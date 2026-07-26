@@ -19,6 +19,8 @@ export const TAB_SLUG_MAP = {
 
 export const SLUG_TAB_MAP = {
   '/': 'dashboard',
+  '': 'dashboard',
+  '/index.html': 'dashboard',
   '/dashboard': 'dashboard',
   '/production-records': 'production_records',
   '/job-punching': 'job_punching',
@@ -36,18 +38,24 @@ export const SLUG_TAB_MAP = {
  * Get active tab key from current URL path or hash
  */
 export function getTabFromUrl() {
-  const path = window.location.pathname.toLowerCase().replace(/\/$/, '') || '/';
-  const hash = window.location.hash.replace('#', '').toLowerCase();
+  try {
+    const rawPath = window.location.pathname ? window.location.pathname.toLowerCase() : '/';
+    const path = rawPath.length > 1 ? rawPath.replace(/\/$/, '') : rawPath;
+    const hash = window.location.hash ? window.location.hash.replace('#', '').toLowerCase() : '';
 
-  if (hash && SLUG_TAB_MAP[hash]) {
-    return SLUG_TAB_MAP[hash];
-  }
-  
-  if (SLUG_TAB_MAP[path]) {
-    return SLUG_TAB_MAP[path];
-  }
+    if (hash && SLUG_TAB_MAP[hash]) {
+      return SLUG_TAB_MAP[hash];
+    }
+    
+    if (SLUG_TAB_MAP[path]) {
+      return SLUG_TAB_MAP[path];
+    }
 
-  return 'dashboard';
+    return 'dashboard';
+  } catch (e) {
+    console.error("Error reading URL slug", e);
+    return 'dashboard';
+  }
 }
 
 /**
@@ -61,10 +69,14 @@ export function getSlugForTab(tabKey) {
  * Update browser URL path with history pushState
  */
 export function pushSlugState(tabKey) {
-  const targetSlug = getSlugForTab(tabKey);
-  const currentPath = window.location.pathname;
+  try {
+    const targetSlug = getSlugForTab(tabKey);
+    const currentPath = window.location.pathname;
 
-  if (currentPath !== targetSlug) {
-    window.history.pushState({ tab: tabKey }, '', targetSlug);
+    if (currentPath !== targetSlug && window.history && window.history.pushState) {
+      window.history.pushState({ tab: tabKey }, '', targetSlug);
+    }
+  } catch (e) {
+    console.warn("Failed to push state to history", e);
   }
 }

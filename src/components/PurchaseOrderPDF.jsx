@@ -427,7 +427,7 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
               </button>
             </div>
             <ul>
-              {currentTerms.map((term, idx) => (
+              {(currentTerms || []).map((term, idx) => (
                 <li key={idx} style={{ marginBottom: '2px' }}>
                   <div style={{ display: 'flex', items: 'flex-start', gap: '4px' }}>
                     <input

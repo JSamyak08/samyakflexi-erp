@@ -307,7 +307,7 @@ export default function GRNPDF({ grnData, onClose }) {
               <li style={{ marginBottom: '2px' }}>
                 <b>QC Observations:</b> {qcNotes}
               </li>
-              {currentGrnTerms.map((term, idx) => (
+              {(currentGrnTerms || []).map((term, idx) => (
                 <li key={idx} style={{ marginBottom: '2px' }}>
                   <div style={{ display: 'flex', items: 'flex-start', gap: '4px' }}>
                     <input

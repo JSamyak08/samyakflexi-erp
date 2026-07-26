@@ -372,7 +372,7 @@ export default function DocumentSettings() {
                 </button>
               </div>
               <div className="space-y-2">
-                {termsState.poTerms.map((term, index) => (
+                {(termsState.poTerms || []).map((term, index) => (
                   <div key={index} className="flex items-start gap-2">
                     <span className="text-xs text-slate-500 mt-2 font-mono">{index + 1}.</span>
                     <textarea
@@ -406,7 +406,7 @@ export default function DocumentSettings() {
                 </button>
               </div>
               <div className="space-y-2">
-                {termsState.ocnTerms.map((term, index) => (
+                {(termsState.ocnTerms || []).map((term, index) => (
                   <div key={index} className="flex items-start gap-2">
                     <span className="text-xs text-slate-500 mt-2 font-mono">{index + 1}.</span>
                     <textarea
@@ -440,7 +440,7 @@ export default function DocumentSettings() {
                 </button>
               </div>
               <div className="space-y-2">
-                {termsState.grnTerms.map((term, index) => (
+                {(termsState.grnTerms || []).map((term, index) => (
                   <div key={index} className="flex items-start gap-2">
                     <span className="text-xs text-slate-500 mt-2 font-mono">{index + 1}.</span>
                     <textarea
@@ -459,6 +459,7 @@ export default function DocumentSettings() {
                   </div>
                 ))}
               </div>
+
             </div>
           </div>
 

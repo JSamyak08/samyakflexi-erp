@@ -344,7 +344,7 @@ export default function OrderConfirmationPDF({ calculationData, onClose }) {
               </button>
             </div>
             <ul>
-              {currentOcnTerms.map((term, idx) => (
+              {(currentOcnTerms || []).map((term, idx) => (
                 <li key={idx} style={{ marginBottom: '2px' }}>
                   <div style={{ display: 'flex', items: 'flex-start', gap: '4px' }}>
                     <input

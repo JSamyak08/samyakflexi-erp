@@ -102,11 +102,20 @@ export function saveDocumentPrefixes(prefixConfig) {
 export function getDocumentTerms() {
   try {
     const saved = localStorage.getItem(TERMS_STORAGE_KEY);
-    return saved ? { ...DEFAULT_DOCUMENT_TERMS, ...JSON.parse(saved) } : { ...DEFAULT_DOCUMENT_TERMS };
+    if (!saved) return { ...DEFAULT_DOCUMENT_TERMS };
+    const parsed = JSON.parse(saved);
+    return {
+      paymentTerms: parsed.paymentTerms || DEFAULT_DOCUMENT_TERMS.paymentTerms,
+      poTerms: Array.isArray(parsed.poTerms) && parsed.poTerms.length > 0 ? parsed.poTerms : DEFAULT_DOCUMENT_TERMS.poTerms,
+      ocnTerms: Array.isArray(parsed.ocnTerms) && parsed.ocnTerms.length > 0 ? parsed.ocnTerms : DEFAULT_DOCUMENT_TERMS.ocnTerms,
+      grnTerms: Array.isArray(parsed.grnTerms) && parsed.grnTerms.length > 0 ? parsed.grnTerms : DEFAULT_DOCUMENT_TERMS.grnTerms
+    };
   } catch (e) {
+    console.error("Failed to parse document terms", e);
     return { ...DEFAULT_DOCUMENT_TERMS };
   }
 }
+
 
 /**
  * Save document terms & conditions configuration
