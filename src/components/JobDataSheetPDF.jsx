@@ -34,7 +34,7 @@ export default function JobDataSheetPDF({ sheetData, onClose }) {
 
   return (
     <div className="pdf-modal-overlay">
-      <div className="pdf-modal-actions no-print">
+      <div className="pdf-modal-toolbar no-print">
         <button className="btn-secondary" onClick={onClose}>
           <ArrowLeft size={16} /> Back
         </button>
@@ -43,8 +43,9 @@ export default function JobDataSheetPDF({ sheetData, onClose }) {
         </button>
       </div>
 
-      <div className="pdf-page-wrapper">
-        <div className="letterhead-container">
+      <div className="pdf-paper-container">
+        <div className="printable-document">
+
           
           {/* Header */}
           <div className="letterhead-header">
