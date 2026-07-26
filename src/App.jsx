@@ -49,7 +49,8 @@ import {
   fetchGRNs, saveGRNToSupabase,
   fetchCylinders, saveCylinderToSupabase,
   fetchProductionRecords, saveProductionRecordToSupabase,
-  fetchUsers, saveUserToSupabase
+  fetchUsers, saveUserToSupabase,
+  fetchJobDataSheets, saveJobDataSheetToSupabase, deleteJobDataSheetFromSupabase
 } from './services/supabaseDataService';
 import './index.css';
 
@@ -84,7 +85,7 @@ export default function App() {
   const [inventory, setInventory] = useState(isSupaActive ? [] : initialInventory);
   const [grns, setGrns] = useState(isSupaActive ? [] : initialGRNs);
   const [users, setUsers] = useState(initialUsers);
-  const [, setJobDataSheets] = useState(isSupaActive ? [] : initialJobDataSheets);
+  const [jobDataSheets, setJobDataSheets] = useState(isSupaActive ? [] : initialJobDataSheets);
   const [cylinders, setCylinders] = useState(isSupaActive ? [] : initialCylinders);
   const [productionRecords, setProductionRecords] = useState(isSupaActive ? [] : initialProductionRecords);
 
@@ -94,14 +95,15 @@ export default function App() {
 
     async function loadSupabaseData() {
       try {
-        const [supaOrders, supaVendors, supaInv, supaGRNs, supaCyls, supaProd, supaUsers] = await Promise.all([
+        const [supaOrders, supaVendors, supaInv, supaGRNs, supaCyls, supaProd, supaUsers, supaSheets] = await Promise.all([
           fetchOrders(),
           fetchVendors(),
           fetchInventory(),
           fetchGRNs(),
           fetchCylinders(),
           fetchProductionRecords(),
-          fetchUsers()
+          fetchUsers(),
+          fetchJobDataSheets()
         ]);
 
         setOrders(supaOrders || []);
@@ -110,6 +112,7 @@ export default function App() {
         setGrns(supaGRNs || []);
         setCylinders(supaCyls || []);
         setProductionRecords(supaProd || []);
+        setJobDataSheets(supaSheets || []);
         if (supaUsers && supaUsers.length > 0) setUsers(supaUsers);
       } catch (err) {
         console.error("Failed to load data from Supabase:", err);
@@ -118,6 +121,7 @@ export default function App() {
 
     loadSupabaseData();
   }, [isSupaActive]);
+
 
 
   // Authentication & Active User Session State
@@ -237,8 +241,15 @@ export default function App() {
   };
 
   const handleAddJobDataSheet = (newSheet) => {
-    setJobDataSheets(prev => [newSheet, ...prev.filter(s => s.jobId !== newSheet.jobId)]);
+    setJobDataSheets(prev => [newSheet, ...prev.filter(s => s.id !== newSheet.id)]);
+    saveJobDataSheetToSupabase(newSheet);
   };
+
+  const handleDeleteJobDataSheet = (sheetId) => {
+    setJobDataSheets(prev => prev.filter(s => s.id !== sheetId));
+    deleteJobDataSheetFromSupabase(sheetId);
+  };
+
 
   const handleAddCylinder = (newCyl) => {
     setCylinders(prev => [newCyl, ...prev]);
@@ -630,10 +641,13 @@ export default function App() {
         {activeTab === 'job_datasheet' && (
           <JobDataSheet 
             orders={orders}
+            jobDataSheets={jobDataSheets}
             currentUser={currentUser}
             onSaveJobDataSheet={handleAddJobDataSheet}
+            onDeleteJobDataSheet={handleDeleteJobDataSheet}
           />
         )}
+
 
         {/* TAB 5: VENDOR MANAGEMENT */}
         {activeTab === 'vendors' && (

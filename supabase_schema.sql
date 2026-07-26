@@ -111,6 +111,26 @@ CREATE TABLE IF NOT EXISTS public.users (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 8. JOB DATA SHEETS TABLE
+CREATE TABLE IF NOT EXISTS public.job_datasheets (
+    id TEXT PRIMARY KEY,
+    job_id TEXT REFERENCES public.orders(id),
+    job_name TEXT NOT NULL,
+    client_name TEXT NOT NULL,
+    completion_date DATE DEFAULT CURRENT_DATE,
+    selling_price_per_kg NUMERIC DEFAULT 0,
+    pre_cost_per_kg NUMERIC DEFAULT 0,
+    post_cost_per_kg NUMERIC DEFAULT 0,
+    profit_margin_pct NUMERIC DEFAULT 0,
+    actual_ink_consumed_kg NUMERIC DEFAULT 0,
+    actual_solvents_consumed_kg NUMERIC DEFAULT 0,
+    actual_adhesive_consumed_kg NUMERIC DEFAULT 0,
+    actual_scrap_wastage_kg NUMERIC DEFAULT 0,
+    operator_notes TEXT,
+    created_by TEXT DEFAULT 'Plant Manager',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Enable Row Level Security (RLS) & default access rules
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.vendors ENABLE ROW LEVEL SECURITY;
@@ -119,6 +139,7 @@ ALTER TABLE public.grns ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cylinders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.production_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.job_datasheets ENABLE ROW LEVEL SECURITY;
 
 -- Anonymous/Public access policies for ERP client operations
 CREATE POLICY "Allow public read-write for orders" ON public.orders FOR ALL USING (true);
@@ -128,6 +149,8 @@ CREATE POLICY "Allow public read-write for grns" ON public.grns FOR ALL USING (t
 CREATE POLICY "Allow public read-write for cylinders" ON public.cylinders FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for production_records" ON public.production_records FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for users" ON public.users FOR ALL USING (true);
+CREATE POLICY "Allow public read-write for job_datasheets" ON public.job_datasheets FOR ALL USING (true);
+
 
 -- 8. SUPABASE AUTH USER SYNC TRIGGER
 -- Automatically creates a record in public.users when a new user signs up via Supabase Auth

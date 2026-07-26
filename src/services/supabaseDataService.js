@@ -393,6 +393,76 @@ export async function saveUserToSupabase(user) {
   }
 }
 
+
+// ============================================================================
+// 8. JOB DATA SHEETS
+// ============================================================================
+
+export async function fetchJobDataSheets() {
+  if (!isSupabaseConfigured()) return [];
+  try {
+    const { data, error } = await supabase.from('job_datasheets').select('*').order('created_at', { ascending: false });
+    if (error) throw error;
+    if (!data) return [];
+
+    return data.map(s => ({
+      id: s.id,
+      jobId: s.job_id,
+      jobName: s.job_name,
+      clientName: s.client_name,
+      completionDate: s.completion_date || s.created_at?.split('T')[0],
+      sellingPricePerKg: Number(s.selling_price_per_kg) || 0,
+      preCostPerKg: Number(s.pre_cost_per_kg) || 0,
+      postCostPerKg: Number(s.post_cost_per_kg) || 0,
+      profitMarginPct: Number(s.profit_margin_pct) || 0,
+      actualInkConsumedKg: Number(s.actual_ink_consumed_kg) || 0,
+      actualSolventsConsumedKg: Number(s.actual_solvents_consumed_kg) || 0,
+      actualAdhesiveConsumedKg: Number(s.actual_adhesive_consumed_kg) || 0,
+      actualScrapWastageKg: Number(s.actual_scrap_wastage_kg) || 0,
+      operatorNotes: s.operator_notes,
+      createdBy: s.created_by
+    }));
+  } catch (err) {
+    console.error("Error fetching job datasheets from Supabase:", err);
+    return [];
+  }
+}
+
+export async function saveJobDataSheetToSupabase(sheet) {
+  if (!isSupabaseConfigured()) return;
+  try {
+    await supabase.from('job_datasheets').upsert({
+      id: sheet.id || `JDS-${Date.now()}`,
+      job_id: sheet.jobId,
+      job_name: sheet.jobName,
+      client_name: sheet.clientName,
+      completion_date: sheet.completionDate,
+      selling_price_per_kg: sheet.sellingPricePerKg,
+      pre_cost_per_kg: sheet.preCostPerKg,
+      post_cost_per_kg: sheet.postCostPerKg,
+      profit_margin_pct: sheet.profitMarginPct,
+      actual_ink_consumed_kg: sheet.actualInkConsumedKg,
+      actual_solvents_consumed_kg: sheet.actualSolventsConsumedKg,
+      actual_adhesive_consumed_kg: sheet.actualAdhesiveConsumedKg,
+      actual_scrap_wastage_kg: sheet.actualScrapWastageKg,
+      operator_notes: sheet.operatorNotes,
+      created_by: sheet.createdBy || 'Plant Manager'
+    });
+  } catch (err) {
+    console.error("Error saving job datasheet to Supabase:", err);
+  }
+}
+
+export async function deleteJobDataSheetFromSupabase(sheetId) {
+  if (!isSupabaseConfigured()) return;
+  try {
+    await supabase.from('job_datasheets').delete().eq('id', sheetId);
+  } catch (err) {
+    console.error("Error deleting job datasheet from Supabase:", err);
+  }
+}
+
+
 // ============================================================================
 // CLEAR ALL SUPABASE TABLES FUNCTION
 // ============================================================================
