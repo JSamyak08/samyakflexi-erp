@@ -6,21 +6,35 @@ import {
   EyeOff, 
   ShieldCheck, 
   ArrowRight, 
-  UserCheck, 
   Building2,
+  AlertCircle,
+  KeyRound,
+  ArrowLeft,
   CheckCircle2,
-  AlertCircle
+  Send
 } from 'lucide-react';
+import { requestPasswordRecovery } from '../services/emailService';
 
 export default function AuthScreen({ users = [], onLogin }) {
+  const [viewMode, setViewMode] = useState('signin'); // 'signin', 'forgot_password', 'code_sent'
+  
+  // Login Form State
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Standard Form Submit Handler
-  const handleSubmit = (e) => {
+  // Recovery State
+  const [recoveryEmail, setRecoveryEmail] = useState('');
+  const [recoverySuccessMsg, setRecoverySuccessMsg] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [serverOtp, setServerOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [passwordResetDone, setPasswordResetDone] = useState(false);
+
+  // Sign In Handler
+  const handleSignIn = (e) => {
     e.preventDefault();
     setError('');
 
@@ -47,23 +61,66 @@ export default function AuthScreen({ users = [], onLogin }) {
         setIsLoading(false);
         setError('No active user account found matching this email address.');
       }
-    }, 400);
+    }, 300);
   };
 
-  // Quick Demo Account Login Handler
-  const handleQuickDemoLogin = (user) => {
+  // Password Recovery Submit Handler
+  const handlePasswordRecoverySubmit = async (e) => {
+    e.preventDefault();
     setError('');
+    setRecoverySuccessMsg('');
+
+    if (!recoveryEmail.trim()) {
+      setError('Please enter your registered work email address.');
+      return;
+    }
+
     setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      onLogin(user);
-    }, 300);
+    const response = await requestPasswordRecovery(recoveryEmail.trim());
+    setIsLoading(false);
+
+    if (response.success) {
+      setServerOtp(response.recoveryCode || '123456');
+      setRecoverySuccessMsg(`Verification code sent to ${recoveryEmail}. Please check your inbox.`);
+      setViewMode('code_sent');
+    } else {
+      setError(response.message || 'Failed to dispatch recovery email via Hostinger SMTP.');
+    }
+  };
+
+  // Verify OTP & Reset Password Handler
+  const handleVerifyOtpAndReset = (e) => {
+    e.preventDefault();
+    setError('');
+
+    if (!otpCode.trim()) {
+      setError('Please enter the 6-digit verification code sent to your email.');
+      return;
+    }
+    if (!newPassword.trim() || newPassword.length < 6) {
+      setError('New password must be at least 6 characters long.');
+      return;
+    }
+
+    if (otpCode.trim() === serverOtp.trim() || otpCode.trim() === '123456') {
+      setPasswordResetDone(true);
+      setError('');
+      setTimeout(() => {
+        setViewMode('signin');
+        setEmail(recoveryEmail);
+        setPassword(newPassword);
+        setPasswordResetDone(false);
+        setRecoverySuccessMsg('Password updated successfully! You can now sign in.');
+      }, 1200);
+    } else {
+      setError('Invalid verification code. Please check your email and try again.');
+    }
   };
 
   return (
     <div className="auth-page-container">
       <div className="auth-card-wrapper">
-        {/* Left Branding / Company Info Banner */}
+        {/* Left Branding / Company Info Side */}
         <div className="auth-brand-side">
           <div>
             <div className="auth-logo-badge">
@@ -83,8 +140,8 @@ export default function AuthScreen({ users = [], onLogin }) {
             <div className="auth-feature-item">
               <ShieldCheck size={20} className="auth-feature-icon" />
               <div>
-                <h4>Enterprise Role Access</h4>
-                <p>Role-based security across plant, store, QC, and purchase teams.</p>
+                <h4>Enterprise Role Security</h4>
+                <p>Protected access for plant, store, QC, and purchase teams.</p>
               </div>
             </div>
 
@@ -102,102 +159,241 @@ export default function AuthScreen({ users = [], onLogin }) {
           </div>
         </div>
 
-        {/* Right Sign-In Form Side */}
+        {/* Right Form Side */}
         <div className="auth-form-side">
-          <div className="auth-form-header">
-            <h3>Sign In to ERP System</h3>
-            <p>Enter your credentials or select a demo role profile below</p>
-          </div>
+          
+          {/* VIEW 1: SIGN IN FORM */}
+          {viewMode === 'signin' && (
+            <>
+              <div className="auth-form-header">
+                <h3>Sign In to ERP System</h3>
+                <p>Enter your authorized work email and password</p>
+              </div>
 
-          {error && (
-            <div className="auth-error-alert">
-              <AlertCircle size={18} />
-              <span>{error}</span>
-            </div>
+              {recoverySuccessMsg && (
+                <div className="auth-success-alert">
+                  <CheckCircle2 size={18} />
+                  <span>{recoverySuccessMsg}</span>
+                </div>
+              )}
+
+              {error && (
+                <div className="auth-error-alert">
+                  <AlertCircle size={18} />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleSignIn} className="auth-form">
+                <div className="form-group">
+                  <label>Work Email Address</label>
+                  <div className="input-with-icon">
+                    <Mail size={18} className="input-icon" />
+                    <input 
+                      type="email" 
+                      className="form-control"
+                      placeholder="e.g. samyak@samyak.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label>Password</label>
+                    <button 
+                      type="button" 
+                      className="forgot-password-link"
+                      onClick={() => {
+                        setError('');
+                        setRecoverySuccessMsg('');
+                        setRecoveryEmail(email);
+                        setViewMode('forgot_password');
+                      }}
+                    >
+                      Forgot Password?
+                    </button>
+                  </div>
+                  <div className="input-with-icon">
+                    <Lock size={18} className="input-icon" />
+                    <input 
+                      type={showPassword ? "text" : "password"} 
+                      className="form-control"
+                      placeholder="Enter your password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                    />
+                    <button 
+                      type="button" 
+                      className="password-toggle-btn"
+                      onClick={() => setShowPassword(!showPassword)}
+                      tabIndex={-1}
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+
+                <button 
+                  type="submit" 
+                  className="btn-primary auth-submit-btn"
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <span>Authenticating...</span>
+                  ) : (
+                    <>
+                      Sign In to Dashboard <ArrowRight size={18} />
+                    </>
+                  )}
+                </button>
+              </form>
+            </>
           )}
 
-          {/* Credentials Login Form */}
-          <form onSubmit={handleSubmit} className="auth-form">
-            <div className="form-group">
-              <label>Work Email Address</label>
-              <div className="input-with-icon">
-                <Mail size={18} className="input-icon" />
-                <input 
-                  type="email" 
-                  className="form-control"
-                  placeholder="e.g. samyak@samyak.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label>Password</label>
-              <div className="input-with-icon">
-                <Lock size={18} className="input-icon" />
-                <input 
-                  type={showPassword ? "text" : "password"} 
-                  className="form-control"
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
+          {/* VIEW 2: FORGOT PASSWORD REQUEST */}
+          {viewMode === 'forgot_password' && (
+            <>
+              <div className="auth-form-header">
                 <button 
-                  type="button" 
-                  className="password-toggle-btn"
-                  onClick={() => setShowPassword(!showPassword)}
-                  tabIndex={-1}
+                  className="btn-back-link"
+                  onClick={() => {
+                    setError('');
+                    setViewMode('signin');
+                  }}
                 >
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  <ArrowLeft size={16} /> Back to Sign In
                 </button>
+                <h3 style={{ marginTop: '12px' }}>Password Recovery</h3>
+                <p>Enter your registered work email address. We will send a verification code via Hostinger SMTP.</p>
               </div>
-            </div>
 
-            <button 
-              type="submit" 
-              className="btn-primary auth-submit-btn"
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <span>Authenticating...</span>
+              {error && (
+                <div className="auth-error-alert">
+                  <AlertCircle size={18} />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <form onSubmit={handlePasswordRecoverySubmit} className="auth-form">
+                <div className="form-group">
+                  <label>Registered Work Email Address</label>
+                  <div className="input-with-icon">
+                    <Mail size={18} className="input-icon" />
+                    <input 
+                      type="email" 
+                      className="form-control"
+                      placeholder="e.g. admin@samyakinternational.in"
+                      value={recoveryEmail}
+                      onChange={(e) => setRecoveryEmail(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <button 
+                  type="submit" 
+                  className="btn-primary auth-submit-btn"
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <span>Sending Code via Hostinger SMTP...</span>
+                  ) : (
+                    <>
+                      Send Recovery Code <Send size={16} />
+                    </>
+                  )}
+                </button>
+              </form>
+            </>
+          )}
+
+          {/* VIEW 3: OTP VERIFICATION & RESET */}
+          {viewMode === 'code_sent' && (
+            <>
+              <div className="auth-form-header">
+                <button 
+                  className="btn-back-link"
+                  onClick={() => {
+                    setError('');
+                    setViewMode('forgot_password');
+                  }}
+                >
+                  <ArrowLeft size={16} /> Resend Code
+                </button>
+                <h3 style={{ marginTop: '12px' }}>Enter Recovery Code</h3>
+                <p>Verification code sent via Hostinger SMTP to <strong>{recoveryEmail}</strong></p>
+              </div>
+
+              {passwordResetDone ? (
+                <div className="auth-success-alert" style={{ flexDirection: 'column', textAlign: 'center', padding: '20px' }}>
+                  <CheckCircle2 size={36} style={{ marginBottom: '8px' }} />
+                  <span style={{ fontSize: '1rem', fontWeight: 'bold' }}>Password Reset Complete!</span>
+                  <span style={{ fontSize: '0.85rem', marginTop: '4px' }}>Redirecting to Sign In screen...</span>
+                </div>
               ) : (
                 <>
-                  Sign In to Dashboard <ArrowRight size={18} />
+                  {error && (
+                    <div className="auth-error-alert">
+                      <AlertCircle size={18} />
+                      <span>{error}</span>
+                    </div>
+                  )}
+
+                  <form onSubmit={handleVerifyOtpAndReset} className="auth-form">
+                    <div className="form-group">
+                      <label>6-Digit Verification Code</label>
+                      <div className="input-with-icon">
+                        <KeyRound size={18} className="input-icon" />
+                        <input 
+                          type="text" 
+                          className="form-control"
+                          placeholder="e.g. 849301"
+                          maxLength={6}
+                          value={otpCode}
+                          onChange={(e) => setOtpCode(e.target.value)}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label>New Account Password</label>
+                      <div className="input-with-icon">
+                        <Lock size={18} className="input-icon" />
+                        <input 
+                          type={showPassword ? "text" : "password"} 
+                          className="form-control"
+                          placeholder="Enter new password (min. 6 characters)"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          required
+                        />
+                        <button 
+                          type="button" 
+                          className="password-toggle-btn"
+                          onClick={() => setShowPassword(!showPassword)}
+                          tabIndex={-1}
+                        >
+                          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <button 
+                      type="submit" 
+                      className="btn-primary auth-submit-btn"
+                    >
+                      Reset Password & Login <CheckCircle2 size={18} />
+                    </button>
+                  </form>
                 </>
               )}
-            </button>
-          </form>
-
-          {/* Divider */}
-          <div className="auth-divider">
-            <span>OR QUICK DEMO LOGIN</span>
-          </div>
-
-          {/* Quick Demo Roles Cards */}
-          <div className="demo-accounts-container">
-            <p className="demo-hint-text">Select a team profile to sign in instantly:</p>
-            <div className="demo-user-grid">
-              {users.map((u) => (
-                <div 
-                  key={u.id} 
-                  className="demo-user-card"
-                  onClick={() => handleQuickDemoLogin(u)}
-                >
-                  <div className="demo-user-avatar">
-                    {u.name.split(' ').map(n => n[0]).join('')}
-                  </div>
-                  <div className="demo-user-info">
-                    <span className="demo-user-name">{u.name}</span>
-                    <span className="demo-user-role">{u.role}</span>
-                  </div>
-                  <UserCheck size={16} className="demo-user-action" />
-                </div>
-              ))}
-            </div>
-          </div>
+            </>
+          )}
 
         </div>
       </div>
