@@ -19,11 +19,11 @@ import { initialCylinders } from '../dataStore';
 // ============================================================================
 
 export async function fetchOrders() {
-  if (!isSupabaseConfigured()) return null;
+  if (!isSupabaseConfigured()) return [];
   try {
     const { data, error } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
     if (error) throw error;
-    if (!data || data.length === 0) return null;
+    if (!data) return [];
 
     return data.map(o => ({
       id: o.id,
@@ -42,7 +42,7 @@ export async function fetchOrders() {
     }));
   } catch (err) {
     console.error("Error fetching orders from Supabase:", err);
-    return null;
+    return [];
   }
 }
 
@@ -80,11 +80,11 @@ export async function deleteOrderFromSupabase(orderId) {
 // ============================================================================
 
 export async function fetchVendors() {
-  if (!isSupabaseConfigured()) return null;
+  if (!isSupabaseConfigured()) return [];
   try {
     const { data, error } = await supabase.from('vendors').select('*').order('name');
     if (error) throw error;
-    if (!data || data.length === 0) return null;
+    if (!data) return [];
 
     return data.map(v => ({
       id: v.id,
@@ -99,7 +99,7 @@ export async function fetchVendors() {
     }));
   } catch (err) {
     console.error("Error fetching vendors from Supabase:", err);
-    return null;
+    return [];
   }
 }
 
@@ -136,11 +136,11 @@ export async function deleteVendorFromSupabase(vendorId) {
 // ============================================================================
 
 export async function fetchInventory() {
-  if (!isSupabaseConfigured()) return null;
+  if (!isSupabaseConfigured()) return [];
   try {
     const { data, error } = await supabase.from('inventory').select('*').order('item_name');
     if (error) throw error;
-    if (!data || data.length === 0) return null;
+    if (!data) return [];
 
     return data.map(i => ({
       id: i.id,
@@ -157,7 +157,7 @@ export async function fetchInventory() {
     }));
   } catch (err) {
     console.error("Error fetching inventory from Supabase:", err);
-    return null;
+    return [];
   }
 }
 
@@ -196,11 +196,11 @@ export async function deleteInventoryItemFromSupabase(itemId) {
 // ============================================================================
 
 export async function fetchGRNs() {
-  if (!isSupabaseConfigured()) return null;
+  if (!isSupabaseConfigured()) return [];
   try {
     const { data, error } = await supabase.from('grns').select('*').order('created_at', { ascending: false });
     if (error) throw error;
-    if (!data || data.length === 0) return null;
+    if (!data) return [];
 
     return data.map(g => ({
       id: g.id,
@@ -216,7 +216,7 @@ export async function fetchGRNs() {
     }));
   } catch (err) {
     console.error("Error fetching GRNs from Supabase:", err);
-    return null;
+    return [];
   }
 }
 
@@ -245,11 +245,11 @@ export async function saveGRNToSupabase(grn) {
 // ============================================================================
 
 export async function fetchCylinders() {
-  if (!isSupabaseConfigured()) return null;
+  if (!isSupabaseConfigured()) return [];
   try {
     const { data, error } = await supabase.from('cylinders').select('*').order('created_at', { ascending: false });
     if (error) throw error;
-    if (!data || data.length === 0) return null;
+    if (!data) return [];
 
     return data.map(c => ({
       id: c.id,
@@ -270,7 +270,7 @@ export async function fetchCylinders() {
     }));
   } catch (err) {
     console.error("Error fetching cylinders from Supabase:", err);
-    return null;
+    return [];
   }
 }
 
@@ -304,11 +304,11 @@ export async function saveCylinderToSupabase(cyl) {
 // ============================================================================
 
 export async function fetchProductionRecords() {
-  if (!isSupabaseConfigured()) return null;
+  if (!isSupabaseConfigured()) return [];
   try {
     const { data, error } = await supabase.from('production_records').select('*').order('recorded_at', { ascending: false });
     if (error) throw error;
-    if (!data || data.length === 0) return null;
+    if (!data) return [];
 
     return data.map(r => ({
       id: r.id,
@@ -326,7 +326,7 @@ export async function fetchProductionRecords() {
     }));
   } catch (err) {
     console.error("Error fetching production records from Supabase:", err);
-    return null;
+    return [];
   }
 }
 
@@ -356,11 +356,11 @@ export async function saveProductionRecordToSupabase(record) {
 // ============================================================================
 
 export async function fetchUsers() {
-  if (!isSupabaseConfigured()) return null;
+  if (!isSupabaseConfigured()) return [];
   try {
     const { data, error } = await supabase.from('users').select('*').order('full_name');
     if (error) throw error;
-    if (!data || data.length === 0) return null;
+    if (!data) return [];
 
     return data.map(u => ({
       id: u.id,
@@ -372,7 +372,7 @@ export async function fetchUsers() {
     }));
   } catch (err) {
     console.error("Error fetching users from Supabase:", err);
-    return null;
+    return [];
   }
 }
 
@@ -390,6 +390,35 @@ export async function saveUserToSupabase(user) {
     });
   } catch (err) {
     console.error("Error saving user to Supabase:", err);
+  }
+}
+
+// ============================================================================
+// CLEAR ALL SUPABASE TABLES FUNCTION
+// ============================================================================
+
+export async function clearAllSupabaseData() {
+  if (!isSupabaseConfigured()) {
+    return { success: false, message: 'Supabase credentials are not configured.' };
+  }
+
+  try {
+    await supabase.from('production_records').delete().neq('id', '000');
+    await supabase.from('grns').delete().neq('id', '000');
+    await supabase.from('orders').delete().neq('id', '000');
+    await supabase.from('vendors').delete().neq('id', '000');
+    await supabase.from('inventory').delete().neq('id', '000');
+    await supabase.from('cylinders').delete().neq('id', '000');
+
+    return {
+      success: true,
+      message: 'All Supabase tables purged successfully!'
+    };
+  } catch (err) {
+    return {
+      success: false,
+      message: `Failed to clear Supabase tables: ${err.message}`
+    };
   }
 }
 

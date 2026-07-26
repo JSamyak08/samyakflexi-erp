@@ -20,7 +20,7 @@ import {
   saveSupabaseCredentials, 
   clearSupabaseCredentials 
 } from '../services/supabaseClient';
-import { seedAllDataToSupabase } from '../services/supabaseDataService';
+import { seedAllDataToSupabase, clearAllSupabaseData } from '../services/supabaseDataService';
 
 export default function SupabaseManagement() {
   const [urlInput, setUrlInput] = useState(() => {
@@ -47,6 +47,16 @@ export default function SupabaseManagement() {
     setSeeding(false);
     setSeedResult(res);
   };
+
+  const handlePurgeSupabaseData = async () => {
+    if (!window.confirm("Are you sure you want to purge all data from Supabase tables? This cannot be undone.")) return;
+    setSeeding(true);
+    setSeedResult(null);
+    const res = await clearAllSupabaseData();
+    setSeeding(false);
+    setSeedResult(res);
+  };
+
 
   
   const [copied, setCopied] = useState(false);
@@ -152,10 +162,21 @@ CREATE POLICY "Public full access" ON public.inventory FOR ALL USING (true);`;
             title="Upload all initial factory data to Supabase database"
           >
             <Database className={`w-4 h-4 ${seeding ? 'animate-bounce' : ''}`} />
-            {seeding ? 'Syncing All Tables...' : 'Push Seed Data to Supabase'}
+            {seeding ? 'Syncing All Tables...' : 'Push Seed Data'}
+          </button>
+
+          <button
+            onClick={handlePurgeSupabaseData}
+            disabled={seeding || !isSupabaseConfigured()}
+            className="flex items-center gap-2 bg-slate-800 hover:bg-rose-900/40 text-rose-300 border border-slate-700 hover:border-rose-800 px-3.5 py-2 rounded-lg font-medium text-xs transition-all disabled:opacity-50"
+            title="Wipe all data from Supabase tables"
+          >
+            <XCircle className="w-4 h-4 text-rose-400" />
+            Purge Remote Data
           </button>
         </div>
       </div>
+
 
       {seedResult && (
         <div className={`p-4 rounded-xl border flex items-center justify-between ${seedResult.success ? 'bg-emerald-950/80 border-emerald-800 text-emerald-300' : 'bg-rose-950/80 border-rose-800 text-rose-300'}`}>

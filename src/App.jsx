@@ -77,19 +77,20 @@ export default function App() {
     pushSlugState(activeTab);
   }, []);
 
-  // Shared Global State
-  const [orders, setOrders] = useState(initialOrders);
-  const [vendors, setVendors] = useState(initialVendors);
-  const [inventory, setInventory] = useState(initialInventory);
-  const [grns, setGrns] = useState(initialGRNs);
+  // Shared Global State (Only load local defaults if Supabase is unconfigured)
+  const isSupaActive = isSupabaseConfigured();
+  const [orders, setOrders] = useState(isSupaActive ? [] : initialOrders);
+  const [vendors, setVendors] = useState(isSupaActive ? [] : initialVendors);
+  const [inventory, setInventory] = useState(isSupaActive ? [] : initialInventory);
+  const [grns, setGrns] = useState(isSupaActive ? [] : initialGRNs);
   const [users, setUsers] = useState(initialUsers);
-  const [, setJobDataSheets] = useState(initialJobDataSheets);
-  const [cylinders, setCylinders] = useState(initialCylinders);
-  const [productionRecords, setProductionRecords] = useState(initialProductionRecords);
+  const [, setJobDataSheets] = useState(isSupaActive ? [] : initialJobDataSheets);
+  const [cylinders, setCylinders] = useState(isSupaActive ? [] : initialCylinders);
+  const [productionRecords, setProductionRecords] = useState(isSupaActive ? [] : initialProductionRecords);
 
-  // Load live data from Supabase PostgreSQL if configured
+  // Load live data exclusively from Supabase PostgreSQL if configured
   useEffect(() => {
-    if (!isSupabaseConfigured()) return;
+    if (!isSupaActive) return;
 
     async function loadSupabaseData() {
       try {
@@ -103,20 +104,21 @@ export default function App() {
           fetchUsers()
         ]);
 
-        if (supaOrders) setOrders(supaOrders);
-        if (supaVendors) setVendors(supaVendors);
-        if (supaInv) setInventory(supaInv);
-        if (supaGRNs) setGrns(supaGRNs);
-        if (supaCyls) setCylinders(supaCyls);
-        if (supaProd) setProductionRecords(supaProd);
-        if (supaUsers) setUsers(supaUsers);
+        setOrders(supaOrders || []);
+        setVendors(supaVendors || []);
+        setInventory(supaInv || []);
+        setGrns(supaGRNs || []);
+        setCylinders(supaCyls || []);
+        setProductionRecords(supaProd || []);
+        if (supaUsers && supaUsers.length > 0) setUsers(supaUsers);
       } catch (err) {
         console.error("Failed to load data from Supabase:", err);
       }
     }
 
     loadSupabaseData();
-  }, []);
+  }, [isSupaActive]);
+
 
   // Authentication & Active User Session State
   const [currentUser, setCurrentUser] = useState(() => {
