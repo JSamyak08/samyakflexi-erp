@@ -25,6 +25,7 @@ import {
   LogOut,
   ClipboardList,
   Database,
+  UserCheck,
   Settings as SettingsIcon
 } from 'lucide-react';
 
