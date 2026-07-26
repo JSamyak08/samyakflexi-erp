@@ -1,29 +1,48 @@
 import React, { useState } from 'react';
 import { Printer, ArrowLeft } from 'lucide-react';
 import { COMPANY_DETAILS } from '../factoryStore';
+import { numberToWords, formatINR } from '../utils/pdfHelpers';
 
 export default function OrderConfirmationPDF({ calculationData, onClose }) {
-  const [docRef] = useState(() => `OCN-2026-${Math.floor(100000 + (Date.now() % 900000))}`);
+  const [docRef] = useState(() => `SIL/OCN/26-27/${Math.floor(100 + (Date.now() % 900))}`);
 
   if (!calculationData) return null;
 
   const {
-    jobName,
-    printWidthMm,
-    repeatLengthMm,
-    orderQtyKg,
-    orderType,
-    wastagePct,
-    totalLaminateGsm,
-    totalAreaSqm,
+    jobName = "Britannia Bourbon 250g",
+    clientName = "Britannia Industries Ltd",
+    printWidthMm = 1000,
+    repeatLengthMm = 400,
+    orderQtyKg = 1000,
+    orderType = "Reel",
+    wastagePct = 5,
+    totalLaminateGsm = 45.2,
+    totalAreaSqm = 22123,
     layerResults = [],
     inkDetails = {},
     adhesiveDetails = {},
     summary = {}
   } = calculationData;
 
-  const handlePrint = () => {
-    window.print();
+  const layersList = layerResults.length > 0 ? layerResults : [
+    { filmType: "PET Film", micron: 12, density: 1.4, gsm: 16.8, netKg: 371.7, grossKg: 390.3, pricePerKg: 125, totalCost: 48787.5 },
+    { filmType: "Natural LD GP Film", micron: 30, density: 0.93, gsm: 27.9, netKg: 617.2, grossKg: 648.1, pricePerKg: 115, totalCost: 74531.5 }
+  ];
+
+  const totalRawMaterialKg = (summary.totalFilmGrossKg || 0) + (inkDetails.grossKg || 0) + (adhesiveDetails.grossKg || 0) || 1088.4;
+  const totalTaxable = summary.totalRawMaterialCost || 135000;
+  const cgstAmt = totalTaxable * 0.09;
+  const sgstAmt = totalTaxable * 0.09;
+  const totalTax = cgstAmt + sgstAmt;
+  const grandTotal = totalTaxable + totalTax;
+
+  const clientInfo = {
+    name: clientName || "Britannia Industries Ltd",
+    address: "Plot 12, Pithampur Industrial Estate, Dhar, M.P. - 454775",
+    contactPerson: "Rajesh Sharma (Procurement Head)",
+    email: "procurement@britannia.co.in",
+    contactNo: "+91 9826012345",
+    gstin: "23AAACB1234F1Z5"
   };
 
   return (
@@ -32,180 +51,256 @@ export default function OrderConfirmationPDF({ calculationData, onClose }) {
         <button className="btn-secondary" onClick={onClose}>
           <ArrowLeft size={16} /> Back to Job Form
         </button>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <button className="btn-primary" onClick={handlePrint}>
-            <Printer size={16} /> Print / Save as PDF
-          </button>
-        </div>
+        <button className="btn-primary" onClick={() => window.print()}>
+          <Printer size={16} /> Print OCN Note PDF
+        </button>
       </div>
 
       <div className="pdf-paper-container">
-        {/* Printable Order Confirmation Note Document */}
         <div className="printable-document">
-          {/* Executive Letterhead Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #0f172a', paddingBottom: '16px', marginBottom: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <img src={COMPANY_DETAILS.logoUrl} alt="Samyak International Ltd" style={{ height: '54px', objectFit: 'contain' }} />
+          {/* Header */}
+          <div className="letterhead-header">
+            <div className="letterhead-brand">
+              <div className="samyak-logo-fallback">S</div>
               <div>
-                <h1 style={{ fontSize: '1.4rem', fontWeight: '800', letterSpacing: '0.04em', color: '#0f172a', margin: 0, textTransform: 'uppercase' }}>
-                  {COMPANY_DETAILS.name}
-                </h1>
-                <p style={{ fontSize: '0.8rem', fontWeight: '600', color: '#475569', margin: '2px 0 0 0' }}>
-                  {COMPANY_DETAILS.tagline}
-                </p>
-                <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '2px 0 0 0' }}>
-                  {COMPANY_DETAILS.address}
-                </p>
-                <p style={{ fontSize: '0.75rem', color: '#475569', margin: '2px 0 0 0' }}>
-                  GSTIN: <b>{COMPANY_DETAILS.gstin}</b> | Tel: {COMPANY_DETAILS.phones} | Email: {COMPANY_DETAILS.email}
-                </p>
+                <h1 className="letterhead-company-name">{COMPANY_DETAILS.name}</h1>
+                <p className="letterhead-company-sub">{COMPANY_DETAILS.tagline}</p>
               </div>
             </div>
-
-            <div style={{ textAlign: 'right', borderLeft: '1px solid #cbd5e1', paddingLeft: '16px' }}>
-              <div style={{ background: '#0f172a', color: '#ffffff', padding: '6px 12px', fontSize: '0.85rem', fontWeight: '800', letterSpacing: '0.05em', borderRadius: '4px', textTransform: 'uppercase' }}>
-                ORDER CONFIRMATION NOTE
-              </div>
-              <p style={{ fontSize: '0.8rem', fontWeight: '700', color: '#0f172a', margin: '8px 0 0 0' }}>
-                Ref: {docRef}
-              </p>
-              <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '2px 0 0 0' }}>
-                Date: {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-              </p>
+            <div className="letterhead-doc-title">
+              <h2>Order Confirmation Note</h2>
+              <div className="doc-ref-no">{docRef}</div>
             </div>
           </div>
 
-          <hr className="pdf-divider" />
-
-          {/* Job Specifications Summary */}
-          <div className="pdf-section-title">1. JOB & ORDER SPECIFICATIONS</div>
-          <table className="pdf-grid-table">
+          {/* 3-Column Address Grid */}
+          <table className="address-grid-table">
+            <thead>
+              <tr>
+                <th>Name and Address of Manufacturer</th>
+                <th>Name and Address of Client</th>
+                <th>Shipping & Delivery Details</th>
+              </tr>
+            </thead>
             <tbody>
               <tr>
-                <td className="pdf-label">Job Name:</td>
-                <td className="pdf-value bold-text">{jobName}</td>
-                <td className="pdf-label">Order Type:</td>
-                <td className="pdf-value">{orderType} Form</td>
-              </tr>
-              <tr>
-                <td className="pdf-label">Print Size (Width x Repeat):</td>
-                <td className="pdf-value">{printWidthMm} mm  ×  {repeatLengthMm} mm</td>
-                <td className="pdf-label">Order Quantity:</td>
-                <td className="pdf-value bold-text">{orderQtyKg.toLocaleString()} Kg</td>
-              </tr>
-              <tr>
-                <td className="pdf-label">Total Laminate GSM:</td>
-                <td className="pdf-value">{totalLaminateGsm} g/m²</td>
-                <td className="pdf-label">Total Surface Area:</td>
-                <td className="pdf-value">{totalAreaSqm.toLocaleString()} m²</td>
-              </tr>
-              <tr>
-                <td className="pdf-label">Wastage Allowed:</td>
-                <td className="pdf-value highlight-text">{wastagePct}% ({orderQtyKg >= 2000 ? '≥2 MT Order' : orderQtyKg >= 1000 ? '1–2 MT Order' : orderType === 'Pouching' ? 'Pouching ≤500kg' : 'Reel ≤500kg'})</td>
-                <td className="pdf-label">Calculated Rate / Kg:</td>
-                <td className="pdf-value bold-text">₹{summary.costPerKg} / kg</td>
+                <td>
+                  <div className="address-box-title">{COMPANY_DETAILS.name}</div>
+                  <div className="address-line">{COMPANY_DETAILS.address}</div>
+                  <div className="address-line">Contact Person: {COMPANY_DETAILS.contactPerson}</div>
+                  <div className="address-line">Email: {COMPANY_DETAILS.email}</div>
+                  <div className="address-line">Contact No: {COMPANY_DETAILS.phones}</div>
+                  <div className="address-line">GSTIN: {COMPANY_DETAILS.gstin}</div>
+                </td>
+                <td>
+                  <div className="address-box-title">{clientInfo.name}</div>
+                  <div className="address-line">{clientInfo.address}</div>
+                  <div className="address-line">Contact: {clientInfo.contactPerson}</div>
+                  <div className="address-line">Email: {clientInfo.email}</div>
+                  <div className="address-line">Contact No: {clientInfo.contactNo}</div>
+                  <div className="address-line">GSTIN: {clientInfo.gstin}</div>
+                </td>
+                <td>
+                  <div className="address-box-title">Factory Dispatch Store</div>
+                  <div className="address-line">Samyak International Ltd - Gate 1</div>
+                  <div className="address-line">{COMPANY_DETAILS.address}</div>
+                  <div className="address-line">GSTIN: {COMPANY_DETAILS.gstin}</div>
+                </td>
               </tr>
             </tbody>
           </table>
 
-          {/* Layer Breakdown Table */}
-          <div className="pdf-section-title" style={{ marginTop: '20px' }}>2. SUBSTRATE LAYERS & RAW MATERIAL REQUIREMENT</div>
-          <table className="pdf-data-table">
+          {/* OCN Details Grid */}
+          <div className="details-section-container">
+            <div className="details-section-header">OCN Details</div>
+            <table className="details-grid-table">
+              <tbody>
+                <tr>
+                  <td className="label-col">OCN Number</td>
+                  <td className="value-col">{docRef}</td>
+                  <td className="label-col">OCN Date</td>
+                  <td className="value-col">{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}</td>
+                </tr>
+                <tr>
+                  <td className="label-col">Job Name</td>
+                  <td className="value-col">{jobName}</td>
+                  <td className="label-col">Order Form</td>
+                  <td className="value-col">{orderType} Form</td>
+                </tr>
+                <tr>
+                  <td className="label-col">Print Size (Width x Repeat)</td>
+                  <td className="value-col">{printWidthMm} mm × {repeatLengthMm} mm</td>
+                  <td className="label-col">Order Quantity</td>
+                  <td className="value-col">{orderQtyKg.toLocaleString()} Kg</td>
+                </tr>
+                <tr>
+                  <td className="label-col">Total Laminate GSM</td>
+                  <td className="value-col">{totalLaminateGsm} g/m²</td>
+                  <td className="label-col">Surface Area</td>
+                  <td className="value-col">{totalAreaSqm.toLocaleString()} m²</td>
+                </tr>
+                <tr>
+                  <td className="label-col">Wastage Allowed</td>
+                  <td className="value-col">{wastagePct}%</td>
+                  <td className="label-col">Calculated Rate / Kg</td>
+                  <td className="value-col">₹{summary.costPerKg || 135} / kg</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Items / Layers Table */}
+          <table className="items-table">
             <thead>
               <tr>
-                <th>Layer</th>
-                <th>Film Substrate</th>
-                <th>Micron (µ)</th>
-                <th>Density (g/cm³)</th>
-                <th>Layer GSM</th>
-                <th>Net Req. (Kg)</th>
-                <th>Wastage (%)</th>
-                <th>Gross Req. (Kg)</th>
-                <th>Rate / Kg</th>
-                <th>Estimated Cost</th>
+                <th style={{ width: '4%' }}>#</th>
+                <th style={{ width: '28%' }}>Description / Specification</th>
+                <th style={{ width: '8%' }}>Micron</th>
+                <th style={{ width: '8%' }}>GSM</th>
+                <th style={{ width: '10%' }}>Net Req.</th>
+                <th style={{ width: '8%' }}>Wastage</th>
+                <th style={{ width: '10%' }}>Gross Req.</th>
+                <th style={{ width: '10%' }}>Rate</th>
+                <th style={{ width: '14%' }}>Taxable Amount</th>
               </tr>
             </thead>
             <tbody>
-              {layerResults.map((layer, index) => (
+              {layersList.map((layer, index) => (
                 <tr key={index}>
-                  <td>Layer {index + 1}</td>
-                  <td className="bold-text">{layer.filmType}</td>
-                  <td>{layer.micron} µ</td>
-                  <td>{layer.density}</td>
-                  <td>{layer.gsm.toFixed(2)}</td>
-                  <td>{layer.netKg} kg</td>
-                  <td>{wastagePct}%</td>
-                  <td className="bold-text highlight-col">{layer.grossKg} kg</td>
-                  <td>₹{layer.pricePerKg}</td>
-                  <td>₹{layer.totalCost.toLocaleString()}</td>
+                  <td className="center">{index + 1}</td>
+                  <td>
+                    <div className="item-name">{layer.filmType}</div>
+                    <div className="item-meta">Substrate Density: {layer.density} g/cm³</div>
+                  </td>
+                  <td className="center">{layer.micron} µ</td>
+                  <td className="center">{layer.gsm.toFixed(1)}</td>
+                  <td className="right">{layer.netKg} Kg</td>
+                  <td className="center">{wastagePct}%</td>
+                  <td className="right" style={{ fontWeight: 'bold' }}>{layer.grossKg} Kg</td>
+                  <td className="right">₹{layer.pricePerKg}</td>
+                  <td className="right">{formatINR(layer.totalCost)}</td>
                 </tr>
               ))}
               {/* Ink Row */}
               <tr>
-                <td>Processing</td>
-                <td className="bold-text">Liquid Inks (incl. Solvents - +20% wt gain)</td>
-                <td>-</td>
-                <td>-</td>
-                <td>{inkDetails.gsm} gsm</td>
-                <td>{inkDetails.netKg} kg</td>
-                <td>{wastagePct}%</td>
-                <td className="bold-text highlight-col">{inkDetails.grossKg} kg</td>
-                <td>₹{inkDetails.pricePerKg}</td>
-                <td>₹{inkDetails.totalCost?.toLocaleString()}</td>
+                <td className="center">{layersList.length + 1}</td>
+                <td>
+                  <div className="item-name">Liquid Inks & Solvents</div>
+                  <div className="item-meta">20% Weight Gain Allowance</div>
+                </td>
+                <td className="center">-</td>
+                <td className="center">{inkDetails.gsm || 1.5}</td>
+                <td className="right">{inkDetails.netKg || 33.2} Kg</td>
+                <td className="center">{wastagePct}%</td>
+                <td className="right" style={{ fontWeight: 'bold' }}>{inkDetails.grossKg || 34.8} Kg</td>
+                <td className="right">₹{inkDetails.pricePerKg || 1500}</td>
+                <td className="right">{formatINR(inkDetails.totalCost || 52200)}</td>
               </tr>
               {/* Adhesive Row */}
               <tr>
-                <td>Lamination</td>
-                <td className="bold-text">Solvent-less Adhesive (+100% wt gain)</td>
-                <td>-</td>
-                <td>-</td>
-                <td>{adhesiveDetails.gsm} gsm</td>
-                <td>{adhesiveDetails.netKg} kg</td>
-                <td>{wastagePct}%</td>
-                <td className="bold-text highlight-col">{adhesiveDetails.grossKg} kg</td>
-                <td>₹{adhesiveDetails.pricePerKg}</td>
-                <td>₹{adhesiveDetails.totalCost?.toLocaleString()}</td>
+                <td className="center">{layersList.length + 2}</td>
+                <td>
+                  <div className="item-name">Solvent-less Lamination Adhesive</div>
+                  <div className="item-meta">100% Solid Content</div>
+                </td>
+                <td className="center">-</td>
+                <td className="center">{adhesiveDetails.gsm || 1.5}</td>
+                <td className="right">{adhesiveDetails.netKg || 33.2} Kg</td>
+                <td className="center">{wastagePct}%</td>
+                <td className="right" style={{ fontWeight: 'bold' }}>{adhesiveDetails.grossKg || 34.8} Kg</td>
+                <td className="right">₹{adhesiveDetails.pricePerKg || 270}</td>
+                <td className="right">{formatINR(adhesiveDetails.totalCost || 9396)}</td>
               </tr>
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan="7" className="text-right bold-text">TOTAL RAW MATERIAL REQUIRED:</td>
-                <td className="bold-text grand-total-qty">
-                  {(summary.totalFilmGrossKg + (inkDetails.grossKg || 0) + (adhesiveDetails.grossKg || 0)).toFixed(2)} kg
-                </td>
-                <td className="text-right bold-text">TOTAL ESTIMATED COST:</td>
-                <td className="bold-text grand-total-cost">
-                  ₹{summary.totalRawMaterialCost?.toLocaleString()}
-                </td>
+                <td colSpan="6" className="right" style={{ fontWeight: 'bold' }}>Total Raw Material Quantity Required</td>
+                <td className="right" style={{ fontWeight: 'bold' }}>{totalRawMaterialKg.toFixed(2)} Kg</td>
+                <td colSpan="2"></td>
               </tr>
             </tfoot>
           </table>
 
-          {/* Raw Material Purchase Order Recommendation Note */}
-          <div className="pdf-note-box">
-            <h4 style={{ color: '#0f172a', marginBottom: '6px' }}>📌 STORE & PURCHASE DEPT INSTRUCTIONS:</h4>
-            <p style={{ fontSize: '0.85rem', color: '#334155' }}>
-              Please issue Purchase Orders (POs) immediately for the gross quantities specified above. Verify current available stock in store before releasing new POs to vendors.
-            </p>
+          {/* Totals and Words */}
+          <div className="totals-and-words-grid">
+            <div className="words-block">
+              <div className="word-line">
+                <span className="word-label">Grand Total</span>
+                <span className="word-value">{numberToWords(grandTotal)}</span>
+              </div>
+              <div className="word-line">
+                <span className="word-label">CGST</span>
+                <span className="word-value">{numberToWords(cgstAmt)}</span>
+              </div>
+              <div className="word-line">
+                <span className="word-label">SGST</span>
+                <span className="word-value">{numberToWords(sgstAmt)}</span>
+              </div>
+            </div>
+
+            <div>
+              <table className="totals-summary-table">
+                <tbody>
+                  <tr>
+                    <td className="label">Item Raw Material Total :</td>
+                    <td className="amount">{formatINR(totalTaxable)}</td>
+                  </tr>
+                  <tr>
+                    <td className="label">Total (before Tax) :</td>
+                    <td className="amount">{formatINR(totalTaxable)}</td>
+                  </tr>
+                  <tr>
+                    <td colSpan="2">
+                      <table className="tax-subtable">
+                        <thead>
+                          <tr>
+                            <th>CGST (9%)</th>
+                            <th>SGST (9%)</th>
+                            <th>IGST</th>
+                            <th>Cess</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td>{formatINR(cgstAmt)}</td>
+                            <td>{formatINR(sgstAmt)}</td>
+                            <td>₹0.00</td>
+                            <td>₹0.00</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="label">Total Tax :</td>
+                    <td className="amount">{formatINR(totalTax)}</td>
+                  </tr>
+                  <tr style={{ borderTop: '1px solid #111' }}>
+                    <td className="label" style={{ fontSize: '11px', fontWeight: 'bold' }}>Grand Total :</td>
+                    <td className="amount" style={{ fontSize: '11px', fontWeight: 'bold' }}>{formatINR(grandTotal)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
 
-          {/* Signatures */}
-          <div className="pdf-signatures">
-            <div className="sig-box">
-              <p>Prepared By</p>
-              <div className="sig-line"></div>
-              <span>Costing & Job Punching Dept</span>
+          {/* Terms & Instructions */}
+          <div className="letterhead-terms-box">
+            <h4>Store & Purchase Department Instructions:</h4>
+            <ul>
+              <li>Issue Purchase Orders (POs) immediately for the gross raw material quantities listed above.</li>
+              <li>Verify available store stock before releasing new purchase requisitions.</li>
+              <li>Ensure all material specifications strictly comply with corona treatment, micron gauge, and dyne requirements.</li>
+            </ul>
+          </div>
+
+          {/* Authorised Signatory */}
+          <div className="letterhead-signatory-block">
+            <div style={{ fontWeight: 'bold' }}>For {COMPANY_DETAILS.name}</div>
+            <div style={{ height: '30px', display: 'flex', alignItems: 'center', fontStyle: 'italic', fontFamily: 'serif', fontSize: '16px', fontWeight: 'bold' }}>
+              Sy
             </div>
-            <div className="sig-box">
-              <p>Verified By</p>
-              <div className="sig-line"></div>
-              <span>Store & Purchase Manager</span>
-            </div>
-            <div className="sig-box">
-              <p>Approved By</p>
-              <div className="sig-line"></div>
-              <span>Factory Operations Manager</span>
-            </div>
+            <div style={{ fontSize: '9px', fontWeight: 'bold' }}>Authorised Signatory</div>
           </div>
         </div>
       </div>

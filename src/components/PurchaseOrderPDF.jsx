@@ -1,23 +1,128 @@
 import React from 'react';
 import { Printer, ArrowLeft } from 'lucide-react';
 import { COMPANY_DETAILS } from '../factoryStore';
+import { numberToWords, formatINR } from '../utils/pdfHelpers';
 
 export default function PurchaseOrderPDF({ poData, onClose }) {
   if (!poData) return null;
 
   const {
-    poNumber = "PO-2026-099",
-    date = new Date().toLocaleDateString('en-IN'),
+    poNumber = "SIL/PO/26-27/246",
+    poDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+    deliveryDate = "24/07/2026",
+    ocDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+    indentDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+    indentNumber = "IND/107",
+    amendmentNo = "0",
+    paymentTerms = "60 Days",
+    logisticDetails = "Freight Included within Indore",
     vendor = {},
-    items = [],
-    deliveryDate = "",
-    terms = "30 Days Net",
-    remarks = "Materials must strictly conform to specified micron gauge and width. COA required upon delivery."
+    items = []
   } = poData;
 
-  const subtotal = items.reduce((acc, item) => acc + (item.qtyKg * item.rate), 0);
-  const gstAmount = subtotal * 0.18; // 18% GST on industrial raw material
-  const grandTotal = Math.round(subtotal + gstAmount);
+  // Standard sample items if empty
+  const poItems = items && items.length > 0 ? items : [
+    {
+      id: 1,
+      description: "Flint Process Magenta (REVERSE)",
+      itemId: "WCL4-302K-01FW",
+      make: "Flint",
+      hsnCode: "3215",
+      qtyKg: 400,
+      rate: 250,
+      cgstRate: 9,
+      sgstRate: 9
+    },
+    {
+      id: 2,
+      description: "Flint Super White 55B (REVERSE)",
+      itemId: "WCL4-001K-01GD",
+      make: "Flint",
+      hsnCode: "3215",
+      qtyKg: 500,
+      rate: 240,
+      cgstRate: 9,
+      sgstRate: 9
+    },
+    {
+      id: 3,
+      description: "Flint ARSR Magenta (REVERSE)",
+      itemId: "WCL4-303K-01FW",
+      make: "Flint",
+      hsnCode: "3215",
+      qtyKg: 80,
+      rate: 410,
+      cgstRate: 9,
+      sgstRate: 9
+    },
+    {
+      id: 4,
+      description: "Flint PET Lam Red Lacquer Ink",
+      itemId: "WCL4-37AK-01GU",
+      make: "Flint",
+      hsnCode: "3215",
+      qtyKg: 94,
+      rate: 400,
+      cgstRate: 9,
+      sgstRate: 9
+    },
+    {
+      id: 5,
+      description: "BOPP LAM ADHESION INK",
+      itemId: "GBLEB011",
+      make: "Flint",
+      hsnCode: "35069999",
+      qtyKg: 100,
+      rate: 395,
+      cgstRate: 9,
+      sgstRate: 9
+    },
+    {
+      id: 6,
+      description: "Flint AR Orange (REVERSE)",
+      itemId: "WCL4-205K-01FW",
+      make: "Flint",
+      hsnCode: "3215",
+      qtyKg: 180,
+      rate: 290,
+      cgstRate: 9,
+      sgstRate: 9
+    }
+  ];
+
+  // Calculated Totals
+  const totalQtyKg = poItems.reduce((acc, item) => acc + (parseFloat(item.qtyKg) || 0), 0);
+  const totalTaxable = poItems.reduce((acc, item) => {
+    const qty = parseFloat(item.qtyKg) || 0;
+    const rate = parseFloat(item.rate) || 0;
+    return acc + (qty * rate);
+  }, 0);
+
+  const totalCgst = poItems.reduce((acc, item) => {
+    const qty = parseFloat(item.qtyKg) || 0;
+    const rate = parseFloat(item.rate) || 0;
+    const cgstPct = parseFloat(item.cgstRate) || 9;
+    return acc + ((qty * rate * cgstPct) / 100);
+  }, 0);
+
+  const totalSgst = poItems.reduce((acc, item) => {
+    const qty = parseFloat(item.qtyKg) || 0;
+    const rate = parseFloat(item.rate) || 0;
+    const sgstPct = parseFloat(item.sgstRate) || 9;
+    return acc + ((qty * rate * sgstPct) / 100);
+  }, 0);
+
+  const totalTax = totalCgst + totalSgst;
+  const grandTotal = totalTaxable + totalTax;
+
+  const supplier = {
+    name: vendor.companyName || vendor.name || "Creative Marketing",
+    address: vendor.address || "Sadhuwasvani Nagar, 2-B, Near Sadhuwasvani Garden, Indore (Madhya Pradesh) India - 452007",
+    email: vendor.email || "creativemarketing.ak@gmail.com",
+    contactNo: vendor.phone || vendor.contactNo || "9425066225",
+    gstin: vendor.gstin || "23AAQFC4167Q1ZT",
+    contactPerson: vendor.contactPerson || "Abhijeet Kher"
+  };
 
   return (
     <div className="pdf-modal-overlay">
@@ -26,135 +131,249 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
           <ArrowLeft size={16} /> Back to Orders
         </button>
         <button className="btn-primary" onClick={() => window.print()}>
-          <Printer size={16} /> Print / Save PO PDF
+          <Printer size={16} /> Print Purchase Order PDF
         </button>
       </div>
 
       <div className="pdf-paper-container">
         <div className="printable-document">
-          {/* Executive Letterhead Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #0f172a', paddingBottom: '16px', marginBottom: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <img src={COMPANY_DETAILS.logoUrl} alt="Samyak International Ltd" style={{ height: '54px', objectFit: 'contain' }} />
+          {/* Header Block */}
+          <div className="letterhead-header">
+            <div className="letterhead-brand">
+              <div className="samyak-logo-fallback">S</div>
               <div>
-                <h1 style={{ fontSize: '1.4rem', fontWeight: '800', letterSpacing: '0.04em', color: '#0f172a', margin: 0, textTransform: 'uppercase' }}>
-                  {COMPANY_DETAILS.name}
-                </h1>
-                <p style={{ fontSize: '0.8rem', fontWeight: '600', color: '#475569', margin: '2px 0 0 0' }}>
-                  {COMPANY_DETAILS.tagline}
-                </p>
-                <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '2px 0 0 0' }}>
-                  {COMPANY_DETAILS.address}
-                </p>
-                <p style={{ fontSize: '0.75rem', color: '#475569', margin: '2px 0 0 0' }}>
-                  GSTIN: <b>{COMPANY_DETAILS.gstin}</b> | Tel: {COMPANY_DETAILS.phones} | Email: {COMPANY_DETAILS.email}
-                </p>
+                <h1 className="letterhead-company-name">{COMPANY_DETAILS.name}</h1>
+                <p className="letterhead-company-sub">{COMPANY_DETAILS.tagline}</p>
               </div>
             </div>
-
-            <div style={{ textAlign: 'right', borderLeft: '1px solid #cbd5e1', paddingLeft: '16px' }}>
-              <div style={{ background: '#0f172a', color: '#ffffff', padding: '6px 12px', fontSize: '0.85rem', fontWeight: '800', letterSpacing: '0.05em', borderRadius: '4px', textTransform: 'uppercase' }}>
-                PURCHASE ORDER
-              </div>
-              <p style={{ fontSize: '0.8rem', fontWeight: '700', color: '#0f172a', margin: '8px 0 0 0' }}>
-                PO No: {poNumber}
-              </p>
-              <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '2px 0 0 0' }}>
-                Date: {date}
-              </p>
+            <div className="letterhead-doc-title">
+              <h2>Purchase Order</h2>
+              <div className="doc-ref-no">{poNumber}</div>
             </div>
           </div>
 
-          <hr className="pdf-divider" />
-
-          {/* Vendor & Delivery Information */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
-            <div style={{ border: '1px solid #cbd5e1', padding: '12px', borderRadius: '6px' }}>
-              <h4 style={{ color: '#1e293b', marginBottom: '6px', fontSize: '0.85rem', textTransform: 'uppercase' }}>VENDOR DETAILS:</h4>
-              <p style={{ fontWeight: 'bold', fontSize: '1rem', color: '#0f172a' }}>{vendor.companyName}</p>
-              <p style={{ fontSize: '0.85rem', color: '#334155' }}>{vendor.address}</p>
-              <p style={{ fontSize: '0.85rem', color: '#334155' }}>GSTIN: <b>{vendor.gstin}</b></p>
-              <p style={{ fontSize: '0.85rem', color: '#334155' }}>Attn: {vendor.contactPerson} ({vendor.phone})</p>
-            </div>
-
-            <div style={{ border: '1px solid #cbd5e1', padding: '12px', borderRadius: '6px' }}>
-              <h4 style={{ color: '#1e293b', marginBottom: '6px', fontSize: '0.85rem', textTransform: 'uppercase' }}>DELIVERY & DISPATCH DETAILS:</h4>
-              <p style={{ fontSize: '0.85rem', color: '#334155' }}>Delivery Location: <b>Samyak Factory Store - Gate 2</b></p>
-              <p style={{ fontSize: '0.85rem', color: '#334155' }}>Expected Delivery Date: <b style={{ color: '#b91c1c' }}>{deliveryDate || 'Immediate / Within 5 Days'}</b></p>
-              <p style={{ fontSize: '0.85rem', color: '#334155' }}>Payment Terms: <b>{vendor.paymentTerms || terms}</b></p>
-              <p style={{ fontSize: '0.85rem', color: '#334155' }}>Mode of Transport: Road Freight</p>
-            </div>
-          </div>
-
-          {/* Items Table */}
-          <div className="pdf-section-title">PURCHASE ORDER LINE ITEMS</div>
-          <table className="pdf-data-table">
+          {/* 3-Column Address Grid */}
+          <table className="address-grid-table">
             <thead>
               <tr>
-                <th>#</th>
-                <th>Material Description / Specification</th>
-                <th>Micron (µ)</th>
-                <th>Width (mm)</th>
-                <th>Quantity (Kg)</th>
-                <th>Rate (₹/Kg)</th>
-                <th>Total Amount (₹)</th>
+                <th>Name and Address of Buyer</th>
+                <th>Name and Address of Supplier</th>
+                <th>Shipping Details</th>
               </tr>
             </thead>
             <tbody>
-              {items.map((item, i) => (
-                <tr key={i}>
-                  <td>{i + 1}</td>
-                  <td className="bold-text">{item.description || `${item.filmType} Film`}</td>
-                  <td>{item.micron || '-'} µ</td>
-                  <td>{item.widthMm || '-'} mm</td>
-                  <td className="bold-text highlight-col">{item.qtyKg} kg</td>
-                  <td>₹{item.rate}</td>
-                  <td>₹{(item.qtyKg * item.rate).toLocaleString()}</td>
+              <tr>
+                <td>
+                  <div className="address-box-title">{COMPANY_DETAILS.name}</div>
+                  <div className="address-line">{COMPANY_DETAILS.address}</div>
+                  <div className="address-line">Contact Person: {COMPANY_DETAILS.contactPerson}</div>
+                  <div className="address-line">Email: {COMPANY_DETAILS.email}</div>
+                  <div className="address-line">Contact No: {COMPANY_DETAILS.phones}</div>
+                  <div className="address-line">GSTIN: {COMPANY_DETAILS.gstin}</div>
+                  <div className="address-line">Place of Supply: {COMPANY_DETAILS.placeOfSupply}</div>
+                </td>
+                <td>
+                  <div className="address-box-title">{supplier.name}</div>
+                  <div className="address-line">{supplier.address}</div>
+                  <div className="address-line">Email: {supplier.email}</div>
+                  <div className="address-line">Contact No: {supplier.contactNo}</div>
+                  <div className="address-line">GSTIN: {supplier.gstin}</div>
+                  <div className="address-line">Kind Attention: {supplier.contactPerson}</div>
+                </td>
+                <td>
+                  <div className="address-box-title">Factory - {COMPANY_DETAILS.name}</div>
+                  <div className="address-line">{COMPANY_DETAILS.address}</div>
+                  <div className="address-line">GSTIN: {COMPANY_DETAILS.gstin}</div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          {/* PO Details Grid */}
+          <div className="details-section-container">
+            <div className="details-section-header">PO Details</div>
+            <table className="details-grid-table">
+              <tbody>
+                <tr>
+                  <td className="label-col">PO Number</td>
+                  <td className="value-col">{poNumber}</td>
+                  <td className="label-col">PO Date</td>
+                  <td className="value-col">{poDate}</td>
                 </tr>
-              ))}
+                <tr>
+                  <td className="label-col">Delivery Date</td>
+                  <td className="value-col">{deliveryDate}</td>
+                  <td className="label-col">PO Amendment</td>
+                  <td className="value-col">{amendmentNo}</td>
+                </tr>
+                <tr>
+                  <td className="label-col">OC Date</td>
+                  <td className="value-col">{ocDate}</td>
+                  <td className="label-col">PO Amount</td>
+                  <td className="value-col">{formatINR(grandTotal)}</td>
+                </tr>
+                <tr>
+                  <td className="label-col">No of Items</td>
+                  <td className="value-col">{poItems.length}</td>
+                  <td className="label-col">Indent Date</td>
+                  <td className="value-col">{indentDate}</td>
+                </tr>
+                <tr>
+                  <td className="label-col">Payment Terms</td>
+                  <td className="value-col">{paymentTerms}</td>
+                  <td className="label-col">Indent Number</td>
+                  <td className="value-col">{indentNumber}</td>
+                </tr>
+                <tr>
+                  <td className="label-col">Logistic Details</td>
+                  <td className="value-col" colSpan="3">{logisticDetails}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Line Items Table */}
+          <table className="items-table">
+            <thead>
+              <tr>
+                <th style={{ width: '4%' }}>#</th>
+                <th style={{ width: '32%' }}>Description</th>
+                <th style={{ width: '10%' }}>HSN/SAC Code</th>
+                <th style={{ width: '10%' }}>Quantity</th>
+                <th style={{ width: '10%' }}>Rate</th>
+                <th style={{ width: '12%' }}>Taxable Amount</th>
+                <th style={{ width: '11%' }}>CGST<br/><span style={{ fontSize: '8px' }}>Rate Amount</span></th>
+                <th style={{ width: '11%' }}>SGST<br/><span style={{ fontSize: '8px' }}>Rate Amount</span></th>
+                <th style={{ width: '10%' }}>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {poItems.map((item, index) => {
+                const qty = parseFloat(item.qtyKg) || 0;
+                const rate = parseFloat(item.rate) || 0;
+                const taxable = qty * rate;
+                const cgstRate = parseFloat(item.cgstRate) || 9;
+                const sgstRate = parseFloat(item.sgstRate) || 9;
+                const cgstAmt = (taxable * cgstRate) / 100;
+                const sgstAmt = (taxable * sgstRate) / 100;
+                const totalAmt = taxable + cgstAmt + sgstAmt;
+
+                return (
+                  <tr key={index}>
+                    <td className="center">{index + 1}</td>
+                    <td>
+                      <div className="item-name">{item.description}</div>
+                      {item.itemId && <div className="item-meta">Item ID:{item.itemId}</div>}
+                      {item.make && <div className="item-meta">Make: {item.make}</div>}
+                    </td>
+                    <td className="center">{item.hsnCode || '3215'}</td>
+                    <td className="right">{qty.toFixed(2)} Kg</td>
+                    <td className="right">{formatINR(rate)}</td>
+                    <td className="right">{formatINR(taxable)}</td>
+                    <td className="right">
+                      {cgstRate}% &nbsp; {formatINR(cgstAmt)}
+                    </td>
+                    <td className="right">
+                      {sgstRate}% &nbsp; {formatINR(sgstAmt)}
+                    </td>
+                    <td className="right">{formatINR(totalAmt)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan="5" className="text-right bold-text">Subtotal:</td>
-                <td colSpan="2" className="bold-text">₹{subtotal.toLocaleString()}</td>
-              </tr>
-              <tr>
-                <td colSpan="5" className="text-right bold-text">IGST / CGST+SGST (18%):</td>
-                <td colSpan="2" className="bold-text">₹{gstAmount.toLocaleString()}</td>
-              </tr>
-              <tr>
-                <td colSpan="5" className="text-right bold-text" style={{ fontSize: '1rem', color: '#0f172a' }}>GRAND TOTAL (INCL. TAXES):</td>
-                <td colSpan="2" className="bold-text grand-total-cost">₹{grandTotal.toLocaleString()}</td>
+                <td colSpan="3" className="right" style={{ fontWeight: 'bold' }}>Total Quantity</td>
+                <td className="right" style={{ fontWeight: 'bold' }}>{totalQtyKg.toLocaleString('en-IN', { minimumFractionDigits: 2 })} Kg</td>
+                <td colSpan="5"></td>
               </tr>
             </tfoot>
           </table>
 
-          {/* Terms & Conditions */}
-          <div className="pdf-note-box" style={{ marginTop: '20px' }}>
-            <h4 style={{ color: '#0f172a', marginBottom: '4px' }}>TERMS & CONDITIONS & REMARKS:</h4>
-            <p style={{ fontSize: '0.8rem', color: '#1e293b', fontWeight: 'bold', marginBottom: '6px' }}>
-              Note: {remarks}
-            </p>
-            <ol style={{ fontSize: '0.8rem', color: '#334155', paddingLeft: '20px' }}>
-              <li>Material must be delivered strictly as per specified micron gauge and slit width.</li>
-              <li>Certificate of Analysis (COA) specifying Corona dyne level, density, and thickness tolerance must accompany invoice.</li>
-              <li>Rejection by Samyak QC will result in immediate material return at supplier's expense.</li>
-              <li>Mention PO Number <b>{poNumber}</b> on all delivery chalans and tax invoices.</li>
-            </ol>
+          {/* Totals & Amounts in Words */}
+          <div className="totals-and-words-grid">
+            <div className="words-block">
+              <div className="word-line">
+                <span className="word-label">PO Amount</span>
+                <span className="word-value">{numberToWords(grandTotal)}</span>
+              </div>
+              <div className="word-line">
+                <span className="word-label">CGST</span>
+                <span className="word-value">{numberToWords(totalCgst)}</span>
+              </div>
+              <div className="word-line">
+                <span className="word-label">SGST</span>
+                <span className="word-value">{numberToWords(totalSgst)}</span>
+              </div>
+            </div>
+
+            <div>
+              <table className="totals-summary-table">
+                <tbody>
+                  <tr>
+                    <td className="label">Item Total :</td>
+                    <td className="amount">{formatINR(totalTaxable)}</td>
+                  </tr>
+                  <tr>
+                    <td className="label">Total (before Tax) :</td>
+                    <td className="amount">{formatINR(totalTaxable)}</td>
+                  </tr>
+                  <tr>
+                    <td colSpan="2">
+                      <table className="tax-subtable">
+                        <thead>
+                          <tr>
+                            <th>CGST</th>
+                            <th>SGST</th>
+                            <th>IGST</th>
+                            <th>Cess</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td>{formatINR(totalCgst)}</td>
+                            <td>{formatINR(totalSgst)}</td>
+                            <td>₹0.00</td>
+                            <td>₹0.00</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="label">Total Tax :</td>
+                    <td className="amount">{formatINR(totalTax)}</td>
+                  </tr>
+                  <tr>
+                    <td className="label">Total (after tax) :</td>
+                    <td className="amount">{formatINR(grandTotal)}</td>
+                  </tr>
+                  <tr style={{ borderTop: '1px solid #111' }}>
+                    <td className="label" style={{ fontSize: '11px', fontWeight: 'bold' }}>Grand Total :</td>
+                    <td className="amount" style={{ fontSize: '11px', fontWeight: 'bold' }}>{formatINR(grandTotal)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
 
-          {/* Signatures */}
-          <div className="pdf-signatures" style={{ marginTop: '40px' }}>
-            <div className="sig-box">
-              <p>Prepared By</p>
-              <div className="sig-line"></div>
-              <span>Purchase Executive</span>
+          {/* Terms & Conditions */}
+          <div className="letterhead-terms-box">
+            <h4>Terms And Conditions:</h4>
+            <ul>
+              <li>Solid Content of the ordered Inks shall be within the range mentioned in the TDS provided. Material not within the range shall be returned to the vendor.</li>
+              <li>Any material not clearing the Quality Control parameters shall be returned to the vendor.</li>
+              <li>All Item Codes of the supply shall be checked and sent. Any corrections in Item Codes shall be informed prior to dispatch by the vendor.</li>
+            </ul>
+          </div>
+
+          {/* Authorised Signatory */}
+          <div className="letterhead-signatory-block">
+            <div style={{ fontWeight: 'bold' }}>For {COMPANY_DETAILS.name}</div>
+            <div style={{ height: '30px', display: 'flex', alignItems: 'center', fontStyle: 'italic', fontFamily: 'serif', fontSize: '16px', fontWeight: 'bold' }}>
+              Sy
             </div>
-            <div className="sig-box">
-              <p>Authorized Signatory</p>
-              <div className="sig-line"></div>
-              <span>For SAMYAK INTERNATIONAL LTD</span>
-            </div>
+            <div style={{ fontSize: '9px', fontWeight: 'bold' }}>Authorised Signatory</div>
           </div>
         </div>
       </div>
