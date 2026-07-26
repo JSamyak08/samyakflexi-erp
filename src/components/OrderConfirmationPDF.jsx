@@ -61,10 +61,11 @@ export default function OrderConfirmationPDF({ calculationData, onClose }) {
           {/* Header */}
           <div className="letterhead-header">
             <div className="letterhead-brand">
-              <div className="samyak-logo-fallback">S</div>
+              <img src={COMPANY_DETAILS.logoUrl} alt="Samyak International Ltd Logo" className="samyak-logo-img" style={{ height: '46px', objectFit: 'contain' }} />
               <div>
-                <h1 className="letterhead-company-name">{COMPANY_DETAILS.name}</h1>
-                <p className="letterhead-company-sub">{COMPANY_DETAILS.tagline}</p>
+                <p className="letterhead-company-sub" style={{ marginTop: '4px', fontSize: '9px', fontWeight: 'bold', color: '#4b5563' }}>
+                  {COMPANY_DETAILS.tagline}
+                </p>
               </div>
             </div>
             <div className="letterhead-doc-title">
@@ -72,6 +73,7 @@ export default function OrderConfirmationPDF({ calculationData, onClose }) {
               <div className="doc-ref-no">{docRef}</div>
             </div>
           </div>
+
 
           {/* 3-Column Address Grid */}
           <table className="address-grid-table">

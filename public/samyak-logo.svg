@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 140" width="540" height="140">
+  <!-- Globe Wireframe (Grey) -->
+  <g fill="none" stroke="#9da3ae" stroke-width="2.5" opacity="0.85">
+    <!-- Outer Globe Circle -->
+    <circle cx="70" cy="70" r="58" />
+    <!-- Equator and Latitudes -->
+    <line x1="12" y1="70" x2="128" y2="70" />
+    <ellipse cx="70" cy="70" rx="58" ry="26" />
+    <ellipse cx="70" cy="70" rx="58" ry="44" />
+    <!-- Prime Meridian and Longitudes -->
+    <line x1="70" y1="12" x2="70" y2="128" />
+    <ellipse cx="70" cy="70" rx="32" ry="58" />
+    <ellipse cx="70" cy="70" rx="16" ry="58" />
+  </g>
+
+  <!-- Red S Ribbon / Swoosh -->
+  <path d="M 32,118 C 45,98 62,80 82,72 C 102,64 114,50 108,36 C 102,22 84,20 62,28 C 44,35 28,52 24,62" 
+        fill="none" 
+        stroke="#dc2626" 
+        stroke-width="8.5" 
+        stroke-linecap="round" 
+        stroke-linejoin="round" />
+
+  <!-- SAMYAK Text -->
+  <text x="145" y="66" 
+        font-family="Arial, Helvetica, sans-serif" 
+        font-weight="900" 
+        font-size="52" 
+        letter-spacing="1" 
+        fill="#242529">SAMYAK</text>
+  
+  <!-- INTERNATIONAL LTD. Text -->
+  <text x="147" y="112" 
+        font-family="Arial, Helvetica, sans-serif" 
+        font-weight="800" 
+        font-size="30" 
+        letter-spacing="1.5" 
+        fill="#242529">INTERNATIONAL LTD.</text>
+</svg>

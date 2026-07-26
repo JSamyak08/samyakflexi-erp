@@ -10,8 +10,9 @@ export const COMPANY_DETAILS = {
   phones: "8889133133",
   email: "info@samyakinternational.in",
   placeOfSupply: "Dhar, Madhya Pradesh (23)",
-  logoUrl: "/samyak-logo.png"
+  logoUrl: "/samyak-logo.svg"
 };
+
 
 
 export const FILM_DENSITIES = {
