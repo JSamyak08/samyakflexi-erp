@@ -1,0 +1,1034 @@
+import React, { useState } from 'react';
+import { 
+  Package, 
+  Plus, 
+  FileCheck, 
+  CheckCircle2, 
+  XCircle, 
+  AlertTriangle, 
+  Download, 
+  Upload, 
+  Printer, 
+  ArrowUpRight, 
+  ArrowDownLeft, 
+  Clock, 
+  Search,
+  Filter,
+  FileSpreadsheet,
+  Bell,
+  Edit3,
+  Trash2
+} from 'lucide-react';
+import GRNPDF from './GRNPDF';
+import { isReconciliationDue, FILM_DENSITIES } from '../factoryStore';
+
+export default function InventoryManagement({ 
+  inventory, 
+  grns, 
+  vendors, 
+  orders, 
+  onAddGRN, 
+  onUpdateGRN, 
+  onUpdateInventory 
+}) {
+  const [activeTab, setActiveTab] = useState('stock'); // stock, grn_inward, qc_approval, issue_return, reconciliation
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Modals state
+  const [isNewGRNModalOpen, setIsNewGRNModalOpen] = useState(false);
+  const [selectedGRNForPDF, setSelectedGRNForPDF] = useState(null);
+  const [qcInspectingGRN, setQcInspectingGRN] = useState(null);
+  const [qcNotesInput, setQcNotesInput] = useState('');
+
+  // Issue / Return Modal state
+  const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
+  const [issueType, setIssueType] = useState('issue'); // issue or return
+  const [selectedInvItem, setSelectedInvItem] = useState(inventory[0] || null);
+  const [issueQtyKg, setIssueQtyKg] = useState(100);
+  const [issueJobName, setIssueJobName] = useState(orders[0]?.jobName || '');
+  const [stockSearchTerm, setStockSearchTerm] = useState('');
+
+  // Inward GRN Form State
+  const [grnVendor, setGrnVendor] = useState(vendors[0]?.companyName || '');
+  const [grnPoNo, setGrnPoNo] = useState('PO-2026-042');
+  const [grnInvoiceNo, setGrnInvoiceNo] = useState('');
+  const [grnFilmType, setGrnFilmType] = useState('PET');
+  const [grnMicron, setGrnMicron] = useState(12);
+  const [grnWidthMm, setGrnWidthMm] = useState(1000);
+  const [grnRolls, setGrnRolls] = useState(10);
+  const [grnWeightKg, setGrnWeightKg] = useState(1500);
+  const [grnBatchNo, setGrnBatchNo] = useState('');
+
+  // Edit Stock Item State
+  const [editingStockItem, setEditingStockItem] = useState(null);
+  const [editFilmType, setEditFilmType] = useState('PET');
+  const [editMicron, setEditMicron] = useState(12);
+  const [editWidthMm, setEditWidthMm] = useState(1000);
+  const [editAvailableQtyKg, setEditAvailableQtyKg] = useState(1000);
+  const [editAllocatedQtyKg, setEditAllocatedQtyKg] = useState(0);
+  const [editLocation, setEditLocation] = useState('Bay A');
+  const [editReorderLevelKg, setEditReorderLevelKg] = useState(1000);
+
+  const openEditStockModal = (item) => {
+    setEditingStockItem(item);
+    setEditFilmType(item.filmType);
+    setEditMicron(item.micron);
+    setEditWidthMm(item.widthMm);
+    setEditAvailableQtyKg(item.availableQtyKg);
+    setEditAllocatedQtyKg(item.allocatedQtyKg || 0);
+    setEditLocation(item.location);
+    setEditReorderLevelKg(item.reorderLevelKg || 1000);
+  };
+
+  const handleSaveStockEdit = (e) => {
+    e.preventDefault();
+    if (!editingStockItem) return;
+
+    const updatedInv = inventory.map(item => {
+      if (item.id === editingStockItem.id) {
+        return {
+          ...item,
+          filmType: editFilmType,
+          micron: parseFloat(editMicron),
+          widthMm: parseFloat(editWidthMm),
+          density: FILM_DENSITIES[editFilmType] || 1.0,
+          availableQtyKg: parseFloat(editAvailableQtyKg),
+          allocatedQtyKg: parseFloat(editAllocatedQtyKg),
+          location: editLocation,
+          reorderLevelKg: parseFloat(editReorderLevelKg)
+        };
+      }
+      return item;
+    });
+
+    if (onUpdateInventory) {
+      onUpdateInventory(updatedInv);
+    }
+
+    setEditingStockItem(null);
+    alert(`Stock item ${editingStockItem.id} updated successfully!`);
+  };
+
+  const handleDeleteStockItem = (item) => {
+    if (window.confirm(`Are you sure you want to permanently delete stock item "${item.id} - ${item.filmType} ${item.micron}µ (${item.widthMm}mm)"?`)) {
+      const updatedInv = inventory.filter(i => i.id !== item.id);
+      if (onUpdateInventory) {
+        onUpdateInventory(updatedInv);
+      }
+      alert(`Stock item ${item.id} deleted.`);
+    }
+  };
+
+  // Stock Reconciliation State
+  const [physicalCounts, setPhysicalCounts] = useState(
+    inventory.reduce((acc, item) => ({ ...acc, [item.id]: item.availableQtyKg }), {})
+  );
+
+  const isRecDue = isReconciliationDue("2026-07-24");
+
+  // Inward GRN Submit
+  const handleSaveGRN = (e) => {
+    e.preventDefault();
+    if (!grnInvoiceNo.trim() || !grnBatchNo.trim()) {
+      alert("Invoice Number and Batch Number are required!");
+      return;
+    }
+
+    const newGRN = {
+      grnNo: `GRN-2026-${Math.floor(100 + Math.random() * 900)}`,
+      poNumber: grnPoNo,
+      vendorName: grnVendor,
+      invoiceNo: grnInvoiceNo,
+      receivedDate: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
+      filmType: grnFilmType,
+      micron: parseFloat(grnMicron),
+      widthMm: parseFloat(grnWidthMm),
+      rollsReceived: parseInt(grnRolls),
+      netWeightKg: parseFloat(grnWeightKg),
+      batchNo: grnBatchNo,
+      status: "Pending QC", // Goes to QC
+      qcNotes: "",
+      inspectedBy: "",
+      storeManager: "Store Mgr Dilip Joshi"
+    };
+
+    if (onAddGRN) {
+      onAddGRN(newGRN);
+    }
+
+    setIsNewGRNModalOpen(false);
+    alert(`GRN ${newGRN.grnNo} created successfully! Sent to Quality Control (QC) team for approval.`);
+    setSelectedGRNForPDF(newGRN);
+  };
+
+  // QC Approval / Rejection
+  const handleQCAction = (status) => {
+    if (!qcInspectingGRN) return;
+
+    const updatedGRN = {
+      ...qcInspectingGRN,
+      status,
+      qcNotes: qcNotesInput || (status === 'Approved' ? 'Inspected and passed all laboratory parameters.' : 'Rejected due to gauge variation.'),
+      inspectedBy: 'QC Chemist Ramesh Kumar'
+    };
+
+    if (onUpdateGRN) {
+      onUpdateGRN(updatedGRN);
+    }
+
+    // If Approved, automatically add stock to Inventory!
+    if (status === 'Approved' && onUpdateInventory) {
+      const existingInvIndex = inventory.findIndex(
+        i => i.filmType === updatedGRN.filmType && i.micron === updatedGRN.micron && i.widthMm === updatedGRN.widthMm
+      );
+
+      if (existingInvIndex >= 0) {
+        const updatedInv = [...inventory];
+        updatedInv[existingInvIndex].availableQtyKg += updatedGRN.netWeightKg;
+        updatedInv[existingInvIndex].lastVendor = updatedGRN.vendorName;
+        updatedInv[existingInvIndex].lastBatch = updatedGRN.batchNo;
+        onUpdateInventory(updatedInv);
+      } else {
+        const newInvItem = {
+          id: `INV-00${inventory.length + 1}`,
+          filmType: updatedGRN.filmType,
+          micron: updatedGRN.micron,
+          widthMm: updatedGRN.widthMm,
+          density: FILM_DENSITIES[updatedGRN.filmType] || 1.0,
+          availableQtyKg: updatedGRN.netWeightKg,
+          allocatedQtyKg: 0,
+          location: "Bay A - Inward Dock",
+          reorderLevelKg: 1000,
+          lastVendor: updatedGRN.vendorName,
+          lastBatch: updatedGRN.batchNo
+        };
+        onUpdateInventory([...inventory, newInvItem]);
+      }
+    }
+
+    setQcInspectingGRN(null);
+    setQcNotesInput('');
+    alert(`GRN ${updatedGRN.grnNo} has been marked as ${status}!`);
+  };
+
+  // Issue / Return Submit
+  const handleIssueReturnSubmit = () => {
+    if (!selectedInvItem || issueQtyKg <= 0) return;
+
+    const qty = parseFloat(issueQtyKg);
+    let updatedInv = [...inventory];
+    const idx = updatedInv.findIndex(i => i.id === selectedInvItem.id);
+
+    if (idx >= 0) {
+      if (issueType === 'issue') {
+        if (updatedInv[idx].availableQtyKg < qty) {
+          alert(`Insufficient available stock! Only ${updatedInv[idx].availableQtyKg} kg available.`);
+          return;
+        }
+        updatedInv[idx].availableQtyKg -= qty;
+        updatedInv[idx].allocatedQtyKg += qty;
+        alert(`Issued ${qty} kg of ${updatedInv[idx].filmType} ${updatedInv[idx].micron}µ to Job: ${issueJobName}`);
+      } else {
+        updatedInv[idx].availableQtyKg += qty;
+        if (updatedInv[idx].allocatedQtyKg >= qty) {
+          updatedInv[idx].allocatedQtyKg -= qty;
+        }
+        alert(`Returned ${qty} kg of ${updatedInv[idx].filmType} ${updatedInv[idx].micron}µ back to Store Inventory.`);
+      }
+
+      if (onUpdateInventory) {
+        onUpdateInventory(updatedInv);
+      }
+    }
+
+    setIsIssueModalOpen(false);
+  };
+
+  // Download Physical Stock CSV Template
+  const downloadReconciliationTemplate = () => {
+    const csvHeader = "Inventory ID,Film Type,Micron (um),Width (mm),System Stock (Kg),Physical Count (Kg),Variance (Kg),Notes\n";
+    const csvRows = inventory.map(item => 
+      `"${item.id}","${item.filmType}",${item.micron},${item.widthMm},${item.availableQtyKg},${item.availableQtyKg},0,""`
+    ).join("\n");
+
+    const blob = new Blob([csvHeader + csvRows], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Physical_Stock_Reconciliation_Template_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+  };
+
+  // Handle Excel/CSV File Upload for Reconciliation
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target.result;
+      const lines = text.split('\n').slice(1); // skip header
+      const updatedCounts = { ...physicalCounts };
+
+      lines.forEach(line => {
+        const cols = line.split(',');
+        if (cols.length >= 6) {
+          const invId = cols[0].replace(/"/g, '').trim();
+          const physicalQty = parseFloat(cols[5].replace(/"/g, '').trim());
+          if (invId && !isNaN(physicalQty)) {
+            updatedCounts[invId] = physicalQty;
+          }
+        }
+      });
+
+      setPhysicalCounts(updatedCounts);
+      alert(`Physical stock sheet imported successfully! Variances calculated below.`);
+    };
+    reader.readAsText(file);
+  };
+
+  // Commit Reconciliation Variances to System Stock
+  const handleCommitReconciliation = () => {
+    let updatedInv = inventory.map(item => {
+      const physicalQty = physicalCounts[item.id];
+      if (physicalQty !== undefined && !isNaN(physicalQty)) {
+        return {
+          ...item,
+          availableQtyKg: parseFloat(physicalQty)
+        };
+      }
+      return item;
+    });
+
+    if (onUpdateInventory) {
+      onUpdateInventory(updatedInv);
+    }
+    alert("Monthly Physical Stock Reconciliation completed successfully! System available stock updated.");
+  };
+
+  // Download Bulk Inventory CSV Template
+  const handleDownloadBulkInventoryTemplate = () => {
+    const headers = ["FilmType", "Micron", "WidthMm", "AvailableQtyKg", "Location", "ReorderLevelKg", "LastVendor", "LastBatch"];
+    const sampleRows = [
+      ["PET", "12", "1000", "2500", "Bay A - Rack 1", "1000", "FlexiPoly Films Ltd", "BATCH-PET-101"],
+      ["METPET", "12", "1000", "1800", "Bay A - Rack 2", "800", "FlexiPoly Films Ltd", "BATCH-MP-202"],
+      ["Natural LD GP Film", "35", "1005", "4200", "Bay B - Extrusion", "1500", "Malwa Extrusions Pvt Ltd", "BATCH-LD-303"],
+      ["Milky LD GP Film", "40", "1005", "3100", "Bay B - Extrusion", "1000", "Malwa Extrusions Pvt Ltd", "BATCH-MLD-404"],
+      ["Natural LD Metallocene Film", "50", "905", "1500", "Bay C - Speciality", "500", "Malwa Extrusions Pvt Ltd", "BATCH-MET-505"]
+    ];
+
+    const csvContent = "data:text/csv;charset=utf-8," + 
+      [headers.join(","), ...sampleRows.map(e => e.join(","))].join("\n");
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "Bulk_Inventory_Template_Samyak.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Bulk Inventory CSV Upload Handler
+  const handleBulkInventoryCSVUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const text = evt.target.result;
+      const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+      
+      if (lines.length <= 1) {
+        alert("CSV file is empty or only contains headers!");
+        return;
+      }
+
+      const newItems = [];
+      for (let i = 1; i < lines.length; i++) {
+        const parts = lines[i].split(",").map(p => p.trim());
+        if (parts.length >= 4) {
+          const filmType = parts[0];
+          const micron = parseFloat(parts[1]) || 12;
+          const widthMm = parseFloat(parts[2]) || 1000;
+          const availableQtyKg = parseFloat(parts[3]) || 0;
+          const location = parts[4] || "Bay A - Inward";
+          const reorderLevelKg = parseFloat(parts[5]) || 1000;
+          const lastVendor = parts[6] || "Local Supplier";
+          const lastBatch = parts[7] || "BULK-BATCH";
+
+          if (filmType && availableQtyKg >= 0) {
+            newItems.push({
+              id: `INV-${100 + inventory.length + newItems.length + 1}`,
+              filmType,
+              micron,
+              widthMm,
+              density: FILM_DENSITIES[filmType] || 1.0,
+              availableQtyKg,
+              allocatedQtyKg: 0,
+              location,
+              reorderLevelKg,
+              lastVendor,
+              lastBatch
+            });
+          }
+        }
+      }
+
+      if (newItems.length > 0) {
+        const updatedInv = [...inventory, ...newItems];
+        if (onUpdateInventory) {
+          onUpdateInventory(updatedInv);
+        }
+        alert(`Successfully imported ${newItems.length} inventory stock items into Stock Register!`);
+      } else {
+        alert("No valid inventory rows found in the CSV file.");
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const pendingQCGRNs = grns.filter(g => g.status === 'Pending QC');
+
+  const filteredInventory = inventory.filter(i => 
+    i.filmType.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    i.location.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {/* Stock Reconciliation Monthly Notification Banner */}
+      {isRecDue && (
+        <div className="reconciliation-alert-banner">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <Bell size={26} className="bell-ring" style={{ color: '#f59e0b' }} />
+            <div>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: '700', color: '#f59e0b' }}>
+                📅 MANDATORY MONTHLY PHYSICAL STOCK RECONCILIATION DUE!
+              </h3>
+              <p style={{ fontSize: '0.85rem', color: '#fef08a' }}>
+                Notification triggered for <b>Store Manager</b>, <b>Factory Manager</b> & <b>Admin</b> (Last 2 days of month). Please conduct physical roll count and upload stock sheet.
+              </p>
+            </div>
+          </div>
+          <button className="btn-primary" style={{ background: '#f59e0b', color: 'black' }} onClick={() => setActiveTab('reconciliation')}>
+            Start Stock Reconciliation
+          </button>
+        </div>
+      )}
+
+      {/* Top Controls & Navigation */}
+      <div className="glass-panel" style={{ padding: '24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+          {/* Sub Tab Pills */}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <button className={`tab-pill ${activeTab === 'stock' ? 'active' : ''}`} onClick={() => setActiveTab('stock')}>
+              <Package size={16} /> Stock Register ({inventory.length})
+            </button>
+            <button className={`tab-pill ${activeTab === 'grn_inward' ? 'active' : ''}`} onClick={() => setActiveTab('grn_inward')}>
+              <FileCheck size={16} /> Inward GRNs ({grns.length})
+            </button>
+            <button className={`tab-pill ${pendingQCGRNs.length > 0 ? 'red-tab' : ''} ${activeTab === 'qc_approval' ? 'active' : ''}`} onClick={() => setActiveTab('qc_approval')}>
+              🧪 QC Approval Lab ({pendingQCGRNs.length} Pending)
+            </button>
+            <button className={`tab-pill ${activeTab === 'reconciliation' ? 'active' : ''}`} onClick={() => setActiveTab('reconciliation')}>
+              <FileSpreadsheet size={16} /> Physical Stock Reconciliation
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <button className="btn-secondary" onClick={() => setIsIssueModalOpen(true)}>
+              <ArrowUpRight size={18} /> Issue / Return to Store
+            </button>
+            <button className="btn-primary" onClick={() => setIsNewGRNModalOpen(true)}>
+              <Plus size={18} /> Inward GRN (New Stock)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* TAB 1: STOCK REGISTER */}
+      {activeTab === 'stock' && (
+        <div className="glass-panel" style={{ padding: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '16px' }}>
+            <div style={{ position: 'relative', width: '300px' }}>
+              <Search size={18} style={{ position: 'absolute', left: '12px', top: '12px', color: 'var(--text-secondary)' }} />
+              <input 
+                type="text"
+                className="form-control"
+                style={{ paddingLeft: '38px' }}
+                placeholder="Search film type or rack bay..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <button 
+                className="btn-secondary" 
+                style={{ fontSize: '0.8rem', padding: '6px 12px' }}
+                onClick={handleDownloadBulkInventoryTemplate}
+              >
+                <Download size={15} /> Download CSV Template
+              </button>
+
+              <label 
+                className="btn-secondary" 
+                style={{ fontSize: '0.8rem', padding: '6px 12px', cursor: 'pointer', margin: 0 }}
+              >
+                <Upload size={15} /> Bulk Upload Stock CSV
+                <input 
+                  type="file" 
+                  accept=".csv" 
+                  style={{ display: 'none' }} 
+                  onChange={handleBulkInventoryCSVUpload} 
+                />
+              </label>
+
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginLeft: '12px' }}>
+                Total Stock Volume: <b>{inventory.reduce((a, b) => a + b.availableQtyKg, 0).toLocaleString()} kg</b>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Inventory ID</th>
+                  <th>Film Substrate</th>
+                  <th>Micron (µ)</th>
+                  <th>Width (mm)</th>
+                  <th>Density</th>
+                  <th>Available Stock (Kg)</th>
+                  <th>Allocated to Jobs (Kg)</th>
+                  <th>Location Bay</th>
+                  <th>Last Supplier & Batch</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredInventory.map(item => {
+                  const isLow = item.availableQtyKg <= item.reorderLevelKg;
+                  return (
+                    <tr key={item.id}>
+                      <td style={{ fontWeight: '700', color: 'var(--accent-color)' }}>{item.id}</td>
+                      <td style={{ fontWeight: '600' }}>{item.filmType} Film</td>
+                      <td>{item.micron} µ</td>
+                      <td>{item.widthMm} mm</td>
+                      <td>{item.density}</td>
+                      <td style={{ fontSize: '1.1rem', fontWeight: '800', color: isLow ? '#ef4444' : '#34d399' }}>
+                        {item.availableQtyKg.toLocaleString()} kg
+                      </td>
+                      <td style={{ color: 'var(--text-secondary)' }}>{item.allocatedQtyKg.toLocaleString()} kg</td>
+                      <td>{item.location}</td>
+                      <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                        <div>{item.lastVendor}</div>
+                        <code style={{ color: 'var(--accent-color)' }}>{item.lastBatch}</code>
+                      </td>
+                      <td>
+                        {isLow ? (
+                          <span className="badge badge-warning" style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444' }}>
+                            LOW STOCK
+                          </span>
+                        ) : (
+                          <span className="badge badge-us">IN STOCK</span>
+                        )}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button 
+                            className="btn-secondary" 
+                            style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                            onClick={() => openEditStockModal(item)}
+                            title="Edit Stock Item"
+                          >
+                            <Edit3 size={14} /> Edit
+                          </button>
+                          
+                          <button 
+                            className="btn-secondary" 
+                            style={{ padding: '4px 8px', fontSize: '0.75rem', color: '#dc2626', borderColor: '#fecaca' }}
+                            onClick={() => handleDeleteStockItem(item)}
+                            title="Delete Stock Item"
+                          >
+                            <Trash2 size={14} /> Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: INWARD GOODS RECEIPT NOTES (GRN) */}
+      {activeTab === 'grn_inward' && (
+        <div className="glass-panel" style={{ padding: '24px' }}>
+          <h3 style={{ marginBottom: '16px', fontSize: '1.1rem', fontWeight: '600' }}>Goods Receipt Notes (GRN Inward History)</h3>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>GRN Number</th>
+                  <th>Ref PO #</th>
+                  <th>Vendor Name</th>
+                  <th>Invoice #</th>
+                  <th>Film Specs</th>
+                  <th>Inward Qty (Kg)</th>
+                  <th>Batch / Heat #</th>
+                  <th>QC Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {grns.map(g => (
+                  <tr key={g.grnNo}>
+                    <td style={{ fontWeight: '700', color: 'var(--accent-color)' }}>{g.grnNo}</td>
+                    <td>{g.poNumber}</td>
+                    <td style={{ fontWeight: '600' }}>{g.vendorName}</td>
+                    <td>{g.invoiceNo}</td>
+                    <td>{g.filmType} ({g.micron}µ / {g.widthMm}mm)</td>
+                    <td style={{ fontWeight: '700', color: '#60a5fa' }}>{g.netWeightKg} kg ({g.rollsReceived} rolls)</td>
+                    <td><code>{g.batchNo}</code></td>
+                    <td>
+                      {g.status === 'Approved' && <span className="badge badge-us">APPROVED BY QC</span>}
+                      {g.status === 'Pending QC' && <span className="badge badge-warning">PENDING QC</span>}
+                      {g.status === 'Rejected' && <span className="badge badge-warning" style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444' }}>REJECTED</span>}
+                    </td>
+                    <td>
+                      <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={() => setSelectedGRNForPDF(g)}>
+                        <Printer size={14} /> Print GRN PDF
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: QC APPROVAL LAB */}
+      {activeTab === 'qc_approval' && (
+        <div className="glass-panel" style={{ padding: '24px' }}>
+          <h3 style={{ marginBottom: '16px', fontSize: '1.1rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            🧪 Quality Control (QC) Lab Inspection & Approval Portal
+          </h3>
+
+          {pendingQCGRNs.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+              <CheckCircle2 size={48} style={{ color: 'var(--success)', marginBottom: '12px' }} />
+              <p style={{ fontSize: '1.1rem', fontWeight: '600', color: 'white' }}>All incoming material GRNs are inspected and approved!</p>
+              <p style={{ fontSize: '0.85rem' }}>No pending QC approvals in queue.</p>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '20px' }}>
+              {pendingQCGRNs.map(g => (
+                <div key={g.grnNo} className="glass-card" style={{ border: '1px solid rgba(245, 158, 11, 0.4)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                    <div>
+                      <span className="badge badge-warning">AWAITING QC CLEARANCE</span>
+                      <h4 style={{ fontSize: '1.2rem', fontWeight: '700', marginTop: '6px' }}>{g.grnNo}</h4>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>PO: {g.poNumber}</div>
+                      <div style={{ fontSize: '0.85rem', fontWeight: '600' }}>{g.vendorName}</div>
+                    </div>
+                  </div>
+
+                  <div className="calc-summary-box" style={{ marginBottom: '16px' }}>
+                    <div className="calc-summary-row">
+                      <span>Material Substrate:</span>
+                      <span className="bold-val">{g.filmType} Film ({g.micron}µ / {g.widthMm}mm)</span>
+                    </div>
+                    <div className="calc-summary-row">
+                      <span>Inward Net Weight:</span>
+                      <span className="bold-val" style={{ color: '#60a5fa' }}>{g.netWeightKg} kg ({g.rollsReceived} rolls)</span>
+                    </div>
+                    <div className="calc-summary-row">
+                      <span>Manufacturer Batch #:</span>
+                      <code>{g.batchNo}</code>
+                    </div>
+                  </div>
+
+                  <button className="btn-primary" style={{ width: '100%' }} onClick={() => setQcInspectingGRN(g)}>
+                    Inspect Material & Approve / Reject
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 4: PHYSICAL STOCK RECONCILIATION */}
+      {activeTab === 'reconciliation' && (
+        <div className="glass-panel" style={{ padding: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+            <div>
+              <h3 style={{ fontSize: '1.3rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FileSpreadsheet size={24} style={{ color: 'var(--accent-color)' }} /> Monthly Physical Stock Reconciliation
+              </h3>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px' }}>
+                Download stock audit sheet template (Excel/CSV), input physical counts, and reconcile inventory variances.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button className="btn-secondary" onClick={downloadReconciliationTemplate}>
+                <Download size={16} /> Download Excel/CSV Template
+              </button>
+
+              <label className="btn-primary" style={{ cursor: 'pointer' }}>
+                <Upload size={16} /> Upload Filled Physical Stock Sheet (.csv)
+                <input type="file" accept=".csv" style={{ display: 'none' }} onChange={handleFileUpload} />
+              </label>
+            </div>
+          </div>
+
+          {/* Variance Table */}
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Inventory ID</th>
+                  <th>Film Substrate</th>
+                  <th>Micron & Width</th>
+                  <th>System Stock (Kg)</th>
+                  <th>Physical Count (Kg)</th>
+                  <th>Variance (Kg)</th>
+                  <th>Variance Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {inventory.map(item => {
+                  const physicalVal = physicalCounts[item.id] !== undefined ? physicalCounts[item.id] : item.availableQtyKg;
+                  const diff = physicalVal - item.availableQtyKg;
+
+                  return (
+                    <tr key={item.id}>
+                      <td style={{ fontWeight: '700', color: 'var(--accent-color)' }}>{item.id}</td>
+                      <td style={{ fontWeight: '600' }}>{item.filmType} Film</td>
+                      <td>{item.micron}µ / {item.widthMm}mm</td>
+                      <td style={{ fontWeight: '700' }}>{item.availableQtyKg} kg</td>
+                      <td style={{ width: '160px' }}>
+                        <input 
+                          type="number" 
+                          className="form-control" 
+                          style={{ padding: '6px' }}
+                          value={physicalVal}
+                          onChange={e => setPhysicalCounts({ ...physicalCounts, [item.id]: parseFloat(e.target.value) || 0 })}
+                        />
+                      </td>
+                      <td style={{ fontWeight: '800', color: diff === 0 ? 'var(--text-secondary)' : diff > 0 ? 'var(--success)' : '#ef4444' }}>
+                        {diff > 0 ? `+${diff.toFixed(1)} kg` : `${diff.toFixed(1)} kg`}
+                      </td>
+                      <td>
+                        {diff === 0 ? (
+                          <span className="badge badge-us">MATCHED</span>
+                        ) : diff > 0 ? (
+                          <span className="badge badge-both">+ GAIN</span>
+                        ) : (
+                          <span className="badge badge-warning" style={{ background: 'rgba(239,68,68,0.2)', color: '#ef4444' }}>
+                            - SHORTAGE (LOSS)
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+            <button className="btn-primary" style={{ padding: '12px 24px', fontSize: '1rem' }} onClick={handleCommitReconciliation}>
+              <CheckCircle2 size={18} /> Commit Reconciliation & Update System Stock
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: New Inward GRN */}
+      {isNewGRNModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsNewGRNModalOpen(false)}>
+          <div className="glass-card modal-content" style={{ width: '650px' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ marginBottom: '8px' }}>Create Goods Receipt Note (GRN Inward)</h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '20px' }}>
+              Store Manager stock inward entry. Creates downloadable GRN & triggers Quality Control (QC) inspection.
+            </p>
+
+            <form onSubmit={handleSaveGRN}>
+              <div className="form-grid">
+                <div className="form-group">
+                  <label>Vendor Name *</label>
+                  <select className="form-control" value={grnVendor} onChange={e => setGrnVendor(e.target.value)}>
+                    {vendors.map(v => <option key={v.id} value={v.companyName}>{v.companyName}</option>)}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Ref PO Number</label>
+                  <input type="text" className="form-control" value={grnPoNo} onChange={e => setGrnPoNo(e.target.value)} />
+                </div>
+
+                <div className="form-group">
+                  <label>Vendor Invoice Number *</label>
+                  <input type="text" className="form-control" required placeholder="e.g. INV-FP-9904" value={grnInvoiceNo} onChange={e => setGrnInvoiceNo(e.target.value)} />
+                </div>
+
+                <div className="form-group">
+                  <label>Manufacturer Batch / Heat # *</label>
+                  <input type="text" className="form-control" required placeholder="e.g. BATCH-PET-991" value={grnBatchNo} onChange={e => setGrnBatchNo(e.target.value)} />
+                </div>
+
+                <div className="form-group">
+                  <label>Film Substrate</label>
+                  <select className="form-control" value={grnFilmType} onChange={e => setGrnFilmType(e.target.value)}>
+                    {Object.keys(FILM_DENSITIES).map(type => <option key={type} value={type}>{type}</option>)}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Micron Gauge (µ)</label>
+                  <input type="number" className="form-control" value={grnMicron} onChange={e => setGrnMicron(e.target.value)} />
+                </div>
+
+                <div className="form-group">
+                  <label>Slit Width (mm)</label>
+                  <input type="number" className="form-control" value={grnWidthMm} onChange={e => setGrnWidthMm(e.target.value)} />
+                </div>
+
+                <div className="form-group">
+                  <label>Rolls Received</label>
+                  <input type="number" className="form-control" value={grnRolls} onChange={e => setGrnRolls(e.target.value)} />
+                </div>
+
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label>Net Weight Inward (Kg) *</label>
+                  <input type="number" className="form-control" required value={grnWeightKg} onChange={e => setGrnWeightKg(e.target.value)} />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                <button type="button" className="btn-secondary" onClick={() => setIsNewGRNModalOpen(false)}>Cancel</button>
+                <button type="submit" className="btn-primary">
+                  <FileCheck size={18} /> Complete Inward & Submit to QC
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: QC Inspection & Approval */}
+      {qcInspectingGRN && (
+        <div className="modal-overlay" onClick={() => setQcInspectingGRN(null)}>
+          <div className="glass-card modal-content" style={{ width: '550px' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ marginBottom: '8px' }}>🧪 QC Inspection Report: {qcInspectingGRN.grnNo}</h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '16px' }}>
+              Inspect physical roll parameters (Micron gauge accuracy, Corona dyne, tensile strength, visual defects).
+            </p>
+
+            <div className="form-group">
+              <label>QC Lab Inspector Notes & Test Results</label>
+              <textarea 
+                className="form-control"
+                placeholder="Enter gauge tolerance test, dyne level, or visual observations..."
+                value={qcNotesInput}
+                onChange={e => setQcNotesInput(e.target.value)}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+              <button className="btn-secondary" style={{ border: '1px solid #ef4444', color: '#ef4444' }} onClick={() => handleQCAction('Rejected')}>
+                <XCircle size={16} /> Reject Material
+              </button>
+              <button className="btn-primary" style={{ background: '#10b981' }} onClick={() => handleQCAction('Approved')}>
+                <CheckCircle2 size={16} /> Approve & Add Stock to Inventory
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Issue / Return to Store */}
+      {isIssueModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsIssueModalOpen(false)}>
+          <div className="glass-card modal-content" style={{ width: '500px' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ marginBottom: '8px' }}>Material Issue & Return to Store</h3>
+            
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+              <button className={`tab-pill ${issueType === 'issue' ? 'active' : ''}`} onClick={() => setIssueType('issue')}>
+                <ArrowUpRight size={14} /> Issue to Production Job
+              </button>
+              <button className={`tab-pill ${issueType === 'return' ? 'active' : ''}`} onClick={() => setIssueType('return')}>
+                <ArrowDownLeft size={14} /> Return to Store
+              </button>
+            </div>
+
+            {/* Searchable Stock Selector */}
+            <div className="form-group">
+              <label>Search & Select Inventory Stock Item *</label>
+              <input 
+                type="text"
+                className="form-control"
+                style={{ marginBottom: '8px' }}
+                placeholder="🔍 Search film, micron, width, bay or ID..."
+                value={stockSearchTerm}
+                onChange={e => setStockSearchTerm(e.target.value)}
+              />
+              <select className="form-control" value={selectedInvItem?.id} onChange={e => setSelectedInvItem(inventory.find(i => i.id === e.target.value))}>
+                {inventory.filter(i => 
+                  i.filmType.toLowerCase().includes(stockSearchTerm.toLowerCase()) ||
+                  i.id.toLowerCase().includes(stockSearchTerm.toLowerCase()) ||
+                  `${i.micron}`.includes(stockSearchTerm) ||
+                  `${i.widthMm}`.includes(stockSearchTerm) ||
+                  i.location.toLowerCase().includes(stockSearchTerm.toLowerCase())
+                ).map(i => (
+                  <option key={i.id} value={i.id}>
+                    {i.id} - {i.filmType} {i.micron}µ ({i.widthMm}mm) | Location: {i.location} | Avail: {i.availableQtyKg}kg
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {issueType === 'issue' && (
+              <div className="form-group">
+                <label>Production Job Name *</label>
+                <select className="form-control" value={issueJobName} onChange={e => setIssueJobName(e.target.value)}>
+                  {orders.map(o => <option key={o.id} value={o.jobName}>{o.jobName} ({o.id})</option>)}
+                </select>
+              </div>
+            )}
+
+            <div className="form-group">
+              <label>Quantity in Kg *</label>
+              <input type="number" className="form-control" value={issueQtyKg} onChange={e => setIssueQtyKg(e.target.value)} />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+              <button className="btn-secondary" onClick={() => setIsIssueModalOpen(false)}>Cancel</button>
+              <button className="btn-primary" onClick={handleIssueReturnSubmit}>
+                Submit {issueType === 'issue' ? 'Material Issue' : 'Material Return'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Edit Stock Item */}
+      {editingStockItem && (
+        <div className="modal-overlay" onClick={() => setEditingStockItem(null)}>
+          <div className="glass-card modal-content" style={{ width: '580px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Edit3 size={20} style={{ color: 'var(--primary-brand)' }} /> Edit Inventory Stock Item ({editingStockItem.id})
+            </h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '20px' }}>
+              Update stock quantities, substrate specifications, location bay, or reorder warnings.
+            </p>
+
+            <form onSubmit={handleSaveStockEdit}>
+              <div className="form-grid">
+                <div className="form-group">
+                  <label>Film Substrate *</label>
+                  <select 
+                    className="form-control"
+                    value={editFilmType}
+                    onChange={e => setEditFilmType(e.target.value)}
+                  >
+                    {Object.keys(FILM_DENSITIES).map(type => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Micron Gauge (µ) *</label>
+                  <input 
+                    type="number" 
+                    className="form-control"
+                    required
+                    value={editMicron}
+                    onChange={e => setEditMicron(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Slit Width (mm) *</label>
+                  <input 
+                    type="number" 
+                    className="form-control"
+                    required
+                    value={editWidthMm}
+                    onChange={e => setEditWidthMm(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Warehouse Location Bay *</label>
+                  <input 
+                    type="text" 
+                    className="form-control"
+                    required
+                    placeholder="e.g. Bay A - Rack 3"
+                    value={editLocation}
+                    onChange={e => setEditLocation(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Available Stock Qty (Kg) *</label>
+                  <input 
+                    type="number" 
+                    className="form-control"
+                    required
+                    value={editAvailableQtyKg}
+                    onChange={e => setEditAvailableQtyKg(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Allocated to Jobs Qty (Kg)</label>
+                  <input 
+                    type="number" 
+                    className="form-control"
+                    value={editAllocatedQtyKg}
+                    onChange={e => setEditAllocatedQtyKg(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label>Low Stock Warning Threshold (Kg)</label>
+                  <input 
+                    type="number" 
+                    className="form-control"
+                    value={editReorderLevelKg}
+                    onChange={e => setEditReorderLevelKg(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                <button type="button" className="btn-secondary" onClick={() => setEditingStockItem(null)}>Cancel</button>
+                <button type="submit" className="btn-primary">
+                  <CheckCircle2 size={16} /> Save Stock Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* PDF View Modal */}
+      {selectedGRNForPDF && (
+        <GRNPDF grnData={selectedGRNForPDF} onClose={() => setSelectedGRNForPDF(null)} />
+      )}
+    </div>
+  );
+}
