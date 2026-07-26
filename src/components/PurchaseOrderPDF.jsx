@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
 import { COMPANY_DETAILS } from '../factoryStore';
 import { numberToWords, formatINR } from '../utils/pdfHelpers';
-import { getAuthorisedSignature, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
+import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 
 export default function PurchaseOrderPDF({ poData, onClose }) {
   if (!poData) return null;
@@ -16,6 +16,8 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
   const [currentTerms, setCurrentTerms] = useState(savedTerms.poTerms || []);
   
   const signatureImage = getAuthorisedSignature();
+  const logoImage = getCompanyLogo();
+
 
   const {
     poDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
@@ -164,13 +166,14 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
         <div className="printable-document">
           <div className="letterhead-header">
             <div className="letterhead-brand">
-              <img src={COMPANY_DETAILS.logoUrl} alt="Samyak International Ltd Logo" className="samyak-logo-img" style={{ height: '46px', objectFit: 'contain' }} />
+              <img src={logoImage} alt="Samyak International Ltd Logo" className="samyak-logo-img" style={{ height: '46px', objectFit: 'contain' }} />
               <div>
                 <p className="letterhead-company-sub" style={{ marginTop: '4px', fontSize: '9px', fontWeight: 'bold', color: '#4b5563' }}>
                   {COMPANY_DETAILS.tagline}
                 </p>
               </div>
             </div>
+
             <div className="letterhead-doc-title">
               <h2>Purchase Order</h2>
               <div className="doc-ref-no" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
@@ -314,14 +317,19 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
                 const sgstAmt = (taxable * sgstRate) / 100;
                 const totalAmt = taxable + cgstAmt + sgstAmt;
 
+                const itemNameText = item.description || item.itemName || item.name || item.item_name || item.filmType || "Material Item";
+
                 return (
                   <tr key={index}>
                     <td className="center">{index + 1}</td>
                     <td>
-                      <div className="item-name">{item.description}</div>
-                      {item.itemId && <div className="item-meta">Item ID:{item.itemId}</div>}
+                      <div className="item-name" style={{ color: '#000000', fontWeight: 'bold', fontSize: '10px', lineHeight: '1.3' }}>
+                        {itemNameText}
+                      </div>
+                      {item.itemId && <div className="item-meta">Item ID: {item.itemId}</div>}
                       {item.make && <div className="item-meta">Make: {item.make}</div>}
                     </td>
+
                     <td className="center">{item.hsnCode || '3215'}</td>
                     <td className="right">{qty.toFixed(2)} Kg</td>
                     <td className="right">{formatINR(rate)}</td>

@@ -3,9 +3,48 @@
  * Manages Authorised Signatory Signature, Document Prefix Series, Payment Terms & Terms & Conditions
  */
 
+const LOGO_STORAGE_KEY = 'samyak_company_logo';
 const SIGNATURE_STORAGE_KEY = 'samyak_authorised_signature';
 const PREFIX_STORAGE_KEY = 'samyak_doc_prefixes';
 const TERMS_STORAGE_KEY = 'samyak_doc_terms';
+
+/**
+ * Get saved company logo (base64 or default path /samyak-logo.png)
+ */
+export function getCompanyLogo() {
+  try {
+    return localStorage.getItem(LOGO_STORAGE_KEY) || '/samyak-logo.png';
+  } catch (e) {
+    return '/samyak-logo.png';
+  }
+}
+
+/**
+ * Save custom company logo image (base64 string)
+ */
+export function saveCompanyLogo(base64String) {
+  try {
+    if (base64String) {
+      localStorage.setItem(LOGO_STORAGE_KEY, base64String);
+    } else {
+      localStorage.removeItem(LOGO_STORAGE_KEY);
+    }
+  } catch (e) {
+    console.error("Failed to save logo", e);
+  }
+}
+
+/**
+ * Clear stored company logo
+ */
+export function clearCompanyLogo() {
+  try {
+    localStorage.removeItem(LOGO_STORAGE_KEY);
+  } catch (e) {
+    console.error("Failed to clear logo", e);
+  }
+}
+
 
 export const DEFAULT_PREFIXES = {
   poPrefix: 'SIL/PO/26-27/',

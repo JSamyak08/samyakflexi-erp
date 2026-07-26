@@ -2,12 +2,14 @@ import React from 'react';
 import { Printer, ArrowLeft } from 'lucide-react';
 import { COMPANY_DETAILS } from '../factoryStore';
 import { formatINR } from '../utils/pdfHelpers';
-import { getAuthorisedSignature } from '../services/settingsService';
+import { getAuthorisedSignature, getCompanyLogo } from '../services/settingsService';
 
 export default function JobDataSheetPDF({ sheetData, onClose }) {
   if (!sheetData) return null;
 
   const signatureImage = getAuthorisedSignature();
+  const companyLogo = getCompanyLogo();
+
 
   const {
     id = `SIL/JDS/26-27/${Math.floor(100 + Math.random() * 900)}`,
@@ -47,9 +49,10 @@ export default function JobDataSheetPDF({ sheetData, onClose }) {
           {/* Header */}
           <div className="letterhead-header">
             <div className="letterhead-logo-column">
-              <img src={COMPANY_DETAILS.logoUrl} alt="Samyak International Ltd" className="letterhead-logo-img" />
+              <img src={companyLogo} alt="Samyak International Ltd" className="letterhead-logo-img" style={{ maxHeight: '48px', objectFit: 'contain' }} />
               <div className="letterhead-brand-title">{COMPANY_DETAILS.name}</div>
               <div className="letterhead-brand-tagline">{COMPANY_DETAILS.tagline}</div>
+
               <div style={{ fontSize: '9px', fontWeight: 'bold', color: '#1e293b', marginTop: '2px' }}>
                 GSTIN: {COMPANY_DETAILS.gstin}
               </div>

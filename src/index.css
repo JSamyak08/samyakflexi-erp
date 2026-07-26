@@ -804,21 +804,53 @@ body {
   body {
     background: #ffffff !important;
     color: #000000 !important;
+    font-size: 10pt;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
-  .no-print {
+
+  /* Hide background App interface & controls */
+  .no-print, 
+  .sidebar, 
+  .header, 
+  .pdf-modal-toolbar, 
+  .pdf-modal-actions,
+  .main-content > :not(.pdf-modal-overlay) {
     display: none !important;
   }
+
   .pdf-modal-overlay {
-    position: static;
-    background: transparent;
-    padding: 0;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    z-index: 99999 !important;
   }
-  .pdf-paper-container {
-    width: 100%;
-    box-shadow: none;
-    padding: 0;
+
+  .pdf-paper-container, 
+  .pdf-page-wrapper, 
+  .printable-document, 
+  .letterhead-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
   }
 }
+
 
 
 /* -------------------------------------

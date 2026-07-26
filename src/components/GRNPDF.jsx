@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
 import { COMPANY_DETAILS } from '../factoryStore';
 import { numberToWords, formatINR } from '../utils/pdfHelpers';
-import { getAuthorisedSignature, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
+import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 
 export default function GRNPDF({ grnData, onClose }) {
   if (!grnData) return null;
@@ -14,6 +14,8 @@ export default function GRNPDF({ grnData, onClose }) {
   const [isEditingRef, setIsEditingRef] = useState(false);
   const [currentGrnTerms, setCurrentGrnTerms] = useState(savedTerms.grnTerms || []);
   const signatureImage = getAuthorisedSignature();
+  const logoImage = getCompanyLogo();
+
 
   const handleUpdateTerm = (index, value) => {
     const updated = [...currentGrnTerms];
@@ -80,13 +82,14 @@ export default function GRNPDF({ grnData, onClose }) {
           {/* Header */}
           <div className="letterhead-header">
             <div className="letterhead-brand">
-              <img src={COMPANY_DETAILS.logoUrl} alt="Samyak International Ltd Logo" className="samyak-logo-img" style={{ height: '46px', objectFit: 'contain' }} />
+              <img src={logoImage} alt="Samyak International Ltd Logo" className="samyak-logo-img" style={{ height: '46px', objectFit: 'contain' }} />
               <div>
                 <p className="letterhead-company-sub" style={{ marginTop: '4px', fontSize: '9px', fontWeight: 'bold', color: '#4b5563' }}>
                   {COMPANY_DETAILS.tagline}
                 </p>
               </div>
             </div>
+
             <div className="letterhead-doc-title">
               <h2>Goods Receipt Note</h2>
               <div className="doc-ref-no" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
