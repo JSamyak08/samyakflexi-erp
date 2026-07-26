@@ -204,9 +204,19 @@ export const calculateJobRawMaterials = ({
  */
 export const initialUsers = [
   {
+    id: "USR-000",
+    name: "Samyak Jain",
+    email: "samyak.jain@samyakinternational.in",
+    password: "Sam@233994",
+    role: "Admin",
+    department: "Executive Management",
+    status: "Active"
+  },
+  {
     id: "USR-001",
     name: "Samyak Shah",
     email: "samyak@samyak.com",
+    password: "password123",
     role: "Admin", // Admin, Plant Manager, Store Manager, QC Chemist, Purchase Manager, Shop Floor Operator
     department: "Executive Management",
     status: "Active"
@@ -215,6 +225,7 @@ export const initialUsers = [
     id: "USR-002",
     name: "Rajiv Malhotra",
     email: "rajiv.m@samyak.com",
+    password: "password123",
     role: "Plant Manager",
     department: "Operations & Plant",
     status: "Active"
@@ -223,6 +234,7 @@ export const initialUsers = [
     id: "USR-003",
     name: "Dilip Joshi",
     email: "dilip.j@samyak.com",
+    password: "password123",
     role: "Store Manager",
     department: "Store & Raw Material",
     status: "Active"
@@ -231,6 +243,7 @@ export const initialUsers = [
     id: "USR-004",
     name: "Ramesh Kumar",
     email: "ramesh.k@samyak.com",
+    password: "password123",
     role: "QC Chemist",
     department: "Quality Control Lab",
     status: "Active"
@@ -239,6 +252,7 @@ export const initialUsers = [
     id: "USR-005",
     name: "Sunil Verma",
     email: "sunil.v@samyak.com",
+    password: "password123",
     role: "Purchase Manager",
     department: "Purchase & Commercial",
     status: "Active"
@@ -247,6 +261,7 @@ export const initialUsers = [
     id: "USR-006",
     name: "Mahesh Yadav",
     email: "mahesh.y@samyak.com",
+    password: "password123",
     role: "Shop Floor Operator",
     department: "Lamination & Printing",
     status: "Active"

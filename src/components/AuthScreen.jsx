@@ -55,6 +55,11 @@ export default function AuthScreen({ users = [], onLogin }) {
       );
 
       if (matchedUser) {
+        if (matchedUser.password && matchedUser.password !== password) {
+          setIsLoading(false);
+          setError('Invalid password. Please verify your credentials or click "Forgot Password?" to reset.');
+          return;
+        }
         setIsLoading(false);
         onLogin(matchedUser);
       } else {
