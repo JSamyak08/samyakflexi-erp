@@ -6,6 +6,7 @@ import {
   initialGRNs,
   initialUsers,
   initialJobDataSheets,
+  initialProductionRecords,
   isReconciliationDue 
 } from './factoryStore';
 import { initialCylinders } from './dataStore';
@@ -23,7 +24,8 @@ import {
   Bell,
   ShieldCheck,
   UserCheck,
-  LogOut
+  LogOut,
+  ClipboardList
 } from 'lucide-react';
 
 import AuthScreen from './components/AuthScreen';
@@ -34,10 +36,11 @@ import InventoryManagement from './components/InventoryManagement';
 import JobDataSheet from './components/JobDataSheet';
 import UserManagement from './components/UserManagement';
 import CylinderManagement from './components/CylinderManagement';
+import ProductionRecordManagement from './components/ProductionRecordManagement';
 import './index.css';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, job_punching, orders, vendors, inventory, job_datasheet, user_management, cylinders
+  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, job_punching, orders, vendors, inventory, job_datasheet, user_management, cylinders, production_records
 
   // Shared Global State
   const [orders, setOrders] = useState(initialOrders);
@@ -47,6 +50,7 @@ export default function App() {
   const [users, setUsers] = useState(initialUsers);
   const [, setJobDataSheets] = useState(initialJobDataSheets);
   const [cylinders, setCylinders] = useState(initialCylinders);
+  const [productionRecords, setProductionRecords] = useState(initialProductionRecords);
 
   // Authentication & Active User Session State
   const [currentUser, setCurrentUser] = useState(() => {
@@ -84,10 +88,29 @@ export default function App() {
     }
   };
 
-
   const isRecDue = isReconciliationDue("2026-07-24");
   const delayedOrdersCount = orders.filter(o => o.status === 'Delayed' || new Date(o.targetDeliveryDate) < new Date('2026-07-24')).length;
   const pendingQCGRNsCount = grns.filter(g => g.status === 'Pending QC').length;
+  const pendingProductionApprovalCount = productionRecords.filter(r => r.status === 'Filled by Plant Manager').length;
+
+  // Handlers for Production Records
+  const handleSaveProductionRecord = (newRecord) => {
+    setProductionRecords(prev => [newRecord, ...prev.filter(r => r.orderId !== newRecord.orderId)]);
+  };
+
+  const handleApproveProductionRecord = (recordId, adminName) => {
+    setProductionRecords(prev => prev.map(r => {
+      if (r.id === recordId) {
+        return {
+          ...r,
+          status: 'Approved by Admin',
+          approvedBy: adminName,
+          approvalDate: new Date().toLocaleString()
+        };
+      }
+      return r;
+    }));
+  };
 
   // Handlers for state updates
   const handleAddOrder = (newOrder) => {
@@ -167,6 +190,19 @@ export default function App() {
           >
             <LayoutDashboard size={18} />
             Executive Dashboard
+          </div>
+
+          <div 
+            className={`nav-item ${activeTab === 'production_records' ? 'active' : ''}`}
+            onClick={() => setActiveTab('production_records')}
+          >
+            <ClipboardList size={18} />
+            Production Records
+            {pendingProductionApprovalCount > 0 && (
+              <span className="badge badge-warning" style={{ marginLeft: 'auto', padding: '2px 6px', fontSize: '0.7rem' }}>
+                {pendingProductionApprovalCount} Pending
+              </span>
+            )}
           </div>
 
           <div 
@@ -253,6 +289,7 @@ export default function App() {
           <div>
             <h1 style={{ fontSize: '1.6rem', fontWeight: '700' }}>
               {activeTab === 'dashboard' && 'Executive Operations Dashboard'}
+              {activeTab === 'production_records' && 'Job Production Records & Approval Workflow'}
               {activeTab === 'job_punching' && 'Order Confirmation & Job Punching'}
               {activeTab === 'orders' && 'Order Management & PO Issuance'}
               {activeTab === 'job_datasheet' && 'Job Data Sheet & Pre vs Post Costing'}
@@ -266,26 +303,34 @@ export default function App() {
             </p>
           </div>
 
-          {/* Top Bar Active User & Logout Controls */}
+          {/* Top Bar Active User & Logout Controls (ADMIN ONLY ROLE SWITCHER) */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#ffffff', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem' }}>
-              <UserCheck size={16} style={{ color: 'var(--primary-brand)' }} />
-              <span style={{ color: 'var(--text-muted)', fontWeight: '500' }}>Active User:</span>
-              <select 
-                style={{ border: 'none', background: 'transparent', fontWeight: '700', color: 'var(--text-primary)', cursor: 'pointer', outline: 'none' }}
-                value={currentUser.id}
-                onChange={e => {
-                  const user = users.find(u => u.id === e.target.value);
-                  if (user) handleLogin(user);
-                }}
-              >
-                {users.map(u => (
-                  <option key={u.id} value={u.id}>
-                    {u.name} ({u.role})
-                  </option>
-                ))}
-              </select>
-            </div>
+            {currentUser?.role === 'Admin' ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#ffffff', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem' }}>
+                <UserCheck size={16} style={{ color: 'var(--primary-brand)' }} />
+                <span style={{ color: 'var(--text-muted)', fontWeight: '500' }}>Active User:</span>
+                <select 
+                  style={{ border: 'none', background: 'transparent', fontWeight: '700', color: 'var(--text-primary)', cursor: 'pointer', outline: 'none' }}
+                  value={currentUser.id}
+                  onChange={e => {
+                    const user = users.find(u => u.id === e.target.value);
+                    if (user) handleLogin(user);
+                  }}
+                >
+                  {users.map(u => (
+                    <option key={u.id} value={u.id}>
+                      {u.name} ({u.role})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#ffffff', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem' }}>
+                <UserCheck size={16} style={{ color: 'var(--primary-brand)' }} />
+                <span style={{ color: 'var(--text-muted)', fontWeight: '500' }}>Logged In:</span>
+                <strong style={{ color: 'var(--text-primary)' }}>{currentUser?.name} ({currentUser?.role})</strong>
+              </div>
+            )}
 
             <button className="btn-signout" onClick={handleLogout} title="Sign Out of Session">
               <LogOut size={16} /> Sign Out
@@ -298,6 +343,18 @@ export default function App() {
             )}
           </div>
         </div>
+
+        {/* TAB: PRODUCTION RECORDS & APPROVAL FLOW */}
+        {activeTab === 'production_records' && (
+          <ProductionRecordManagement 
+            productionRecords={productionRecords}
+            orders={orders}
+            inventory={inventory}
+            currentUser={currentUser}
+            onSaveProductionRecord={handleSaveProductionRecord}
+            onApproveProductionRecord={handleApproveProductionRecord}
+          />
+        )}
 
         {/* TAB 1: EXECUTIVE DASHBOARD */}
         {activeTab === 'dashboard' && (
@@ -456,9 +513,11 @@ export default function App() {
             orders={orders} 
             vendors={vendors} 
             currentUser={currentUser}
+            productionRecords={productionRecords}
             onUpdateOrder={handleUpdateOrder} 
             onDeleteOrder={handleDeleteOrder}
             onNavigateToPunching={() => setActiveTab('job_punching')}
+            onNavigateToProductionRecords={() => setActiveTab('production_records')}
           />
         )}
 

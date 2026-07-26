@@ -39,6 +39,7 @@ export default function InventoryManagement({
   const [selectedGRNForPDF, setSelectedGRNForPDF] = useState(null);
   const [qcInspectingGRN, setQcInspectingGRN] = useState(null);
   const [qcNotesInput, setQcNotesInput] = useState('');
+  const [selectedItemForPurchaseHistory, setSelectedItemForPurchaseHistory] = useState(null);
 
   // Issue / Return Modal state
   const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
@@ -514,7 +515,26 @@ export default function InventoryManagement({
                   return (
                     <tr key={item.id}>
                       <td style={{ fontWeight: '700', color: 'var(--accent-color)' }}>{item.id}</td>
-                      <td style={{ fontWeight: '600' }}>{item.filmType} Film</td>
+                      <td>
+                        <button 
+                          style={{ 
+                            background: 'none', 
+                            border: 'none', 
+                            padding: 0, 
+                            fontFamily: 'inherit', 
+                            fontSize: 'inherit', 
+                            fontWeight: '700', 
+                            color: '#2563eb', 
+                            cursor: 'pointer', 
+                            textDecoration: 'underline',
+                            textAlign: 'left'
+                          }}
+                          onClick={() => setSelectedItemForPurchaseHistory(item)}
+                          title="Click to view date-wise GRN Purchase & Receipt History"
+                        >
+                          {item.filmType} Film ({item.micron}µ x {item.widthMm}mm)
+                        </button>
+                      </td>
                       <td>{item.micron} µ</td>
                       <td>{item.widthMm} mm</td>
                       <td>{item.density}</td>
@@ -538,6 +558,15 @@ export default function InventoryManagement({
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: '6px' }}>
+                          <button 
+                            className="btn-secondary" 
+                            style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                            onClick={() => setSelectedItemForPurchaseHistory(item)}
+                            title="View GRN Purchase History"
+                          >
+                            <Clock size={14} /> History
+                          </button>
+                          
                           <button 
                             className="btn-secondary" 
                             style={{ padding: '4px 8px', fontSize: '0.75rem' }}
@@ -1029,6 +1058,120 @@ export default function InventoryManagement({
       {selectedGRNForPDF && (
         <GRNPDF grnData={selectedGRNForPDF} onClose={() => setSelectedGRNForPDF(null)} />
       )}
+
+      {/* Item GRN Purchase History Modal */}
+      {selectedItemForPurchaseHistory && (() => {
+        const item = selectedItemForPurchaseHistory;
+        // Filter matching GRNs by filmType (and micron/width if available)
+        const matchingGRNs = grns.filter(g => 
+          g.filmType.toLowerCase() === item.filmType.toLowerCase()
+        );
+
+        const totalPurchasedKg = matchingGRNs.reduce((sum, g) => sum + (g.netWeightKg || 0), 0);
+        const totalSpendRs = matchingGRNs.reduce((sum, g) => sum + ((g.netWeightKg || 0) * (g.purchaseRatePerKg || 120)), 0);
+        const avgPurchaseRate = totalPurchasedKg > 0 ? (totalSpendRs / totalPurchasedKg) : 0;
+
+        return (
+          <div className="modal-overlay" onClick={() => setSelectedItemForPurchaseHistory(null)}>
+            <div className="modal-content" style={{ maxWidth: '850px', width: '90%' }} onClick={e => e.stopPropagation()}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '12px', borderBottom: '1px solid var(--border-color)' }}>
+                <div>
+                  <h3 style={{ fontSize: '1.25rem', fontWeight: '800', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Clock style={{ color: '#2563eb' }} /> GRN Purchase & Receipt History
+                  </h3>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                    Item: <strong>{item.filmType} Film ({item.micron}µ x {item.widthMm}mm)</strong>
+                  </p>
+                </div>
+                <button className="btn-secondary" style={{ padding: '4px 10px' }} onClick={() => setSelectedItemForPurchaseHistory(null)}>✕ Close</button>
+              </div>
+
+              {/* Summary Metrics Banner */}
+              <div className="glass-card" style={{ background: '#f8fafc', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', padding: '16px', marginBottom: '20px' }}>
+                <div>
+                  <span className="stats-title">Historical Purchased Qty</span>
+                  <div style={{ fontSize: '1.3rem', fontWeight: '800', color: 'var(--text-primary)', marginTop: '4px' }}>
+                    {totalPurchasedKg > 0 ? `${totalPurchasedKg.toLocaleString()} kg` : `${item.availableQtyKg.toLocaleString()} kg`}
+                  </div>
+                </div>
+
+                <div>
+                  <span className="stats-title">Avg Purchase Rate</span>
+                  <div style={{ fontSize: '1.3rem', fontWeight: '800', color: '#2563eb', marginTop: '4px' }}>
+                    ₹ {avgPurchaseRate > 0 ? avgPurchaseRate.toFixed(2) : (DEFAULT_DAILY_RATES[item.filmType] || 120).toFixed(2)} / kg
+                  </div>
+                </div>
+
+                <div>
+                  <span className="stats-title">Total Spend Value</span>
+                  <div style={{ fontSize: '1.3rem', fontWeight: '800', color: '#047857', marginTop: '4px' }}>
+                    ₹ {totalSpendRs > 0 ? totalSpendRs.toLocaleString(undefined, { minimumFractionDigits: 2 }) : (item.availableQtyKg * (DEFAULT_DAILY_RATES[item.filmType] || 120)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Date-wise GRN Purchase Table */}
+              <h4 style={{ fontSize: '0.95rem', fontWeight: '700', marginBottom: '12px', color: 'var(--text-primary)' }}>
+                📅 Inward Receipt Entries (Date-Wise)
+              </h4>
+
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Date & Time</th>
+                    <th>GRN No / Ref PO</th>
+                    <th>Vendor Name</th>
+                    <th>Invoice No</th>
+                    <th>Qty Received</th>
+                    <th>Purchase Rate</th>
+                    <th>Total Value (₹)</th>
+                    <th>Batch & Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {matchingGRNs.length === 0 ? (
+                    <tr>
+                      <td colSpan="8" style={{ textCenter: 'center', padding: '24px', color: 'var(--text-muted)' }}>
+                        No past GRN inward records found for this specific film type.
+                      </td>
+                    </tr>
+                  ) : (
+                    matchingGRNs.map((g, idx) => {
+                      const rate = g.purchaseRatePerKg || DEFAULT_DAILY_RATES[g.filmType] || 120;
+                      const val = (g.netWeightKg || 0) * rate;
+                      return (
+                        <tr key={idx}>
+                          <td style={{ fontSize: '0.85rem' }}>{g.receivedDate}</td>
+                          <td>
+                            <div style={{ fontWeight: '700', color: '#2563eb' }}>{g.grnNo}</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{g.poNumber}</div>
+                          </td>
+                          <td style={{ fontWeight: '600' }}>{g.vendorName}</td>
+                          <td>{g.invoiceNo || 'N/A'}</td>
+                          <td style={{ fontWeight: '700' }}>{g.netWeightKg.toLocaleString()} kg <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>({g.rollsReceived} rolls)</span></td>
+                          <td style={{ fontWeight: '700', color: '#2563eb' }}>₹ {rate.toFixed(2)}</td>
+                          <td style={{ fontWeight: '700', color: '#047857' }}>₹ {val.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          <td>
+                            <code style={{ fontSize: '0.75rem' }}>{g.batchNo}</code>
+                            <div style={{ marginTop: '2px' }}>
+                              {g.status === 'Approved' ? (
+                                <span className="badge badge-us" style={{ fontSize: '0.7rem' }}>Approved</span>
+                              ) : (
+                                <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>Pending QC</span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
+

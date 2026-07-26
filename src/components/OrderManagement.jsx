@@ -20,14 +20,36 @@ export default function OrderManagement({
   orders, 
   vendors, 
   currentUser,
+  productionRecords = [],
   onUpdateOrder, 
   onDeleteOrder,
-  onNavigateToPunching 
+  onNavigateToPunching,
+  onNavigateToProductionRecords
 }) {
   const isAdmin = currentUser?.role === 'Admin';
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [vendorFilter, setVendorFilter] = useState('ALL');
+
+  // Job Completion Guard Handler
+  const handleMarkJobCompleted = (order, e) => {
+    if (e) e.stopPropagation();
+    
+    // Check if Production Record exists and is approved by Admin
+    const rec = productionRecords.find(r => r.orderId === order.id);
+    if (!rec || rec.status !== 'Approved by Admin') {
+      alert(`⚠️ CANNOT COMPLETE JOB "${order.id}":\n\nA Job cannot be completed until its Production Record is completely filled by the Plant Manager AND approved by the Admin.\n\nCurrent Status: ${rec ? rec.status : 'Record Not Filled'}\n\nPlease complete the Production Record first.`);
+      if (onNavigateToProductionRecords) onNavigateToProductionRecords();
+      return;
+    }
+
+    onUpdateOrder({
+      ...order,
+      status: 'Completed'
+    });
+
+    alert(`🎉 Job "${order.id} - ${order.jobName}" has been successfully marked as COMPLETED!`);
+  };
 
   // Track expanded order IDs
   const [expandedOrders, setExpandedOrders] = useState({
@@ -345,8 +367,19 @@ export default function OrderManagement({
                     {order.status === 'On Hold' ? '⏸️ ON HOLD' : order.status}
                   </span>
 
+                  {order.status !== 'Completed' && (
+                    <button 
+                      className="btn-secondary" 
+                      style={{ padding: '4px 10px', fontSize: '0.75rem', color: '#047857', borderColor: '#a7f3d0', background: '#ecfdf5', marginLeft: '8px' }}
+                      onClick={(e) => handleMarkJobCompleted(order, e)}
+                      title="Mark Job Completed (Requires Approved Production Record)"
+                    >
+                      <CheckCircle2 size={14} /> Complete Job
+                    </button>
+                  )}
+
                   {isAdmin && (
-                    <div style={{ display: 'flex', gap: '6px', marginLeft: '8px' }}>
+                    <div style={{ display: 'flex', gap: '6px', marginLeft: '6px' }}>
                       <button 
                         className="btn-secondary" 
                         style={{ padding: '4px 8px', fontSize: '0.75rem' }}

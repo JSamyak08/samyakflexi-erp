@@ -601,6 +601,7 @@ export const initialGRNs = [
     widthMm: 1000,
     rollsReceived: 12,
     netWeightKg: 1850,
+    purchaseRatePerKg: 125.00,
     batchNo: "BATCH-PET-991",
     status: "Approved", // Approved by QC
     qcNotes: "Average gauge 12.1 mic. Dyne level 44 dynes/cm. Approved for production.",
@@ -618,11 +619,117 @@ export const initialGRNs = [
     widthMm: 1050,
     rollsReceived: 16,
     netWeightKg: 2400,
+    purchaseRatePerKg: 115.00,
     batchNo: "BATCH-LD-9982",
     status: "Pending QC", // Awaiting QC
     qcNotes: "",
     inspectedBy: "",
     storeManager: "Store Mgr Dilip Joshi"
+  },
+  {
+    grnNo: "GRN-2026-098",
+    poNumber: "PO-2026-035",
+    vendorName: "FlexiPoly Films Ltd",
+    invoiceNo: "INV-FP-9812",
+    receivedDate: "2026-07-15 02:45 PM",
+    filmType: "METPET",
+    micron: 12,
+    widthMm: 1000,
+    rollsReceived: 8,
+    netWeightKg: 1200,
+    purchaseRatePerKg: 140.00,
+    batchNo: "BATCH-MPET-312",
+    status: "Approved",
+    qcNotes: "Good metallisation optical density 2.4. Approved.",
+    inspectedBy: "Quality Inspector Ramesh Kumar",
+    storeManager: "Store Mgr Dilip Joshi"
+  },
+  {
+    grnNo: "GRN-2026-089",
+    poNumber: "PO-2026-028",
+    vendorName: "Malwa Extrusions Pvt Ltd",
+    invoiceNo: "INV-ME-3190",
+    receivedDate: "2026-07-08 11:00 AM",
+    filmType: "White LD",
+    micron: 40,
+    widthMm: 980,
+    rollsReceived: 20,
+    netWeightKg: 3000,
+    purchaseRatePerKg: 120.00,
+    batchNo: "BATCH-WLD-441",
+    status: "Approved",
+    qcNotes: "Opacity 85%, seal strength excellent.",
+    inspectedBy: "Quality Inspector Ramesh Kumar",
+    storeManager: "Store Mgr Dilip Joshi"
+  },
+  {
+    grnNo: "GRN-2026-072",
+    poNumber: "PO-2026-019",
+    vendorName: "Cosmo Films India",
+    invoiceNo: "INV-CF-7714",
+    receivedDate: "2026-06-28 04:20 PM",
+    filmType: "Pearlised BOPP",
+    micron: 20,
+    widthMm: 800,
+    rollsReceived: 14,
+    netWeightKg: 2100,
+    purchaseRatePerKg: 160.00,
+    batchNo: "BATCH-PBOPP-71",
+    status: "Approved",
+    qcNotes: "Density 0.70 g/cc verified. Corona treatment 40 dynes.",
+    inspectedBy: "Quality Inspector Ramesh Kumar",
+    storeManager: "Store Mgr Dilip Joshi"
+  }
+];
+
+/**
+ * Seed Job Production Records & Material Consumption Trackers
+ */
+export const initialProductionRecords = [
+  {
+    id: "REC-2026-089",
+    orderId: "ORD-2026-089",
+    jobName: "Britannia Bourbon 250g Packaging",
+    clientName: "Britannia Industries Ltd",
+    dateFilled: "2026-07-24",
+    materialsList: [
+      { id: "MAT-1", filmType: "PET", micron: 12, widthMm: 1000, issueQtyKg: 400.0, returnQtyKg: 14.5, netConsumedQtyKg: 385.5, unitPricePerKg: 125.00, totalMaterialCost: 48187.50 },
+      { id: "MAT-2", filmType: "METPET", micron: 12, widthMm: 1000, issueQtyKg: 400.0, returnQtyKg: 12.0, netConsumedQtyKg: 388.0, unitPricePerKg: 140.00, totalMaterialCost: 54320.00 },
+      { id: "MAT-3", filmType: "Natural LD GP Film", micron: 35, widthMm: 1005, issueQtyKg: 850.0, returnQtyKg: 40.0, netConsumedQtyKg: 810.0, unitPricePerKg: 115.00, totalMaterialCost: 93150.00 },
+      { id: "MAT-4", filmType: "Liquid Inks & Solvents", micron: "-", widthMm: "-", issueQtyKg: 55.0, returnQtyKg: 3.0, netConsumedQtyKg: 52.0, unitPricePerKg: 1500.00, totalMaterialCost: 78000.00 },
+      { id: "MAT-5", filmType: "Solvent-less Adhesive", micron: "-", widthMm: "-", issueQtyKg: 48.0, returnQtyKg: 1.5, netConsumedQtyKg: 46.5, unitPricePerKg: 270.00, totalMaterialCost: 12555.00 }
+    ],
+    totalProductionQtyKg: 1635.5,
+    totalMaterialCostRs: 286212.50,
+    processingCostRs: 45000.00,
+    finalProductionCostRs: 331212.50,
+    status: "Filled by Plant Manager", // Options: 'Draft', 'Filled by Plant Manager', 'Approved by Admin'
+    filledBy: "Rajiv Malhotra (Plant Manager)",
+    approvedBy: "",
+    approvalDate: "",
+    notes: "Lamination trial completed cleanly. 67.5 kg net trimming waste within tolerance."
+  },
+  {
+    id: "REC-2026-090",
+    orderId: "ORD-2026-090",
+    jobName: "P&G Ariel Matic 1kg Pouch",
+    clientName: "Procter & Gamble",
+    dateFilled: "2026-07-22",
+    materialsList: [
+      { id: "MAT-1", filmType: "PET", micron: 12, widthMm: 1000, issueQtyKg: 240.0, returnQtyKg: 10.0, netConsumedQtyKg: 230.0, unitPricePerKg: 125.00, totalMaterialCost: 28750.00 },
+      { id: "MAT-2", filmType: "METPET", micron: 12, widthMm: 1000, issueQtyKg: 245.0, returnQtyKg: 13.0, netConsumedQtyKg: 232.0, unitPricePerKg: 140.00, totalMaterialCost: 32480.00 },
+      { id: "MAT-3", filmType: "Milky LD GP Film", micron: 40, widthMm: 1005, issueQtyKg: 580.0, returnQtyKg: 20.0, netConsumedQtyKg: 560.0, unitPricePerKg: 120.00, totalMaterialCost: 67200.00 },
+      { id: "MAT-4", filmType: "Liquid Inks & Solvents", micron: "-", widthMm: "-", issueQtyKg: 33.0, returnQtyKg: 2.0, netConsumedQtyKg: 31.0, unitPricePerKg: 1500.00, totalMaterialCost: 46500.00 }
+    ],
+    totalProductionQtyKg: 1053.0,
+    totalMaterialCostRs: 174930.00,
+    processingCostRs: 28000.00,
+    finalProductionCostRs: 202930.00,
+    status: "Approved by Admin", // Fully Approved!
+    filledBy: "Rajiv Malhotra (Plant Manager)",
+    approvedBy: "Samyak Jain (Admin)",
+    approvalDate: "2026-07-23 04:15 PM",
+    notes: "QC approved and ready for dispatch."
   }
 ];
 
@@ -637,3 +744,4 @@ export const isReconciliationDue = (currentDateString = "2026-07-24") => {
   const currentDay = date.getDate();
   return (lastDayOfMonth - currentDay) <= 1; // True on last 2 days
 };
+
