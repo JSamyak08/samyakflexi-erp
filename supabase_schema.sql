@@ -128,3 +128,34 @@ CREATE POLICY "Allow public read-write for grns" ON public.grns FOR ALL USING (t
 CREATE POLICY "Allow public read-write for cylinders" ON public.cylinders FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for production_records" ON public.production_records FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for users" ON public.users FOR ALL USING (true);
+
+-- 8. SUPABASE AUTH USER SYNC TRIGGER
+-- Automatically creates a record in public.users when a new user signs up via Supabase Auth
+CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.users (id, username, full_name, email, role, department, active)
+  VALUES (
+    NEW.id::text,
+    LOWER(NEW.email),
+    COALESCE(NEW.raw_user_meta_data->>'full_name', SPLIT_PART(NEW.email, '@', 1)),
+    NEW.email,
+    COALESCE(NEW.raw_user_meta_data->>'role', 'Admin'),
+    COALESCE(NEW.raw_user_meta_data->>'department', 'Executive Management'),
+    TRUE
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    email = EXCLUDED.email,
+    full_name = EXCLUDED.full_name,
+    role = EXCLUDED.role;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Trigger firing on auth.users insert
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_auth_user();
+

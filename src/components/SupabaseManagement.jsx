@@ -168,7 +168,18 @@ CREATE POLICY "Public full access" ON public.inventory FOR ALL USING (true);`;
           }`}
         >
           <FileCode className="w-4 h-4" />
-          SQL Database Schema
+          SQL Schema Script
+        </button>
+        <button
+          onClick={() => setActiveSubTab('auth')}
+          className={`pb-3 px-4 font-semibold text-sm transition-all border-b-2 flex items-center gap-2 ${
+            activeSubTab === 'auth'
+              ? 'border-emerald-500 text-emerald-400'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4" />
+          Supabase Auth & Roles
         </button>
       </div>
 
@@ -369,6 +380,81 @@ CREATE POLICY "Public full access" ON public.inventory FOR ALL USING (true);`;
           </pre>
         </div>
       )}
+
+      {/* SUBTAB 4: SUPABASE AUTH & ROLES */}
+      {activeSubTab === 'auth' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg space-y-6">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+            <div>
+              <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                Supabase Authentication & Role Sync
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Manage cloud authentication, user account creation, and PostgreSQL user profile syncing.
+              </p>
+            </div>
+            {isSupabaseConfigured() ? (
+              <span className="bg-emerald-950 text-emerald-400 border border-emerald-800 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4" /> Supabase Auth Connected
+              </span>
+            ) : (
+              <span className="bg-amber-950 text-amber-400 border border-amber-800 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5">
+                <AlertCircle className="w-4 h-4" /> Local Auth Active (Offline)
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-slate-950 p-5 rounded-xl border border-slate-800 space-y-3">
+              <h3 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                1. Enable Email / Password Provider
+              </h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                In your Supabase project dashboard, navigate to <strong>Authentication &rarr; Providers &rarr; Email</strong> and ensure <em>Enable Email Provider</em> is toggled <strong>ON</strong>.
+              </p>
+            </div>
+
+            <div className="bg-slate-950 p-5 rounded-xl border border-slate-800 space-y-3">
+              <h3 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                <Database className="w-4 h-4 text-indigo-400" />
+                2. User Sync Trigger
+              </h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                When users sign up or log in via Supabase Auth, the PostgreSQL trigger <code className="text-emerald-300">on_auth_user_created</code> automatically populates <code className="text-emerald-300">public.users</code> with their role and department metadata.
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-slate-950 p-5 rounded-xl border border-slate-800 space-y-3">
+            <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider">Automated User Sync Trigger SQL Snippet</h3>
+            <pre className="bg-slate-900 p-4 rounded-lg border border-slate-800 text-xs font-mono text-emerald-300 overflow-x-auto">
+{`CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.users (id, username, full_name, email, role, department, active)
+  VALUES (
+    NEW.id::text,
+    LOWER(NEW.email),
+    COALESCE(NEW.raw_user_meta_data->>'full_name', SPLIT_PART(NEW.email, '@', 1)),
+    NEW.email,
+    COALESCE(NEW.raw_user_meta_data->>'role', 'Admin'),
+    COALESCE(NEW.raw_user_meta_data->>'department', 'Executive Management'),
+    TRUE
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    email = EXCLUDED.email,
+    full_name = EXCLUDED.full_name,
+    role = EXCLUDED.role;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;`}
+            </pre>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

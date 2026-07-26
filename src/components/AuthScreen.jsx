@@ -11,12 +11,16 @@ import {
   KeyRound,
   ArrowLeft,
   CheckCircle2,
-  Send
+  Send,
+  Database
 } from 'lucide-react';
 import { requestPasswordRecovery } from '../services/emailService';
+import { signInUser, sendPasswordResetEmail } from '../services/authService';
+import { isSupabaseConfigured } from '../services/supabaseClient';
 
 export default function AuthScreen({ users = [], onLogin }) {
   const [viewMode, setViewMode] = useState('signin'); // 'signin', 'forgot_password', 'code_sent'
+  const isSupabaseActive = isSupabaseConfigured();
   
   // Login Form State
   const [email, setEmail] = useState('');
@@ -34,7 +38,7 @@ export default function AuthScreen({ users = [], onLogin }) {
   const [passwordResetDone, setPasswordResetDone] = useState(false);
 
   // Sign In Handler
-  const handleSignIn = (e) => {
+  const handleSignIn = async (e) => {
     e.preventDefault();
     setError('');
 
@@ -48,25 +52,14 @@ export default function AuthScreen({ users = [], onLogin }) {
     }
 
     setIsLoading(true);
-    setTimeout(() => {
-      // Find matching user by email
-      const matchedUser = users.find(
-        u => u.email.toLowerCase().trim() === email.toLowerCase().trim()
-      );
+    const response = await signInUser(email, password);
+    setIsLoading(false);
 
-      if (matchedUser) {
-        if (matchedUser.password && matchedUser.password !== password) {
-          setIsLoading(false);
-          setError('Invalid password. Please verify your credentials or click "Forgot Password?" to reset.');
-          return;
-        }
-        setIsLoading(false);
-        onLogin(matchedUser);
-      } else {
-        setIsLoading(false);
-        setError('No active user account found matching this email address.');
-      }
-    }, 300);
+    if (response.success && response.user) {
+      onLogin(response.user);
+    } else {
+      setError(response.message || 'Authentication failed.');
+    }
   };
 
   // Password Recovery Submit Handler
@@ -81,6 +74,18 @@ export default function AuthScreen({ users = [], onLogin }) {
     }
 
     setIsLoading(true);
+    
+    // Try Supabase Auth password reset if configured
+    if (isSupabaseActive) {
+      const supaResp = await sendPasswordResetEmail(recoveryEmail.trim());
+      if (supaResp.success) {
+        setIsLoading(false);
+        setRecoverySuccessMsg(supaResp.message || `Password recovery link sent via Supabase Auth.`);
+        return;
+      }
+    }
+
+    // Fallback to Hostinger SMTP email recovery
     const response = await requestPasswordRecovery(recoveryEmail.trim());
     setIsLoading(false);
 
@@ -89,9 +94,10 @@ export default function AuthScreen({ users = [], onLogin }) {
       setRecoverySuccessMsg(`Verification code sent to ${recoveryEmail}. Please check your inbox.`);
       setViewMode('code_sent');
     } else {
-      setError(response.message || 'Failed to dispatch recovery email via Hostinger SMTP.');
+      setError(response.message || 'Failed to dispatch recovery email.');
     }
   };
+
 
   // Verify OTP & Reset Password Handler
   const handleVerifyOtpAndReset = (e) => {
@@ -171,9 +177,21 @@ export default function AuthScreen({ users = [], onLogin }) {
           {viewMode === 'signin' && (
             <>
               <div className="auth-form-header">
-                <h3>Sign In to ERP System</h3>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <h3>Sign In to ERP System</h3>
+                  {isSupabaseActive ? (
+                    <span style={{ fontSize: '0.75rem', background: '#064e3b', color: '#34d399', border: '1px solid #059669', padding: '3px 8px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '600' }}>
+                      <Database size={12} /> Supabase Auth Connected
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: '0.75rem', background: '#1e293b', color: '#94a3b8', border: '1px solid #334155', padding: '3px 8px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      ⚡ Local Auth
+                    </span>
+                  )}
+                </div>
                 <p>Enter your authorized work email and password</p>
               </div>
+
 
               {recoverySuccessMsg && (
                 <div className="auth-success-alert">
