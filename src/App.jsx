@@ -25,7 +25,8 @@ import {
   ShieldCheck,
   UserCheck,
   LogOut,
-  ClipboardList
+  ClipboardList,
+  Database
 } from 'lucide-react';
 
 import AuthScreen from './components/AuthScreen';
@@ -37,10 +38,12 @@ import JobDataSheet from './components/JobDataSheet';
 import UserManagement from './components/UserManagement';
 import CylinderManagement from './components/CylinderManagement';
 import ProductionRecordManagement from './components/ProductionRecordManagement';
+import SupabaseManagement from './components/SupabaseManagement';
 import './index.css';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, job_punching, orders, vendors, inventory, job_datasheet, user_management, cylinders, production_records
+  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, job_punching, orders, vendors, inventory, job_datasheet, user_management, cylinders, production_records, supabase
+
 
   // Shared Global State
   const [orders, setOrders] = useState(initialOrders);
@@ -270,6 +273,14 @@ export default function App() {
             <Layers size={18} />
             Rotogravure Cylinders
           </div>
+
+          <div 
+            className={`nav-item ${activeTab === 'supabase' ? 'active' : ''}`}
+            onClick={() => setActiveTab('supabase')}
+          >
+            <Database size={18} style={{ color: '#10b981' }} />
+            Supabase Connection
+          </div>
         </div>
 
         {/* System Alert Status Footer */}
@@ -297,7 +308,9 @@ export default function App() {
               {activeTab === 'inventory' && 'Raw Material Inventory, GRN & Quality Control'}
               {activeTab === 'user_management' && 'Departmental User Management (RBAC)'}
               {activeTab === 'cylinders' && 'Rotogravure Cylinder Database'}
+              {activeTab === 'supabase' && 'Supabase Cloud Database & API Service'}
             </h1>
+
             <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
               Samyak International Ltd — Flexible Packaging Manufacturing OS
             </p>
@@ -567,7 +580,13 @@ export default function App() {
             onUpdateCylinder={handleUpdateCylinder}
           />
         )}
+
+        {/* TAB 9: SUPABASE DATABASE INTEGRATION */}
+        {activeTab === 'supabase' && (
+          <SupabaseManagement />
+        )}
       </div>
     </div>
   );
+
 }
