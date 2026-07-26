@@ -1,24 +1,49 @@
-import React from 'react';
-import { Printer, ArrowLeft } from 'lucide-react';
+import React, { useState } from 'react';
+import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
 import { COMPANY_DETAILS } from '../factoryStore';
 import { numberToWords, formatINR } from '../utils/pdfHelpers';
+import { getAuthorisedSignature, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 
 export default function PurchaseOrderPDF({ poData, onClose }) {
   if (!poData) return null;
 
+  const defaultPoNum = poData.poNumber || generateDocRefNumber('po');
+  const savedTerms = getDocumentTerms();
+  
+  const [currentPoNumber, setCurrentPoNumber] = useState(defaultPoNum);
+  const [isEditingRef, setIsEditingRef] = useState(false);
+  const [currentPaymentTerms, setCurrentPaymentTerms] = useState(poData.paymentTerms || savedTerms.paymentTerms || "60 Days");
+  const [currentTerms, setCurrentTerms] = useState(savedTerms.poTerms || []);
+  
+  const signatureImage = getAuthorisedSignature();
+
   const {
-    poNumber = "SIL/PO/26-27/246",
     poDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
     deliveryDate = "24/07/2026",
     ocDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
     indentDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
     indentNumber = "IND/107",
     amendmentNo = "0",
-    paymentTerms = "60 Days",
     logisticDetails = "Freight Included within Indore",
     vendor = {},
     items = []
   } = poData;
+
+  const handleUpdateTerm = (index, value) => {
+    const updated = [...currentTerms];
+    updated[index] = value;
+    setCurrentTerms(updated);
+  };
+
+  const handleAddTerm = () => {
+    setCurrentTerms(prev => [...prev, "New term condition..."]);
+  };
+
+  const handleRemoveTerm = (index) => {
+    setCurrentTerms(prev => prev.filter((_, i) => i !== index));
+  };
+
+
 
   // Standard sample items if empty
   const poItems = items && items.length > 0 ? items : [
@@ -148,9 +173,30 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
             </div>
             <div className="letterhead-doc-title">
               <h2>Purchase Order</h2>
-              <div className="doc-ref-no">{poNumber}</div>
+              <div className="doc-ref-no" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+                {isEditingRef ? (
+                  <input
+                    type="text"
+                    value={currentPoNumber}
+                    onChange={(e) => setCurrentPoNumber(e.target.value)}
+                    onBlur={() => setIsEditingRef(false)}
+                    autoFocus
+                    style={{ fontSize: '13px', fontWeight: 'bold', border: '1px solid #2563eb', padding: '2px 6px', borderRadius: '4px', textAlign: 'right' }}
+                  />
+                ) : (
+                  <span 
+                    onClick={() => setIsEditingRef(true)}
+                    title="Click to edit reference number"
+                    style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    {currentPoNumber}
+                    <Edit3 size={12} className="no-print" style={{ opacity: 0.6, color: '#2563eb' }} />
+                  </span>
+                )}
+              </div>
             </div>
           </div>
+
 
 
           {/* 3-Column Address Grid */}
@@ -221,10 +267,19 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
                 </tr>
                 <tr>
                   <td className="label-col">Payment Terms</td>
-                  <td className="value-col">{paymentTerms}</td>
+                  <td className="value-col">
+                    <input
+                      type="text"
+                      value={currentPaymentTerms}
+                      onChange={(e) => setCurrentPaymentTerms(e.target.value)}
+                      className="no-border-print"
+                      style={{ width: '100%', background: 'transparent', border: 'none', fontWeight: '600', fontSize: '10px' }}
+                    />
+                  </td>
                   <td className="label-col">Indent Number</td>
                   <td className="value-col">{indentNumber}</td>
                 </tr>
+
                 <tr>
                   <td className="label-col">Logistic Details</td>
                   <td className="value-col" colSpan="3">{logisticDetails}</td>
@@ -360,22 +415,57 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
 
           {/* Terms & Conditions */}
           <div className="letterhead-terms-box">
-            <h4>Terms And Conditions:</h4>
+            <div style={{ display: 'flex', items: 'center', justify: 'space-between', marginBottom: '4px' }}>
+              <h4 style={{ margin: 0 }}>Terms And Conditions:</h4>
+              <button 
+                type="button" 
+                onClick={handleAddTerm}
+                className="no-print"
+                style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: '10px', cursor: 'pointer', fontWeight: 'bold' }}
+              >
+                + Add Bullet
+              </button>
+            </div>
             <ul>
-              <li>Solid Content of the ordered Inks shall be within the range mentioned in the TDS provided. Material not within the range shall be returned to the vendor.</li>
-              <li>Any material not clearing the Quality Control parameters shall be returned to the vendor.</li>
-              <li>All Item Codes of the supply shall be checked and sent. Any corrections in Item Codes shall be informed prior to dispatch by the vendor.</li>
+              {currentTerms.map((term, idx) => (
+                <li key={idx} style={{ marginBottom: '2px' }}>
+                  <div style={{ display: 'flex', items: 'flex-start', gap: '4px' }}>
+                    <input
+                      type="text"
+                      value={term}
+                      onChange={(e) => handleUpdateTerm(idx, e.target.value)}
+                      className="no-border-print"
+                      style={{ width: '100%', background: 'transparent', border: 'none', fontSize: '9.5px', color: '#1f2937' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveTerm(idx)}
+                      className="no-print"
+                      style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '10px' }}
+                      title="Remove term bullet"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </li>
+              ))}
             </ul>
           </div>
+
 
           {/* Authorised Signatory */}
           <div className="letterhead-signatory-block">
             <div style={{ fontWeight: 'bold' }}>For {COMPANY_DETAILS.name}</div>
-            <div style={{ height: '30px', display: 'flex', alignItems: 'center', fontStyle: 'italic', fontFamily: 'serif', fontSize: '16px', fontWeight: 'bold' }}>
-              Sy
+            <div style={{ height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {signatureImage ? (
+                <img src={signatureImage} alt="Authorised Signature" style={{ maxHeight: '38px', objectFit: 'contain' }} />
+              ) : (
+                <span style={{ fontStyle: 'italic', fontFamily: 'serif', fontSize: '18px', fontWeight: 'bold' }}>Sy</span>
+              )}
             </div>
             <div style={{ fontSize: '9px', fontWeight: 'bold' }}>Authorised Signatory</div>
           </div>
+
         </div>
       </div>
     </div>

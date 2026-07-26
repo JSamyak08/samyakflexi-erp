@@ -1,13 +1,36 @@
-import React from 'react';
-import { Printer, ArrowLeft } from 'lucide-react';
+import React, { useState } from 'react';
+import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
 import { COMPANY_DETAILS } from '../factoryStore';
 import { numberToWords, formatINR } from '../utils/pdfHelpers';
+import { getAuthorisedSignature, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 
 export default function GRNPDF({ grnData, onClose }) {
   if (!grnData) return null;
 
+  const defaultGrnNo = grnData.grnNo || generateDocRefNumber('grn');
+  const savedTerms = getDocumentTerms();
+
+  const [currentGrnNo, setCurrentGrnNo] = useState(defaultGrnNo);
+  const [isEditingRef, setIsEditingRef] = useState(false);
+  const [currentGrnTerms, setCurrentGrnTerms] = useState(savedTerms.grnTerms || []);
+  const signatureImage = getAuthorisedSignature();
+
+  const handleUpdateTerm = (index, value) => {
+    const updated = [...currentGrnTerms];
+    updated[index] = value;
+    setCurrentGrnTerms(updated);
+  };
+
+  const handleAddTerm = () => {
+    setCurrentGrnTerms(prev => [...prev, "New QC observation term..."]);
+  };
+
+  const handleRemoveTerm = (index) => {
+    setCurrentGrnTerms(prev => prev.filter((_, i) => i !== index));
+  };
+
+
   const {
-    grnNo = "SIL/GRN/26-27/104",
     poNumber = "SIL/PO/26-27/042",
     vendorName = "FlexiPoly Films Ltd",
     invoiceNo = "INV-FP-9904",
@@ -24,6 +47,7 @@ export default function GRNPDF({ grnData, onClose }) {
     inspectedBy = "Ramesh Kumar (Quality Chemist)",
     storeManager = "Dilip Joshi (Store Inward Manager)"
   } = grnData;
+
 
   const totalTaxable = netWeightKg * unitPrice;
   const cgstAmt = totalTaxable * 0.09;
@@ -65,9 +89,30 @@ export default function GRNPDF({ grnData, onClose }) {
             </div>
             <div className="letterhead-doc-title">
               <h2>Goods Receipt Note</h2>
-              <div className="doc-ref-no">{grnNo}</div>
+              <div className="doc-ref-no" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+                {isEditingRef ? (
+                  <input
+                    type="text"
+                    value={currentGrnNo}
+                    onChange={(e) => setCurrentGrnNo(e.target.value)}
+                    onBlur={() => setIsEditingRef(false)}
+                    autoFocus
+                    style={{ fontSize: '13px', fontWeight: 'bold', border: '1px solid #2563eb', padding: '2px 6px', borderRadius: '4px', textAlign: 'right' }}
+                  />
+                ) : (
+                  <span 
+                    onClick={() => setIsEditingRef(true)}
+                    title="Click to edit reference number"
+                    style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    {currentGrnNo}
+                    <Edit3 size={12} className="no-print" style={{ opacity: 0.6, color: '#2563eb' }} />
+                  </span>
+                )}
+              </div>
             </div>
           </div>
+
 
 
           {/* 3-Column Address Grid */}
@@ -247,22 +292,60 @@ export default function GRNPDF({ grnData, onClose }) {
 
           {/* QC Inspection & Terms */}
           <div className="letterhead-terms-box">
-            <h4>Quality Control (QC) & Inward Inspection Report:</h4>
+            <div style={{ display: 'flex', items: 'center', justify: 'space-between', marginBottom: '4px' }}>
+              <h4 style={{ margin: 0 }}>Quality Control (QC) & Inward Inspection Report:</h4>
+              <button 
+                type="button" 
+                onClick={handleAddTerm}
+                className="no-print"
+                style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: '10px', cursor: 'pointer', fontWeight: 'bold' }}
+              >
+                + Add Bullet
+              </button>
+            </div>
             <ul>
-              <li><b>QC Observations:</b> {qcNotes}</li>
-              <li>Material verified for micron gauge tolerance (±3%), dyne level (&ge;38 dynes/cm), and slit width accuracy.</li>
-              <li>Stock updated in Factory Inventory store under inward batch reference {batchNo}.</li>
+              <li style={{ marginBottom: '2px' }}>
+                <b>QC Observations:</b> {qcNotes}
+              </li>
+              {currentGrnTerms.map((term, idx) => (
+                <li key={idx} style={{ marginBottom: '2px' }}>
+                  <div style={{ display: 'flex', items: 'flex-start', gap: '4px' }}>
+                    <input
+                      type="text"
+                      value={term}
+                      onChange={(e) => handleUpdateTerm(idx, e.target.value)}
+                      className="no-border-print"
+                      style={{ width: '100%', background: 'transparent', border: 'none', fontSize: '9.5px', color: '#1f2937' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveTerm(idx)}
+                      className="no-print"
+                      style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '10px' }}
+                      title="Remove term bullet"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </li>
+              ))}
             </ul>
           </div>
+
 
           {/* Authorised Signatory */}
           <div className="letterhead-signatory-block">
             <div style={{ fontWeight: 'bold' }}>For {COMPANY_DETAILS.name}</div>
-            <div style={{ height: '30px', display: 'flex', alignItems: 'center', fontStyle: 'italic', fontFamily: 'serif', fontSize: '16px', fontWeight: 'bold' }}>
-              Sy
+            <div style={{ height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {signatureImage ? (
+                <img src={signatureImage} alt="Authorised Signature" style={{ maxHeight: '38px', objectFit: 'contain' }} />
+              ) : (
+                <span style={{ fontStyle: 'italic', fontFamily: 'serif', fontSize: '18px', fontWeight: 'bold' }}>Sy</span>
+              )}
             </div>
             <div style={{ fontSize: '9px', fontWeight: 'bold' }}>Authorised Signatory</div>
           </div>
+
         </div>
       </div>
     </div>

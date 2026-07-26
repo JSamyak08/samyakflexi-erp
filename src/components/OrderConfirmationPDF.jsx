@@ -1,12 +1,35 @@
 import React, { useState } from 'react';
-import { Printer, ArrowLeft } from 'lucide-react';
+import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
 import { COMPANY_DETAILS } from '../factoryStore';
 import { numberToWords, formatINR } from '../utils/pdfHelpers';
+import { getAuthorisedSignature, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 
 export default function OrderConfirmationPDF({ calculationData, onClose }) {
-  const [docRef] = useState(() => `SIL/OCN/26-27/${Math.floor(100 + (Date.now() % 900))}`);
+  const defaultDocRef = generateDocRefNumber('ocn');
+  const savedTerms = getDocumentTerms();
+
+  const [docRef, setDocRef] = useState(defaultDocRef);
+  const [isEditingRef, setIsEditingRef] = useState(false);
+  const [currentOcnTerms, setCurrentOcnTerms] = useState(savedTerms.ocnTerms || []);
+  const signatureImage = getAuthorisedSignature();
 
   if (!calculationData) return null;
+
+  const handleUpdateTerm = (index, value) => {
+    const updated = [...currentOcnTerms];
+    updated[index] = value;
+    setCurrentOcnTerms(updated);
+  };
+
+  const handleAddTerm = () => {
+    setCurrentOcnTerms(prev => [...prev, "New store instruction..."]);
+  };
+
+  const handleRemoveTerm = (index) => {
+    setCurrentOcnTerms(prev => prev.filter((_, i) => i !== index));
+  };
+
+
 
   const {
     jobName = "Britannia Bourbon 250g",
@@ -70,9 +93,30 @@ export default function OrderConfirmationPDF({ calculationData, onClose }) {
             </div>
             <div className="letterhead-doc-title">
               <h2>Order Confirmation Note</h2>
-              <div className="doc-ref-no">{docRef}</div>
+              <div className="doc-ref-no" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+                {isEditingRef ? (
+                  <input
+                    type="text"
+                    value={docRef}
+                    onChange={(e) => setDocRef(e.target.value)}
+                    onBlur={() => setIsEditingRef(false)}
+                    autoFocus
+                    style={{ fontSize: '13px', fontWeight: 'bold', border: '1px solid #2563eb', padding: '2px 6px', borderRadius: '4px', textAlign: 'right' }}
+                  />
+                ) : (
+                  <span 
+                    onClick={() => setIsEditingRef(true)}
+                    title="Click to edit reference number"
+                    style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    {docRef}
+                    <Edit3 size={12} className="no-print" style={{ opacity: 0.6, color: '#2563eb' }} />
+                  </span>
+                )}
+              </div>
             </div>
           </div>
+
 
 
           {/* 3-Column Address Grid */}
@@ -288,22 +332,57 @@ export default function OrderConfirmationPDF({ calculationData, onClose }) {
 
           {/* Terms & Instructions */}
           <div className="letterhead-terms-box">
-            <h4>Store & Purchase Department Instructions:</h4>
+            <div style={{ display: 'flex', items: 'center', justify: 'space-between', marginBottom: '4px' }}>
+              <h4 style={{ margin: 0 }}>Store & Purchase Department Instructions:</h4>
+              <button 
+                type="button" 
+                onClick={handleAddTerm}
+                className="no-print"
+                style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: '10px', cursor: 'pointer', fontWeight: 'bold' }}
+              >
+                + Add Bullet
+              </button>
+            </div>
             <ul>
-              <li>Issue Purchase Orders (POs) immediately for the gross raw material quantities listed above.</li>
-              <li>Verify available store stock before releasing new purchase requisitions.</li>
-              <li>Ensure all material specifications strictly comply with corona treatment, micron gauge, and dyne requirements.</li>
+              {currentOcnTerms.map((term, idx) => (
+                <li key={idx} style={{ marginBottom: '2px' }}>
+                  <div style={{ display: 'flex', items: 'flex-start', gap: '4px' }}>
+                    <input
+                      type="text"
+                      value={term}
+                      onChange={(e) => handleUpdateTerm(idx, e.target.value)}
+                      className="no-border-print"
+                      style={{ width: '100%', background: 'transparent', border: 'none', fontSize: '9.5px', color: '#1f2937' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveTerm(idx)}
+                      className="no-print"
+                      style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '10px' }}
+                      title="Remove term bullet"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </li>
+              ))}
             </ul>
           </div>
+
 
           {/* Authorised Signatory */}
           <div className="letterhead-signatory-block">
             <div style={{ fontWeight: 'bold' }}>For {COMPANY_DETAILS.name}</div>
-            <div style={{ height: '30px', display: 'flex', alignItems: 'center', fontStyle: 'italic', fontFamily: 'serif', fontSize: '16px', fontWeight: 'bold' }}>
-              Sy
+            <div style={{ height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {signatureImage ? (
+                <img src={signatureImage} alt="Authorised Signature" style={{ maxHeight: '38px', objectFit: 'contain' }} />
+              ) : (
+                <span style={{ fontStyle: 'italic', fontFamily: 'serif', fontSize: '18px', fontWeight: 'bold' }}>Sy</span>
+              )}
             </div>
             <div style={{ fontSize: '9px', fontWeight: 'bold' }}>Authorised Signatory</div>
           </div>
+
         </div>
       </div>
     </div>

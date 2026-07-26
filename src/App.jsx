@@ -22,11 +22,10 @@ import {
   FileSpreadsheet,
   Users,
   Bell,
-  ShieldCheck,
-  UserCheck,
   LogOut,
   ClipboardList,
-  Database
+  Database,
+  Settings as SettingsIcon
 } from 'lucide-react';
 
 import AuthScreen from './components/AuthScreen';
@@ -39,10 +38,12 @@ import UserManagement from './components/UserManagement';
 import CylinderManagement from './components/CylinderManagement';
 import ProductionRecordManagement from './components/ProductionRecordManagement';
 import SupabaseManagement from './components/SupabaseManagement';
+import DocumentSettings from './components/DocumentSettings';
 import './index.css';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, job_punching, orders, vendors, inventory, job_datasheet, user_management, cylinders, production_records, supabase
+  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, job_punching, orders, vendors, inventory, job_datasheet, user_management, cylinders, production_records, supabase, doc_settings
+
 
 
   // Shared Global State
@@ -281,6 +282,14 @@ export default function App() {
             <Database size={18} style={{ color: '#10b981' }} />
             Supabase Connection
           </div>
+
+          <div 
+            className={`nav-item ${activeTab === 'doc_settings' ? 'active' : ''}`}
+            onClick={() => setActiveTab('doc_settings')}
+          >
+            <SettingsIcon size={18} style={{ color: '#6366f1' }} />
+            Letterhead & Signature Settings
+          </div>
         </div>
 
         {/* System Alert Status Footer */}
@@ -309,7 +318,9 @@ export default function App() {
               {activeTab === 'user_management' && 'Departmental User Management (RBAC)'}
               {activeTab === 'cylinders' && 'Rotogravure Cylinder Database'}
               {activeTab === 'supabase' && 'Supabase Cloud Database & API Service'}
+              {activeTab === 'doc_settings' && 'Letterhead Signature & Series Settings'}
             </h1>
+
 
             <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
               Samyak International Ltd — Flexible Packaging Manufacturing OS
