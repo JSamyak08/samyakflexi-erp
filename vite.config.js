@@ -3,8 +3,10 @@ import react from '@vitejs/plugin-react'
 
 // https://vite.dev/config/
 export default defineConfig({
+  appType: 'spa',
   plugins: [react()],
   server: {
+    historyApiFallback: true,
     proxy: {
       '/api': {
         target: 'http://localhost:5000',
@@ -12,6 +14,8 @@ export default defineConfig({
         secure: false,
       }
     }
+  },
+  preview: {
+    historyApiFallback: true
   }
 })
-

@@ -1,6 +1,6 @@
 /**
  * Slug Router Utility for Samyak Flexi-ERP
- * Manages clean URL slug paths throughout the app
+ * Manages clean URL slug paths throughout the app with zero-404 fallback support
  */
 
 export const TAB_SLUG_MAP = {
@@ -21,32 +21,62 @@ export const SLUG_TAB_MAP = {
   '/': 'dashboard',
   '': 'dashboard',
   '/index.html': 'dashboard',
+  
   '/dashboard': 'dashboard',
+  'dashboard': 'dashboard',
+
   '/production-records': 'production_records',
+  'production-records': 'production_records',
+
   '/job-punching': 'job_punching',
+  'job-punching': 'job_punching',
+
   '/orders': 'orders',
+  'orders': 'orders',
+
   '/job-datasheet': 'job_datasheet',
+  'job-datasheet': 'job_datasheet',
+
   '/vendors': 'vendors',
+  'vendors': 'vendors',
+
   '/inventory': 'inventory',
+  'inventory': 'inventory',
+
   '/user-management': 'user_management',
+  'user-management': 'user_management',
+
   '/rotogravure-cylinders': 'cylinders',
+  'rotogravure-cylinders': 'cylinders',
+
   '/supabase-integration': 'supabase',
-  '/letterhead-settings': 'doc_settings'
+  'supabase-integration': 'supabase',
+
+  '/letterhead-settings': 'doc_settings',
+  'letterhead-settings': 'doc_settings'
 };
 
 /**
- * Get active tab key from current URL path or hash
+ * Get active tab key from current URL path, hash or query string
  */
 export function getTabFromUrl() {
   try {
+    // 1. Check Query Params e.g. ?tab=orders or ?page=orders
+    const searchParams = new URLSearchParams(window.location.search);
+    const paramTab = searchParams.get('tab') || searchParams.get('page') || searchParams.get('p');
+    if (paramTab && SLUG_TAB_MAP[paramTab]) {
+      return SLUG_TAB_MAP[paramTab];
+    }
+
+    // 2. Check Hash e.g. #/orders or #orders
+    const rawHash = window.location.hash ? window.location.hash.replace(/^#\/?/, '') : '';
+    if (rawHash && SLUG_TAB_MAP[rawHash]) {
+      return SLUG_TAB_MAP[rawHash];
+    }
+
+    // 3. Check Pathname e.g. /orders or /job-punching
     const rawPath = window.location.pathname ? window.location.pathname.toLowerCase() : '/';
     const path = rawPath.length > 1 ? rawPath.replace(/\/$/, '') : rawPath;
-    const hash = window.location.hash ? window.location.hash.replace('#', '').toLowerCase() : '';
-
-    if (hash && SLUG_TAB_MAP[hash]) {
-      return SLUG_TAB_MAP[hash];
-    }
-    
     if (SLUG_TAB_MAP[path]) {
       return SLUG_TAB_MAP[path];
     }

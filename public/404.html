@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Samyak Flexi-ERP Routing</title>
+    <script type="text/javascript">
+      // SPA 404 Fallback Redirect Script
+      var l = window.location;
+      var path = l.pathname.replace(/\/$/, '');
+      l.replace(
+        l.protocol + '//' + l.host + '/?p=' + encodeURIComponent(path) + (l.hash ? '&h=' + encodeURIComponent(l.hash) : '')
+      );
+    </script>
+  </head>
+  <body>
+    <p>Redirecting to Samyak Flexi-ERP dashboard...</p>
+  </body>
+</html>
