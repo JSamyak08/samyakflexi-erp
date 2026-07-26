@@ -20,6 +20,7 @@ import {
   saveSupabaseCredentials, 
   clearSupabaseCredentials 
 } from '../services/supabaseClient';
+import { seedAllDataToSupabase } from '../services/supabaseDataService';
 
 export default function SupabaseManagement() {
   const [urlInput, setUrlInput] = useState(() => {
@@ -30,12 +31,23 @@ export default function SupabaseManagement() {
   });
 
   const [loading, setLoading] = useState(false);
+  const [seeding, setSeeding] = useState(false);
+  const [seedResult, setSeedResult] = useState(null);
   const [connectionState, setConnectionState] = useState({
     checked: false,
     connected: false,
     message: '',
     error: null
   });
+
+  const handleSeedData = async () => {
+    setSeeding(true);
+    setSeedResult(null);
+    const res = await seedAllDataToSupabase();
+    setSeeding(false);
+    setSeedResult(res);
+  };
+
   
   const [copied, setCopied] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState('status'); // 'status', 'config', 'schema'
@@ -132,8 +144,29 @@ CREATE POLICY "Public full access" ON public.inventory FOR ALL USING (true);`;
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             {loading ? 'Testing Connection...' : 'Test Connection'}
           </button>
+
+          <button
+            onClick={handleSeedData}
+            disabled={seeding || !isSupabaseConfigured()}
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-medium transition-all shadow-md disabled:opacity-50"
+            title="Upload all initial factory data to Supabase database"
+          >
+            <Database className={`w-4 h-4 ${seeding ? 'animate-bounce' : ''}`} />
+            {seeding ? 'Syncing All Tables...' : 'Push Seed Data to Supabase'}
+          </button>
         </div>
       </div>
+
+      {seedResult && (
+        <div className={`p-4 rounded-xl border flex items-center justify-between ${seedResult.success ? 'bg-emerald-950/80 border-emerald-800 text-emerald-300' : 'bg-rose-950/80 border-rose-800 text-rose-300'}`}>
+          <div className="flex items-center gap-3">
+            {seedResult.success ? <CheckCircle2 className="w-5 h-5 text-emerald-400" /> : <AlertCircle className="w-5 h-5 text-rose-400" />}
+            <span className="text-sm font-medium">{seedResult.message}</span>
+          </div>
+          <button onClick={() => setSeedResult(null)} className="text-xs opacity-70 hover:opacity-100">Dismiss</button>
+        </div>
+      )}
+
 
       {/* Tabs */}
       <div className="flex border-b border-slate-700 gap-2">

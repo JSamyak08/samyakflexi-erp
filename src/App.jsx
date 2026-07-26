@@ -41,6 +41,16 @@ import ProductionRecordManagement from './components/ProductionRecordManagement'
 import SupabaseManagement from './components/SupabaseManagement';
 import DocumentSettings from './components/DocumentSettings';
 import { getTabFromUrl, pushSlugState } from './utils/slugRouter';
+import { isSupabaseConfigured } from './services/supabaseClient';
+import { 
+  fetchOrders, saveOrderToSupabase, deleteOrderFromSupabase,
+  fetchVendors, saveVendorToSupabase, deleteVendorFromSupabase,
+  fetchInventory, saveInventoryItemToSupabase, deleteInventoryItemFromSupabase,
+  fetchGRNs, saveGRNToSupabase,
+  fetchCylinders, saveCylinderToSupabase,
+  fetchProductionRecords, saveProductionRecordToSupabase,
+  fetchUsers, saveUserToSupabase
+} from './services/supabaseDataService';
 import './index.css';
 
 export default function App() {
@@ -67,9 +77,6 @@ export default function App() {
     pushSlugState(activeTab);
   }, []);
 
-
-
-
   // Shared Global State
   const [orders, setOrders] = useState(initialOrders);
   const [vendors, setVendors] = useState(initialVendors);
@@ -79,6 +86,37 @@ export default function App() {
   const [, setJobDataSheets] = useState(initialJobDataSheets);
   const [cylinders, setCylinders] = useState(initialCylinders);
   const [productionRecords, setProductionRecords] = useState(initialProductionRecords);
+
+  // Load live data from Supabase PostgreSQL if configured
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+
+    async function loadSupabaseData() {
+      try {
+        const [supaOrders, supaVendors, supaInv, supaGRNs, supaCyls, supaProd, supaUsers] = await Promise.all([
+          fetchOrders(),
+          fetchVendors(),
+          fetchInventory(),
+          fetchGRNs(),
+          fetchCylinders(),
+          fetchProductionRecords(),
+          fetchUsers()
+        ]);
+
+        if (supaOrders) setOrders(supaOrders);
+        if (supaVendors) setVendors(supaVendors);
+        if (supaInv) setInventory(supaInv);
+        if (supaGRNs) setGrns(supaGRNs);
+        if (supaCyls) setCylinders(supaCyls);
+        if (supaProd) setProductionRecords(supaProd);
+        if (supaUsers) setUsers(supaUsers);
+      } catch (err) {
+        console.error("Failed to load data from Supabase:", err);
+      }
+    }
+
+    loadSupabaseData();
+  }, []);
 
   // Authentication & Active User Session State
   const [currentUser, setCurrentUser] = useState(() => {
@@ -124,17 +162,20 @@ export default function App() {
   // Handlers for Production Records
   const handleSaveProductionRecord = (newRecord) => {
     setProductionRecords(prev => [newRecord, ...prev.filter(r => r.orderId !== newRecord.orderId)]);
+    saveProductionRecordToSupabase(newRecord);
   };
 
   const handleApproveProductionRecord = (recordId, adminName) => {
     setProductionRecords(prev => prev.map(r => {
       if (r.id === recordId) {
-        return {
+        const updated = {
           ...r,
           status: 'Approved by Admin',
           approvedBy: adminName,
           approvalDate: new Date().toLocaleString()
         };
+        saveProductionRecordToSupabase(updated);
+        return updated;
       }
       return r;
     }));
@@ -143,41 +184,53 @@ export default function App() {
   // Handlers for state updates
   const handleAddOrder = (newOrder) => {
     setOrders(prev => [newOrder, ...prev]);
+    saveOrderToSupabase(newOrder);
   };
 
   const handleUpdateOrder = (updatedOrder) => {
     setOrders(prev => prev.map(o => o.id === updatedOrder.id ? updatedOrder : o));
+    saveOrderToSupabase(updatedOrder);
   };
 
   const handleDeleteOrder = (orderId) => {
     setOrders(prev => prev.filter(o => o.id !== orderId));
+    deleteOrderFromSupabase(orderId);
   };
 
   const handleAddVendor = (newVendor) => {
     setVendors(prev => [...prev, newVendor]);
+    saveVendorToSupabase(newVendor);
   };
 
   const handleAddGRN = (newGRN) => {
     setGrns(prev => [newGRN, ...prev]);
+    saveGRNToSupabase(newGRN);
   };
 
   const handleUpdateGRN = (updatedGRN) => {
     setGrns(prev => prev.map(g => g.grnNo === updatedGRN.grnNo ? updatedGRN : g));
+    saveGRNToSupabase(updatedGRN);
   };
 
   const handleUpdateInventory = (newInventory) => {
     setInventory(newInventory);
+    if (Array.isArray(newInventory)) {
+      newInventory.forEach(item => saveInventoryItemToSupabase(item));
+    }
   };
 
   const handleAddUser = (newUser) => {
     setUsers(prev => [...prev, newUser]);
+    saveUserToSupabase(newUser);
   };
 
   const handleUpdateUser = (updatedUser) => {
     setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+    saveUserToSupabase(updatedUser);
   };
 
   const handleDeleteUser = (userId) => {
+
     setUsers(prev => prev.filter(u => u.id !== userId));
   };
 
