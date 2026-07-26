@@ -39,10 +39,33 @@ import CylinderManagement from './components/CylinderManagement';
 import ProductionRecordManagement from './components/ProductionRecordManagement';
 import SupabaseManagement from './components/SupabaseManagement';
 import DocumentSettings from './components/DocumentSettings';
+import { getTabFromUrl, pushSlugState } from './utils/slugRouter';
 import './index.css';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, job_punching, orders, vendors, inventory, job_datasheet, user_management, cylinders, production_records, supabase, doc_settings
+  const [activeTab, setActiveTab] = useState(() => getTabFromUrl());
+
+  const handleTabChange = (tabKey) => {
+    setActiveTab(tabKey);
+    pushSlugState(tabKey);
+  };
+
+  // Sync state when user uses browser Back / Forward buttons
+  useEffect(() => {
+    const handlePopState = () => {
+      const currentTab = getTabFromUrl();
+      setActiveTab(currentTab);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Sync initial URL path if opened directly at root or deep link
+  useEffect(() => {
+    pushSlugState(activeTab);
+  }, []);
+
 
 
 
@@ -190,7 +213,7 @@ export default function App() {
         <div className="nav-links">
           <div 
             className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
-            onClick={() => setActiveTab('dashboard')}
+            onClick={() => handleTabChange('dashboard')}
           >
             <LayoutDashboard size={18} />
             Executive Dashboard
@@ -198,7 +221,7 @@ export default function App() {
 
           <div 
             className={`nav-item ${activeTab === 'production_records' ? 'active' : ''}`}
-            onClick={() => setActiveTab('production_records')}
+            onClick={() => handleTabChange('production_records')}
           >
             <ClipboardList size={18} />
             Production Records
@@ -211,7 +234,7 @@ export default function App() {
 
           <div 
             className={`nav-item ${activeTab === 'job_punching' ? 'active' : ''}`}
-            onClick={() => setActiveTab('job_punching')}
+            onClick={() => handleTabChange('job_punching')}
           >
             <Calculator size={18} />
             Job Punching & Costing
@@ -219,7 +242,7 @@ export default function App() {
 
           <div 
             className={`nav-item ${activeTab === 'orders' ? 'active' : ''}`}
-            onClick={() => setActiveTab('orders')}
+            onClick={() => handleTabChange('orders')}
           >
             <ShoppingBag size={18} />
             Order Management & POs
@@ -232,7 +255,7 @@ export default function App() {
 
           <div 
             className={`nav-item ${activeTab === 'job_datasheet' ? 'active' : ''}`}
-            onClick={() => setActiveTab('job_datasheet')}
+            onClick={() => handleTabChange('job_datasheet')}
           >
             <FileSpreadsheet size={18} />
             Job Data Sheet & Profitability
@@ -240,7 +263,7 @@ export default function App() {
 
           <div 
             className={`nav-item ${activeTab === 'vendors' ? 'active' : ''}`}
-            onClick={() => setActiveTab('vendors')}
+            onClick={() => handleTabChange('vendors')}
           >
             <Building2 size={18} />
             Vendor Onboarding ({vendors.length})
@@ -248,7 +271,7 @@ export default function App() {
 
           <div 
             className={`nav-item ${activeTab === 'inventory' ? 'active' : ''}`}
-            onClick={() => setActiveTab('inventory')}
+            onClick={() => handleTabChange('inventory')}
           >
             <Package size={18} />
             Inventory, GRN & QC
@@ -261,7 +284,7 @@ export default function App() {
 
           <div 
             className={`nav-item ${activeTab === 'user_management' ? 'active' : ''}`}
-            onClick={() => setActiveTab('user_management')}
+            onClick={() => handleTabChange('user_management')}
           >
             <Users size={18} />
             User Management (RBAC)
@@ -269,7 +292,7 @@ export default function App() {
 
           <div 
             className={`nav-item ${activeTab === 'cylinders' ? 'active' : ''}`}
-            onClick={() => setActiveTab('cylinders')}
+            onClick={() => handleTabChange('cylinders')}
           >
             <Layers size={18} />
             Rotogravure Cylinders
@@ -277,7 +300,7 @@ export default function App() {
 
           <div 
             className={`nav-item ${activeTab === 'supabase' ? 'active' : ''}`}
-            onClick={() => setActiveTab('supabase')}
+            onClick={() => handleTabChange('supabase')}
           >
             <Database size={18} style={{ color: '#10b981' }} />
             Supabase Connection
@@ -285,12 +308,13 @@ export default function App() {
 
           <div 
             className={`nav-item ${activeTab === 'doc_settings' ? 'active' : ''}`}
-            onClick={() => setActiveTab('doc_settings')}
+            onClick={() => handleTabChange('doc_settings')}
           >
             <SettingsIcon size={18} style={{ color: '#6366f1' }} />
             Letterhead & Signature Settings
           </div>
         </div>
+
 
         {/* System Alert Status Footer */}
         <div style={{ marginTop: 'auto', background: '#f8fafc', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.8rem' }}>
@@ -361,7 +385,7 @@ export default function App() {
             </button>
 
             {activeTab !== 'job_punching' && (
-              <button className="btn-primary" onClick={() => setActiveTab('job_punching')}>
+              <button className="btn-primary" onClick={() => handleTabChange('job_punching')}>
                 <Calculator size={18} /> Punch New Order
               </button>
             )}
@@ -397,7 +421,7 @@ export default function App() {
                     </p>
                   </div>
                 </div>
-                <button className="btn-danger-action" onClick={() => setActiveTab('orders')}>
+                <button className="btn-danger-action" onClick={() => handleTabChange('orders')}>
                   Manage Delayed Orders
                 </button>
               </div>
@@ -405,7 +429,7 @@ export default function App() {
 
             {/* Metrics Overview Grid */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px' }}>
-              <div className="glass-card stats-card" style={{ cursor: 'pointer' }} onClick={() => setActiveTab('orders')}>
+              <div className="glass-card stats-card" style={{ cursor: 'pointer' }} onClick={() => handleTabChange('orders')}>
                 <span className="stats-title">Active Orders</span>
                 <span className="stats-value">{orders.length}</span>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
@@ -413,7 +437,7 @@ export default function App() {
                 </span>
               </div>
 
-              <div className={`glass-card stats-card ${delayedOrdersCount > 0 ? 'card-alert-highlight' : ''}`} style={{ cursor: 'pointer' }} onClick={() => setActiveTab('orders')}>
+              <div className={`glass-card stats-card ${delayedOrdersCount > 0 ? 'card-alert-highlight' : ''}`} style={{ cursor: 'pointer' }} onClick={() => handleTabChange('orders')}>
                 <span className="stats-title" style={{ color: delayedOrdersCount > 0 ? '#dc2626' : '' }}>Delayed Orders (Red)</span>
                 <span className="stats-value" style={delayedOrdersCount > 0 ? { color: '#dc2626' } : {}}>
                   {delayedOrdersCount}
@@ -423,7 +447,7 @@ export default function App() {
                 </span>
               </div>
 
-              <div className="glass-card stats-card" style={{ cursor: 'pointer' }} onClick={() => setActiveTab('inventory')}>
+              <div className="glass-card stats-card" style={{ cursor: 'pointer' }} onClick={() => handleTabChange('inventory')}>
                 <span className="stats-title">Available Film Stock</span>
                 <span className="stats-value">
                   {inventory.reduce((a, b) => a + b.availableQtyKg, 0).toLocaleString()} <span style={{ fontSize: '1rem' }}>kg</span>
@@ -431,7 +455,7 @@ export default function App() {
                 <span style={{ fontSize: '0.8rem', color: 'var(--success)' }}>Across {inventory.length} film grades</span>
               </div>
 
-              <div className="glass-card stats-card" style={{ cursor: 'pointer' }} onClick={() => setActiveTab('vendors')}>
+              <div className="glass-card stats-card" style={{ cursor: 'pointer' }} onClick={() => handleTabChange('vendors')}>
                 <span className="stats-title">Onboarded Vendors</span>
                 <span className="stats-value">{vendors.length}</span>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>GSTIN Verified Suppliers</span>
@@ -444,7 +468,7 @@ export default function App() {
               <div className="glass-panel" style={{ padding: '24px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                   <h3 style={{ fontSize: '1.1rem', fontWeight: '600' }}>Recent Active Orders & Target Deadlines</h3>
-                  <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={() => setActiveTab('orders')}>
+                  <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={() => handleTabChange('orders')}>
                     View All Orders
                   </button>
                 </div>
@@ -491,16 +515,16 @@ export default function App() {
                 <div className="glass-card">
                   <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '12px' }}>⚙️ Plant Quick Shortcuts</h3>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <button className="btn-secondary" style={{ justifyContent: 'flex-start' }} onClick={() => setActiveTab('job_punching')}>
+                    <button className="btn-secondary" style={{ justifyContent: 'flex-start' }} onClick={() => handleTabChange('job_punching')}>
                       <Calculator size={16} style={{ color: 'var(--primary-brand)' }} /> Job Punching & OCN Note PDF
                     </button>
-                    <button className="btn-secondary" style={{ justifyContent: 'flex-start' }} onClick={() => setActiveTab('orders')}>
+                    <button className="btn-secondary" style={{ justifyContent: 'flex-start' }} onClick={() => handleTabChange('orders')}>
                       <ShoppingBag size={16} style={{ color: '#059669' }} /> Issue Bulk Purchase Orders (POs)
                     </button>
-                    <button className="btn-secondary" style={{ justifyContent: 'flex-start' }} onClick={() => setActiveTab('job_datasheet')}>
+                    <button className="btn-secondary" style={{ justifyContent: 'flex-start' }} onClick={() => handleTabChange('job_datasheet')}>
                       <FileSpreadsheet size={16} style={{ color: '#7c3aed' }} /> Actual Consumption & Pre/Post Costing
                     </button>
-                    <button className="btn-secondary" style={{ justifyContent: 'flex-start' }} onClick={() => setActiveTab('inventory')}>
+                    <button className="btn-secondary" style={{ justifyContent: 'flex-start' }} onClick={() => handleTabChange('inventory')}>
                       <FileCheck size={16} style={{ color: '#d97706' }} /> Inward GRN & QC Approval
                     </button>
                   </div>
@@ -527,7 +551,7 @@ export default function App() {
         {activeTab === 'job_punching' && (
           <JobPunchingForm 
             onSaveOrder={handleAddOrder} 
-            onNavigateToDashboard={() => setActiveTab('dashboard')} 
+            onNavigateToDashboard={() => handleTabChange('dashboard')} 
           />
         )}
 
@@ -540,10 +564,11 @@ export default function App() {
             productionRecords={productionRecords}
             onUpdateOrder={handleUpdateOrder} 
             onDeleteOrder={handleDeleteOrder}
-            onNavigateToPunching={() => setActiveTab('job_punching')}
-            onNavigateToProductionRecords={() => setActiveTab('production_records')}
+            onNavigateToPunching={() => handleTabChange('job_punching')}
+            onNavigateToProductionRecords={() => handleTabChange('production_records')}
           />
         )}
+
 
         {/* TAB 4: JOB DATA SHEET & PRE VS POST PROFITABILITY */}
         {activeTab === 'job_datasheet' && (
