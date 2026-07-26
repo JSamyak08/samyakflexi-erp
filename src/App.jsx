@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   initialOrders, 
   initialVendors, 
@@ -22,9 +22,11 @@ import {
   Users,
   Bell,
   ShieldCheck,
-  UserCheck
+  UserCheck,
+  LogOut
 } from 'lucide-react';
 
+import AuthScreen from './components/AuthScreen';
 import JobPunchingForm from './components/JobPunchingForm';
 import OrderManagement from './components/OrderManagement';
 import VendorManagement from './components/VendorManagement';
@@ -46,8 +48,42 @@ export default function App() {
   const [, setJobDataSheets] = useState(initialJobDataSheets);
   const [cylinders, setCylinders] = useState(initialCylinders);
 
-  // Active User / Role State (default Admin)
-  const [currentUser, setCurrentUser] = useState(initialUsers[0]);
+  // Authentication & Active User Session State
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const savedUser = localStorage.getItem('samyak_erp_user');
+      return savedUser ? JSON.parse(savedUser) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return !!localStorage.getItem('samyak_erp_user');
+  });
+
+  // Login Handler
+  const handleLogin = (user) => {
+    setCurrentUser(user);
+    setIsAuthenticated(true);
+    try {
+      localStorage.setItem('samyak_erp_user', JSON.stringify(user));
+    } catch (e) {
+      console.error("Failed to save auth session", e);
+    }
+  };
+
+  // Logout Handler
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setIsAuthenticated(false);
+    try {
+      localStorage.removeItem('samyak_erp_user');
+    } catch (e) {
+      console.error("Failed to remove auth session", e);
+    }
+  };
+
 
   const isRecDue = isReconciliationDue("2026-07-24");
   const delayedOrdersCount = orders.filter(o => o.status === 'Delayed' || new Date(o.targetDeliveryDate) < new Date('2026-07-24')).length;
@@ -105,6 +141,11 @@ export default function App() {
   const handleUpdateCylinder = (updatedCyl) => {
     setCylinders(prev => prev.map(c => c.id === updatedCyl.id ? updatedCyl : c));
   };
+
+  // Render Authentication Screen if user is not signed in
+  if (!isAuthenticated || !currentUser) {
+    return <AuthScreen users={users} onLogin={handleLogin} />;
+  }
 
   return (
     <div className="app-container">
@@ -225,17 +266,17 @@ export default function App() {
             </p>
           </div>
 
-          {/* Top Bar Role Switcher */}
+          {/* Top Bar Active User & Logout Controls */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#ffffff', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem' }}>
               <UserCheck size={16} style={{ color: 'var(--primary-brand)' }} />
-              <span style={{ color: 'var(--text-muted)', fontWeight: '500' }}>Active Login:</span>
+              <span style={{ color: 'var(--text-muted)', fontWeight: '500' }}>Active User:</span>
               <select 
                 style={{ border: 'none', background: 'transparent', fontWeight: '700', color: 'var(--text-primary)', cursor: 'pointer', outline: 'none' }}
                 value={currentUser.id}
                 onChange={e => {
                   const user = users.find(u => u.id === e.target.value);
-                  if (user) setCurrentUser(user);
+                  if (user) handleLogin(user);
                 }}
               >
                 {users.map(u => (
@@ -245,6 +286,10 @@ export default function App() {
                 ))}
               </select>
             </div>
+
+            <button className="btn-signout" onClick={handleLogout} title="Sign Out of Session">
+              <LogOut size={16} /> Sign Out
+            </button>
 
             {activeTab !== 'job_punching' && (
               <button className="btn-primary" onClick={() => setActiveTab('job_punching')}>
