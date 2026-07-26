@@ -162,10 +162,11 @@ export default function GRNPDF({ grnData, onClose }) {
               <tbody>
                 <tr>
                   <td className="label-col">GRN Number</td>
-                  <td className="value-col">{grnNo}</td>
+                  <td className="value-col">{currentGrnNo}</td>
                   <td className="label-col">GRN Date</td>
                   <td className="value-col">{receivedDate}</td>
                 </tr>
+
                 <tr>
                   <td className="label-col">Ref PO Number</td>
                   <td className="value-col">{poNumber}</td>

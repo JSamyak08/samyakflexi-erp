@@ -246,10 +246,11 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
               <tbody>
                 <tr>
                   <td className="label-col">PO Number</td>
-                  <td className="value-col">{poNumber}</td>
+                  <td className="value-col">{currentPoNumber}</td>
                   <td className="label-col">PO Date</td>
                   <td className="value-col">{poDate}</td>
                 </tr>
+
                 <tr>
                   <td className="label-col">Delivery Date</td>
                   <td className="value-col">{deliveryDate}</td>
