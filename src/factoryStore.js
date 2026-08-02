@@ -873,4 +873,8 @@ export const generateBarcodeId = (prefix = 'BC') => {
   return `${prefix}-${dateStr}-${randomSuffix}`;
 };
 
+export const generateVendorId = () => {
+  return `VEND-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+};
+
 

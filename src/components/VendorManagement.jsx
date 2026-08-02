@@ -11,6 +11,7 @@ import {
   FileText,
   Search
 } from 'lucide-react';
+import { generateVendorId } from '../factoryStore';
 
 export default function VendorManagement({ vendors, onAddVendor }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -57,7 +58,7 @@ export default function VendorManagement({ vendors, onAddVendor }) {
     }
 
     const newVendor = {
-      id: `VEND-00${vendors.length + 1}`,
+      id: generateVendorId(),
       name: companyName.trim(),
       companyName: companyName.trim(),
       gstin: gstin.toUpperCase().trim(),

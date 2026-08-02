@@ -34,6 +34,7 @@ import {
   isReconciliationDue, 
   FILM_DENSITIES, 
   generateBarcodeId, 
+  generateVendorId,
   initialInventoryRolls, 
   initialDispatchShipments 
 } from '../factoryStore';
@@ -114,7 +115,7 @@ export default function InventoryManagement({
     }
 
     const createdVendor = {
-      id: `VEND-00${(vendors || []).length + 1}`,
+      id: generateVendorId(),
       name: newVendorCompanyName.trim(),
       companyName: newVendorCompanyName.trim(),
       gstin: newVendorGstin.toUpperCase().trim(),

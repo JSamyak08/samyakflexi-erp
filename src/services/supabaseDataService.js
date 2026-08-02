@@ -111,20 +111,21 @@ export async function fetchVendors() {
 
 export async function saveVendorToSupabase(vendor) {
   if (!isSupabaseConfigured()) return;
+  const vendorId = vendor.id || `VEND-2026-${Math.floor(1000 + Math.random() * 9000)}`;
   const vendorName = vendor.name || vendor.companyName || 'New Vendor';
   const vendorCategory = vendor.category || (Array.isArray(vendor.materials) ? vendor.materials.join(', ') : 'Flexible Packaging Supplier');
 
   const { error } = await supabase.from('vendors').upsert({
-    id: vendor.id,
+    id: vendorId,
     name: vendorName,
     category: vendorCategory,
-    contact_person: vendor.contactPerson || '',
+    contact_person: vendor.contactPerson || vendor.contact_person || '',
     phone: vendor.phone || '',
     email: vendor.email || '',
     gstin: vendor.gstin || '',
     address: vendor.address || '',
     rating: Number(vendor.rating) || 5.0
-  });
+  }, { onConflict: 'id' });
 
   if (error) {
     console.error("Error saving vendor to Supabase:", error);
