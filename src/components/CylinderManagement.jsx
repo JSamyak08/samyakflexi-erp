@@ -342,8 +342,8 @@ export default function CylinderManagement({
               Close Job Card
             </button>
           </div>
-          <div className="pdf-paper-container" style={{ background: 'white', padding: '24px', borderRadius: '8px' }}>
-            <CylinderJobCardForm initialData={selectedForPDF} />
+          <div className="pdf-paper-container landscape" style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', maxWidth: '1200px', width: '95vw', overflowY: 'auto' }}>
+            <CylinderJobCardForm initialData={selectedForPDF} onClose={() => setSelectedForPDF(null)} />
           </div>
         </div>
       )}

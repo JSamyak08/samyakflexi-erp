@@ -1035,4 +1035,37 @@ export const initialProductionSchedules = [
   }
 ];
 
+/**
+ * Initial Clients Dataset
+ */
+export const initialClients = [
+  {
+    id: "CLI-101",
+    name: "Britannia Industries Ltd",
+    gstin: "23AAACB1234F1Z5",
+    address: "Plot 12, Pithampur Industrial Estate, Dhar, M.P. - 454775",
+    paymentTerms: "30 Days Credit",
+    contactPerson: "Rajesh Sharma",
+    phone: "+91 9826012345"
+  },
+  {
+    id: "CLI-102",
+    name: "Hindustan Unilever Ltd",
+    gstin: "27AAACH1111H1Z2",
+    address: "Unilever House, B. D. Sawant Marg, Chakala, Andheri (E), Mumbai",
+    paymentTerms: "45 Days Credit",
+    contactPerson: "Anish Gupta",
+    phone: "+91 9821098765"
+  },
+  {
+    id: "CLI-103",
+    name: "Adani Wilmar Ltd",
+    gstin: "24AAACA0000A1Z1",
+    address: "Fortune House, Near Navrangpura Railway Crossing, Ahmedabad",
+    paymentTerms: "15 Days Credit",
+    contactPerson: "Vikram Patel",
+    phone: "+91 9898011223"
+  }
+];
+
 

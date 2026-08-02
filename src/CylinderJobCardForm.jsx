@@ -1,127 +1,269 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useReactToPrint } from 'react-to-print';
-import { Save, Printer, UploadCloud } from 'lucide-react';
+import { Save, Printer, UploadCloud, ArrowLeft, X } from 'lucide-react';
 
 const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
   return (
-    <div ref={ref} className="print-container">
-      {/* Header */}
-      <div className="print-header">
-        <div className="logo-container" style={{ textAlign: 'center', marginBottom: '10px' }}>
-          <img src="/samyak-logo.png" alt="Samyak International Ltd Logo" style={{ maxWidth: '300px', maxHeight: '90px' }} />
+    <div ref={ref} className="printable-landscape-card" style={{ background: '#ffffff', color: '#000000', fontFamily: 'Inter, Arial, sans-serif', padding: '12px 16px', boxSizing: 'border-box', width: '100%' }}>
+      <style>{`
+        @media print {
+          @page {
+            size: A4 landscape !important;
+            margin: 5mm 8mm !important;
+          }
+          html, body {
+            background: #ffffff !important;
+            color: #000000 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .no-print {
+            display: none !important;
+          }
+          .printable-landscape-card {
+            width: 100% !important;
+            max-width: 285mm !important;
+            padding: 0 !important;
+            margin: 0 auto !important;
+          }
+        }
+
+        .jobcard-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 11px;
+          margin-bottom: 8px;
+        }
+
+        .jobcard-table th, .jobcard-table td {
+          border: 1px solid #1e293b;
+          padding: 5px 8px;
+          vertical-align: middle;
+        }
+
+        .jobcard-table th {
+          background-color: #f1f5f9;
+          color: #0f172a;
+          font-weight: 700;
+          text-align: left;
+          font-size: 11px;
+          text-transform: uppercase;
+          letter-spacing: 0.3px;
+        }
+
+        .jobcard-table .label-cell {
+          background-color: #f8fafc;
+          font-weight: 600;
+          color: #334155;
+          width: 20%;
+        }
+
+        .jobcard-table .value-cell {
+          font-weight: 600;
+          color: #0f172a;
+          width: 30%;
+        }
+      `}</style>
+
+      {/* Header Bar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #0f172a', paddingBottom: '8px', marginBottom: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <img src="/samyak-logo.png" alt="Samyak Logo" style={{ maxHeight: '42px', objectFit: 'contain' }} />
+          <div>
+            <h1 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              SAMYAK INTERNATIONAL LTD
+            </h1>
+            <p style={{ margin: '1px 0 0 0', fontSize: '10px', color: '#475569', fontWeight: '600' }}>
+              FLEXIBLE PACKAGING DIVISION | ROTOGRAVURE CYLINDER SPECIFICATION SHEET
+            </p>
+          </div>
+        </div>
+
+        <div style={{ textAlign: 'right', borderLeft: '1px solid #cbd5e1', paddingLeft: '16px' }}>
+          <div style={{ background: '#0f172a', color: '#ffffff', padding: '4px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: '800', letterSpacing: '0.5px' }}>
+            CYLINDER JOB CARD
+          </div>
+          <div style={{ fontSize: '10px', color: '#475569', marginTop: '4px', fontWeight: '600' }}>
+            Date: <strong>{data.creationDate || new Date().toLocaleDateString('en-GB')}</strong> | Ref: <strong>{data.skuCode || 'JOB-CARD'}</strong>
+          </div>
         </div>
       </div>
 
-      <div className="print-title-bar">
-        CYLINDER JOB CARD
-      </div>
-
-      <div className="print-body">
-        {/* Left Column Table */}
-        <div className="print-table-wrapper">
-          <table className="print-table">
+      {/* Main Grid: Left Side Tables (65%), Right Side Artwork KLD (35%) */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '12px' }}>
+        
+        {/* Left Column: Data Tables */}
+        <div>
+          {/* Table Section 1: Job & Client Information */}
+          <table className="jobcard-table">
+            <thead>
+              <tr>
+                <th colSpan="4">1. Job & Client Details</th>
+              </tr>
+            </thead>
             <tbody>
-              <tr className="highlight-row">
-                <td className="label-col">Job Name</td>
-                <td className="val-col">{data.jobName}</td>
+              <tr>
+                <td className="label-cell">Job Name</td>
+                <td className="value-cell" style={{ fontSize: '12px', color: '#0f172a', fontWeight: '800' }}>{data.jobName || '—'}</td>
+                <td className="label-cell">Party / Client</td>
+                <td className="value-cell">{data.partyName || '—'}</td>
               </tr>
               <tr>
-                <td className="label-col">Creation Date</td>
-                <td className="val-col">{data.creationDate}</td>
+                <td className="label-cell">SKU Code</td>
+                <td className="value-cell">{data.skuCode || '—'}</td>
+                <td className="label-cell">Invoice To</td>
+                <td className="value-cell">{data.invoiceTo || 'Samyak International Ltd'}</td>
               </tr>
               <tr>
-                <td className="label-col">Party Name</td>
-                <td className="val-col">{data.partyName}</td>
+                <td className="label-cell">Variant / Flavor</td>
+                <td className="value-cell">{data.variant || 'Standard'}</td>
+                <td className="label-cell">Job Structure</td>
+                <td className="value-cell">{data.jobStructure || 'PET / PE'}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          {/* Table Section 2: Technical Specifications & Dimensions */}
+          <table className="jobcard-table">
+            <thead>
+              <tr>
+                <th colSpan="4">2. Printing & Cylinder Technical Parameters</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="label-cell">Printing Type</td>
+                <td className="value-cell">{data.printing || 'Reverse'}</td>
+                <td className="label-cell">No. of Cylinders</td>
+                <td className="value-cell" style={{ fontWeight: '800' }}>{data.numberOfCylinders || '—'} Colors</td>
               </tr>
               <tr>
-                <td className="label-col">Invoice To</td>
-                <td className="val-col">{data.invoiceTo}</td>
+                <td className="label-cell">Indiv. Pouch Size</td>
+                <td className="value-cell">
+                  {data.pouchOpenWidth ? `${data.pouchOpenWidth}` : ''} 
+                  {data.pouchOpenWidth && data.pouchHeight ? ' x ' : ''}
+                  {data.pouchHeight ? `${data.pouchHeight}` : ''}
+                  {!data.pouchOpenWidth && !data.pouchHeight ? '—' : ''}
+                </td>
+                <td className="label-cell">Shell Size</td>
+                <td className="value-cell">{data.shellSize || '—'}</td>
               </tr>
               <tr>
-                <td className="label-col">Variant</td>
-                <td className="val-col">{data.variant}</td>
+                <td className="label-cell">Total Width (Face)</td>
+                <td className="value-cell">{data.totalWidth || '—'}</td>
+                <td className="label-cell">Total Repeat (Circum.)</td>
+                <td className="value-cell">{data.totalHeight || '—'}</td>
               </tr>
               <tr>
-                <td className="label-col">Printing <span style={{fontSize: '10px', fontWeight: 'normal'}}>(Reverse/Surface)</span></td>
-                <td className="val-col">{data.printing}</td>
+                <td className="label-cell">PET Substrate Size</td>
+                <td className="value-cell">{data.petSize || '—'}</td>
+                <td className="label-cell">Engraver Name</td>
+                <td className="value-cell">{data.engravure || '—'}</td>
               </tr>
               <tr>
-                <td className="label-col">Individual Pouch Size <span style={{fontSize: '10px', fontWeight: 'normal'}}>(Including Sealing)</span></td>
-                <td className="val-col">{data.pouchOpenWidth || ''}{data.pouchOpenWidth && data.pouchHeight ? ' X ' : ''}{data.pouchHeight || ''}</td>
+                <td className="label-cell">Cost Borne By</td>
+                <td className="value-cell">{data.costBorneBy || '—'}</td>
+                <td className="label-cell">Utilisation Limit</td>
+                <td className="value-cell">{data.utilisationLimit ? `${Number(data.utilisationLimit).toLocaleString()} Kg` : '10,000 Kg'}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          {/* Table Section 3: Press Marks & Quality Guidelines */}
+          <table className="jobcard-table">
+            <thead>
+              <tr>
+                <th colSpan="4">3. Press Marks & Quality Guidelines</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="label-cell">SIL Logo / Press Line</td>
+                <td className="value-cell">{data.silLogo || 'Yes'}</td>
+                <td className="label-cell">ARC Mark</td>
+                <td className="value-cell">{data.arcMark || 'Yes'}</td>
               </tr>
               <tr>
-                <td className="label-col">Number of Cylinders</td>
-                <td className="val-col">{data.numberOfCylinders}</td>
+                <td className="label-cell">Slitting Mark</td>
+                <td className="value-cell">{data.slittingMark || 'Yes'}</td>
+                <td className="label-cell">Tracker Line</td>
+                <td className="value-cell">{data.trackerLine || 'Yes'}</td>
               </tr>
-              <tr>
-                <td className="label-col">Job Structure</td>
-                <td className="val-col">{data.jobStructure}</td>
-              </tr>
-              <tr>
-                <td className="label-col">Total Width</td>
-                <td className="val-col">{data.totalWidth}</td>
-              </tr>
-              <tr>
-                <td className="label-col">Total Height</td>
-                <td className="val-col">{data.totalHeight}</td>
-              </tr>
-              <tr>
-                <td className="label-col">Shell Size</td>
-                <td className="val-col">{data.shellSize}</td>
-              </tr>
-              <tr>
-                <td className="label-col">PET Size <span style={{fontSize: '10px', fontWeight: 'normal'}}>(Including Reg. Mark)</span></td>
-                <td className="val-col">{data.petSize}</td>
-              </tr>
-              <tr>
-                <td className="label-col">SIL Logo/Press Line</td>
-                <td className="val-col">{data.silLogo}</td>
-              </tr>
-              <tr>
-                <td className="label-col">ARC Mark</td>
-                <td className="val-col">{data.arcMark}</td>
-              </tr>
-              <tr>
-                <td className="label-col">Slitting Mark</td>
-                <td className="val-col">{data.slittingMark}</td>
-              </tr>
-              <tr>
-                <td className="label-col">Tracker Line</td>
-                <td className="val-col">{data.trackerLine}</td>
-              </tr>
-              <tr>
-                <td className="label-col">Special Instructions</td>
-                <td className="val-col">{data.specialInstructions}</td>
-              </tr>
-              <tr>
-                <td className="label-col">Approved By</td>
-                <td className="val-col">{data.approvedBy}</td>
-              </tr>
-              <tr>
-                <td className="label-col">Engravure</td>
-                <td className="val-col">{data.engravure}</td>
-              </tr>
+              {data.specialInstructions && (
+                <tr>
+                  <td className="label-cell">Special Notes</td>
+                  <td colSpan="3" className="value-cell" style={{ color: '#b91c1c' }}>{data.specialInstructions}</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
 
-        {/* Right Column Artwork */}
-        <div className="print-artwork-wrapper">
-          {imagePreview ? (
-            <img src={imagePreview} alt="Final Approved KLD" className="artwork-image" />
-          ) : (
-            <div className="artwork-placeholder">
-              <h2>FINAL APPROVED KLD</h2>
-              <p>(No Image Attached)</p>
-            </div>
-          )}
+        {/* Right Column: Approved Artwork / KLD Container */}
+        <div style={{ border: '1px solid #1e293b', borderRadius: '4px', display: 'flex', flexDirection: 'column', overflow: 'hidden', height: '100%' }}>
+          <div style={{ background: '#f1f5f9', padding: '6px 10px', fontSize: '11px', fontWeight: '700', borderBottom: '1px solid #1e293b', color: '#0f172a', textAlign: 'center', textTransform: 'uppercase' }}>
+            FINAL APPROVED KLD / ARTWORK PROOF
+          </div>
+
+          <div style={{ flex: 1, padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fafafa', minHeight: '180px' }}>
+            {imagePreview ? (
+              <img src={imagePreview} alt="Final Approved KLD" style={{ maxWidth: '100%', maxHeight: '200px', objectFit: 'contain', borderRadius: '4px', border: '1px solid #e2e8f0' }} />
+            ) : (
+              <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px' }}>
+                <div style={{ fontSize: '28px', marginBottom: '4px' }}>📐</div>
+                <div style={{ fontWeight: '700', fontSize: '12px', color: '#475569' }}>KLD PROOF ATTACHED</div>
+                <div style={{ fontSize: '9px', marginTop: '4px' }}>(Verify Keyline layout & Color Sequence)</div>
+              </div>
+            )}
+          </div>
+
+          <div style={{ borderTop: '1px solid #e2e8f0', padding: '6px 8px', fontSize: '9px', color: '#64748b', background: '#ffffff' }}>
+            <strong>Checklist:</strong>
+            <ul style={{ margin: '2px 0 0 14px', padding: 0 }}>
+              <li>Eye-mark positioning verified</li>
+              <li>Bar-code & FSSAI license checked</li>
+              <li>Reverse / Surface orientation confirmed</li>
+            </ul>
+          </div>
         </div>
+      </div>
+
+      {/* Footer Signature Block */}
+      <div style={{ marginTop: '8px' }}>
+        <table className="jobcard-table" style={{ marginBottom: 0 }}>
+          <thead>
+            <tr>
+              <th style={{ width: '25%', textAlign: 'center' }}>Prepared By (Pre-Press)</th>
+              <th style={{ width: '25%', textAlign: 'center' }}>Checked By (QC Manager)</th>
+              <th style={{ width: '25%', textAlign: 'center' }}>Production Head</th>
+              <th style={{ width: '25%', textAlign: 'center' }}>Approved By (Client Rep)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style={{ height: '38px' }}>
+              <td style={{ textAlign: 'center', verticalAlign: 'bottom', fontSize: '9px', color: '#64748b' }}>
+                Sign & Date
+              </td>
+              <td style={{ textAlign: 'center', verticalAlign: 'bottom', fontSize: '9px', color: '#64748b' }}>
+                Sign & Date
+              </td>
+              <td style={{ textAlign: 'center', verticalAlign: 'bottom', fontSize: '9px', color: '#64748b' }}>
+                Sign & Date
+              </td>
+              <td style={{ textAlign: 'center', verticalAlign: 'bottom', fontSize: '10px', fontWeight: '700', color: '#0f172a' }}>
+                {data.approvedBy ? data.approvedBy : 'Authorized Signatory'}
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   );
 });
 
-export default function CylinderJobCardForm({ onSave }) {
+export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
   const componentRef = useRef();
 
   const [formData, setFormData] = useState({
@@ -134,8 +276,8 @@ export default function CylinderJobCardForm({ onSave }) {
     printing: 'Reverse',
     pouchOpenWidth: '',
     pouchHeight: '',
-    numberOfCylinders: '',
-    jobStructure: '',
+    numberOfCylinders: '6',
+    jobStructure: 'PET / PE',
     totalWidth: '',
     totalHeight: '',
     shellSize: '',
@@ -146,12 +288,45 @@ export default function CylinderJobCardForm({ onSave }) {
     trackerLine: 'Yes',
     specialInstructions: '',
     approvedBy: '',
-    engravure: '',
-    cylinderCost: '₹0',
+    engravure: 'Acme Rotogravure Engravers',
+    cylinderCost: '₹35,000',
     utilisationLimit: '10000',
     costBorneBy: 'Client (100%)',
-    costBorneType: 'client' // client, us, both
+    costBorneType: 'client'
   });
+
+  useEffect(() => {
+    if (initialData) {
+      setFormData({
+        skuCode: initialData.sku || initialData.skuCode || '',
+        jobName: initialData.jobName || '',
+        creationDate: initialData.creationDate || new Date().toLocaleDateString('en-GB'),
+        partyName: initialData.clientGroup || initialData.partyName || '',
+        invoiceTo: initialData.invoiceTo || 'Samyak International Ltd',
+        variant: initialData.variant || '',
+        printing: initialData.printing || 'Reverse',
+        pouchOpenWidth: initialData.pouchOpenWidth || '',
+        pouchHeight: initialData.pouchHeight || '',
+        numberOfCylinders: `${initialData.colorsCount || initialData.numberOfCylinders || 6}`,
+        jobStructure: initialData.jobStructure || 'PET / PE',
+        totalWidth: initialData.faceLengthMm ? `${initialData.faceLengthMm} mm` : (initialData.totalWidth || ''),
+        totalHeight: initialData.circumferenceMm ? `${initialData.circumferenceMm} mm` : (initialData.totalHeight || ''),
+        shellSize: initialData.shellSize || (initialData.faceLengthMm ? `${initialData.faceLengthMm} mm` : ''),
+        petSize: initialData.petSize || (initialData.faceLengthMm ? `${initialData.faceLengthMm + 10} mm` : ''),
+        silLogo: initialData.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+        arcMark: initialData.arcMark || 'Yes',
+        slittingMark: initialData.slittingMark || 'Yes',
+        trackerLine: initialData.trackerLine || 'Yes',
+        specialInstructions: initialData.specialInstructions || '',
+        approvedBy: initialData.approvedBy || '',
+        engravure: initialData.engravuresName || initialData.engravure || 'Acme Rotogravure Engravers',
+        cylinderCost: initialData.cylinderCost || '₹35,000',
+        utilisationLimit: `${initialData.utilisationLimit || 10000}`,
+        costBorneBy: initialData.costBorneBy || 'Client (100%)',
+        costBorneType: initialData.costBorneType || 'client'
+      });
+    }
+  }, [initialData]);
 
   const [imagePreview, setImagePreview] = useState(null);
 
@@ -188,72 +363,69 @@ export default function CylinderJobCardForm({ onSave }) {
       alert("SKU Code and Job Name are required to add to the system.");
       return;
     }
-    onSave({
-      id: Date.now(),
-      sku: formData.skuCode,
-      jobName: formData.jobName,
-      cylinderCost: formData.cylinderCost,
-      engravuresName: formData.engravure,
-      costBorneBy: formData.costBorneBy,
-      costBorneType: formData.costBorneType,
-      clientGroup: formData.partyName || "Unassigned",
-      dispatchedQty: 0,
-      utilisationLimit: parseFloat(formData.utilisationLimit) || 10000
-    });
-    alert("Cylinder Job processed and added to Database successfully.");
+    if (onSave) {
+      onSave({
+        id: Date.now(),
+        sku: formData.skuCode,
+        jobName: formData.jobName,
+        cylinderCost: formData.cylinderCost,
+        engravuresName: formData.engravure,
+        costBorneBy: formData.costBorneBy,
+        costBorneType: formData.costBorneType,
+        clientGroup: formData.partyName || "Unassigned",
+        dispatchedQty: 0,
+        utilisationLimit: parseFloat(formData.utilisationLimit) || 10000
+      });
+      alert("Cylinder Job processed and added to Database successfully.");
+    }
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-      <div className="glass-card" style={{ maxWidth: '1000px', width: '100%' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-          <h2>Create Cylinder Job Card</h2>
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <button className="btn-secondary" onClick={handlePrint}>
-              <Printer size={18} /> Print to PDF
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {/* Action Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }} className="no-print">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {onClose && (
+            <button className="btn-secondary" style={{ padding: '6px 12px' }} onClick={onClose}>
+              <ArrowLeft size={16} /> Back
             </button>
-            <button className="btn-primary" onClick={submitToSystem}>
-              <Save size={18} /> Add to System
-            </button>
-          </div>
+          )}
+          <h3 style={{ fontSize: '1.1rem', fontWeight: '700', margin: 0 }}>
+            {initialData ? `Cylinder Job Card: ${formData.jobName}` : 'Cylinder Job Card Generator'}
+          </h3>
         </div>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button className="btn-primary" onClick={handlePrint}>
+            <Printer size={16} /> Print Landscape PDF
+          </button>
+          {onSave && (
+            <button className="btn-secondary" onClick={submitToSystem}>
+              <Save size={16} /> Add to System
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Printable Landscape Preview */}
+      <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '16px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
+        <PrintableJobCard ref={componentRef} data={formData} imagePreview={imagePreview} />
+      </div>
+
+      {/* Editable Form Grid (Shown below preview for customization) */}
+      <div className="glass-card no-print" style={{ maxWidth: '1000px', width: '100%' }}>
+        <h4 style={{ marginBottom: '16px', fontWeight: '700' }}>Edit Job Card Data Parameters</h4>
 
         <div className="form-grid">
-          {/* Tracking DB specifics not on print card */}
           <div className="form-group">
-            <label>SKU Code (For System Tracking)*</label>
+            <label>SKU Code*</label>
             <input className="form-control" name="skuCode" value={formData.skuCode} onChange={handleChange} placeholder="e.g. SKU-XC-101" />
           </div>
           <div className="form-group">
-            <label>Cylinder Cost</label>
-            <input className="form-control" name="cylinderCost" value={formData.cylinderCost} onChange={handleChange} />
-          </div>
-          <div className="form-group">
-            <label>Utilisation Limit (KG)</label>
-            <input className="form-control" name="utilisationLimit" type="number" value={formData.utilisationLimit} onChange={handleChange} />
-          </div>
-          <div className="form-group">
-            <label>Cost Borne Type</label>
-            <select className="form-control" name="costBorneType" value={formData.costBorneType} onChange={handleChange}>
-              <option value="client">Client</option>
-              <option value="us">Us</option>
-              <option value="both">Both</option>
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Cost Borne Description</label>
-            <input className="form-control" name="costBorneBy" value={formData.costBorneBy} onChange={handleChange} />
-          </div>
-
-          <div style={{ gridColumn: '1 / -1', height: '1px', background: 'var(--glass-border)', margin: '16px 0' }}></div>
-
-          {/* Core Job Card Fields */}
-          <div className="form-group">
-            <label>Job Name</label>
+            <label>Job Name*</label>
             <input className="form-control" name="jobName" value={formData.jobName} onChange={handleChange} />
           </div>
           <div className="form-group">
-            <label>Party Name / Client Group</label>
+            <label>Party Name / Client</label>
             <input className="form-control" name="partyName" value={formData.partyName} onChange={handleChange} />
           </div>
           <div className="form-group">
@@ -265,7 +437,7 @@ export default function CylinderJobCardForm({ onSave }) {
             <input className="form-control" name="invoiceTo" value={formData.invoiceTo} onChange={handleChange} />
           </div>
           <div className="form-group">
-            <label>Variant</label>
+            <label>Variant / Flavor</label>
             <input className="form-control" name="variant" value={formData.variant} onChange={handleChange} />
           </div>
           <div className="form-group">
@@ -273,15 +445,15 @@ export default function CylinderJobCardForm({ onSave }) {
             <input className="form-control" name="printing" value={formData.printing} onChange={handleChange} />
           </div>
           <div className="form-group">
-            <label>Individual Pouch Size (Open Width)</label>
-            <input className="form-control" name="pouchOpenWidth" value={formData.pouchOpenWidth} onChange={handleChange} onBlur={handleDimensionBlur} placeholder="e.g. 120" />
+            <label>Individual Pouch Size (Width)</label>
+            <input className="form-control" name="pouchOpenWidth" value={formData.pouchOpenWidth} onChange={handleChange} onBlur={handleDimensionBlur} placeholder="e.g. 120 mm" />
           </div>
           <div className="form-group">
             <label>Individual Pouch Size (Height)</label>
-            <input className="form-control" name="pouchHeight" value={formData.pouchHeight} onChange={handleChange} onBlur={handleDimensionBlur} placeholder="e.g. 150" />
+            <input className="form-control" name="pouchHeight" value={formData.pouchHeight} onChange={handleChange} onBlur={handleDimensionBlur} placeholder="e.g. 150 mm" />
           </div>
           <div className="form-group">
-            <label>Number of Cylinders</label>
+            <label>Number of Cylinders / Colors</label>
             <input className="form-control" name="numberOfCylinders" value={formData.numberOfCylinders} onChange={handleChange} />
           </div>
           <div className="form-group">
@@ -289,58 +461,40 @@ export default function CylinderJobCardForm({ onSave }) {
             <input className="form-control" name="jobStructure" value={formData.jobStructure} onChange={handleChange} />
           </div>
           <div className="form-group">
-            <label>Total Width</label>
-            <input className="form-control" name="totalWidth" value={formData.totalWidth} onChange={handleChange} onBlur={handleDimensionBlur} placeholder="e.g. 150" />
+            <label>Total Width (Face Length)</label>
+            <input className="form-control" name="totalWidth" value={formData.totalWidth} onChange={handleChange} onBlur={handleDimensionBlur} placeholder="e.g. 1050 mm" />
           </div>
           <div className="form-group">
-            <label>Total Height</label>
-            <input className="form-control" name="totalHeight" value={formData.totalHeight} onChange={handleChange} onBlur={handleDimensionBlur} placeholder="e.g. 200" />
+            <label>Total Height (Circumference)</label>
+            <input className="form-control" name="totalHeight" value={formData.totalHeight} onChange={handleChange} onBlur={handleDimensionBlur} placeholder="e.g. 400 mm" />
           </div>
           <div className="form-group">
             <label>Shell Size</label>
-            <input className="form-control" name="shellSize" value={formData.shellSize} onChange={handleChange} onBlur={handleDimensionBlur} placeholder="e.g. 150" />
+            <input className="form-control" name="shellSize" value={formData.shellSize} onChange={handleChange} onBlur={handleDimensionBlur} placeholder="e.g. 1050 mm" />
           </div>
           <div className="form-group">
             <label>PET Size</label>
-            <input className="form-control" name="petSize" value={formData.petSize} onChange={handleChange} onBlur={handleDimensionBlur} placeholder="e.g. 150" />
+            <input className="form-control" name="petSize" value={formData.petSize} onChange={handleChange} onBlur={handleDimensionBlur} placeholder="e.g. 1060 mm" />
           </div>
           <div className="form-group">
-            <label>SIL Logo/Press Line</label>
-            <input className="form-control" name="silLogo" value={formData.silLogo} onChange={handleChange} />
+            <label>Engraver Name</label>
+            <input className="form-control" name="engravure" value={formData.engravure} onChange={handleChange} />
           </div>
           <div className="form-group">
-             <label>ARC Mark</label>
-             <input className="form-control" name="arcMark" value={formData.arcMark} onChange={handleChange} />
-          </div>
-          <div className="form-group">
-            <label>Slitting Mark</label>
-            <input className="form-control" name="slittingMark" value={formData.slittingMark} onChange={handleChange} />
-          </div>
-          <div className="form-group">
-            <label>Tracker Line</label>
-            <input className="form-control" name="trackerLine" value={formData.trackerLine} onChange={handleChange} />
+            <label>Cost Borne By</label>
+            <input className="form-control" name="costBorneBy" value={formData.costBorneBy} onChange={handleChange} />
           </div>
           <div className="form-group">
             <label>Approved By</label>
             <input className="form-control" name="approvedBy" value={formData.approvedBy} onChange={handleChange} />
           </div>
-          <div className="form-group">
-            <label>Engravure</label>
-            <input className="form-control" name="engravure" value={formData.engravure} onChange={handleChange} />
-          </div>
 
-          <div style={{ gridColumn: '1 / -1', marginTop: '16px' }} className="form-group">
-            <label>Artwork Upload (KLD)</label>
+          <div style={{ gridColumn: '1 / -1', marginTop: '12px' }} className="form-group">
+            <label>Artwork / KLD Upload (Optional Image)</label>
             <input type="file" accept="image/*" onChange={handleImageUpload} style={{ background: 'rgba(255,255,255,0.05)', padding: '12px', borderRadius: '8px' }} />
           </div>
         </div>
       </div>
-
-      {/* Hidden layout specifically structured for printing */}
-      <div style={{ display: 'none' }}>
-        <PrintableJobCard ref={componentRef} data={formData} imagePreview={imagePreview} />
-      </div>
-
     </div>
   );
 }

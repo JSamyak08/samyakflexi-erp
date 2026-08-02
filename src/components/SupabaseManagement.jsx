@@ -22,16 +22,17 @@ import {
   isSupabaseConfigured, 
   checkSupabaseConnection, 
   saveSupabaseCredentials, 
-  clearSupabaseCredentials 
+  clearSupabaseCredentials,
+  getSupabaseCredentials
 } from '../services/supabaseClient';
 import { seedAllDataToSupabase, clearAllSupabaseData } from '../services/supabaseDataService';
 
 export default function SupabaseManagement() {
   const [urlInput, setUrlInput] = useState(() => {
-    return localStorage.getItem('samyak_supabase_url') || import.meta.env.VITE_SUPABASE_URL || '';
+    return getSupabaseCredentials().url || '';
   });
   const [keyInput, setKeyInput] = useState(() => {
-    return localStorage.getItem('samyak_supabase_key') || import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+    return getSupabaseCredentials().key || '';
   });
 
   const [loading, setLoading] = useState(false);

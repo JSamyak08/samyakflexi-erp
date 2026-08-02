@@ -1,42 +1,115 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Retrieve credentials from environment variables or custom runtime storage
-const getSupabaseCredentials = () => {
-  const customUrl = localStorage.getItem('samyak_supabase_url');
-  const customKey = localStorage.getItem('samyak_supabase_key');
-
-  const url = customUrl || import.meta.env.VITE_SUPABASE_URL || '';
-  const key = customKey || import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-
-  return { url, key };
+// Helper to set cookie for extra persistence against cache wipes
+const setCookie = (name, value, days = 365) => {
+  try {
+    const expires = new Date(Date.now() + days * 864e5).toUTCString();
+    document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/; SameSite=Strict`;
+  } catch (e) {
+    // Ignore cookie errors in restricted environments
+  }
 };
 
-const { url, key } = getSupabaseCredentials();
+const getCookie = (name) => {
+  try {
+    return document.cookie.split('; ').reduce((r, v) => {
+      const parts = v.split('=');
+      return parts[0] === name ? decodeURIComponent(parts[1]) : r;
+    }, '');
+  } catch (e) {
+    return '';
+  }
+};
 
-// Check if valid credentials are supplied (not empty and not default placeholders)
+const removeCookie = (name) => {
+  try {
+    document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+  } catch (e) {}
+};
+
+/**
+ * Multi-layer credential retrieval (LocalStorage -> SessionStorage -> Cookie -> Env)
+ */
+export const getSupabaseCredentials = () => {
+  const url = 
+    localStorage.getItem('samyak_supabase_url') ||
+    sessionStorage.getItem('samyak_supabase_url') ||
+    getCookie('samyak_supabase_url') ||
+    import.meta.env.VITE_SUPABASE_URL || '';
+
+  const key = 
+    localStorage.getItem('samyak_supabase_key') ||
+    sessionStorage.getItem('samyak_supabase_key') ||
+    getCookie('samyak_supabase_key') ||
+    import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+
+  return { url: url.trim(), key: key.trim() };
+};
+
+/**
+ * Check if valid non-placeholder credentials are present
+ */
 export const isSupabaseConfigured = () => {
-  const { url: currentUrl, key: currentKey } = getSupabaseCredentials();
+  const { url, key } = getSupabaseCredentials();
   return Boolean(
-    currentUrl && 
-    currentKey && 
-    !currentUrl.includes('your-supabase-project') && 
-    !currentKey.includes('your-supabase-anon-key')
+    url && 
+    key && 
+    url.startsWith('http') &&
+    !url.includes('your-supabase-project') && 
+    !key.includes('your-supabase-anon-key')
   );
 };
 
-// Instantiate client (safely handles empty credentials to avoid immediate crash)
-const validUrl = url && url.startsWith('http') ? url : 'https://placeholder.supabase.co';
-const validKey = key || 'placeholder-key';
+// Internal active client cache
+let currentClientInstance = null;
+let currentClientKey = '';
 
-export const supabase = createClient(validUrl, validKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
+/**
+ * Returns the live active Supabase client, re-instantiating automatically
+ * if credentials have changed or were newly provided.
+ */
+export const getSupabaseClient = () => {
+  const { url, key } = getSupabaseCredentials();
+  const credentialHash = `${url}::${key}`;
+
+  if (!currentClientInstance || currentClientKey !== credentialHash) {
+    const validUrl = url && url.startsWith('http') ? url : 'https://placeholder.supabase.co';
+    const validKey = key || 'placeholder-key';
+
+    currentClientInstance = createClient(validUrl, validKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: false
+      },
+      db: {
+        schema: 'public'
+      },
+      global: {
+        headers: { 'x-application-name': 'SamyakFlexiERP' }
+      }
+    });
+    currentClientKey = credentialHash;
+  }
+
+  return currentClientInstance;
+};
+
+/**
+ * Dynamic Proxy for `supabase` export.
+ * Guarantees that calls to `supabase.from(...)` or `supabase.auth` ALWAYS use
+ * the latest configured client instance even if credentials were updated at runtime.
+ */
+export const supabase = new Proxy({}, {
+  get(_target, prop) {
+    const client = getSupabaseClient();
+    const value = client[prop];
+    return typeof value === 'function' ? value.bind(client) : value;
   }
 });
 
 /**
- * Test connectivity to Supabase
+ * Test connectivity to Supabase and auto-persist active state
  */
 export const checkSupabaseConnection = async () => {
   if (!isSupabaseConfigured()) {
@@ -47,21 +120,18 @@ export const checkSupabaseConnection = async () => {
   }
 
   try {
-    const { url: activeUrl, key: activeKey } = getSupabaseCredentials();
-    const tempClient = createClient(activeUrl, activeKey);
+    const client = getSupabaseClient();
     
-    // Perform a lightweight query against database
-    const { error } = await tempClient.from('orders').select('count', { count: 'exact', head: true });
+    // Lightweight database ping
+    const { error } = await client.from('orders').select('count', { count: 'exact', head: true });
     
-    if (error && error.code === 'PGRST301') {
-      // Table doesn't exist yet, but connection to database URL & API key works!
+    if (error && (error.code === 'PGRST301' || error.code === 'PGRST204')) {
       return {
         connected: true,
         tablesExist: false,
-        message: 'Connected to Supabase! (Database tables need initialization)'
+        message: 'Connected to Supabase project! (Tables need initialization)'
       };
     } else if (error && error.code !== '42P01') {
-      // Other database error or permission error
       return {
         connected: true,
         tablesExist: true,
@@ -84,20 +154,49 @@ export const checkSupabaseConnection = async () => {
 };
 
 /**
- * Save custom Supabase credentials directly from ERP UI
+ * Save custom Supabase credentials across LocalStorage, SessionStorage, and Cookies
+ * to ensure persistent reconnection across cache clears and browser sessions.
  */
 export const saveSupabaseCredentials = (supabaseUrl, supabaseAnonKey) => {
-  if (supabaseUrl) localStorage.setItem('samyak_supabase_url', supabaseUrl.trim());
-  else localStorage.removeItem('samyak_supabase_url');
+  const trimmedUrl = (supabaseUrl || '').trim();
+  const trimmedKey = (supabaseAnonKey || '').trim();
 
-  if (supabaseAnonKey) localStorage.setItem('samyak_supabase_key', supabaseAnonKey.trim());
-  else localStorage.removeItem('samyak_supabase_key');
+  if (trimmedUrl) {
+    localStorage.setItem('samyak_supabase_url', trimmedUrl);
+    sessionStorage.setItem('samyak_supabase_url', trimmedUrl);
+    setCookie('samyak_supabase_url', trimmedUrl);
+  } else {
+    localStorage.removeItem('samyak_supabase_url');
+    sessionStorage.removeItem('samyak_supabase_url');
+    removeCookie('samyak_supabase_url');
+  }
+
+  if (trimmedKey) {
+    localStorage.setItem('samyak_supabase_key', trimmedKey);
+    sessionStorage.setItem('samyak_supabase_key', trimmedKey);
+    setCookie('samyak_supabase_key', trimmedKey);
+  } else {
+    localStorage.removeItem('samyak_supabase_key');
+    sessionStorage.removeItem('samyak_supabase_key');
+    removeCookie('samyak_supabase_key');
+  }
+
+  // Invalidate cached client so the next query immediately uses the new credentials
+  currentClientInstance = null;
+  currentClientKey = '';
 };
 
 /**
- * Clear custom Supabase credentials from local storage
+ * Clear custom Supabase credentials from all local storages
  */
 export const clearSupabaseCredentials = () => {
   localStorage.removeItem('samyak_supabase_url');
   localStorage.removeItem('samyak_supabase_key');
+  sessionStorage.removeItem('samyak_supabase_url');
+  sessionStorage.removeItem('samyak_supabase_key');
+  removeCookie('samyak_supabase_url');
+  removeCookie('samyak_supabase_key');
+
+  currentClientInstance = null;
+  currentClientKey = '';
 };
