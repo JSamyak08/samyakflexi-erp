@@ -328,7 +328,7 @@ export default function OrderManagement({
         {filteredOrders.map(order => {
           const isOverdue = order.status === 'Delayed' || new Date(order.targetDeliveryDate) < new Date('2026-07-24');
           const isExpanded = expandedOrders[order.id];
-          const reqs = order.materialRequirements || [];
+          const reqs = order.materialRequirements || order.rawMaterialRequirements || [];
           const allReqsSelected = reqs.length > 0 && reqs.every(r => selectedReqIds[r.id]);
 
           return (

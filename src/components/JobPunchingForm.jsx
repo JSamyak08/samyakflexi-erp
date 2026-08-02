@@ -146,8 +146,53 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard }) 
 
     const structureString = layers.map(l => `${l.micron} ${l.filmType}`).join(' / ');
 
+    const orderId = `ORD-2026-${Math.floor(100 + Math.random() * 900)}`;
+
+    // Generate Itemized Raw Material Requirements list from live calculation results
+    const materialRequirements = [];
+    if (calculationResults && calculationResults.layerResults) {
+      calculationResults.layerResults.forEach((layer, idx) => {
+        materialRequirements.push({
+          id: `REQ-${orderId}-${idx + 1}`,
+          filmType: layer.filmType,
+          micron: layer.micron,
+          widthMm: layer.widthMm || parseFloat(printWidthMm) || 1000,
+          qtyKg: layer.grossKg || 0,
+          preferredVendor: layer.filmType.includes('LD') ? 'Malwa Extrusions Pvt Ltd' : 'FlexiPoly Films Ltd',
+          poIssued: false,
+          poNumber: ""
+        });
+      });
+
+      if (calculationResults.inkDetails && calculationResults.inkDetails.grossKg > 0) {
+        materialRequirements.push({
+          id: `REQ-${orderId}-${materialRequirements.length + 1}`,
+          filmType: 'Liquid Inks',
+          micron: '-',
+          widthMm: '-',
+          qtyKg: calculationResults.inkDetails.grossKg,
+          preferredVendor: 'Siegwerk Inks Ltd',
+          poIssued: false,
+          poNumber: ""
+        });
+      }
+
+      if (calculationResults.adhesiveDetails && calculationResults.adhesiveDetails.grossKg > 0) {
+        materialRequirements.push({
+          id: `REQ-${orderId}-${materialRequirements.length + 1}`,
+          filmType: 'Solvent-less Adhesive',
+          micron: '-',
+          widthMm: '-',
+          qtyKg: calculationResults.adhesiveDetails.grossKg,
+          preferredVendor: 'Siegwerk Inks Ltd',
+          poIssued: false,
+          poNumber: ""
+        });
+      }
+    }
+
     const newOrder = {
-      id: `ORD-2026-${Math.floor(100 + Math.random() * 900)}`,
+      id: orderId,
       jobName,
       clientName,
       orderDate: new Date().toISOString().split('T')[0],
@@ -159,6 +204,8 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard }) 
       structure: structureString,
       poIssued: false,
       poNumber: "",
+      materialRequirements,
+      rawMaterialRequirements: materialRequirements,
       calculationDetails: calculationResults
     };
 

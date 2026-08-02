@@ -61,7 +61,8 @@ export async function fetchOrders() {
       printWidthMm: o.job_details?.printWidthMm,
       repeatLengthMm: o.job_details?.repeatLengthMm,
       jobDetails: o.job_details,
-      rawMaterialRequirements: o.raw_material_requirements
+      materialRequirements: o.raw_material_requirements || [],
+      rawMaterialRequirements: o.raw_material_requirements || []
     }));
   } catch (err) {
     console.error("Error fetching orders from Supabase:", err);
