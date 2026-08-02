@@ -14,6 +14,29 @@ import {
 } from '../factoryStore';
 import { initialCylinders } from '../dataStore';
 
+/**
+ * Graceful Supabase Error Handler
+ * Suppresses blocking UI exceptions if a table is not created in Supabase yet,
+ * allowing local ERP in-memory state to operate smoothly.
+ */
+function handleSupabaseError(error, contextName) {
+  if (!error) return;
+
+  const isMissingTable = 
+    error.message?.includes('schema cache') || 
+    error.message?.includes('does not exist') || 
+    error.code === 'PGRST204' || 
+    error.code === '42P01';
+
+  if (isMissingTable) {
+    console.warn(`[Supabase Sync Notice] Table '${contextName}' is not created in Supabase yet. Saved locally in ERP state.`);
+    return;
+  }
+
+  console.error(`[Supabase Sync Error] ${contextName}:`, error);
+  throw error;
+}
+
 // ============================================================================
 // 1. ORDERS / JOB PUNCHING
 // ============================================================================
@@ -63,20 +86,13 @@ export async function saveOrderToSupabase(order) {
   };
 
   const { error } = await supabase.from('orders').upsert(payload, { onConflict: 'id' });
-  
-  if (error) {
-    console.error("Error saving order to Supabase:", error);
-    throw error;
-  }
+  handleSupabaseError(error, 'orders');
 }
 
 export async function deleteOrderFromSupabase(orderId) {
   if (!isSupabaseConfigured()) return;
   const { error } = await supabase.from('orders').delete().eq('id', orderId);
-  if (error) {
-    console.error("Error deleting order from Supabase:", error);
-    throw error;
-  }
+  handleSupabaseError(error, 'orders');
 }
 
 // ============================================================================
@@ -87,7 +103,10 @@ export async function fetchVendors() {
   if (!isSupabaseConfigured()) return [];
   try {
     const { data, error } = await supabase.from('vendors').select('*').order('name');
-    if (error) throw error;
+    if (error) {
+      handleSupabaseError(error, 'vendors');
+      return [];
+    }
     if (!data) return [];
 
     return data.map(v => ({
@@ -127,10 +146,7 @@ export async function saveVendorToSupabase(vendor) {
     rating: Number(vendor.rating) || 5.0
   }, { onConflict: 'id' });
 
-  if (error) {
-    console.error("Error saving vendor to Supabase:", error);
-    throw error;
-  }
+  handleSupabaseError(error, 'vendors');
 }
 
 export async function deleteVendorFromSupabase(vendorId) {
