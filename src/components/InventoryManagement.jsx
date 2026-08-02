@@ -33,6 +33,7 @@ import DispatchPackingListPDF from './DispatchPackingListPDF';
 import { 
   isReconciliationDue, 
   FILM_DENSITIES, 
+  DEFAULT_DAILY_RATES,
   generateBarcodeId, 
   generateVendorId,
   initialInventoryRolls, 

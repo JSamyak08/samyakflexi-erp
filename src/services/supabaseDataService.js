@@ -238,16 +238,19 @@ export async function fetchGRNs() {
     if (!data) return [];
 
     return data.map(g => ({
-      id: g.id,
-      grnNo: g.grn_number,
+      id: g.id || g.grn_number,
+      grnNo: g.grn_number || g.id,
       vendorId: g.vendor_id,
+      vendorName: g.vendor_id,
       poNumber: g.po_number,
       invoiceNo: g.invoice_number,
       receivedDate: g.received_date,
       itemName: g.item_name,
+      filmType: g.item_name ? g.item_name.split(' ')[0] : 'PET',
       receivedQtyKg: Number(g.received_qty_kg) || 0,
+      netWeightKg: Number(g.received_qty_kg) || 0,
       status: g.status || 'Pending QC',
-      qcNotes: g.qc_remarks
+      qcNotes: g.qc_remarks || ''
     }));
   } catch (err) {
     console.error("Error fetching GRNs from Supabase:", err);
@@ -257,23 +260,24 @@ export async function fetchGRNs() {
 
 export async function saveGRNToSupabase(grn) {
   if (!isSupabaseConfigured()) return;
-  const { error } = await supabase.from('grns').upsert({
-    id: grn.id,
-    grn_number: grn.grnNo,
-    vendor_id: grn.vendorId,
-    po_number: grn.poNumber,
-    invoice_number: grn.invoiceNo,
-    received_date: grn.receivedDate,
-    item_name: grn.itemName,
-    received_qty_kg: grn.receivedQtyKg,
-    status: grn.status || 'Pending QC',
-    qc_remarks: grn.qcNotes
-  });
+  const grnId = grn.id || grn.grnNo || `GRN-2026-${Math.floor(100 + Math.random() * 900)}`;
+  const itemNameVal = grn.itemName || (grn.filmType ? `${grn.filmType} ${grn.micron || 12}µ (${grn.widthMm || 1000}mm)` : 'Raw Material Film');
+  const weightVal = Number(grn.receivedQtyKg || grn.netWeightKg) || 0;
 
-  if (error) {
-    console.error("Error saving GRN to Supabase:", error);
-    throw error;
-  }
+  const { error } = await supabase.from('grns').upsert({
+    id: grnId,
+    grn_number: grn.grnNo || grnId,
+    vendor_id: grn.vendorName || grn.vendorId || 'General Vendor',
+    po_number: grn.poNumber || '',
+    invoice_number: grn.invoiceNo || '',
+    received_date: grn.receivedDate || new Date().toISOString(),
+    item_name: itemNameVal,
+    received_qty_kg: weightVal,
+    status: grn.status || 'Pending QC',
+    qc_remarks: grn.qcNotes || ''
+  }, { onConflict: 'id' });
+
+  handleSupabaseError(error, 'grns');
 }
 
 // ============================================================================
