@@ -70,6 +70,8 @@ CREATE TABLE IF NOT EXISTS public.cylinders (
     job_name TEXT NOT NULL,
     colors_count INT,
     cylinder_cost TEXT,
+    cost_per_cylinder TEXT,
+    rate_per_sq_inch NUMERIC DEFAULT 1.6,
     engravures_name TEXT,
     cost_borne_by TEXT,
     cost_borne_type TEXT,
@@ -80,6 +82,7 @@ CREATE TABLE IF NOT EXISTS public.cylinders (
     dispatched_qty NUMERIC DEFAULT 0,
     utilisation_limit NUMERIC DEFAULT 10000,
     status TEXT DEFAULT 'Active In-Use',
+    artwork_url TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -222,22 +225,80 @@ CREATE TABLE IF NOT EXISTS public.production_schedules (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 13. CLIENTS TABLE
+CREATE TABLE IF NOT EXISTS public.clients (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    gstin TEXT,
+    address TEXT,
+    payment_terms TEXT,
+    contact_person TEXT,
+    phone TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 14. JOB MASTERS DIRECTORY TABLE
+CREATE TABLE IF NOT EXISTS public.job_masters (
+    id TEXT PRIMARY KEY,
+    sku_code TEXT UNIQUE NOT NULL,
+    job_name TEXT NOT NULL,
+    client_name TEXT NOT NULL,
+    pouch_width_mm NUMERIC,
+    pouch_height_mm NUMERIC,
+    repeat_length_mm NUMERIC,
+    film_structure TEXT,
+    colors_count INT DEFAULT 8,
+    cylinder_cost TEXT,
+    cost_borne_by TEXT,
+    engraver_name TEXT,
+    printing_process TEXT DEFAULT 'Rotogravure Reverse',
+    target_gsm NUMERIC,
+    artwork_url TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 ALTER TABLE public.printing_machines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.production_schedules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.job_masters ENABLE ROW LEVEL SECURITY;
 
 -- Anonymous/Public access policies for ERP client operations
 CREATE POLICY "Allow public read-write for orders" ON public.orders FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for vendors" ON public.vendors FOR ALL USING (true);
+CREATE POLICY "Allow public read-write for clients" ON public.clients FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for inventory" ON public.inventory FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for grns" ON public.grns FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for cylinders" ON public.cylinders FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for production_records" ON public.production_records FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for users" ON public.users FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for job_datasheets" ON public.job_datasheets FOR ALL USING (true);
+CREATE POLICY "Allow public read-write for job_masters" ON public.job_masters FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for inventory_rolls" ON public.inventory_rolls FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for dispatch_shipments" ON public.dispatch_shipments FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for printing_machines" ON public.printing_machines FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for production_schedules" ON public.production_schedules FOR ALL USING (true);
+
+-- 15. STORAGE BUCKETS FOR PACKAGING ARTWORK & DOCUMENTS
+INSERT INTO storage.buckets (id, name, public) 
+VALUES ('erp-files', 'erp-files', true), ('artwork', 'artwork', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+DO $$
+BEGIN
+  -- Storage policies
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow public uploads to erp-files' AND tablename = 'objects') THEN
+    CREATE POLICY "Allow public uploads to erp-files" ON storage.objects FOR INSERT WITH CHECK (bucket_id IN ('erp-files', 'artwork'));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow public read from erp-files' AND tablename = 'objects') THEN
+    CREATE POLICY "Allow public read from erp-files" ON storage.objects FOR SELECT USING (bucket_id IN ('erp-files', 'artwork'));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow public update to erp-files' AND tablename = 'objects') THEN
+    CREATE POLICY "Allow public update to erp-files" ON storage.objects FOR UPDATE USING (bucket_id IN ('erp-files', 'artwork'));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow public delete from erp-files' AND tablename = 'objects') THEN
+    CREATE POLICY "Allow public delete from erp-files" ON storage.objects FOR DELETE USING (bucket_id IN ('erp-files', 'artwork'));
+  END IF;
+END $$;
 
 
 -- 8. SUPABASE AUTH USER SYNC TRIGGER

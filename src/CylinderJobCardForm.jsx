@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useReactToPrint } from 'react-to-print';
-import { Save, Printer, UploadCloud, ArrowLeft, CheckCircle2, RefreshCw } from 'lucide-react';
+import { Save, Printer, UploadCloud, ArrowLeft, CheckCircle2, RefreshCw, Trash2, Check, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { uploadArtworkFile } from './services/supabaseStorageService';
 
 const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
   return (
@@ -332,14 +333,22 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
         approvedBy: initialData.approvedBy || '',
         engravure: initialData.engravuresName || initialData.engravure || 'Acme Rotogravure Engravers',
         cylinderCost: initialData.cylinderCost || '₹35,000',
+        costPerCylinder: initialData.costPerCylinder || '',
+        ratePerSqInch: initialData.ratePerSqInch || 1.60,
         utilisationLimit: `${initialData.utilisationLimit || 10000}`,
         costBorneBy: initialData.costBorneBy || 'Client (100%)',
-        costBorneType: initialData.costBorneType || 'client'
+        costBorneType: initialData.costBorneType || 'client',
+        artworkUrl: initialData.artworkUrl || initialData.imageUrl || initialData.artworkImage || ''
       });
+
+      if (initialData.artworkUrl || initialData.imageUrl || initialData.artworkImage) {
+        setImagePreview(initialData.artworkUrl || initialData.imageUrl || initialData.artworkImage);
+      }
     }
   }, [initialData]);
 
   const [imagePreview, setImagePreview] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
   const [saveNotification, setSaveNotification] = useState(null);
 
   // Auto-Save effect: persists formData to localStorage automatically on any change
@@ -370,14 +379,36 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
     }
   };
 
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result);
-      };
-      reader.readAsDataURL(file);
+  const handleImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    try {
+      const result = await uploadArtworkFile(file, formData.skuCode || formData.jobName || 'jobcard');
+      if (result.publicUrl) {
+        setImagePreview(result.publicUrl);
+        setFormData(prev => ({ ...prev, artworkUrl: result.publicUrl }));
+        
+        if (onSave) {
+          onSave({ ...formData, artworkUrl: result.publicUrl });
+        }
+        setSaveNotification('✅ Artwork Uploaded to Supabase Cloud Storage Successfully!');
+        setTimeout(() => setSaveNotification(null), 4000);
+      }
+    } catch (err) {
+      console.error("Artwork upload failed:", err);
+      alert("Failed to upload artwork: " + err.message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleRemoveArtwork = () => {
+    setImagePreview(null);
+    setFormData(prev => ({ ...prev, artworkUrl: '' }));
+    if (onSave) {
+      onSave({ ...formData, artworkUrl: '' });
     }
   };
 
@@ -387,10 +418,10 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
       localStorage.setItem(storageKey, JSON.stringify(formData));
 
       if (onSave) {
-        onSave(formData);
+        onSave({ ...formData, artworkUrl: imagePreview || formData.artworkUrl || '' });
       }
 
-      setSaveNotification('✅ Job Card Settings & Parameters Saved Successfully!');
+      setSaveNotification('✅ Job Card Settings & Cloud Parameters Saved Successfully!');
       setTimeout(() => setSaveNotification(null), 4000);
     } catch (e) {
       console.error("Save failed", e);
@@ -535,9 +566,46 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
             <input className="form-control" name="approvedBy" value={formData.approvedBy} onChange={handleChange} />
           </div>
 
-          <div style={{ gridColumn: '1 / -1', marginTop: '12px' }} className="form-group">
-            <label>Artwork / KLD Upload (Optional Image)</label>
-            <input type="file" accept="image/*" onChange={handleImageUpload} style={{ background: 'rgba(255,255,255,0.05)', padding: '12px', borderRadius: '8px' }} />
+          <div style={{ gridColumn: '1 / -1', marginTop: '12px', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }} className="form-group">
+            <label style={{ fontWeight: '700', fontSize: '0.9rem', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <UploadCloud size={18} style={{ color: 'var(--primary-brand)' }} />
+              Artwork / KLD Upload (Supabase Cloud Storage)
+            </label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+              {imagePreview ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <img src={imagePreview} alt="Artwork Preview" style={{ width: '64px', height: '64px', objectFit: 'contain', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff' }} />
+                  <div>
+                    <div style={{ fontSize: '0.85rem', fontWeight: '700', color: '#047857', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Check size={16} /> Cloud Artwork Stored
+                    </div>
+                    <a href={imagePreview} target="_blank" rel="noreferrer" style={{ fontSize: '0.75rem', color: '#2563eb', display: 'flex', alignItems: 'center', gap: '2px', textDecoration: 'none' }}>
+                      View Full File <ExternalLink size={12} />
+                    </a>
+                    <button type="button" style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginTop: '4px' }} onClick={handleRemoveArtwork}>
+                      <Trash2 size={12} /> Remove Artwork
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ fontSize: '0.85rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <ImageIcon size={20} /> No artwork uploaded yet.
+                </div>
+              )}
+
+              <div style={{ marginLeft: 'auto' }}>
+                <label className="btn-secondary" style={{ cursor: isUploading ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', padding: '8px 14px' }}>
+                  <UploadCloud size={16} /> {isUploading ? 'Uploading to Supabase...' : (imagePreview ? 'Replace Artwork File' : 'Upload Artwork to Cloud')}
+                  <input 
+                    type="file" 
+                    accept="image/*,.pdf" 
+                    style={{ display: 'none' }} 
+                    disabled={isUploading}
+                    onChange={handleImageUpload} 
+                  />
+                </label>
+              </div>
+            </div>
           </div>
         </div>
 

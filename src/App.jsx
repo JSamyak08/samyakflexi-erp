@@ -49,6 +49,7 @@ import ProductionScheduler from './components/ProductionScheduler';
 import ClientManagement from './components/ClientManagement';
 import SupabaseManagement from './components/SupabaseManagement';
 import DocumentSettings from './components/DocumentSettings';
+import ErrorButton from './components/ErrorButton';
 import { getTabFromUrl, pushSlugState } from './utils/slugRouter';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import { 
@@ -56,7 +57,7 @@ import {
   fetchVendors, saveVendorToSupabase, deleteVendorFromSupabase,
   fetchInventory, saveInventoryItemToSupabase, deleteInventoryItemFromSupabase,
   fetchGRNs, saveGRNToSupabase,
-  fetchCylinders, saveCylinderToSupabase,
+  fetchCylinders, saveCylinderToSupabase, deleteCylinderFromSupabase,
   fetchProductionRecords, saveProductionRecordToSupabase,
   fetchUsers, saveUserToSupabase,
   fetchJobDataSheets, saveJobDataSheetToSupabase, deleteJobDataSheetFromSupabase,
@@ -73,6 +74,8 @@ import './index.css';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState(() => getTabFromUrl());
+
+
 
   const handleTabChange = (tabKey) => {
     setActiveTab(tabKey);
@@ -435,6 +438,15 @@ export default function App() {
     }
   };
 
+  const handleDeleteCylinder = async (cylId) => {
+    setCylinders(prev => prev.filter(c => c.id !== cylId));
+    try {
+      await deleteCylinderFromSupabase(cylId);
+    } catch (err) {
+      console.warn("[Sync Notice] Cylinder deleted locally. Supabase notice:", err);
+    }
+  };
+
   const handleAddRoll = async (newRoll) => {
     setInventoryRolls(prev => [newRoll, ...prev.filter(r => r.id !== newRoll.id)]);
     try {
@@ -468,6 +480,15 @@ export default function App() {
       await saveClientToSupabase(updatedClient);
     } catch (err) {
       console.warn("[Sync Notice] Client updated locally. Supabase notice:", err);
+    }
+  };
+
+  const handleDeleteClient = async (clientId) => {
+    setClients(prev => prev.filter(c => c.id !== clientId));
+    try {
+      await deleteClientFromSupabase(clientId);
+    } catch (err) {
+      console.warn("[Sync Notice] Client deleted locally. Supabase notice:", err);
     }
   };
 
@@ -700,6 +721,8 @@ export default function App() {
               </div>
             )}
 
+            <ErrorButton />
+
             <button className="btn-signout" onClick={handleLogout} title="Sign Out of Session">
               <LogOut size={16} /> Sign Out
             </button>
@@ -733,6 +756,7 @@ export default function App() {
             cylinders={cylinders}
             onAddClient={handleAddClient}
             onUpdateClient={handleUpdateClient}
+            onDeleteClient={handleDeleteClient}
           />
         )}
 
@@ -1013,12 +1037,13 @@ export default function App() {
           />
         )}
 
-        {/* TAB 8: ROTOGRAVURE CYLINDERS */}
+        {/* TAB 8: CYLINDER DATABASE & UTILISATION */}
         {activeTab === 'cylinders' && (
           <CylinderManagement 
             cylinders={cylinders}
             onAddCylinder={handleAddCylinder}
             onUpdateCylinder={handleUpdateCylinder}
+            onDeleteCylinder={handleDeleteCylinder}
           />
         )}
 

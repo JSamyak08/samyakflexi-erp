@@ -4,6 +4,8 @@
  */
 
 import { supabase, isSupabaseConfigured } from './supabaseClient';
+import { uploadArtworkFile, uploadDocumentFile } from './supabaseStorageService';
+export { uploadArtworkFile, uploadDocumentFile };
 import { 
   initialOrders, 
   initialVendors, 
@@ -209,12 +211,14 @@ export async function saveClientToSupabase(client) {
 
 export async function deleteClientFromSupabase(clientId) {
   if (!isSupabaseConfigured()) return;
-  const { error } = await supabase.from('clients').delete().eq('id', clientId);
-  if (error) {
-    console.error("Error deleting client from Supabase:", error);
-    throw error;
+  try {
+    const { error } = await supabase.from('clients').delete().eq('id', clientId);
+    handleSupabaseError(error, 'clients');
+  } catch (err) {
+    console.error("Error deleting client from Supabase:", err);
   }
 }
+
 
 // ============================================================================
 // 3. INVENTORY & FILM STOCK
@@ -357,6 +361,8 @@ export async function fetchCylinders() {
       jobName: c.job_name,
       colorsCount: Number(c.colors_count) || 0,
       cylinderCost: c.cylinder_cost,
+      costPerCylinder: c.cost_per_cylinder,
+      ratePerSqInch: Number(c.rate_per_sq_inch) || 1.6,
       engravuresName: c.engravures_name,
       costBorneBy: c.cost_borne_by,
       costBorneType: c.cost_borne_type,
@@ -366,7 +372,8 @@ export async function fetchCylinders() {
       layer1PrintedQtyKg: Number(c.layer1_printed_qty_kg) || 0,
       dispatchedQty: Number(c.dispatched_qty) || 0,
       utilisationLimit: Number(c.utilisation_limit) || 10000,
-      status: c.status || 'Active In-Use'
+      status: c.status || 'Active In-Use',
+      artworkUrl: c.artwork_url || null
     }));
   } catch (err) {
     console.error("Error fetching cylinders from Supabase:", err);
@@ -382,6 +389,8 @@ export async function saveCylinderToSupabase(cyl) {
     job_name: cyl.jobName,
     colors_count: cyl.colorsCount,
     cylinder_cost: cyl.cylinderCost,
+    cost_per_cylinder: cyl.costPerCylinder,
+    rate_per_sq_inch: cyl.ratePerSqInch,
     engravures_name: cyl.engravuresName,
     cost_borne_by: cyl.costBorneBy,
     cost_borne_type: cyl.costBorneType,
@@ -391,10 +400,21 @@ export async function saveCylinderToSupabase(cyl) {
     layer1_printed_qty_kg: cyl.layer1PrintedQtyKg,
     dispatched_qty: cyl.dispatchedQty,
     utilisation_limit: cyl.utilisationLimit,
-    status: cyl.status || 'Active In-Use'
+    status: cyl.status || 'Active In-Use',
+    artwork_url: cyl.artworkUrl || cyl.artwork_url || null
   }, { onConflict: 'id' });
 
   handleSupabaseError(error, 'cylinders');
+}
+
+export async function deleteCylinderFromSupabase(cylinderId) {
+  if (!isSupabaseConfigured()) return;
+  try {
+    const { error } = await supabase.from('cylinders').delete().eq('id', cylinderId);
+    handleSupabaseError(error, 'cylinders');
+  } catch (err) {
+    console.error("Error deleting cylinder from Supabase:", err);
+  }
 }
 
 // ============================================================================

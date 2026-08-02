@@ -465,8 +465,16 @@ export default function ProductionScheduler({
           {/* Machine Gantt Timeline Cards */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {machines.map(mac => {
-              const machineScheds = schedules.filter(s => s.machineId === mac.id);
-              
+              const windowStart = new Date(selectedDate);
+              const windowEnd = new Date(selectedDate);
+              windowEnd.setDate(windowEnd.getDate() + 6); // include 7 days total
+
+              const machineScheds = schedules.filter(s => {
+                if (s.machineId !== mac.id) return false;
+                if (!s.scheduledDate) return false;
+                const schedDate = new Date(s.scheduledDate);
+                return schedDate >= windowStart && schedDate <= windowEnd;
+              });              
               const getJobOffsetMins = (startTime, shift) => {
                 if (!startTime) return 0;
                 const [h, m] = startTime.split(':').map(Number);
