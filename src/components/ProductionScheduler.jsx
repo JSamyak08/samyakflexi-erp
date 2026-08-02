@@ -69,6 +69,12 @@ export default function ProductionScheduler({
       const isOverdue = order.status === 'Delayed' || new Date(order.targetDeliveryDate) < new Date('2026-07-24');
       const reqs = order.materialRequirements || order.rawMaterialRequirements || [];
 
+      // Extract Print Width and Micron
+      const layers = order.jobDetails?.layers || [];
+      const firstLayer = layers[0] || {};
+      const widthMm = parseFloat(order.printWidthMm || order.jobDetails?.printWidthMm || order.widthMm || 1000);
+      const micron = parseFloat(order.micron || firstLayer.micron || 12);
+
       // Check stock availability for order materials
       let isMaterialReady = true;
       if (reqs.length > 0) {
@@ -84,13 +90,23 @@ export default function ProductionScheduler({
 
       return {
         ...order,
+        widthMm,
+        micron,
         isOverdue,
         isMaterialReady,
         isAlreadyScheduled,
         priorityTag: isOverdue ? 'HIGH PRIORITY - OVERDUE' : isMaterialReady ? 'READY FOR SCHEDULING' : 'MATERIAL PENDING'
       };
     }).sort((a, b) => {
-      // Prioritize overdue jobs first, then ready jobs
+      // Primary sort: Decreasing order of Print Film Size (Width in mm)
+      if (b.widthMm !== a.widthMm) {
+        return b.widthMm - a.widthMm;
+      }
+      // Secondary sort: Decreasing order of Micron (µ)
+      if (b.micron !== a.micron) {
+        return b.micron - a.micron;
+      }
+      // Tertiary sort: Overdue priority
       if (a.isOverdue && !b.isOverdue) return -1;
       if (!a.isOverdue && b.isOverdue) return 1;
       return 0;
@@ -483,7 +499,7 @@ export default function ProductionScheduler({
                 Material-Ready Order Scheduling Queue ({readyForScheduleOrders.length})
               </h3>
               <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                Orders with verified film stock are pushed to top. Overdue jobs highlighted in red for urgent scheduling.
+                Sorted in <b>decreasing order of Print Size (Width in mm) & Micron (µ)</b> to minimize cylinder & deck changeover times. Overdue jobs highlighted in red.
               </p>
             </div>
           </div>
@@ -494,6 +510,7 @@ export default function ProductionScheduler({
                 <th>Priority / Status</th>
                 <th>Order ID</th>
                 <th>Job & Client Name</th>
+                <th>Print Size (mm) × Micron (µ)</th>
                 <th>Substrate Structure</th>
                 <th>Order Qty (Kg)</th>
                 <th>Delivery Date</th>
@@ -516,6 +533,11 @@ export default function ProductionScheduler({
                   <td>
                     <div style={{ fontWeight: '700' }}>{order.jobName}</div>
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{order.clientName}</div>
+                  </td>
+                  <td>
+                    <div style={{ fontWeight: '800', color: '#047857', fontSize: '0.9rem', background: '#ecfdf5', padding: '4px 8px', borderRadius: '6px', display: 'inline-block', border: '1px solid #a7f3d0' }}>
+                      📐 {order.widthMm} mm • {order.micron} µ
+                    </div>
                   </td>
                   <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{order.structure}</td>
                   <td className="bold-val">{order.orderQtyKg.toLocaleString()} kg</td>
