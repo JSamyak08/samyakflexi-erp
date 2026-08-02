@@ -13,6 +13,7 @@ export const TAB_SLUG_MAP = {
   inventory: '/inventory',
   user_management: '/user-management',
   cylinders: '/rotogravure-cylinders',
+  printing_scheduler: '/printing-scheduler',
   supabase: '/supabase-integration',
   doc_settings: '/letterhead-settings'
 };
@@ -48,6 +49,9 @@ export const SLUG_TAB_MAP = {
 
   '/rotogravure-cylinders': 'cylinders',
   'rotogravure-cylinders': 'cylinders',
+
+  '/printing-scheduler': 'printing_scheduler',
+  'printing-scheduler': 'printing_scheduler',
 
   '/supabase-integration': 'supabase',
   'supabase-integration': 'supabase',

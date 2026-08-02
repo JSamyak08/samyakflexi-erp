@@ -7,6 +7,8 @@ import {
   initialUsers,
   initialJobDataSheets,
   initialProductionRecords,
+  initialMachines,
+  initialProductionSchedules,
   isReconciliationDue 
 } from './factoryStore';
 import { initialCylinders } from './dataStore';
@@ -26,6 +28,7 @@ import {
   ClipboardList,
   Database,
   UserCheck,
+  Printer,
   Settings as SettingsIcon
 } from 'lucide-react';
 
@@ -38,6 +41,7 @@ import JobDataSheet from './components/JobDataSheet';
 import UserManagement from './components/UserManagement';
 import CylinderManagement from './components/CylinderManagement';
 import ProductionRecordManagement from './components/ProductionRecordManagement';
+import ProductionScheduler from './components/ProductionScheduler';
 import SupabaseManagement from './components/SupabaseManagement';
 import DocumentSettings from './components/DocumentSettings';
 import { getTabFromUrl, pushSlugState } from './utils/slugRouter';
@@ -52,7 +56,9 @@ import {
   fetchUsers, saveUserToSupabase,
   fetchJobDataSheets, saveJobDataSheetToSupabase, deleteJobDataSheetFromSupabase,
   fetchInventoryRolls, saveInventoryRollToSupabase,
-  fetchDispatchShipments, saveDispatchShipmentToSupabase
+  fetchDispatchShipments, saveDispatchShipmentToSupabase,
+  fetchPrintingMachines, savePrintingMachineToSupabase,
+  fetchProductionSchedules, saveProductionScheduleToSupabase
 } from './services/supabaseDataService';
 import { initialInventoryRolls, initialDispatchShipments } from './factoryStore';
 import './index.css';
@@ -107,6 +113,8 @@ export default function App() {
   const [productionRecords, setProductionRecords] = useState(() => loadLocalState('production_records', initialProductionRecords));
   const [inventoryRolls, setInventoryRolls] = useState(() => loadLocalState('inventory_rolls', initialInventoryRolls));
   const [dispatchShipments, setDispatchShipments] = useState(() => loadLocalState('dispatch_shipments', initialDispatchShipments));
+  const [machines, setMachines] = useState(() => loadLocalState('printing_machines', initialMachines));
+  const [schedules, setSchedules] = useState(() => loadLocalState('production_schedules', initialProductionSchedules));
 
   // Sync state to localStorage whenever modified
   useEffect(() => { localStorage.setItem('samyak_erp_orders', JSON.stringify(orders)); }, [orders]);
@@ -119,6 +127,8 @@ export default function App() {
   useEffect(() => { localStorage.setItem('samyak_erp_production_records', JSON.stringify(productionRecords)); }, [productionRecords]);
   useEffect(() => { localStorage.setItem('samyak_erp_inventory_rolls', JSON.stringify(inventoryRolls)); }, [inventoryRolls]);
   useEffect(() => { localStorage.setItem('samyak_erp_dispatch_shipments', JSON.stringify(dispatchShipments)); }, [dispatchShipments]);
+  useEffect(() => { localStorage.setItem('samyak_erp_printing_machines', JSON.stringify(machines)); }, [machines]);
+  useEffect(() => { localStorage.setItem('samyak_erp_production_schedules', JSON.stringify(schedules)); }, [schedules]);
 
   // Load live data exclusively from Supabase PostgreSQL if configured
   useEffect(() => {
@@ -126,7 +136,11 @@ export default function App() {
 
     async function loadSupabaseData() {
       try {
-        const [supaOrders, supaVendors, supaInv, supaGRNs, supaCyls, supaProd, supaUsers, supaSheets, supaRolls, supaShipments] = await Promise.all([
+        const [
+          supaOrders, supaVendors, supaInv, supaGRNs, supaCyls, 
+          supaProd, supaUsers, supaSheets, supaRolls, supaShipments,
+          supaMachines, supaSchedules
+        ] = await Promise.all([
           fetchOrders(),
           fetchVendors(),
           fetchInventory(),
@@ -136,7 +150,9 @@ export default function App() {
           fetchUsers(),
           fetchJobDataSheets(),
           fetchInventoryRolls(),
-          fetchDispatchShipments()
+          fetchDispatchShipments(),
+          fetchPrintingMachines(),
+          fetchProductionSchedules()
         ]);
 
         if (supaOrders && supaOrders.length > 0) setOrders(supaOrders);
@@ -149,6 +165,8 @@ export default function App() {
         if (supaRolls && supaRolls.length > 0) setInventoryRolls(supaRolls);
         if (supaShipments && supaShipments.length > 0) setDispatchShipments(supaShipments);
         if (supaUsers && supaUsers.length > 0) setUsers(supaUsers);
+        if (supaMachines && supaMachines.length > 0) setMachines(supaMachines);
+        if (supaSchedules && supaSchedules.length > 0) setSchedules(supaSchedules);
       } catch (err) {
         console.error("Failed to load data from Supabase:", err);
       }
@@ -156,6 +174,16 @@ export default function App() {
 
     loadSupabaseData();
   }, [isSupaActive]);
+
+  const handleSaveMachine = (newMachine) => {
+    setMachines(prev => [newMachine, ...prev]);
+    savePrintingMachineToSupabase(newMachine);
+  };
+
+  const handleSaveSchedule = (newSchedule) => {
+    setSchedules(prev => [newSchedule, ...prev]);
+    saveProductionScheduleToSupabase(newSchedule);
+  };
 
 
 
@@ -502,6 +530,14 @@ export default function App() {
           </div>
 
           <div 
+            className={`nav-item ${activeTab === 'printing_scheduler' ? 'active' : ''}`}
+            onClick={() => handleTabChange('printing_scheduler')}
+          >
+            <Printer size={18} style={{ color: '#3b82f6' }} />
+            Printing Machine Scheduler
+          </div>
+
+          <div 
             className={`nav-item ${activeTab === 'supabase' ? 'active' : ''}`}
             onClick={() => handleTabChange('supabase')}
           >
@@ -544,6 +580,7 @@ export default function App() {
               {activeTab === 'inventory' && 'Raw Material Inventory, GRN & Quality Control'}
               {activeTab === 'user_management' && 'Departmental User Management (RBAC)'}
               {activeTab === 'cylinders' && 'Rotogravure Cylinder Database'}
+              {activeTab === 'printing_scheduler' && 'Printing Machine Production Scheduler & Time Board'}
               {activeTab === 'supabase' && 'Supabase Cloud Database & API Service'}
               {activeTab === 'doc_settings' && 'Letterhead Signature & Series Settings'}
             </h1>
@@ -829,12 +866,24 @@ export default function App() {
           />
         )}
 
-        {/* TAB 9: SUPABASE DATABASE INTEGRATION */}
+        {/* TAB 9: PRINTING MACHINE PRODUCTION SCHEDULER */}
+        {activeTab === 'printing_scheduler' && (
+          <ProductionScheduler 
+            orders={orders}
+            inventory={inventory}
+            machines={machines}
+            schedules={schedules}
+            onSaveMachine={handleSaveMachine}
+            onSaveSchedule={handleSaveSchedule}
+          />
+        )}
+
+        {/* TAB 10: SUPABASE DATABASE INTEGRATION */}
         {activeTab === 'supabase' && (
           <SupabaseManagement />
         )}
 
-        {/* TAB 10: LETTERHEAD & SIGNATURE SETTINGS */}
+        {/* TAB 11: LETTERHEAD & SIGNATURE SETTINGS */}
         {activeTab === 'doc_settings' && (
           <DocumentSettings />
         )}

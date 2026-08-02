@@ -654,6 +654,122 @@ export async function saveDispatchShipmentToSupabase(shipment) {
 }
 
 // ============================================================================
+// 11. PRINTING MACHINES & PRODUCTION SCHEDULER
+// ============================================================================
+
+export async function fetchPrintingMachines() {
+  if (!isSupabaseConfigured()) return [];
+  try {
+    const { data, error } = await supabase.from('printing_machines').select('*').order('name');
+    if (error) {
+      handleSupabaseError(error, 'printing_machines');
+      return [];
+    }
+    if (!data) return [];
+
+    return data.map(m => ({
+      id: m.id,
+      name: m.name,
+      type: m.type || 'Rotogravure',
+      colors: Number(m.colors) || 8,
+      maxSpeedMpm: Number(m.max_speed_mpm) || 250,
+      maxWidthMm: Number(m.max_width_mm) || 1200,
+      status: m.status || 'Active',
+      operator: m.operator,
+      location: m.location
+    }));
+  } catch (err) {
+    console.error("Error fetching printing machines from Supabase:", err);
+    return [];
+  }
+}
+
+export async function savePrintingMachineToSupabase(machine) {
+  if (!isSupabaseConfigured()) return;
+  const { error } = await supabase.from('printing_machines').upsert({
+    id: machine.id || `MAC-PRINT-${Math.floor(10 + Math.random() * 90)}`,
+    name: machine.name,
+    type: machine.type || 'Rotogravure',
+    colors: machine.colors || 8,
+    max_speed_mpm: machine.maxSpeedMpm || 250,
+    max_width_mm: machine.maxWidthMm || 1200,
+    status: machine.status || 'Active',
+    operator: machine.operator || '',
+    location: machine.location || 'Printing Hall'
+  }, { onConflict: 'id' });
+
+  handleSupabaseError(error, 'printing_machines');
+}
+
+export async function fetchProductionSchedules() {
+  if (!isSupabaseConfigured()) return [];
+  try {
+    const { data, error } = await supabase.from('production_schedules').select('*').order('scheduled_date', { ascending: true });
+    if (error) {
+      handleSupabaseError(error, 'production_schedules');
+      return [];
+    }
+    if (!data) return [];
+
+    return data.map(s => ({
+      id: s.id,
+      orderId: s.order_id,
+      jobName: s.job_name,
+      clientName: s.client_name,
+      machineId: s.machine_id,
+      shift: s.shift || 'Day Shift',
+      scheduledDate: s.scheduled_date,
+      startTime: s.start_time,
+      orderQtyKg: Number(s.order_qty_kg) || 0,
+      widthMm: Number(s.width_mm) || 0,
+      micron: Number(s.micron) || 12,
+      filmType: s.film_type || 'PET',
+      maxSpeedMpm: Number(s.max_speed_mpm) || 250,
+      totalLengthMeters: Number(s.total_length_meters) || 0,
+      runTimeMins: Number(s.run_time_mins) || 0,
+      rollChangeoverMins: Number(s.roll_changeover_mins) || 0,
+      jobChangeoverMins: Number(s.job_changeover_mins) || 0,
+      totalDurationMins: Number(s.total_duration_mins) || 0,
+      endTime: s.end_time,
+      status: s.status || 'Scheduled',
+      priority: s.priority || 'Normal'
+    }));
+  } catch (err) {
+    console.error("Error fetching production schedules from Supabase:", err);
+    return [];
+  }
+}
+
+export async function saveProductionScheduleToSupabase(schedule) {
+  if (!isSupabaseConfigured()) return;
+  const { error } = await supabase.from('production_schedules').upsert({
+    id: schedule.id || `SCHED-2026-${Math.floor(100 + Math.random() * 900)}`,
+    order_id: schedule.orderId,
+    job_name: schedule.jobName,
+    client_name: schedule.clientName,
+    machine_id: schedule.machineId,
+    shift: schedule.shift || 'Day Shift',
+    scheduled_date: schedule.scheduledDate || new Date().toISOString().split('T')[0],
+    start_time: schedule.startTime || '08:00',
+    order_qty_kg: schedule.orderQtyKg,
+    width_mm: schedule.widthMm,
+    micron: schedule.micron,
+    film_type: schedule.filmType,
+    max_speed_mpm: schedule.maxSpeedMpm,
+    total_length_meters: schedule.totalLengthMeters,
+    run_time_mins: schedule.runTimeMins,
+    roll_changeover_mins: schedule.rollChangeoverMins,
+    job_changeover_mins: schedule.jobChangeoverMins,
+    total_duration_mins: schedule.totalDurationMins,
+    end_time: schedule.endTime,
+    status: schedule.status || 'Scheduled',
+    priority: schedule.priority || 'Normal'
+  }, { onConflict: 'id' });
+
+  handleSupabaseError(error, 'production_schedules');
+}
+
+// ============================================================================
 // ONE-CLICK SEED MIGRATION: SEED ALL INITIAL FACTORY DATA TO SUPABASE
 // ============================================================================
 

@@ -182,6 +182,49 @@ ALTER TABLE public.job_datasheets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inventory_rolls ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.dispatch_shipments ENABLE ROW LEVEL SECURITY;
 
+-- 11. PRINTING MACHINES TABLE
+CREATE TABLE IF NOT EXISTS public.printing_machines (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    type TEXT DEFAULT 'Rotogravure',
+    colors INT DEFAULT 8,
+    max_speed_mpm NUMERIC DEFAULT 250,
+    max_width_mm NUMERIC DEFAULT 1200,
+    status TEXT DEFAULT 'Active',
+    operator TEXT,
+    location TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 12. PRODUCTION SCHEDULES TABLE
+CREATE TABLE IF NOT EXISTS public.production_schedules (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL,
+    job_name TEXT NOT NULL,
+    client_name TEXT NOT NULL,
+    machine_id TEXT NOT NULL,
+    shift TEXT DEFAULT 'Day Shift',
+    scheduled_date DATE DEFAULT CURRENT_DATE,
+    start_time TEXT DEFAULT '08:00',
+    order_qty_kg NUMERIC,
+    width_mm NUMERIC,
+    micron NUMERIC,
+    film_type TEXT,
+    max_speed_mpm NUMERIC,
+    total_length_meters NUMERIC,
+    run_time_mins NUMERIC,
+    roll_changeover_mins NUMERIC,
+    job_changeover_mins NUMERIC,
+    total_duration_mins NUMERIC,
+    end_time TEXT,
+    status TEXT DEFAULT 'Scheduled',
+    priority TEXT DEFAULT 'Normal',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.printing_machines ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.production_schedules ENABLE ROW LEVEL SECURITY;
+
 -- Anonymous/Public access policies for ERP client operations
 CREATE POLICY "Allow public read-write for orders" ON public.orders FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for vendors" ON public.vendors FOR ALL USING (true);
@@ -193,6 +236,8 @@ CREATE POLICY "Allow public read-write for users" ON public.users FOR ALL USING 
 CREATE POLICY "Allow public read-write for job_datasheets" ON public.job_datasheets FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for inventory_rolls" ON public.inventory_rolls FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for dispatch_shipments" ON public.dispatch_shipments FOR ALL USING (true);
+CREATE POLICY "Allow public read-write for printing_machines" ON public.printing_machines FOR ALL USING (true);
+CREATE POLICY "Allow public read-write for production_schedules" ON public.production_schedules FOR ALL USING (true);
 
 
 -- 8. SUPABASE AUTH USER SYNC TRIGGER

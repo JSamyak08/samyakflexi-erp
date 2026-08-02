@@ -877,4 +877,152 @@ export const generateVendorId = () => {
   return `VEND-2026-${Math.floor(1000 + Math.random() * 9000)}`;
 };
 
+/**
+ * Initial Printing Machines Dataset
+ */
+export const initialMachines = [
+  {
+    id: "MAC-PRINT-01",
+    name: "Rotogravure Press #1 (8-Color)",
+    type: "Rotogravure",
+    colors: 8,
+    maxSpeedMpm: 250,
+    maxWidthMm: 1200,
+    status: "Active",
+    operator: "Rajesh Sharma",
+    location: "Bay 1 - Rotogravure Hall"
+  },
+  {
+    id: "MAC-PRINT-02",
+    name: "Rotogravure Press #2 (10-Color)",
+    type: "Rotogravure",
+    colors: 10,
+    maxSpeedMpm: 300,
+    maxWidthMm: 1300,
+    status: "Active",
+    operator: "Virendra Singh",
+    location: "Bay 2 - Rotogravure Hall"
+  },
+  {
+    id: "MAC-PRINT-03",
+    name: "Flexographic Press #1 (6-Color)",
+    type: "Flexographic",
+    colors: 6,
+    maxSpeedMpm: 200,
+    maxWidthMm: 1000,
+    status: "Active",
+    operator: "Amit Patel",
+    location: "Bay 3 - Flexo Hall"
+  }
+];
+
+/**
+ * Production Metrics & Time Accounting Engine for Printing Machines
+ */
+export const calculatePrintingScheduleMetrics = ({
+  orderQtyKg = 1000,
+  widthMm = 1000,
+  micron = 12,
+  filmType = "PET",
+  maxSpeedMpm = 250,
+  prevJobWidthMm = null,
+  prevJobRepeatMm = null,
+  repeatLengthMm = 400
+}) => {
+  const density = FILM_DENSITIES[filmType] || 1.40;
+  const gsm = micron * density;
+  const widthM = widthMm / 1000;
+
+  // 1. Calculate Total Area in square meters (m²)
+  const totalAreaSqm = gsm > 0 ? (orderQtyKg * 1000) / gsm : 0;
+
+  // 2. Calculate Total Length in Running Meters
+  const totalLengthMeters = widthM > 0 ? Math.round(totalAreaSqm / widthM) : 0;
+
+  // 3. Net Running Time (minutes)
+  const speed = Math.max(parseFloat(maxSpeedMpm) || 200, 10);
+  const runTimeMins = Math.ceil(totalLengthMeters / speed);
+
+  // 4. Roll Changeover Time (approx 20 mins per 250kg roll)
+  const rollCount = Math.max(1, Math.ceil(orderQtyKg / 250));
+  const rollChangeoverMins = rollCount * 20;
+
+  // 5. Job Changeover Time (2 hours if size/width is different, 1 hour if same)
+  let isSameSize = false;
+  if (prevJobWidthMm && Math.abs(parseFloat(prevJobWidthMm) - parseFloat(widthMm)) < 5) {
+    if (!prevJobRepeatMm || Math.abs(parseFloat(prevJobRepeatMm) - parseFloat(repeatLengthMm)) < 5) {
+      isSameSize = true;
+    }
+  }
+
+  const jobChangeoverMins = isSameSize ? 60 : 120;
+  const totalDurationMins = runTimeMins + rollChangeoverMins + jobChangeoverMins;
+
+  return {
+    density,
+    gsm: parseFloat(gsm.toFixed(2)),
+    totalAreaSqm: Math.round(totalAreaSqm),
+    totalLengthMeters,
+    runTimeMins,
+    rollCount,
+    rollChangeoverMins,
+    isSameSize,
+    jobChangeoverMins,
+    totalDurationMins,
+    totalDurationHours: (totalDurationMins / 60).toFixed(1)
+  };
+};
+
+/**
+ * Initial Production Schedules Dataset for Printing Machines
+ */
+export const initialProductionSchedules = [
+  {
+    id: "SCHED-2026-001",
+    orderId: "ORD-2026-089",
+    jobName: "Fortune Sunlite Oil 1L Pouch",
+    clientName: "Adani Wilmar",
+    machineId: "MAC-PRINT-01",
+    shift: "Day Shift", // "Day Shift" (08:00 - 20:00) or "Night Shift" (20:00 - 08:00)
+    scheduledDate: "2026-08-02",
+    startTime: "08:00",
+    orderQtyKg: 1000,
+    widthMm: 1000,
+    micron: 12,
+    filmType: "PET",
+    maxSpeedMpm: 250,
+    totalLengthMeters: 59523,
+    runTimeMins: 238,
+    rollChangeoverMins: 80,
+    jobChangeoverMins: 120,
+    totalDurationMins: 438,
+    endTime: "15:18",
+    status: "Scheduled",
+    priority: "Normal"
+  },
+  {
+    id: "SCHED-2026-002",
+    orderId: "ORD-2026-091",
+    jobName: "Surf Excel 500ml Refill Pack",
+    clientName: "Hindustan Unilever",
+    machineId: "MAC-PRINT-01",
+    shift: "Day Shift",
+    scheduledDate: "2026-08-02",
+    startTime: "15:30",
+    orderQtyKg: 450,
+    widthMm: 900,
+    micron: 12,
+    filmType: "PET",
+    maxSpeedMpm: 250,
+    totalLengthMeters: 29761,
+    runTimeMins: 119,
+    rollChangeoverMins: 40,
+    jobChangeoverMins: 60,
+    totalDurationMins: 219,
+    endTime: "19:09",
+    status: "In Progress",
+    priority: "HIGH PRIORITY - OVERDUE"
+  }
+];
+
 
