@@ -252,7 +252,7 @@ export default function ProductionRecordManagement({
                       <td style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>{rec.orderId}</td>
                       <td>
                         <div style={{ fontWeight: '600' }}>{rec.jobName}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{rec.clientName}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{rec.clientName} • <span style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>{rec.jobMasterId || 'JM-2026-089'}</span></div>
                       </td>
                       <td>{rec.dateFilled}</td>
                       <td style={{ fontWeight: '600' }}>{rec.totalProductionQtyKg.toLocaleString()} kg</td>
@@ -301,7 +301,7 @@ export default function ProductionRecordManagement({
                 Production Record: {selectedRecord.jobName}
               </h3>
               <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                Order ID: <b>{selectedRecord.orderId}</b> • Client: {selectedRecord.clientName}
+                Job Master ID: <b>{selectedRecord.jobMasterId || 'JM-2026-089'}</b> • Order ID: <b>{selectedRecord.orderId}</b> • Client: {selectedRecord.clientName}
               </p>
             </div>
 

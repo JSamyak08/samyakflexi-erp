@@ -86,7 +86,7 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
             CYLINDER JOB CARD
           </div>
           <div style={{ fontSize: '10px', color: '#475569', marginTop: '4px', fontWeight: '600' }}>
-            Date: <strong>{data.creationDate || new Date().toLocaleDateString('en-GB')}</strong> | Ref: <strong>{data.skuCode || 'JOB-CARD'}</strong>
+            Job Master ID: <strong>{data.jobMasterId || data.id || 'JM-2026-089'}</strong> | Date: <strong>{data.creationDate || new Date().toLocaleDateString('en-GB')}</strong>
           </div>
         </div>
       </div>
@@ -105,8 +105,14 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
             </thead>
             <tbody>
               <tr>
+                <td className="label-cell">Job Master ID</td>
+                <td className="value-cell" style={{ fontSize: '12px', color: '#0f172a', fontWeight: '800' }}>{data.jobMasterId || data.id || 'JM-2026-089'}</td>
+                <td className="label-cell">SKU Code</td>
+                <td className="value-cell">{data.skuCode || data.sku || '—'}</td>
+              </tr>
+              <tr>
                 <td className="label-cell">Job Name</td>
-                <td className="value-cell" style={{ fontSize: '12px', color: '#0f172a', fontWeight: '800' }}>{data.jobName || '—'}</td>
+                <td className="value-cell" style={{ fontSize: '11px', color: '#0f172a', fontWeight: '700' }}>{data.jobName || '—'}</td>
                 <td className="label-cell">Party / Client</td>
                 <td className="value-cell">{data.partyName || '—'}</td>
               </tr>

@@ -1068,4 +1068,101 @@ export const initialClients = [
   }
 ];
 
+/**
+ * Initial Job Masters Dataset
+ */
+export const initialJobMasters = [
+  {
+    id: "JM-2026-089",
+    skuCode: "SKU-BR-001",
+    jobName: "Britannia Bourbon 250g Packaging",
+    clientName: "Britannia Industries Ltd",
+    structure: "PET 12µ / METPET 12µ / Natural GP LD 35µ",
+    printWidthMm: 1000,
+    repeatLengthMm: 400,
+    pouchOpenWidth: 120,
+    pouchHeight: 150,
+    layers: [
+      { id: 1, filmType: "PET", micron: 12 },
+      { id: 2, filmType: "METPET", micron: 12 },
+      { id: 3, filmType: "Natural GP LD", micron: 35 }
+    ],
+    cylinderSku: "SKU-BR-001",
+    cylinderCost: "₹ 35,000",
+    colorsCount: 6,
+    engravuresName: "Acme Rotogravure Engravers",
+    costBorneBy: "Client (100%)",
+    utilisationLimit: 10000,
+    creationDate: "2026-07-01"
+  },
+  {
+    id: "JM-2026-090",
+    skuCode: "SKU-BR-002",
+    jobName: "Britannia Marie Gold 150g",
+    clientName: "Britannia Industries Ltd",
+    structure: "PET 12µ / Natural GP LD 50µ",
+    printWidthMm: 980,
+    repeatLengthMm: 380,
+    pouchOpenWidth: 115,
+    pouchHeight: 145,
+    layers: [
+      { id: 1, filmType: "PET", micron: 12 },
+      { id: 2, filmType: "Natural GP LD", micron: 50 }
+    ],
+    cylinderSku: "SKU-BR-002",
+    cylinderCost: "₹ 30,000",
+    colorsCount: 5,
+    engravuresName: "Acme Rotogravure Engravers",
+    costBorneBy: "Us (100%)",
+    utilisationLimit: 10000,
+    creationDate: "2026-07-05"
+  },
+  {
+    id: "JM-2026-091",
+    skuCode: "SKU-PG-101",
+    jobName: "P&G Ariel Matic 1kg",
+    clientName: "Procter & Gamble",
+    structure: "PET 12µ / METPET 12µ / Natural LD Metallocene 40µ",
+    printWidthMm: 1050,
+    repeatLengthMm: 420,
+    pouchOpenWidth: 150,
+    pouchHeight: 220,
+    layers: [
+      { id: 1, filmType: "PET", micron: 12 },
+      { id: 2, filmType: "METPET", micron: 12 },
+      { id: 3, filmType: "Natural LD Metallocene Film", micron: 40 }
+    ],
+    cylinderSku: "SKU-PG-101",
+    cylinderCost: "₹ 45,000",
+    colorsCount: 7,
+    engravuresName: "Precision Rotogravure Dies",
+    costBorneBy: "Both (50/50)",
+    utilisationLimit: 10000,
+    creationDate: "2026-07-10"
+  },
+  {
+    id: "JM-2026-092",
+    skuCode: "SKU-UL-205",
+    jobName: "Surf Excel Liquid 500ml",
+    clientName: "Hindustan Unilever Ltd",
+    structure: "PET 12µ / METPET 12µ / Milky Atta (High Dart) 60µ",
+    printWidthMm: 920,
+    repeatLengthMm: 450,
+    pouchOpenWidth: 140,
+    pouchHeight: 200,
+    layers: [
+      { id: 1, filmType: "PET", micron: 12 },
+      { id: 2, filmType: "METPET", micron: 12 },
+      { id: 3, filmType: "Milky Atta (High Dart) Film", micron: 60 }
+    ],
+    cylinderSku: "SKU-UL-205",
+    cylinderCost: "₹ 52,000",
+    colorsCount: 8,
+    engravuresName: "Precision Rotogravure Dies",
+    costBorneBy: "Client (100%)",
+    utilisationLimit: 10000,
+    creationDate: "2026-07-15"
+  }
+];
+
 

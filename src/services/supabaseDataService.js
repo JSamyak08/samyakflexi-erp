@@ -11,7 +11,8 @@ import {
   initialGRNs, 
   initialUsers, 
   initialProductionRecords,
-  initialClients
+  initialClients,
+  initialJobMasters
 } from '../factoryStore';
 import { initialCylinders } from '../dataStore';
 
@@ -839,6 +840,76 @@ export async function deleteProductionScheduleFromSupabase(scheduleId) {
 }
 
 // ============================================================================
+// 12. JOB MASTERS DIRECTORY
+// ============================================================================
+
+export async function fetchJobMasters() {
+  if (!isSupabaseConfigured()) return [];
+  try {
+    const { data, error } = await supabase.from('job_masters').select('*').order('created_at', { ascending: false });
+    if (error) {
+      handleSupabaseError(error, 'job_masters');
+      return [];
+    }
+    if (!data) return [];
+
+    return data.map(j => ({
+      id: j.id,
+      skuCode: j.sku_code || j.sku || '',
+      jobName: j.job_name,
+      clientName: j.client_name,
+      structure: j.structure,
+      printWidthMm: Number(j.print_width_mm) || 1000,
+      repeatLengthMm: Number(j.repeat_length_mm) || 400,
+      pouchOpenWidth: Number(j.pouch_open_width) || 0,
+      pouchHeight: Number(j.pouch_height) || 0,
+      layers: j.layers || [],
+      cylinderSku: j.cylinder_sku || j.sku_code,
+      cylinderCost: j.cylinder_cost || '₹ 0',
+      colorsCount: Number(j.colors_count) || 6,
+      engravuresName: j.engravures_name || '',
+      costBorneBy: j.cost_borne_by || 'Client (100%)',
+      utilisationLimit: Number(j.utilisation_limit) || 10000,
+      creationDate: j.creation_date || new Date().toISOString().split('T')[0]
+    }));
+  } catch (err) {
+    console.error("Error fetching job masters from Supabase:", err);
+    return [];
+  }
+}
+
+export async function saveJobMasterToSupabase(jobMaster) {
+  if (!isSupabaseConfigured()) return;
+  const { error } = await supabase.from('job_masters').upsert({
+    id: jobMaster.id || `JM-2026-${Math.floor(100 + Math.random() * 900)}`,
+    sku_code: jobMaster.skuCode || jobMaster.sku || '',
+    job_name: jobMaster.jobName,
+    client_name: jobMaster.clientName,
+    structure: jobMaster.structure || 'PET / PE',
+    print_width_mm: jobMaster.printWidthMm || 1000,
+    repeat_length_mm: jobMaster.repeatLengthMm || 400,
+    pouch_open_width: jobMaster.pouchOpenWidth || 0,
+    pouch_height: jobMaster.pouchHeight || 0,
+    layers: jobMaster.layers || [],
+    cylinder_sku: jobMaster.cylinderSku || jobMaster.skuCode,
+    cylinder_cost: jobMaster.cylinderCost || '₹ 0',
+    colors_count: jobMaster.colorsCount || 6,
+    engravures_name: jobMaster.engravuresName || '',
+    cost_borne_by: jobMaster.costBorneBy || 'Client (100%)',
+    utilisation_limit: jobMaster.utilisationLimit || 10000,
+    creation_date: jobMaster.creationDate || new Date().toISOString().split('T')[0]
+  }, { onConflict: 'id' });
+
+  handleSupabaseError(error, 'job_masters');
+}
+
+export async function deleteJobMasterFromSupabase(jobMasterId) {
+  if (!isSupabaseConfigured()) return;
+  const { error } = await supabase.from('job_masters').delete().eq('id', jobMasterId);
+  handleSupabaseError(error, 'job_masters');
+}
+
+// ============================================================================
 // ONE-CLICK SEED MIGRATION: SEED ALL INITIAL FACTORY DATA TO SUPABASE
 // ============================================================================
 
@@ -911,6 +982,14 @@ export async function seedAllDataToSupabase() {
     results.push('Users');
   } catch (e) {
     console.warn("Seeding Users notice:", e.message);
+  }
+
+  // 8. Seed Job Masters
+  try {
+    for (const j of initialJobMasters) await saveJobMasterToSupabase(j);
+    results.push('Job Masters');
+  } catch (e) {
+    console.warn("Seeding Job Masters notice:", e.message);
   }
 
   return {

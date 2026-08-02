@@ -10,7 +10,8 @@ import {
   initialMachines,
   initialProductionSchedules,
   isReconciliationDue,
-  initialClients
+  initialClients,
+  initialJobMasters
 } from './factoryStore';
 import { initialCylinders } from './dataStore';
 import { 
@@ -31,6 +32,7 @@ import {
   Database,
   UserCheck,
   Printer,
+  FileCode,
   Settings as SettingsIcon
 } from 'lucide-react';
 
@@ -62,8 +64,10 @@ import {
   fetchDispatchShipments, saveDispatchShipmentToSupabase,
   fetchPrintingMachines, savePrintingMachineToSupabase, deletePrintingMachineFromSupabase,
   fetchProductionSchedules, saveProductionScheduleToSupabase, deleteProductionScheduleFromSupabase,
-  fetchClients, saveClientToSupabase, deleteClientFromSupabase
+  fetchClients, saveClientToSupabase, deleteClientFromSupabase,
+  fetchJobMasters, saveJobMasterToSupabase, deleteJobMasterFromSupabase
 } from './services/supabaseDataService';
+import JobMasterDirectory from './components/JobMasterDirectory';
 import { initialInventoryRolls, initialDispatchShipments } from './factoryStore';
 import './index.css';
 
@@ -120,6 +124,8 @@ export default function App() {
   const [machines, setMachines] = useState(() => loadLocalState('printing_machines', initialMachines));
   const [schedules, setSchedules] = useState(() => loadLocalState('production_schedules', initialProductionSchedules));
   const [clients, setClients] = useState(() => loadLocalState('clients', initialClients));
+  const [jobMasters, setJobMasters] = useState(() => loadLocalState('job_masters', initialJobMasters));
+  const [selectedJobMasterForPunch, setSelectedJobMasterForPunch] = useState(null);
 
   // Sync state to localStorage whenever modified
   useEffect(() => { localStorage.setItem('samyak_erp_orders', JSON.stringify(orders)); }, [orders]);
@@ -135,6 +141,7 @@ export default function App() {
   useEffect(() => { localStorage.setItem('samyak_erp_printing_machines', JSON.stringify(machines)); }, [machines]);
   useEffect(() => { localStorage.setItem('samyak_erp_production_schedules', JSON.stringify(schedules)); }, [schedules]);
   useEffect(() => { localStorage.setItem('samyak_erp_clients', JSON.stringify(clients)); }, [clients]);
+  useEffect(() => { localStorage.setItem('samyak_erp_job_masters', JSON.stringify(jobMasters)); }, [jobMasters]);
 
   // Helper to merge local items with Supabase items safely without wiping local additions
   const mergeDatasets = (localItems = [], remoteItems = [], keyField = 'id') => {
@@ -168,7 +175,7 @@ export default function App() {
         const [
           supaOrders, supaVendors, supaInv, supaGRNs, supaCyls, 
           supaProd, supaUsers, supaSheets, supaRolls, supaShipments,
-          supaMachines, supaSchedules, supaClients
+          supaMachines, supaSchedules, supaClients, supaJobMasters
         ] = await Promise.all([
           fetchOrders(),
           fetchVendors(),
@@ -182,7 +189,8 @@ export default function App() {
           fetchDispatchShipments(),
           fetchPrintingMachines(),
           fetchProductionSchedules(),
-          fetchClients()
+          fetchClients(),
+          fetchJobMasters()
         ]);
 
         setOrders(prev => mergeDatasets(prev, supaOrders, 'id'));
@@ -198,6 +206,7 @@ export default function App() {
         setMachines(prev => mergeDatasets(prev, supaMachines, 'id'));
         setSchedules(prev => mergeDatasets(prev, supaSchedules, 'id'));
         setClients(prev => mergeDatasets(prev, supaClients, 'id'));
+        setJobMasters(prev => mergeDatasets(prev, supaJobMasters, 'id'));
       } catch (err) {
         console.warn("[Supabase Sync Notice] Multi-table fetch notice:", err);
       }
@@ -462,6 +471,20 @@ export default function App() {
     }
   };
 
+  const handleAddJobMaster = async (newJobMaster) => {
+    setJobMasters(prev => [...prev.filter(j => j.id !== newJobMaster.id), newJobMaster]);
+    try {
+      await saveJobMasterToSupabase(newJobMaster);
+    } catch (err) {
+      console.warn("[Sync Notice] Job Master saved locally. Supabase notice:", err);
+    }
+  };
+
+  const handlePunchOrderFromJobMaster = (jobMaster) => {
+    setSelectedJobMasterForPunch(jobMaster);
+    handleTabChange('job_punching');
+  };
+
   // Render Authentication Screen if user is not signed in
   if (!isAuthenticated || !currentUser) {
     return <AuthScreen users={users} onLogin={handleLogin} />;
@@ -537,6 +560,14 @@ export default function App() {
           >
             <Briefcase size={18} />
             Clients & Directory ({clients.length})
+          </div>
+
+          <div 
+            className={`nav-item ${activeTab === 'job_masters' ? 'active' : ''}`}
+            onClick={() => handleTabChange('job_masters')}
+          >
+            <FileCode size={18} style={{ color: '#8b5cf6' }} />
+            Job Master Directory ({jobMasters.length})
           </div>
 
           <div 
@@ -623,6 +654,7 @@ export default function App() {
               {activeTab === 'job_punching' && 'Order Confirmation & Job Punching'}
               {activeTab === 'orders' && 'Order Management & PO Issuance'}
               {activeTab === 'job_datasheet' && 'Job Data Sheet & Pre vs Post Costing'}
+              {activeTab === 'job_masters' && 'Job Master Technical Directory & Specs'}
               {activeTab === 'clients' && 'Client Onboarding & Directory'}
               {activeTab === 'vendors' && 'Vendor Onboarding & Directory'}
               {activeTab === 'inventory' && 'Raw Material Inventory, GRN & Quality Control'}
@@ -701,6 +733,19 @@ export default function App() {
             cylinders={cylinders}
             onAddClient={handleAddClient}
             onUpdateClient={handleUpdateClient}
+          />
+        )}
+
+        {/* TAB: JOB MASTER DIRECTORY */}
+        {activeTab === 'job_masters' && (
+          <JobMasterDirectory 
+            jobMasters={jobMasters}
+            cylinders={cylinders}
+            productionRecords={productionRecords}
+            orders={orders}
+            onAddJobMaster={handleAddJobMaster}
+            onAddCylinder={handleAddCylinder}
+            onPunchOrderFromJobMaster={handlePunchOrderFromJobMaster}
           />
         )}
 
@@ -898,11 +943,12 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 2: JOB PUNCHING & COSTING */}
+        {/* TAB 0.5: JOB PUNCHING & COSTING ENGINE */}
         {activeTab === 'job_punching' && (
           <JobPunchingForm 
-            onSaveOrder={handleAddOrder} 
-            onNavigateToDashboard={() => handleTabChange('dashboard')} 
+            onSaveOrder={handleAddOrder}
+            onNavigateToDashboard={() => handleTabChange('orders')}
+            initialJobMasterData={selectedJobMasterForPunch}
           />
         )}
 

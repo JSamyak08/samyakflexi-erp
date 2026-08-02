@@ -17,26 +17,37 @@ import {
 } from 'lucide-react';
 import OrderConfirmationPDF from './OrderConfirmationPDF';
 
-export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard }) {
+export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, initialJobMasterData }) {
   // Form State
-  const [jobName, setJobName] = useState('Britannia Bourbon 250g Packaging');
-  const [clientName, setClientName] = useState('Britannia Industries Ltd');
-  const [printWidthMm, setPrintWidthMm] = useState(1000);
-  const [repeatLengthMm, setRepeatLengthMm] = useState(400);
+  const [jobName, setJobName] = useState(() => initialJobMasterData?.jobName || 'Britannia Bourbon 250g Packaging');
+  const [clientName, setClientName] = useState(() => initialJobMasterData?.clientName || 'Britannia Industries Ltd');
+  const [printWidthMm, setPrintWidthMm] = useState(() => initialJobMasterData?.printWidthMm || 1000);
+  const [repeatLengthMm, setRepeatLengthMm] = useState(() => initialJobMasterData?.repeatLengthMm || 400);
   const [orderQtyKg, setOrderQtyKg] = useState(1000);
   const [orderType, setOrderType] = useState('Pouching'); // Reel or Pouching
   const [inkGsm, setInkGsm] = useState(1.5);
   const [adhesiveGsm, setAdhesiveGsm] = useState(1.5);
-  const [colorsCount, setColorsCount] = useState(6);
+  const [colorsCount, setColorsCount] = useState(() => initialJobMasterData?.colorsCount || 6);
   const [targetDeliveryDays, setTargetDeliveryDays] = useState(10);
   const [isSubmitted, setIsSubmitted] = useState(false);
 
   // Dynamic Layers State
-  const [layers, setLayers] = useState([
+  const [layers, setLayers] = useState(() => initialJobMasterData?.layers || [
     { id: 1, filmType: 'PET', micron: 12 },
     { id: 2, filmType: 'METPET', micron: 12 },
     { id: 3, filmType: 'Natural GP LD', micron: 35 }
   ]);
+
+  React.useEffect(() => {
+    if (initialJobMasterData) {
+      setJobName(initialJobMasterData.jobName || '');
+      setClientName(initialJobMasterData.clientName || '');
+      if (initialJobMasterData.printWidthMm) setPrintWidthMm(initialJobMasterData.printWidthMm);
+      if (initialJobMasterData.repeatLengthMm) setRepeatLengthMm(initialJobMasterData.repeatLengthMm);
+      if (initialJobMasterData.colorsCount) setColorsCount(initialJobMasterData.colorsCount);
+      if (initialJobMasterData.layers && initialJobMasterData.layers.length > 0) setLayers(initialJobMasterData.layers);
+    }
+  }, [initialJobMasterData]);
 
   // Editable Daily Prices State
   const [filmPrices, setFilmPrices] = useState({ ...DEFAULT_DAILY_RATES });
