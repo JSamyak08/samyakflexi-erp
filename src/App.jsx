@@ -49,7 +49,6 @@ import ProductionScheduler from './components/ProductionScheduler';
 import ClientManagement from './components/ClientManagement';
 import SupabaseManagement from './components/SupabaseManagement';
 import DocumentSettings from './components/DocumentSettings';
-import ErrorButton from './components/ErrorButton';
 import { getTabFromUrl, pushSlugState } from './utils/slugRouter';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import { 
@@ -754,8 +753,6 @@ export default function App() {
                 <strong style={{ color: 'var(--text-primary)' }}>{currentUser?.name} ({currentUser?.role})</strong>
               </div>
             )}
-
-            <ErrorButton />
 
             <button className="btn-signout" onClick={handleLogout} title="Sign Out of Session">
               <LogOut size={16} /> Sign Out
