@@ -33,6 +33,8 @@ export default function ProductionScheduler({
   machines = initialMachines,
   schedules = initialProductionSchedules,
   onSaveMachine,
+  onUpdateMachine,
+  onDeleteMachine,
   onSaveSchedule,
   onDeleteSchedule
 }) {
@@ -42,6 +44,7 @@ export default function ProductionScheduler({
   
   // Machine Management Modal State
   const [isMachineModalOpen, setIsMachineModalOpen] = useState(false);
+  const [editingMachineId, setEditingMachineId] = useState(null);
   const [machineName, setMachineName] = useState('');
   const [machineType, setMachineType] = useState('Rotogravure');
   const [machineColors, setMachineColors] = useState(8);
@@ -49,6 +52,7 @@ export default function ProductionScheduler({
   const [machineMaxWidth, setMachineMaxWidth] = useState(1200);
   const [machineOperator, setMachineOperator] = useState('Plant Operator');
   const [machineLocation, setMachineLocation] = useState('Bay 1 - Rotogravure Hall');
+  const [machineStatus, setMachineStatus] = useState('Active');
 
   // Job Scheduling Modal State
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
@@ -93,7 +97,44 @@ export default function ProductionScheduler({
     });
   }, [orders, inventory, schedules]);
 
-  // Handle Add Machine
+  // Open Add Machine Modal
+  const handleOpenAddMachine = () => {
+    setEditingMachineId(null);
+    setMachineName('');
+    setMachineType('Rotogravure');
+    setMachineColors(8);
+    setMachineMaxSpeed(250);
+    setMachineMaxWidth(1200);
+    setMachineOperator('Plant Operator');
+    setMachineLocation('Bay 1 - Rotogravure Hall');
+    setMachineStatus('Active');
+    setIsMachineModalOpen(true);
+  };
+
+  // Open Edit Machine Modal
+  const handleOpenEditMachine = (mac) => {
+    setEditingMachineId(mac.id);
+    setMachineName(mac.name || '');
+    setMachineType(mac.type || 'Rotogravure');
+    setMachineColors(mac.colors || 8);
+    setMachineMaxSpeed(mac.maxSpeedMpm || 250);
+    setMachineMaxWidth(mac.maxWidthMm || 1200);
+    setMachineOperator(mac.operator || 'Plant Operator');
+    setMachineLocation(mac.location || 'Printing Hall');
+    setMachineStatus(mac.status || 'Active');
+    setIsMachineModalOpen(true);
+  };
+
+  // Handle Delete Machine
+  const handleDeleteMachineClick = (mac) => {
+    if (window.confirm(`Are you sure you want to delete printing machine "${mac.name}" (${mac.id})?`)) {
+      if (onDeleteMachine) {
+        onDeleteMachine(mac.id);
+      }
+    }
+  };
+
+  // Handle Save (Create or Update) Machine Form
   const handleSaveMachineForm = (e) => {
     e.preventDefault();
     if (!machineName.trim()) {
@@ -101,25 +142,27 @@ export default function ProductionScheduler({
       return;
     }
 
-    const newMachine = {
-      id: `MAC-PRINT-${Math.floor(10 + Math.random() * 90)}`,
+    const machineData = {
+      id: editingMachineId || `MAC-PRINT-${Math.floor(10 + Math.random() * 90)}`,
       name: machineName,
       type: machineType,
       colors: parseInt(machineColors),
       maxSpeedMpm: parseFloat(machineMaxSpeed),
       maxWidthMm: parseFloat(machineMaxWidth),
-      status: "Active",
+      status: machineStatus,
       operator: machineOperator,
       location: machineLocation
     };
 
-    if (onSaveMachine) {
-      onSaveMachine(newMachine);
+    if (editingMachineId) {
+      if (onUpdateMachine) onUpdateMachine(machineData);
+      alert(`Printing Machine "${machineData.name}" updated successfully!`);
+    } else {
+      if (onSaveMachine) onSaveMachine(machineData);
+      alert(`Printing Machine "${machineData.name}" added successfully!`);
     }
 
     setIsMachineModalOpen(false);
-    setMachineName('');
-    alert(`Printing Machine "${newMachine.name}" added successfully!`);
   };
 
   // Open Scheduling Modal for an Order
@@ -510,17 +553,19 @@ export default function ProductionScheduler({
               </p>
             </div>
 
-            <button className="btn-primary" onClick={() => setIsMachineModalOpen(true)}>
+            <button className="btn-primary" onClick={handleOpenAddMachine}>
               <Plus size={16} /> Onboard New Printing Machine
             </button>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '20px' }}>
             {machines.map(mac => (
-              <div key={mac.id} className="glass-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div key={mac.id} className="glass-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px', position: 'relative' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.75rem', fontWeight: '800', color: 'var(--primary-brand)' }}>{mac.id}</span>
-                  <span className="badge badge-us">{mac.status}</span>
+                  <span className={`badge ${mac.status === 'Active' ? 'badge-us' : mac.status === 'Maintenance' ? 'badge-warning' : ''}`}>
+                    {mac.status}
+                  </span>
                 </div>
 
                 <div>
@@ -545,6 +590,25 @@ export default function ProductionScheduler({
                   <div>Operator: <strong>{mac.operator || 'Unassigned'}</strong></div>
                   <div>Location: <strong>{mac.location || 'Printing Hall'}</strong></div>
                 </div>
+
+                {/* Edit & Delete Action Buttons */}
+                <div style={{ display: 'flex', gap: '8px', marginTop: '8px', paddingTop: '10px', borderTop: '1px solid #f1f5f9' }}>
+                  <button 
+                    className="btn-secondary" 
+                    style={{ flex: 1, padding: '6px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                    onClick={() => handleOpenEditMachine(mac)}
+                  >
+                    <Edit3 size={14} style={{ color: 'var(--primary-brand)' }} /> Edit Machine
+                  </button>
+                  <button 
+                    className="btn-secondary" 
+                    style={{ padding: '6px 10px', fontSize: '0.78rem', color: '#dc2626', borderColor: '#fecaca', background: '#fef2f2' }}
+                    onClick={() => handleDeleteMachineClick(mac)}
+                    title="Delete Machine"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -552,13 +616,13 @@ export default function ProductionScheduler({
       )}
 
       {/* ==================================================================== */}
-      {/* MODAL: ONBOARD NEW PRINTING MACHINE */}
+      {/* MODAL: ONBOARD / EDIT PRINTING MACHINE */}
       {/* ==================================================================== */}
       {isMachineModalOpen && (
         <div className="modal-overlay" onClick={() => setIsMachineModalOpen(false)}>
           <div className="glass-card modal-content" style={{ width: '500px' }} onClick={e => e.stopPropagation()}>
             <h3 style={{ fontSize: '1.1rem', fontWeight: '800', marginBottom: '16px' }}>
-              Onboard New Printing Machine
+              {editingMachineId ? `Edit Printing Machine (${editingMachineId})` : 'Onboard New Printing Machine'}
             </h3>
 
             <form onSubmit={handleSaveMachineForm}>
@@ -591,15 +655,31 @@ export default function ProductionScheduler({
                   <input type="number" className="form-control" required value={machineMaxWidth} onChange={e => setMachineMaxWidth(e.target.value)} />
                 </div>
 
-                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                <div className="form-group">
+                  <label>Operational Status *</label>
+                  <select className="form-control" value={machineStatus} onChange={e => setMachineStatus(e.target.value)}>
+                    <option value="Active">Active In-Use</option>
+                    <option value="Maintenance">Under Maintenance</option>
+                    <option value="Idle">Idle / Standby</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
                   <label>Assigned Operator</label>
                   <input type="text" className="form-control" value={machineOperator} onChange={e => setMachineOperator(e.target.value)} />
+                </div>
+
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label>Location / Bay</label>
+                  <input type="text" className="form-control" value={machineLocation} onChange={e => setMachineLocation(e.target.value)} />
                 </div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px' }}>
                 <button type="button" className="btn-secondary" onClick={() => setIsMachineModalOpen(false)}>Cancel</button>
-                <button type="submit" className="btn-primary">Save Printing Machine</button>
+                <button type="submit" className="btn-primary">
+                  {editingMachineId ? 'Update Machine Settings' : 'Save Printing Machine'}
+                </button>
               </div>
             </form>
           </div>

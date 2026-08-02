@@ -180,6 +180,16 @@ export default function App() {
     savePrintingMachineToSupabase(newMachine);
   };
 
+  const handleUpdateMachine = (updatedMachine) => {
+    setMachines(prev => prev.map(m => m.id === updatedMachine.id ? updatedMachine : m));
+    savePrintingMachineToSupabase(updatedMachine);
+  };
+
+  const handleDeleteMachine = (machineId) => {
+    setMachines(prev => prev.filter(m => m.id !== machineId));
+    deletePrintingMachineFromSupabase(machineId);
+  };
+
   const handleSaveSchedule = (newSchedule) => {
     setSchedules(prev => [newSchedule, ...prev]);
     saveProductionScheduleToSupabase(newSchedule);
@@ -874,6 +884,8 @@ export default function App() {
             machines={machines}
             schedules={schedules}
             onSaveMachine={handleSaveMachine}
+            onUpdateMachine={handleUpdateMachine}
+            onDeleteMachine={handleDeleteMachine}
             onSaveSchedule={handleSaveSchedule}
           />
         )}

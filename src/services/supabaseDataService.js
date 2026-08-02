@@ -701,6 +701,12 @@ export async function savePrintingMachineToSupabase(machine) {
   handleSupabaseError(error, 'printing_machines');
 }
 
+export async function deletePrintingMachineFromSupabase(machineId) {
+  if (!isSupabaseConfigured()) return;
+  const { error } = await supabase.from('printing_machines').delete().eq('id', machineId);
+  handleSupabaseError(error, 'printing_machines');
+}
+
 export async function fetchProductionSchedules() {
   if (!isSupabaseConfigured()) return [];
   try {
