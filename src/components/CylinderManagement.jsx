@@ -37,7 +37,7 @@ export default function CylinderManagement({
   const [clientGroup, setClientGroup] = useState('');
   const [colorsCount, setColorsCount] = useState(6);
   const [engravuresName, setEngravuresName] = useState('Acme Rotogravure Engravers');
-  const [ratePerSqInch, setRatePerSqInch] = useState(1.60);
+  const [rate, setRate] = useState(1.60);
   const [cylinderCost, setCylinderCost] = useState('35000');
   const [costPerCylinder, setCostPerCylinder] = useState('5833');
   const [costBorneBy, setCostBorneBy] = useState('Client (100%)');
@@ -52,9 +52,9 @@ export default function CylinderManagement({
   const [isUploading, setIsUploading] = useState(false);
   const [autoCalculateCost, setAutoCalculateCost] = useState(true);
 
-  // Surface Area and Cost Calculations
-  const surfaceAreaSqIn = Number(((Number(circumferenceMm || 0) * Number(faceLengthMm || 0)) / 645.16).toFixed(1));
-  const calculatedCostPerCylinder = Math.round(surfaceAreaSqIn * Number(ratePerSqInch || 1.6));
+  // Surface Area and Cost Calculations: (Face Length × Circumference ÷ 100) × Rate × Colors
+  const billingAreaUnits = Number(((Number(circumferenceMm || 0) * Number(faceLengthMm || 0)) / 100).toFixed(2));
+  const calculatedCostPerCylinder = Math.round(billingAreaUnits * Number(rate || 1.6));
   const calculatedTotalSetCost = Math.round(calculatedCostPerCylinder * (parseInt(colorsCount) || 1));
 
   // Automatically update costs when dimensions, colors, or rates change if autoCalculateCost is active
@@ -63,7 +63,7 @@ export default function CylinderManagement({
       setCostPerCylinder(String(calculatedCostPerCylinder));
       setCylinderCost(String(calculatedTotalSetCost));
     }
-  }, [circumferenceMm, faceLengthMm, ratePerSqInch, colorsCount, autoCalculateCost, calculatedCostPerCylinder, calculatedTotalSetCost]);
+  }, [circumferenceMm, faceLengthMm, rate, colorsCount, autoCalculateCost, calculatedCostPerCylinder, calculatedTotalSetCost]);
 
   const openAddModal = () => {
     setEditingCylinder(null);
@@ -72,7 +72,7 @@ export default function CylinderManagement({
     setClientGroup('');
     setColorsCount(6);
     setEngravuresName('Acme Rotogravure Engravers');
-    setRatePerSqInch(1.60);
+    setRate(1.60);
     setCircumferenceMm(400);
     setFaceLengthMm(1050);
     setAutoCalculateCost(true);
@@ -93,7 +93,7 @@ export default function CylinderManagement({
     setClientGroup(cyl.clientGroup || '');
     setColorsCount(cyl.colorsCount || 6);
     setEngravuresName(cyl.engravuresName || 'Acme Rotogravure Engravers');
-    setRatePerSqInch(cyl.ratePerSqInch || 1.60);
+    setRate(cyl.rate || cyl.ratePerSqInch || 1.60);
     setCircumferenceMm(cyl.circumferenceMm || 400);
     setFaceLengthMm(cyl.faceLengthMm || 1050);
     setCylinderCost(`${cyl.cylinderCost || ''}`.replace(/[^0-9]/g, ''));
@@ -144,7 +144,8 @@ export default function CylinderManagement({
       jobName,
       clientGroup,
       colorsCount: parseInt(colorsCount) || 1,
-      ratePerSqInch: parseFloat(ratePerSqInch) || 1.6,
+      rate: parseFloat(rate) || 1.6,
+      ratePerSqInch: parseFloat(rate) || 1.6,
       costPerCylinder: `₹ ${parseInt(costPerCylinder || 0).toLocaleString()}`,
       cylinderCost: `₹ ${parseInt(cylinderCost || 0).toLocaleString()}`,
       engravuresName,
@@ -256,7 +257,7 @@ export default function CylinderManagement({
                   const isWarning = util >= 80;
                   const cCirc = c.circumferenceMm || 400;
                   const cFace = c.faceLengthMm || 1050;
-                  const cArea = ((cCirc * cFace) / 645.16).toFixed(0);
+                  const cUnits = Math.round((cCirc * cFace) / 100);
 
                   return (
                     <tr key={c.id}>
@@ -291,7 +292,7 @@ export default function CylinderManagement({
                       </td>
                       <td>
                         <div style={{ fontSize: '0.85rem', fontWeight: '600' }}>{cFace}L × {cCirc}C mm</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>≈ {cArea} sq. inches</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{cUnits.toLocaleString()} sq. cm (L×C÷100)</div>
                       </td>
                       <td>
                         <div style={{ fontWeight: '600' }}>{c.clientGroup || 'Standard'}</div>
@@ -407,7 +408,7 @@ export default function CylinderManagement({
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                     <div style={{ fontWeight: '700', fontSize: '0.95rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <Calculator size={18} style={{ color: '#2563eb' }} />
-                      Cylinder Cost Calculator (Surface Area Engine)
+                      Cylinder Cost Calculator (Formula Engine)
                     </div>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', cursor: 'pointer' }}>
                       <input 
@@ -421,20 +422,20 @@ export default function CylinderManagement({
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '12px' }}>
                     <div>
-                      <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Surface Area</div>
-                      <div style={{ fontWeight: '700', fontSize: '1rem', color: '#0f172a' }}>{surfaceAreaSqIn} sq. in</div>
-                      <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>({faceLengthMm} × {circumferenceMm} mm)</div>
+                      <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Surface Area (sq cm)</div>
+                      <div style={{ fontWeight: '700', fontSize: '1rem', color: '#0f172a' }}>{billingAreaUnits.toLocaleString()} sq. cm</div>
+                      <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>({faceLengthMm} × {circumferenceMm} ÷ 100)</div>
                     </div>
 
                     <div>
-                      <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Engraving Rate (₹/sq.in)</div>
+                      <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Cylinder Rate (₹/sq cm)</div>
                       <input 
                         type="number" 
-                        step="0.05"
+                        step="0.01"
                         className="form-control" 
                         style={{ padding: '4px 8px', fontSize: '0.9rem', marginTop: '2px' }}
-                        value={ratePerSqInch} 
-                        onChange={e => setRatePerSqInch(e.target.value)} 
+                        value={rate} 
+                        onChange={e => setRate(e.target.value)} 
                       />
                     </div>
 
@@ -468,7 +469,7 @@ export default function CylinderManagement({
                   </div>
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: '#475569', borderTop: '1px solid #e2e8f0', paddingTop: '8px' }}>
-                    <span>Formula: <code>(Face Length × Circumference ÷ 645.16) × Rate × Colors</code></span>
+                    <span>Formula: <code>(Face Length × Circumference ÷ 100) × Rate × Colors</code></span>
                     {!autoCalculateCost && (
                       <button 
                         type="button" 

@@ -119,9 +119,9 @@ export default function ClientManagement({ clients, orders, cylinders, onAddClie
       if (!totalSetCost && costPerCyl) {
         totalSetCost = costPerCyl * colors;
       } else if (!totalSetCost && c.faceLengthMm && c.circumferenceMm) {
-        const sqIn = (parseFloat(c.faceLengthMm) * parseFloat(c.circumferenceMm)) / 645.16;
-        const rate = parseFloat(c.ratePerSqInch) || 1.60;
-        costPerCyl = sqIn * rate;
+        const sqCm = (parseFloat(c.faceLengthMm) * parseFloat(c.circumferenceMm)) / 100;
+        const rate = parseFloat(c.rate || c.ratePerSqInch) || 1.60;
+        costPerCyl = sqCm * rate;
         totalSetCost = costPerCyl * colors;
       }
       totalVal += (totalSetCost || 0);
@@ -272,9 +272,9 @@ export default function ClientManagement({ clients, orders, cylinders, onAddClie
                       if (!costPerCyl && totalSetCost && colors) {
                         costPerCyl = totalSetCost / colors;
                       } else if (!totalSetCost && c.faceLengthMm && c.circumferenceMm) {
-                        const sqIn = (parseFloat(c.faceLengthMm) * parseFloat(c.circumferenceMm)) / 645.16;
-                        const rate = parseFloat(c.ratePerSqInch) || 1.60;
-                        costPerCyl = sqIn * rate;
+                        const sqCm = (parseFloat(c.faceLengthMm) * parseFloat(c.circumferenceMm)) / 100;
+                        const rate = parseFloat(c.rate || c.ratePerSqInch) || 1.60;
+                        costPerCyl = sqCm * rate;
                         totalSetCost = costPerCyl * colors;
                       }
 
@@ -307,8 +307,8 @@ export default function ClientManagement({ clients, orders, cylinders, onAddClie
                           </td>
                           <td>
                             <strong style={{ color: '#334155' }}>{costPerCyl ? formatINR(costPerCyl) : '—'}</strong>
-                            {c.ratePerSqInch && (
-                              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>@ ₹{c.ratePerSqInch}/sq.in</div>
+                            {(c.rate || c.ratePerSqInch) && (
+                              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>@ ₹{c.rate || c.ratePerSqInch}/sq cm</div>
                             )}
                           </td>
                           <td>

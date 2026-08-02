@@ -362,7 +362,8 @@ export async function fetchCylinders() {
       colorsCount: Number(c.colors_count) || 0,
       cylinderCost: c.cylinder_cost,
       costPerCylinder: c.cost_per_cylinder,
-      ratePerSqInch: Number(c.rate_per_sq_inch) || 1.6,
+      rate: Number(c.rate_per_sq_cm ?? c.rate_per_sq_inch) || 1.6,
+      ratePerSqInch: Number(c.rate_per_sq_cm ?? c.rate_per_sq_inch) || 1.6,
       engravuresName: c.engravures_name,
       costBorneBy: c.cost_borne_by,
       costBorneType: c.cost_borne_type,
@@ -383,6 +384,7 @@ export async function fetchCylinders() {
 
 export async function saveCylinderToSupabase(cyl) {
   if (!isSupabaseConfigured()) return;
+  const rateVal = cyl.rate !== undefined ? cyl.rate : cyl.ratePerSqInch;
   const { error } = await supabase.from('cylinders').upsert({
     id: cyl.id || `CYL-${Math.floor(100 + Math.random() * 900)}`,
     sku: cyl.sku,
@@ -390,7 +392,7 @@ export async function saveCylinderToSupabase(cyl) {
     colors_count: cyl.colorsCount,
     cylinder_cost: cyl.cylinderCost,
     cost_per_cylinder: cyl.costPerCylinder,
-    rate_per_sq_inch: cyl.ratePerSqInch,
+    rate_per_sq_inch: rateVal,
     engravures_name: cyl.engravuresName,
     cost_borne_by: cyl.costBorneBy,
     cost_borne_type: cyl.costBorneType,
