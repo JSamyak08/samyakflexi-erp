@@ -70,7 +70,12 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
       {/* Header Bar with explicit top spacing */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #0f172a', paddingBottom: '8px', paddingTop: '6px', marginTop: '4px', marginBottom: '10px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <img src="/samyak-logo.png" alt="Samyak Logo" style={{ maxHeight: '44px', objectFit: 'contain', marginTop: '2px' }} />
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+            <img src="/samyak-logo.png" alt="Samyak Logo" style={{ maxHeight: '42px', objectFit: 'contain', marginTop: '2px' }} />
+            <span style={{ fontSize: '8px', fontWeight: '800', color: '#374151', marginTop: '2px' }}>
+              BSE: SAMYAKINT • CIN: L67120MH1994PLC225907
+            </span>
+          </div>
           <div>
             <h1 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
               SAMYAK INTERNATIONAL LTD

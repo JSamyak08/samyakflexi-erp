@@ -51,8 +51,10 @@ export default function JobDataSheetPDF({ sheetData, onClose }) {
           <div className="letterhead-header">
             <div className="letterhead-logo-column">
               <img src={companyLogo} alt="Samyak International Ltd" className="letterhead-logo-img" style={{ maxHeight: '48px', objectFit: 'contain' }} />
-              <div className="letterhead-brand-title">{COMPANY_DETAILS.name}</div>
-              <div className="letterhead-brand-tagline">{COMPANY_DETAILS.tagline}</div>
+              <div style={{ marginTop: '2px', fontSize: '8.5px', fontWeight: '800', color: '#374151' }}>
+                BSE: SAMYAKINT • CIN: L67120MH1994PLC225907
+              </div>
+              <div className="letterhead-brand-title" style={{ marginTop: '4px' }}>{COMPANY_DETAILS.name}</div>
 
               <div style={{ fontSize: '9px', fontWeight: 'bold', color: '#1e293b', marginTop: '2px' }}>
                 GSTIN: {COMPANY_DETAILS.gstin}

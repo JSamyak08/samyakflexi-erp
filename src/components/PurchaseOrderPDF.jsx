@@ -167,11 +167,9 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
           <div className="letterhead-header">
             <div className="letterhead-brand">
               <img src={logoImage} alt="Samyak International Ltd Logo" className="samyak-logo-img" style={{ height: '46px', objectFit: 'contain' }} />
-              <div>
-                <p className="letterhead-company-sub" style={{ marginTop: '4px', fontSize: '9px', fontWeight: 'bold', color: '#4b5563' }}>
-                  {COMPANY_DETAILS.tagline}
-                </p>
-              </div>
+              <p className="letterhead-company-sub" style={{ marginTop: '2px', fontSize: '8.5px', fontWeight: '800', color: '#374151' }}>
+                BSE: SAMYAKINT • CIN: L67120MH1994PLC225907
+              </p>
             </div>
 
             <div className="letterhead-doc-title">
