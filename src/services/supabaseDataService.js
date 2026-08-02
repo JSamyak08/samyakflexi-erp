@@ -166,22 +166,28 @@ export async function fetchInventory() {
   if (!isSupabaseConfigured()) return [];
   try {
     const { data, error } = await supabase.from('inventory').select('*').order('item_name');
-    if (error) throw error;
+    if (error) {
+      handleSupabaseError(error, 'inventory');
+      return [];
+    }
     if (!data) return [];
 
-    return data.map(i => ({
-      id: i.id,
-      itemCode: i.item_code,
-      itemName: i.item_name,
-      category: i.category,
-      filmType: i.film_type,
-      micron: Number(i.micron) || 0,
-      widthMm: Number(i.width_mm) || 0,
-      availableQtyKg: Number(i.stock_qty_kg) || 0,
-      reorderLevelKg: Number(i.reorder_level_kg) || 0,
-      unitPrice: Number(i.unit_price) || 0,
-      location: i.location
-    }));
+    return data.map(i => {
+      const filmTypeVal = i.film_type || (i.item_name ? i.item_name.split(' ')[0] : 'PET');
+      return {
+        id: i.id,
+        itemCode: i.item_code || i.id,
+        itemName: i.item_name || `${filmTypeVal} ${i.micron || 12}µ`,
+        category: i.category || 'Film',
+        filmType: filmTypeVal,
+        micron: Number(i.micron) || 12,
+        widthMm: Number(i.width_mm) || 1000,
+        availableQtyKg: Number(i.stock_qty_kg) || 0,
+        reorderLevelKg: Number(i.reorder_level_kg) || 0,
+        unitPrice: Number(i.unit_price) || 0,
+        location: i.location || 'Bay A'
+      };
+    });
   } catch (err) {
     console.error("Error fetching inventory from Supabase:", err);
     return [];
@@ -190,24 +196,24 @@ export async function fetchInventory() {
 
 export async function saveInventoryItemToSupabase(item) {
   if (!isSupabaseConfigured()) return;
+  const filmTypeStr = item.filmType || 'PET';
+  const itemNameStr = item.itemName || `${filmTypeStr} ${item.micron || 12}µ (${item.widthMm || 1000}mm)`;
+  const itemCodeStr = item.itemCode || item.id || `INV-${Math.floor(100 + Math.random() * 900)}`;
+
   const { error } = await supabase.from('inventory').upsert({
     id: item.id,
-    item_code: item.itemCode,
-    item_name: item.itemName,
-    category: item.category,
-    film_type: item.filmType,
-    micron: item.micron,
-    width_mm: item.widthMm,
-    stock_qty_kg: item.availableQtyKg,
-    reorder_level_kg: item.reorderLevelKg,
-    unit_price: item.unitPrice,
-    location: item.location
-  });
+    item_code: itemCodeStr,
+    item_name: itemNameStr,
+    category: item.category || 'Film',
+    micron: Number(item.micron) || 0,
+    width_mm: Number(item.widthMm) || 0,
+    stock_qty_kg: Number(item.availableQtyKg) || 0,
+    reorder_level_kg: Number(item.reorderLevelKg) || 0,
+    unit_price: Number(item.unitPrice) || 0,
+    location: item.location || 'Bay A'
+  }, { onConflict: 'id' });
 
-  if (error) {
-    console.error("Error saving inventory item to Supabase:", error);
-    throw error;
-  }
+  handleSupabaseError(error, 'inventory');
 }
 
 export async function deleteInventoryItemFromSupabase(itemId) {
