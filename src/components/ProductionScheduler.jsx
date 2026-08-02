@@ -193,10 +193,18 @@ export default function ProductionScheduler({
     const existing = schedules.find(s => s.id === scheduleId);
     if (!existing) return;
 
+    let newStartTime = existing.startTime || '08:00';
+    if (existing.shift !== targetShift) {
+      const [h, m] = newStartTime.split(':').map(Number);
+      const adjustedH = (h + 12) % 24;
+      newStartTime = `${adjustedH.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+    }
+
     const updatedSchedule = {
       ...existing,
       machineId: targetMachineId,
-      shift: targetShift
+      shift: targetShift,
+      startTime: newStartTime
     };
 
     if (onSaveSchedule) {
@@ -208,7 +216,13 @@ export default function ProductionScheduler({
   const handleQuickToggleShift = (e, schedule) => {
     if (e && e.stopPropagation) e.stopPropagation();
     const newShift = schedule.shift === 'Day Shift' ? 'Night Shift' : 'Day Shift';
-    const updated = { ...schedule, shift: newShift };
+    
+    let newStartTime = schedule.startTime || '08:00';
+    const [h, m] = newStartTime.split(':').map(Number);
+    const adjustedH = (h + 12) % 24;
+    newStartTime = `${adjustedH.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+
+    const updated = { ...schedule, shift: newShift, startTime: newStartTime };
     if (onSaveSchedule) {
       onSaveSchedule(updated);
     }
@@ -442,9 +456,89 @@ export default function ProductionScheduler({
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {machines.map(mac => {
               const machineScheds = schedules.filter(s => s.machineId === mac.id);
+              
+              const getJobOffsetMins = (startTime, shift) => {
+                if (!startTime) return 0;
+                const [h, m] = startTime.split(':').map(Number);
+                let mins = h * 60 + m;
+                if (shift === 'Day Shift') {
+                  return Math.max(0, mins - 480); // 08:00
+                } else {
+                  if (mins < 720) mins += 1440; // < 12:00 -> next day
+                  return Math.max(0, mins - 1200); // 20:00
+                }
+              };
 
-              return (
-                <div key={mac.id} className="glass-panel" style={{ padding: '20px' }}>
+              // --- Layout Calculation ---
+              const dayJobs = machineScheds.filter(s => s.shift === 'Day Shift').sort((a, b) => getJobOffsetMins(a.startTime, 'Day Shift') - getJobOffsetMins(b.startTime, 'Day Shift'));
+              const dayBlocks = [];
+              let dayCurrentMins = 0;
+              const dayOverflows = [];
+
+              dayJobs.forEach(s => {
+                const jobOffset = getJobOffsetMins(s.startTime, 'Day Shift');
+                const actualStart = Math.max(jobOffset, dayCurrentMins);
+                
+                if (actualStart > dayCurrentMins) {
+                  dayBlocks.push({ type: 'gap', durationMins: actualStart - dayCurrentMins });
+                  dayCurrentMins = actualStart;
+                }
+                
+                const duration = Math.max(s.totalDurationMins || 120, 1);
+                const blockDuration = Math.min(duration, 720 - dayCurrentMins);
+                const overflowMins = duration - blockDuration;
+                
+                if (blockDuration > 0) {
+                  dayBlocks.push({ type: 'job', job: s, durationMins: blockDuration, totalDuration: duration, isOverflowing: overflowMins > 0, overflowMins });
+                  dayCurrentMins += blockDuration;
+                }
+                
+                if (overflowMins > 0) {
+                  dayOverflows.push({ job: s, durationMins: overflowMins });
+                }
+              });
+
+              if (dayCurrentMins < 720) {
+                dayBlocks.push({ type: 'gap', durationMins: 720 - dayCurrentMins });
+              }
+
+              const nightJobs = machineScheds.filter(s => s.shift === 'Night Shift').sort((a, b) => getJobOffsetMins(a.startTime, 'Night Shift') - getJobOffsetMins(b.startTime, 'Night Shift'));
+              const nightBlocks = [];
+              let nightCurrentMins = 0;
+
+              dayOverflows.forEach(overflow => {
+                const blockDuration = Math.min(overflow.durationMins, 720 - nightCurrentMins);
+                if (blockDuration > 0) {
+                  nightBlocks.push({ type: 'continuation', job: overflow.job, durationMins: blockDuration, originalOverflowMins: overflow.durationMins });
+                  nightCurrentMins += blockDuration;
+                }
+              });
+
+              nightJobs.forEach(s => {
+                const jobOffset = getJobOffsetMins(s.startTime, 'Night Shift');
+                const actualStart = Math.max(jobOffset, nightCurrentMins);
+                
+                if (actualStart > nightCurrentMins) {
+                  nightBlocks.push({ type: 'gap', durationMins: actualStart - nightCurrentMins });
+                  nightCurrentMins = actualStart;
+                }
+                
+                const duration = Math.max(s.totalDurationMins || 120, 1);
+                const blockDuration = Math.min(duration, 720 - nightCurrentMins);
+                
+                if (blockDuration > 0) {
+                  nightBlocks.push({ type: 'job', job: s, durationMins: blockDuration, totalDuration: duration });
+                  nightCurrentMins += blockDuration;
+                }
+              });
+
+              if (nightCurrentMins < 720) {
+                nightBlocks.push({ type: 'gap', durationMins: 720 - nightCurrentMins });
+              }
+              // ------------------------
+
+                return (
+                  <div key={mac.id} className="glass-panel" style={{ padding: '20px' }}>
                   {/* Machine Header */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -466,7 +560,6 @@ export default function ProductionScheduler({
                     
                     {/* DAY SHIFT TIMELINE (08:00 to 20:00 - 12 Hours) */}
                     {(selectedShiftFilter === 'All' || selectedShiftFilter === 'Day Shift') && (() => {
-                      const dayJobs = machineScheds.filter(s => s.shift === 'Day Shift');
                       const dayScheduledMins = dayJobs.reduce((acc, s) => acc + (s.totalDurationMins || 0), 0);
                       const dayUtilPct = Math.round((dayScheduledMins / 720) * 100);
                       const zoneKey = `${mac.id}_Day Shift`;
@@ -529,121 +622,148 @@ export default function ProductionScheduler({
 
                           {/* Visual Timeline Bar Container */}
                           <div style={{ minHeight: '62px', background: '#e2e8f0', borderRadius: '8px', overflow: 'hidden', display: 'flex', position: 'relative', border: '1px solid #cbd5e1' }}>
-                            {dayJobs.length === 0 ? (
+                            {dayBlocks.length === 0 ? (
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', color: '#64748b', fontSize: '0.8rem', fontWeight: '600', padding: '16px' }}>
-                                No jobs scheduled for Day Shift (Drag jobs here or click Schedule in Ready Queue)
+                                No jobs scheduled for Day Shift
                               </div>
                             ) : (
-                              dayJobs.map(s => {
-                                const totalDuration = Math.max(s.totalDurationMins || 120, 1);
-                                const setupMins = s.jobChangeoverMins || 60;
-                                const rollMins = s.rollChangeoverMins || 20;
-                                const runMins = s.runTimeMins || Math.max(10, totalDuration - setupMins - rollMins);
-
-                                const setupPct = (setupMins / totalDuration) * 100;
-                                const rollPct = (rollMins / totalDuration) * 100;
-                                const runPct = Math.max(0, 100 - setupPct - rollPct);
-
-                                const pctWidth = Math.min(100, Math.max(15, (totalDuration / 720) * 100));
-                                const isOverflowing = totalDuration > 720;
-                                const overflowMins = Math.max(0, totalDuration - 720);
-
-                                return (
-                                  <div 
-                                    key={s.id}
-                                    draggable="true"
-                                    onDragStart={(e) => {
-                                      e.dataTransfer.setData('text/plain', JSON.stringify({ scheduleId: s.id }));
-                                    }}
-                                    style={{
-                                      width: `${pctWidth}%`,
-                                      height: '100%',
-                                      display: 'flex',
-                                      flexDirection: 'column',
-                                      justify: 'space-between',
-                                      borderRight: '2px solid #ffffff',
-                                      cursor: 'grab',
-                                      background: '#0f172a',
-                                      color: '#ffffff',
-                                      padding: '6px 8px',
-                                      borderRadius: '6px',
-                                      boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
-                                      transition: 'transform 0.15s'
-                                    }}
-                                    title={`Job: ${s.jobName} (${s.clientName})\nStart: ${s.startTime} | End: ${s.endTime}\nSetup Time: ${setupMins} mins\nRoll Changeover: ${rollMins} mins\nNet Printing Run: ${runMins} mins\nTotal Duration: ${(totalDuration/60).toFixed(1)} hrs${isOverflowing ? `\n(Spills ${ (overflowMins/60).toFixed(1) } hrs into Night Shift)` : ''}`}
-                                  >
-                                    {/* Job Header & Action Controls */}
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', fontWeight: '800' }}>
-                                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.jobName}</span>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                        <span style={{ fontSize: '0.65rem', background: 'rgba(255,255,255,0.2)', padding: '1px 5px', borderRadius: '4px', fontWeight: 'bold' }}>
-                                          {(totalDuration/60).toFixed(1)}h
-                                        </span>
-                                        {/* Edit / Reschedule Button */}
-                                        <button 
-                                          type="button"
-                                          onClick={(e) => handleEditExistingSchedule(e, s)}
-                                          style={{ background: 'rgba(59, 130, 246, 0.8)', border: 'none', color: '#ffffff', borderRadius: '3px', cursor: 'pointer', padding: '2px 4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center' }}
-                                          title="Reschedule / Edit Parameters"
-                                        >
-                                          <Edit3 size={11} />
-                                        </button>
-                                        {/* Quick Shift Toggle Button */}
-                                        <button 
-                                          type="button"
-                                          onClick={(e) => handleQuickToggleShift(e, s)}
-                                          style={{ background: 'rgba(245, 158, 11, 0.8)', border: 'none', color: '#ffffff', borderRadius: '3px', cursor: 'pointer', padding: '2px 4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center' }}
-                                          title="Switch to Night Shift (1-Click)"
-                                        >
-                                          🌙
-                                        </button>
-                                        {/* Delete Button */}
-                                        <button 
-                                          type="button"
-                                          onClick={(e) => handleDeleteScheduleClick(e, s)}
-                                          style={{ background: 'rgba(239, 68, 68, 0.8)', border: 'none', color: '#ffffff', borderRadius: '3px', cursor: 'pointer', padding: '2px 4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center' }}
-                                          title="Delete Schedule"
-                                        >
-                                          <Trash2 size={11} />
-                                        </button>
-                                      </div>
+                              dayBlocks.map((b, idx) => {
+                                const pctWidth = (b.durationMins / 720) * 100;
+                                
+                                if (b.type === 'gap') {
+                                  return (
+                                    <div 
+                                      key={`gap-${idx}`}
+                                      style={{
+                                        width: `${pctWidth}%`,
+                                        height: '100%',
+                                        background: 'rgba(239, 68, 68, 0.1)',
+                                        borderRight: '1px dashed rgba(239, 68, 68, 0.3)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        color: '#ef4444',
+                                        fontSize: '0.75rem',
+                                        fontWeight: '600',
+                                        overflow: 'hidden'
+                                      }}
+                                      title={`Unallocated time: ${b.durationMins} mins`}
+                                    >
+                                      {pctWidth > 8 ? 'Unallocated' : ''}
                                     </div>
+                                  );
+                                } else if (b.type === 'job') {
+                                  const s = b.job;
+                                  const totalDuration = b.totalDuration;
+                                  const setupMins = s.jobChangeoverMins || 60;
+                                  const rollMins = s.rollChangeoverMins || 20;
+                                  const runMins = s.runTimeMins || Math.max(10, totalDuration - setupMins - rollMins);
 
-                                    {/* Segmented Color Bar: Setup (Purple) + Rolls (Amber) + Run (Green) */}
-                                    <div style={{ height: '20px', background: '#1e293b', borderRadius: '4px', overflow: 'hidden', display: 'flex', marginTop: '3px', fontSize: '0.68rem', fontWeight: '700' }}>
-                                      {/* 1. Setup Segment */}
-                                      <div 
-                                        style={{ width: `${setupPct}%`, background: '#8b5cf6', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 2px' }}
-                                        title={`Job Setup / Cylinder Changeover: ${setupMins} mins`}
-                                      >
-                                        {setupPct > 10 && `⚙️ ${setupMins}m`}
+                                  const blockSetupMins = Math.min(setupMins, b.durationMins);
+                                  const blockRollMins = Math.min(rollMins, b.durationMins - blockSetupMins);
+                                  const blockRunMins = Math.max(0, b.durationMins - blockSetupMins - blockRollMins);
+
+                                  const setupPct = (blockSetupMins / b.durationMins) * 100;
+                                  const rollPct = (blockRollMins / b.durationMins) * 100;
+                                  const runPct = (blockRunMins / b.durationMins) * 100;
+
+                                  const isOverflowing = b.isOverflowing;
+                                  const overflowMins = b.overflowMins;
+
+                                  return (
+                                    <div 
+                                      key={s.id}
+                                      draggable="true"
+                                      onDragStart={(e) => {
+                                        e.dataTransfer.setData('text/plain', JSON.stringify({ scheduleId: s.id }));
+                                      }}
+                                      style={{
+                                        width: `${pctWidth}%`,
+                                        height: '100%',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        justifyContent: 'space-between',
+                                        borderRight: '2px solid #ffffff',
+                                        cursor: 'grab',
+                                        background: '#0f172a',
+                                        color: '#ffffff',
+                                        padding: '6px 8px',
+                                        borderRadius: '6px',
+                                        boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
+                                        transition: 'transform 0.15s',
+                                        overflow: 'hidden'
+                                      }}
+                                      title={`Job: ${s.jobName} (${s.clientName})\nStart: ${s.startTime} | End: ${s.endTime}\nSetup Time: ${setupMins} mins\nRoll Changeover: ${rollMins} mins\nNet Printing Run: ${runMins} mins\nTotal Duration: ${(totalDuration/60).toFixed(1)} hrs${isOverflowing ? `\n(Spills ${ (overflowMins/60).toFixed(1) } hrs into Night Shift)` : ''}`}
+                                    >
+                                      {/* Job Header & Action Controls */}
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', fontWeight: '800' }}>
+                                        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.jobName}</span>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                          <span style={{ fontSize: '0.65rem', background: 'rgba(255,255,255,0.2)', padding: '1px 5px', borderRadius: '4px', fontWeight: 'bold' }}>
+                                            {(totalDuration/60).toFixed(1)}h
+                                          </span>
+                                          {/* Edit / Reschedule Button */}
+                                          <button 
+                                            type="button"
+                                            onClick={(e) => handleEditExistingSchedule(e, s)}
+                                            style={{ background: 'rgba(59, 130, 246, 0.8)', border: 'none', color: '#ffffff', borderRadius: '3px', cursor: 'pointer', padding: '2px 4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center' }}
+                                            title="Reschedule / Edit Parameters"
+                                          >
+                                            <Edit3 size={11} />
+                                          </button>
+                                          {/* Quick Shift Toggle Button */}
+                                          <button 
+                                            type="button"
+                                            onClick={(e) => handleQuickToggleShift(e, s)}
+                                            style={{ background: 'rgba(245, 158, 11, 0.8)', border: 'none', color: '#ffffff', borderRadius: '3px', cursor: 'pointer', padding: '2px 4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center' }}
+                                            title="Switch to Night Shift (1-Click)"
+                                          >
+                                            🌙
+                                          </button>
+                                          {/* Delete Button */}
+                                          <button 
+                                            type="button"
+                                            onClick={(e) => handleDeleteScheduleClick(e, s)}
+                                            style={{ background: 'rgba(239, 68, 68, 0.8)', border: 'none', color: '#ffffff', borderRadius: '3px', cursor: 'pointer', padding: '2px 4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center' }}
+                                            title="Delete Schedule"
+                                          >
+                                            <Trash2 size={11} />
+                                          </button>
+                                        </div>
                                       </div>
 
-                                      {/* 2. Roll Changes Segment */}
-                                      <div 
-                                        style={{ width: `${rollPct}%`, background: '#f59e0b', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 2px' }}
-                                        title={`Roll Changeovers: ${rollMins} mins`}
-                                      >
-                                        {rollPct > 10 && `📦 ${rollMins}m`}
+                                      {/* Segmented Color Bar */}
+                                      <div style={{ height: '20px', background: '#1e293b', borderRadius: '4px', overflow: 'hidden', display: 'flex', marginTop: '3px', fontSize: '0.68rem', fontWeight: '700' }}>
+                                        <div 
+                                          style={{ width: `${setupPct}%`, background: '#8b5cf6', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 2px', overflow: 'hidden' }}
+                                          title={`Job Setup: ${setupMins} mins`}
+                                        >
+                                          {setupPct > 10 && `⚙️ ${blockSetupMins}m`}
+                                        </div>
+                                        <div 
+                                          style={{ width: `${rollPct}%`, background: '#f59e0b', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 2px', overflow: 'hidden' }}
+                                          title={`Roll Changeovers: ${rollMins} mins`}
+                                        >
+                                          {rollPct > 10 && `📦 ${blockRollMins}m`}
+                                        </div>
+                                        <div 
+                                          style={{ width: `${runPct}%`, background: '#10b981', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 2px', overflow: 'hidden' }}
+                                          title={`Net Printing Run: ${runMins} mins`}
+                                        >
+                                          {runPct > 12 && `🖨️ ${blockRunMins}m`}
+                                        </div>
                                       </div>
 
-                                      {/* 3. Printing Run Segment */}
-                                      <div 
-                                        style={{ width: `${runPct}%`, background: '#10b981', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 2px' }}
-                                        title={`Net Printing Run: ${runMins} mins`}
-                                      >
-                                        {runPct > 12 && `🖨️ ${runMins}m`}
-                                      </div>
+                                      {/* Overflow Banner */}
+                                      {isOverflowing && (
+                                        <div style={{ fontSize: '0.62rem', background: '#ef4444', color: '#fff', padding: '1px 4px', borderRadius: '2px', fontWeight: 'bold', marginTop: '2px', textTransform: 'uppercase' }}>
+                                          🔄 Spills +{(overflowMins/60).toFixed(1)}h to Night Shift
+                                        </div>
+                                      )}
                                     </div>
-
-                                    {/* Overflow Banner */}
-                                    {isOverflowing && (
-                                      <div style={{ fontSize: '0.62rem', background: '#ef4444', color: '#fff', padding: '1px 4px', borderRadius: '2px', fontWeight: 'bold', marginTop: '2px', textTransform: 'uppercase' }}>
-                                        🔄 Spills +{(overflowMins/60).toFixed(1)}h to Night Shift
-                                      </div>
-                                    )}
-                                  </div>
-                                );
+                                  );
+                                }
+                                return null;
                               })
                             )}
                           </div>
@@ -653,7 +773,6 @@ export default function ProductionScheduler({
 
                     {/* NIGHT SHIFT TIMELINE (20:00 to 08:00 - 12 Hours) */}
                     {(selectedShiftFilter === 'All' || selectedShiftFilter === 'Night Shift') && (() => {
-                      const nightJobs = machineScheds.filter(s => s.shift === 'Night Shift');
                       const nightScheduledMins = nightJobs.reduce((acc, s) => acc + (s.totalDurationMins || 0), 0);
                       const nightUtilPct = Math.round((nightScheduledMins / 720) * 100);
                       const zoneKey = `${mac.id}_Night Shift`;
@@ -716,133 +835,194 @@ export default function ProductionScheduler({
 
                           {/* Visual Timeline Bar Container */}
                           <div style={{ minHeight: '62px', background: '#94a3b8', borderRadius: '8px', overflow: 'hidden', display: 'flex', position: 'relative', border: '1px solid #64748b' }}>
-                            {/* Auto-render Multi-Shift Continuation Blocks from Day Shift Overflow */}
-                            {machineScheds.filter(s => s.shift === 'Day Shift' && (s.totalDurationMins || 0) > 720).map(overflowJob => {
-                              const overflowMins = (overflowJob.totalDurationMins || 0) - 720;
-                              return (
-                                <div 
-                                  key={`overflow-${overflowJob.id}`}
-                                  style={{
-                                    width: `${Math.min(100, Math.max(15, (overflowMins / 720) * 100))}%`,
-                                    height: '100%',
-                                    background: '#4338ca',
-                                    color: '#ffffff',
-                                    padding: '6px 10px',
-                                    fontSize: '0.72rem',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    justify: 'center',
-                                    borderRight: '2px solid #ffffff',
-                                    borderLeft: '4px solid #f59e0b'
-                                  }}
-                                  title={`Continued from Day Shift: ${overflowJob.jobName}\nRemaining run time: ${(overflowMins/60).toFixed(1)} hrs`}
-                                >
-                                  <div style={{ fontWeight: '800' }}>➡️ CONTINUATION: {overflowJob.jobName}</div>
-                                  <div style={{ fontSize: '0.65rem', opacity: 0.9 }}>Remaining: {(overflowMins/60).toFixed(1)} hrs in Night Shift</div>
-                                </div>
-                              );
-                            })}
-
-                            {nightJobs.length === 0 && machineScheds.filter(s => s.shift === 'Day Shift' && (s.totalDurationMins || 0) > 720).length === 0 ? (
+                            {nightBlocks.length === 0 ? (
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', color: '#ffffff', fontSize: '0.8rem', fontWeight: '600', padding: '16px' }}>
-                                No jobs scheduled for Night Shift (Drag jobs here or click Schedule in Ready Queue)
+                                No jobs scheduled for Night Shift
                               </div>
                             ) : (
-                              nightJobs.map(s => {
-                                const totalDuration = Math.max(s.totalDurationMins || 120, 1);
-                                const setupMins = s.jobChangeoverMins || 60;
-                                const rollMins = s.rollChangeoverMins || 20;
-                                const runMins = s.runTimeMins || Math.max(10, totalDuration - setupMins - rollMins);
+                              nightBlocks.map((b, idx) => {
+                                const pctWidth = (b.durationMins / 720) * 100;
+                                
+                                if (b.type === 'gap') {
+                                  return (
+                                    <div 
+                                      key={`gap-${idx}`}
+                                      style={{
+                                        width: `${pctWidth}%`,
+                                        height: '100%',
+                                        background: 'rgba(239, 68, 68, 0.1)',
+                                        borderRight: '1px dashed rgba(239, 68, 68, 0.3)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        color: '#ef4444',
+                                        fontSize: '0.75rem',
+                                        fontWeight: '600',
+                                        overflow: 'hidden'
+                                      }}
+                                      title={`Unallocated time: ${b.durationMins} mins`}
+                                    >
+                                      {pctWidth > 8 ? 'Unallocated' : ''}
+                                    </div>
+                                  );
+                                } else if (b.type === 'continuation') {
+                                  const s = b.job;
+                                  const totalDuration = s.totalDurationMins || 120;
+                                  const setupMins = s.jobChangeoverMins || 60;
+                                  const rollMins = s.rollChangeoverMins || 20;
+                                  const runMins = s.runTimeMins || Math.max(10, totalDuration - setupMins - rollMins);
 
-                                const setupPct = (setupMins / totalDuration) * 100;
-                                const rollPct = (rollMins / totalDuration) * 100;
-                                const runPct = Math.max(0, 100 - setupPct - rollPct);
+                                  const dayDuration = totalDuration - b.originalOverflowMins;
+                                  const daySetupMins = Math.min(setupMins, dayDuration);
+                                  const dayRollMins = Math.min(rollMins, dayDuration - daySetupMins);
+                                  
+                                  const nightSetupMins = Math.min(setupMins - daySetupMins, b.durationMins);
+                                  const nightRollMins = Math.min(rollMins - dayRollMins, b.durationMins - nightSetupMins);
+                                  const nightRunMins = Math.max(0, b.durationMins - nightSetupMins - nightRollMins);
 
-                                const pctWidth = Math.min(100, Math.max(15, (totalDuration / 720) * 100));
+                                  const setupPct = (nightSetupMins / b.durationMins) * 100;
+                                  const rollPct = (nightRollMins / b.durationMins) * 100;
+                                  const runPct = (nightRunMins / b.durationMins) * 100;
 
-                                return (
-                                  <div 
-                                    key={s.id}
-                                    draggable="true"
-                                    onDragStart={(e) => {
-                                      e.dataTransfer.setData('text/plain', JSON.stringify({ scheduleId: s.id }));
-                                    }}
-                                    style={{
-                                      width: `${pctWidth}%`,
-                                      height: '100%',
-                                      display: 'flex',
-                                      flexDirection: 'column',
-                                      justify: 'space-between',
-                                      borderRight: '2px solid #ffffff',
-                                      cursor: 'grab',
-                                      background: '#0f172a',
-                                      color: '#ffffff',
-                                      padding: '6px 8px',
-                                      borderRadius: '6px',
-                                      boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
-                                    }}
-                                    title={`Job: ${s.jobName} (${s.clientName})\nStart: ${s.startTime} | End: ${s.endTime}\nSetup Time: ${setupMins} mins\nRoll Changeover: ${rollMins} mins\nNet Printing Run: ${runMins} mins`}
-                                  >
-                                    {/* Job Header & Action Controls */}
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', fontWeight: '800' }}>
-                                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.jobName}</span>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                        <span style={{ fontSize: '0.65rem', background: 'rgba(255,255,255,0.2)', padding: '1px 5px', borderRadius: '4px', fontWeight: 'bold' }}>
-                                          {(totalDuration/60).toFixed(1)}h
-                                        </span>
-                                        {/* Edit / Reschedule Button */}
-                                        <button 
-                                          type="button"
-                                          onClick={(e) => handleEditExistingSchedule(e, s)}
-                                          style={{ background: 'rgba(59, 130, 246, 0.8)', border: 'none', color: '#ffffff', borderRadius: '3px', cursor: 'pointer', padding: '2px 4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center' }}
-                                          title="Reschedule / Edit Parameters"
-                                        >
-                                          <Edit3 size={11} />
-                                        </button>
-                                        {/* Quick Shift Toggle Button */}
-                                        <button 
-                                          type="button"
-                                          onClick={(e) => handleQuickToggleShift(e, s)}
-                                          style={{ background: 'rgba(245, 158, 11, 0.8)', border: 'none', color: '#ffffff', borderRadius: '3px', cursor: 'pointer', padding: '2px 4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center' }}
-                                          title="Switch to Day Shift (1-Click)"
-                                        >
-                                          ☀️
-                                        </button>
-                                        {/* Delete Button */}
-                                        <button 
-                                          type="button"
-                                          onClick={(e) => handleDeleteScheduleClick(e, s)}
-                                          style={{ background: 'rgba(239, 68, 68, 0.8)', border: 'none', color: '#ffffff', borderRadius: '3px', cursor: 'pointer', padding: '2px 4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center' }}
-                                          title="Delete Schedule"
-                                        >
-                                          <Trash2 size={11} />
-                                        </button>
+                                  return (
+                                    <div 
+                                      key={`overflow-${s.id}`}
+                                      style={{
+                                        width: `${pctWidth}%`,
+                                        height: '100%',
+                                        background: '#4338ca',
+                                        color: '#ffffff',
+                                        padding: '6px 10px',
+                                        fontSize: '0.72rem',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        justifyContent: 'space-between',
+                                        borderRight: '2px solid #ffffff',
+                                        borderLeft: '4px solid #f59e0b',
+                                        overflow: 'hidden'
+                                      }}
+                                      title={`Continued from Day Shift: ${s.jobName}\nRemaining run time: ${(b.durationMins/60).toFixed(1)} hrs`}
+                                    >
+                                      <div>
+                                        <div style={{ fontWeight: '800', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>➡️ CONTINUATION: {s.jobName}</div>
+                                        <div style={{ fontSize: '0.65rem', opacity: 0.9 }}>Remaining: {(b.durationMins/60).toFixed(1)} hrs</div>
+                                      </div>
+                                      
+                                      <div style={{ height: '20px', background: '#312e81', borderRadius: '4px', overflow: 'hidden', display: 'flex', marginTop: '3px', fontSize: '0.68rem', fontWeight: '700' }}>
+                                        <div style={{ width: `${setupPct}%`, background: '#8b5cf6', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 2px', overflow: 'hidden' }}>
+                                          {setupPct > 10 && `⚙️ ${nightSetupMins}m`}
+                                        </div>
+                                        <div style={{ width: `${rollPct}%`, background: '#f59e0b', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 2px', overflow: 'hidden' }}>
+                                          {rollPct > 10 && `📦 ${nightRollMins}m`}
+                                        </div>
+                                        <div style={{ width: `${runPct}%`, background: '#10b981', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 2px', overflow: 'hidden' }}>
+                                          {runPct > 12 && `🖨️ ${nightRunMins}m`}
+                                        </div>
                                       </div>
                                     </div>
+                                  );
+                                } else if (b.type === 'job') {
+                                  const s = b.job;
+                                  const totalDuration = b.totalDuration;
+                                  const setupMins = s.jobChangeoverMins || 60;
+                                  const rollMins = s.rollChangeoverMins || 20;
+                                  const runMins = s.runTimeMins || Math.max(10, totalDuration - setupMins - rollMins);
 
-                                    {/* Segmented Color Bar: Setup (Purple) + Rolls (Amber) + Run (Green) */}
-                                    <div style={{ height: '20px', background: '#1e293b', borderRadius: '4px', overflow: 'hidden', display: 'flex', marginTop: '3px', fontSize: '0.68rem', fontWeight: '700' }}>
-                                      <div 
-                                        style={{ width: `${setupPct}%`, background: '#8b5cf6', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 2px' }}
-                                        title={`Job Setup: ${setupMins} mins`}
-                                      >
-                                        {setupPct > 10 && `⚙️ ${setupMins}m`}
+                                  const blockSetupMins = Math.min(setupMins, b.durationMins);
+                                  const blockRollMins = Math.min(rollMins, b.durationMins - blockSetupMins);
+                                  const blockRunMins = Math.max(0, b.durationMins - blockSetupMins - blockRollMins);
+
+                                  const setupPct = (blockSetupMins / b.durationMins) * 100;
+                                  const rollPct = (blockRollMins / b.durationMins) * 100;
+                                  const runPct = (blockRunMins / b.durationMins) * 100;
+
+                                  return (
+                                    <div 
+                                      key={s.id}
+                                      draggable="true"
+                                      onDragStart={(e) => {
+                                        e.dataTransfer.setData('text/plain', JSON.stringify({ scheduleId: s.id }));
+                                      }}
+                                      style={{
+                                        width: `${pctWidth}%`,
+                                        height: '100%',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        justifyContent: 'space-between',
+                                        borderRight: '2px solid #ffffff',
+                                        cursor: 'grab',
+                                        background: '#0f172a',
+                                        color: '#ffffff',
+                                        padding: '6px 8px',
+                                        borderRadius: '6px',
+                                        boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
+                                        transition: 'transform 0.15s',
+                                        overflow: 'hidden'
+                                      }}
+                                      title={`Job: ${s.jobName} (${s.clientName})\nStart: ${s.startTime} | End: ${s.endTime}\nSetup Time: ${setupMins} mins\nRoll Changeover: ${rollMins} mins\nNet Printing Run: ${runMins} mins\nTotal Duration: ${(totalDuration/60).toFixed(1)} hrs`}
+                                    >
+                                      {/* Job Header & Action Controls */}
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', fontWeight: '800' }}>
+                                        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.jobName}</span>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                          <span style={{ fontSize: '0.65rem', background: 'rgba(255,255,255,0.2)', padding: '1px 5px', borderRadius: '4px', fontWeight: 'bold' }}>
+                                            {(totalDuration/60).toFixed(1)}h
+                                          </span>
+                                          {/* Edit / Reschedule Button */}
+                                          <button 
+                                            type="button"
+                                            onClick={(e) => handleEditExistingSchedule(e, s)}
+                                            style={{ background: 'rgba(59, 130, 246, 0.8)', border: 'none', color: '#ffffff', borderRadius: '3px', cursor: 'pointer', padding: '2px 4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center' }}
+                                            title="Reschedule / Edit Parameters"
+                                          >
+                                            <Edit3 size={11} />
+                                          </button>
+                                          {/* Quick Shift Toggle Button */}
+                                          <button 
+                                            type="button"
+                                            onClick={(e) => handleQuickToggleShift(e, s)}
+                                            style={{ background: 'rgba(245, 158, 11, 0.8)', border: 'none', color: '#ffffff', borderRadius: '3px', cursor: 'pointer', padding: '2px 4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center' }}
+                                            title="Switch to Day Shift (1-Click)"
+                                          >
+                                            ☀️
+                                          </button>
+                                          {/* Delete Button */}
+                                          <button 
+                                            type="button"
+                                            onClick={(e) => handleDeleteScheduleClick(e, s)}
+                                            style={{ background: 'rgba(239, 68, 68, 0.8)', border: 'none', color: '#ffffff', borderRadius: '3px', cursor: 'pointer', padding: '2px 4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center' }}
+                                            title="Delete Schedule"
+                                          >
+                                            <Trash2 size={11} />
+                                          </button>
+                                        </div>
                                       </div>
-                                      <div 
-                                        style={{ width: `${rollPct}%`, background: '#f59e0b', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 2px' }}
-                                        title={`Roll Changeovers: ${rollMins} mins`}
-                                      >
-                                        {rollPct > 10 && `📦 ${rollMins}m`}
-                                      </div>
-                                      <div 
-                                        style={{ width: `${runPct}%`, background: '#10b981', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 2px' }}
-                                        title={`Net Printing Run: ${runMins} mins`}
-                                      >
-                                        {runPct > 12 && `🖨️ ${runMins}m`}
+
+                                      {/* Segmented Color Bar */}
+                                      <div style={{ height: '20px', background: '#1e293b', borderRadius: '4px', overflow: 'hidden', display: 'flex', marginTop: '3px', fontSize: '0.68rem', fontWeight: '700' }}>
+                                        <div 
+                                          style={{ width: `${setupPct}%`, background: '#8b5cf6', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 2px', overflow: 'hidden' }}
+                                          title={`Job Setup: ${setupMins} mins`}
+                                        >
+                                          {setupPct > 10 && `⚙️ ${blockSetupMins}m`}
+                                        </div>
+                                        <div 
+                                          style={{ width: `${rollPct}%`, background: '#f59e0b', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 2px', overflow: 'hidden' }}
+                                          title={`Roll Changeovers: ${rollMins} mins`}
+                                        >
+                                          {rollPct > 10 && `📦 ${blockRollMins}m`}
+                                        </div>
+                                        <div 
+                                          style={{ width: `${runPct}%`, background: '#10b981', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 2px', overflow: 'hidden' }}
+                                          title={`Net Printing Run: ${runMins} mins`}
+                                        >
+                                          {runPct > 12 && `🖨️ ${blockRunMins}m`}
+                                        </div>
                                       </div>
                                     </div>
-                                  </div>
-                                );
+                                  );
+                                }
+                                return null;
                               })
                             )}
                           </div>
@@ -1146,7 +1326,7 @@ export default function ProductionScheduler({
                 </div>
 
                 <div className="form-group">
-                  <label>Shift Start Time *</label>
+                  <label>Job Start Time *</label>
                   <input type="time" className="form-control" required value={startTimeInput} onChange={e => setStartTimeInput(e.target.value)} />
                 </div>
 
