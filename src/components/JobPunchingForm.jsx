@@ -178,6 +178,15 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard }) 
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {/* PDF View Modal */}
+      {showPDFModal && (
+        <OrderConfirmationPDF 
+          calculationData={calculationResults} 
+          onClose={handleClosePDFAndNavigate} 
+        />
+      )}
+
+      <div className="hide-on-print" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Top Banner */}
       <div className="glass-panel" style={{ padding: '20px 24px', background: '#ffffff' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
@@ -589,14 +598,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard }) 
           </div>
         </div>
       )}
-
-      {/* PDF View Modal */}
-      {showPDFModal && (
-        <OrderConfirmationPDF 
-          calculationData={calculationResults} 
-          onClose={handleClosePDFAndNavigate} 
-        />
-      )}
+      </div>
     </div>
   );
 }

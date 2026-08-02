@@ -80,14 +80,14 @@ export default function App() {
 
   // Shared Global State (Only load local defaults if Supabase is unconfigured)
   const isSupaActive = isSupabaseConfigured();
-  const [orders, setOrders] = useState(isSupaActive ? [] : initialOrders);
-  const [vendors, setVendors] = useState(isSupaActive ? [] : initialVendors);
-  const [inventory, setInventory] = useState(isSupaActive ? [] : initialInventory);
-  const [grns, setGrns] = useState(isSupaActive ? [] : initialGRNs);
-  const [users, setUsers] = useState(initialUsers);
-  const [jobDataSheets, setJobDataSheets] = useState(isSupaActive ? [] : initialJobDataSheets);
-  const [cylinders, setCylinders] = useState(isSupaActive ? [] : initialCylinders);
-  const [productionRecords, setProductionRecords] = useState(isSupaActive ? [] : initialProductionRecords);
+  const [orders, setOrders] = useState([]);
+  const [vendors, setVendors] = useState([]);
+  const [inventory, setInventory] = useState([]);
+  const [grns, setGrns] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [jobDataSheets, setJobDataSheets] = useState([]);
+  const [cylinders, setCylinders] = useState([]);
+  const [productionRecords, setProductionRecords] = useState([]);
 
   // Load live data exclusively from Supabase PostgreSQL if configured
   useEffect(() => {
@@ -188,75 +188,154 @@ export default function App() {
   };
 
   // Handlers for state updates
-  const handleAddOrder = (newOrder) => {
+  const handleAddOrder = async (newOrder) => {
     setOrders(prev => [newOrder, ...prev]);
-    saveOrderToSupabase(newOrder);
-  };
-
-  const handleUpdateOrder = (updatedOrder) => {
-    setOrders(prev => prev.map(o => o.id === updatedOrder.id ? updatedOrder : o));
-    saveOrderToSupabase(updatedOrder);
-  };
-
-  const handleDeleteOrder = (orderId) => {
-    setOrders(prev => prev.filter(o => o.id !== orderId));
-    deleteOrderFromSupabase(orderId);
-  };
-
-  const handleAddVendor = (newVendor) => {
-    setVendors(prev => [...prev, newVendor]);
-    saveVendorToSupabase(newVendor);
-  };
-
-  const handleAddGRN = (newGRN) => {
-    setGrns(prev => [newGRN, ...prev]);
-    saveGRNToSupabase(newGRN);
-  };
-
-  const handleUpdateGRN = (updatedGRN) => {
-    setGrns(prev => prev.map(g => g.grnNo === updatedGRN.grnNo ? updatedGRN : g));
-    saveGRNToSupabase(updatedGRN);
-  };
-
-  const handleUpdateInventory = (newInventory) => {
-    setInventory(newInventory);
-    if (Array.isArray(newInventory)) {
-      newInventory.forEach(item => saveInventoryItemToSupabase(item));
+    try {
+      await saveOrderToSupabase(newOrder);
+    } catch (err) {
+      alert("Failed to save Order. Please check constraints or permissions.");
+      const updated = await fetchOrders();
+      setOrders(updated || []);
     }
   };
 
-  const handleAddUser = (newUser) => {
-    setUsers(prev => [...prev, newUser]);
-    saveUserToSupabase(newUser);
+  const handleUpdateOrder = async (updatedOrder) => {
+    setOrders(prev => prev.map(o => o.id === updatedOrder.id ? updatedOrder : o));
+    try {
+      await saveOrderToSupabase(updatedOrder);
+    } catch (err) {
+      alert("Failed to update Order. Please check constraints or permissions.");
+      const updated = await fetchOrders();
+      setOrders(updated || []);
+    }
   };
 
-  const handleUpdateUser = (updatedUser) => {
+  const handleDeleteOrder = async (orderId) => {
+    setOrders(prev => prev.filter(o => o.id !== orderId));
+    try {
+      await deleteOrderFromSupabase(orderId);
+    } catch (err) {
+      alert("Failed to delete Order. It may be referenced by other records (e.g., Job Data Sheets).");
+      const updated = await fetchOrders();
+      setOrders(updated || []);
+    }
+  };
+
+  const handleAddVendor = async (newVendor) => {
+    setVendors(prev => [...prev, newVendor]);
+    try {
+      await saveVendorToSupabase(newVendor);
+    } catch (err) {
+      alert("Failed to save Vendor.");
+      const updated = await fetchVendors();
+      setVendors(updated || []);
+    }
+  };
+
+  const handleAddGRN = async (newGRN) => {
+    setGrns(prev => [newGRN, ...prev]);
+    try {
+      await saveGRNToSupabase(newGRN);
+    } catch (err) {
+      alert("Failed to save GRN.");
+      const updated = await fetchGRNs();
+      setGrns(updated || []);
+    }
+  };
+
+  const handleUpdateGRN = async (updatedGRN) => {
+    setGrns(prev => prev.map(g => g.grnNo === updatedGRN.grnNo ? updatedGRN : g));
+    try {
+      await saveGRNToSupabase(updatedGRN);
+    } catch (err) {
+      alert("Failed to update GRN.");
+      const updated = await fetchGRNs();
+      setGrns(updated || []);
+    }
+  };
+
+  const handleUpdateInventory = async (newInventory) => {
+    setInventory(newInventory);
+    if (Array.isArray(newInventory)) {
+      try {
+        await Promise.all(newInventory.map(item => saveInventoryItemToSupabase(item)));
+      } catch (err) {
+        alert("Failed to update Inventory. Reverting to database state.");
+        const updated = await fetchInventory();
+        setInventory(updated || []);
+      }
+    }
+  };
+
+  const handleAddUser = async (newUser) => {
+    setUsers(prev => [...prev, newUser]);
+    try {
+      await saveUserToSupabase(newUser);
+    } catch (err) {
+      alert("Failed to save User.");
+      const updated = await fetchUsers();
+      setUsers(updated || []);
+    }
+  };
+
+  const handleUpdateUser = async (updatedUser) => {
     setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
-    saveUserToSupabase(updatedUser);
+    try {
+      await saveUserToSupabase(updatedUser);
+    } catch (err) {
+      alert("Failed to update User.");
+      const updated = await fetchUsers();
+      setUsers(updated || []);
+    }
   };
 
   const handleDeleteUser = (userId) => {
-
     setUsers(prev => prev.filter(u => u.id !== userId));
   };
 
-  const handleAddJobDataSheet = (newSheet) => {
+  const handleAddJobDataSheet = async (newSheet) => {
     setJobDataSheets(prev => [newSheet, ...prev.filter(s => s.id !== newSheet.id)]);
-    saveJobDataSheetToSupabase(newSheet);
+    try {
+      await saveJobDataSheetToSupabase(newSheet);
+    } catch (err) {
+      alert("Failed to save Job Data Sheet.");
+      const updated = await fetchJobDataSheets();
+      setJobDataSheets(updated || []);
+    }
   };
 
-  const handleDeleteJobDataSheet = (sheetId) => {
+  const handleDeleteJobDataSheet = async (sheetId) => {
     setJobDataSheets(prev => prev.filter(s => s.id !== sheetId));
-    deleteJobDataSheetFromSupabase(sheetId);
+    try {
+      await deleteJobDataSheetFromSupabase(sheetId);
+    } catch (err) {
+      alert("Failed to delete Job Data Sheet. Please check constraints.");
+      const updated = await fetchJobDataSheets();
+      setJobDataSheets(updated || []);
+    }
   };
 
 
-  const handleAddCylinder = (newCyl) => {
+  const handleAddCylinder = async (newCyl) => {
     setCylinders(prev => [newCyl, ...prev]);
+    try {
+      await saveCylinderToSupabase(newCyl);
+    } catch (err) {
+      alert("Failed to save Cylinder.");
+      const updated = await fetchCylinders();
+      setCylinders(updated || []);
+    }
   };
 
-  const handleUpdateCylinder = (updatedCyl) => {
+  const handleUpdateCylinder = async (updatedCyl) => {
     setCylinders(prev => prev.map(c => c.id === updatedCyl.id ? updatedCyl : c));
+    try {
+      await saveCylinderToSupabase(updatedCyl);
+    } catch (err) {
+      alert("Failed to update Cylinder.");
+      const updated = await fetchCylinders();
+      setCylinders(updated || []);
+    }
   };
 
   // Render Authentication Screen if user is not signed in
@@ -690,6 +769,11 @@ export default function App() {
         {/* TAB 9: SUPABASE DATABASE INTEGRATION */}
         {activeTab === 'supabase' && (
           <SupabaseManagement />
+        )}
+
+        {/* TAB 10: LETTERHEAD & SIGNATURE SETTINGS */}
+        {activeTab === 'doc_settings' && (
+          <DocumentSettings />
         )}
       </div>
     </div>

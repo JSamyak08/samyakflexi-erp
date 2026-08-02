@@ -12,7 +12,11 @@ import {
   ShieldCheck, 
   AlertCircle,
   FileCode,
-  Check
+  Check,
+  Zap,
+  Layers,
+  ArrowRight,
+  Trash2
 } from 'lucide-react';
 import { 
   isSupabaseConfigured, 
@@ -40,6 +44,9 @@ export default function SupabaseManagement() {
     error: null
   });
 
+  const [copied, setCopied] = useState(false);
+  const [activeSubTab, setActiveSubTab] = useState('status'); // 'status', 'config', 'schema', 'auth'
+
   const handleSeedData = async () => {
     setSeeding(true);
     setSeedResult(null);
@@ -56,11 +63,6 @@ export default function SupabaseManagement() {
     setSeeding(false);
     setSeedResult(res);
   };
-
-
-  
-  const [copied, setCopied] = useState(false);
-  const [activeSubTab, setActiveSubTab] = useState('status'); // 'status', 'config', 'schema'
 
   const runConnectionCheck = async () => {
     setLoading(true);
@@ -130,275 +132,362 @@ CREATE POLICY "Public full access" ON public.inventory FOR ALL USING (true);`;
   const configured = isSupabaseConfigured();
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header Banner */}
-      <div className="bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 rounded-xl p-6 text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="p-3 bg-emerald-500/20 border border-emerald-400/30 rounded-xl backdrop-blur-sm">
-            <Database className="w-8 h-8 text-emerald-400" />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      
+      {/* Top Banner / Actions Bar */}
+      <div className="glass-panel" style={{ padding: '24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div style={{ 
+              background: 'linear-gradient(135deg, #059669 0%, #0d9488 100%)', 
+              padding: '14px', 
+              borderRadius: '12px', 
+              color: 'white',
+              boxShadow: '0 4px 12px rgba(5, 150, 105, 0.25)'
+            }}>
+              <Database size={28} />
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <h2 style={{ fontSize: '1.35rem', fontWeight: '700', color: 'var(--text-primary)' }}>
+                  Supabase Database Integration
+                </h2>
+                <span className={`badge ${connectionState.connected ? 'badge-us' : configured ? 'badge-warning' : 'badge-client'}`} style={{ fontSize: '0.75rem', padding: '3px 10px' }}>
+                  {connectionState.connected ? '● ONLINE' : configured ? '● UNVERIFIED' : '○ DISCONNECTED'}
+                </span>
+              </div>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '4px' }}>
+                Manage live PostgreSQL connection, API credentials, schema scripts, and cloud data synchronization
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Supabase Database Integration</h1>
-            <p className="text-emerald-200/80 text-sm mt-1">
-              Connect your Samyak Flexi-ERP frontend to Supabase PostgreSQL database & Auth service
-            </p>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <button
+              onClick={runConnectionCheck}
+              disabled={loading}
+              className="btn-primary"
+              style={{ background: '#059669', borderColor: '#059669' }}
+            >
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+              {loading ? 'Testing...' : 'Test Connection'}
+            </button>
+
+            <button
+              onClick={handleSeedData}
+              disabled={seeding || !isSupabaseConfigured()}
+              className="btn-primary"
+              style={{ background: '#4f46e5', borderColor: '#4f46e5', opacity: (!isSupabaseConfigured() || seeding) ? 0.6 : 1 }}
+              title="Upload initial factory data to Supabase database"
+            >
+              <Zap size={16} />
+              {seeding ? 'Syncing...' : 'Push Seed Data'}
+            </button>
+
+            <button
+              onClick={handlePurgeSupabaseData}
+              disabled={seeding || !isSupabaseConfigured()}
+              className="btn-secondary"
+              style={{ color: '#dc2626', borderColor: '#fecaca', background: '#fef2f2', opacity: (!isSupabaseConfigured() || seeding) ? 0.6 : 1 }}
+              title="Wipe all data from Supabase tables"
+            >
+              <Trash2 size={15} />
+              Purge Remote Data
+            </button>
           </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={runConnectionCheck}
-            disabled={loading}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-medium transition-all shadow-md hover:shadow-emerald-600/30 disabled:opacity-50"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            {loading ? 'Testing Connection...' : 'Test Connection'}
-          </button>
-
-          <button
-            onClick={handleSeedData}
-            disabled={seeding || !isSupabaseConfigured()}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-medium transition-all shadow-md disabled:opacity-50"
-            title="Upload all initial factory data to Supabase database"
-          >
-            <Database className={`w-4 h-4 ${seeding ? 'animate-bounce' : ''}`} />
-            {seeding ? 'Syncing All Tables...' : 'Push Seed Data'}
-          </button>
-
-          <button
-            onClick={handlePurgeSupabaseData}
-            disabled={seeding || !isSupabaseConfigured()}
-            className="flex items-center gap-2 bg-slate-800 hover:bg-rose-900/40 text-rose-300 border border-slate-700 hover:border-rose-800 px-3.5 py-2 rounded-lg font-medium text-xs transition-all disabled:opacity-50"
-            title="Wipe all data from Supabase tables"
-          >
-            <XCircle className="w-4 h-4 text-rose-400" />
-            Purge Remote Data
-          </button>
         </div>
       </div>
 
-
+      {/* Seed Operation Notification */}
       {seedResult && (
-        <div className={`p-4 rounded-xl border flex items-center justify-between ${seedResult.success ? 'bg-emerald-950/80 border-emerald-800 text-emerald-300' : 'bg-rose-950/80 border-rose-800 text-rose-300'}`}>
-          <div className="flex items-center gap-3">
-            {seedResult.success ? <CheckCircle2 className="w-5 h-5 text-emerald-400" /> : <AlertCircle className="w-5 h-5 text-rose-400" />}
-            <span className="text-sm font-medium">{seedResult.message}</span>
+        <div style={{
+          padding: '14px 20px',
+          borderRadius: '8px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyInBetween: 'space-between',
+          background: seedResult.success ? '#ecfdf5' : '#fef2f2',
+          border: `1px solid ${seedResult.success ? '#a7f3d0' : '#fecaca'}`,
+          color: seedResult.success ? '#047857' : '#b91c1c'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.875rem', fontWeight: '500' }}>
+            {seedResult.success ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+            <span>{seedResult.message}</span>
           </div>
-          <button onClick={() => setSeedResult(null)} className="text-xs opacity-70 hover:opacity-100">Dismiss</button>
+          <button 
+            onClick={() => setSeedResult(null)} 
+            style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '0.8rem', color: 'inherit', fontWeight: '600' }}
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
-
-      {/* Tabs */}
-      <div className="flex border-b border-slate-700 gap-2">
+      {/* Subtab Navigation Pills */}
+      <div style={{ display: 'flex', gap: '10px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
         <button
           onClick={() => setActiveSubTab('status')}
-          className={`pb-3 px-4 font-semibold text-sm transition-all border-b-2 flex items-center gap-2 ${
-            activeSubTab === 'status'
-              ? 'border-emerald-500 text-emerald-400'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
-          }`}
+          className={`tab-pill ${activeSubTab === 'status' ? 'active' : ''}`}
         >
-          <Server className="w-4 h-4" />
+          <Server size={16} />
           Connection Overview
         </button>
         <button
           onClick={() => setActiveSubTab('config')}
-          className={`pb-3 px-4 font-semibold text-sm transition-all border-b-2 flex items-center gap-2 ${
-            activeSubTab === 'config'
-              ? 'border-emerald-500 text-emerald-400'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
-          }`}
+          className={`tab-pill ${activeSubTab === 'config' ? 'active' : ''}`}
         >
-          <Key className="w-4 h-4" />
+          <Key size={16} />
           Credentials & API Setup
         </button>
         <button
           onClick={() => setActiveSubTab('schema')}
-          className={`pb-3 px-4 font-semibold text-sm transition-all border-b-2 flex items-center gap-2 ${
-            activeSubTab === 'schema'
-              ? 'border-emerald-500 text-emerald-400'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
-          }`}
+          className={`tab-pill ${activeSubTab === 'schema' ? 'active' : ''}`}
         >
-          <FileCode className="w-4 h-4" />
+          <FileCode size={16} />
           SQL Schema Script
         </button>
         <button
           onClick={() => setActiveSubTab('auth')}
-          className={`pb-3 px-4 font-semibold text-sm transition-all border-b-2 flex items-center gap-2 ${
-            activeSubTab === 'auth'
-              ? 'border-emerald-500 text-emerald-400'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
-          }`}
+          className={`tab-pill ${activeSubTab === 'auth' ? 'active' : ''}`}
         >
-          <ShieldCheck className="w-4 h-4" />
+          <ShieldCheck size={16} />
           Supabase Auth & Roles
         </button>
       </div>
 
-      {/* SUBTAB 1: STATUS OVERVIEW */}
+      {/* SUBTAB 1: CONNECTION OVERVIEW */}
       {activeSubTab === 'status' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Status Card */}
-          <div className="md:col-span-2 bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg space-y-4">
-            <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-              <ShieldCheck className="w-5 h-5 text-emerald-400" />
-              Supabase Status & Health
-            </h2>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
+          
+          {/* Main Status & Health Panel */}
+          <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ShieldCheck size={20} style={{ color: '#059669' }} />
+                Supabase Status & Health
+              </h3>
+            </div>
 
-            <div className="p-4 rounded-xl border bg-slate-950/60 flex items-start gap-4">
+            {/* Status Alert Banner */}
+            <div style={{
+              padding: '16px 20px',
+              borderRadius: '10px',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '14px',
+              background: connectionState.connected ? '#ecfdf5' : configured ? '#fffbeb' : '#fef2f2',
+              border: `1px solid ${connectionState.connected ? '#a7f3d0' : configured ? '#fde68a' : '#fecaca'}`
+            }}>
               {connectionState.connected ? (
-                <CheckCircle2 className="w-8 h-8 text-emerald-400 shrink-0 mt-0.5" />
+                <CheckCircle2 size={24} style={{ color: '#059669', flexShrink: 0, marginTop: '2px' }} />
               ) : configured ? (
-                <AlertCircle className="w-8 h-8 text-amber-400 shrink-0 mt-0.5" />
+                <AlertCircle size={24} style={{ color: '#d97706', flexShrink: 0, marginTop: '2px' }} />
               ) : (
-                <XCircle className="w-8 h-8 text-rose-400 shrink-0 mt-0.5" />
+                <XCircle size={24} style={{ color: '#dc2626', flexShrink: 0, marginTop: '2px' }} />
               )}
-              <div className="space-y-1">
-                <div className="flex items-center gap-3">
-                  <span className="font-semibold text-slate-100">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ 
+                    fontWeight: '700', 
+                    fontSize: '0.95rem',
+                    color: connectionState.connected ? '#047857' : configured ? '#b45309' : '#b91c1c' 
+                  }}>
                     {connectionState.connected
-                      ? 'Connected to Supabase'
+                      ? 'Database Live & Connected'
                       : configured
-                      ? 'Credentials Configured (Verification Needed)'
+                      ? 'Credentials Configured (Verification Pending)'
                       : 'Supabase Not Configured'}
                   </span>
-                  <span
-                    className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                      connectionState.connected
-                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                        : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                    }`}
-                  >
-                    {connectionState.connected ? 'ONLINE' : 'OFFLINE'}
-                  </span>
                 </div>
-                <p className="text-sm text-slate-300">
-                  {connectionState.message || 'Check your Supabase URL & API Key configuration.'}
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
+                  {connectionState.message || 'Configure your Supabase URL & API key to connect to PostgreSQL.'}
                 </p>
               </div>
             </div>
 
-            {/* Quick Details List */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-              <div className="bg-slate-950/40 p-4 rounded-lg border border-slate-800/80">
-                <span className="text-xs text-slate-400 block font-medium">Project URL</span>
-                <span className="text-sm font-mono text-emerald-400 truncate block mt-1">
+            {/* Quick Details Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div className="glass-card" style={{ padding: '16px', background: '#f8fafc' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Project URL
+                </span>
+                <span style={{ 
+                  display: 'block', 
+                  marginTop: '6px', 
+                  fontSize: '0.85rem', 
+                  fontFamily: 'monospace', 
+                  fontWeight: '600',
+                  color: urlInput ? '#047857' : 'var(--text-muted)',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
+                }}>
                   {urlInput || 'Not configured'}
                 </span>
               </div>
-              <div className="bg-slate-950/40 p-4 rounded-lg border border-slate-800/80">
-                <span className="text-xs text-slate-400 block font-medium">Anon Key Status</span>
-                <span className="text-sm font-mono text-slate-200 block mt-1">
-                  {keyInput ? `${keyInput.substring(0, 15)}...` : 'Not configured'}
+
+              <div className="glass-card" style={{ padding: '16px', background: '#f8fafc' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Anon API Key Status
+                </span>
+                <span style={{ 
+                  display: 'block', 
+                  marginTop: '6px', 
+                  fontSize: '0.85rem', 
+                  fontFamily: 'monospace', 
+                  fontWeight: '600',
+                  color: keyInput ? 'var(--text-primary)' : 'var(--text-muted)'
+                }}>
+                  {keyInput ? `${keyInput.substring(0, 18)}...` : 'Not configured'}
                 </span>
               </div>
             </div>
 
-            {/* Steps to setup */}
-            <div className="border-t border-slate-800 pt-4 mt-4">
-              <h3 className="text-sm font-semibold text-slate-200 mb-3">Quick Setup Guide</h3>
-              <ol className="space-y-2 text-xs text-slate-300 list-decimal list-inside">
-                <li>Create a free Supabase project at <a href="https://supabase.com" target="_blank" rel="noreferrer" className="text-emerald-400 hover:underline">supabase.com</a>.</li>
-                <li>Copy your <strong>Project URL</strong> and <strong>anon public API key</strong> from Project Settings &gt; API.</li>
-                <li>Paste them under the <strong>Credentials & API Setup</strong> tab or into your project's <code className="text-emerald-300 bg-slate-800 px-1 py-0.5 rounded">.env</code> file as <code className="text-emerald-300 bg-slate-800 px-1 py-0.5 rounded">VITE_SUPABASE_URL</code> and <code className="text-emerald-300 bg-slate-800 px-1 py-0.5 rounded">VITE_SUPABASE_ANON_KEY</code>.</li>
-                <li>Run the provided SQL Schema in Supabase SQL Editor to initialize all ERP tables.</li>
+            {/* Setup Guide */}
+            <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px', marginTop: '4px' }}>
+              <h4 style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '12px' }}>
+                Quick Setup Instructions
+              </h4>
+              <ol style={{ paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                <li>
+                  Create a free project on <a href="https://supabase.com" target="_blank" rel="noreferrer" style={{ color: '#059669', fontWeight: '600', textDecoration: 'none' }}>Supabase.com</a>.
+                </li>
+                <li>
+                  Go to <strong>Project Settings &gt; API</strong> and copy your <strong>Project URL</strong> and <strong>anon public key</strong>.
+                </li>
+                <li>
+                  Paste them in the <strong>Credentials & API Setup</strong> tab or add them to your <code style={{ background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', color: '#0f172a' }}>.env</code> file as <code style={{ background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', color: '#0f172a' }}>VITE_SUPABASE_URL</code> and <code style={{ background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', color: '#0f172a' }}>VITE_SUPABASE_ANON_KEY</code>.
+                </li>
+                <li>
+                  Run the SQL schema provided under the <strong>SQL Schema Script</strong> tab in your Supabase SQL Editor.
+                </li>
               </ol>
             </div>
+
           </div>
 
-          {/* Useful Links & Actions */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg space-y-4">
-            <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-              <Globe className="w-5 h-5 text-emerald-400" />
-              Supabase Console
-            </h2>
+          {/* Side Info / Quick Links Panel */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            
+            <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: '700', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Globe size={18} style={{ color: '#059669' }} />
+                Supabase Console Links
+              </h3>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
+                Quick shortcuts to manage tables, users, security policies, and SQL editor in your Supabase project.
+              </p>
 
-            <p className="text-xs text-slate-300 leading-relaxed">
-              Manage your cloud database tables, user authentication, Realtime subscriptions, and storage buckets.
-            </p>
+              <a
+                href="https://supabase.com/dashboard"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-secondary"
+                style={{ justifyContent: 'space-between', width: '100%', textDecoration: 'none' }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <ExternalLink size={16} style={{ color: '#059669' }} />
+                  Supabase Dashboard
+                </span>
+                <ArrowRight size={14} style={{ opacity: 0.6 }} />
+              </a>
 
-            <a
-              href="https://supabase.com/dashboard"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-between w-full p-3 bg-slate-800 hover:bg-slate-700 text-slate-100 rounded-lg text-sm font-medium transition-all group"
-            >
-              <span className="flex items-center gap-2">
-                <ExternalLink className="w-4 h-4 text-emerald-400" />
-                Supabase Dashboard
-              </span>
-              <span className="text-xs text-slate-400 group-hover:text-emerald-400">Open &rarr;</span>
-            </a>
+              <a
+                href="https://supabase.com/docs"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-secondary"
+                style={{ justifyContent: 'space-between', width: '100%', textDecoration: 'none' }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <FileCode size={16} style={{ color: '#0d9488' }} />
+                  Documentation & API
+                </span>
+                <ArrowRight size={14} style={{ opacity: 0.6 }} />
+              </a>
+            </div>
 
-            <a
-              href="https://supabase.com/docs"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-between w-full p-3 bg-slate-800 hover:bg-slate-700 text-slate-100 rounded-lg text-sm font-medium transition-all group"
-            >
-              <span className="flex items-center gap-2">
-                <FileCode className="w-4 h-4 text-teal-400" />
-                Supabase Documentation
-              </span>
-              <span className="text-xs text-slate-400 group-hover:text-teal-400">Open &rarr;</span>
-            </a>
+            <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <h3 style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Layers size={16} style={{ color: '#4f46e5' }} />
+                Synced ERP Modules
+              </h3>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                {['Orders & POs', 'Vendors', 'Inventory & Stock', 'GRN & QC', 'Cylinders', 'Production Logs', 'User Accounts', 'Job Data Sheets'].map((mod, idx) => (
+                  <span key={idx} style={{ 
+                    fontSize: '0.75rem', 
+                    fontWeight: '500', 
+                    background: '#f1f5f9', 
+                    border: '1px solid var(--border-color)', 
+                    padding: '4px 8px', 
+                    borderRadius: '6px',
+                    color: 'var(--text-secondary)'
+                  }}>
+                    ✓ {mod}
+                  </span>
+                ))}
+              </div>
+            </div>
+
           </div>
+
         </div>
       )}
 
       {/* SUBTAB 2: CREDENTIALS SETUP */}
       {activeSubTab === 'config' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg max-w-3xl space-y-6">
-          <div>
-            <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-              <Key className="w-5 h-5 text-emerald-400" />
+        <div className="glass-panel" style={{ padding: '28px', maxWidth: '800px' }}>
+          <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '16px', marginBottom: '20px' }}>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: '700', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Key size={20} style={{ color: '#059669' }} />
               Configure Supabase Credentials
-            </h2>
-            <p className="text-xs text-slate-400 mt-1">
-              Credentials saved here take immediate effect for this session and override environment defaults.
+            </h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+              Credentials saved here are stored securely in browser LocalStorage and override environment defaults immediately.
             </p>
           </div>
 
-          <form onSubmit={handleSaveConfig} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Supabase Project URL (VITE_SUPABASE_URL)
+          <form onSubmit={handleSaveConfig} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label style={{ fontWeight: '600', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                Supabase Project URL <code style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: '400' }}>(VITE_SUPABASE_URL)</code>
               </label>
               <input
                 type="text"
-                placeholder="https://your-project-ref.supabase.co"
+                placeholder="https://your-project-id.supabase.co"
                 value={urlInput}
                 onChange={(e) => setUrlInput(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-mono"
+                className="form-control"
+                style={{ fontFamily: 'monospace', fontSize: '0.9rem' }}
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Supabase Anon API Key (VITE_SUPABASE_ANON_KEY)
+            <div className="form-group" style={{ margin: 0 }}>
+              <label style={{ fontWeight: '600', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                Supabase Anon Public API Key <code style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: '400' }}>(VITE_SUPABASE_ANON_KEY)</code>
               </label>
               <input
                 type="password"
                 placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
                 value={keyInput}
                 onChange={(e) => setKeyInput(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-mono"
+                className="form-control"
+                style={{ fontFamily: 'monospace', fontSize: '0.9rem' }}
               />
             </div>
 
-            <div className="flex items-center gap-3 pt-2">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingTop: '8px' }}>
               <button
                 type="submit"
-                className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all shadow-md"
+                className="btn-primary"
+                style={{ background: '#059669', borderColor: '#059669' }}
               >
-                Save Credentials
+                <Check size={16} /> Save & Test Credentials
               </button>
               <button
                 type="button"
                 onClick={handleClearConfig}
-                className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2.5 rounded-lg text-sm font-medium transition-all"
+                className="btn-secondary"
               >
                 Reset to Defaults
               </button>
@@ -409,27 +498,38 @@ CREATE POLICY "Public full access" ON public.inventory FOR ALL USING (true);`;
 
       {/* SUBTAB 3: SQL SCHEMA */}
       {activeSubTab === 'schema' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg space-y-4">
-          <div className="flex items-center justify-between">
+        <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
             <div>
-              <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-                <FileCode className="w-5 h-5 text-emerald-400" />
-                Database Tables & DDL Script
-              </h2>
-              <p className="text-xs text-slate-400 mt-1">
-                Copy and run this script inside your Supabase project's SQL Editor to set up ERP tables.
+              <h3 style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FileCode size={20} style={{ color: '#059669' }} />
+                Database Tables & DDL Initialization Script
+              </h3>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                Copy and run this SQL script inside your Supabase project's <strong>SQL Editor</strong> tab to set up required tables & policies.
               </p>
             </div>
             <button
               onClick={copySqlToClipboard}
-              className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all"
+              className="btn-secondary"
             >
-              {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-              {copied ? 'Copied!' : 'Copy SQL'}
+              {copied ? <Check size={16} style={{ color: '#059669' }} /> : <Copy size={16} />}
+              {copied ? 'Copied to Clipboard!' : 'Copy SQL Script'}
             </button>
           </div>
 
-          <pre className="bg-slate-950 p-4 rounded-lg border border-slate-800 text-xs font-mono text-emerald-300 overflow-x-auto max-h-96 leading-relaxed">
+          <pre style={{
+            background: '#0f172a',
+            color: '#34d399',
+            padding: '20px',
+            borderRadius: '10px',
+            border: '1px solid #1e293b',
+            fontSize: '0.82rem',
+            fontFamily: 'Consolas, Monaco, "Andale Mono", monospace',
+            lineHeight: '1.6',
+            overflowX: 'auto',
+            maxHeight: '400px'
+          }}>
             {sqlSchemaSnippet}
           </pre>
         </div>
@@ -437,53 +537,59 @@ CREATE POLICY "Public full access" ON public.inventory FOR ALL USING (true);`;
 
       {/* SUBTAB 4: SUPABASE AUTH & ROLES */}
       {activeSubTab === 'auth' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg space-y-6">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+        <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '16px' }}>
             <div>
-              <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-emerald-400" />
+              <h3 style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ShieldCheck size={20} style={{ color: '#059669' }} />
                 Supabase Authentication & Role Sync
-              </h2>
-              <p className="text-xs text-slate-400 mt-1">
-                Manage cloud authentication, user account creation, and PostgreSQL user profile syncing.
+              </h3>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                Automated Cloud User Authentication, JWT Tokens, and PostgreSQL User Sync Triggers
               </p>
             </div>
-            {isSupabaseConfigured() ? (
-              <span className="bg-emerald-950 text-emerald-400 border border-emerald-800 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4" /> Supabase Auth Connected
-              </span>
-            ) : (
-              <span className="bg-amber-950 text-amber-400 border border-amber-800 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5">
-                <AlertCircle className="w-4 h-4" /> Local Auth Active (Offline)
-              </span>
-            )}
+            <span className={`badge ${isSupabaseConfigured() ? 'badge-us' : 'badge-warning'}`} style={{ padding: '6px 12px', fontSize: '0.8rem' }}>
+              {isSupabaseConfigured() ? '✓ Supabase Auth Enabled' : '⚠ Local Auth Mode Active'}
+            </span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-slate-950 p-5 rounded-xl border border-slate-800 space-y-3">
-              <h3 className="text-sm font-bold text-slate-200 flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+            <div className="glass-card" style={{ padding: '20px', background: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <h4 style={{ fontSize: '0.95rem', fontWeight: '700', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <CheckCircle2 size={18} style={{ color: '#059669' }} />
                 1. Enable Email / Password Provider
-              </h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                In your Supabase project dashboard, navigate to <strong>Authentication &rarr; Providers &rarr; Email</strong> and ensure <em>Enable Email Provider</em> is toggled <strong>ON</strong>.
+              </h4>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                In your Supabase project dashboard, navigate to <strong>Authentication &rarr; Providers &rarr; Email</strong> and confirm that <em>Enable Email Provider</em> is toggled <strong>ON</strong>.
               </p>
             </div>
 
-            <div className="bg-slate-950 p-5 rounded-xl border border-slate-800 space-y-3">
-              <h3 className="text-sm font-bold text-slate-200 flex items-center gap-2">
-                <Database className="w-4 h-4 text-indigo-400" />
-                2. User Sync Trigger
-              </h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                When users sign up or log in via Supabase Auth, the PostgreSQL trigger <code className="text-emerald-300">on_auth_user_created</code> automatically populates <code className="text-emerald-300">public.users</code> with their role and department metadata.
+            <div className="glass-card" style={{ padding: '20px', background: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <h4 style={{ fontSize: '0.95rem', fontWeight: '700', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Database size={18} style={{ color: '#4f46e5' }} />
+                2. Automated User Sync Trigger
+              </h4>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                When users register or log in via Supabase Auth, PostgreSQL trigger <code style={{ background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px' }}>on_auth_user_created</code> synchronizes profile and RBAC roles to <code style={{ background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px' }}>public.users</code>.
               </p>
             </div>
           </div>
 
-          <div className="bg-slate-950 p-5 rounded-xl border border-slate-800 space-y-3">
-            <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider">Automated User Sync Trigger SQL Snippet</h3>
-            <pre className="bg-slate-900 p-4 rounded-lg border border-slate-800 text-xs font-mono text-emerald-300 overflow-x-auto">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <h4 style={{ fontSize: '0.85rem', fontWeight: '700', color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              PostgreSQL User Sync Trigger SQL Function
+            </h4>
+            <pre style={{
+              background: '#0f172a',
+              color: '#34d399',
+              padding: '18px',
+              borderRadius: '8px',
+              border: '1px solid #1e293b',
+              fontSize: '0.8rem',
+              fontFamily: 'Consolas, Monaco, monospace',
+              lineHeight: '1.5',
+              overflowX: 'auto'
+            }}>
 {`CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -506,9 +612,10 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;`}
             </pre>
           </div>
+
         </div>
       )}
+
     </div>
   );
 }
-

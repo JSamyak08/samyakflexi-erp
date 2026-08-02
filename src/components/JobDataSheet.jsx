@@ -182,6 +182,7 @@ export default function JobDataSheet({
         <JobDataSheetPDF sheetData={previewPdfSheet} onClose={() => setPreviewPdfSheet(null)} />
       )}
 
+      <div className="hide-on-print" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Top Banner */}
       <div className="glass-panel" style={{ padding: '20px 24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
@@ -610,7 +611,7 @@ export default function JobDataSheet({
           </div>
         </div>
       )}
-
+      </div>
     </div>
   );
 }

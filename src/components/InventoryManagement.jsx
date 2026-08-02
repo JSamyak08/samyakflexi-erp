@@ -398,6 +398,12 @@ export default function InventoryManagement({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {/* PDF View Modal */}
+      {selectedGRNForPDF && (
+        <GRNPDF grnData={selectedGRNForPDF} onClose={() => setSelectedGRNForPDF(null)} />
+      )}
+
+      <div className="hide-on-print" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Stock Reconciliation Monthly Notification Banner */}
       {isRecDue && (
         <div className="reconciliation-alert-banner">
@@ -1053,12 +1059,6 @@ export default function InventoryManagement({
           </div>
         </div>
       )}
-
-      {/* PDF View Modal */}
-      {selectedGRNForPDF && (
-        <GRNPDF grnData={selectedGRNForPDF} onClose={() => setSelectedGRNForPDF(null)} />
-      )}
-
       {/* Item GRN Purchase History Modal */}
       {selectedItemForPurchaseHistory && (() => {
         const item = selectedItemForPurchaseHistory;
@@ -1171,6 +1171,7 @@ export default function InventoryManagement({
           </div>
         );
       })()}
+      </div>
     </div>
   );
 }

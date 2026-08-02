@@ -235,6 +235,15 @@ export default function OrderManagement({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {/* Generated Purchase Order PDF Modal Preview */}
+      {activePoPdfData && (
+        <PurchaseOrderPDF 
+          poData={activePoPdfData} 
+          onClose={() => setActivePoPdfData(null)} 
+        />
+      )}
+
+      <div className="hide-on-print" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Top Banner */}
       <div className="glass-panel" style={{ padding: '20px 24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
@@ -579,14 +588,7 @@ export default function OrderManagement({
           </div>
         </div>
       )}
-
-      {/* Generated Purchase Order PDF Modal Preview */}
-      {activePoPdfData && (
-        <PurchaseOrderPDF 
-          poData={activePoPdfData} 
-          onClose={() => setActivePoPdfData(null)} 
-        />
-      )}
+      </div>
     </div>
   );
 }

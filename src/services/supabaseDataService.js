@@ -48,30 +48,31 @@ export async function fetchOrders() {
 
 export async function saveOrderToSupabase(order) {
   if (!isSupabaseConfigured()) return;
-  try {
-    await supabase.from('orders').upsert({
-      id: order.id,
-      job_name: order.jobName,
-      client_name: order.clientName,
-      order_type: order.orderType || 'Reel',
-      order_qty_kg: order.orderQtyKg,
-      delivery_date: order.deliveryDate,
-      target_delivery_date: order.targetDeliveryDate || order.deliveryDate,
-      status: order.status || 'Scheduled',
-      job_details: order.jobDetails || { structure: order.structure },
-      raw_material_requirements: order.rawMaterialRequirements || []
-    });
-  } catch (err) {
-    console.error("Error saving order to Supabase:", err);
+  const { error } = await supabase.from('orders').upsert({
+    id: order.id,
+    job_name: order.jobName,
+    client_name: order.clientName,
+    order_type: order.orderType || 'Reel',
+    order_qty_kg: order.orderQtyKg,
+    delivery_date: order.deliveryDate,
+    target_delivery_date: order.targetDeliveryDate || order.deliveryDate,
+    status: order.status || 'Scheduled',
+    job_details: order.jobDetails || { structure: order.structure },
+    raw_material_requirements: order.rawMaterialRequirements || []
+  });
+  
+  if (error) {
+    console.error("Error saving order to Supabase:", error);
+    throw error;
   }
 }
 
 export async function deleteOrderFromSupabase(orderId) {
   if (!isSupabaseConfigured()) return;
-  try {
-    await supabase.from('orders').delete().eq('id', orderId);
-  } catch (err) {
-    console.error("Error deleting order from Supabase:", err);
+  const { error } = await supabase.from('orders').delete().eq('id', orderId);
+  if (error) {
+    console.error("Error deleting order from Supabase:", error);
+    throw error;
   }
 }
 
@@ -105,29 +106,30 @@ export async function fetchVendors() {
 
 export async function saveVendorToSupabase(vendor) {
   if (!isSupabaseConfigured()) return;
-  try {
-    await supabase.from('vendors').upsert({
-      id: vendor.id,
-      name: vendor.name,
-      category: vendor.category,
-      contact_person: vendor.contactPerson,
-      phone: vendor.phone,
-      email: vendor.email,
-      gstin: vendor.gstin,
-      address: vendor.address,
-      rating: vendor.rating || 5.0
-    });
-  } catch (err) {
-    console.error("Error saving vendor to Supabase:", err);
+  const { error } = await supabase.from('vendors').upsert({
+    id: vendor.id,
+    name: vendor.name,
+    category: vendor.category,
+    contact_person: vendor.contactPerson,
+    phone: vendor.phone,
+    email: vendor.email,
+    gstin: vendor.gstin,
+    address: vendor.address,
+    rating: vendor.rating || 5.0
+  });
+
+  if (error) {
+    console.error("Error saving vendor to Supabase:", error);
+    throw error;
   }
 }
 
 export async function deleteVendorFromSupabase(vendorId) {
   if (!isSupabaseConfigured()) return;
-  try {
-    await supabase.from('vendors').delete().eq('id', vendorId);
-  } catch (err) {
-    console.error("Error deleting vendor from Supabase:", err);
+  const { error } = await supabase.from('vendors').delete().eq('id', vendorId);
+  if (error) {
+    console.error("Error deleting vendor from Supabase:", error);
+    throw error;
   }
 }
 
@@ -163,31 +165,32 @@ export async function fetchInventory() {
 
 export async function saveInventoryItemToSupabase(item) {
   if (!isSupabaseConfigured()) return;
-  try {
-    await supabase.from('inventory').upsert({
-      id: item.id,
-      item_code: item.itemCode,
-      item_name: item.itemName,
-      category: item.category,
-      film_type: item.filmType,
-      micron: item.micron,
-      width_mm: item.widthMm,
-      stock_qty_kg: item.availableQtyKg,
-      reorder_level_kg: item.reorderLevelKg,
-      unit_price: item.unitPrice,
-      location: item.location
-    });
-  } catch (err) {
-    console.error("Error saving inventory item to Supabase:", err);
+  const { error } = await supabase.from('inventory').upsert({
+    id: item.id,
+    item_code: item.itemCode,
+    item_name: item.itemName,
+    category: item.category,
+    film_type: item.filmType,
+    micron: item.micron,
+    width_mm: item.widthMm,
+    stock_qty_kg: item.availableQtyKg,
+    reorder_level_kg: item.reorderLevelKg,
+    unit_price: item.unitPrice,
+    location: item.location
+  });
+
+  if (error) {
+    console.error("Error saving inventory item to Supabase:", error);
+    throw error;
   }
 }
 
 export async function deleteInventoryItemFromSupabase(itemId) {
   if (!isSupabaseConfigured()) return;
-  try {
-    await supabase.from('inventory').delete().eq('id', itemId);
-  } catch (err) {
-    console.error("Error deleting inventory item from Supabase:", err);
+  const { error } = await supabase.from('inventory').delete().eq('id', itemId);
+  if (error) {
+    console.error("Error deleting inventory from Supabase:", error);
+    throw error;
   }
 }
 
@@ -222,21 +225,22 @@ export async function fetchGRNs() {
 
 export async function saveGRNToSupabase(grn) {
   if (!isSupabaseConfigured()) return;
-  try {
-    await supabase.from('grns').upsert({
-      id: grn.id,
-      grn_number: grn.grnNo,
-      vendor_id: grn.vendorId,
-      po_number: grn.poNumber,
-      invoice_number: grn.invoiceNo,
-      received_date: grn.receivedDate,
-      item_name: grn.itemName,
-      received_qty_kg: grn.receivedQtyKg,
-      status: grn.status || 'Pending QC',
-      qc_remarks: grn.qcNotes
-    });
-  } catch (err) {
-    console.error("Error saving GRN to Supabase:", err);
+  const { error } = await supabase.from('grns').upsert({
+    id: grn.id,
+    grn_number: grn.grnNo,
+    vendor_id: grn.vendorId,
+    po_number: grn.poNumber,
+    invoice_number: grn.invoiceNo,
+    received_date: grn.receivedDate,
+    item_name: grn.itemName,
+    received_qty_kg: grn.receivedQtyKg,
+    status: grn.status || 'Pending QC',
+    qc_remarks: grn.qcNotes
+  });
+
+  if (error) {
+    console.error("Error saving GRN to Supabase:", error);
+    throw error;
   }
 }
 
@@ -276,26 +280,27 @@ export async function fetchCylinders() {
 
 export async function saveCylinderToSupabase(cyl) {
   if (!isSupabaseConfigured()) return;
-  try {
-    await supabase.from('cylinders').upsert({
-      id: cyl.id,
-      sku: cyl.sku,
-      job_name: cyl.jobName,
-      colors_count: cyl.colorsCount,
-      cylinder_cost: cyl.cylinderCost,
-      engravures_name: cyl.engravuresName,
-      cost_borne_by: cyl.costBorneBy,
-      cost_borne_type: cyl.costBorneType,
-      client_group: cyl.clientGroup,
-      circumference_mm: cyl.circumferenceMm,
-      face_length_mm: cyl.faceLengthMm,
-      layer1_printed_qty_kg: cyl.layer1PrintedQtyKg,
-      dispatched_qty: cyl.dispatchedQty,
-      utilisation_limit: cyl.utilisationLimit,
-      status: cyl.status || 'Active In-Use'
-    });
-  } catch (err) {
-    console.error("Error saving cylinder to Supabase:", err);
+  const { error } = await supabase.from('cylinders').upsert({
+    id: cyl.id,
+    sku: cyl.sku,
+    job_name: cyl.jobName,
+    colors_count: cyl.colorsCount,
+    cylinder_cost: cyl.cylinderCost,
+    engravures_name: cyl.engravuresName,
+    cost_borne_by: cyl.costBorneBy,
+    cost_borne_type: cyl.costBorneType,
+    client_group: cyl.clientGroup,
+    circumference_mm: cyl.circumferenceMm,
+    face_length_mm: cyl.faceLengthMm,
+    layer1_printed_qty_kg: cyl.layer1PrintedQtyKg,
+    dispatched_qty: cyl.dispatchedQty,
+    utilisation_limit: cyl.utilisationLimit,
+    status: cyl.status || 'Active In-Use'
+  });
+
+  if (error) {
+    console.error("Error saving cylinder to Supabase:", error);
+    throw error;
   }
 }
 
@@ -332,22 +337,23 @@ export async function fetchProductionRecords() {
 
 export async function saveProductionRecordToSupabase(record) {
   if (!isSupabaseConfigured()) return;
-  try {
-    await supabase.from('production_records').upsert({
-      id: record.id,
-      order_id: record.orderId,
-      job_name: record.jobName,
-      operator_name: record.operatorName,
-      shift: record.shift,
-      gross_production_kg: record.grossProductionKg,
-      net_usable_kg: record.netUsableKg,
-      total_wastage_kg: record.totalWastageKg,
-      wastage_percentage: record.wastagePercentage,
-      status: record.status || 'Pending Plant Approval',
-      process_logs: record.processLogs || []
-    });
-  } catch (err) {
-    console.error("Error saving production record to Supabase:", err);
+  const { error } = await supabase.from('production_records').upsert({
+    id: record.id,
+    order_id: record.orderId,
+    job_name: record.jobName,
+    operator_name: record.operatorName,
+    shift: record.shift,
+    gross_production_kg: record.grossProductionKg,
+    net_usable_kg: record.netUsableKg,
+    total_wastage_kg: record.totalWastageKg,
+    wastage_percentage: record.wastagePercentage,
+    status: record.status || 'Pending Plant Approval',
+    process_logs: record.processLogs || []
+  });
+
+  if (error) {
+    console.error("Error saving production record to Supabase:", error);
+    throw error;
   }
 }
 
@@ -378,18 +384,19 @@ export async function fetchUsers() {
 
 export async function saveUserToSupabase(user) {
   if (!isSupabaseConfigured()) return;
-  try {
-    await supabase.from('users').upsert({
-      id: user.id,
-      username: user.email?.toLowerCase(),
-      full_name: user.name,
-      email: user.email,
-      role: user.role,
-      department: user.department,
-      active: user.status === 'Active'
-    });
-  } catch (err) {
-    console.error("Error saving user to Supabase:", err);
+  const { error } = await supabase.from('users').upsert({
+    id: user.id,
+    username: user.email?.toLowerCase(),
+    full_name: user.name,
+    email: user.email,
+    role: user.role,
+    department: user.department,
+    active: user.status === 'Active'
+  });
+
+  if (error) {
+    console.error("Error saving user to Supabase:", error);
+    throw error;
   }
 }
 
@@ -430,35 +437,36 @@ export async function fetchJobDataSheets() {
 
 export async function saveJobDataSheetToSupabase(sheet) {
   if (!isSupabaseConfigured()) return;
-  try {
-    await supabase.from('job_datasheets').upsert({
-      id: sheet.id || `JDS-${Date.now()}`,
-      job_id: sheet.jobId,
-      job_name: sheet.jobName,
-      client_name: sheet.clientName,
-      completion_date: sheet.completionDate,
-      selling_price_per_kg: sheet.sellingPricePerKg,
-      pre_cost_per_kg: sheet.preCostPerKg,
-      post_cost_per_kg: sheet.postCostPerKg,
-      profit_margin_pct: sheet.profitMarginPct,
-      actual_ink_consumed_kg: sheet.actualInkConsumedKg,
-      actual_solvents_consumed_kg: sheet.actualSolventsConsumedKg,
-      actual_adhesive_consumed_kg: sheet.actualAdhesiveConsumedKg,
-      actual_scrap_wastage_kg: sheet.actualScrapWastageKg,
-      operator_notes: sheet.operatorNotes,
-      created_by: sheet.createdBy || 'Plant Manager'
-    });
-  } catch (err) {
-    console.error("Error saving job datasheet to Supabase:", err);
+  const { error } = await supabase.from('job_datasheets').upsert({
+    id: sheet.id || `JDS-${Date.now()}`,
+    job_id: sheet.jobId,
+    job_name: sheet.jobName,
+    client_name: sheet.clientName,
+    completion_date: sheet.completionDate,
+    selling_price_per_kg: sheet.sellingPricePerKg,
+    pre_cost_per_kg: sheet.preCostPerKg,
+    post_cost_per_kg: sheet.postCostPerKg,
+    profit_margin_pct: sheet.profitMarginPct,
+    actual_ink_consumed_kg: sheet.actualInkConsumedKg,
+    actual_solvents_consumed_kg: sheet.actualSolventsConsumedKg,
+    actual_adhesive_consumed_kg: sheet.actualAdhesiveConsumedKg,
+    actual_scrap_wastage_kg: sheet.actualScrapWastageKg,
+    operator_notes: sheet.operatorNotes,
+    created_by: sheet.createdBy || 'Plant Manager'
+  });
+
+  if (error) {
+    console.error("Error saving job datasheet to Supabase:", error);
+    throw error;
   }
 }
 
 export async function deleteJobDataSheetFromSupabase(sheetId) {
   if (!isSupabaseConfigured()) return;
-  try {
-    await supabase.from('job_datasheets').delete().eq('id', sheetId);
-  } catch (err) {
-    console.error("Error deleting job datasheet from Supabase:", err);
+  const { error } = await supabase.from('job_datasheets').delete().eq('id', sheetId);
+  if (error) {
+    console.error("Error deleting job data sheet from Supabase:", error);
+    throw error;
   }
 }
 
