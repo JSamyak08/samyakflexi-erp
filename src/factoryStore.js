@@ -927,7 +927,9 @@ export const calculatePrintingScheduleMetrics = ({
   maxSpeedMpm = 250,
   prevJobWidthMm = null,
   prevJobRepeatMm = null,
-  repeatLengthMm = 400
+  repeatLengthMm = 400,
+  customJobChangeoverMins = null,
+  customRollChangeoverRateMins = null
 }) => {
   const density = FILM_DENSITIES[filmType] || 1.40;
   const gsm = micron * density;
@@ -943,11 +945,14 @@ export const calculatePrintingScheduleMetrics = ({
   const speed = Math.max(parseFloat(maxSpeedMpm) || 200, 10);
   const runTimeMins = Math.ceil(totalLengthMeters / speed);
 
-  // 4. Roll Changeover Time (approx 20 mins per 250kg roll)
+  // 4. Roll Changeover Time (configurable rate, default 20 mins per 250kg roll)
   const rollCount = Math.max(1, Math.ceil(orderQtyKg / 250));
-  const rollChangeoverMins = rollCount * 20;
+  const ratePerRoll = (customRollChangeoverRateMins !== null && customRollChangeoverRateMins !== undefined && customRollChangeoverRateMins !== '') 
+    ? parseFloat(customRollChangeoverRateMins) 
+    : 20;
+  const rollChangeoverMins = Math.round(rollCount * ratePerRoll);
 
-  // 5. Job Changeover Time (2 hours if size/width is different, 1 hour if same)
+  // 5. Job Changeover Time (configurable or auto: 2h if different size, 1h if same)
   let isSameSize = false;
   if (prevJobWidthMm && Math.abs(parseFloat(prevJobWidthMm) - parseFloat(widthMm)) < 5) {
     if (!prevJobRepeatMm || Math.abs(parseFloat(prevJobRepeatMm) - parseFloat(repeatLengthMm)) < 5) {
@@ -955,7 +960,11 @@ export const calculatePrintingScheduleMetrics = ({
     }
   }
 
-  const jobChangeoverMins = isSameSize ? 60 : 120;
+  const defaultJobChangeover = isSameSize ? 60 : 120;
+  const jobChangeoverMins = (customJobChangeoverMins !== null && customJobChangeoverMins !== undefined && customJobChangeoverMins !== '')
+    ? parseFloat(customJobChangeoverMins)
+    : defaultJobChangeover;
+
   const totalDurationMins = runTimeMins + rollChangeoverMins + jobChangeoverMins;
 
   return {
@@ -965,6 +974,7 @@ export const calculatePrintingScheduleMetrics = ({
     totalLengthMeters,
     runTimeMins,
     rollCount,
+    ratePerRoll,
     rollChangeoverMins,
     isSameSize,
     jobChangeoverMins,
