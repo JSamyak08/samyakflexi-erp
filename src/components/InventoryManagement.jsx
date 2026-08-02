@@ -149,6 +149,48 @@ export default function InventoryManagement({
     alert(`Vendor "${createdVendor.companyName}" onboarded successfully and selected for this GRN!`);
   };
 
+  // Save Dispatch Shipment Handler (Scale #4 Station)
+  const handleSaveDispatchShipment = (e) => {
+    e.preventDefault();
+    if (!dispatchJobName || !dispatchClientName || !dispatchVehicleNo) {
+      alert("Job Name, Client Name, and Vehicle Number are required for Dispatch!");
+      return;
+    }
+
+    if (dispatchRollsList.length === 0) {
+      alert("Please add at least 1 itemized roll/box to the dispatch shipment!");
+      return;
+    }
+
+    const matchedOrder = orders.find(o => o.jobName === dispatchJobName);
+    const orderId = matchedOrder ? matchedOrder.id : `ORD-2026-${Math.floor(100 + Math.random() * 900)}`;
+
+    const totalNetWeight = dispatchRollsList.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
+    const totalGrossWeight = dispatchRollsList.reduce((sum, r) => sum + (parseFloat(r.grossWeightKg) || 0), 0);
+
+    const newShipment = {
+      dispatchId: `DISP-2026-${Math.floor(100 + Math.random() * 900)}`,
+      orderId,
+      jobName: dispatchJobName,
+      clientName: dispatchClientName,
+      vehicleNo: dispatchVehicleNo,
+      lrNo: dispatchLrNo || `LR-${Math.floor(10000 + Math.random() * 90000)}-IND`,
+      dispatchDate: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+      totalRolls: dispatchRollsList.length,
+      totalNetWeightKg: parseFloat(totalNetWeight.toFixed(2)),
+      totalGrossWeightKg: parseFloat(totalGrossWeight.toFixed(2)),
+      items: dispatchRollsList
+    };
+
+    if (onAddDispatchShipment) {
+      onAddDispatchShipment(newShipment);
+    }
+
+    setIsNewDispatchModalOpen(false);
+    setSelectedDispatchForPackingList(newShipment);
+    alert(`Dispatch Shipment ${newShipment.dispatchId} created successfully! Generated packing list for ${newShipment.totalRolls} rolls (${newShipment.totalNetWeightKg} kg).`);
+  };
+
   // Issue / Return Modal state
   const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
   const [issueType, setIssueType] = useState('issue'); // issue or return
