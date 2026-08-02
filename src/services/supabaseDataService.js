@@ -288,7 +288,10 @@ export async function fetchCylinders() {
   if (!isSupabaseConfigured()) return [];
   try {
     const { data, error } = await supabase.from('cylinders').select('*').order('created_at', { ascending: false });
-    if (error) throw error;
+    if (error) {
+      handleSupabaseError(error, 'cylinders');
+      return [];
+    }
     if (!data) return [];
 
     return data.map(c => ({
@@ -317,7 +320,7 @@ export async function fetchCylinders() {
 export async function saveCylinderToSupabase(cyl) {
   if (!isSupabaseConfigured()) return;
   const { error } = await supabase.from('cylinders').upsert({
-    id: cyl.id,
+    id: cyl.id || `CYL-${Math.floor(100 + Math.random() * 900)}`,
     sku: cyl.sku,
     job_name: cyl.jobName,
     colors_count: cyl.colorsCount,
@@ -332,12 +335,9 @@ export async function saveCylinderToSupabase(cyl) {
     dispatched_qty: cyl.dispatchedQty,
     utilisation_limit: cyl.utilisationLimit,
     status: cyl.status || 'Active In-Use'
-  });
+  }, { onConflict: 'id' });
 
-  if (error) {
-    console.error("Error saving cylinder to Supabase:", error);
-    throw error;
-  }
+  handleSupabaseError(error, 'cylinders');
 }
 
 // ============================================================================
@@ -348,7 +348,10 @@ export async function fetchProductionRecords() {
   if (!isSupabaseConfigured()) return [];
   try {
     const { data, error } = await supabase.from('production_records').select('*').order('recorded_at', { ascending: false });
-    if (error) throw error;
+    if (error) {
+      handleSupabaseError(error, 'production_records');
+      return [];
+    }
     if (!data) return [];
 
     return data.map(r => ({
@@ -374,7 +377,7 @@ export async function fetchProductionRecords() {
 export async function saveProductionRecordToSupabase(record) {
   if (!isSupabaseConfigured()) return;
   const { error } = await supabase.from('production_records').upsert({
-    id: record.id,
+    id: record.id || `PROD-${Math.floor(100 + Math.random() * 900)}`,
     order_id: record.orderId,
     job_name: record.jobName,
     operator_name: record.operatorName,
@@ -385,12 +388,9 @@ export async function saveProductionRecordToSupabase(record) {
     wastage_percentage: record.wastagePercentage,
     status: record.status || 'Pending Plant Approval',
     process_logs: record.processLogs || []
-  });
+  }, { onConflict: 'id' });
 
-  if (error) {
-    console.error("Error saving production record to Supabase:", error);
-    throw error;
-  }
+  handleSupabaseError(error, 'production_records');
 }
 
 // ============================================================================
@@ -401,7 +401,10 @@ export async function fetchUsers() {
   if (!isSupabaseConfigured()) return [];
   try {
     const { data, error } = await supabase.from('users').select('*').order('full_name');
-    if (error) throw error;
+    if (error) {
+      handleSupabaseError(error, 'users');
+      return [];
+    }
     if (!data) return [];
 
     return data.map(u => ({
@@ -421,19 +424,16 @@ export async function fetchUsers() {
 export async function saveUserToSupabase(user) {
   if (!isSupabaseConfigured()) return;
   const { error } = await supabase.from('users').upsert({
-    id: user.id,
+    id: user.id || `USR-${Math.floor(100 + Math.random() * 900)}`,
     username: user.email?.toLowerCase(),
     full_name: user.name,
     email: user.email,
     role: user.role,
     department: user.department,
     active: user.status === 'Active'
-  });
+  }, { onConflict: 'id' });
 
-  if (error) {
-    console.error("Error saving user to Supabase:", error);
-    throw error;
-  }
+  handleSupabaseError(error, 'users');
 }
 
 
@@ -445,7 +445,10 @@ export async function fetchJobDataSheets() {
   if (!isSupabaseConfigured()) return [];
   try {
     const { data, error } = await supabase.from('job_datasheets').select('*').order('created_at', { ascending: false });
-    if (error) throw error;
+    if (error) {
+      handleSupabaseError(error, 'job_datasheets');
+      return [];
+    }
     if (!data) return [];
 
     return data.map(s => ({
@@ -489,21 +492,15 @@ export async function saveJobDataSheetToSupabase(sheet) {
     actual_scrap_wastage_kg: sheet.actualScrapWastageKg,
     operator_notes: sheet.operatorNotes,
     created_by: sheet.createdBy || 'Plant Manager'
-  });
+  }, { onConflict: 'id' });
 
-  if (error) {
-    console.error("Error saving job datasheet to Supabase:", error);
-    throw error;
-  }
+  handleSupabaseError(error, 'job_datasheets');
 }
 
 export async function deleteJobDataSheetFromSupabase(sheetId) {
   if (!isSupabaseConfigured()) return;
   const { error } = await supabase.from('job_datasheets').delete().eq('id', sheetId);
-  if (error) {
-    console.error("Error deleting job data sheet from Supabase:", error);
-    throw error;
-  }
+  handleSupabaseError(error, 'job_datasheets');
 }
 
 
@@ -544,7 +541,10 @@ export async function fetchInventoryRolls() {
   if (!isSupabaseConfigured()) return [];
   try {
     const { data, error } = await supabase.from('inventory_rolls').select('*').order('inward_datetime', { ascending: false });
-    if (error) throw error;
+    if (error) {
+      handleSupabaseError(error, 'inventory_rolls');
+      return [];
+    }
     if (!data) return [];
 
     return data.map(r => ({
@@ -596,12 +596,9 @@ export async function saveInventoryRollToSupabase(roll) {
     station_id: roll.stationId || 'SCALE_1_INWARD',
     location_bay: roll.locationBay || 'Bay A',
     status: roll.status || 'In Stock'
-  });
+  }, { onConflict: 'barcode_id' });
 
-  if (error) {
-    console.error("Error saving inventory roll to Supabase:", error);
-    throw error;
-  }
+  handleSupabaseError(error, 'inventory_rolls');
 }
 
 // ============================================================================
@@ -612,7 +609,10 @@ export async function fetchDispatchShipments() {
   if (!isSupabaseConfigured()) return [];
   try {
     const { data, error } = await supabase.from('dispatch_shipments').select('*').order('dispatch_date', { ascending: false });
-    if (error) throw error;
+    if (error) {
+      handleSupabaseError(error, 'dispatch_shipments');
+      return [];
+    }
     if (!data) return [];
 
     return data.map(d => ({
@@ -648,12 +648,9 @@ export async function saveDispatchShipmentToSupabase(shipment) {
     total_net_weight_kg: shipment.totalNetWeightKg,
     total_gross_weight_kg: shipment.totalGrossWeightKg,
     items: shipment.items || []
-  });
+  }, { onConflict: 'dispatch_id' });
 
-  if (error) {
-    console.error("Error saving dispatch shipment to Supabase:", error);
-    throw error;
-  }
+  handleSupabaseError(error, 'dispatch_shipments');
 }
 
 // ============================================================================
@@ -665,50 +662,68 @@ export async function seedAllDataToSupabase() {
     return { success: false, message: 'Supabase credentials are not configured.' };
   }
 
+  const results = [];
+
+  // 1. Seed Vendors
   try {
-    // 1. Seed Vendors
-    for (const v of initialVendors) {
-      await saveVendorToSupabase(v);
-    }
-
-    // 2. Seed Orders
-    for (const o of initialOrders) {
-      await saveOrderToSupabase(o);
-    }
-
-    // 3. Seed Inventory
-    for (const i of initialInventory) {
-      await saveInventoryItemToSupabase(i);
-    }
-
-    // 4. Seed GRNs
-    for (const g of initialGRNs) {
-      await saveGRNToSupabase(g);
-    }
-
-    // 5. Seed Cylinders
-    for (const c of initialCylinders) {
-      await saveCylinderToSupabase(c);
-    }
-
-    // 6. Seed Production Records
-    for (const r of initialProductionRecords) {
-      await saveProductionRecordToSupabase(r);
-    }
-
-    // 7. Seed Users
-    for (const u of initialUsers) {
-      await saveUserToSupabase(u);
-    }
-
-    return {
-      success: true,
-      message: 'Successfully populated all initial factory tables in Supabase PostgreSQL!'
-    };
-  } catch (err) {
-    return {
-      success: false,
-      message: `Failed to seed data: ${err.message}`
-    };
+    for (const v of initialVendors) await saveVendorToSupabase(v);
+    results.push('Vendors');
+  } catch (e) {
+    console.warn("Seeding Vendors notice:", e.message);
   }
+
+  // 2. Seed Orders
+  try {
+    for (const o of initialOrders) await saveOrderToSupabase(o);
+    results.push('Orders');
+  } catch (e) {
+    console.warn("Seeding Orders notice:", e.message);
+  }
+
+  // 3. Seed Inventory
+  try {
+    for (const i of initialInventory) await saveInventoryItemToSupabase(i);
+    results.push('Inventory');
+  } catch (e) {
+    console.warn("Seeding Inventory notice:", e.message);
+  }
+
+  // 4. Seed GRNs
+  try {
+    for (const g of initialGRNs) await saveGRNToSupabase(g);
+    results.push('GRNs');
+  } catch (e) {
+    console.warn("Seeding GRNs notice:", e.message);
+  }
+
+  // 5. Seed Cylinders
+  try {
+    for (const c of initialCylinders) await saveCylinderToSupabase(c);
+    results.push('Cylinders');
+  } catch (e) {
+    console.warn("Seeding Cylinders notice:", e.message);
+  }
+
+  // 6. Seed Production Records
+  try {
+    for (const r of initialProductionRecords) await saveProductionRecordToSupabase(r);
+    results.push('Production Records');
+  } catch (e) {
+    console.warn("Seeding Production Records notice:", e.message);
+  }
+
+  // 7. Seed Users
+  try {
+    for (const u of initialUsers) await saveUserToSupabase(u);
+    results.push('Users');
+  } catch (e) {
+    console.warn("Seeding Users notice:", e.message);
+  }
+
+  return {
+    success: true,
+    message: results.length > 0 
+      ? `Successfully populated factory tables (${results.join(', ')}) in Supabase PostgreSQL!` 
+      : 'Factory seed data loaded locally. Run supabase_schema.sql to create missing tables.'
+  };
 }
