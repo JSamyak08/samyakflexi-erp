@@ -19,6 +19,7 @@ import {
 import { calculateUtilisation } from '../dataStore';
 import CylinderJobCardForm from '../CylinderJobCardForm';
 import { uploadArtworkFile, openArtworkViewer } from '../services/supabaseStorageService';
+import ArtworkModal from './ArtworkModal';
 
 export default function CylinderManagement({ 
   cylinders, 
@@ -30,6 +31,7 @@ export default function CylinderManagement({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCylinder, setEditingCylinder] = useState(null);
   const [selectedForPDF, setSelectedForPDF] = useState(null);
+  const [activeArtworkModal, setActiveArtworkModal] = useState({ isOpen: false, url: '', title: '' });
 
   // Form State
   const [sku, setSku] = useState('');
@@ -267,8 +269,8 @@ export default function CylinderManagement({
                             <img 
                               src={c.artworkUrl} 
                               alt="Artwork" 
-                              style={{ width: '36px', height: '36px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #cbd5e1', cursor: 'pointer' }} 
-                              onClick={() => openArtworkViewer(c.artworkUrl, `${c.sku} - ${c.jobName}`)}
+                              style={{ width: '36px', height: '36px', objectFit: 'contain', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }} 
+                              onClick={() => setActiveArtworkModal({ isOpen: true, url: c.artworkUrl, title: `${c.sku} - ${c.jobName}` })}
                               title="Click to view artwork"
                             />
                           ) : (
@@ -281,7 +283,7 @@ export default function CylinderManagement({
                             {c.artworkUrl && (
                               <button 
                                 type="button"
-                                onClick={() => openArtworkViewer(c.artworkUrl, `${c.sku} - ${c.jobName}`)}
+                                onClick={() => setActiveArtworkModal({ isOpen: true, url: c.artworkUrl, title: `${c.sku} - ${c.jobName}` })}
                                 style={{ background: 'none', border: 'none', padding: 0, fontSize: '0.7rem', color: '#2563eb', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px', fontWeight: '500' }}
                               >
                                 View Artwork <ExternalLink size={10} />
@@ -524,7 +526,7 @@ export default function CylinderManagement({
                           src={artworkUrl} 
                           alt="Artwork Preview" 
                           style={{ width: '60px', height: '60px', objectFit: 'contain', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }} 
-                          onClick={() => openArtworkViewer(artworkUrl, `${sku || 'Cylinder'} Artwork`)}
+                          onClick={() => setActiveArtworkModal({ isOpen: true, url: artworkUrl, title: `${sku || 'Cylinder'} Artwork` })}
                           title="Click to view full image"
                         />
                         <div>
@@ -533,7 +535,7 @@ export default function CylinderManagement({
                           </div>
                           <button 
                             type="button" 
-                            onClick={() => openArtworkViewer(artworkUrl, `${sku || 'Cylinder'} Artwork`)}
+                            onClick={() => setActiveArtworkModal({ isOpen: true, url: artworkUrl, title: `${sku || 'Cylinder'} Artwork` })}
                             style={{ background: 'none', border: 'none', padding: 0, fontSize: '0.75rem', color: '#2563eb', cursor: 'pointer', textDecoration: 'underline' }}
                           >
                             View Full Artwork
@@ -633,6 +635,17 @@ export default function CylinderManagement({
           </div>
         </div>
       )}
+
+      {/* In-App Artwork Lightbox Modal */}
+      <ArtworkModal
+        isOpen={activeArtworkModal.isOpen}
+        onClose={() => setActiveArtworkModal({ isOpen: false, url: '', title: '' })}
+        artworkUrl={activeArtworkModal.url}
+        title={activeArtworkModal.title}
+        onReupload={() => {
+          setIsModalOpen(true);
+        }}
+      />
     </div>
   );
 }

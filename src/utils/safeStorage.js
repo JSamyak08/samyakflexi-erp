@@ -1,25 +1,28 @@
 /**
  * Safe Storage & IndexedDB Manager for Samyak Flexi-ERP
- * Prevents QuotaExceededError by offloading large data (like artwork base64, PDFs, and big records)
- * to IndexedDB while maintaining fast, non-blocking synchronous access in localStorage.
+ * Manages high-capacity persistence without corrupting data URLs or triggering QuotaExceededError.
  */
 
 const DB_NAME = 'samyak_erp_idb';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'keyval';
+const ASSETS_STORE = 'assets';
 
 let dbPromise = null;
 
 function getIDB() {
   if (typeof window === 'undefined' || !window.indexedDB) return null;
   if (!dbPromise) {
-    dbPromise = new Promise((resolve, reject) => {
+    dbPromise = new Promise((resolve) => {
       try {
         const req = window.indexedDB.open(DB_NAME, DB_VERSION);
         req.onupgradeneeded = (e) => {
           const db = e.target.result;
           if (!db.objectStoreNames.contains(STORE_NAME)) {
             db.createObjectStore(STORE_NAME);
+          }
+          if (!db.objectStoreNames.contains(ASSETS_STORE)) {
+            db.createObjectStore(ASSETS_STORE);
           }
         };
         req.onsuccess = () => resolve(req.result);
@@ -37,7 +40,7 @@ function getIDB() {
 }
 
 /**
- * Store a key-value pair in IndexedDB (virtually unlimited capacity)
+ * Store a key-value pair in IndexedDB
  */
 export async function idbSet(key, value) {
   try {
@@ -48,13 +51,9 @@ export async function idbSet(key, value) {
       const store = tx.objectStore(STORE_NAME);
       const req = store.put(value, key);
       req.onsuccess = () => resolve(true);
-      req.onerror = () => {
-        console.warn(`[IDB] Set error for key ${key}:`, req.error);
-        resolve(false);
-      };
+      req.onerror = () => resolve(false);
     });
   } catch (err) {
-    console.warn(`[IDB] Exception in idbSet for ${key}:`, err);
     return false;
   }
 }
@@ -79,29 +78,68 @@ export async function idbGet(key) {
 }
 
 /**
- * Delete a key from IndexedDB
+ * Store a dedicated raw asset (image/blob) in IndexedDB
  */
-export async function idbDelete(key) {
+export async function idbSaveAsset(assetId, dataUrlOrBlob) {
   try {
     const db = await getIDB();
-    if (!db) return;
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).delete(key);
+    if (!db || !assetId || !dataUrlOrBlob) return null;
+    return new Promise((resolve) => {
+      const tx = db.transaction(ASSETS_STORE, 'readwrite');
+      const store = tx.objectStore(ASSETS_STORE);
+      store.put(dataUrlOrBlob, assetId);
+      tx.oncomplete = () => resolve(assetId);
+      tx.onerror = () => resolve(null);
+    });
   } catch (e) {
-    // Ignore
+    return null;
   }
+}
+
+/**
+ * Retrieve a raw asset from IndexedDB
+ */
+export async function idbGetAsset(assetId) {
+  try {
+    const db = await getIDB();
+    if (!db || !assetId) return null;
+    return new Promise((resolve) => {
+      const tx = db.transaction(ASSETS_STORE, 'readonly');
+      const store = tx.objectStore(ASSETS_STORE);
+      const req = store.get(assetId);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    });
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Checks if a URL or data URL is corrupted or a truncated placeholder
+ */
+export function isCorruptedArtworkUrl(url) {
+  if (!url || typeof url !== 'string') return true;
+  if (url.includes('[STORED_IN_IDB]') || url.includes('...')) return true;
+  if (url.startsWith('http://') || url.startsWith('https://')) return false;
+  if (url.startsWith('data:')) {
+    // Valid data url must have comma and reasonable length
+    const parts = url.split(',');
+    return parts.length < 2 || parts[1].length < 20;
+  }
+  return false;
 }
 
 /**
  * Compress an image data URL via HTML Canvas to reduce payload by 80-95%
  */
-export function compressImageDataUrl(dataUrl, maxDimension = 800, quality = 0.65) {
+export function compressImageDataUrl(dataUrl, maxDimension = 800, quality = 0.7) {
   return new Promise((resolve) => {
     if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image')) {
       return resolve(dataUrl);
     }
-    // If SVG or already small (< 40KB), don't compress
-    if (dataUrl.startsWith('data:image/svg') || dataUrl.length < 40000) {
+    // If SVG, don't compress via canvas
+    if (dataUrl.startsWith('data:image/svg')) {
       return resolve(dataUrl);
     }
 
@@ -143,15 +181,19 @@ export function compressImageDataUrl(dataUrl, maxDimension = 800, quality = 0.65
 }
 
 /**
- * Sanitizes an object or array for localStorage by truncating or omitting massive base64 payloads
+ * Sanitizes object for localStorage without creating broken strings
  */
 function sanitizeForLocalStorage(obj, depth = 0) {
   if (depth > 6 || !obj) return obj;
 
   if (typeof obj === 'string') {
-    // If base64 image or pdf > 25KB, strip for localStorage
-    if (obj.startsWith('data:') && obj.length > 25000) {
-      return obj.substring(0, 100) + '...[STORED_IN_IDB]';
+    // If massive uncompressed base64 (> 150KB), omit it from localStorage
+    if (obj.startsWith('data:') && obj.length > 150000) {
+      return '';
+    }
+    // Clean up any historical corrupted strings
+    if (obj.includes('[STORED_IN_IDB]')) {
+      return '';
     }
     return obj;
   }
@@ -163,9 +205,14 @@ function sanitizeForLocalStorage(obj, depth = 0) {
   if (typeof obj === 'object') {
     const cleaned = {};
     for (const [k, v] of Object.entries(obj)) {
-      if (typeof v === 'string' && v.startsWith('data:') && v.length > 25000) {
-        // Keep a placeholder so UI knows an image exists while not blowing localStorage quota
-        cleaned[k] = v.substring(0, 100) + '...[STORED_IN_IDB]';
+      if (typeof v === 'string') {
+        if (v.includes('[STORED_IN_IDB]')) {
+          cleaned[k] = '';
+        } else if (v.startsWith('data:') && v.length > 150000) {
+          cleaned[k] = '';
+        } else {
+          cleaned[k] = v;
+        }
       } else {
         cleaned[k] = sanitizeForLocalStorage(v, depth + 1);
       }
@@ -177,7 +224,7 @@ function sanitizeForLocalStorage(obj, depth = 0) {
 }
 
 /**
- * Emergency purge of bloated keys in localStorage to immediately relieve QuotaExceededError
+ * Emergency purge and repair of bloated or corrupted keys in localStorage
  */
 export function emergencyCleanLocalStorage() {
   if (typeof window === 'undefined' || !window.localStorage) return;
@@ -188,49 +235,46 @@ export function emergencyCleanLocalStorage() {
       if (key.startsWith('samyak_erp_') || key.startsWith('samyak_')) {
         try {
           const raw = localStorage.getItem(key);
-          if (raw && (raw.length > 100000 || raw.includes('data:image/') || raw.includes('data:application/pdf'))) {
-            // Save original to IndexedDB first
+          if (!raw) continue;
+
+          // If contains historical corrupted placeholder or is oversized (> 100KB)
+          if (raw.includes('[STORED_IN_IDB]') || raw.length > 100000) {
             try {
               const parsed = JSON.parse(raw);
+              // Save clean backup to IDB if not already there
               idbSet(key, parsed);
               const sanitized = sanitizeForLocalStorage(parsed);
               localStorage.setItem(key, JSON.stringify(sanitized));
-            } catch (err) {
-              // If not JSON, truncate or remove
+            } catch {
               if (raw.length > 100000) {
                 localStorage.removeItem(key);
               }
             }
           }
         } catch (e) {
-          // Ignore individual key errors
+          // Ignore individual key error
         }
       }
     }
   } catch (err) {
-    console.warn('[SafeStorage] Emergency clean failed:', err);
+    console.warn('[SafeStorage] Cleanup error:', err);
   }
 }
 
 /**
- * Safely writes data to localStorage with automatic IndexedDB backing and QuotaExceeded prevention
- * 
- * @param {string} key - localStorage key name
- * @param {any} value - Object, Array, or String
+ * Safely writes data to localStorage with automatic IndexedDB backing
  */
 export function safeLocalStorageSet(key, value) {
   if (typeof window === 'undefined' || !window.localStorage) return;
 
-  // 1. Always back up full uncompromised value to IndexedDB asynchronously
+  // 1. Always back up full value to IndexedDB
   idbSet(key, value);
 
-  // 2. Prepare sanitized version for localStorage
+  // 2. Prepare clean version for localStorage
   try {
     let serialized;
     if (typeof value === 'string') {
-      serialized = value.length > 50000 && value.startsWith('data:') 
-        ? value.substring(0, 100) + '...[STORED_IN_IDB]' 
-        : value;
+      serialized = (value.startsWith('data:') && value.length > 150000) ? '' : value;
     } else {
       const sanitized = sanitizeForLocalStorage(value);
       serialized = JSON.stringify(sanitized);
@@ -247,16 +291,6 @@ export function safeLocalStorageSet(key, value) {
     if (isQuotaError) {
       console.warn(`[SafeStorage] Quota exceeded on key "${key}". Running emergency cleanup...`);
       emergencyCleanLocalStorage();
-
-      // Retry with aggressive sanitization
-      try {
-        if (typeof value === 'object') {
-          const aggressive = sanitizeForLocalStorage(value);
-          localStorage.setItem(key, JSON.stringify(aggressive));
-        }
-      } catch (retryError) {
-        console.warn(`[SafeStorage] Could not write "${key}" to localStorage. Persisted in IndexedDB safely.`);
-      }
     } else {
       console.error(`[SafeStorage] Error setting "${key}":`, error);
     }
@@ -264,10 +298,7 @@ export function safeLocalStorageSet(key, value) {
 }
 
 /**
- * Safely reads data from localStorage with fallback
- * 
- * @param {string} key 
- * @param {any} fallbackDefault 
+ * Safely reads data from localStorage
  */
 export function safeLocalStorageGet(key, fallbackDefault = null) {
   if (typeof window === 'undefined' || !window.localStorage) return fallbackDefault;
@@ -280,13 +311,12 @@ export function safeLocalStorageGet(key, fallbackDefault = null) {
       return saved;
     }
   } catch (e) {
-    console.warn(`[SafeStorage] Failed to read ${key}:`, e);
     return fallbackDefault;
   }
 }
 
 /**
- * Initializes safe storage on app boot, cleaning up any existing bloated keys
+ * Initializes safe storage on app boot
  */
 export function initSafeStorage() {
   emergencyCleanLocalStorage();

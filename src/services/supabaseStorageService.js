@@ -98,11 +98,20 @@ export function openArtworkViewer(url, title = 'Artwork File') {
     const safeTitle = (title || 'Artwork File').replace(/[<>&"]/g, '');
     const cleanDownloadName = (title || 'artwork_file').replace(/[^a-zA-Z0-9_-]/g, '_');
 
+    // Convert data URL to Blob URL to ensure fast, uncorrupted, memory-efficient rendering in new tab
+    let renderUrl = url;
+    if (typeof url === 'string' && url.startsWith('data:')) {
+      const blob = dataUrlToBlob(url);
+      if (blob) {
+        renderUrl = URL.createObjectURL(blob);
+      }
+    }
+
     const win = window.open('', '_blank');
     if (!win) {
       // If popup blocker intervened, trigger direct download
       const a = document.createElement('a');
-      a.href = url;
+      a.href = renderUrl;
       a.download = cleanDownloadName;
       document.body.appendChild(a);
       a.click();
@@ -136,7 +145,8 @@ export function openArtworkViewer(url, title = 'Artwork File') {
               border-bottom: 1px solid #334155; 
               position: sticky; 
               top: 0; 
-              z-index: 10;
+              z-index: 100;
+              box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             }
             .brand { 
               font-weight: 700; 
@@ -144,32 +154,51 @@ export function openArtworkViewer(url, title = 'Artwork File') {
               color: #38bdf8; 
               display: flex; 
               align-items: center; 
-              gap: 8px; 
+              gap: 10px; 
+            }
+            .brand-badge {
+              background: #0284c7;
+              color: #fff;
+              padding: 4px 8px;
+              border-radius: 4px;
+              font-size: 0.75rem;
+              font-weight: 800;
             }
             .filename { 
-              color: #cbd5e1; 
-              font-size: 0.85rem; 
-              font-weight: 500; 
+              color: #f1f5f9; 
+              font-size: 0.9rem; 
+              font-weight: 600; 
               max-width: 450px; 
               white-space: nowrap; 
               overflow: hidden; 
               text-overflow: ellipsis; 
             }
+            .toolbar {
+              display: flex;
+              align-items: center;
+              gap: 8px;
+            }
             .btn { 
-              background: #0284c7; 
-              color: white; 
-              padding: 8px 16px; 
+              background: #334155; 
+              color: #f8fafc; 
+              padding: 7px 14px; 
               border-radius: 6px; 
-              font-size: 0.85rem; 
+              font-size: 0.8rem; 
               font-weight: 600; 
               text-decoration: none; 
-              border: none; 
+              border: 1px solid #475569; 
               cursor: pointer; 
               display: inline-flex; 
               align-items: center; 
               gap: 6px;
+              transition: background 0.15s;
             }
-            .btn:hover { background: #0369a1; }
+            .btn:hover { background: #475569; }
+            .btn-primary {
+              background: #0284c7;
+              border-color: #0284c7;
+            }
+            .btn-primary:hover { background: #0369a1; }
             .canvas { 
               flex: 1; 
               padding: 24px; 
@@ -177,24 +206,28 @@ export function openArtworkViewer(url, title = 'Artwork File') {
               justify-content: center; 
               align-items: center; 
               overflow: auto; 
+              position: relative;
             }
             .frame-container { 
               background: #1e293b; 
               border: 1px solid #334155; 
               border-radius: 8px; 
-              box-shadow: 0 10px 25px rgba(0,0,0,0.5); 
+              box-shadow: 0 20px 35px rgba(0,0,0,0.6); 
               padding: 16px; 
               max-width: 100%; 
               display: flex; 
               justify-content: center; 
               align-items: center; 
+              min-height: 200px;
             }
-            img { 
-              max-width: 100%; 
-              max-height: 82vh; 
+            #artwork-img { 
+              max-width: 90vw; 
+              max-height: 80vh; 
               object-fit: contain; 
               border-radius: 4px; 
-              background: #fff; 
+              background: #ffffff; 
+              transition: transform 0.15s ease-out;
+              transform-origin: center center;
             }
             iframe { 
               width: 85vw; 
@@ -203,17 +236,31 @@ export function openArtworkViewer(url, title = 'Artwork File') {
               border-radius: 4px; 
               background: #fff; 
             }
+            #error-fallback {
+              display: none;
+              text-align: center;
+              padding: 40px;
+              background: #1e293b;
+              border-radius: 8px;
+              border: 1px solid #ef4444;
+              max-width: 480px;
+            }
           </style>
         </head>
         <body>
           <div class="nav">
             <div class="brand">
-              <span>Samyak Flexi ERP</span>
-              <span style="color:#64748b;">|</span>
+              <span class="brand-badge">SAMYAK ERP</span>
               <span class="filename">${safeTitle}</span>
             </div>
-            <div>
-              <a href="${url}" download="${cleanDownloadName}" class="btn">
+            <div class="toolbar">
+              ${!isPdf ? `
+                <button class="btn" onclick="zoomIn()" title="Zoom In (+)">Zoom +</button>
+                <button class="btn" onclick="zoomOut()" title="Zoom Out (-)">Zoom -</button>
+                <button class="btn" onclick="resetZoom()" title="Reset (0)">100%</button>
+                <button class="btn" onclick="rotateImg()" title="Rotate (90°)">Rotate</button>
+              ` : ''}
+              <a href="${renderUrl}" download="${cleanDownloadName}" class="btn btn-primary">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 Download File
               </a>
@@ -222,11 +269,51 @@ export function openArtworkViewer(url, title = 'Artwork File') {
           <div class="canvas">
             <div class="frame-container">
               ${isPdf 
-                ? `<iframe src="${url}" title="${safeTitle}"></iframe>` 
-                : `<img src="${url}" alt="${safeTitle}" />`
+                ? `<iframe src="${renderUrl}" title="${safeTitle}"></iframe>` 
+                : `<img id="artwork-img" src="${renderUrl}" alt="${safeTitle}" onerror="document.getElementById('artwork-img').style.display='none'; document.getElementById('error-fallback').style.display='block';" />`
               }
+              <div id="error-fallback">
+                <div style="font-size: 2rem; margin-bottom: 12px;">⚠️</div>
+                <h3 style="font-size: 1.1rem; color: #f8fafc; margin-bottom: 8px;">Artwork Preview Unavailable</h3>
+                <p style="font-size: 0.85rem; color: #94a3b8; line-height: 1.4; margin-bottom: 16px;">
+                  The artwork proof link is empty or the browser local cache was refreshed. Please re-upload the artwork file in Cylinder Management.
+                </p>
+                <a href="${renderUrl}" download="${cleanDownloadName}" class="btn btn-primary" style="margin: 0 auto;">Download Stored Data</a>
+              </div>
             </div>
           </div>
+          <script>
+            let currentZoom = 1;
+            let currentRotate = 0;
+            const img = document.getElementById('artwork-img');
+            function applyTransform() {
+              if (img) {
+                img.style.transform = 'scale(' + currentZoom + ') rotate(' + currentRotate + 'deg)';
+              }
+            }
+            function zoomIn() {
+              currentZoom = Math.min(currentZoom + 0.25, 4);
+              applyTransform();
+            }
+            function zoomOut() {
+              currentZoom = Math.max(currentZoom - 0.25, 0.5);
+              applyTransform();
+            }
+            function resetZoom() {
+              currentZoom = 1;
+              currentRotate = 0;
+              applyTransform();
+            }
+            function rotateImg() {
+              currentRotate = (currentRotate + 90) % 360;
+              applyTransform();
+            }
+            window.addEventListener('keydown', function(e) {
+              if (e.key === '+' || e.key === '=') zoomIn();
+              if (e.key === '-' || e.key === '_') zoomOut();
+              if (e.key === '0') resetZoom();
+            });
+          </script>
         </body>
       </html>
     `);

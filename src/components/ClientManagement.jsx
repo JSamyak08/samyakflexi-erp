@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Plus, Search, Building2, Phone, MapPin, Briefcase, ChevronRight, Package, Layers, X, Edit, Trash2, AlertTriangle, ExternalLink, IndianRupee, Image as ImageIcon } from 'lucide-react';
 import { openArtworkViewer } from '../services/supabaseStorageService';
+import ArtworkModal from './ArtworkModal';
 
 export default function ClientManagement({ clients, orders, cylinders, onAddClient, onUpdateClient, onDeleteClient }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -8,6 +9,7 @@ export default function ClientManagement({ clients, orders, cylinders, onAddClie
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, client: null });
+  const [activeArtworkModal, setActiveArtworkModal] = useState({ isOpen: false, url: '', title: '' });
 
   // Form State
   const [name, setName] = useState('');
@@ -290,7 +292,7 @@ export default function ClientManagement({ clients, orders, cylinders, onAddClie
                                   src={artwork} 
                                   alt="Artwork" 
                                   style={{ width: '32px', height: '32px', objectFit: 'contain', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }} 
-                                  onClick={() => openArtworkViewer(artwork, `${c.sku} - ${c.jobName}`)}
+                                  onClick={() => setActiveArtworkModal({ isOpen: true, url: artwork, title: `${c.sku} - ${c.jobName}` })}
                                   title="Click to view artwork"
                                 />
                               ) : (
@@ -582,6 +584,14 @@ export default function ClientManagement({ clients, orders, cylinders, onAddClie
           </div>
         </div>
       )}
+
+      {/* In-App Artwork Lightbox Modal */}
+      <ArtworkModal
+        isOpen={activeArtworkModal.isOpen}
+        onClose={() => setActiveArtworkModal({ isOpen: false, url: '', title: '' })}
+        artworkUrl={activeArtworkModal.url}
+        title={activeArtworkModal.title}
+      />
     </div>
   );
 }

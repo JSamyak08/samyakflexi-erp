@@ -3,6 +3,7 @@ import { useReactToPrint } from 'react-to-print';
 import { Save, Printer, UploadCloud, ArrowLeft, CheckCircle2, RefreshCw, Trash2, Check, ExternalLink, Image as ImageIcon } from 'lucide-react';
 import { uploadArtworkFile, openArtworkViewer } from './services/supabaseStorageService';
 import { safeLocalStorageSet } from './utils/safeStorage';
+import ArtworkModal from './components/ArtworkModal';
 
 const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
   return (
@@ -351,6 +352,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
   const [imagePreview, setImagePreview] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [saveNotification, setSaveNotification] = useState(null);
+  const [activeArtworkModal, setActiveArtworkModal] = useState({ isOpen: false, url: '', title: '' });
 
   // Auto-Save effect: persists formData safely automatically on any change
   useEffect(() => {
@@ -579,7 +581,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
                     src={imagePreview} 
                     alt="Artwork Preview" 
                     style={{ width: '64px', height: '64px', objectFit: 'contain', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }} 
-                    onClick={() => openArtworkViewer(imagePreview, `${formData.skuCode || 'Job'} Artwork`)}
+                    onClick={() => setActiveArtworkModal({ isOpen: true, url: imagePreview, title: `${formData.skuCode || 'Job'} Artwork` })}
                     title="Click to view full image"
                   />
                   <div>
@@ -588,7 +590,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
                     </div>
                     <button 
                       type="button"
-                      onClick={() => openArtworkViewer(imagePreview, `${formData.skuCode || 'Job'} Artwork`)}
+                      onClick={() => setActiveArtworkModal({ isOpen: true, url: imagePreview, title: `${formData.skuCode || 'Job'} Artwork` })}
                       style={{ background: 'none', border: 'none', padding: 0, fontSize: '0.75rem', color: '#2563eb', display: 'flex', alignItems: 'center', gap: '2px', cursor: 'pointer', textDecoration: 'underline' }}
                     >
                       View Full File <ExternalLink size={12} />
@@ -626,6 +628,14 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
           </button>
         </div>
       </div>
+
+      {/* In-App Artwork Lightbox Modal */}
+      <ArtworkModal
+        isOpen={activeArtworkModal.isOpen}
+        onClose={() => setActiveArtworkModal({ isOpen: false, url: '', title: '' })}
+        artworkUrl={activeArtworkModal.url}
+        title={activeArtworkModal.title}
+      />
     </div>
   );
 }
