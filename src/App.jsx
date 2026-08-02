@@ -57,8 +57,8 @@ import {
   fetchJobDataSheets, saveJobDataSheetToSupabase, deleteJobDataSheetFromSupabase,
   fetchInventoryRolls, saveInventoryRollToSupabase,
   fetchDispatchShipments, saveDispatchShipmentToSupabase,
-  fetchPrintingMachines, savePrintingMachineToSupabase,
-  fetchProductionSchedules, saveProductionScheduleToSupabase
+  fetchPrintingMachines, savePrintingMachineToSupabase, deletePrintingMachineFromSupabase,
+  fetchProductionSchedules, saveProductionScheduleToSupabase, deleteProductionScheduleFromSupabase
 } from './services/supabaseDataService';
 import { initialInventoryRolls, initialDispatchShipments } from './factoryStore';
 import './index.css';
@@ -191,8 +191,21 @@ export default function App() {
   };
 
   const handleSaveSchedule = (newSchedule) => {
-    setSchedules(prev => [newSchedule, ...prev]);
+    setSchedules(prev => {
+      const idx = prev.findIndex(s => s.id === newSchedule.id || s.orderId === newSchedule.orderId);
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = newSchedule;
+        return updated;
+      }
+      return [newSchedule, ...prev];
+    });
     saveProductionScheduleToSupabase(newSchedule);
+  };
+
+  const handleDeleteSchedule = (scheduleId) => {
+    setSchedules(prev => prev.filter(s => s.id !== scheduleId));
+    deleteProductionScheduleFromSupabase(scheduleId);
   };
 
 
@@ -887,6 +900,7 @@ export default function App() {
             onUpdateMachine={handleUpdateMachine}
             onDeleteMachine={handleDeleteMachine}
             onSaveSchedule={handleSaveSchedule}
+            onDeleteSchedule={handleDeleteSchedule}
           />
         )}
 

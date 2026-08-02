@@ -775,6 +775,12 @@ export async function saveProductionScheduleToSupabase(schedule) {
   handleSupabaseError(error, 'production_schedules');
 }
 
+export async function deleteProductionScheduleFromSupabase(scheduleId) {
+  if (!isSupabaseConfigured()) return;
+  const { error } = await supabase.from('production_schedules').delete().eq('id', scheduleId);
+  handleSupabaseError(error, 'production_schedules');
+}
+
 // ============================================================================
 // ONE-CLICK SEED MIGRATION: SEED ALL INITIAL FACTORY DATA TO SUPABASE
 // ============================================================================

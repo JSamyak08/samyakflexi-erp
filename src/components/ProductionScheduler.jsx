@@ -199,6 +199,16 @@ export default function ProductionScheduler({
     }
   };
 
+  // Handle Delete Schedule
+  const handleDeleteScheduleClick = (e, schedule) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    if (window.confirm(`Are you sure you want to delete the schedule for "${schedule.jobName}" on ${schedule.shift}?`)) {
+      if (onDeleteSchedule) {
+        onDeleteSchedule(schedule.id);
+      }
+    }
+  };
+
   // Open Scheduling Modal for an Order
   const handleOpenScheduleModal = (order) => {
     setSchedulingOrder(order);
@@ -476,9 +486,19 @@ export default function ProductionScheduler({
                                   {/* Job Header Label */}
                                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.72rem', fontWeight: '800' }}>
                                     <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.jobName}</span>
-                                    <span style={{ fontSize: '0.65rem', background: 'rgba(255,255,255,0.2)', padding: '1px 4px', borderRadius: '3px' }}>
-                                      {(totalDuration/60).toFixed(1)}h
-                                    </span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                      <span style={{ fontSize: '0.65rem', background: 'rgba(255,255,255,0.2)', padding: '1px 4px', borderRadius: '3px' }}>
+                                        {(totalDuration/60).toFixed(1)}h
+                                      </span>
+                                      <button 
+                                        type="button"
+                                        onClick={(e) => handleDeleteScheduleClick(e, s)}
+                                        style={{ background: 'rgba(239, 68, 68, 0.8)', border: 'none', color: '#ffffff', borderRadius: '3px', cursor: 'pointer', padding: '1px 4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center' }}
+                                        title="Delete Schedule"
+                                      >
+                                        <Trash2 size={10} />
+                                      </button>
+                                    </div>
                                   </div>
 
                                   {/* Segmented Color Bar: Setup (Purple) + Rolls (Amber) + Run (Green) */}
@@ -612,9 +632,19 @@ export default function ProductionScheduler({
                                   {/* Job Header Label */}
                                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.72rem', fontWeight: '800' }}>
                                     <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.jobName}</span>
-                                    <span style={{ fontSize: '0.65rem', background: 'rgba(255,255,255,0.2)', padding: '1px 4px', borderRadius: '3px' }}>
-                                      {(totalDuration/60).toFixed(1)}h
-                                    </span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                      <span style={{ fontSize: '0.65rem', background: 'rgba(255,255,255,0.2)', padding: '1px 4px', borderRadius: '3px' }}>
+                                        {(totalDuration/60).toFixed(1)}h
+                                      </span>
+                                      <button 
+                                        type="button"
+                                        onClick={(e) => handleDeleteScheduleClick(e, s)}
+                                        style={{ background: 'rgba(239, 68, 68, 0.8)', border: 'none', color: '#ffffff', borderRadius: '3px', cursor: 'pointer', padding: '1px 4px', fontSize: '0.65rem', display: 'flex', alignItems: 'center' }}
+                                        title="Delete Schedule"
+                                      >
+                                        <Trash2 size={10} />
+                                      </button>
+                                    </div>
                                   </div>
 
                                   {/* Segmented Color Bar: Setup (Purple) + Rolls (Amber) + Run (Green) */}
@@ -645,7 +675,6 @@ export default function ProductionScheduler({
                         </div>
                       </div>
                     )}
-
                   </div>
                 </div>
               );
@@ -684,43 +713,66 @@ export default function ProductionScheduler({
               </tr>
             </thead>
             <tbody>
-              {readyForScheduleOrders.map(order => (
-                <tr key={order.id} className={order.isOverdue ? 'row-delayed-highlight' : ''}>
-                  <td>
-                    {order.isOverdue ? (
-                      <span className="badge-delayed-tag">🚨 HIGH PRIORITY - OVERDUE</span>
-                    ) : order.isAlreadyScheduled ? (
-                      <span className="badge badge-us">SCHEDULED</span>
-                    ) : (
-                      <span className="badge" style={{ background: '#dcfce7', color: '#166534' }}>READY TO SCHEDULE</span>
-                    )}
-                  </td>
-                  <td style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>{order.id}</td>
-                  <td>
-                    <div style={{ fontWeight: '700' }}>{order.jobName}</div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{order.clientName}</div>
-                  </td>
-                  <td>
-                    <div style={{ fontWeight: '800', color: '#047857', fontSize: '0.9rem', background: '#ecfdf5', padding: '4px 8px', borderRadius: '6px', display: 'inline-block', border: '1px solid #a7f3d0' }}>
-                      📐 {order.widthMm} mm • {order.micron} µ
-                    </div>
-                  </td>
-                  <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{order.structure}</td>
-                  <td className="bold-val">{order.orderQtyKg.toLocaleString()} kg</td>
-                  <td style={{ color: order.isOverdue ? '#dc2626' : 'inherit', fontWeight: order.isOverdue ? 'bold' : 'normal' }}>
-                    {order.targetDeliveryDate}
-                  </td>
-                  <td>
-                    <button 
-                      className="btn-primary" 
-                      style={{ padding: '6px 12px', fontSize: '0.78rem' }}
-                      onClick={() => handleOpenScheduleModal(order)}
-                    >
-                      <Clock size={14} /> Schedule Job
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {readyForScheduleOrders.map(order => {
+                const assignedSchedule = schedules.find(s => s.orderId === order.id);
+                const assignedMachine = assignedSchedule ? machines.find(m => m.id === assignedSchedule.machineId) : null;
+
+                return (
+                  <tr key={order.id} className={order.isOverdue ? 'row-delayed-highlight' : ''}>
+                    <td>
+                      {order.isOverdue ? (
+                        <span className="badge-delayed-tag">🚨 HIGH PRIORITY - OVERDUE</span>
+                      ) : order.isAlreadyScheduled ? (
+                        <span className="badge badge-us">
+                          SCHEDULED ({assignedMachine?.name || assignedSchedule?.machineId || 'Assigned'})
+                        </span>
+                      ) : (
+                        <span className="badge" style={{ background: '#dcfce7', color: '#166534' }}>READY TO SCHEDULE</span>
+                      )}
+                    </td>
+                    <td style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>{order.id}</td>
+                    <td>
+                      <div style={{ fontWeight: '700' }}>{order.jobName}</div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{order.clientName}</div>
+                    </td>
+                    <td>
+                      <div style={{ fontWeight: '800', color: '#047857', fontSize: '0.9rem', background: '#ecfdf5', padding: '4px 8px', borderRadius: '6px', display: 'inline-block', border: '1px solid #a7f3d0' }}>
+                        📐 {order.widthMm} mm • {order.micron} µ
+                      </div>
+                    </td>
+                    <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{order.structure}</td>
+                    <td className="bold-val">{order.orderQtyKg.toLocaleString()} kg</td>
+                    <td style={{ color: order.isOverdue ? '#dc2626' : 'inherit', fontWeight: order.isOverdue ? 'bold' : 'normal' }}>
+                      {order.targetDeliveryDate}
+                    </td>
+                    <td>
+                      {order.isAlreadyScheduled ? (
+                        <button 
+                          type="button"
+                          className="btn-secondary" 
+                          style={{ padding: '6px 12px', fontSize: '0.78rem', color: '#dc2626', borderColor: '#fecaca', background: '#fef2f2', display: 'flex', alignItems: 'center', gap: '6px' }}
+                          onClick={() => {
+                            if (assignedSchedule && window.confirm(`Remove schedule for "${order.jobName}"?`)) {
+                              if (onDeleteSchedule) onDeleteSchedule(assignedSchedule.id);
+                            }
+                          }}
+                        >
+                          <Trash2 size={13} /> Remove Schedule
+                        </button>
+                      ) : (
+                        <button 
+                          type="button"
+                          className="btn-primary" 
+                          style={{ padding: '6px 12px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                          onClick={() => handleOpenScheduleModal(order)}
+                        >
+                          <Clock size={13} /> Schedule Job
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
