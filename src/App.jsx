@@ -981,7 +981,7 @@ export default function App() {
 
         {/* TAB 5: VENDOR MANAGEMENT */}
         {activeTab === 'vendors' && (
-          <VendorManagement vendors={vendors} onAddVendor={handleAddVendor} />
+          <VendorManagement vendors={vendors} orders={orders} onAddVendor={handleAddVendor} />
         )}
 
         {/* TAB 6: INVENTORY, GRN & QC */}
