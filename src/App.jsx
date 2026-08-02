@@ -743,6 +743,7 @@ export default function App() {
             onAddGRN={handleAddGRN}
             onUpdateGRN={handleUpdateGRN}
             onUpdateInventory={handleUpdateInventory}
+            onAddVendor={handleAddVendor}
           />
         )}
 

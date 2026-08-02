@@ -17,7 +17,8 @@ import {
   FileSpreadsheet,
   Bell,
   Edit3,
-  Trash2
+  Trash2,
+  Building2
 } from 'lucide-react';
 import GRNPDF from './GRNPDF';
 import { isReconciliationDue, FILM_DENSITIES } from '../factoryStore';
@@ -29,7 +30,8 @@ export default function InventoryManagement({
   orders, 
   onAddGRN, 
   onUpdateGRN, 
-  onUpdateInventory 
+  onUpdateInventory,
+  onAddVendor
 }) {
   const [activeTab, setActiveTab] = useState('stock'); // stock, grn_inward, qc_approval, issue_return, reconciliation
   const [searchTerm, setSearchTerm] = useState('');
@@ -40,6 +42,71 @@ export default function InventoryManagement({
   const [qcInspectingGRN, setQcInspectingGRN] = useState(null);
   const [qcNotesInput, setQcNotesInput] = useState('');
   const [selectedItemForPurchaseHistory, setSelectedItemForPurchaseHistory] = useState(null);
+
+  // Vendor Onboarding Modal State inside GRN
+  const [isVendorModalOpen, setIsVendorModalOpen] = useState(false);
+  const [newVendorCompanyName, setNewVendorCompanyName] = useState('');
+  const [newVendorGstin, setNewVendorGstin] = useState('');
+  const [newVendorAddress, setNewVendorAddress] = useState('');
+  const [newVendorContactPerson, setNewVendorContactPerson] = useState('');
+  const [newVendorPhone, setNewVendorPhone] = useState('');
+  const [newVendorEmail, setNewVendorEmail] = useState('');
+  const [newVendorBankDetails, setNewVendorBankDetails] = useState('');
+  const [newVendorPaymentTerms, setNewVendorPaymentTerms] = useState('30 Days Net');
+  const [newVendorMaterials, setNewVendorMaterials] = useState(['PET', 'METPET']);
+
+  const vendorMaterialOptions = [
+    "PET", "METPET", "LDPE", "Natural GP LD", "White LD", 
+    "BOPP Natural", "Metalised BOPP", "Pearlised BOPP", 
+    "CPP Natural", "Metalised CPP", "Liquid Inks", "Solvent-less Adhesive", "Solvents"
+  ];
+
+  const toggleVendorMaterial = (mat) => {
+    setNewVendorMaterials(prev => 
+      prev.includes(mat) ? prev.filter(m => m !== mat) : [...prev, mat]
+    );
+  };
+
+  const handleSaveVendorFromGRN = (e) => {
+    e.preventDefault();
+    if (!newVendorCompanyName.trim() || !newVendorGstin.trim()) {
+      alert("Company Name and GSTIN are required!");
+      return;
+    }
+
+    const createdVendor = {
+      id: `VEND-00${(vendors || []).length + 1}`,
+      companyName: newVendorCompanyName.trim(),
+      gstin: newVendorGstin.toUpperCase().trim(),
+      address: newVendorAddress.trim(),
+      contactPerson: newVendorContactPerson.trim(),
+      phone: newVendorPhone.trim(),
+      email: newVendorEmail.trim(),
+      bankDetails: newVendorBankDetails.trim() || "HDFC Bank | A/C: 502000000000 | IFSC: HDFC0000123",
+      materials: newVendorMaterials,
+      paymentTerms: newVendorPaymentTerms,
+      rating: 5.0
+    };
+
+    if (onAddVendor) {
+      onAddVendor(createdVendor);
+    }
+
+    // Auto select the newly created vendor for the GRN form
+    setGrnVendor(createdVendor.companyName);
+
+    // Reset vendor modal state
+    setNewVendorCompanyName('');
+    setNewVendorGstin('');
+    setNewVendorAddress('');
+    setNewVendorContactPerson('');
+    setNewVendorPhone('');
+    setNewVendorEmail('');
+    setNewVendorBankDetails('');
+    setIsVendorModalOpen(false);
+
+    alert(`Vendor "${createdVendor.companyName}" onboarded successfully and selected for this GRN!`);
+  };
 
   // Issue / Return Modal state
   const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
@@ -800,10 +867,47 @@ export default function InventoryManagement({
 
             <form onSubmit={handleSaveGRN}>
               <div className="form-grid">
-                <div className="form-group">
-                  <label>Vendor Name *</label>
-                  <select className="form-control" value={grnVendor} onChange={e => setGrnVendor(e.target.value)}>
-                    {vendors.map(v => <option key={v.id} value={v.companyName}>{v.companyName}</option>)}
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label style={{ margin: 0, fontWeight: '600' }}>Vendor Name *</label>
+                    <button
+                      type="button"
+                      onClick={() => setIsVendorModalOpen(true)}
+                      style={{
+                        background: '#ecfdf5',
+                        border: '1px solid #a7f3d0',
+                        color: '#047857',
+                        fontSize: '0.78rem',
+                        fontWeight: '600',
+                        padding: '3px 10px',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      <Plus size={14} /> Onboard New Vendor
+                    </button>
+                  </div>
+                  <select 
+                    className="form-control" 
+                    value={grnVendor} 
+                    onChange={e => {
+                      if (e.target.value === '__CREATE_NEW__') {
+                        setIsVendorModalOpen(true);
+                      } else {
+                        setGrnVendor(e.target.value);
+                      }
+                    }}
+                  >
+                    <option value="" disabled>-- Select Vendor --</option>
+                    {vendors.map(v => (
+                      <option key={v.id} value={v.companyName}>{v.companyName} ({v.gstin || 'GSTIN N/A'})</option>
+                    ))}
+                    <option value="__CREATE_NEW__" style={{ fontWeight: '700', color: '#047857' }}>
+                      ➕ + Onboard / Create New Vendor...
+                    </option>
                   </select>
                 </div>
 
@@ -1171,6 +1275,154 @@ export default function InventoryManagement({
           </div>
         );
       })()}
+
+      {/* Modal: Quick Vendor Onboarding (from GRN Modal) */}
+      {isVendorModalOpen && (
+        <div className="modal-overlay" style={{ zIndex: 110 }} onClick={() => setIsVendorModalOpen(false)}>
+          <div className="glass-card modal-content" style={{ width: '620px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Building2 style={{ color: 'var(--primary-brand)' }} /> Quick Vendor Onboarding & Registration
+                </h3>
+                <p style={{ fontSize: '0.825rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  Register a new supplier to immediately select for this GRN Inward note.
+                </p>
+              </div>
+              <button 
+                type="button" 
+                className="btn-secondary" 
+                style={{ padding: '4px 10px', fontSize: '0.8rem' }}
+                onClick={() => setIsVendorModalOpen(false)}
+              >
+                ✕ Close
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveVendorFromGRN}>
+              <div className="form-grid">
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label>Company / Vendor Name *</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    required
+                    placeholder="e.g. SRF Limited / Jindal Poly Films"
+                    value={newVendorCompanyName}
+                    onChange={e => setNewVendorCompanyName(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>GSTIN Number *</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    required
+                    placeholder="e.g. 23AABCS1234F1Z5"
+                    value={newVendorGstin}
+                    onChange={e => setNewVendorGstin(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Payment Terms</label>
+                  <select
+                    className="form-control"
+                    value={newVendorPaymentTerms}
+                    onChange={e => setNewVendorPaymentTerms(e.target.value)}
+                  >
+                    <option value="15 Days Net">15 Days Net</option>
+                    <option value="30 Days Net">30 Days Net</option>
+                    <option value="45 Days Net">45 Days Net</option>
+                    <option value="60 Days Net">60 Days Net</option>
+                    <option value="Advance Payment">Advance Payment</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Contact Person</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. Rajesh Malhotra"
+                    value={newVendorContactPerson}
+                    onChange={e => setNewVendorContactPerson(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Phone Number</label>
+                  <input
+                    type="tel"
+                    className="form-control"
+                    placeholder="e.g. +91 98260 12345"
+                    value={newVendorPhone}
+                    onChange={e => setNewVendorPhone(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label>Email Address</label>
+                  <input
+                    type="email"
+                    className="form-control"
+                    placeholder="e.g. sales@vendorcompany.com"
+                    value={newVendorEmail}
+                    onChange={e => setNewVendorEmail(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label>Plant & Billing Address</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. Plot 42, Pithampur Industrial Area, Sector 3, Dhar MP"
+                    value={newVendorAddress}
+                    onChange={e => setNewVendorAddress(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label>Bank Account Details</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. HDFC Bank | A/C: 50200012345678 | IFSC: HDFC0000123"
+                    value={newVendorBankDetails}
+                    onChange={e => setNewVendorBankDetails(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label style={{ display: 'block', marginBottom: '8px' }}>Supplied Material Categories</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {vendorMaterialOptions.map(mat => (
+                      <span
+                        key={mat}
+                        className={`preset-chip ${newVendorMaterials.includes(mat) ? 'active-chip' : ''}`}
+                        onClick={() => toggleVendorMaterial(mat)}
+                      >
+                        {newVendorMaterials.includes(mat) ? '✓ ' : '+ '}{mat}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                <button type="button" className="btn-secondary" onClick={() => setIsVendorModalOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary" style={{ background: '#047857', borderColor: '#047857' }}>
+                  <Building2 size={16} /> Onboard & Select Vendor
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );
