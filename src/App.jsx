@@ -137,6 +137,48 @@ export default function App() {
   useEffect(() => { localStorage.setItem('samyak_erp_clients', JSON.stringify(clients)); }, [clients]);
 
   // Load live data exclusively from Supabase PostgreSQL if configured
+  // Live connection status & background heartbeat
+  const [dbStatus, setDbStatus] = useState({ connected: false, checking: true, message: '' });
+
+  useEffect(() => {
+    async function verifyConnection() {
+      const res = await checkSupabaseConnection();
+      setDbStatus({
+        connected: res.connected,
+        checking: false,
+        message: res.message || ''
+      });
+    }
+
+    verifyConnection();
+    const interval = setInterval(verifyConnection, 15000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Helper to merge local items with Supabase items safely without wiping local additions
+  const mergeDatasets = (localItems = [], remoteItems = [], keyField = 'id') => {
+    if (!remoteItems || remoteItems.length === 0) return localItems;
+    if (!localItems || localItems.length === 0) return remoteItems;
+
+    const map = new Map();
+    // 1. Load remote Supabase records
+    remoteItems.forEach(item => {
+      const key = item[keyField] || item.id || item.grnNo || item.sku;
+      if (key) map.set(String(key), item);
+    });
+
+    // 2. Preserve local items if missing from remote (e.g. created locally before DB sync)
+    localItems.forEach(item => {
+      const key = item[keyField] || item.id || item.grnNo || item.sku;
+      if (key && !map.has(String(key))) {
+        map.set(String(key), item);
+      }
+    });
+
+    return Array.from(map.values());
+  };
+
+  // Load live data from Supabase PostgreSQL & merge seamlessly with local state
   useEffect(() => {
     if (!isSupaActive) return;
 
@@ -145,7 +187,7 @@ export default function App() {
         const [
           supaOrders, supaVendors, supaInv, supaGRNs, supaCyls, 
           supaProd, supaUsers, supaSheets, supaRolls, supaShipments,
-          supaMachines, supaSchedules
+          supaMachines, supaSchedules, supaClients
         ] = await Promise.all([
           fetchOrders(),
           fetchVendors(),
@@ -162,21 +204,21 @@ export default function App() {
           fetchClients()
         ]);
 
-        if (supaOrders && supaOrders.length > 0) setOrders(supaOrders);
-        if (supaVendors && supaVendors.length > 0) setVendors(supaVendors);
-        if (supaInv && supaInv.length > 0) setInventory(supaInv);
-        if (supaGRNs && supaGRNs.length > 0) setGrns(supaGRNs);
-        if (supaCyls && supaCyls.length > 0) setCylinders(supaCyls);
-        if (supaProd && supaProd.length > 0) setProductionRecords(supaProd);
-        if (supaSheets && supaSheets.length > 0) setJobDataSheets(supaSheets);
-        if (supaRolls && supaRolls.length > 0) setInventoryRolls(supaRolls);
-        if (supaShipments && supaShipments.length > 0) setDispatchShipments(supaShipments);
-        if (supaUsers && supaUsers.length > 0) setUsers(supaUsers);
-        if (supaMachines && supaMachines.length > 0) setMachines(supaMachines);
-        if (supaSchedules && supaSchedules.length > 0) setSchedules(supaSchedules);
-        if (supaClients && supaClients.length > 0) setClients(supaClients);
+        setOrders(prev => mergeDatasets(prev, supaOrders, 'id'));
+        setVendors(prev => mergeDatasets(prev, supaVendors, 'id'));
+        setInventory(prev => mergeDatasets(prev, supaInv, 'id'));
+        setGrns(prev => mergeDatasets(prev, supaGRNs, 'grnNo'));
+        setCylinders(prev => mergeDatasets(prev, supaCyls, 'id'));
+        setProductionRecords(prev => mergeDatasets(prev, supaProd, 'id'));
+        setUsers(prev => mergeDatasets(prev, supaUsers, 'id'));
+        setJobDataSheets(prev => mergeDatasets(prev, supaSheets, 'jobId'));
+        setInventoryRolls(prev => mergeDatasets(prev, supaRolls, 'id'));
+        setDispatchShipments(prev => mergeDatasets(prev, supaShipments, 'id'));
+        setMachines(prev => mergeDatasets(prev, supaMachines, 'id'));
+        setSchedules(prev => mergeDatasets(prev, supaSchedules, 'id'));
+        setClients(prev => mergeDatasets(prev, supaClients, 'id'));
       } catch (err) {
-        console.error("Failed to load data from Supabase:", err);
+        console.warn("[Supabase Sync Notice] Multi-table fetch notice:", err);
       }
     }
 
@@ -184,7 +226,7 @@ export default function App() {
   }, [isSupaActive]);
 
   const handleSaveMachine = (newMachine) => {
-    setMachines(prev => [newMachine, ...prev]);
+    setMachines(prev => [newMachine, ...prev.filter(m => m.id !== newMachine.id)]);
     savePrintingMachineToSupabase(newMachine);
   };
 
@@ -215,8 +257,6 @@ export default function App() {
     setSchedules(prev => prev.filter(s => s.id !== scheduleId));
     deleteProductionScheduleFromSupabase(scheduleId);
   };
-
-
 
   // Authentication & Active User Session State
   const [currentUser, setCurrentUser] = useState(() => {
@@ -281,16 +321,13 @@ export default function App() {
     }));
   };
 
-  // Handlers for state updates
+  // Handlers for state updates (Preserves local state + async Supabase sync)
   const handleAddOrder = async (newOrder) => {
-    setOrders(prev => [newOrder, ...prev]);
+    setOrders(prev => [newOrder, ...prev.filter(o => o.id !== newOrder.id)]);
     try {
       await saveOrderToSupabase(newOrder);
     } catch (err) {
-      console.error("Failed to save Order to Supabase:", err);
-      alert(`Failed to save Order: ${err.message || err.details || 'Check console logs'}`);
-      const updated = await fetchOrders();
-      if (updated && updated.length > 0) setOrders(updated);
+      console.warn("[Sync Notice] Order saved locally. Supabase notice:", err);
     }
   };
 
@@ -299,10 +336,7 @@ export default function App() {
     try {
       await saveOrderToSupabase(updatedOrder);
     } catch (err) {
-      console.error("Failed to update Order in Supabase:", err);
-      alert(`Failed to update Order: ${err.message || err.details || 'Check console logs'}`);
-      const updated = await fetchOrders();
-      if (updated && updated.length > 0) setOrders(updated);
+      console.warn("[Sync Notice] Order updated locally. Supabase notice:", err);
     }
   };
 
@@ -311,33 +345,25 @@ export default function App() {
     try {
       await deleteOrderFromSupabase(orderId);
     } catch (err) {
-      console.error("Failed to delete Order from Supabase:", err);
-      alert(`Failed to delete Order: ${err.message || err.details || 'Referenced by other records'}`);
-      const updated = await fetchOrders();
-      if (updated && updated.length > 0) setOrders(updated);
+      console.warn("[Sync Notice] Order deleted locally. Supabase notice:", err);
     }
   };
 
   const handleAddVendor = async (newVendor) => {
-    setVendors(prev => [...prev, newVendor]);
+    setVendors(prev => [...prev.filter(v => v.id !== newVendor.id), newVendor]);
     try {
       await saveVendorToSupabase(newVendor);
     } catch (err) {
-      console.error("Failed to save Vendor to Supabase:", err);
-      alert(`Failed to save Vendor: ${err.message || err.details || 'Check console logs'}`);
-      const updated = await fetchVendors();
-      if (updated && updated.length > 0) setVendors(updated);
+      console.warn("[Sync Notice] Vendor saved locally. Supabase notice:", err);
     }
   };
 
   const handleAddGRN = async (newGRN) => {
-    setGrns(prev => [newGRN, ...prev]);
+    setGrns(prev => [newGRN, ...prev.filter(g => g.grnNo !== newGRN.grnNo)]);
     try {
       await saveGRNToSupabase(newGRN);
     } catch (err) {
-      alert("Failed to save GRN.");
-      const updated = await fetchGRNs();
-      setGrns(updated || []);
+      console.warn("[Sync Notice] GRN saved locally. Supabase notice:", err);
     }
   };
 
@@ -346,9 +372,7 @@ export default function App() {
     try {
       await saveGRNToSupabase(updatedGRN);
     } catch (err) {
-      alert("Failed to update GRN.");
-      const updated = await fetchGRNs();
-      setGrns(updated || []);
+      console.warn("[Sync Notice] GRN updated locally. Supabase notice:", err);
     }
   };
 
@@ -358,21 +382,17 @@ export default function App() {
       try {
         await Promise.all(newInventory.map(item => saveInventoryItemToSupabase(item)));
       } catch (err) {
-        alert("Failed to update Inventory. Reverting to database state.");
-        const updated = await fetchInventory();
-        setInventory(updated || []);
+        console.warn("[Sync Notice] Inventory updated locally. Supabase notice:", err);
       }
     }
   };
 
   const handleAddUser = async (newUser) => {
-    setUsers(prev => [...prev, newUser]);
+    setUsers(prev => [...prev.filter(u => u.id !== newUser.id), newUser]);
     try {
       await saveUserToSupabase(newUser);
     } catch (err) {
-      alert("Failed to save User.");
-      const updated = await fetchUsers();
-      setUsers(updated || []);
+      console.warn("[Sync Notice] User saved locally. Supabase notice:", err);
     }
   };
 
@@ -381,9 +401,7 @@ export default function App() {
     try {
       await saveUserToSupabase(updatedUser);
     } catch (err) {
-      alert("Failed to update User.");
-      const updated = await fetchUsers();
-      setUsers(updated || []);
+      console.warn("[Sync Notice] User updated locally. Supabase notice:", err);
     }
   };
 
@@ -396,9 +414,7 @@ export default function App() {
     try {
       await saveJobDataSheetToSupabase(newSheet);
     } catch (err) {
-      alert("Failed to save Job Data Sheet.");
-      const updated = await fetchJobDataSheets();
-      setJobDataSheets(updated || []);
+      console.warn("[Sync Notice] Job Data Sheet saved locally. Supabase notice:", err);
     }
   };
 
@@ -407,21 +423,16 @@ export default function App() {
     try {
       await deleteJobDataSheetFromSupabase(sheetId);
     } catch (err) {
-      alert("Failed to delete Job Data Sheet. Please check constraints.");
-      const updated = await fetchJobDataSheets();
-      setJobDataSheets(updated || []);
+      console.warn("[Sync Notice] Job Data Sheet deleted locally. Supabase notice:", err);
     }
   };
 
-
   const handleAddCylinder = async (newCyl) => {
-    setCylinders(prev => [newCyl, ...prev]);
+    setCylinders(prev => [newCyl, ...prev.filter(c => c.id !== newCyl.id)]);
     try {
       await saveCylinderToSupabase(newCyl);
     } catch (err) {
-      alert("Failed to save Cylinder.");
-      const updated = await fetchCylinders();
-      setCylinders(updated || []);
+      console.warn("[Sync Notice] Cylinder saved locally. Supabase notice:", err);
     }
   };
 
@@ -430,36 +441,34 @@ export default function App() {
     try {
       await saveCylinderToSupabase(updatedCyl);
     } catch (err) {
-      alert("Failed to update Cylinder.");
-      const updated = await fetchCylinders();
-      setCylinders(updated || []);
+      console.warn("[Sync Notice] Cylinder updated locally. Supabase notice:", err);
     }
   };
 
   const handleAddRoll = async (newRoll) => {
-    setInventoryRolls(prev => [newRoll, ...prev]);
+    setInventoryRolls(prev => [newRoll, ...prev.filter(r => r.id !== newRoll.id)]);
     try {
       await saveInventoryRollToSupabase(newRoll);
     } catch (err) {
-      console.error("Failed to save inventory roll to Supabase", err);
+      console.warn("[Sync Notice] Roll saved locally. Supabase notice:", err);
     }
   };
 
   const handleAddDispatchShipment = async (newShipment) => {
-    setDispatchShipments(prev => [newShipment, ...prev]);
+    setDispatchShipments(prev => [newShipment, ...prev.filter(s => s.id !== newShipment.id)]);
     try {
       await saveDispatchShipmentToSupabase(newShipment);
     } catch (err) {
-      console.error("Failed to save dispatch shipment to Supabase", err);
+      console.warn("[Sync Notice] Dispatch shipment saved locally. Supabase notice:", err);
     }
   };
 
   const handleAddClient = async (newClient) => {
-    setClients(prev => [...prev, newClient]);
+    setClients(prev => [...prev.filter(c => c.id !== newClient.id), newClient]);
     try {
       await saveClientToSupabase(newClient);
     } catch (err) {
-      console.error("Failed to save client to Supabase:", err);
+      console.warn("[Sync Notice] Client saved locally. Supabase notice:", err);
     }
   };
 
@@ -468,7 +477,7 @@ export default function App() {
     try {
       await saveClientToSupabase(updatedClient);
     } catch (err) {
-      console.error("Failed to update client in Supabase:", err);
+      console.warn("[Sync Notice] Client updated locally. Supabase notice:", err);
     }
   };
 
@@ -677,6 +686,34 @@ export default function App() {
                 <strong style={{ color: 'var(--text-primary)' }}>{currentUser?.name} ({currentUser?.role})</strong>
               </div>
             )}
+
+            {/* Live Supabase Connection Badge */}
+            <div 
+              onClick={() => handleTabChange('supabase')}
+              title={dbStatus.message || 'Click to view Supabase Connection details'}
+              style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '8px', 
+                background: dbStatus.connected ? '#ecfdf5' : '#fef2f2', 
+                border: `1px solid ${dbStatus.connected ? '#a7f3d0' : '#fecaca'}`, 
+                padding: '6px 12px', 
+                borderRadius: '8px', 
+                fontSize: '0.8rem',
+                fontWeight: '700',
+                color: dbStatus.connected ? '#047857' : '#b91c1c',
+                cursor: 'pointer'
+              }}
+            >
+              <span style={{ 
+                height: '8px', 
+                width: '8px', 
+                borderRadius: '50%', 
+                background: dbStatus.connected ? '#10b981' : '#ef4444',
+                boxShadow: dbStatus.connected ? '0 0 8px #10b981' : 'none'
+              }} />
+              <span>{dbStatus.checking ? 'Connecting...' : (dbStatus.connected ? 'Supabase Live' : 'Offline Mode')}</span>
+            </div>
 
             <button className="btn-signout" onClick={handleLogout} title="Sign Out of Session">
               <LogOut size={16} /> Sign Out
