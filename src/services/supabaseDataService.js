@@ -31,7 +31,7 @@ export async function fetchOrders() {
       clientName: o.client_name,
       orderType: o.order_type || 'Reel',
       orderQtyKg: Number(o.order_qty_kg) || 0,
-      deliveryDate: o.delivery_date,
+      deliveryDate: o.target_delivery_date,
       targetDeliveryDate: o.target_delivery_date,
       status: o.status || 'Scheduled',
       structure: o.job_details?.structure || 'PET / PE',
@@ -48,21 +48,21 @@ export async function fetchOrders() {
 
 export async function saveOrderToSupabase(order) {
   if (!isSupabaseConfigured()) return;
-  const deliveryDateVal = order.deliveryDate || order.targetDeliveryDate || new Date().toISOString().split('T')[0];
-  const targetDateVal = order.targetDeliveryDate || order.deliveryDate || deliveryDateVal;
+  const targetDateVal = order.targetDeliveryDate || order.deliveryDate || new Date().toISOString().split('T')[0];
 
-  const { error } = await supabase.from('orders').upsert({
+  const payload = {
     id: order.id,
     job_name: order.jobName || 'Untitled Job',
     client_name: order.clientName || 'General Client',
     order_type: order.orderType || 'Reel',
     order_qty_kg: Number(order.orderQtyKg) || 0,
-    delivery_date: deliveryDateVal,
     target_delivery_date: targetDateVal,
     status: order.status || 'Scheduled',
     job_details: order.jobDetails || { structure: order.structure || 'PET / PE', calculationDetails: order.calculationDetails || null },
     raw_material_requirements: order.rawMaterialRequirements || order.materialRequirements || []
-  });
+  };
+
+  const { error } = await supabase.from('orders').upsert(payload, { onConflict: 'id' });
   
   if (error) {
     console.error("Error saving order to Supabase:", error);
