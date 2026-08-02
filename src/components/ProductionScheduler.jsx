@@ -288,6 +288,15 @@ export default function ProductionScheduler({
     setIsScheduleModalOpen(true);
   };
 
+  const printQtyKg = useMemo(() => {
+    if (!schedulingOrder) return 1000;
+    const layers = schedulingOrder.jobDetails?.layers || [];
+    const firstLayer = layers[0] || { filmType: 'PET', micron: 12 };
+    const reqs = schedulingOrder.materialRequirements || schedulingOrder.rawMaterialRequirements || [];
+    const firstLayerReq = reqs.find(r => r.filmType === firstLayer.filmType) || reqs[0];
+    return firstLayerReq?.qtyKg || schedulingOrder.orderQtyKg || 1000;
+  }, [schedulingOrder]);
+
   // Live calculation of metrics for modal preview
   const previewMetrics = useMemo(() => {
     if (!schedulingOrder) return null;
@@ -302,7 +311,7 @@ export default function ProductionScheduler({
     const lastJob = machineSchedules[machineSchedules.length - 1];
 
     return calculatePrintingScheduleMetrics({
-      orderQtyKg: schedulingOrder.orderQtyKg || 1000,
+      orderQtyKg: printQtyKg,
       widthMm,
       micron: firstLayer.micron || 12,
       filmType: firstLayer.filmType || 'PET',
@@ -313,7 +322,7 @@ export default function ProductionScheduler({
       customJobChangeoverMins: customJobChangeoverInput,
       customRollChangeoverRateMins: customRollChangeoverRateInput
     });
-  }, [schedulingOrder, targetMachineId, customSpeedInput, customJobChangeoverInput, customRollChangeoverRateInput, schedules, editingScheduleId]);
+  }, [schedulingOrder, targetMachineId, customSpeedInput, customJobChangeoverInput, customRollChangeoverRateInput, schedules, editingScheduleId, printQtyKg]);
 
   // Handle Save Scheduled Job
   const handleConfirmSchedule = (e) => {
@@ -337,6 +346,7 @@ export default function ProductionScheduler({
       scheduledDate: scheduledDateInput,
       startTime: startTimeInput,
       orderQtyKg: schedulingOrder.orderQtyKg,
+      printQtyKg: printQtyKg,
       widthMm: schedulingOrder.printWidthMm || 1000,
       micron: 12,
       filmType: 'PET',
@@ -1290,7 +1300,7 @@ export default function ProductionScheduler({
               Schedule Job: {schedulingOrder.jobName}
             </h3>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-              Client: <b>{schedulingOrder.clientName}</b> | Qty: <b>{schedulingOrder.orderQtyKg} kg</b>
+              Client: <b>{schedulingOrder.clientName}</b> | Order Qty: <b>{schedulingOrder.orderQtyKg} kg</b> | Print Qty: <b>{printQtyKg} kg</b>
             </p>
 
             <form onSubmit={handleConfirmSchedule}>
