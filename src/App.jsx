@@ -202,9 +202,10 @@ export default function App() {
     try {
       await saveOrderToSupabase(newOrder);
     } catch (err) {
-      alert("Failed to save Order. Please check constraints or permissions.");
+      console.error("Failed to save Order to Supabase:", err);
+      alert(`Failed to save Order: ${err.message || err.details || 'Check console logs'}`);
       const updated = await fetchOrders();
-      setOrders(updated || []);
+      if (updated && updated.length > 0) setOrders(updated);
     }
   };
 
@@ -213,9 +214,10 @@ export default function App() {
     try {
       await saveOrderToSupabase(updatedOrder);
     } catch (err) {
-      alert("Failed to update Order. Please check constraints or permissions.");
+      console.error("Failed to update Order in Supabase:", err);
+      alert(`Failed to update Order: ${err.message || err.details || 'Check console logs'}`);
       const updated = await fetchOrders();
-      setOrders(updated || []);
+      if (updated && updated.length > 0) setOrders(updated);
     }
   };
 
@@ -224,9 +226,10 @@ export default function App() {
     try {
       await deleteOrderFromSupabase(orderId);
     } catch (err) {
-      alert("Failed to delete Order. It may be referenced by other records (e.g., Job Data Sheets).");
+      console.error("Failed to delete Order from Supabase:", err);
+      alert(`Failed to delete Order: ${err.message || err.details || 'Referenced by other records'}`);
       const updated = await fetchOrders();
-      setOrders(updated || []);
+      if (updated && updated.length > 0) setOrders(updated);
     }
   };
 
@@ -235,9 +238,10 @@ export default function App() {
     try {
       await saveVendorToSupabase(newVendor);
     } catch (err) {
-      alert("Failed to save Vendor.");
+      console.error("Failed to save Vendor to Supabase:", err);
+      alert(`Failed to save Vendor: ${err.message || err.details || 'Check console logs'}`);
       const updated = await fetchVendors();
-      setVendors(updated || []);
+      if (updated && updated.length > 0) setVendors(updated);
     }
   };
 

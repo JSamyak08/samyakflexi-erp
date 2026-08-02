@@ -48,17 +48,20 @@ export async function fetchOrders() {
 
 export async function saveOrderToSupabase(order) {
   if (!isSupabaseConfigured()) return;
+  const deliveryDateVal = order.deliveryDate || order.targetDeliveryDate || new Date().toISOString().split('T')[0];
+  const targetDateVal = order.targetDeliveryDate || order.deliveryDate || deliveryDateVal;
+
   const { error } = await supabase.from('orders').upsert({
     id: order.id,
-    job_name: order.jobName,
-    client_name: order.clientName,
+    job_name: order.jobName || 'Untitled Job',
+    client_name: order.clientName || 'General Client',
     order_type: order.orderType || 'Reel',
-    order_qty_kg: order.orderQtyKg,
-    delivery_date: order.deliveryDate,
-    target_delivery_date: order.targetDeliveryDate || order.deliveryDate,
+    order_qty_kg: Number(order.orderQtyKg) || 0,
+    delivery_date: deliveryDateVal,
+    target_delivery_date: targetDateVal,
     status: order.status || 'Scheduled',
-    job_details: order.jobDetails || { structure: order.structure },
-    raw_material_requirements: order.rawMaterialRequirements || []
+    job_details: order.jobDetails || { structure: order.structure || 'PET / PE', calculationDetails: order.calculationDetails || null },
+    raw_material_requirements: order.rawMaterialRequirements || order.materialRequirements || []
   });
   
   if (error) {
@@ -90,13 +93,15 @@ export async function fetchVendors() {
     return data.map(v => ({
       id: v.id,
       name: v.name,
+      companyName: v.name,
       category: v.category,
       contactPerson: v.contact_person,
       phone: v.phone,
       email: v.email,
       gstin: v.gstin,
       address: v.address,
-      rating: Number(v.rating) || 5.0
+      rating: Number(v.rating) || 5.0,
+      materials: v.category ? v.category.split(', ') : []
     }));
   } catch (err) {
     console.error("Error fetching vendors from Supabase:", err);
@@ -106,16 +111,19 @@ export async function fetchVendors() {
 
 export async function saveVendorToSupabase(vendor) {
   if (!isSupabaseConfigured()) return;
+  const vendorName = vendor.name || vendor.companyName || 'New Vendor';
+  const vendorCategory = vendor.category || (Array.isArray(vendor.materials) ? vendor.materials.join(', ') : 'Flexible Packaging Supplier');
+
   const { error } = await supabase.from('vendors').upsert({
     id: vendor.id,
-    name: vendor.name,
-    category: vendor.category,
-    contact_person: vendor.contactPerson,
-    phone: vendor.phone,
-    email: vendor.email,
-    gstin: vendor.gstin,
-    address: vendor.address,
-    rating: vendor.rating || 5.0
+    name: vendorName,
+    category: vendorCategory,
+    contact_person: vendor.contactPerson || '',
+    phone: vendor.phone || '',
+    email: vendor.email || '',
+    gstin: vendor.gstin || '',
+    address: vendor.address || '',
+    rating: Number(vendor.rating) || 5.0
   });
 
   if (error) {

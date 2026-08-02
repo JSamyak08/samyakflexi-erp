@@ -115,6 +115,7 @@ export default function InventoryManagement({
 
     const createdVendor = {
       id: `VEND-00${(vendors || []).length + 1}`,
+      name: newVendorCompanyName.trim(),
       companyName: newVendorCompanyName.trim(),
       gstin: newVendorGstin.toUpperCase().trim(),
       address: newVendorAddress.trim(),
