@@ -140,8 +140,8 @@ export default function VendorManagement({ vendors = [], orders = [], onAddVendo
               items: [{
                 id: r.id,
                 orderId: ord.id,
-                itemDesc: `${r.filmType} ${r.micron !== '-' ? r.micron + 'µ' : ''} (${ord.jobName})`,
-                spec: `${r.filmType} ${r.micron !== '-' ? r.micron + 'µ' : ''} | Width: ${r.widthMm}mm`,
+                itemDesc: `${r.filmType} ${r.micron && r.micron !== '-' ? r.micron + 'µ' : ''}`.trim(),
+                spec: `${r.filmType} ${r.micron && r.micron !== '-' ? r.micron + 'µ' : ''} | Width: ${r.widthMm}mm`,
                 qtyKg: r.qtyKg,
                 rate: rate,
                 amount: r.qtyKg * rate

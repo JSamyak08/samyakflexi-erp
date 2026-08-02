@@ -197,8 +197,8 @@ export default function OrderManagement({
           matchedItems.push({
             id: r.id,
             orderId: ord.id,
-            itemDesc: `${r.filmType} ${r.micron !== '-' ? r.micron + 'µ' : ''} (${ord.jobName})`,
-            spec: `${r.filmType} ${r.micron !== '-' ? r.micron + 'µ' : ''} | Width: ${r.widthMm}mm`,
+            itemDesc: `${r.filmType} ${r.micron && r.micron !== '-' ? r.micron + 'µ' : ''}`.trim(),
+            spec: `${r.filmType} ${r.micron && r.micron !== '-' ? r.micron + 'µ' : ''} | Width: ${r.widthMm}mm`,
             qtyKg: r.qtyKg,
             rate: rate,
             amount: r.qtyKg * rate
@@ -216,7 +216,7 @@ export default function OrderManagement({
       items: matchedItems.length > 0 ? matchedItems : [{
         id: '1',
         orderId: 'ORD-2026-089',
-        itemDesc: 'PET 12µ (Britannia Bourbon)',
+        itemDesc: 'PET 12µ',
         spec: 'PET 12µ | Width: 1000mm',
         qtyKg: 385.5,
         rate: 165,
@@ -242,8 +242,8 @@ export default function OrderManagement({
       return {
         id: item.id,
         orderId: item.orderId,
-        itemDesc: `${item.filmType} ${item.micron !== '-' ? item.micron + 'µ' : ''} (${item.jobName})`,
-        spec: `${item.filmType} ${item.micron !== '-' ? item.micron + 'µ' : ''} | Width: ${item.widthMm}mm`,
+        itemDesc: `${item.filmType} ${item.micron && item.micron !== '-' ? item.micron + 'µ' : ''}`.trim(),
+        spec: `${item.filmType} ${item.micron && item.micron !== '-' ? item.micron + 'µ' : ''} | Width: ${item.widthMm}mm`,
         qtyKg: qty,
         rate: rate,
         amount: qty * rate

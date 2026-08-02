@@ -318,7 +318,8 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
                 const sgstAmt = (taxable * sgstRate) / 100;
                 const totalAmt = taxable + cgstAmt + sgstAmt;
 
-                const itemNameText = item.itemDesc || item.description || item.itemName || item.name || item.item_name || item.filmType || "Material Item";
+                let rawName = item.itemDesc || item.description || item.itemName || item.name || item.item_name || item.filmType || "Material Item";
+                const itemNameText = rawName.replace(/\s*\([^)]*\)\s*$/, '').trim();
                 const itemSpecText = item.spec || (item.widthMm ? `Width: ${item.widthMm}mm` : '');
 
                 return (
