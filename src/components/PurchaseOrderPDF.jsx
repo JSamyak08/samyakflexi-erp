@@ -318,15 +318,17 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
                 const sgstAmt = (taxable * sgstRate) / 100;
                 const totalAmt = taxable + cgstAmt + sgstAmt;
 
-                const itemNameText = item.description || item.itemName || item.name || item.item_name || item.filmType || "Material Item";
+                const itemNameText = item.itemDesc || item.description || item.itemName || item.name || item.item_name || item.filmType || "Material Item";
+                const itemSpecText = item.spec || (item.widthMm ? `Width: ${item.widthMm}mm` : '');
 
                 return (
                   <tr key={index}>
                     <td className="center">{index + 1}</td>
                     <td>
-                      <div className="item-name" style={{ color: '#000000', fontWeight: 'bold', fontSize: '10px', lineHeight: '1.3' }}>
+                      <div className="item-name" style={{ color: '#0f172a', fontWeight: 'bold', fontSize: '10.5px', lineHeight: '1.3' }}>
                         {itemNameText}
                       </div>
+                      {itemSpecText && <div className="item-meta" style={{ fontSize: '9px', color: '#475569', marginTop: '2px', fontWeight: '600' }}>{itemSpecText}</div>}
                       {item.itemId && <div className="item-meta">Item ID: {item.itemId}</div>}
                       {item.make && <div className="item-meta">Make: {item.make}</div>}
                     </td>
