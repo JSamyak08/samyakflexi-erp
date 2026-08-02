@@ -66,6 +66,7 @@ export default function OrderManagement({
   const [deliveryDate, setDeliveryDate] = useState('2026-07-29');
   const [paymentTerms, setPaymentTerms] = useState('30 Days Net');
   const [poRemarks, setPoRemarks] = useState('Raw material must strictly conform to specified micron gauge and slit width. COA required upon delivery.');
+  const [editablePoItems, setEditablePoItems] = useState([]);
 
   // Generated PO PDF preview state
   const [activePoPdfData, setActivePoPdfData] = useState(null);
@@ -120,16 +121,8 @@ export default function OrderManagement({
     const match = vendors.find(v => v.companyName === firstReq.preferredVendor);
     if (match) setSelectedVendorId(match.id);
 
-    setIsPoModalOpen(true);
-  };
-
-  const handleGenerateConsolidatedPO = (e) => {
-    e.preventDefault();
-    const vendorObj = vendors.find(v => v.id === selectedVendorId) || vendors[0];
-    const poNo = `PO-2026-${100 + orders.length * 10 + selectedRequirements.length}`;
-
-    const poItems = selectedRequirements.map(req => {
-      let rate = 165; // Default film rate ₹/kg
+    const items = selectedRequirements.map(req => {
+      let rate = 165;
       if (req.filmType.includes('METPET')) rate = 185;
       else if (req.filmType.includes('LD')) rate = 135;
       else if (req.filmType.includes('Ink')) rate = 1500;
@@ -138,11 +131,45 @@ export default function OrderManagement({
       return {
         id: req.id,
         orderId: req.orderId,
-        itemDesc: `${req.filmType} ${req.micron !== '-' ? req.micron + 'µ' : ''} (${req.jobName})`,
-        spec: `${req.filmType} ${req.micron !== '-' ? req.micron + 'µ' : ''} | Width: ${req.widthMm}mm`,
+        jobName: req.jobName,
+        filmType: req.filmType,
+        micron: req.micron,
+        widthMm: req.widthMm,
         qtyKg: req.qtyKg,
+        rate: rate
+      };
+    });
+
+    setEditablePoItems(items);
+    setIsPoModalOpen(true);
+  };
+
+  const handlePoItemChange = (id, field, value) => {
+    setEditablePoItems(prev => prev.map(item => {
+      if (item.id === id) {
+        return { ...item, [field]: value };
+      }
+      return item;
+    }));
+  };
+
+  const handleGenerateConsolidatedPO = (e) => {
+    e.preventDefault();
+    const vendorObj = vendors.find(v => v.id === selectedVendorId) || vendors[0];
+    const poNo = `PO-2026-${100 + orders.length * 10 + selectedRequirements.length}`;
+
+    const poItems = editablePoItems.map(item => {
+      const qty = parseFloat(item.qtyKg) || 0;
+      const rate = parseFloat(item.rate) || 0;
+
+      return {
+        id: item.id,
+        orderId: item.orderId,
+        itemDesc: `${item.filmType} ${item.micron !== '-' ? item.micron + 'µ' : ''} (${item.jobName})`,
+        spec: `${item.filmType} ${item.micron !== '-' ? item.micron + 'µ' : ''} | Width: ${item.widthMm}mm`,
+        qtyKg: qty,
         rate: rate,
-        amount: req.qtyKg * rate
+        amount: qty * rate
       };
     });
 
@@ -526,20 +553,44 @@ export default function OrderManagement({
                         <th>Order ID & Job</th>
                         <th>Material Grade</th>
                         <th>Width</th>
-                        <th>Qty (Kg)</th>
-                        <th>Est Rate (₹/kg)</th>
+                        <th style={{ width: '100px' }}>Qty (Kg) *</th>
+                        <th style={{ width: '110px' }}>Rate (₹/kg) *</th>
+                        <th style={{ textAlign: 'right' }}>Total (₹)</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {selectedRequirements.map(r => (
-                        <tr key={r.id}>
-                          <td><b>{r.orderId}</b>: {r.jobName}</td>
-                          <td style={{ fontWeight: '600' }}>{r.filmType} {r.micron !== '-' ? r.micron + 'µ' : ''}</td>
-                          <td>{r.widthMm}mm</td>
-                          <td className="bold-val">{r.qtyKg} kg</td>
-                          <td>₹{r.filmType.includes('Ink') ? '1,500' : r.filmType.includes('Adhesive') ? '270' : '165'}</td>
-                        </tr>
-                      ))}
+                      {editablePoItems.map(item => {
+                        const qty = parseFloat(item.qtyKg) || 0;
+                        const rate = parseFloat(item.rate) || 0;
+                        return (
+                          <tr key={item.id}>
+                            <td><b>{item.orderId}</b>: {item.jobName}</td>
+                            <td style={{ fontWeight: '600' }}>{item.filmType} {item.micron !== '-' ? item.micron + 'µ' : ''}</td>
+                            <td>{item.widthMm}mm</td>
+                            <td>
+                              <input 
+                                type="number" 
+                                className="form-control" 
+                                style={{ padding: '3px 6px', fontSize: '0.8rem', fontWeight: '700' }}
+                                value={item.qtyKg} 
+                                onChange={e => handlePoItemChange(item.id, 'qtyKg', e.target.value)} 
+                              />
+                            </td>
+                            <td>
+                              <input 
+                                type="number" 
+                                className="form-control" 
+                                style={{ padding: '3px 6px', fontSize: '0.8rem', fontWeight: '700' }}
+                                value={item.rate} 
+                                onChange={e => handlePoItemChange(item.id, 'rate', e.target.value)} 
+                              />
+                            </td>
+                            <td style={{ textAlign: 'right', fontWeight: '800', color: 'var(--primary-brand)' }}>
+                              ₹{(qty * rate).toLocaleString()}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
