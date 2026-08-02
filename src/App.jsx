@@ -81,18 +81,44 @@ export default function App() {
     pushSlugState(activeTab);
   }, []);
 
-  // Shared Global State (Only load local defaults if Supabase is unconfigured)
+  // Helper to load state from localStorage or fallback
+  const loadLocalState = (key, fallbackDefault) => {
+    try {
+      const saved = localStorage.getItem(`samyak_erp_${key}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.warn(`Failed to parse localStorage key samyak_erp_${key}`, e);
+    }
+    return fallbackDefault;
+  };
+
+  // Shared Global State with dual-persistence (Supabase + localStorage fallback)
   const isSupaActive = isSupabaseConfigured();
-  const [orders, setOrders] = useState([]);
-  const [vendors, setVendors] = useState([]);
-  const [inventory, setInventory] = useState([]);
-  const [grns, setGrns] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [jobDataSheets, setJobDataSheets] = useState([]);
-  const [cylinders, setCylinders] = useState([]);
-  const [productionRecords, setProductionRecords] = useState([]);
-  const [inventoryRolls, setInventoryRolls] = useState(initialInventoryRolls);
-  const [dispatchShipments, setDispatchShipments] = useState(initialDispatchShipments);
+  const [orders, setOrders] = useState(() => loadLocalState('orders', initialOrders));
+  const [vendors, setVendors] = useState(() => loadLocalState('vendors', initialVendors));
+  const [inventory, setInventory] = useState(() => loadLocalState('inventory', initialInventory));
+  const [grns, setGrns] = useState(() => loadLocalState('grns', initialGRNs));
+  const [users, setUsers] = useState(() => loadLocalState('users', initialUsers));
+  const [jobDataSheets, setJobDataSheets] = useState(() => loadLocalState('job_datasheets', initialJobDataSheets || []));
+  const [cylinders, setCylinders] = useState(() => loadLocalState('cylinders', initialCylinders));
+  const [productionRecords, setProductionRecords] = useState(() => loadLocalState('production_records', initialProductionRecords));
+  const [inventoryRolls, setInventoryRolls] = useState(() => loadLocalState('inventory_rolls', initialInventoryRolls));
+  const [dispatchShipments, setDispatchShipments] = useState(() => loadLocalState('dispatch_shipments', initialDispatchShipments));
+
+  // Sync state to localStorage whenever modified
+  useEffect(() => { localStorage.setItem('samyak_erp_orders', JSON.stringify(orders)); }, [orders]);
+  useEffect(() => { localStorage.setItem('samyak_erp_vendors', JSON.stringify(vendors)); }, [vendors]);
+  useEffect(() => { localStorage.setItem('samyak_erp_inventory', JSON.stringify(inventory)); }, [inventory]);
+  useEffect(() => { localStorage.setItem('samyak_erp_grns', JSON.stringify(grns)); }, [grns]);
+  useEffect(() => { localStorage.setItem('samyak_erp_users', JSON.stringify(users)); }, [users]);
+  useEffect(() => { localStorage.setItem('samyak_erp_job_datasheets', JSON.stringify(jobDataSheets)); }, [jobDataSheets]);
+  useEffect(() => { localStorage.setItem('samyak_erp_cylinders', JSON.stringify(cylinders)); }, [cylinders]);
+  useEffect(() => { localStorage.setItem('samyak_erp_production_records', JSON.stringify(productionRecords)); }, [productionRecords]);
+  useEffect(() => { localStorage.setItem('samyak_erp_inventory_rolls', JSON.stringify(inventoryRolls)); }, [inventoryRolls]);
+  useEffect(() => { localStorage.setItem('samyak_erp_dispatch_shipments', JSON.stringify(dispatchShipments)); }, [dispatchShipments]);
 
   // Load live data exclusively from Supabase PostgreSQL if configured
   useEffect(() => {
@@ -113,13 +139,13 @@ export default function App() {
           fetchDispatchShipments()
         ]);
 
-        setOrders(supaOrders || []);
-        setVendors(supaVendors || []);
-        setInventory(supaInv || []);
-        setGrns(supaGRNs || []);
-        setCylinders(supaCyls || []);
-        setProductionRecords(supaProd || []);
-        setJobDataSheets(supaSheets || []);
+        if (supaOrders && supaOrders.length > 0) setOrders(supaOrders);
+        if (supaVendors && supaVendors.length > 0) setVendors(supaVendors);
+        if (supaInv && supaInv.length > 0) setInventory(supaInv);
+        if (supaGRNs && supaGRNs.length > 0) setGrns(supaGRNs);
+        if (supaCyls && supaCyls.length > 0) setCylinders(supaCyls);
+        if (supaProd && supaProd.length > 0) setProductionRecords(supaProd);
+        if (supaSheets && supaSheets.length > 0) setJobDataSheets(supaSheets);
         if (supaRolls && supaRolls.length > 0) setInventoryRolls(supaRolls);
         if (supaShipments && supaShipments.length > 0) setDispatchShipments(supaShipments);
         if (supaUsers && supaUsers.length > 0) setUsers(supaUsers);
