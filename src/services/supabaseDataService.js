@@ -501,6 +501,126 @@ export async function clearAllSupabaseData() {
 }
 
 // ============================================================================
+// 9. INVENTORY ROLLS & BARCODES
+// ============================================================================
+
+export async function fetchInventoryRolls() {
+  if (!isSupabaseConfigured()) return [];
+  try {
+    const { data, error } = await supabase.from('inventory_rolls').select('*').order('inward_datetime', { ascending: false });
+    if (error) throw error;
+    if (!data) return [];
+
+    return data.map(r => ({
+      barcodeId: r.barcode_id,
+      rollType: r.roll_type || 'RAW_MATERIAL',
+      itemId: r.item_id,
+      itemName: r.item_name,
+      category: r.category || 'Film',
+      jobName: r.job_name,
+      orderId: r.order_id,
+      micron: Number(r.micron) || 0,
+      widthMm: Number(r.width_mm) || 0,
+      inwardDatetime: r.inward_datetime,
+      vendorName: r.vendor_name,
+      invoiceNo: r.invoice_no,
+      batchNo: r.batch_no,
+      netWeightKg: Number(r.net_weight_kg) || 0,
+      availableWeightKg: Number(r.available_weight_kg) || 0,
+      inputBarcodeIds: Array.isArray(r.input_barcode_ids) ? r.input_barcode_ids : [],
+      stationId: r.station_id || 'SCALE_1_INWARD',
+      locationBay: r.location_bay || 'Bay A',
+      status: r.status || 'In Stock'
+    }));
+  } catch (err) {
+    console.error("Error fetching inventory rolls from Supabase:", err);
+    return [];
+  }
+}
+
+export async function saveInventoryRollToSupabase(roll) {
+  if (!isSupabaseConfigured()) return;
+  const { error } = await supabase.from('inventory_rolls').upsert({
+    barcode_id: roll.barcodeId,
+    roll_type: roll.rollType || 'RAW_MATERIAL',
+    item_id: roll.itemId,
+    item_name: roll.itemName,
+    category: roll.category || 'Film',
+    job_name: roll.jobName,
+    order_id: roll.orderId,
+    micron: roll.micron,
+    width_mm: roll.widthMm,
+    inward_datetime: roll.inwardDatetime || new Date().toISOString(),
+    vendor_name: roll.vendorName,
+    invoice_no: roll.invoiceNo,
+    batch_no: roll.batchNo,
+    net_weight_kg: roll.netWeightKg,
+    available_weight_kg: roll.availableWeightKg,
+    input_barcode_ids: roll.inputBarcodeIds || [],
+    station_id: roll.stationId || 'SCALE_1_INWARD',
+    location_bay: roll.locationBay || 'Bay A',
+    status: roll.status || 'In Stock'
+  });
+
+  if (error) {
+    console.error("Error saving inventory roll to Supabase:", error);
+    throw error;
+  }
+}
+
+// ============================================================================
+// 10. DISPATCH SHIPMENTS & PACKING LISTS
+// ============================================================================
+
+export async function fetchDispatchShipments() {
+  if (!isSupabaseConfigured()) return [];
+  try {
+    const { data, error } = await supabase.from('dispatch_shipments').select('*').order('dispatch_date', { ascending: false });
+    if (error) throw error;
+    if (!data) return [];
+
+    return data.map(d => ({
+      dispatchId: d.dispatch_id,
+      orderId: d.order_id,
+      jobName: d.job_name,
+      clientName: d.client_name,
+      vehicleNo: d.vehicle_no,
+      lrNo: d.lr_no,
+      dispatchDate: d.dispatch_date,
+      totalRolls: Number(d.total_rolls) || 0,
+      totalNetWeightKg: Number(d.total_net_weight_kg) || 0,
+      totalGrossWeightKg: Number(d.total_gross_weight_kg) || 0,
+      items: Array.isArray(d.items) ? d.items : []
+    }));
+  } catch (err) {
+    console.error("Error fetching dispatch shipments from Supabase:", err);
+    return [];
+  }
+}
+
+export async function saveDispatchShipmentToSupabase(shipment) {
+  if (!isSupabaseConfigured()) return;
+  const { error } = await supabase.from('dispatch_shipments').upsert({
+    dispatch_id: shipment.dispatchId,
+    order_id: shipment.orderId,
+    job_name: shipment.jobName,
+    client_name: shipment.clientName,
+    vehicle_no: shipment.vehicleNo,
+    lr_no: shipment.lrNo,
+    dispatch_date: shipment.dispatchDate || new Date().toISOString(),
+    total_rolls: shipment.totalRolls,
+    total_net_weight_kg: shipment.totalNetWeightKg,
+    total_gross_weight_kg: shipment.totalGrossWeightKg,
+    items: shipment.items || []
+  });
+
+  if (error) {
+    console.error("Error saving dispatch shipment to Supabase:", error);
+    throw error;
+  }
+}
+
+// ============================================================================
 // ONE-CLICK SEED MIGRATION: SEED ALL INITIAL FACTORY DATA TO SUPABASE
 // ============================================================================
 

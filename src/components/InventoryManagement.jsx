@@ -18,10 +18,25 @@ import {
   Bell,
   Edit3,
   Trash2,
-  Building2
+  Building2,
+  Tag,
+  Truck,
+  Scale,
+  Barcode,
+  Scan,
+  FileText
 } from 'lucide-react';
 import GRNPDF from './GRNPDF';
-import { isReconciliationDue, FILM_DENSITIES } from '../factoryStore';
+import WeighingScaleInput from './WeighingScaleInput';
+import BarcodePrinterModal from './BarcodePrinterModal';
+import DispatchPackingListPDF from './DispatchPackingListPDF';
+import { 
+  isReconciliationDue, 
+  FILM_DENSITIES, 
+  generateBarcodeId, 
+  initialInventoryRolls, 
+  initialDispatchShipments 
+} from '../factoryStore';
 
 export default function InventoryManagement({ 
   inventory, 
@@ -31,7 +46,11 @@ export default function InventoryManagement({
   onAddGRN, 
   onUpdateGRN, 
   onUpdateInventory,
-  onAddVendor
+  onAddVendor,
+  inventoryRolls = initialInventoryRolls,
+  dispatchShipments = initialDispatchShipments,
+  onAddRoll,
+  onAddDispatchShipment
 }) {
   const [activeTab, setActiveTab] = useState('stock'); // stock, grn_inward, qc_approval, issue_return, reconciliation
   const [searchTerm, setSearchTerm] = useState('');
@@ -42,6 +61,26 @@ export default function InventoryManagement({
   const [qcInspectingGRN, setQcInspectingGRN] = useState(null);
   const [qcNotesInput, setQcNotesInput] = useState('');
   const [selectedItemForPurchaseHistory, setSelectedItemForPurchaseHistory] = useState(null);
+
+  // Barcode Printer & Packing List Modals State
+  const [selectedRollForBarcodeModal, setSelectedRollForBarcodeModal] = useState(null);
+  const [selectedDispatchForPackingList, setSelectedDispatchForPackingList] = useState(null);
+
+  // Dispatch Form State (Scale #4 Station)
+  const [isNewDispatchModalOpen, setIsNewDispatchModalOpen] = useState(false);
+  const [dispatchJobName, setDispatchJobName] = useState(orders[0]?.jobName || 'Britannia Bourbon 250g Packaging');
+  const [dispatchClientName, setDispatchClientName] = useState(orders[0]?.clientName || 'Britannia Industries Ltd');
+  const [dispatchVehicleNo, setDispatchVehicleNo] = useState('MP-09-HH-4491');
+  const [dispatchLrNo, setDispatchLrNo] = useState('LR-99821-IND');
+  const [dispatchRollsList, setDispatchRollsList] = useState([
+    { rollNo: 1, barcodeId: generateBarcodeId('FG-DISP'), substrateSpec: 'PET 12µ / METPET 12µ / Milky LD 40µ', netWeightKg: 210.0, grossWeightKg: 214.5, coreSize: '3 inch' },
+    { rollNo: 2, barcodeId: generateBarcodeId('FG-DISP'), substrateSpec: 'PET 12µ / METPET 12µ / Milky LD 40µ', netWeightKg: 210.0, grossWeightKg: 214.5, coreSize: '3 inch' }
+  ]);
+  const [currentDispatchNetWeight, setCurrentDispatchNetWeight] = useState(210.0);
+
+  // Barcode Audit Scanner State for Reconciliation
+  const [scannedAuditBarcodes, setScannedAuditBarcodes] = useState('');
+  const [auditResults, setAuditResults] = useState(null);
 
   // Vendor Onboarding Modal State inside GRN
   const [isVendorModalOpen, setIsVendorModalOpen] = useState(false);
@@ -224,9 +263,33 @@ export default function InventoryManagement({
       onAddGRN(newGRN);
     }
 
+    // Generate Raw Material Barcode Roll (Scale #1 Inward Station)
+    const newRoll = {
+      barcodeId: generateBarcodeId('RM-BC'),
+      rollType: 'RAW_MATERIAL',
+      itemId: `INV-${Math.floor(100 + Math.random() * 900)}`,
+      itemName: `${grnFilmType} ${grnMicron}µ (${grnWidthMm}mm)`,
+      category: 'Film',
+      micron: parseFloat(grnMicron),
+      widthMm: parseFloat(grnWidthMm),
+      inwardDatetime: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
+      vendorName: grnVendor,
+      invoiceNo: grnInvoiceNo,
+      batchNo: grnBatchNo,
+      netWeightKg: parseFloat(grnWeightKg),
+      availableWeightKg: parseFloat(grnWeightKg),
+      stationId: 'SCALE_1_INWARD',
+      locationBay: 'Bay A',
+      status: 'In Stock'
+    };
+
+    if (onAddRoll) {
+      onAddRoll(newRoll);
+    }
+
     setIsNewGRNModalOpen(false);
-    alert(`GRN ${newGRN.grnNo} created successfully! Sent to Quality Control (QC) team for approval.`);
-    setSelectedGRNForPDF(newGRN);
+    setSelectedRollForBarcodeModal(newRoll);
+    alert(`GRN ${newGRN.grnNo} created! Raw Material Barcode ${newRoll.barcodeId} generated. Print thermal sticker label now.`);
   };
 
   // QC Approval / Rejection
@@ -470,6 +533,16 @@ export default function InventoryManagement({
         <GRNPDF grnData={selectedGRNForPDF} onClose={() => setSelectedGRNForPDF(null)} />
       )}
 
+      {/* Barcode Thermal Label Printer Modal */}
+      {selectedRollForBarcodeModal && (
+        <BarcodePrinterModal roll={selectedRollForBarcodeModal} onClose={() => setSelectedRollForBarcodeModal(null)} />
+      )}
+
+      {/* Dispatch Packing List PDF Modal */}
+      {selectedDispatchForPackingList && (
+        <DispatchPackingListPDF shipment={selectedDispatchForPackingList} onClose={() => setSelectedDispatchForPackingList(null)} />
+      )}
+
       <div className="hide-on-print" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Stock Reconciliation Monthly Notification Banner */}
       {isRecDue && (
@@ -505,8 +578,11 @@ export default function InventoryManagement({
             <button className={`tab-pill ${pendingQCGRNs.length > 0 ? 'red-tab' : ''} ${activeTab === 'qc_approval' ? 'active' : ''}`} onClick={() => setActiveTab('qc_approval')}>
               🧪 QC Approval Lab ({pendingQCGRNs.length} Pending)
             </button>
+            <button className={`tab-pill ${activeTab === 'dispatch' ? 'active' : ''}`} onClick={() => setActiveTab('dispatch')}>
+              <Truck size={16} style={{ color: '#059669' }} /> Scale #4 Dispatch & Packing List
+            </button>
             <button className={`tab-pill ${activeTab === 'reconciliation' ? 'active' : ''}`} onClick={() => setActiveTab('reconciliation')}>
-              <FileSpreadsheet size={16} /> Physical Stock Reconciliation
+              <FileSpreadsheet size={16} /> Barcode Stock Reconciliation
             </button>
           </div>
 
@@ -765,6 +841,71 @@ export default function InventoryManagement({
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* TAB: SCALE #4 DISPATCH & PACKING LIST */}
+      {activeTab === 'dispatch' && (
+        <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+            <div>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: '700', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Truck size={22} style={{ color: '#059669' }} />
+                Scale #4 - Finished Goods Dispatch & Packing List Station
+              </h3>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                Weigh FG rolls/pouches on Scale #4, print dispatch barcode slips, and generate printable A4 Packing List PDFs.
+              </p>
+            </div>
+
+            <button className="btn-primary" style={{ background: '#059669', borderColor: '#059669' }} onClick={() => setIsNewDispatchModalOpen(true)}>
+              <Plus size={16} /> Create New Dispatch Shipment
+            </button>
+          </div>
+
+          {/* Dispatch Shipments Table */}
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Dispatch ID</th>
+                  <th>Date & Time</th>
+                  <th>Customer / Client Name</th>
+                  <th>Job Name</th>
+                  <th>Vehicle & LR #</th>
+                  <th>Rolls Count</th>
+                  <th>Net Weight (Kg)</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(dispatchShipments || initialDispatchShipments).map(ds => (
+                  <tr key={ds.dispatchId}>
+                    <td style={{ fontWeight: '700', color: '#2563eb' }}>{ds.dispatchId}</td>
+                    <td style={{ fontSize: '0.85rem' }}>{ds.dispatchDate}</td>
+                    <td style={{ fontWeight: '700' }}>{ds.clientName}</td>
+                    <td style={{ fontWeight: '600' }}>{ds.jobName}</td>
+                    <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      {ds.vehicleNo} | {ds.lrNo}
+                    </td>
+                    <td style={{ fontWeight: '700', textAlign: 'center' }}>{ds.totalRolls} rolls</td>
+                    <td style={{ fontWeight: '800', color: '#047857' }}>
+                      {Number(ds.totalNetWeightKg).toLocaleString()} kg
+                    </td>
+                    <td>
+                      <button 
+                        className="btn-primary" 
+                        style={{ padding: '6px 12px', fontSize: '0.8rem', background: '#059669' }}
+                        onClick={() => setSelectedDispatchForPackingList(ds)}
+                      >
+                        <Printer size={14} /> Print Packing List PDF
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -1417,6 +1558,140 @@ export default function InventoryManagement({
                 </button>
                 <button type="submit" className="btn-primary" style={{ background: '#047857', borderColor: '#047857' }}>
                   <Building2 size={16} /> Onboard & Select Vendor
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Create New Dispatch Shipment (Scale #4 Station) */}
+      {isNewDispatchModalOpen && (
+        <div className="modal-overlay" style={{ zIndex: 115 }} onClick={() => setIsNewDispatchModalOpen(false)}>
+          <div className="glass-card modal-content" style={{ width: '650px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Truck style={{ color: '#059669' }} /> New Dispatch Shipment (Scale #4 Station)
+                </h3>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  Capture finished goods weights on Scale #4 and assign to shipment packing list.
+                </p>
+              </div>
+              <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.8rem' }} onClick={() => setIsNewDispatchModalOpen(false)}>
+                ✕ Close
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveDispatchShipment}>
+              <div className="form-grid">
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label>Select Production Job *</label>
+                  <select 
+                    className="form-control"
+                    value={dispatchJobName}
+                    onChange={e => {
+                      setDispatchJobName(e.target.value);
+                      const matchedOrder = orders.find(o => o.jobName === e.target.value);
+                      if (matchedOrder) setDispatchClientName(matchedOrder.clientName);
+                    }}
+                  >
+                    {orders.map(o => (
+                      <option key={o.id} value={o.jobName}>{o.jobName} ({o.clientName})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Client Name *</label>
+                  <input type="text" className="form-control" required value={dispatchClientName} onChange={e => setDispatchClientName(e.target.value)} />
+                </div>
+
+                <div className="form-group">
+                  <label>Vehicle Number *</label>
+                  <input type="text" className="form-control" required value={dispatchVehicleNo} onChange={e => setDispatchVehicleNo(e.target.value)} />
+                </div>
+
+                <div className="form-group">
+                  <label>Lorry Receipt (LR) #</label>
+                  <input type="text" className="form-control" value={dispatchLrNo} onChange={e => setDispatchLrNo(e.target.value)} />
+                </div>
+
+                {/* Scale #4 Live Weight Input */}
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <WeighingScaleInput
+                    value={currentDispatchNetWeight}
+                    onChange={setCurrentDispatchNetWeight}
+                    stationId="SCALE_4_DISPATCH"
+                    label="Scale #4 Live Roll Net Weight (Kg) *"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Scanned Dispatch Rolls Table */}
+              <div style={{ marginTop: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <h4 style={{ fontSize: '0.9rem', fontWeight: '700' }}>Itemized Dispatch Reels / Boxes ({dispatchRollsList.length})</h4>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ fontSize: '0.75rem', padding: '4px 8px' }}
+                    onClick={() => {
+                      const nextRollNo = dispatchRollsList.length + 1;
+                      const newRollItem = {
+                        rollNo: nextRollNo,
+                        barcodeId: generateBarcodeId('FG-DISP'),
+                        substrateSpec: 'Laminated Printed Reel',
+                        netWeightKg: currentDispatchNetWeight || 210.0,
+                        grossWeightKg: (currentDispatchNetWeight || 210.0) + 4.5,
+                        coreSize: '3 inch'
+                      };
+                      setDispatchRollsList([...dispatchRollsList, newRollItem]);
+                    }}
+                  >
+                    + Add Scanned Roll ({currentDispatchNetWeight} kg)
+                  </button>
+                </div>
+
+                <table className="data-table" style={{ fontSize: '0.8rem' }}>
+                  <thead>
+                    <tr>
+                      <th>Roll #</th>
+                      <th>Barcode ID</th>
+                      <th>Net Wt (kg)</th>
+                      <th>Gross Wt (kg)</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dispatchRollsList.map((r, i) => (
+                      <tr key={i}>
+                        <td style={{ fontWeight: '700' }}>{r.rollNo}</td>
+                        <td style={{ fontFamily: 'monospace', color: '#2563eb' }}>{r.barcodeId}</td>
+                        <td style={{ fontWeight: '700', color: '#047857' }}>{r.netWeightKg} kg</td>
+                        <td>{r.grossWeightKg} kg</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="icon-btn-danger"
+                            onClick={() => setDispatchRollsList(dispatchRollsList.filter((_, idx) => idx !== i))}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                <button type="button" className="btn-secondary" onClick={() => setIsNewDispatchModalOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary" style={{ background: '#059669', borderColor: '#059669' }}>
+                  <Printer size={16} /> Save & Generate Packing List PDF
                 </button>
               </div>
             </form>

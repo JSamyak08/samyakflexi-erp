@@ -131,6 +131,45 @@ CREATE TABLE IF NOT EXISTS public.job_datasheets (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 9. INVENTORY ROLLS & SFG BARCODES TABLE
+CREATE TABLE IF NOT EXISTS public.inventory_rolls (
+    barcode_id TEXT PRIMARY KEY,
+    roll_type TEXT NOT NULL DEFAULT 'RAW_MATERIAL', -- 'RAW_MATERIAL', 'SFG_PRINTED', 'SFG_LAMINATED', 'FG_DISPATCH'
+    item_id TEXT,
+    item_name TEXT NOT NULL,
+    category TEXT DEFAULT 'Film', -- 'Film', 'Ink', 'Solvent', 'Adhesive', 'SFG', 'FG'
+    job_name TEXT,
+    order_id TEXT,
+    micron NUMERIC,
+    width_mm NUMERIC,
+    inward_datetime TIMESTAMPTZ DEFAULT NOW(),
+    vendor_name TEXT,
+    invoice_no TEXT,
+    batch_no TEXT,
+    net_weight_kg NUMERIC NOT NULL DEFAULT 0,
+    available_weight_kg NUMERIC NOT NULL DEFAULT 0,
+    input_barcode_ids JSONB DEFAULT '[]'::jsonb,
+    station_id TEXT DEFAULT 'SCALE_1_INWARD', -- 'SCALE_1_INWARD', 'SCALE_2_PRINTING', 'SCALE_3_LAMINATION', 'SCALE_4_DISPATCH'
+    location_bay TEXT DEFAULT 'Bay A',
+    status TEXT DEFAULT 'In Stock'
+);
+
+-- 10. DISPATCH SHIPMENTS & PACKING LIST TABLE
+CREATE TABLE IF NOT EXISTS public.dispatch_shipments (
+    dispatch_id TEXT PRIMARY KEY,
+    order_id TEXT,
+    job_name TEXT NOT NULL,
+    client_name TEXT NOT NULL,
+    vehicle_no TEXT,
+    lr_no TEXT,
+    dispatch_date TIMESTAMPTZ DEFAULT NOW(),
+    total_rolls INT DEFAULT 0,
+    total_net_weight_kg NUMERIC DEFAULT 0,
+    total_gross_weight_kg NUMERIC DEFAULT 0,
+    items JSONB DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Enable Row Level Security (RLS) & default access rules
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.vendors ENABLE ROW LEVEL SECURITY;
@@ -140,6 +179,8 @@ ALTER TABLE public.cylinders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.production_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.job_datasheets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.inventory_rolls ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.dispatch_shipments ENABLE ROW LEVEL SECURITY;
 
 -- Anonymous/Public access policies for ERP client operations
 CREATE POLICY "Allow public read-write for orders" ON public.orders FOR ALL USING (true);
@@ -150,6 +191,8 @@ CREATE POLICY "Allow public read-write for cylinders" ON public.cylinders FOR AL
 CREATE POLICY "Allow public read-write for production_records" ON public.production_records FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for users" ON public.users FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for job_datasheets" ON public.job_datasheets FOR ALL USING (true);
+CREATE POLICY "Allow public read-write for inventory_rolls" ON public.inventory_rolls FOR ALL USING (true);
+CREATE POLICY "Allow public read-write for dispatch_shipments" ON public.dispatch_shipments FOR ALL USING (true);
 
 
 -- 8. SUPABASE AUTH USER SYNC TRIGGER

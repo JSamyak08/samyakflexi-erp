@@ -14,9 +14,15 @@ import {
   FileCheck,
   Search,
   Filter,
-  DollarSign
+  DollarSign,
+  Tag,
+  Scale,
+  Barcode,
+  Printer
 } from 'lucide-react';
-import { DEFAULT_DAILY_RATES } from '../factoryStore';
+import WeighingScaleInput from './WeighingScaleInput';
+import BarcodePrinterModal from './BarcodePrinterModal';
+import { DEFAULT_DAILY_RATES, generateBarcodeId } from '../factoryStore';
 
 export default function ProductionRecordManagement({
   productionRecords = [],
@@ -24,7 +30,8 @@ export default function ProductionRecordManagement({
   inventory = [],
   currentUser,
   onSaveProductionRecord,
-  onApproveProductionRecord
+  onApproveProductionRecord,
+  onAddRoll
 }) {
   const isPlantManager = currentUser?.role === 'Plant Manager' || currentUser?.role === 'Admin';
   const isAdmin = currentUser?.role === 'Admin';

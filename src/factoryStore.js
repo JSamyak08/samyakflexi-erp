@@ -749,3 +749,128 @@ export const isReconciliationDue = (currentDateString = "2026-07-24") => {
   return (lastDayOfMonth - currentDay) <= 1; // True on last 2 days
 };
 
+/**
+ * Plant Weighing Scale Stations Metadata
+ */
+export const WEIGHING_STATIONS = [
+  { id: 'SCALE_1_INWARD', name: 'Scale #1 - Inward Section', department: 'Raw Material Inward', defaultCategory: 'Raw Material' },
+  { id: 'SCALE_2_PRINTING', name: 'Scale #2 - Printing Press Section', department: 'Rotogravure Printing', defaultCategory: 'SFG Printing' },
+  { id: 'SCALE_3_LAMINATION', name: 'Scale #3 - Lamination & Slitting', department: 'Lamination & Slitting', defaultCategory: 'SFG Lamination' },
+  { id: 'SCALE_4_DISPATCH', name: 'Scale #4 - Dispatch Section', department: 'Finished Goods Dispatch', defaultCategory: 'Finished Goods' }
+];
+
+/**
+ * Material Categories (RM, Inks, Solvents, SFG, FG)
+ */
+export const RAW_MATERIAL_CATEGORIES = {
+  FILMS: ["PET", "METPET", "Natural LD GP Film", "Milky LD GP Film", "Natural LD Metallocene Film", "Milky LD Metallocene Film", "Milky Atta (High Dart) Film", "LDPE", "Natural GP LD", "White LD", "BOPP Natural", "Metalised BOPP", "Pearlised BOPP", "CPP Natural", "Metalised CPP"],
+  INKS: ["Reverse Ink - Process Cyan", "Reverse Ink - Process Magenta", "Reverse Ink - Process Yellow", "Reverse Ink - Process Black", "Reverse Ink - White High Opacity", "Surface Ink - Gloss White", "Surface Ink - Process Red"],
+  SOLVENTS: ["Ethyl Acetate", "Toluene", "MIBK (Methyl Isobutyl Ketone)", "Ethyl Cellosolve", "Isopropanol (IPA)"],
+  ADHESIVES: ["Solvent-less Adhesive Component A", "Solvent-less Adhesive Component B", "Solvent-based Adhesive"]
+};
+
+/**
+ * Seed Barcoded Inventory Rolls & SFGs
+ */
+export const initialInventoryRolls = [
+  {
+    barcodeId: "BC-20260724-001",
+    rollType: "RAW_MATERIAL",
+    itemId: "INV-001",
+    itemName: "PET Film 12µ (1000mm)",
+    category: "Film",
+    jobName: "",
+    orderId: "",
+    micron: 12,
+    widthMm: 1000,
+    inwardDatetime: "2026-07-24 10:30 AM",
+    vendorName: "SRF Limited",
+    invoiceNo: "INV-SRF-9912",
+    batchNo: "BATCH-PET-881A",
+    netWeightKg: 1450.0,
+    availableWeightKg: 1450.0,
+    inputBarcodeIds: [],
+    stationId: "SCALE_1_INWARD",
+    locationBay: "Bay A - Rack 1",
+    status: "In Stock"
+  },
+  {
+    barcodeId: "BC-20260724-002",
+    rollType: "RAW_MATERIAL",
+    itemId: "INV-002",
+    itemName: "METPET Film 12µ (1000mm)",
+    category: "Film",
+    jobName: "",
+    orderId: "",
+    micron: 12,
+    widthMm: 1000,
+    inwardDatetime: "2026-07-24 11:15 AM",
+    vendorName: "Jindal Poly Films",
+    invoiceNo: "INV-JPF-4410",
+    batchNo: "BATCH-METPET-902",
+    netWeightKg: 1200.0,
+    availableWeightKg: 1200.0,
+    inputBarcodeIds: [],
+    stationId: "SCALE_1_INWARD",
+    locationBay: "Bay A - Rack 2",
+    status: "In Stock"
+  },
+  {
+    barcodeId: "SFG-PRINT-20260724-001",
+    rollType: "SFG_PRINTED",
+    itemId: "SFG-001",
+    itemName: "Britannia Bourbon 250g Printed Reel",
+    category: "SFG",
+    jobName: "Britannia Bourbon 250g Packaging",
+    orderId: "ORD-2026-089",
+    micron: 12,
+    widthMm: 1000,
+    inwardDatetime: "2026-07-24 02:45 PM",
+    vendorName: "In-House Printing Press",
+    invoiceNo: "INT-JOB-89",
+    batchNo: "PRINT-LINE2-01",
+    netWeightKg: 385.5,
+    availableWeightKg: 385.5,
+    inputBarcodeIds: ["BC-20260724-001"],
+    stationId: "SCALE_2_PRINTING",
+    locationBay: "WIP Printing Bay B",
+    status: "In Stock"
+  }
+];
+
+/**
+ * Seed Dispatch Shipments & Packing Lists
+ */
+export const initialDispatchShipments = [
+  {
+    dispatchId: "DSP-2026-012",
+    orderId: "ORD-2026-090",
+    jobName: "P&G Ariel Matic 1kg Pouch",
+    clientName: "Procter & Gamble India Ltd",
+    vehicleNo: "MP-09-HH-4491",
+    lrNo: "LR-99821-IND",
+    dispatchDate: "2026-07-24 05:30 PM",
+    totalRolls: 5,
+    totalNetWeightKg: 1050.0,
+    totalGrossWeightKg: 1072.5,
+    items: [
+      { rollNo: 1, barcodeId: "FG-DISP-20260724-01", substrateSpec: "PET 12µ / METPET 12µ / Milky LD 40µ", netWeightKg: 210.0, grossWeightKg: 214.5, coreSize: "3 inch" },
+      { rollNo: 2, barcodeId: "FG-DISP-20260724-02", substrateSpec: "PET 12µ / METPET 12µ / Milky LD 40µ", netWeightKg: 210.0, grossWeightKg: 214.5, coreSize: "3 inch" },
+      { rollNo: 3, barcodeId: "FG-DISP-20260724-03", substrateSpec: "PET 12µ / METPET 12µ / Milky LD 40µ", netWeightKg: 210.0, grossWeightKg: 214.5, coreSize: "3 inch" },
+      { rollNo: 4, barcodeId: "FG-DISP-20260724-04", substrateSpec: "PET 12µ / METPET 12µ / Milky LD 40µ", netWeightKg: 210.0, grossWeightKg: 214.5, coreSize: "3 inch" },
+      { rollNo: 5, barcodeId: "FG-DISP-20260724-05", substrateSpec: "PET 12µ / METPET 12µ / Milky LD 40µ", netWeightKg: 210.0, grossWeightKg: 214.5, coreSize: "3 inch" }
+    ]
+  }
+];
+
+/**
+ * Generate Barcode ID string helper
+ */
+export const generateBarcodeId = (prefix = 'BC') => {
+  const today = new Date();
+  const dateStr = today.toISOString().slice(0,10).replace(/-/g, '');
+  const randomSuffix = Math.floor(100 + Math.random() * 900);
+  return `${prefix}-${dateStr}-${randomSuffix}`;
+};
+
+

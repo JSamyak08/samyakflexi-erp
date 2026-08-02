@@ -50,8 +50,11 @@ import {
   fetchCylinders, saveCylinderToSupabase,
   fetchProductionRecords, saveProductionRecordToSupabase,
   fetchUsers, saveUserToSupabase,
-  fetchJobDataSheets, saveJobDataSheetToSupabase, deleteJobDataSheetFromSupabase
+  fetchJobDataSheets, saveJobDataSheetToSupabase, deleteJobDataSheetFromSupabase,
+  fetchInventoryRolls, saveInventoryRollToSupabase,
+  fetchDispatchShipments, saveDispatchShipmentToSupabase
 } from './services/supabaseDataService';
+import { initialInventoryRolls, initialDispatchShipments } from './factoryStore';
 import './index.css';
 
 export default function App() {
@@ -88,6 +91,8 @@ export default function App() {
   const [jobDataSheets, setJobDataSheets] = useState([]);
   const [cylinders, setCylinders] = useState([]);
   const [productionRecords, setProductionRecords] = useState([]);
+  const [inventoryRolls, setInventoryRolls] = useState(initialInventoryRolls);
+  const [dispatchShipments, setDispatchShipments] = useState(initialDispatchShipments);
 
   // Load live data exclusively from Supabase PostgreSQL if configured
   useEffect(() => {
@@ -95,7 +100,7 @@ export default function App() {
 
     async function loadSupabaseData() {
       try {
-        const [supaOrders, supaVendors, supaInv, supaGRNs, supaCyls, supaProd, supaUsers, supaSheets] = await Promise.all([
+        const [supaOrders, supaVendors, supaInv, supaGRNs, supaCyls, supaProd, supaUsers, supaSheets, supaRolls, supaShipments] = await Promise.all([
           fetchOrders(),
           fetchVendors(),
           fetchInventory(),
@@ -103,7 +108,9 @@ export default function App() {
           fetchCylinders(),
           fetchProductionRecords(),
           fetchUsers(),
-          fetchJobDataSheets()
+          fetchJobDataSheets(),
+          fetchInventoryRolls(),
+          fetchDispatchShipments()
         ]);
 
         setOrders(supaOrders || []);
@@ -113,6 +120,8 @@ export default function App() {
         setCylinders(supaCyls || []);
         setProductionRecords(supaProd || []);
         setJobDataSheets(supaSheets || []);
+        if (supaRolls && supaRolls.length > 0) setInventoryRolls(supaRolls);
+        if (supaShipments && supaShipments.length > 0) setDispatchShipments(supaShipments);
         if (supaUsers && supaUsers.length > 0) setUsers(supaUsers);
       } catch (err) {
         console.error("Failed to load data from Supabase:", err);
@@ -338,6 +347,24 @@ export default function App() {
     }
   };
 
+  const handleAddRoll = async (newRoll) => {
+    setInventoryRolls(prev => [newRoll, ...prev]);
+    try {
+      await saveInventoryRollToSupabase(newRoll);
+    } catch (err) {
+      console.error("Failed to save inventory roll to Supabase", err);
+    }
+  };
+
+  const handleAddDispatchShipment = async (newShipment) => {
+    setDispatchShipments(prev => [newShipment, ...prev]);
+    try {
+      await saveDispatchShipmentToSupabase(newShipment);
+    } catch (err) {
+      console.error("Failed to save dispatch shipment to Supabase", err);
+    }
+  };
+
   // Render Authentication Screen if user is not signed in
   if (!isAuthenticated || !currentUser) {
     return <AuthScreen users={users} onLogin={handleLogin} />;
@@ -547,6 +574,7 @@ export default function App() {
             currentUser={currentUser}
             onSaveProductionRecord={handleSaveProductionRecord}
             onApproveProductionRecord={handleApproveProductionRecord}
+            onAddRoll={handleAddRoll}
           />
         )}
 
@@ -744,6 +772,10 @@ export default function App() {
             onUpdateGRN={handleUpdateGRN}
             onUpdateInventory={handleUpdateInventory}
             onAddVendor={handleAddVendor}
+            inventoryRolls={inventoryRolls}
+            dispatchShipments={dispatchShipments}
+            onAddRoll={handleAddRoll}
+            onAddDispatchShipment={handleAddDispatchShipment}
           />
         )}
 
