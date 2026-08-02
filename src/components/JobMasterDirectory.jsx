@@ -83,6 +83,29 @@ export default function JobMasterDirectory({
     setLayers(prev => prev.filter(l => l.id !== id));
   };
 
+  const getNextSerialSkuCode = () => {
+    let maxIndex = 0;
+    (jobMasters || []).forEach(j => {
+      if (j.skuCode) {
+        const matches = j.skuCode.match(/\d+/g);
+        if (matches) {
+          const num = parseInt(matches[matches.length - 1], 10);
+          if (!isNaN(num) && num > maxIndex) maxIndex = num;
+        }
+      }
+    });
+
+    const nextNum = maxIndex > 0 ? maxIndex + 1 : (jobMasters ? jobMasters.length : 0) + 1;
+    return `SKU-2026-${String(nextNum).padStart(3, '0')}`;
+  };
+
+  const handleOpenCreateModal = () => {
+    setSkuCode(getNextSerialSkuCode());
+    setJobName('');
+    setClientName('');
+    setIsCreateModalOpen(true);
+  };
+
   const handleCreateJobMaster = (e) => {
     e.preventDefault();
     if (!jobName.trim() || !clientName.trim() || !skuCode.trim()) {
@@ -90,7 +113,7 @@ export default function JobMasterDirectory({
       return;
     }
 
-    const jobMasterId = `JM-2026-${Math.floor(100 + Math.random() * 900)}`;
+    const jobMasterId = `JM-2026-${String((jobMasters ? jobMasters.length : 0) + 101).padStart(3, '0')}`;
     const structureSummary = layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
 
     const newJobMaster = {
@@ -444,7 +467,7 @@ export default function JobMasterDirectory({
               <Search size={18} style={{ color: 'var(--text-muted)' }} />
               <input type="text" placeholder="Search Job Name, SKU, Client..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ border: 'none', outline: 'none', background: 'transparent', width: '100%', fontSize: '0.9rem' }} />
             </div>
-            <button className="btn-primary" onClick={() => setIsCreateModalOpen(true)}><Plus size={18} /> Create New Job Master</button>
+            <button className="btn-primary" onClick={handleOpenCreateModal}><Plus size={18} /> Create New Job Master</button>
           </div>
         </div>
       </div>
