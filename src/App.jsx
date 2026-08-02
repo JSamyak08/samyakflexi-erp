@@ -851,14 +851,56 @@ export default function App() {
 
                 {/* Stock Level Quick Summary */}
                 <div className="glass-card">
-                  <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '12px' }}>📦 Low Stock Warning</h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {inventory.filter(i => i.availableQtyKg <= i.reorderLevelKg).map(i => (
-                      <div key={i.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', padding: '8px', background: '#fef2f2', borderRadius: '6px', border: '1px solid #fecaca' }}>
-                        <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{i.filmType} ({i.micron}µ)</span>
-                        <span style={{ color: '#dc2626', fontWeight: 'bold' }}>{i.availableQtyKg} kg left</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <h3 style={{ fontSize: '1rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      📦 Low Stock Warning
+                    </h3>
+                    <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.75rem' }} onClick={() => handleTabChange('inventory')}>
+                      Manage Inventory
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {inventory.filter(i => (i.availableQtyKg || 0) <= (i.reorderLevelKg || 500)).length === 0 ? (
+                      <div style={{ fontSize: '0.85rem', color: '#059669', padding: '10px', background: '#ecfdf5', borderRadius: '6px', border: '1px solid #a7f3d0' }}>
+                        ✓ All raw material items are above reorder threshold.
                       </div>
-                    ))}
+                    ) : (
+                      inventory.filter(i => (i.availableQtyKg || 0) <= (i.reorderLevelKg || 500)).map(i => {
+                        const displayName = i.itemName || `${i.filmType || 'Film'} ${i.micron || ''}µ`;
+                        return (
+                          <div key={i.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '10px 12px', background: '#fef2f2', borderRadius: '6px', border: '1px solid #fecaca' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontWeight: '700', fontSize: '0.9rem', color: '#991b1b' }}>
+                                {displayName}
+                              </span>
+                              <span style={{ fontSize: '0.75rem', fontWeight: '700', background: '#dc2626', color: '#ffffff', padding: '2px 6px', borderRadius: '4px' }}>
+                                {i.micron || 12} µ (Micron)
+                              </span>
+                            </div>
+
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', marginTop: '2px' }}>
+                              <span style={{ color: '#475569' }}>
+                                Grade: <strong>{i.filmType || 'PET'}</strong> {i.widthMm ? `| ${i.widthMm}mm Width` : ''}
+                              </span>
+                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                <span style={{ color: '#b91c1c', fontWeight: '800' }}>
+                                  Avail: {i.availableQtyKg?.toLocaleString() || 0} kg
+                                </span>
+                                {i.allocatedQtyKg > 0 && (
+                                  <span style={{ color: '#64748b', fontSize: '0.75rem' }}>
+                                    (Alloc: {i.allocatedQtyKg} kg)
+                                  </span>
+                                )}
+                                <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>
+                                  [Min: {i.reorderLevelKg || 500} kg]
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
                 </div>
               </div>
