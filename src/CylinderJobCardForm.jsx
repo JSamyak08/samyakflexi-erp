@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useReactToPrint } from 'react-to-print';
 import { Save, Printer, UploadCloud, ArrowLeft, CheckCircle2, RefreshCw, Trash2, Check, ExternalLink, Image as ImageIcon } from 'lucide-react';
-import { uploadArtworkFile } from './services/supabaseStorageService';
+import { uploadArtworkFile, openArtworkViewer } from './services/supabaseStorageService';
 
 const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
   return (
@@ -574,14 +574,24 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
               {imagePreview ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <img src={imagePreview} alt="Artwork Preview" style={{ width: '64px', height: '64px', objectFit: 'contain', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff' }} />
+                  <img 
+                    src={imagePreview} 
+                    alt="Artwork Preview" 
+                    style={{ width: '64px', height: '64px', objectFit: 'contain', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }} 
+                    onClick={() => openArtworkViewer(imagePreview, `${formData.skuCode || 'Job'} Artwork`)}
+                    title="Click to view full image"
+                  />
                   <div>
                     <div style={{ fontSize: '0.85rem', fontWeight: '700', color: '#047857', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Check size={16} /> Cloud Artwork Stored
+                      <Check size={16} /> Artwork Stored
                     </div>
-                    <a href={imagePreview} target="_blank" rel="noreferrer" style={{ fontSize: '0.75rem', color: '#2563eb', display: 'flex', alignItems: 'center', gap: '2px', textDecoration: 'none' }}>
+                    <button 
+                      type="button"
+                      onClick={() => openArtworkViewer(imagePreview, `${formData.skuCode || 'Job'} Artwork`)}
+                      style={{ background: 'none', border: 'none', padding: 0, fontSize: '0.75rem', color: '#2563eb', display: 'flex', alignItems: 'center', gap: '2px', cursor: 'pointer', textDecoration: 'underline' }}
+                    >
                       View Full File <ExternalLink size={12} />
-                    </a>
+                    </button>
                     <button type="button" style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginTop: '4px' }} onClick={handleRemoveArtwork}>
                       <Trash2 size={12} /> Remove Artwork
                     </button>

@@ -4,8 +4,8 @@
  */
 
 import { supabase, isSupabaseConfigured } from './supabaseClient';
-import { uploadArtworkFile, uploadDocumentFile } from './supabaseStorageService';
-export { uploadArtworkFile, uploadDocumentFile };
+import { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl } from './supabaseStorageService';
+export { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl };
 import { 
   initialOrders, 
   initialVendors, 

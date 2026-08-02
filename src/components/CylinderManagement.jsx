@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { calculateUtilisation } from '../dataStore';
 import CylinderJobCardForm from '../CylinderJobCardForm';
-import { uploadArtworkFile } from '../services/supabaseStorageService';
+import { uploadArtworkFile, openArtworkViewer } from '../services/supabaseStorageService';
 
 export default function CylinderManagement({ 
   cylinders, 
@@ -267,7 +267,9 @@ export default function CylinderManagement({
                             <img 
                               src={c.artworkUrl} 
                               alt="Artwork" 
-                              style={{ width: '36px', height: '36px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #cbd5e1' }} 
+                              style={{ width: '36px', height: '36px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #cbd5e1', cursor: 'pointer' }} 
+                              onClick={() => openArtworkViewer(c.artworkUrl, `${c.sku} - ${c.jobName}`)}
+                              title="Click to view artwork"
                             />
                           ) : (
                             <div style={{ width: '36px', height: '36px', background: '#f1f5f9', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
@@ -277,9 +279,13 @@ export default function CylinderManagement({
                           <div>
                             <div style={{ fontWeight: '700', color: 'var(--primary-brand)', fontSize: '0.85rem' }}>{c.sku}</div>
                             {c.artworkUrl && (
-                              <a href={c.artworkUrl} target="_blank" rel="noreferrer" style={{ fontSize: '0.7rem', color: '#2563eb', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                View Cloud <ExternalLink size={10} />
-                              </a>
+                              <button 
+                                type="button"
+                                onClick={() => openArtworkViewer(c.artworkUrl, `${c.sku} - ${c.jobName}`)}
+                                style={{ background: 'none', border: 'none', padding: 0, fontSize: '0.7rem', color: '#2563eb', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px', fontWeight: '500' }}
+                              >
+                                View Artwork <ExternalLink size={10} />
+                              </button>
                             )}
                           </div>
                         </div>
@@ -514,12 +520,24 @@ export default function CylinderManagement({
                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
                     {artworkUrl ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <img src={artworkUrl} alt="Artwork Preview" style={{ width: '60px', height: '60px', objectFit: 'contain', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff' }} />
+                        <img 
+                          src={artworkUrl} 
+                          alt="Artwork Preview" 
+                          style={{ width: '60px', height: '60px', objectFit: 'contain', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }} 
+                          onClick={() => openArtworkViewer(artworkUrl, `${sku || 'Cylinder'} Artwork`)}
+                          title="Click to view full image"
+                        />
                         <div>
                           <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#047857', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <Check size={14} /> Cloud Artwork Stored
+                            <Check size={14} /> Artwork Stored
                           </div>
-                          <a href={artworkUrl} target="_blank" rel="noreferrer" style={{ fontSize: '0.75rem', color: '#2563eb' }}>View Full Image</a>
+                          <button 
+                            type="button" 
+                            onClick={() => openArtworkViewer(artworkUrl, `${sku || 'Cylinder'} Artwork`)}
+                            style={{ background: 'none', border: 'none', padding: 0, fontSize: '0.75rem', color: '#2563eb', cursor: 'pointer', textDecoration: 'underline' }}
+                          >
+                            View Full Artwork
+                          </button>
                           <button type="button" style={{ display: 'block', fontSize: '0.7rem', color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginTop: '2px' }} onClick={() => setArtworkUrl('')}>
                             Remove Artwork
                           </button>

@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Plus, Search, Building2, Phone, MapPin, Briefcase, ChevronRight, Package, Layers, X, Edit, Trash2, AlertTriangle, ExternalLink, IndianRupee, Image as ImageIcon } from 'lucide-react';
+import { openArtworkViewer } from '../services/supabaseStorageService';
 
 export default function ClientManagement({ clients, orders, cylinders, onAddClient, onUpdateClient, onDeleteClient }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -285,9 +286,13 @@ export default function ClientManagement({ clients, orders, cylinders, onAddClie
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                               {artwork ? (
-                                <a href={artwork} target="_blank" rel="noreferrer" title="View Artwork">
-                                  <img src={artwork} alt="Artwork" style={{ width: '32px', height: '32px', objectFit: 'contain', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff' }} />
-                                </a>
+                                <img 
+                                  src={artwork} 
+                                  alt="Artwork" 
+                                  style={{ width: '32px', height: '32px', objectFit: 'contain', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }} 
+                                  onClick={() => openArtworkViewer(artwork, `${c.sku} - ${c.jobName}`)}
+                                  title="Click to view artwork"
+                                />
                               ) : (
                                 <div style={{ width: '32px', height: '32px', borderRadius: '4px', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
                                   <ImageIcon size={16} />
