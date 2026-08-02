@@ -769,6 +769,12 @@ export default function App() {
                 <span className="stats-value">{vendors.length}</span>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>GSTIN Verified Suppliers</span>
               </div>
+
+              <div className="glass-card stats-card" style={{ cursor: 'pointer' }} onClick={() => handleTabChange('clients')}>
+                <span className="stats-title">Client Directory</span>
+                <span className="stats-value">{clients.length}</span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Registered Buyers</span>
+              </div>
             </div>
 
             {/* Quick Actions & Recent Orders Split */}
@@ -835,6 +841,9 @@ export default function App() {
                     </button>
                     <button className="btn-secondary" style={{ justifyContent: 'flex-start' }} onClick={() => handleTabChange('inventory')}>
                       <FileCheck size={16} style={{ color: '#d97706' }} /> Inward GRN & QC Approval
+                    </button>
+                    <button className="btn-secondary" style={{ justifyContent: 'flex-start' }} onClick={() => handleTabChange('clients')}>
+                      <Briefcase size={16} style={{ color: '#2563eb' }} /> View Client Directory & Cylinders
                     </button>
                   </div>
                 </div>
