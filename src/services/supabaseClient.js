@@ -109,45 +109,90 @@ export const supabase = new Proxy({}, {
 });
 
 /**
- * Test connectivity to Supabase and auto-persist active state
+ * Test connectivity to Supabase (both PostgreSQL tables and Storage Buckets)
  */
 export const checkSupabaseConnection = async () => {
   if (!isSupabaseConfigured()) {
     return {
       connected: false,
+      databaseOnline: false,
+      storageOnline: false,
+      tablesExist: false,
       message: 'Supabase credentials are not configured in .env or settings.'
     };
   }
 
+  const result = {
+    connected: false,
+    databaseOnline: false,
+    storageOnline: false,
+    tablesExist: false,
+    storageBucket: null,
+    message: '',
+    error: null
+  };
+
   try {
     const client = getSupabaseClient();
     
-    // Lightweight database ping
-    const { error } = await client.from('orders').select('count', { count: 'exact', head: true });
+    // 1. Check PostgreSQL Database Connectivity
+    const { error: dbError } = await client.from('orders').select('count', { count: 'exact', head: true });
     
-    if (error && (error.code === 'PGRST301' || error.code === 'PGRST204')) {
-      return {
-        connected: true,
-        tablesExist: false,
-        message: 'Connected to Supabase project! (Tables need initialization)'
-      };
-    } else if (error && error.code !== '42P01') {
-      return {
-        connected: true,
-        tablesExist: true,
-        error: error.message,
-        message: `Connected to Supabase project (${error.message})`
-      };
+    if (dbError && (dbError.code === 'PGRST301' || dbError.code === 'PGRST204')) {
+      result.connected = true;
+      result.databaseOnline = true;
+      result.tablesExist = false;
+      result.message = 'Connected to Supabase project! (Tables need initialization via SQL schema)';
+    } else if (dbError && dbError.code === '42P01') {
+      result.connected = true;
+      result.databaseOnline = true;
+      result.tablesExist = false;
+      result.message = 'Connected to Supabase! Table "orders" not yet created. Run the SQL schema script.';
+    } else if (dbError) {
+      result.connected = true;
+      result.databaseOnline = true;
+      result.tablesExist = true;
+      result.error = dbError.message;
+      result.message = `Connected to Supabase project (${dbError.message})`;
+    } else {
+      result.connected = true;
+      result.databaseOnline = true;
+      result.tablesExist = true;
+      result.message = 'Successfully connected to Supabase database!';
     }
 
-    return {
-      connected: true,
-      tablesExist: true,
-      message: 'Successfully connected to Supabase database!'
-    };
+    // 2. Check Cloud Storage Buckets Connectivity
+    try {
+      const { data: buckets, error: storageError } = await client.storage.listBuckets();
+      if (!storageError && Array.isArray(buckets)) {
+        const erpBucket = buckets.find(b => b.name === 'erp-files' || b.name === 'artwork' || b.name === 'artworks');
+        if (erpBucket) {
+          result.storageOnline = true;
+          result.storageBucket = erpBucket.name;
+        } else {
+          result.storageOnline = buckets.length > 0;
+          result.storageBucket = buckets[0]?.name || 'default';
+        }
+      } else {
+        // Direct probe on 'erp-files' or 'artwork'
+        const { data: files } = await client.storage.from('erp-files').list('', { limit: 1 });
+        if (files) {
+          result.storageOnline = true;
+          result.storageBucket = 'erp-files';
+        }
+      }
+    } catch (sErr) {
+      console.warn('[Supabase Client] Storage check notice:', sErr);
+    }
+
+    return result;
   } catch (err) {
     return {
       connected: false,
+      databaseOnline: false,
+      storageOnline: false,
+      tablesExist: false,
+      error: err.message,
       message: err.message || 'Failed to establish connection with Supabase.'
     };
   }
@@ -156,6 +201,7 @@ export const checkSupabaseConnection = async () => {
 /**
  * Save custom Supabase credentials across LocalStorage, SessionStorage, and Cookies
  * to ensure persistent reconnection across cache clears and browser sessions.
+ * Automatically broadcasts a custom event to notify all components.
  */
 export const saveSupabaseCredentials = (supabaseUrl, supabaseAnonKey) => {
   const trimmedUrl = (supabaseUrl || '').trim();
@@ -184,6 +230,13 @@ export const saveSupabaseCredentials = (supabaseUrl, supabaseAnonKey) => {
   // Invalidate cached client so the next query immediately uses the new credentials
   currentClientInstance = null;
   currentClientKey = '';
+
+  // Notify the entire application of credential update
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('supabase-credentials-changed', {
+      detail: { url: trimmedUrl, key: trimmedKey, configured: isSupabaseConfigured() }
+    }));
+  }
 };
 
 /**
@@ -199,4 +252,10 @@ export const clearSupabaseCredentials = () => {
 
   currentClientInstance = null;
   currentClientKey = '';
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('supabase-credentials-changed', {
+      detail: { url: '', key: '', configured: false }
+    }));
+  }
 };

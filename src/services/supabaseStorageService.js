@@ -331,60 +331,65 @@ export function openArtworkViewer(url, title = 'Artwork File') {
 }
 
 /**
- * Uploads an artwork file (Image or PDF) to Supabase Cloud Storage.
- * If Supabase is offline or not configured, it permanently encodes as Base64 Data URL
- * so that artwork is NEVER lost and NEVER suffers from ERR_FILE_NOT_FOUND.
+ * Uploads an artwork file (Image or PDF) directly to Supabase Cloud Storage.
+ * Stores exclusively in Supabase Cloud Storage bucket ('erp-files' or 'artwork')
+ * and returns the public CDN HTTPS URL.
  * 
- * @param {File|Blob|string} fileInput - File object, Blob, or base64 dataUrl
+ * @param {File|Blob|string} fileInput - File object, Blob, or file data
  * @param {string} identifier - SKU, Job Name, or unique ID for file naming
- * @returns {Promise<{ success: boolean, publicUrl: string|null, filePath: string|null, isCloud?: boolean, error?: string }>}
+ * @returns {Promise<{ success: boolean, publicUrl: string|null, filePath: string|null, isCloud?: boolean, bucket?: string, error?: string }>}
  */
 export async function uploadArtworkFile(fileInput, identifier = 'job_art') {
   if (!fileInput) {
-    return { success: false, publicUrl: null, filePath: null, error: 'No file provided' };
+    return { success: false, publicUrl: null, filePath: null, error: 'No file provided for upload.' };
   }
 
-  // First convert to persistent Base64 Data URL as the fail-safe baseline
-  const persistentBase64 = await fileToDataUrl(fileInput);
+  if (!isSupabaseConfigured()) {
+    return { 
+      success: false, 
+      publicUrl: null, 
+      filePath: null, 
+      isCloud: false,
+      error: 'Supabase is not configured. Please provide your Supabase URL & API Key in Supabase Settings.' 
+    };
+  }
 
   let fileBlob = fileInput;
   let fileExt = 'png';
+  let contentType = 'image/png';
 
   if (typeof fileInput === 'string' && fileInput.startsWith('data:')) {
     fileBlob = dataUrlToBlob(fileInput);
     if (!fileBlob) {
-      return { success: true, publicUrl: fileInput, filePath: null, isCloud: false };
+      return { success: false, publicUrl: null, filePath: null, isCloud: false, error: 'Invalid file data provided.' };
     }
-    const type = fileBlob.type || '';
-    if (type.includes('jpeg') || type.includes('jpg')) fileExt = 'jpg';
-    else if (type.includes('svg')) fileExt = 'svg';
-    else if (type.includes('pdf')) fileExt = 'pdf';
-    else if (type.includes('webp')) fileExt = 'webp';
+    contentType = fileBlob.type || 'image/png';
+    if (contentType.includes('jpeg') || contentType.includes('jpg')) fileExt = 'jpg';
+    else if (contentType.includes('svg')) fileExt = 'svg';
+    else if (contentType.includes('pdf')) fileExt = 'pdf';
+    else if (contentType.includes('webp')) fileExt = 'webp';
   } else if (fileInput.name) {
+    contentType = fileInput.type || 'image/png';
     const parts = fileInput.name.split('.');
     if (parts.length > 1) {
       fileExt = parts.pop().toLowerCase();
     }
   }
 
-  if (!isSupabaseConfigured()) {
-    console.log('[Storage Service] Supabase not connected. Persisting artwork locally as Base64.');
-    return { success: true, publicUrl: persistentBase64, filePath: null, isCloud: false };
-  }
-
   const cleanId = String(identifier || 'art').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 40);
   const timestamp = Date.now();
   const filePath = `artwork/${cleanId}_${timestamp}.${fileExt}`;
 
-  // Try uploading to cloud storage buckets
+  // Try uploading to cloud storage buckets ('erp-files', 'artwork', etc.)
+  let lastError = null;
   for (const bucket of FALLBACK_BUCKETS) {
     try {
       const { data, error } = await supabase.storage
         .from(bucket)
         .upload(filePath, fileBlob, {
-          cacheControl: '31536000', // 1 year cache
+          cacheControl: '31536000', // 1 year CDN cache
           upsert: true,
-          contentType: fileBlob.type || 'image/png'
+          contentType
         });
 
       if (!error && data) {
@@ -394,6 +399,7 @@ export async function uploadArtworkFile(fileInput, identifier = 'job_art') {
 
         const publicUrl = publicUrlData?.publicUrl || null;
         if (publicUrl) {
+          console.log(`[Storage Service] Artwork successfully uploaded to Supabase Cloud bucket '${bucket}':`, publicUrl);
           return {
             success: true,
             publicUrl,
@@ -402,20 +408,21 @@ export async function uploadArtworkFile(fileInput, identifier = 'job_art') {
             isCloud: true
           };
         }
+      } else if (error) {
+        lastError = error.message;
       }
     } catch (bucketErr) {
-      console.warn(`[Storage Service] Exception uploading to bucket '${bucket}':`, bucketErr);
+      lastError = bucketErr.message;
+      console.warn(`[Storage Service] Upload attempt on bucket '${bucket}' exception:`, bucketErr);
     }
   }
 
-  // Cloud upload fallback: return permanent Base64 Data URL (never temporary blob:)
-  console.warn('[Storage Service] Cloud bucket upload unavailable. Retaining persistent Base64 artwork.');
   return {
-    success: true,
-    publicUrl: persistentBase64,
+    success: false,
+    publicUrl: null,
     filePath: null,
     isCloud: false,
-    error: 'Storage bucket unavailable. Persisted locally.'
+    error: `Supabase Storage upload failed (${lastError || 'Bucket permission error'}). Ensure bucket "erp-files" or "artwork" exists with public policy in Supabase.`
   };
 }
 
@@ -423,30 +430,32 @@ export async function uploadArtworkFile(fileInput, identifier = 'job_art') {
  * Uploads a document (such as PDF, Purchase Order, Delivery Challan) to Supabase Storage
  */
 export async function uploadDocumentFile(fileInput, folder = 'documents', customName = null) {
-  if (!fileInput) return { success: false, publicUrl: null };
+  if (!fileInput) return { success: false, publicUrl: null, error: 'No document file provided.' };
 
-  const persistentBase64 = await fileToDataUrl(fileInput);
+  if (!isSupabaseConfigured()) {
+    return { success: false, publicUrl: null, isCloud: false, error: 'Supabase is not configured. Please enter credentials in Supabase Settings.' };
+  }
 
   let fileBlob = fileInput;
   let fileExt = 'pdf';
+  let contentType = 'application/pdf';
 
   if (typeof fileInput === 'string' && fileInput.startsWith('data:')) {
     fileBlob = dataUrlToBlob(fileInput);
     if (!fileBlob) {
-      return { success: true, publicUrl: fileInput, filePath: null, isCloud: false };
+      return { success: false, publicUrl: null, filePath: null, isCloud: false, error: 'Invalid document data' };
     }
+    contentType = fileBlob.type || 'application/pdf';
   } else if (fileInput.name) {
+    contentType = fileInput.type || 'application/pdf';
     const parts = fileInput.name.split('.');
     if (parts.length > 1) fileExt = parts.pop().toLowerCase();
-  }
-
-  if (!isSupabaseConfigured()) {
-    return { success: true, publicUrl: persistentBase64, isCloud: false };
   }
 
   const fileName = customName ? `${customName}.${fileExt}` : `${folder}_${Date.now()}.${fileExt}`;
   const filePath = `${folder}/${fileName}`;
 
+  let lastError = null;
   for (const bucket of FALLBACK_BUCKETS) {
     try {
       const { data, error } = await supabase.storage
@@ -454,7 +463,7 @@ export async function uploadDocumentFile(fileInput, folder = 'documents', custom
         .upload(filePath, fileBlob, {
           cacheControl: '3600',
           upsert: true,
-          contentType: fileBlob.type || 'application/pdf'
+          contentType
         });
 
       if (!error && data) {
@@ -466,14 +475,18 @@ export async function uploadDocumentFile(fileInput, folder = 'documents', custom
           success: true,
           publicUrl: publicUrlData?.publicUrl || null,
           filePath,
+          bucket,
           isCloud: true
         };
+      } else if (error) {
+        lastError = error.message;
       }
     } catch (err) {
+      lastError = err.message;
       console.warn(`[Storage Service] Document upload exception on bucket ${bucket}:`, err);
     }
   }
 
-  return { success: true, publicUrl: persistentBase64, isCloud: false };
+  return { success: false, publicUrl: null, isCloud: false, error: lastError || 'Failed to upload document to Supabase storage.' };
 }
 

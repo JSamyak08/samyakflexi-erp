@@ -112,7 +112,7 @@ export default function App() {
   };
 
   // Shared Global State with dual-persistence (Supabase + localStorage fallback)
-  const isSupaActive = isSupabaseConfigured();
+  const [isSupaActive, setIsSupaActive] = useState(() => isSupabaseConfigured());
   const [orders, setOrders] = useState(() => loadLocalState('orders', initialOrders));
   const [vendors, setVendors] = useState(() => loadLocalState('vendors', initialVendors));
   const [inventory, setInventory] = useState(() => loadLocalState('inventory', initialInventory));
@@ -128,6 +128,17 @@ export default function App() {
   const [clients, setClients] = useState(() => loadLocalState('clients', initialClients));
   const [jobMasters, setJobMasters] = useState(() => loadLocalState('job_masters', initialJobMasters));
   const [selectedJobMasterForPunch, setSelectedJobMasterForPunch] = useState(null);
+
+  // Reactive listener for Supabase credential updates
+  useEffect(() => {
+    const handleCredentialsChanged = (e) => {
+      const isConfigured = isSupabaseConfigured();
+      setIsSupaActive(isConfigured);
+    };
+
+    window.addEventListener('supabase-credentials-changed', handleCredentialsChanged);
+    return () => window.removeEventListener('supabase-credentials-changed', handleCredentialsChanged);
+  }, []);
 
   // Sync state to safe storage (IndexedDB + sanitized localStorage) whenever modified
   useEffect(() => { safeLocalStorageSet('samyak_erp_orders', orders); }, [orders]);

@@ -223,8 +223,16 @@ function sanitizeForLocalStorage(obj, depth = 0) {
   return obj;
 }
 
+const PROTECTED_KEYS = [
+  'samyak_supabase_url',
+  'samyak_supabase_key',
+  'samyak_erp_user',
+  'samyak_auth_token'
+];
+
 /**
- * Emergency purge and repair of bloated or corrupted keys in localStorage
+ * Emergency purge and repair of bloated or corrupted keys in localStorage.
+ * Strictly avoids touching Supabase credentials, auth tokens, or login sessions.
  */
 export function emergencyCleanLocalStorage() {
   if (typeof window === 'undefined' || !window.localStorage) return;
@@ -232,6 +240,9 @@ export function emergencyCleanLocalStorage() {
   try {
     const keys = Object.keys(localStorage);
     for (const key of keys) {
+      // Never touch protected credentials or authentication tokens
+      if (PROTECTED_KEYS.includes(key)) continue;
+
       if (key.startsWith('samyak_erp_') || key.startsWith('samyak_')) {
         try {
           const raw = localStorage.getItem(key);
