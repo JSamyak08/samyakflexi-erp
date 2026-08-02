@@ -18,6 +18,7 @@ import {
   Calculator, 
   ShoppingBag, 
   Building2, 
+  Briefcase,
   Package, 
   Layers, 
   AlertTriangle, 
