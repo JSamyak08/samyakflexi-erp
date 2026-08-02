@@ -343,7 +343,24 @@ export default function CylinderManagement({
             </button>
           </div>
           <div className="pdf-paper-container landscape" style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', maxWidth: '1200px', width: '95vw', overflowY: 'auto' }}>
-            <CylinderJobCardForm initialData={selectedForPDF} onClose={() => setSelectedForPDF(null)} />
+            <CylinderJobCardForm 
+              initialData={selectedForPDF} 
+              onClose={() => setSelectedForPDF(null)} 
+              onSave={(updated) => {
+                if (onUpdateCylinder) {
+                  onUpdateCylinder({
+                    ...selectedForPDF,
+                    sku: updated.skuCode || updated.sku || selectedForPDF.sku,
+                    jobName: updated.jobName || selectedForPDF.jobName,
+                    cylinderCost: updated.cylinderCost || selectedForPDF.cylinderCost,
+                    engravuresName: updated.engravure || selectedForPDF.engravuresName,
+                    costBorneBy: updated.costBorneBy || selectedForPDF.costBorneBy,
+                    clientGroup: updated.partyName || selectedForPDF.clientGroup,
+                    colorsCount: parseInt(updated.numberOfCylinders) || selectedForPDF.colorsCount
+                  });
+                }
+              }}
+            />
           </div>
         </div>
       )}

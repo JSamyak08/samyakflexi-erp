@@ -1,15 +1,15 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useReactToPrint } from 'react-to-print';
-import { Save, Printer, UploadCloud, ArrowLeft, X } from 'lucide-react';
+import { Save, Printer, UploadCloud, ArrowLeft, CheckCircle2, RefreshCw } from 'lucide-react';
 
 const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
   return (
-    <div ref={ref} className="printable-landscape-card" style={{ background: '#ffffff', color: '#000000', fontFamily: 'Inter, Arial, sans-serif', padding: '12px 16px', boxSizing: 'border-box', width: '100%' }}>
+    <div ref={ref} className="printable-landscape-card" style={{ background: '#ffffff', color: '#000000', fontFamily: 'Inter, Arial, sans-serif', padding: '16px 20px', boxSizing: 'border-box', width: '100%' }}>
       <style>{`
         @media print {
           @page {
             size: A4 landscape !important;
-            margin: 5mm 8mm !important;
+            margin: 12mm 8mm 6mm 8mm !important;
           }
           html, body {
             background: #ffffff !important;
@@ -25,7 +25,7 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
           .printable-landscape-card {
             width: 100% !important;
             max-width: 285mm !important;
-            padding: 0 !important;
+            padding: 4mm 0 0 0 !important;
             margin: 0 auto !important;
           }
         }
@@ -67,10 +67,10 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
         }
       `}</style>
 
-      {/* Header Bar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #0f172a', paddingBottom: '8px', marginBottom: '10px' }}>
+      {/* Header Bar with explicit top spacing */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #0f172a', paddingBottom: '8px', paddingTop: '6px', marginTop: '4px', marginBottom: '10px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <img src="/samyak-logo.png" alt="Samyak Logo" style={{ maxHeight: '42px', objectFit: 'contain' }} />
+          <img src="/samyak-logo.png" alt="Samyak Logo" style={{ maxHeight: '44px', objectFit: 'contain', marginTop: '2px' }} />
           <div>
             <h1 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
               SAMYAK INTERNATIONAL LTD
@@ -335,6 +335,18 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
   }, [initialData]);
 
   const [imagePreview, setImagePreview] = useState(null);
+  const [saveNotification, setSaveNotification] = useState(null);
+
+  // Auto-Save effect: persists formData to localStorage automatically on any change
+  useEffect(() => {
+    if (!formData.jobName && !formData.skuCode) return;
+    try {
+      const storageKey = `samyak_erp_jobcard_settings_${formData.skuCode || formData.jobName}`;
+      localStorage.setItem(storageKey, JSON.stringify(formData));
+    } catch (e) {
+      console.warn("Auto-save failed", e);
+    }
+  }, [formData]);
 
   const handlePrint = useReactToPrint({
     contentRef: componentRef,
@@ -364,30 +376,40 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
     }
   };
 
+  const handleSaveSettings = () => {
+    try {
+      const storageKey = `samyak_erp_jobcard_settings_${formData.skuCode || formData.jobName}`;
+      localStorage.setItem(storageKey, JSON.stringify(formData));
+
+      if (onSave) {
+        onSave(formData);
+      }
+
+      setSaveNotification('✅ Job Card Settings & Parameters Saved Successfully!');
+      setTimeout(() => setSaveNotification(null), 4000);
+    } catch (e) {
+      console.error("Save failed", e);
+      alert("Failed to save settings: " + e.message);
+    }
+  };
+
   const submitToSystem = () => {
     if (!formData.skuCode || !formData.jobName) {
       alert("SKU Code and Job Name are required to add to the system.");
       return;
     }
-    if (onSave) {
-      onSave({
-        id: Date.now(),
-        sku: formData.skuCode,
-        jobName: formData.jobName,
-        cylinderCost: formData.cylinderCost,
-        engravuresName: formData.engravure,
-        costBorneBy: formData.costBorneBy,
-        costBorneType: formData.costBorneType,
-        clientGroup: formData.partyName || "Unassigned",
-        dispatchedQty: 0,
-        utilisationLimit: parseFloat(formData.utilisationLimit) || 10000
-      });
-      alert("Cylinder Job processed and added to Database successfully.");
-    }
+    handleSaveSettings();
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {/* Save Notification Banner */}
+      {saveNotification && (
+        <div className="no-print" style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '12px 16px', borderRadius: '8px', color: '#047857', fontWeight: '700', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <CheckCircle2 size={18} /> {saveNotification}
+        </div>
+      )}
+
       {/* Action Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }} className="no-print">
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -396,19 +418,22 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
               <ArrowLeft size={16} /> Back
             </button>
           )}
-          <h3 style={{ fontSize: '1.1rem', fontWeight: '700', margin: 0 }}>
-            {initialData ? `Cylinder Job Card: ${formData.jobName}` : 'Cylinder Job Card Generator'}
-          </h3>
+          <div>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: '700', margin: 0 }}>
+              {initialData ? `Cylinder Job Card: ${formData.jobName}` : 'Cylinder Job Card Generator'}
+            </h3>
+            <span style={{ fontSize: '0.75rem', color: '#059669', fontWeight: '600' }}>
+              ⚡ Auto-Save Active (Changes saved automatically)
+            </span>
+          </div>
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
+          <button className="btn-primary" style={{ background: '#059669' }} onClick={handleSaveSettings}>
+            <Save size={16} /> Save Settings
+          </button>
           <button className="btn-primary" onClick={handlePrint}>
             <Printer size={16} /> Print Landscape PDF
           </button>
-          {onSave && (
-            <button className="btn-secondary" onClick={submitToSystem}>
-              <Save size={16} /> Add to System
-            </button>
-          )}
         </div>
       </div>
 
@@ -419,7 +444,17 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
 
       {/* Editable Form Grid (Shown below preview for customization) */}
       <div className="glass-card no-print" style={{ maxWidth: '1000px', width: '100%' }}>
-        <h4 style={{ marginBottom: '16px', fontWeight: '700' }}>Edit Job Card Data Parameters</h4>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <div>
+            <h4 style={{ margin: 0, fontWeight: '700', fontSize: '1.05rem' }}>Edit Job Card Data Parameters & Settings</h4>
+            <p style={{ margin: '2px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              All edits update the preview in real-time and auto-save.
+            </p>
+          </div>
+          <button className="btn-primary" style={{ background: '#059669', padding: '8px 16px', fontSize: '0.85rem' }} onClick={handleSaveSettings}>
+            <CheckCircle2 size={16} /> Save Job Card Parameters
+          </button>
+        </div>
 
         <div className="form-grid">
           <div className="form-group">
@@ -499,6 +534,12 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
             <label>Artwork / KLD Upload (Optional Image)</label>
             <input type="file" accept="image/*" onChange={handleImageUpload} style={{ background: 'rgba(255,255,255,0.05)', padding: '12px', borderRadius: '8px' }} />
           </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
+          <button className="btn-primary" style={{ background: '#059669', padding: '10px 20px' }} onClick={handleSaveSettings}>
+            <Save size={16} /> Save Parameters & Settings
+          </button>
         </div>
       </div>
     </div>
