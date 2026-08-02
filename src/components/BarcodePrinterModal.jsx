@@ -66,24 +66,27 @@ export default function BarcodePrinterModal({ roll, onClose }) {
             left: 0 !important;
             top: 0 !important;
             width: 4in !important;
-            height: 2in !important;
-            padding: 6px 10px !important;
+            height: 4in !important;
+            padding: 14px 16px !important;
             margin: 0 !important;
             box-shadow: none !important;
-            border: 1.5px solid #000 !important;
+            border: 2px solid #000 !important;
             box-sizing: border-box !important;
             background: #ffffff !important;
             border-radius: 0 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: space-between !important;
           }
           @page {
-            size: 4in 2in;
+            size: 4in 4in;
             margin: 0;
           }
         }
       `}</style>
       <div 
         className="glass-card modal-content" 
-        style={{ width: '540px', maxWidth: '95vw', padding: '24px' }} 
+        style={{ width: '560px', maxWidth: '95vw', padding: '24px' }} 
         onClick={e => e.stopPropagation()}
       >
         {/* Top Actions */}
@@ -93,7 +96,7 @@ export default function BarcodePrinterModal({ roll, onClose }) {
               <Tag style={{ color: '#059669' }} /> Barcode Sticker Preview & Printer
             </h3>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-              4×2 Inch Thermal Sticker Format • Scale Net Weight Captured
+              4×4 Inch Thermal Sticker Format • Scale Net Weight Captured
             </p>
           </div>
           <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.8rem' }} onClick={onClose}>
@@ -101,72 +104,72 @@ export default function BarcodePrinterModal({ roll, onClose }) {
           </button>
         </div>
 
-        {/* Printable Barcode Label Card (4x2 Inch Aspect Ratio Box) */}
+        {/* Printable Barcode Label Card (4x4 Inch Square Format Box) */}
         <div 
           id="printable-barcode-label"
           style={{
             background: '#ffffff',
             border: '2px solid #0f172a',
             borderRadius: '8px',
-            padding: '12px 14px',
+            padding: '16px 18px',
             boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
             display: 'flex',
             flexDirection: 'column',
-            gap: '6px',
+            gap: '12px',
             fontFamily: 'Inter, sans-serif',
             color: '#0f172a'
           }}
         >
           {/* Label Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1.5px solid #0f172a', paddingBottom: '4px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #0f172a', paddingBottom: '8px' }}>
             <div>
-              <div style={{ fontWeight: '900', fontSize: '0.88rem', letterSpacing: '-0.02em', lineHeight: '1.1' }}>
+              <div style={{ fontWeight: '900', fontSize: '1rem', letterSpacing: '-0.02em', lineHeight: '1.1' }}>
                 {COMPANY_DETAILS.name}
               </div>
-              <div style={{ fontSize: '0.62rem', color: '#475569', fontWeight: '600' }}>
+              <div style={{ fontSize: '0.72rem', color: '#475569', fontWeight: '600', marginTop: '2px' }}>
                 Indore Plant • GSTIN: {COMPANY_DETAILS.gstin}
               </div>
             </div>
             <span style={{ 
-              fontSize: '0.65rem', 
+              fontSize: '0.72rem', 
               fontWeight: '800', 
               background: isSFG ? '#e0e7ff' : isFG ? '#fef3c7' : '#dcfce7',
               color: isSFG ? '#3730a3' : isFG ? '#92400e' : '#166534',
-              padding: '1px 6px', 
+              padding: '3px 10px', 
               borderRadius: '4px',
-              border: '1px solid currentColor'
+              border: '1.5px solid currentColor'
             }}>
               {isSFG ? 'SEMI-FINISHED (SFG)' : isFG ? 'FINISHED GOODS (FG)' : 'RAW MATERIAL (RM)'}
             </span>
           </div>
 
           {/* Barcode SVG Visual */}
-          <div style={{ textAlign: 'center', background: '#f8fafc', padding: '2px 4px', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
+          <div style={{ textAlign: 'center', background: '#f8fafc', padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
             {renderBarcodeSVG(roll.barcodeId)}
           </div>
 
           {/* Core Specs Grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '6px', fontSize: '0.75rem', background: '#f8fafc', padding: '6px 8px', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px', fontSize: '0.85rem', background: '#f8fafc', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
             <div>
-              <span style={{ fontSize: '0.62rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Item / Substrate</span>
-              <div style={{ fontWeight: '800', fontSize: '0.82rem', color: '#0f172a', lineHeight: '1.2' }}>{roll.itemName}</div>
+              <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Item / Substrate</span>
+              <div style={{ fontWeight: '800', fontSize: '0.95rem', color: '#0f172a', lineHeight: '1.2' }}>{roll.itemName}</div>
               {roll.micron > 0 && (
-                <div style={{ fontSize: '0.7rem', color: '#334155', marginTop: '1px' }}>
+                <div style={{ fontSize: '0.78rem', color: '#334155', marginTop: '3px' }}>
                   Gauge: <strong>{roll.micron}µ</strong> | Width: <strong>{roll.widthMm}mm</strong>
                 </div>
               )}
             </div>
 
-            <div style={{ textAlign: 'right', borderLeft: '1px solid #cbd5e1', paddingLeft: '6px' }}>
-              <span style={{ fontSize: '0.62rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Net Scale Weight</span>
-              <div style={{ fontWeight: '900', fontSize: '1.1rem', color: '#047857', lineHeight: '1.1' }}>
-                {roll.netWeightKg} <span style={{ fontSize: '0.7rem' }}>kg</span>
+            <div style={{ textAlign: 'right', borderLeft: '1.5px solid #cbd5e1', paddingLeft: '10px' }}>
+              <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Net Scale Weight</span>
+              <div style={{ fontWeight: '900', fontSize: '1.35rem', color: '#047857', lineHeight: '1.1', marginTop: '2px' }}>
+                {roll.netWeightKg} <span style={{ fontSize: '0.8rem' }}>kg</span>
               </div>
             </div>
           </div>
 
           {/* Traceability Metadata */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '0.7rem', color: '#334155' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', fontSize: '0.78rem', color: '#1e293b', background: '#ffffff', padding: '8px 10px', borderRadius: '6px', border: '1px dashed #cbd5e1' }}>
             {roll.jobName && (
               <div>Job Name: <strong>{roll.jobName}</strong></div>
             )}
@@ -174,17 +177,17 @@ export default function BarcodePrinterModal({ roll, onClose }) {
               <div>Client: <strong>{roll.clientName}</strong></div>
             )}
             {roll.vendorName && (
-              <div>Vendor: <strong>{roll.vendorName}</strong> | Inv: <strong>{roll.invoiceNo || 'N/A'}</strong></div>
+              <div>Vendor: <strong>{roll.vendorName}</strong> {roll.invoiceNo ? `| Inv: ${roll.invoiceNo}` : ''}</div>
             )}
             {roll.batchNo && (
               <div>Batch / Heat #: <strong>{roll.batchNo}</strong></div>
             )}
             {roll.inputBarcodeIds && roll.inputBarcodeIds.length > 0 && (
-              <div style={{ fontSize: '0.65rem', color: '#4f46e5', fontWeight: '600' }}>
+              <div style={{ fontSize: '0.72rem', color: '#4f46e5', fontWeight: '600' }}>
                 Input Roll Ref: {roll.inputBarcodeIds.join(', ')}
               </div>
             )}
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px', fontSize: '0.62rem', color: '#64748b', borderTop: '1px dashed #cbd5e1', paddingTop: '2px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', fontSize: '0.7rem', color: '#64748b', borderTop: '1px solid #e2e8f0', paddingTop: '4px' }}>
               <span>Station: <strong>{roll.stationId || 'SCALE_1_INWARD'}</strong></span>
               <span>Date: <strong>{roll.inwardDatetime || new Date().toLocaleString()}</strong></span>
             </div>
