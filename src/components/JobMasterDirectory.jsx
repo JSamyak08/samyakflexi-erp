@@ -16,10 +16,13 @@ import {
   Printer, 
   FileText,
   TrendingUp,
-  Sparkles
+  Sparkles,
+  Upload,
+  Paperclip
 } from 'lucide-react';
 import { calculateUtilisation } from '../dataStore';
 import { FILM_DENSITIES } from '../factoryStore';
+import CylinderJobCardForm from '../CylinderJobCardForm';
 
 export default function JobMasterDirectory({ 
   jobMasters = [], 
@@ -33,6 +36,7 @@ export default function JobMasterDirectory({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedJob, setSelectedJob] = useState(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [activeJobCardData, setActiveJobCardData] = useState(null);
 
   // Form State for New Job Master
   const [jobName, setJobName] = useState('');
@@ -44,10 +48,11 @@ export default function JobMasterDirectory({
   const [pouchHeight, setPouchHeight] = useState('150');
   
   // Layer state
+  const availableFilmTypes = Object.keys(FILM_DENSITIES);
   const [layers, setLayers] = useState([
-    { id: 1, filmType: 'PET', micron: 12 },
-    { id: 2, filmType: 'METPET', micron: 12 },
-    { id: 3, filmType: 'Natural GP LD', micron: 35 }
+    { id: 1, filmType: availableFilmTypes[0] || 'PET', micron: 12 },
+    { id: 2, filmType: availableFilmTypes[1] || 'METPET', micron: 12 },
+    { id: 3, filmType: availableFilmTypes[2] || 'Natural GP LD', micron: 35 }
   ]);
 
   // Cylinder creation state
@@ -69,7 +74,8 @@ export default function JobMasterDirectory({
   }, [jobMasters, searchTerm]);
 
   const addLayer = () => {
-    setLayers(prev => [...prev, { id: Date.now(), filmType: 'Natural GP LD', micron: 35 }]);
+    const defaultFilm = availableFilmTypes[0] || 'PET';
+    setLayers(prev => [...prev, { id: Date.now(), filmType: defaultFilm, micron: 12 }]);
   };
 
   const removeLayer = (id) => {
@@ -134,7 +140,6 @@ export default function JobMasterDirectory({
     alert(`Job Master ${jobMasterId} created successfully!`);
   };
 
-  // Helper to find cylinder data for a selected job
   const getLinkedCylinder = (job) => {
     if (!job || !cylinders) return null;
     return cylinders.find(c => 
@@ -144,7 +149,6 @@ export default function JobMasterDirectory({
     );
   };
 
-  // Helper to find production records for a selected job
   const getJobProductionRecords = (job) => {
     if (!job || !productionRecords) return [];
     return productionRecords.filter(r => 
@@ -154,7 +158,70 @@ export default function JobMasterDirectory({
     );
   };
 
-  // Profile View for Selected Job
+  const handleOpenJobCard = (job) => {
+    const linkedCyl = getLinkedCylinder(job);
+    const cardData = {
+      jobMasterId: job.id,
+      skuCode: job.skuCode,
+      jobName: job.jobName,
+      clientName: job.clientName,
+      clientGroup: job.clientName,
+      printWidthMm: job.printWidthMm,
+      repeatLengthMm: job.repeatLengthMm,
+      circumferenceMm: job.repeatLengthMm,
+      faceLengthMm: job.printWidthMm,
+      pouchOpenWidth: job.pouchOpenWidth,
+      pouchHeight: job.pouchHeight,
+      structure: job.structure,
+      layers: job.layers || [],
+      colorsCount: job.colorsCount || (linkedCyl ? linkedCyl.colorsCount : 6),
+      cylinderCost: job.cylinderCost || (linkedCyl ? linkedCyl.cylinderCost : '35000'),
+      engravuresName: job.engravuresName || (linkedCyl ? linkedCyl.engravuresName : 'Acme Rotogravure Engravers'),
+      costBorneBy: job.costBorneBy || (linkedCyl ? linkedCyl.costBorneBy : 'Client (100%)'),
+      creationDate: job.creationDate || new Date().toLocaleDateString('en-GB')
+    };
+    setActiveJobCardData(cardData);
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file || !selectedJob) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      alert("File size exceeds 10MB limit!");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const fileUrl = evt.target.result;
+      const updatedJob = {
+        ...selectedJob,
+        jobCardFileName: file.name,
+        jobCardFileUrl: fileUrl,
+        jobCardUploadDate: new Date().toLocaleDateString('en-IN')
+      };
+
+      setSelectedJob(updatedJob);
+      if (onAddJobMaster) onAddJobMaster(updatedJob);
+      alert(`File "${file.name}" linked to Job Master ${selectedJob.id} successfully!`);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveFile = () => {
+    if (!selectedJob || !window.confirm("Remove attached Job Card file from this Job Master?")) return;
+    const updatedJob = {
+      ...selectedJob,
+      jobCardFileName: null,
+      jobCardFileUrl: null,
+      jobCardUploadDate: null
+    };
+
+    setSelectedJob(updatedJob);
+    if (onAddJobMaster) onAddJobMaster(updatedJob);
+  };
+
   if (selectedJob) {
     const linkedCylinder = getLinkedCylinder(selectedJob);
     const jobHistory = getJobProductionRecords(selectedJob);
@@ -164,7 +231,27 @@ export default function JobMasterDirectory({
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-        {/* Header Bar */}
+        {activeJobCardData && (
+          <div className="pdf-modal-overlay">
+            <div className="pdf-modal-toolbar no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 24px', background: '#0f172a' }}>
+              <button className="btn-secondary" style={{ background: '#ffffff', color: '#0f172a' }} onClick={() => setActiveJobCardData(null)}>
+                <X size={16} /> Close Job Card View
+              </button>
+              <div style={{ color: '#ffffff', fontWeight: '700', fontSize: '1rem' }}>
+                Rotogravure Cylinder Job Card — {activeJobCardData.jobName} ({activeJobCardData.jobMasterId})
+              </div>
+            </div>
+            <div style={{ padding: '20px', display: 'flex', justifyContent: 'center', background: '#334155', minHeight: 'calc(100vh - 60px)', overflowY: 'auto' }}>
+              <div style={{ background: '#ffffff', width: '1000px', maxWidth: '98vw', borderRadius: '8px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)', padding: '24px' }}>
+                <CylinderJobCardForm 
+                  initialData={activeJobCardData} 
+                  onSave={() => alert("Job Card settings saved successfully!")}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="glass-panel" style={{ padding: '24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', cursor: 'pointer', color: 'var(--primary-brand)', fontWeight: '600' }} onClick={() => setSelectedJob(null)}>
             <ChevronRight size={18} style={{ transform: 'rotate(180deg)' }} /> Back to Job Master Directory
@@ -173,16 +260,10 @@ export default function JobMasterDirectory({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span className="badge badge-info" style={{ fontSize: '0.85rem', fontWeight: '800' }}>
-                  {selectedJob.id}
-                </span>
-                <span className="badge badge-both" style={{ fontSize: '0.75rem' }}>
-                  SKU: {selectedJob.skuCode}
-                </span>
+                <span className="badge badge-info" style={{ fontSize: '0.85rem', fontWeight: '800' }}>{selectedJob.id}</span>
+                <span className="badge badge-both" style={{ fontSize: '0.75rem' }}>SKU: {selectedJob.skuCode}</span>
               </div>
-              <h2 style={{ fontSize: '1.6rem', fontWeight: '800', color: 'var(--text-primary)', marginTop: '8px' }}>
-                {selectedJob.jobName}
-              </h2>
+              <h2 style={{ fontSize: '1.6rem', fontWeight: '800', color: 'var(--text-primary)', marginTop: '8px' }}>{selectedJob.jobName}</h2>
               <div style={{ display: 'flex', gap: '20px', marginTop: '10px', flexWrap: 'wrap', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                 <span><Building2 size={16} inline /> Client: <strong>{selectedJob.clientName}</strong></span>
                 <span><Layers size={16} inline /> Structure: <strong>{selectedJob.structure}</strong></span>
@@ -190,22 +271,22 @@ export default function JobMasterDirectory({
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button 
-                className="btn-primary" 
-                style={{ padding: '10px 18px', fontSize: '0.9rem', fontWeight: '700', background: 'linear-gradient(135deg, #059669 0%, #047857 100%)' }} 
-                onClick={() => onPunchOrderFromJobMaster && onPunchOrderFromJobMaster(selectedJob)}
-              >
-                <Calculator size={18} /> Punch New Order for this Job
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button className="btn-secondary" style={{ padding: '10px 16px', fontSize: '0.85rem', fontWeight: '700', background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0' }} onClick={() => handleOpenJobCard(selectedJob)} title="Open interactive Rotogravure Cylinder Job Card">
+                <Printer size={16} /> Open Linked Job Card
+              </button>
+              <label className="btn-secondary" style={{ padding: '10px 16px', fontSize: '0.85rem', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <Upload size={16} /> {selectedJob.jobCardFileUrl ? 'Replace Artwork / Job Card' : 'Upload Job Card PDF'}
+                <input type="file" accept=".pdf,image/*" style={{ display: 'none' }} onChange={handleFileUpload} />
+              </label>
+              <button className="btn-primary" style={{ padding: '10px 18px', fontSize: '0.9rem', fontWeight: '700', background: 'linear-gradient(135deg, #059669 0%, #047857 100%)' }} onClick={() => onPunchOrderFromJobMaster && onPunchOrderFromJobMaster(selectedJob)}>
+                <Calculator size={18} /> Punch New Order
               </button>
             </div>
           </div>
         </div>
 
-        {/* Dashboard Grid */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-          
-          {/* Left Column: Structure & Dimensions */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <div className="glass-panel" style={{ padding: '20px' }}>
               <h3 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -224,23 +305,14 @@ export default function JobMasterDirectory({
                 {selectedJob.pouchOpenWidth > 0 && (
                   <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)', gridColumn: 'span 2' }}>
                     <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Individual Pouch Size (Open W x H)</div>
-                    <strong style={{ fontSize: '0.95rem', color: 'var(--text-primary)' }}>
-                      {selectedJob.pouchOpenWidth} mm x {selectedJob.pouchHeight} mm
-                    </strong>
+                    <strong style={{ fontSize: '0.95rem', color: 'var(--text-primary)' }}>{selectedJob.pouchOpenWidth} mm x {selectedJob.pouchHeight} mm</strong>
                   </div>
                 )}
               </div>
 
               <h4 style={{ fontSize: '0.9rem', fontWeight: '700', marginBottom: '10px' }}>Laminate Layer Breakdown</h4>
               <table className="data-table" style={{ fontSize: '0.85rem' }}>
-                <thead>
-                  <tr>
-                    <th>Layer #</th>
-                    <th>Substrate Film Grade</th>
-                    <th>Micron (µ)</th>
-                    <th>Calculated GSM</th>
-                  </tr>
-                </thead>
+                <thead><tr><th>Layer #</th><th>Substrate Film Grade</th><th>Micron (µ)</th><th>Calculated GSM</th></tr></thead>
                 <tbody>
                   {selectedJob.layers && selectedJob.layers.map((l, idx) => {
                     const density = FILM_DENSITIES[l.filmType] || 1.0;
@@ -258,13 +330,52 @@ export default function JobMasterDirectory({
               </table>
             </div>
 
-            {/* Production Job History */}
+            <div className="glass-panel" style={{ padding: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Paperclip size={18} style={{ color: 'var(--primary-brand)' }} /> Linked Job Card File & Artwork
+                </h3>
+                <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.78rem' }} onClick={() => handleOpenJobCard(selectedJob)}>
+                  <Printer size={14} /> Open Form Job Card
+                </button>
+              </div>
+
+              {selectedJob.jobCardFileUrl ? (
+                <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ background: '#ecfdf5', padding: '10px', borderRadius: '8px', color: '#047857' }}><FileText size={24} /></div>
+                    <div>
+                      <h4 style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text-primary)', margin: 0 }}>{selectedJob.jobCardFileName || 'Job_Card_Artwork.pdf'}</h4>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Uploaded: {selectedJob.jobCardUploadDate || 'Recent'}</span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <a href={selectedJob.jobCardFileUrl} target="_blank" rel="noopener noreferrer" className="btn-primary" style={{ padding: '6px 12px', fontSize: '0.8rem', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <Printer size={14} /> View / Download
+                    </a>
+                    <button className="btn-secondary" style={{ padding: '6px 10px', fontSize: '0.8rem', color: '#dc2626', borderColor: '#fecaca' }} onClick={handleRemoveFile} title="Remove attached file">
+                      <X size={14} /> Remove
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '8px', border: '1px dashed var(--border-color)', textAlign: 'center' }}>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '12px' }}>No external Job Card PDF attached to this Job Master.</p>
+                  <label className="btn-secondary" style={{ padding: '6px 14px', fontSize: '0.8rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    <Upload size={14} /> Upload Job Card / Artwork PDF
+                    <input type="file" accept=".pdf,image/*" style={{ display: 'none' }} onChange={handleFileUpload} />
+                  </label>
+                </div>
+              )}
+            </div>
+
             <div className="glass-panel" style={{ padding: '20px' }}>
               <h3 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Clock size={18} /> Shop Floor Production History ({jobHistory.length})
               </h3>
               {jobHistory.length === 0 ? (
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>No previous production records logged for this job master.</p>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>No previous production records.</p>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {jobHistory.map(r => (
@@ -274,7 +385,7 @@ export default function JobMasterDirectory({
                         <span className="badge badge-success">{r.status || 'Approved'}</span>
                       </div>
                       <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                        Date: {r.logDate || 'Recent'} | Output: <strong>{r.totalOutputKg || 0} kg</strong> | Scrappage: {r.scrapKg || 0} kg
+                        Date: {r.logDate || 'Recent'} | Output: <strong>{r.totalOutputKg || 0} kg</strong>
                       </div>
                     </div>
                   ))}
@@ -283,12 +394,10 @@ export default function JobMasterDirectory({
             </div>
           </div>
 
-          {/* Right Column: Linked Cylinder Record & Amortization Wear */}
           <div className="glass-panel" style={{ padding: '20px' }}>
             <h3 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Printer size={18} style={{ color: '#2563eb' }} /> Rotogravure Cylinder & Amortization Wear
+              <Printer size={18} style={{ color: '#2563eb' }} /> Rotogravure Cylinder & Amortization
             </h3>
-
             {linkedCylinder ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
@@ -300,54 +409,21 @@ export default function JobMasterDirectory({
                     <div>Engraver: <strong>{linkedCylinder.engravuresName || selectedJob.engravuresName}</strong></div>
                     <div>Set Cost: <strong>{linkedCylinder.cylinderCost || selectedJob.cylinderCost}</strong></div>
                     <div>Cost Borne By: <strong>{linkedCylinder.costBorneBy || selectedJob.costBorneBy}</strong></div>
-                    <div>Face x Circum.: <strong>{linkedCylinder.faceLengthMm || selectedJob.printWidthMm}mm x {linkedCylinder.circumferenceMm || selectedJob.repeatLengthMm}mm</strong></div>
                   </div>
                 </div>
-
-                {/* Amortization Progress Bar */}
                 <div style={{ background: '#ffffff', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                   <h4 style={{ fontSize: '0.85rem', fontWeight: '700', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <TrendingUp size={16} style={{ color: utilPercentage >= 80 ? '#d97706' : '#059669' }} /> Cylinder Wear Amortization Status
+                    <TrendingUp size={16} /> Cylinder Wear Amortization Status
                   </h4>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '4px' }}>
-                    <span>Layer 1 Print Substrate Run: <strong>{linkedCylinder.dispatchedQty || 0} kg</strong></span>
+                    <span>Run: <strong>{linkedCylinder.dispatchedQty || 0} kg</strong></span>
                     <span style={{ fontWeight: '800', color: utilPercentage >= 80 ? '#d97706' : '#059669' }}>{utilPercentage}% Wear</span>
                   </div>
-                  <div className="progress-container">
-                    <div className="progress-fill" style={{ width: `${utilPercentage}%`, background: utilPercentage >= 80 ? '#d97706' : '#0f172a' }}></div>
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '6px' }}>
-                    Max Utilisation Limit: {linkedCylinder.utilisationLimit ? linkedCylinder.utilisationLimit.toLocaleString() : '10,000'} kg
-                  </div>
+                  <div className="progress-container"><div className="progress-fill" style={{ width: `${utilPercentage}%`, background: utilPercentage >= 80 ? '#d97706' : '#0f172a' }}></div></div>
                 </div>
               </div>
             ) : (
-              <div style={{ padding: '24px', textAlign: 'center', background: '#f8fafc', borderRadius: '8px', border: '1px dashed var(--border-color)' }}>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '12px' }}>No rotogravure cylinder record currently linked to this Job Master ID.</p>
-                <button className="btn-secondary" onClick={() => {
-                  if (onAddCylinder) {
-                    onAddCylinder({
-                      id: Date.now(),
-                      sku: selectedJob.skuCode,
-                      jobName: selectedJob.jobName,
-                      clientGroup: selectedJob.clientName,
-                      colorsCount: selectedJob.colorsCount || 6,
-                      cylinderCost: selectedJob.cylinderCost || '₹ 35,000',
-                      engravuresName: selectedJob.engravuresName || 'Acme Rotogravure Engravers',
-                      costBorneBy: selectedJob.costBorneBy || 'Client (100%)',
-                      costBorneType: 'client',
-                      circumferenceMm: selectedJob.repeatLengthMm,
-                      faceLengthMm: selectedJob.printWidthMm,
-                      dispatchedQty: 0,
-                      utilisationLimit: selectedJob.utilisationLimit || 10000,
-                      status: 'Active In-Use'
-                    });
-                    alert("Cylinder record created and linked successfully!");
-                  }
-                }}>
-                  <Plus size={16} /> Link / Create Cylinder Set
-                </button>
-              </div>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>No Rotogravure Cylinder linked to this Job Master.</p>
             )}
           </div>
         </div>
@@ -356,159 +432,89 @@ export default function JobMasterDirectory({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      {/* Top Action Bar */}
-      <div className="glass-panel" style={{ padding: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div className="search-bar" style={{ width: '320px' }}>
-            <Search size={18} style={{ color: 'var(--text-muted)' }} />
-            <input 
-              type="text" 
-              placeholder="Search Job ID, SKU, Name, or Client..." 
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              style={{ border: 'none', outline: 'none', background: 'transparent', width: '100%', fontSize: '0.9rem' }}
-            />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      <div className="glass-panel" style={{ padding: '24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+          <div>
+            <h2 style={{ fontSize: '1.4rem', fontWeight: '700', color: 'var(--text-primary)' }}>Job Master Technical Directory ({jobMasters.length})</h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px' }}>Central repository for all repeating job structures, film layer gauges, linked cylinders, and production histories.</p>
+          </div>
+          <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+            <div className="search-bar" style={{ width: '280px' }}>
+              <Search size={18} style={{ color: 'var(--text-muted)' }} />
+              <input type="text" placeholder="Search Job Name, SKU, Client..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ border: 'none', outline: 'none', background: 'transparent', width: '100%', fontSize: '0.9rem' }} />
+            </div>
+            <button className="btn-primary" onClick={() => setIsCreateModalOpen(true)}><Plus size={18} /> Create New Job Master</button>
           </div>
         </div>
-
-        <button className="btn-primary" onClick={() => setIsCreateModalOpen(true)}>
-          <Plus size={18} /> Create New Job Master
-        </button>
       </div>
 
-      {/* Directory Table */}
       <div className="glass-panel" style={{ padding: '20px' }}>
-        <h3 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <FileCode size={20} style={{ color: 'var(--primary-brand)' }} /> Job Master Technical Directory ({filteredJobMasters.length})
-        </h3>
-
-        <div style={{ overflowX: 'auto' }}>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Job Master ID</th>
-                <th>Job Name & SKU</th>
-                <th>Client Name</th>
-                <th>Laminate Structure</th>
-                <th>Film Sizes (Face x Repeat)</th>
-                <th>Colors & Engraver</th>
-                <th>Actions</th>
+        <table className="data-table">
+          <thead>
+            <tr><th>Job Master ID</th><th>SKU Code</th><th>Job Name</th><th>Client Name</th><th>Laminate Structure</th><th>Print Width x Repeat</th><th>Colors & Engraver</th><th>Actions</th></tr>
+          </thead>
+          <tbody>
+            {filteredJobMasters.map(job => (
+              <tr key={job.id}>
+                <td style={{ fontWeight: '800', color: 'var(--primary-brand)' }}>{job.id}</td>
+                <td><span className="badge badge-both">{job.skuCode}</span></td>
+                <td style={{ fontWeight: '700' }}>{job.jobName}</td>
+                <td style={{ color: 'var(--text-secondary)' }}>{job.clientName}</td>
+                <td style={{ fontSize: '0.8rem', fontWeight: '600' }}>{job.structure}</td>
+                <td>{job.printWidthMm}mm x {job.repeatLengthMm}mm</td>
+                <td>
+                  <div style={{ fontSize: '0.8rem' }}>
+                    🎨 <b>{job.colorsCount || 6} Colors</b>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{job.engravuresName}</div>
+                  </div>
+                </td>
+                <td>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => setSelectedJob(job)}>View Profile</button>
+                    <button className="btn-primary" style={{ padding: '4px 10px', fontSize: '0.75rem', background: '#047857' }} onClick={() => onPunchOrderFromJobMaster && onPunchOrderFromJobMaster(job)}>Punch Order</button>
+                  </div>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {filteredJobMasters.length === 0 ? (
-                <tr>
-                  <td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
-                    No Job Masters found. Click "Create New Job Master" to add one.
-                  </td>
-                </tr>
-              ) : (
-                filteredJobMasters.map(j => (
-                  <tr key={j.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedJob(j)}>
-                    <td style={{ fontWeight: '800', color: 'var(--primary-brand)' }}>{j.id}</td>
-                    <td>
-                      <div style={{ fontWeight: '700' }}>{j.jobName}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>SKU: {j.skuCode}</div>
-                    </td>
-                    <td style={{ fontWeight: '600' }}>{j.clientName}</td>
-                    <td style={{ fontSize: '0.85rem' }}>{j.structure}</td>
-                    <td style={{ fontSize: '0.85rem', fontWeight: '600' }}>
-                      {j.printWidthMm} mm x {j.repeatLengthMm} mm
-                    </td>
-                    <td>
-                      <div style={{ fontSize: '0.85rem', fontWeight: '600' }}>🎨 {j.colorsCount || 6} Colors</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{j.engravuresName || 'Standard'}</div>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.8rem' }} onClick={(e) => { e.stopPropagation(); setSelectedJob(j); }}>
-                          View Profile
-                        </button>
-                        <button className="btn-primary" style={{ padding: '4px 8px', fontSize: '0.8rem', background: '#059669' }} onClick={(e) => { e.stopPropagation(); onPunchOrderFromJobMaster && onPunchOrderFromJobMaster(j); }}>
-                          Punch Order
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
       </div>
 
-      {/* Modal: Create New Job Master */}
       {isCreateModalOpen && (
         <div className="modal-overlay" onClick={() => setIsCreateModalOpen(false)}>
-          <div className="glass-card modal-content" onClick={e => e.stopPropagation()} style={{ width: '680px', maxWidth: '95vw' }}>
+          <div className="glass-card modal-content" style={{ width: '720px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ fontSize: '1.2rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <FileCode size={20} style={{ color: 'var(--primary-brand)' }} /> Create New Job Master
               </h3>
-              <button className="btn-secondary" style={{ padding: '6px' }} onClick={() => setIsCreateModalOpen(false)}>
-                <X size={18} />
-              </button>
+              <button className="btn-secondary" style={{ padding: '4px' }} onClick={() => setIsCreateModalOpen(false)}><X size={18} /></button>
             </div>
 
             <form onSubmit={handleCreateJobMaster}>
               <div className="form-grid">
-                <div className="form-group">
-                  <label>SKU Code *</label>
-                  <input type="text" className="form-control" required placeholder="e.g. SKU-BR-005" value={skuCode} onChange={e => setSkuCode(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>Job Name *</label>
-                  <input type="text" className="form-control" required placeholder="e.g. Parle-G 100g Pouch" value={jobName} onChange={e => setJobName(e.target.value)} />
-                </div>
-                <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                  <label>Client Name *</label>
-                  <input type="text" className="form-control" required placeholder="e.g. Parle Products Pvt Ltd" value={clientName} onChange={e => setClientName(e.target.value)} />
-                </div>
-
-                <div className="form-group">
-                  <label>Print Width / Face Length (mm)</label>
-                  <input type="number" className="form-control" value={printWidthMm} onChange={e => setPrintWidthMm(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>Repeat Length / Circumference (mm)</label>
-                  <input type="number" className="form-control" value={repeatLengthMm} onChange={e => setRepeatLengthMm(e.target.value)} />
-                </div>
-
-                <div className="form-group">
-                  <label>Individual Pouch Width (mm)</label>
-                  <input type="number" className="form-control" value={pouchOpenWidth} onChange={e => setPouchOpenWidth(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>Individual Pouch Height (mm)</label>
-                  <input type="number" className="form-control" value={pouchHeight} onChange={e => setPouchHeight(e.target.value)} />
-                </div>
+                <div className="form-group"><label>SKU Code *</label><input type="text" className="form-control" required value={skuCode} onChange={e => setSkuCode(e.target.value)} /></div>
+                <div className="form-group"><label>Job Name *</label><input type="text" className="form-control" required value={jobName} onChange={e => setJobName(e.target.value)} /></div>
+                <div className="form-group" style={{ gridColumn: 'span 2' }}><label>Client Name *</label><input type="text" className="form-control" required value={clientName} onChange={e => setClientName(e.target.value)} /></div>
+                <div className="form-group"><label>Print Width (mm)</label><input type="number" className="form-control" value={printWidthMm} onChange={e => setPrintWidthMm(e.target.value)} /></div>
+                <div className="form-group"><label>Repeat Length (mm)</label><input type="number" className="form-control" value={repeatLengthMm} onChange={e => setRepeatLengthMm(e.target.value)} /></div>
+                <div className="form-group"><label>Pouch Width (mm)</label><input type="number" className="form-control" value={pouchOpenWidth} onChange={e => setPouchOpenWidth(e.target.value)} /></div>
+                <div className="form-group"><label>Pouch Height (mm)</label><input type="number" className="form-control" value={pouchHeight} onChange={e => setPouchHeight(e.target.value)} /></div>
               </div>
 
-              {/* Dynamic Layers Builder */}
               <div style={{ marginTop: '16px', background: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                   <strong style={{ fontSize: '0.9rem' }}>Laminate Layers Structure</strong>
-                  <button type="button" className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.75rem' }} onClick={addLayer}>
-                    <Plus size={14} /> Add Layer
-                  </button>
+                  <button type="button" className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.75rem' }} onClick={addLayer}><Plus size={14} /> Add Layer</button>
                 </div>
                 {layers.map((l, idx) => (
                   <div key={l.id} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px 32px', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
                     <span style={{ fontSize: '0.8rem', fontWeight: '600' }}>Layer {idx + 1}</span>
-                    <input type="text" className="form-control" style={{ padding: '4px 8px', fontSize: '0.85rem' }} value={l.filmType} onChange={e => {
-                      const val = e.target.value;
-                      setLayers(prev => prev.map(item => item.id === l.id ? { ...item, filmType: val } : item));
-                    }} />
-                    <input type="number" className="form-control" style={{ padding: '4px 8px', fontSize: '0.85rem' }} value={l.micron} onChange={e => {
-                      const val = parseFloat(e.target.value) || 0;
-                      setLayers(prev => prev.map(item => item.id === l.id ? { ...item, micron: val } : item));
-                    }} placeholder="Micron" />
-                    {layers.length > 1 && (
-                      <button type="button" className="btn-secondary" style={{ padding: '4px' }} onClick={() => removeLayer(l.id)}>
-                        <X size={14} />
-                      </button>
-                    )}
+                    <select className="form-control" style={{ padding: '4px 8px', fontSize: '0.85rem' }} value={l.filmType} onChange={e => setLayers(prev => prev.map(item => item.id === l.id ? { ...item, filmType: e.target.value } : item))}>
+                      {availableFilmTypes.map(filmKey => <option key={filmKey} value={filmKey}>{filmKey} ({FILM_DENSITIES[filmKey]} g/cc)</option>)}
+                    </select>
+                    <input type="number" className="form-control" style={{ padding: '4px 8px', fontSize: '0.85rem' }} value={l.micron} onChange={e => setLayers(prev => prev.map(item => item.id === l.id ? { ...item, micron: parseFloat(e.target.value) || 0 } : item))} />
+                    {layers.length > 1 && <button type="button" className="btn-secondary" style={{ padding: '4px' }} onClick={() => removeLayer(l.id)}><X size={14} /></button>}
                   </div>
                 ))}
               </div>
@@ -546,7 +552,7 @@ export default function JobMasterDirectory({
                 )}
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px' }}>
+              <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
                 <button type="button" className="btn-secondary" onClick={() => setIsCreateModalOpen(false)}>Cancel</button>
                 <button type="submit" className="btn-primary">
                   <CheckCircle2 size={16} /> Save Job Master
