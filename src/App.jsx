@@ -70,12 +70,14 @@ import {
 } from './services/supabaseDataService';
 import JobMasterDirectory from './components/JobMasterDirectory';
 import { initialInventoryRolls, initialDispatchShipments } from './factoryStore';
+import { safeLocalStorageSet, safeLocalStorageGet, initSafeStorage, idbGet } from './utils/safeStorage';
 import './index.css';
+
+// Immediately sanitize localStorage on boot
+initSafeStorage();
 
 export default function App() {
   const [activeTab, setActiveTab] = useState(() => getTabFromUrl());
-
-
 
   const handleTabChange = (tabKey) => {
     setActiveTab(tabKey);
@@ -98,14 +100,11 @@ export default function App() {
     pushSlugState(activeTab);
   }, []);
 
-  // Helper to load state from localStorage or fallback
+  // Helper to load state safely from localStorage or fallback
   const loadLocalState = (key, fallbackDefault) => {
     try {
-      const saved = localStorage.getItem(`samyak_erp_${key}`);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
+      const parsed = safeLocalStorageGet(`samyak_erp_${key}`, null);
+      if (parsed && Array.isArray(parsed) && parsed.length > 0) return parsed;
     } catch (e) {
       console.warn(`Failed to parse localStorage key samyak_erp_${key}`, e);
     }
@@ -130,21 +129,45 @@ export default function App() {
   const [jobMasters, setJobMasters] = useState(() => loadLocalState('job_masters', initialJobMasters));
   const [selectedJobMasterForPunch, setSelectedJobMasterForPunch] = useState(null);
 
-  // Sync state to localStorage whenever modified
-  useEffect(() => { localStorage.setItem('samyak_erp_orders', JSON.stringify(orders)); }, [orders]);
-  useEffect(() => { localStorage.setItem('samyak_erp_vendors', JSON.stringify(vendors)); }, [vendors]);
-  useEffect(() => { localStorage.setItem('samyak_erp_inventory', JSON.stringify(inventory)); }, [inventory]);
-  useEffect(() => { localStorage.setItem('samyak_erp_grns', JSON.stringify(grns)); }, [grns]);
-  useEffect(() => { localStorage.setItem('samyak_erp_users', JSON.stringify(users)); }, [users]);
-  useEffect(() => { localStorage.setItem('samyak_erp_job_datasheets', JSON.stringify(jobDataSheets)); }, [jobDataSheets]);
-  useEffect(() => { localStorage.setItem('samyak_erp_cylinders', JSON.stringify(cylinders)); }, [cylinders]);
-  useEffect(() => { localStorage.setItem('samyak_erp_production_records', JSON.stringify(productionRecords)); }, [productionRecords]);
-  useEffect(() => { localStorage.setItem('samyak_erp_inventory_rolls', JSON.stringify(inventoryRolls)); }, [inventoryRolls]);
-  useEffect(() => { localStorage.setItem('samyak_erp_dispatch_shipments', JSON.stringify(dispatchShipments)); }, [dispatchShipments]);
-  useEffect(() => { localStorage.setItem('samyak_erp_printing_machines', JSON.stringify(machines)); }, [machines]);
-  useEffect(() => { localStorage.setItem('samyak_erp_production_schedules', JSON.stringify(schedules)); }, [schedules]);
-  useEffect(() => { localStorage.setItem('samyak_erp_clients', JSON.stringify(clients)); }, [clients]);
-  useEffect(() => { localStorage.setItem('samyak_erp_job_masters', JSON.stringify(jobMasters)); }, [jobMasters]);
+  // Sync state to safe storage (IndexedDB + sanitized localStorage) whenever modified
+  useEffect(() => { safeLocalStorageSet('samyak_erp_orders', orders); }, [orders]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_vendors', vendors); }, [vendors]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_inventory', inventory); }, [inventory]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_grns', grns); }, [grns]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_users', users); }, [users]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_job_datasheets', jobDataSheets); }, [jobDataSheets]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_cylinders', cylinders); }, [cylinders]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_production_records', productionRecords); }, [productionRecords]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_inventory_rolls', inventoryRolls); }, [inventoryRolls]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_dispatch_shipments', dispatchShipments); }, [dispatchShipments]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_printing_machines', machines); }, [machines]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_production_schedules', schedules); }, [schedules]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_clients', clients); }, [clients]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_job_masters', jobMasters); }, [jobMasters]);
+
+  // Asynchronously hydrate any full artwork assets from IndexedDB if needed on mount
+  useEffect(() => {
+    let isMounted = true;
+    async function hydrateIdbAssets() {
+      try {
+        const idbCylinders = await idbGet('samyak_erp_cylinders');
+        if (isMounted && Array.isArray(idbCylinders) && idbCylinders.length > 0) {
+          setCylinders(prev => {
+            // If prev contains placeholder strings, replace with full IDB values
+            const hasPlaceholders = prev.some(c => typeof c.artworkUrl === 'string' && c.artworkUrl.includes('[STORED_IN_IDB]'));
+            if (hasPlaceholders) {
+              return idbCylinders;
+            }
+            return prev;
+          });
+        }
+      } catch (err) {
+        console.warn('IDB hydration warning:', err);
+      }
+    }
+    hydrateIdbAssets();
+    return () => { isMounted = false; };
+  }, []);
 
   // Helper to merge local items with Supabase items safely without wiping local additions
   const mergeDatasets = (localItems = [], remoteItems = [], keyField = 'id') => {

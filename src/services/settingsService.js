@@ -8,6 +8,8 @@ const SIGNATURE_STORAGE_KEY = 'samyak_authorised_signature';
 const PREFIX_STORAGE_KEY = 'samyak_doc_prefixes';
 const TERMS_STORAGE_KEY = 'samyak_doc_terms';
 
+import { compressImageDataUrl, safeLocalStorageSet } from '../utils/safeStorage';
+
 /**
  * Get saved company logo (base64 or default path /samyak-logo.png)
  */
@@ -22,10 +24,11 @@ export function getCompanyLogo() {
 /**
  * Save custom company logo image (base64 string)
  */
-export function saveCompanyLogo(base64String) {
+export async function saveCompanyLogo(base64String) {
   try {
     if (base64String) {
-      localStorage.setItem(LOGO_STORAGE_KEY, base64String);
+      const compressed = await compressImageDataUrl(base64String, 600, 0.7);
+      safeLocalStorageSet(LOGO_STORAGE_KEY, compressed);
     } else {
       localStorage.removeItem(LOGO_STORAGE_KEY);
     }
@@ -89,10 +92,11 @@ export function getAuthorisedSignature() {
 /**
  * Save authorised signature image (base64 string)
  */
-export function saveAuthorisedSignature(base64String) {
+export async function saveAuthorisedSignature(base64String) {
   try {
     if (base64String) {
-      localStorage.setItem(SIGNATURE_STORAGE_KEY, base64String);
+      const compressed = await compressImageDataUrl(base64String, 500, 0.7);
+      safeLocalStorageSet(SIGNATURE_STORAGE_KEY, compressed);
     } else {
       localStorage.removeItem(SIGNATURE_STORAGE_KEY);
     }

@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { useReactToPrint } from 'react-to-print';
 import { Save, Printer, UploadCloud, ArrowLeft, CheckCircle2, RefreshCw, Trash2, Check, ExternalLink, Image as ImageIcon } from 'lucide-react';
 import { uploadArtworkFile, openArtworkViewer } from './services/supabaseStorageService';
+import { safeLocalStorageSet } from './utils/safeStorage';
 
 const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
   return (
@@ -351,12 +352,12 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
   const [isUploading, setIsUploading] = useState(false);
   const [saveNotification, setSaveNotification] = useState(null);
 
-  // Auto-Save effect: persists formData to localStorage automatically on any change
+  // Auto-Save effect: persists formData safely automatically on any change
   useEffect(() => {
     if (!formData.jobName && !formData.skuCode) return;
     try {
       const storageKey = `samyak_erp_jobcard_settings_${formData.skuCode || formData.jobName}`;
-      localStorage.setItem(storageKey, JSON.stringify(formData));
+      safeLocalStorageSet(storageKey, formData);
     } catch (e) {
       console.warn("Auto-save failed", e);
     }
@@ -415,7 +416,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
   const handleSaveSettings = () => {
     try {
       const storageKey = `samyak_erp_jobcard_settings_${formData.skuCode || formData.jobName}`;
-      localStorage.setItem(storageKey, JSON.stringify(formData));
+      safeLocalStorageSet(storageKey, formData);
 
       if (onSave) {
         onSave({ ...formData, artworkUrl: imagePreview || formData.artworkUrl || '' });

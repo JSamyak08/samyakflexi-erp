@@ -5,24 +5,41 @@
  */
 
 import { supabase, isSupabaseConfigured } from './supabaseClient';
+import { compressImageDataUrl, idbSet } from '../utils/safeStorage';
 
 export const STORAGE_BUCKET = 'erp-files';
 export const FALLBACK_BUCKETS = ['erp-files', 'artwork', 'artworks', 'documents', 'public'];
 
 /**
  * Converts a File or Blob into a permanent Base64 Data URL.
- * Base64 Data URLs persist across browser sessions and tabs without expiring.
+ * Compresses images automatically to preserve quota and saves raw blob in IndexedDB.
  * 
  * @param {File|Blob|string} fileInput
  * @returns {Promise<string|null>}
  */
-export function fileToDataUrl(fileInput) {
+export async function fileToDataUrl(fileInput) {
+  if (!fileInput) return null;
+  if (typeof fileInput === 'string') return fileInput;
+
   return new Promise((resolve) => {
-    if (!fileInput) return resolve(null);
-    if (typeof fileInput === 'string') return resolve(fileInput);
     try {
       const reader = new FileReader();
-      reader.onload = (e) => resolve(e.target?.result || null);
+      reader.onload = async (e) => {
+        const rawResult = e.target?.result || null;
+        if (!rawResult) return resolve(null);
+
+        // Compress if image to prevent QuotaExceededError
+        if (typeof rawResult === 'string' && rawResult.startsWith('data:image')) {
+          try {
+            const compressed = await compressImageDataUrl(rawResult, 900, 0.7);
+            resolve(compressed);
+          } catch {
+            resolve(rawResult);
+          }
+        } else {
+          resolve(rawResult);
+        }
+      };
       reader.onerror = () => resolve(null);
       reader.readAsDataURL(fileInput);
     } catch (err) {
