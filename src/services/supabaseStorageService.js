@@ -331,6 +331,54 @@ export function openArtworkViewer(url, title = 'Artwork File') {
 }
 
 /**
+ * Creates or ensures a public storage bucket exists in Supabase.
+ * 
+ * @param {string} bucketName 
+ * @returns {Promise<{ success: boolean, message?: string }>}
+ */
+export async function createPublicBucketIfNotExists(bucketName = 'erp-files') {
+  if (!supabase || !isSupabaseConfigured()) {
+    return { success: false, message: 'Supabase is not configured' };
+  }
+
+  try {
+    const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+    if (!listError && Array.isArray(buckets)) {
+      const exists = buckets.some(b => b.name === bucketName || b.id === bucketName);
+      if (exists) {
+        return { success: true, message: `Bucket '${bucketName}' is available.` };
+      }
+    }
+
+    const { data, error } = await supabase.storage.createBucket(bucketName, {
+      public: true,
+      allowedMimeTypes: ['image/*', 'application/pdf', 'application/octet-stream'],
+      fileSizeLimit: 52428800 // 50MB limit
+    });
+
+    if (!error) {
+      console.log(`[Storage Service] Bucket '${bucketName}' created successfully.`);
+      return { success: true, message: `Bucket '${bucketName}' created successfully.` };
+    } else {
+      console.warn(`[Storage Service] Bucket create note for '${bucketName}':`, error.message);
+      return { success: false, message: error.message };
+    }
+  } catch (err) {
+    console.error(`[Storage Service] Exception during bucket creation for '${bucketName}':`, err);
+    return { success: false, message: err.message };
+  }
+}
+
+/**
+ * Ensures standard ERP storage buckets ('erp-files' and 'artwork') exist.
+ */
+export async function initializeStorageBuckets() {
+  const res1 = await createPublicBucketIfNotExists('erp-files');
+  const res2 = await createPublicBucketIfNotExists('artwork');
+  return { erpFiles: res1, artwork: res2 };
+}
+
+/**
  * Uploads an artwork file (Image or PDF) directly to Supabase Cloud Storage.
  * Stores exclusively in Supabase Cloud Storage bucket ('erp-files' or 'artwork')
  * and returns the public CDN HTTPS URL.
@@ -380,41 +428,58 @@ export async function uploadArtworkFile(fileInput, identifier = 'job_art') {
   const timestamp = Date.now();
   const filePath = `artwork/${cleanId}_${timestamp}.${fileExt}`;
 
-  // Try uploading to cloud storage buckets ('erp-files', 'artwork', etc.)
-  let lastError = null;
-  for (const bucket of FALLBACK_BUCKETS) {
-    try {
-      const { data, error } = await supabase.storage
-        .from(bucket)
-        .upload(filePath, fileBlob, {
-          cacheControl: '31536000', // 1 year CDN cache
-          upsert: true,
-          contentType
-        });
-
-      if (!error && data) {
-        const { data: publicUrlData } = supabase.storage
+  // Helper function to perform upload
+  const tryUpload = async () => {
+    let lastErr = null;
+    for (const bucket of FALLBACK_BUCKETS) {
+      try {
+        const { data, error } = await supabase.storage
           .from(bucket)
-          .getPublicUrl(filePath);
+          .upload(filePath, fileBlob, {
+            cacheControl: '31536000', // 1 year CDN cache
+            upsert: true,
+            contentType
+          });
 
-        const publicUrl = publicUrlData?.publicUrl || null;
-        if (publicUrl) {
-          console.log(`[Storage Service] Artwork successfully uploaded to Supabase Cloud bucket '${bucket}':`, publicUrl);
-          return {
-            success: true,
-            publicUrl,
-            filePath,
-            bucket,
-            isCloud: true
-          };
+        if (!error && data) {
+          const { data: publicUrlData } = supabase.storage
+            .from(bucket)
+            .getPublicUrl(filePath);
+
+          const publicUrl = publicUrlData?.publicUrl || null;
+          if (publicUrl) {
+            console.log(`[Storage Service] Artwork successfully uploaded to Supabase Cloud bucket '${bucket}':`, publicUrl);
+            return {
+              success: true,
+              publicUrl,
+              filePath,
+              bucket,
+              isCloud: true
+            };
+          }
+        } else if (error) {
+          lastErr = error.message;
         }
-      } else if (error) {
-        lastError = error.message;
+      } catch (bucketErr) {
+        lastErr = bucketErr.message;
+        console.warn(`[Storage Service] Upload attempt on bucket '${bucket}' exception:`, bucketErr);
       }
-    } catch (bucketErr) {
-      lastError = bucketErr.message;
-      console.warn(`[Storage Service] Upload attempt on bucket '${bucket}' exception:`, bucketErr);
     }
+    return { success: false, error: lastErr };
+  };
+
+  // Attempt 1
+  let result = await tryUpload();
+  if (result.success) return result;
+
+  // If failed due to bucket not found, attempt auto-creation and retry
+  if (result.error && (result.error.toLowerCase().includes('not found') || result.error.toLowerCase().includes('bucket'))) {
+    console.log('[Storage Service] Bucket not found. Attempting automatic bucket creation...');
+    await initializeStorageBuckets();
+    
+    // Retry Attempt 2 after bucket creation attempt
+    result = await tryUpload();
+    if (result.success) return result;
   }
 
   return {
@@ -422,7 +487,7 @@ export async function uploadArtworkFile(fileInput, identifier = 'job_art') {
     publicUrl: null,
     filePath: null,
     isCloud: false,
-    error: `Supabase Storage upload failed (${lastError || 'Bucket permission error'}). Ensure bucket "erp-files" or "artwork" exists with public policy in Supabase.`
+    error: `Supabase Storage upload failed (${result.error || 'Bucket not found'}). Please create a public bucket named "erp-files" in your Supabase Dashboard -> Storage.`
   };
 }
 
@@ -455,38 +520,53 @@ export async function uploadDocumentFile(fileInput, folder = 'documents', custom
   const fileName = customName ? `${customName}.${fileExt}` : `${folder}_${Date.now()}.${fileExt}`;
   const filePath = `${folder}/${fileName}`;
 
-  let lastError = null;
-  for (const bucket of FALLBACK_BUCKETS) {
-    try {
-      const { data, error } = await supabase.storage
-        .from(bucket)
-        .upload(filePath, fileBlob, {
-          cacheControl: '3600',
-          upsert: true,
-          contentType
-        });
-
-      if (!error && data) {
-        const { data: publicUrlData } = supabase.storage
+  const tryUploadDoc = async () => {
+    let lastErr = null;
+    for (const bucket of FALLBACK_BUCKETS) {
+      try {
+        const { data, error } = await supabase.storage
           .from(bucket)
-          .getPublicUrl(filePath);
+          .upload(filePath, fileBlob, {
+            cacheControl: '3600',
+            upsert: true,
+            contentType
+          });
 
-        return {
-          success: true,
-          publicUrl: publicUrlData?.publicUrl || null,
-          filePath,
-          bucket,
-          isCloud: true
-        };
-      } else if (error) {
-        lastError = error.message;
+        if (!error && data) {
+          const { data: publicUrlData } = supabase.storage
+            .from(bucket)
+            .getPublicUrl(filePath);
+
+          return {
+            success: true,
+            publicUrl: publicUrlData?.publicUrl || null,
+            filePath,
+            bucket,
+            isCloud: true
+          };
+        } else if (error) {
+          lastErr = error.message;
+        }
+      } catch (err) {
+        lastErr = err.message;
+        console.warn(`[Storage Service] Document upload exception on bucket ${bucket}:`, err);
       }
-    } catch (err) {
-      lastError = err.message;
-      console.warn(`[Storage Service] Document upload exception on bucket ${bucket}:`, err);
     }
+    return { success: false, error: lastErr };
+  };
+
+  // Attempt 1
+  let result = await tryUploadDoc();
+  if (result.success) return result;
+
+  // If failed due to bucket not found, attempt auto-creation and retry
+  if (result.error && (result.error.toLowerCase().includes('not found') || result.error.toLowerCase().includes('bucket'))) {
+    console.log('[Storage Service] Bucket not found during doc upload. Attempting automatic bucket creation...');
+    await initializeStorageBuckets();
+    result = await tryUploadDoc();
+    if (result.success) return result;
   }
 
-  return { success: false, publicUrl: null, isCloud: false, error: lastError || 'Failed to upload document to Supabase storage.' };
+  return { success: false, publicUrl: null, isCloud: false, error: result.error || 'Failed to upload document to Supabase storage.' };
 }
 

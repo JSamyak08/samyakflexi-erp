@@ -26,6 +26,7 @@ import {
   getSupabaseCredentials
 } from '../services/supabaseClient';
 import { seedAllDataToSupabase, clearAllSupabaseData } from '../services/supabaseDataService';
+import { initializeStorageBuckets } from '../services/supabaseStorageService';
 
 export default function SupabaseManagement() {
   const [urlInput, setUrlInput] = useState(() => {
@@ -37,6 +38,7 @@ export default function SupabaseManagement() {
 
   const [loading, setLoading] = useState(false);
   const [seeding, setSeeding] = useState(false);
+  const [initializingBuckets, setInitializingBuckets] = useState(false);
   const [seedResult, setSeedResult] = useState(null);
   const [connectionState, setConnectionState] = useState({
     checked: false,
@@ -63,6 +65,29 @@ export default function SupabaseManagement() {
     const res = await clearAllSupabaseData();
     setSeeding(false);
     setSeedResult(res);
+  };
+
+  const handleInitBuckets = async () => {
+    setInitializingBuckets(true);
+    setSeedResult(null);
+    try {
+      const res = await initializeStorageBuckets();
+      const success = res.erpFiles.success || res.artwork.success;
+      setSeedResult({
+        success,
+        message: success 
+          ? `Storage Buckets ('erp-files' & 'artwork') verified/created successfully!` 
+          : `Storage bucket initialization note: ${res.erpFiles.message || 'Please create bucket erp-files in Supabase Dashboard -> Storage'}`
+      });
+      runConnectionCheck();
+    } catch (err) {
+      setSeedResult({
+        success: false,
+        message: `Storage setup error: ${err.message}`
+      });
+    } finally {
+      setInitializingBuckets(false);
+    }
   };
 
   const runConnectionCheck = async () => {
@@ -450,6 +475,17 @@ END $$;`;
             </button>
 
             <button
+              onClick={handleInitBuckets}
+              disabled={initializingBuckets || !isSupabaseConfigured()}
+              className="btn-primary"
+              style={{ background: '#0284c7', borderColor: '#0284c7', opacity: (!isSupabaseConfigured() || initializingBuckets) ? 0.6 : 1 }}
+              title="Create or verify public storage bucket erp-files and artwork in Supabase"
+            >
+              <Cloud size={16} className={initializingBuckets ? 'animate-spin' : ''} />
+              {initializingBuckets ? 'Configuring...' : 'Setup Storage Buckets'}
+            </button>
+
+            <button
               onClick={handleSeedData}
               disabled={seeding || !isSupabaseConfigured()}
               className="btn-primary"
@@ -635,7 +671,10 @@ END $$;`;
                   Paste them in the <strong>Credentials & API Setup</strong> tab or add them to your <code style={{ background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', color: '#0f172a' }}>.env</code> file as <code style={{ background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', color: '#0f172a' }}>VITE_SUPABASE_URL</code> and <code style={{ background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', color: '#0f172a' }}>VITE_SUPABASE_ANON_KEY</code>.
                 </li>
                 <li>
-                  Run the SQL schema provided under the <strong>SQL Schema Script</strong> tab in your Supabase SQL Editor.
+                  Run the SQL schema provided under the <strong>SQL Schema Script</strong> tab in your Supabase SQL Editor to create all 14 tables and access policies.
+                </li>
+                <li>
+                  Go to <strong>Storage</strong> in Supabase Dashboard &gt; <strong>New bucket</strong> &gt; Name it <code style={{ background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', color: '#0f172a', fontWeight: '700' }}>erp-files</code> &gt; Toggle <strong>Public bucket</strong> to ON &gt; Save.
                 </li>
               </ol>
             </div>
