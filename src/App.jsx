@@ -136,25 +136,6 @@ export default function App() {
   useEffect(() => { localStorage.setItem('samyak_erp_production_schedules', JSON.stringify(schedules)); }, [schedules]);
   useEffect(() => { localStorage.setItem('samyak_erp_clients', JSON.stringify(clients)); }, [clients]);
 
-  // Load live data exclusively from Supabase PostgreSQL if configured
-  // Live connection status & background heartbeat
-  const [dbStatus, setDbStatus] = useState({ connected: false, checking: true, message: '' });
-
-  useEffect(() => {
-    async function verifyConnection() {
-      const res = await checkSupabaseConnection();
-      setDbStatus({
-        connected: res.connected,
-        checking: false,
-        message: res.message || ''
-      });
-    }
-
-    verifyConnection();
-    const interval = setInterval(verifyConnection, 15000);
-    return () => clearInterval(interval);
-  }, []);
-
   // Helper to merge local items with Supabase items safely without wiping local additions
   const mergeDatasets = (localItems = [], remoteItems = [], keyField = 'id') => {
     if (!remoteItems || remoteItems.length === 0) return localItems;
@@ -686,34 +667,6 @@ export default function App() {
                 <strong style={{ color: 'var(--text-primary)' }}>{currentUser?.name} ({currentUser?.role})</strong>
               </div>
             )}
-
-            {/* Live Supabase Connection Badge */}
-            <div 
-              onClick={() => handleTabChange('supabase')}
-              title={dbStatus.message || 'Click to view Supabase Connection details'}
-              style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '8px', 
-                background: dbStatus.connected ? '#ecfdf5' : '#fef2f2', 
-                border: `1px solid ${dbStatus.connected ? '#a7f3d0' : '#fecaca'}`, 
-                padding: '6px 12px', 
-                borderRadius: '8px', 
-                fontSize: '0.8rem',
-                fontWeight: '700',
-                color: dbStatus.connected ? '#047857' : '#b91c1c',
-                cursor: 'pointer'
-              }}
-            >
-              <span style={{ 
-                height: '8px', 
-                width: '8px', 
-                borderRadius: '50%', 
-                background: dbStatus.connected ? '#10b981' : '#ef4444',
-                boxShadow: dbStatus.connected ? '0 0 8px #10b981' : 'none'
-              }} />
-              <span>{dbStatus.checking ? 'Connecting...' : (dbStatus.connected ? 'Supabase Live' : 'Offline Mode')}</span>
-            </div>
 
             <button className="btn-signout" onClick={handleLogout} title="Sign Out of Session">
               <LogOut size={16} /> Sign Out
