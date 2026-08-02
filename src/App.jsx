@@ -9,7 +9,8 @@ import {
   initialProductionRecords,
   initialMachines,
   initialProductionSchedules,
-  isReconciliationDue 
+  isReconciliationDue,
+  initialClients
 } from './factoryStore';
 import { initialCylinders } from './dataStore';
 import { 
@@ -42,6 +43,7 @@ import UserManagement from './components/UserManagement';
 import CylinderManagement from './components/CylinderManagement';
 import ProductionRecordManagement from './components/ProductionRecordManagement';
 import ProductionScheduler from './components/ProductionScheduler';
+import ClientManagement from './components/ClientManagement';
 import SupabaseManagement from './components/SupabaseManagement';
 import DocumentSettings from './components/DocumentSettings';
 import { getTabFromUrl, pushSlugState } from './utils/slugRouter';
@@ -58,7 +60,8 @@ import {
   fetchInventoryRolls, saveInventoryRollToSupabase,
   fetchDispatchShipments, saveDispatchShipmentToSupabase,
   fetchPrintingMachines, savePrintingMachineToSupabase, deletePrintingMachineFromSupabase,
-  fetchProductionSchedules, saveProductionScheduleToSupabase, deleteProductionScheduleFromSupabase
+  fetchProductionSchedules, saveProductionScheduleToSupabase, deleteProductionScheduleFromSupabase,
+  fetchClients, saveClientToSupabase, deleteClientFromSupabase
 } from './services/supabaseDataService';
 import { initialInventoryRolls, initialDispatchShipments } from './factoryStore';
 import './index.css';
@@ -115,6 +118,7 @@ export default function App() {
   const [dispatchShipments, setDispatchShipments] = useState(() => loadLocalState('dispatch_shipments', initialDispatchShipments));
   const [machines, setMachines] = useState(() => loadLocalState('printing_machines', initialMachines));
   const [schedules, setSchedules] = useState(() => loadLocalState('production_schedules', initialProductionSchedules));
+  const [clients, setClients] = useState(() => loadLocalState('clients', initialClients));
 
   // Sync state to localStorage whenever modified
   useEffect(() => { localStorage.setItem('samyak_erp_orders', JSON.stringify(orders)); }, [orders]);
@@ -129,6 +133,7 @@ export default function App() {
   useEffect(() => { localStorage.setItem('samyak_erp_dispatch_shipments', JSON.stringify(dispatchShipments)); }, [dispatchShipments]);
   useEffect(() => { localStorage.setItem('samyak_erp_printing_machines', JSON.stringify(machines)); }, [machines]);
   useEffect(() => { localStorage.setItem('samyak_erp_production_schedules', JSON.stringify(schedules)); }, [schedules]);
+  useEffect(() => { localStorage.setItem('samyak_erp_clients', JSON.stringify(clients)); }, [clients]);
 
   // Load live data exclusively from Supabase PostgreSQL if configured
   useEffect(() => {
@@ -152,7 +157,8 @@ export default function App() {
           fetchInventoryRolls(),
           fetchDispatchShipments(),
           fetchPrintingMachines(),
-          fetchProductionSchedules()
+          fetchProductionSchedules(),
+          fetchClients()
         ]);
 
         if (supaOrders && supaOrders.length > 0) setOrders(supaOrders);
@@ -167,6 +173,7 @@ export default function App() {
         if (supaUsers && supaUsers.length > 0) setUsers(supaUsers);
         if (supaMachines && supaMachines.length > 0) setMachines(supaMachines);
         if (supaSchedules && supaSchedules.length > 0) setSchedules(supaSchedules);
+        if (supaClients && supaClients.length > 0) setClients(supaClients);
       } catch (err) {
         console.error("Failed to load data from Supabase:", err);
       }
@@ -446,6 +453,24 @@ export default function App() {
     }
   };
 
+  const handleAddClient = async (newClient) => {
+    setClients(prev => [...prev, newClient]);
+    try {
+      await saveClientToSupabase(newClient);
+    } catch (err) {
+      console.error("Failed to save client to Supabase:", err);
+    }
+  };
+
+  const handleUpdateClient = async (updatedClient) => {
+    setClients(prev => prev.map(c => c.id === updatedClient.id ? updatedClient : c));
+    try {
+      await saveClientToSupabase(updatedClient);
+    } catch (err) {
+      console.error("Failed to update client in Supabase:", err);
+    }
+  };
+
   // Render Authentication Screen if user is not signed in
   if (!isAuthenticated || !currentUser) {
     return <AuthScreen users={users} onLogin={handleLogin} />;
@@ -513,6 +538,14 @@ export default function App() {
           >
             <FileSpreadsheet size={18} />
             Job Data Sheet & Profitability
+          </div>
+
+          <div 
+            className={`nav-item ${activeTab === 'clients' ? 'active' : ''}`}
+            onClick={() => handleTabChange('clients')}
+          >
+            <Briefcase size={18} />
+            Clients & Directory ({clients.length})
           </div>
 
           <div 
@@ -599,6 +632,7 @@ export default function App() {
               {activeTab === 'job_punching' && 'Order Confirmation & Job Punching'}
               {activeTab === 'orders' && 'Order Management & PO Issuance'}
               {activeTab === 'job_datasheet' && 'Job Data Sheet & Pre vs Post Costing'}
+              {activeTab === 'clients' && 'Client Onboarding & Directory'}
               {activeTab === 'vendors' && 'Vendor Onboarding & Directory'}
               {activeTab === 'inventory' && 'Raw Material Inventory, GRN & Quality Control'}
               {activeTab === 'user_management' && 'Departmental User Management (RBAC)'}
@@ -665,6 +699,17 @@ export default function App() {
             onSaveProductionRecord={handleSaveProductionRecord}
             onApproveProductionRecord={handleApproveProductionRecord}
             onAddRoll={handleAddRoll}
+          />
+        )}
+
+        {/* TAB: CLIENTS */}
+        {activeTab === 'clients' && (
+          <ClientManagement 
+            clients={clients}
+            orders={orders}
+            cylinders={cylinders}
+            onAddClient={handleAddClient}
+            onUpdateClient={handleUpdateClient}
           />
         )}
 

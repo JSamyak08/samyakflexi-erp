@@ -10,7 +10,8 @@ import {
   initialInventory, 
   initialGRNs, 
   initialUsers, 
-  initialProductionRecords 
+  initialProductionRecords,
+  initialClients
 } from '../factoryStore';
 import { initialCylinders } from '../dataStore';
 
@@ -155,6 +156,61 @@ export async function deleteVendorFromSupabase(vendorId) {
   const { error } = await supabase.from('vendors').delete().eq('id', vendorId);
   if (error) {
     console.error("Error deleting vendor from Supabase:", error);
+    throw error;
+  }
+}
+
+// ============================================================================
+// 2b. CLIENTS
+// ============================================================================
+
+export async function fetchClients() {
+  if (!isSupabaseConfigured()) return [];
+  try {
+    const { data, error } = await supabase.from('clients').select('*').order('name');
+    if (error) {
+      handleSupabaseError(error, 'clients');
+      return [];
+    }
+    if (!data) return [];
+
+    return data.map(c => ({
+      id: c.id,
+      name: c.name,
+      gstin: c.gstin,
+      address: c.address,
+      paymentTerms: c.payment_terms,
+      contactPerson: c.contact_person,
+      phone: c.phone
+    }));
+  } catch (err) {
+    console.error("Error fetching clients from Supabase:", err);
+    return [];
+  }
+}
+
+export async function saveClientToSupabase(client) {
+  if (!isSupabaseConfigured()) return;
+  const clientId = client.id || `CLI-${Math.floor(1000 + Math.random() * 9000)}`;
+
+  const { error } = await supabase.from('clients').upsert({
+    id: clientId,
+    name: client.name || 'New Client',
+    gstin: client.gstin || '',
+    address: client.address || '',
+    payment_terms: client.paymentTerms || '',
+    contact_person: client.contactPerson || '',
+    phone: client.phone || ''
+  }, { onConflict: 'id' });
+
+  handleSupabaseError(error, 'clients');
+}
+
+export async function deleteClientFromSupabase(clientId) {
+  if (!isSupabaseConfigured()) return;
+  const { error } = await supabase.from('clients').delete().eq('id', clientId);
+  if (error) {
+    console.error("Error deleting client from Supabase:", error);
     throw error;
   }
 }
@@ -518,6 +574,7 @@ export async function clearAllSupabaseData() {
     await supabase.from('grns').delete().neq('id', '000');
     await supabase.from('orders').delete().neq('id', '000');
     await supabase.from('vendors').delete().neq('id', '000');
+    await supabase.from('clients').delete().neq('id', '000');
     await supabase.from('inventory').delete().neq('id', '000');
     await supabase.from('cylinders').delete().neq('id', '000');
 
@@ -798,6 +855,14 @@ export async function seedAllDataToSupabase() {
     results.push('Vendors');
   } catch (e) {
     console.warn("Seeding Vendors notice:", e.message);
+  }
+
+  // 1b. Seed Clients
+  try {
+    for (const c of initialClients) await saveClientToSupabase(c);
+    results.push('Clients');
+  } catch (e) {
+    console.warn("Seeding Clients notice:", e.message);
   }
 
   // 2. Seed Orders
