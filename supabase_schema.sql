@@ -173,18 +173,6 @@ CREATE TABLE IF NOT EXISTS public.dispatch_shipments (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Enable Row Level Security (RLS) & default access rules
-ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.vendors ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.inventory ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.grns ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.cylinders ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.production_records ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.job_datasheets ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.inventory_rolls ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.dispatch_shipments ENABLE ROW LEVEL SECURITY;
-
 -- 11. PRINTING MACHINES TABLE
 CREATE TABLE IF NOT EXISTS public.printing_machines (
     id TEXT PRIMARY KEY,
@@ -257,26 +245,22 @@ CREATE TABLE IF NOT EXISTS public.job_masters (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-ALTER TABLE public.printing_machines ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.production_schedules ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.job_masters ENABLE ROW LEVEL SECURITY;
-
--- Anonymous/Public access policies for ERP client operations
-CREATE POLICY "Allow public read-write for orders" ON public.orders FOR ALL USING (true);
-CREATE POLICY "Allow public read-write for vendors" ON public.vendors FOR ALL USING (true);
-CREATE POLICY "Allow public read-write for clients" ON public.clients FOR ALL USING (true);
-CREATE POLICY "Allow public read-write for inventory" ON public.inventory FOR ALL USING (true);
-CREATE POLICY "Allow public read-write for grns" ON public.grns FOR ALL USING (true);
-CREATE POLICY "Allow public read-write for cylinders" ON public.cylinders FOR ALL USING (true);
-CREATE POLICY "Allow public read-write for production_records" ON public.production_records FOR ALL USING (true);
-CREATE POLICY "Allow public read-write for users" ON public.users FOR ALL USING (true);
-CREATE POLICY "Allow public read-write for job_datasheets" ON public.job_datasheets FOR ALL USING (true);
-CREATE POLICY "Allow public read-write for job_masters" ON public.job_masters FOR ALL USING (true);
-CREATE POLICY "Allow public read-write for inventory_rolls" ON public.inventory_rolls FOR ALL USING (true);
-CREATE POLICY "Allow public read-write for dispatch_shipments" ON public.dispatch_shipments FOR ALL USING (true);
-CREATE POLICY "Allow public read-write for printing_machines" ON public.printing_machines FOR ALL USING (true);
-CREATE POLICY "Allow public read-write for production_schedules" ON public.production_schedules FOR ALL USING (true);
+-- Enable Row Level Security (RLS) & Grant Permissive Access to Anon & Authenticated Roles for Internal ERP
+DO $$ 
+DECLARE
+  tbl text;
+BEGIN
+  FOR tbl IN 
+    SELECT table_name 
+    FROM information_schema.tables 
+    WHERE table_schema = 'public' 
+      AND table_type = 'BASE TABLE'
+  LOOP
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY;', tbl);
+    EXECUTE format('DROP POLICY IF EXISTS "Allow anon and auth full access" ON public.%I;', tbl);
+    EXECUTE format('CREATE POLICY "Allow anon and auth full access" ON public.%I FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);', tbl);
+  END LOOP;
+END $$;
 
 -- 15. STORAGE BUCKETS FOR PACKAGING ARTWORK & DOCUMENTS
 INSERT INTO storage.buckets (id, name, public) 
