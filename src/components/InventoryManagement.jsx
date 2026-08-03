@@ -363,6 +363,11 @@ export default function InventoryManagement({
     inventory.reduce((acc, item) => ({ ...acc, [item.id]: item.availableQtyKg }), {})
   );
 
+  // Physical Stock Reconciliation Search & Filter States
+  const [recSearchTerm, setRecSearchTerm] = useState('');
+  const [recStatusFilter, setRecStatusFilter] = useState('ALL'); // 'ALL', 'DISCREPANCY', 'SHORTAGE', 'SURPLUS', 'MATCHED'
+  const [recSubstrateFilter, setRecSubstrateFilter] = useState('ALL');
+
   const isRecDue = isReconciliationDue("2026-07-24");
 
   // Inward GRN Submit
@@ -1042,92 +1047,366 @@ export default function InventoryManagement({
       )}
 
       {/* TAB 4: PHYSICAL STOCK RECONCILIATION */}
-      {activeTab === 'reconciliation' && (
-        <div className="glass-panel" style={{ padding: '24px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
-            <div>
-              <h3 style={{ fontSize: '1.3rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <FileSpreadsheet size={24} style={{ color: 'var(--accent-color)' }} /> Monthly Physical Stock Reconciliation
-              </h3>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px' }}>
-                Download stock audit sheet template (Excel/CSV), input physical counts, and reconcile inventory variances.
-              </p>
+      {activeTab === 'reconciliation' && (() => {
+        // Unique film substrate options for filter dropdown
+        const uniqueFilmSubstrates = Array.from(new Set(inventory.map(item => item.filmType))).filter(Boolean);
+
+        // Compute audit stats across all inventory items
+        let matchedCount = 0;
+        let shortageCount = 0;
+        let surplusCount = 0;
+        let totalNetShortageKg = 0;
+        let totalNetSurplusKg = 0;
+
+        inventory.forEach(item => {
+          const physicalVal = physicalCounts[item.id] !== undefined ? physicalCounts[item.id] : item.availableQtyKg;
+          const diff = physicalVal - item.availableQtyKg;
+          if (diff === 0) matchedCount++;
+          else if (diff < 0) {
+            shortageCount++;
+            totalNetShortageKg += Math.abs(diff);
+          } else {
+            surplusCount++;
+            totalNetSurplusKg += diff;
+          }
+        });
+
+        // Filter inventory list based on Search & Filter state
+        const filteredRecItems = inventory.filter(item => {
+          const physicalVal = physicalCounts[item.id] !== undefined ? physicalCounts[item.id] : item.availableQtyKg;
+          const diff = physicalVal - item.availableQtyKg;
+
+          // 1. Search Filter
+          if (recSearchTerm.trim()) {
+            const q = recSearchTerm.toLowerCase();
+            const matchId = (item.id || '').toLowerCase().includes(q);
+            const matchFilm = (item.filmType || '').toLowerCase().includes(q);
+            const matchSpec = `${item.micron || ''} ${item.widthMm || ''}`.toLowerCase().includes(q);
+            const matchLoc = (item.location || '').toLowerCase().includes(q);
+            const matchBatch = (item.lastBatch || '').toLowerCase().includes(q);
+            if (!matchId && !matchFilm && !matchSpec && !matchLoc && !matchBatch) return false;
+          }
+
+          // 2. Status Filter
+          if (recStatusFilter === 'DISCREPANCY' && diff === 0) return false;
+          if (recStatusFilter === 'SHORTAGE' && diff >= 0) return false;
+          if (recStatusFilter === 'SURPLUS' && diff <= 0) return false;
+          if (recStatusFilter === 'MATCHED' && diff !== 0) return false;
+
+          // 3. Substrate Filter
+          if (recSubstrateFilter !== 'ALL') {
+            if ((item.filmType || '').toLowerCase() !== recSubstrateFilter.toLowerCase()) return false;
+          }
+
+          return true;
+        });
+
+        return (
+          <div className="glass-panel" style={{ padding: '24px' }}>
+            {/* Header Action Bar */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '16px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.3rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <FileSpreadsheet size={24} style={{ color: 'var(--accent-color)' }} /> Monthly Physical Stock Reconciliation
+                </h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px' }}>
+                  Download stock audit sheet template (Excel/CSV), input physical counts, and reconcile inventory variances.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button className="btn-secondary" onClick={downloadReconciliationTemplate}>
+                  <Download size={16} /> Download Excel/CSV Template
+                </button>
+
+                <label className="btn-primary" style={{ cursor: 'pointer' }}>
+                  <Upload size={16} /> Upload Filled Physical Stock Sheet (.csv)
+                  <input type="file" accept=".csv" style={{ display: 'none' }} onChange={handleFileUpload} />
+                </label>
+              </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button className="btn-secondary" onClick={downloadReconciliationTemplate}>
-                <Download size={16} /> Download Excel/CSV Template
-              </button>
+            {/* Reconciliation KPI Summary Cards */}
+            <div className="glass-card" style={{ background: '#f8fafc', display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', padding: '14px', marginBottom: '20px' }}>
+              <div>
+                <span className="stats-title" style={{ fontSize: '0.75rem' }}>Total Audit Items</span>
+                <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#0f172a', marginTop: '2px' }}>
+                  {inventory.length} SKUs
+                </div>
+              </div>
 
-              <label className="btn-primary" style={{ cursor: 'pointer' }}>
-                <Upload size={16} /> Upload Filled Physical Stock Sheet (.csv)
-                <input type="file" accept=".csv" style={{ display: 'none' }} onChange={handleFileUpload} />
-              </label>
+              <div>
+                <span className="stats-title" style={{ fontSize: '0.75rem' }}>Matched Stocks</span>
+                <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#059669', marginTop: '2px' }}>
+                  {matchedCount} Items
+                </div>
+              </div>
+
+              <div>
+                <span className="stats-title" style={{ fontSize: '0.75rem' }}>Shortages / Losses</span>
+                <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#dc2626', marginTop: '2px' }}>
+                  {shortageCount} SKUs <span style={{ fontSize: '0.75rem', fontWeight: '600' }}>(-{totalNetShortageKg.toFixed(1)}kg)</span>
+                </div>
+              </div>
+
+              <div>
+                <span className="stats-title" style={{ fontSize: '0.75rem' }}>Surplus / Gains</span>
+                <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#2563eb', marginTop: '2px' }}>
+                  {surplusCount} SKUs <span style={{ fontSize: '0.75rem', fontWeight: '600' }}>(+{totalNetSurplusKg.toFixed(1)}kg)</span>
+                </div>
+              </div>
+
+              <div>
+                <span className="stats-title" style={{ fontSize: '0.75rem' }}>Discrepancies Ratio</span>
+                <div style={{ fontSize: '1.2rem', fontWeight: '800', color: (shortageCount + surplusCount) > 0 ? '#d97706' : '#059669', marginTop: '2px' }}>
+                  {inventory.length > 0 ? (((shortageCount + surplusCount) / inventory.length) * 100).toFixed(0) : 0}% Variance
+                </div>
+              </div>
             </div>
-          </div>
 
-          {/* Variance Table */}
-          <div style={{ overflowX: 'auto' }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Inventory ID</th>
-                  <th>Film Substrate</th>
-                  <th>Micron & Width</th>
-                  <th>System Stock (Kg)</th>
-                  <th>Physical Count (Kg)</th>
-                  <th>Variance (Kg)</th>
-                  <th>Variance Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {inventory.map(item => {
-                  const physicalVal = physicalCounts[item.id] !== undefined ? physicalCounts[item.id] : item.availableQtyKg;
-                  const diff = physicalVal - item.availableQtyKg;
+            {/* Search Bar & Filter Controls Toolbar */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px', background: '#ffffff', padding: '12px 16px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+              
+              {/* Search Box */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: '260px' }}>
+                <div style={{ position: 'relative', width: '100%', maxWidth: '320px' }}>
+                  <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                  <input
+                    type="text"
+                    className="form-control"
+                    style={{ paddingLeft: '32px', paddingRight: '10px', paddingTop: '6px', paddingBottom: '6px', fontSize: '0.85rem' }}
+                    placeholder="Search Inventory ID, Substrate, Micron/Width..."
+                    value={recSearchTerm}
+                    onChange={e => setRecSearchTerm(e.target.value)}
+                  />
+                  {recSearchTerm && (
+                    <button 
+                      onClick={() => setRecSearchTerm('')}
+                      style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
 
-                  return (
-                    <tr key={item.id}>
-                      <td style={{ fontWeight: '700', color: 'var(--accent-color)' }}>{item.id}</td>
-                      <td style={{ fontWeight: '600' }}>{item.filmType} Film</td>
-                      <td>{item.micron}µ / {item.widthMm}mm</td>
-                      <td style={{ fontWeight: '700' }}>{item.availableQtyKg} kg</td>
-                      <td style={{ width: '160px' }}>
-                        <input 
-                          type="number" 
-                          className="form-control" 
-                          style={{ padding: '6px' }}
-                          value={physicalVal}
-                          onChange={e => setPhysicalCounts({ ...physicalCounts, [item.id]: parseFloat(e.target.value) || 0 })}
-                        />
-                      </td>
-                      <td style={{ fontWeight: '800', color: diff === 0 ? 'var(--text-secondary)' : diff > 0 ? 'var(--success)' : '#ef4444' }}>
-                        {diff > 0 ? `+${diff.toFixed(1)} kg` : `${diff.toFixed(1)} kg`}
-                      </td>
-                      <td>
-                        {diff === 0 ? (
-                          <span className="badge badge-us">MATCHED</span>
-                        ) : diff > 0 ? (
-                          <span className="badge badge-both">+ GAIN</span>
-                        ) : (
-                          <span className="badge badge-warning" style={{ background: 'rgba(239,68,68,0.2)', color: '#ef4444' }}>
-                            - SHORTAGE (LOSS)
-                          </span>
-                        )}
+              {/* Status & Substrate Filters */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                
+                {/* Status Filter Pills */}
+                <div style={{ display: 'flex', gap: '4px', background: '#f1f5f9', padding: '3px', borderRadius: '8px' }}>
+                  <button
+                    type="button"
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '0.78rem',
+                      borderRadius: '6px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontWeight: recStatusFilter === 'ALL' ? '700' : '500',
+                      background: recStatusFilter === 'ALL' ? '#ffffff' : 'transparent',
+                      color: recStatusFilter === 'ALL' ? '#0f172a' : 'var(--text-secondary)',
+                      boxShadow: recStatusFilter === 'ALL' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none'
+                    }}
+                    onClick={() => setRecStatusFilter('ALL')}
+                  >
+                    All ({inventory.length})
+                  </button>
+
+                  <button
+                    type="button"
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '0.78rem',
+                      borderRadius: '6px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontWeight: recStatusFilter === 'DISCREPANCY' ? '700' : '500',
+                      background: recStatusFilter === 'DISCREPANCY' ? '#ffffff' : 'transparent',
+                      color: recStatusFilter === 'DISCREPANCY' ? '#d97706' : 'var(--text-secondary)',
+                      boxShadow: recStatusFilter === 'DISCREPANCY' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none'
+                    }}
+                    onClick={() => setRecStatusFilter('DISCREPANCY')}
+                  >
+                    ⚠️ Discrepancies ({shortageCount + surplusCount})
+                  </button>
+
+                  <button
+                    type="button"
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '0.78rem',
+                      borderRadius: '6px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontWeight: recStatusFilter === 'SHORTAGE' ? '700' : '500',
+                      background: recStatusFilter === 'SHORTAGE' ? '#ffffff' : 'transparent',
+                      color: recStatusFilter === 'SHORTAGE' ? '#dc2626' : 'var(--text-secondary)',
+                      boxShadow: recStatusFilter === 'SHORTAGE' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none'
+                    }}
+                    onClick={() => setRecStatusFilter('SHORTAGE')}
+                  >
+                    🔻 Shortage ({shortageCount})
+                  </button>
+
+                  <button
+                    type="button"
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '0.78rem',
+                      borderRadius: '6px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontWeight: recStatusFilter === 'SURPLUS' ? '700' : '500',
+                      background: recStatusFilter === 'SURPLUS' ? '#ffffff' : 'transparent',
+                      color: recStatusFilter === 'SURPLUS' ? '#2563eb' : 'var(--text-secondary)',
+                      boxShadow: recStatusFilter === 'SURPLUS' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none'
+                    }}
+                    onClick={() => setRecStatusFilter('SURPLUS')}
+                  >
+                    🟢 Surplus ({surplusCount})
+                  </button>
+
+                  <button
+                    type="button"
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '0.78rem',
+                      borderRadius: '6px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontWeight: recStatusFilter === 'MATCHED' ? '700' : '500',
+                      background: recStatusFilter === 'MATCHED' ? '#ffffff' : 'transparent',
+                      color: recStatusFilter === 'MATCHED' ? '#059669' : 'var(--text-secondary)',
+                      boxShadow: recStatusFilter === 'MATCHED' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none'
+                    }}
+                    onClick={() => setRecStatusFilter('MATCHED')}
+                  >
+                    ✅ Matched ({matchedCount})
+                  </button>
+                </div>
+
+                {/* Substrate Dropdown Filter */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Filter size={14} style={{ color: 'var(--text-muted)' }} />
+                  <select
+                    className="form-control"
+                    style={{ padding: '5px 10px', fontSize: '0.8rem', width: '160px' }}
+                    value={recSubstrateFilter}
+                    onChange={e => setRecSubstrateFilter(e.target.value)}
+                  >
+                    <option value="ALL">All Substrates</option>
+                    {uniqueFilmSubstrates.map(film => (
+                      <option key={film} value={film}>{film} Film</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Reset Filters button if any filter is active */}
+                {(recSearchTerm || recStatusFilter !== 'ALL' || recSubstrateFilter !== 'ALL') && (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ padding: '4px 10px', fontSize: '0.78rem' }}
+                    onClick={() => {
+                      setRecSearchTerm('');
+                      setRecStatusFilter('ALL');
+                      setRecSubstrateFilter('ALL');
+                    }}
+                  >
+                    Clear Filters
+                  </button>
+                )}
+
+              </div>
+            </div>
+
+            {/* Variance Table */}
+            <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+              <table className="data-table">
+                <thead>
+                  <tr style={{ background: '#f8fafc' }}>
+                    <th>Inventory ID</th>
+                    <th>Film Substrate</th>
+                    <th>Micron & Width</th>
+                    <th>System Stock (Kg)</th>
+                    <th style={{ width: '170px' }}>Physical Count (Kg)</th>
+                    <th>Variance (Kg)</th>
+                    <th>Variance Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRecItems.length === 0 ? (
+                    <tr>
+                      <td colSpan="7" style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
+                        <div>No physical stock reconciliation items match your search & filter parameters.</div>
+                        <button 
+                          className="btn-secondary" 
+                          style={{ marginTop: '10px', fontSize: '0.8rem', padding: '4px 12px' }}
+                          onClick={() => {
+                            setRecSearchTerm('');
+                            setRecStatusFilter('ALL');
+                            setRecSubstrateFilter('ALL');
+                          }}
+                        >
+                          Reset Filters
+                        </button>
                       </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                  ) : (
+                    filteredRecItems.map(item => {
+                      const physicalVal = physicalCounts[item.id] !== undefined ? physicalCounts[item.id] : item.availableQtyKg;
+                      const diff = physicalVal - item.availableQtyKg;
 
-          <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
-            <button className="btn-primary" style={{ padding: '12px 24px', fontSize: '1rem' }} onClick={handleCommitReconciliation}>
-              <CheckCircle2 size={18} /> Commit Reconciliation & Update System Stock
-            </button>
+                      return (
+                        <tr key={item.id} style={{ background: diff < 0 ? '#fff5f5' : (diff > 0 ? '#f0fdf4' : 'transparent') }}>
+                          <td style={{ fontWeight: '700', color: 'var(--accent-color)' }}>{item.id}</td>
+                          <td style={{ fontWeight: '600' }}>{item.filmType} Film</td>
+                          <td>{item.micron}µ / {item.widthMm}mm</td>
+                          <td style={{ fontWeight: '700' }}>{item.availableQtyKg.toLocaleString()} kg</td>
+                          <td style={{ width: '170px' }}>
+                            <input 
+                              type="number" 
+                              step="0.1"
+                              className="form-control" 
+                              style={{ padding: '6px', fontWeight: '600', borderColor: diff !== 0 ? (diff > 0 ? '#059669' : '#dc2626') : 'var(--border-color)' }}
+                              value={physicalVal}
+                              onChange={e => setPhysicalCounts({ ...physicalCounts, [item.id]: parseFloat(e.target.value) || 0 })}
+                            />
+                          </td>
+                          <td style={{ fontWeight: '800', color: diff === 0 ? 'var(--text-secondary)' : (diff > 0 ? '#059669' : '#dc2626') }}>
+                            {diff > 0 ? `+${diff.toFixed(1)} kg` : `${diff.toFixed(1)} kg`}
+                          </td>
+                          <td>
+                            {diff === 0 ? (
+                              <span className="badge badge-us" style={{ background: '#ecfdf5', color: '#047857' }}>✅ MATCHED</span>
+                            ) : diff > 0 ? (
+                              <span className="badge badge-both" style={{ background: '#dbeafe', color: '#1e40af' }}>🟢 + GAIN (SURPLUS)</span>
+                            ) : (
+                              <span className="badge badge-warning" style={{ background: '#fee2e2', color: '#b91c1c' }}>
+                                🔻 - SHORTAGE (LOSS)
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                Showing <strong>{filteredRecItems.length}</strong> of <strong>{inventory.length}</strong> stock items
+              </div>
+              <button className="btn-primary" style={{ padding: '12px 24px', fontSize: '1rem' }} onClick={handleCommitReconciliation}>
+                <CheckCircle2 size={18} /> Commit Reconciliation & Update System Stock
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Modal: New Inward GRN */}
       {isNewGRNModalOpen && (

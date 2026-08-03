@@ -329,6 +329,52 @@ export default function App() {
   const handleSaveProductionRecord = (newRecord) => {
     setProductionRecords(prev => [newRecord, ...prev.filter(r => r.orderId !== newRecord.orderId)]);
     saveProductionRecordToSupabase(newRecord);
+
+    // Update Inventory available stock for materials consumed
+    if (newRecord.materialsList && newRecord.materialsList.length > 0) {
+      setInventory(prevInv => {
+        let updatedInv = [...prevInv];
+        newRecord.materialsList.forEach(mat => {
+          const netQty = parseFloat(mat.netConsumedQtyKg) || Math.max(0, (parseFloat(mat.issueQtyKg) || 0) - (parseFloat(mat.returnQtyKg) || 0));
+          if (netQty > 0 && mat.filmType) {
+            const matName = mat.filmType.toLowerCase();
+            updatedInv = updatedInv.map(invItem => {
+              if ((invItem.filmType || '').toLowerCase() === matName) {
+                return {
+                  ...invItem,
+                  availableQtyKg: Math.max(0, (invItem.availableQtyKg || 0) - netQty)
+                };
+              }
+              return invItem;
+            });
+          }
+        });
+        return updatedInv;
+      });
+    }
+
+    // Update inventoryRolls for scanned barcodes with remaining balance
+    if (newRecord.materialsList && newRecord.materialsList.length > 0) {
+      setInventoryRolls(prevRolls => {
+        let updatedRolls = [...prevRolls];
+        newRecord.materialsList.forEach(mat => {
+          if (mat.barcode) {
+            const returnQty = parseFloat(mat.returnQtyKg) || 0;
+            updatedRolls = updatedRolls.map(roll => {
+              if (roll.barcodeId === mat.barcode || roll.batchNo === mat.barcode) {
+                return {
+                  ...roll,
+                  netWeightKg: returnQty,
+                  status: returnQty > 0 ? 'Partial Roll (In Store)' : 'Fully Consumed'
+                };
+              }
+              return roll;
+            });
+          }
+        });
+        return updatedRolls;
+      });
+    }
   };
 
   const handleApproveProductionRecord = (recordId, adminName) => {

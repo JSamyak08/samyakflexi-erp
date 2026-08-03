@@ -18,7 +18,9 @@ import {
   Tag,
   Scale,
   Barcode,
-  Printer
+  Printer,
+  Play,
+  Scan
 } from 'lucide-react';
 import WeighingScaleInput from './WeighingScaleInput';
 import BarcodePrinterModal from './BarcodePrinterModal';
@@ -36,7 +38,7 @@ export default function ProductionRecordManagement({
   const isPlantManager = currentUser?.role === 'Plant Manager' || currentUser?.role === 'Admin';
   const isAdmin = currentUser?.role === 'Admin';
 
-  const [activeTab, setActiveTab] = useState('list'); // 'list' or 'new_record'
+  const [activeTab, setActiveTab] = useState('punched_jobs'); // 'punched_jobs', 'list', 'new_record'
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -44,32 +46,49 @@ export default function ProductionRecordManagement({
   // Form State for creating/editing a Production Record
   const [selectedOrder, setSelectedOrder] = useState(orders[0] || null);
   const [materialsList, setMaterialsList] = useState([
-    { id: '1', filmType: 'PET', micron: 12, widthMm: 1000, issueQtyKg: 400, returnQtyKg: 14.5, unitPricePerKg: 125 },
-    { id: '2', filmType: 'METPET', micron: 12, widthMm: 1000, issueQtyKg: 400, returnQtyKg: 12.0, unitPricePerKg: 140 },
-    { id: '3', filmType: 'Natural LD GP Film', micron: 35, widthMm: 1005, issueQtyKg: 850, returnQtyKg: 40.0, unitPricePerKg: 115 },
-    { id: '4', filmType: 'Liquid Inks & Solvents', micron: '-', widthMm: '-', issueQtyKg: 55, returnQtyKg: 3.0, unitPricePerKg: 1500 },
-    { id: '5', filmType: 'Solvent-less Adhesive', micron: '-', widthMm: '-', issueQtyKg: 48, returnQtyKg: 1.5, unitPricePerKg: 270 }
+    { id: '1', filmType: 'PET', micron: 12, widthMm: 1000, barcode: 'BAR-PET-089-1', issueQtyKg: 400, returnQtyKg: 14.5, unitPricePerKg: 125 },
+    { id: '2', filmType: 'METPET', micron: 12, widthMm: 1000, barcode: 'BAR-METPET-089-2', issueQtyKg: 400, returnQtyKg: 12.0, unitPricePerKg: 140 },
+    { id: '3', filmType: 'Natural LD GP Film', micron: 35, widthMm: 1005, barcode: 'BAR-LD-089-3', issueQtyKg: 850, returnQtyKg: 40.0, unitPricePerKg: 115 },
+    { id: '4', filmType: 'Liquid Inks & Solvents', micron: '-', widthMm: '-', barcode: 'BAR-INK-089-4', issueQtyKg: 55, returnQtyKg: 3.0, unitPricePerKg: 1500 },
+    { id: '5', filmType: 'Solvent-less Adhesive', micron: '-', widthMm: '-', barcode: 'BAR-ADH-089-5', issueQtyKg: 48, returnQtyKg: 1.5, unitPricePerKg: 270 }
   ]);
   const [processingCostRs, setProcessingCostRs] = useState(45000);
   const [recordNotes, setRecordNotes] = useState('');
 
-  // Helper to open order details for new record
+  // Helper to open 'Start Production' for a specific punched job/order
+  const handleStartProductionForOrder = (ord) => {
+    setSelectedOrder(ord);
+    setSelectedRecord(null);
+    const ordNumStr = (ord.id || '89').replace('ORD-2026-', '');
+    if (ord.materialRequirements && ord.materialRequirements.length > 0) {
+      const mappedList = ord.materialRequirements.map((req, idx) => ({
+        id: String(idx + 1),
+        filmType: req.filmType,
+        micron: req.micron,
+        widthMm: req.widthMm,
+        barcode: `BAR-${(req.filmType || 'PET').toUpperCase().replace(/\s+/g, '')}-${ordNumStr}-${idx + 1}`,
+        issueQtyKg: Math.round(req.qtyKg * 1.05),
+        returnQtyKg: Math.round(req.qtyKg * 0.05),
+        unitPricePerKg: DEFAULT_DAILY_RATES[req.filmType] || 120
+      }));
+      setMaterialsList(mappedList);
+    } else {
+      setMaterialsList([
+        { id: '1', filmType: 'PET', micron: 12, widthMm: 1000, barcode: `BAR-PET-${ordNumStr}-1`, issueQtyKg: 400, returnQtyKg: 14.5, unitPricePerKg: 125 },
+        { id: '2', filmType: 'METPET', micron: 12, widthMm: 1000, barcode: `BAR-METPET-${ordNumStr}-2`, issueQtyKg: 400, returnQtyKg: 12.0, unitPricePerKg: 140 },
+        { id: '3', filmType: 'Natural LD GP Film', micron: 35, widthMm: 1005, barcode: `BAR-LD-${ordNumStr}-3`, issueQtyKg: 850, returnQtyKg: 40.0, unitPricePerKg: 115 },
+        { id: '4', filmType: 'Liquid Inks & Solvents', micron: '-', widthMm: '-', barcode: `BAR-INK-${ordNumStr}-4`, issueQtyKg: 55, returnQtyKg: 3.0, unitPricePerKg: 1500 },
+        { id: '5', filmType: 'Solvent-less Adhesive', micron: '-', widthMm: '-', barcode: `BAR-ADH-${ordNumStr}-5`, issueQtyKg: 48, returnQtyKg: 1.5, unitPricePerKg: 270 }
+      ]);
+    }
+    setActiveTab('new_record');
+  };
+
+  // Helper to open order details for dropdown selection
   const handleSelectOrderForRecord = (orderId) => {
     const ord = orders.find(o => o.id === orderId);
     if (ord) {
-      setSelectedOrder(ord);
-      if (ord.materialRequirements && ord.materialRequirements.length > 0) {
-        const mappedList = ord.materialRequirements.map((req, idx) => ({
-          id: String(idx + 1),
-          filmType: req.filmType,
-          micron: req.micron,
-          widthMm: req.widthMm,
-          issueQtyKg: Math.round(req.qtyKg * 1.05),
-          returnQtyKg: Math.round(req.qtyKg * 0.05),
-          unitPricePerKg: DEFAULT_DAILY_RATES[req.filmType] || 120
-        }));
-        setMaterialsList(mappedList);
-      }
+      handleStartProductionForOrder(ord);
     }
   };
 
@@ -81,6 +100,7 @@ export default function ProductionRecordManagement({
         filmType: 'PET',
         micron: 12,
         widthMm: 1000,
+        barcode: `BAR-PET-${Date.now().toString().slice(-4)}`,
         issueQtyKg: 100,
         returnQtyKg: 0,
         unitPricePerKg: 125
@@ -147,7 +167,7 @@ export default function ProductionRecordManagement({
     };
 
     if (onSaveProductionRecord) onSaveProductionRecord(newRecord);
-    alert(`Production Record for "${selectedOrder.jobName}" saved & submitted for Admin Approval!`);
+    alert(`Production Record for "${selectedOrder.jobName}" saved & submitted for Admin Approval!\nAvailable stock and roll balance for scanned barcodes updated successfully.`);
     setActiveTab('list');
   };
 
@@ -159,6 +179,12 @@ export default function ProductionRecordManagement({
     return matchesSearch && matchesFilter;
   });
 
+  const filteredPunchedOrders = orders.filter(o => {
+    return o.jobName.toLowerCase().includes(searchTerm.toLowerCase()) || 
+           o.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+           o.clientName.toLowerCase().includes(searchTerm.toLowerCase());
+  });
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Header Banner & Approval Flow Notice */}
@@ -168,22 +194,33 @@ export default function ProductionRecordManagement({
             <FileSpreadsheet style={{ color: 'var(--primary-brand)' }} /> Job Production Records & Material Costing
           </h2>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-            Record material issue & returns, ingredients price, and final cost of production. Required prior to job completion.
+            All punched jobs appear here. Click <strong>"Start Production" 🚀</strong> to fill material usage & barcode consumption.
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '12px' }}>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button 
+            className={`tab-pill ${activeTab === 'punched_jobs' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('punched_jobs'); setSelectedRecord(null); }}
+          >
+            📦 Punched Jobs ({orders.length})
+          </button>
+
           <button 
             className={`tab-pill ${activeTab === 'list' ? 'active' : ''}`}
             onClick={() => { setActiveTab('list'); setSelectedRecord(null); }}
           >
-            Production Records ({productionRecords.length})
+            📑 Submitted Records ({productionRecords.length})
           </button>
 
           {isPlantManager && (
             <button 
               className="btn-primary"
-              onClick={() => { setSelectedOrder(orders[0] || null); setActiveTab('new_record'); setSelectedRecord(null); }}
+              onClick={() => { 
+                if (orders.length > 0) handleStartProductionForOrder(orders[0]);
+                else setActiveTab('new_record');
+                setSelectedRecord(null); 
+              }}
             >
               <Plus size={16} /> Fill New Production Record
             </button>
@@ -191,7 +228,113 @@ export default function ProductionRecordManagement({
         </div>
       </div>
 
-      {/* VIEW 1: PRODUCTION RECORDS LIST */}
+      {/* TAB 1: PUNCHED JOBS READY FOR PRODUCTION */}
+      {activeTab === 'punched_jobs' && !selectedRecord && (
+        <div className="glass-panel" style={{ padding: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', gap: '16px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div className="input-with-icon" style={{ width: '300px' }}>
+                <Search size={16} className="input-icon" />
+                <input 
+                  type="text" 
+                  className="form-control"
+                  placeholder="Search Punched Job or Order ID..."
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              Showing {filteredPunchedOrders.length} punched jobs
+            </div>
+          </div>
+
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Order ID</th>
+                  <th>Job Name & Customer</th>
+                  <th>Substrate Structure</th>
+                  <th>Order Qty (kg)</th>
+                  <th>Target Delivery</th>
+                  <th>Production Record Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredPunchedOrders.length === 0 ? (
+                  <tr>
+                    <td colSpan="7" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+                      No punched jobs found matching your search.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredPunchedOrders.map(ord => {
+                    const existingRecord = productionRecords.find(r => r.orderId === ord.id);
+                    return (
+                      <tr key={ord.id} style={{ background: existingRecord ? 'transparent' : '#f0f9ff' }}>
+                        <td style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>{ord.id}</td>
+                        <td>
+                          <div style={{ fontWeight: '700', color: '#0f172a' }}>{ord.jobName}</div>
+                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{ord.clientName}</div>
+                        </td>
+                        <td style={{ fontSize: '0.8rem', color: '#334155' }}>
+                          <code>{ord.structure || 'PET / METPET / LDPE'}</code>
+                        </td>
+                        <td style={{ fontWeight: '700' }}>
+                          {ord.orderQtyKg ? ord.orderQtyKg.toLocaleString() : '1,500'} kg
+                        </td>
+                        <td style={{ fontSize: '0.8rem' }}>{ord.targetDeliveryDate || '2026-07-28'}</td>
+                        <td>
+                          {existingRecord ? (
+                            existingRecord.status === 'Approved by Admin' ? (
+                              <span className="badge badge-us" style={{ background: '#dcfce7', color: '#15803d' }}>
+                                <CheckCircle2 size={12} /> Approved Record
+                              </span>
+                            ) : (
+                              <span className="badge badge-warning" style={{ background: '#fef3c7', color: '#b45309' }}>
+                                <Clock size={12} /> Filled (Pending Approval)
+                              </span>
+                            )
+                          ) : (
+                            <span className="badge badge-client" style={{ background: '#e0f2fe', color: '#0369a1', fontWeight: '700' }}>
+                              🚀 Punched - Ready for Production
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          <button 
+                            className="btn-primary" 
+                            style={{ 
+                              padding: '6px 14px', 
+                              fontSize: '0.82rem', 
+                              background: existingRecord ? '#64748b' : '#4f46e5',
+                              borderColor: existingRecord ? '#64748b' : '#4f46e5'
+                            }}
+                            onClick={() => {
+                              if (existingRecord) {
+                                setSelectedRecord(existingRecord);
+                              } else {
+                                handleStartProductionForOrder(ord);
+                              }
+                            }}
+                          >
+                            <Play size={13} fill="currentColor" /> {existingRecord ? 'View/Edit Record' : 'Start Production'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: SUBMITTED PRODUCTION RECORDS LIST */}
       {activeTab === 'list' && !selectedRecord && (
         <div className="glass-panel" style={{ padding: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', gap: '16px', flexWrap: 'wrap' }}>
@@ -454,85 +597,141 @@ export default function ProductionRecordManagement({
 
           <table className="data-table" style={{ marginBottom: '24px' }}>
             <thead>
-              <tr>
+              <tr style={{ background: '#f8fafc' }}>
                 <th>Raw Material / Ingredient</th>
-                <th>Micron</th>
-                <th>Width (mm)</th>
-                <th>Issued (kg)</th>
-                <th>Returned (kg)</th>
-                <th>Net Consumed (kg)</th>
-                <th>Unit Rate (₹/kg)</th>
+                <th style={{ minWidth: '180px' }}>Barcode / Roll ID (Scan 📷)</th>
+                <th style={{ width: '75px' }}>Micron</th>
+                <th style={{ width: '85px' }}>Width (mm)</th>
+                <th style={{ width: '110px' }}>Issued Roll Qty (kg)</th>
+                <th style={{ width: '110px' }}>Unused Return (kg)</th>
+                <th style={{ color: '#047857' }}>Net Consumed (kg)</th>
+                <th style={{ width: '110px' }}>Unit Rate (₹/kg)</th>
                 <th>Total Cost (₹)</th>
-                <th>Action</th>
+                <th style={{ width: '50px' }}>Action</th>
               </tr>
             </thead>
             <tbody>
-              {calculatedMaterials.map((m) => (
-                <tr key={m.id}>
-                  <td>
-                    <input 
-                      type="text" 
-                      className="form-control"
-                      value={m.filmType}
-                      onChange={e => updateMaterialRow(m.id, 'filmType', e.target.value)}
-                      required
-                    />
-                  </td>
-                  <td style={{ width: '80px' }}>
-                    <input 
-                      type="text" 
-                      className="form-control"
-                      value={m.micron}
-                      onChange={e => updateMaterialRow(m.id, 'micron', e.target.value)}
-                    />
-                  </td>
-                  <td style={{ width: '90px' }}>
-                    <input 
-                      type="text" 
-                      className="form-control"
-                      value={m.widthMm}
-                      onChange={e => updateMaterialRow(m.id, 'widthMm', e.target.value)}
-                    />
-                  </td>
-                  <td style={{ width: '110px' }}>
-                    <input 
-                      type="number" 
-                      className="form-control"
-                      value={m.issueQtyKg}
-                      onChange={e => updateMaterialRow(m.id, 'issueQtyKg', e.target.value)}
-                      required
-                    />
-                  </td>
-                  <td style={{ width: '110px' }}>
-                    <input 
-                      type="number" 
-                      className="form-control"
-                      value={m.returnQtyKg}
-                      onChange={e => updateMaterialRow(m.id, 'returnQtyKg', e.target.value)}
-                    />
-                  </td>
-                  <td style={{ fontWeight: '700' }}>
-                    {m.netConsumedQtyKg} kg
-                  </td>
-                  <td style={{ width: '120px' }}>
-                    <input 
-                      type="number" 
-                      className="form-control"
-                      value={m.unitPricePerKg}
-                      onChange={e => updateMaterialRow(m.id, 'unitPricePerKg', e.target.value)}
-                      required
-                    />
-                  </td>
-                  <td style={{ fontWeight: '700' }}>
-                    ₹ {m.totalMaterialCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </td>
-                  <td>
-                    <button type="button" className="icon-btn-danger" onClick={() => removeMaterialRow(m.id)}>
-                      ✕
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {calculatedMaterials.map((m) => {
+                const isPartialReturn = (parseFloat(m.returnQtyKg) || 0) > 0;
+                return (
+                  <tr key={m.id}>
+                    <td>
+                      <input 
+                        type="text" 
+                        className="form-control"
+                        style={{ fontWeight: '600' }}
+                        value={m.filmType}
+                        onChange={e => updateMaterialRow(m.id, 'filmType', e.target.value)}
+                        required
+                      />
+                    </td>
+
+                    {/* Barcode Scanner / Selector Input */}
+                    <td>
+                      <div style={{ position: 'relative' }}>
+                        <input 
+                          type="text" 
+                          className="form-control"
+                          style={{ paddingLeft: '28px', fontSize: '0.8rem', fontFamily: 'monospace', fontWeight: '700', background: '#f8fafc' }}
+                          placeholder="Scan or type Barcode..."
+                          value={m.barcode || ''}
+                          onChange={e => {
+                            const val = e.target.value;
+                            updateMaterialRow(m.id, 'barcode', val);
+                            // Auto-fetch stock if matched with inventory item ID or batch
+                            const match = inventory.find(inv => (inv.lastBatch || '').toLowerCase() === val.trim().toLowerCase() || (inv.id || '').toLowerCase() === val.trim().toLowerCase());
+                            if (match) {
+                              updateMaterialRow(m.id, 'issueQtyKg', match.availableQtyKg || 400);
+                              updateMaterialRow(m.id, 'filmType', match.filmType);
+                              updateMaterialRow(m.id, 'micron', match.micron);
+                              updateMaterialRow(m.id, 'widthMm', match.widthMm);
+                            }
+                          }}
+                        />
+                        <Scan size={14} style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', color: '#2563eb' }} />
+                      </div>
+                    </td>
+
+                    <td style={{ width: '75px' }}>
+                      <input 
+                        type="text" 
+                        className="form-control"
+                        value={m.micron}
+                        onChange={e => updateMaterialRow(m.id, 'micron', e.target.value)}
+                      />
+                    </td>
+
+                    <td style={{ width: '85px' }}>
+                      <input 
+                        type="text" 
+                        className="form-control"
+                        value={m.widthMm}
+                        onChange={e => updateMaterialRow(m.id, 'widthMm', e.target.value)}
+                      />
+                    </td>
+
+                    <td style={{ width: '110px' }}>
+                      <input 
+                        type="number" 
+                        step="0.1"
+                        className="form-control"
+                        style={{ fontWeight: '600' }}
+                        value={m.issueQtyKg}
+                        onChange={e => updateMaterialRow(m.id, 'issueQtyKg', e.target.value)}
+                        required
+                      />
+                    </td>
+
+                    <td style={{ width: '110px' }}>
+                      <input 
+                        type="number" 
+                        step="0.1"
+                        className="form-control"
+                        style={{ fontWeight: '600', color: isPartialReturn ? '#dc2626' : 'var(--text-muted)' }}
+                        value={m.returnQtyKg}
+                        onChange={e => updateMaterialRow(m.id, 'returnQtyKg', e.target.value)}
+                      />
+                    </td>
+
+                    {/* Net Consumed & Roll Return Status Badge */}
+                    <td>
+                      <div style={{ fontWeight: '800', color: '#047857', fontSize: '0.9rem' }}>
+                        {m.netConsumedQtyKg} kg
+                      </div>
+                      {isPartialReturn ? (
+                        <span className="badge badge-warning" style={{ fontSize: '0.68rem', padding: '1px 5px', marginTop: '3px', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' }}>
+                          📦 {m.returnQtyKg} kg returned to {m.barcode || 'barcode'}
+                        </span>
+                      ) : (
+                        <span className="badge badge-us" style={{ fontSize: '0.68rem', padding: '1px 5px', marginTop: '3px' }}>
+                          Fully Consumed
+                        </span>
+                      )}
+                    </td>
+
+                    <td style={{ width: '110px' }}>
+                      <input 
+                        type="number" 
+                        step="0.1"
+                        className="form-control"
+                        value={m.unitPricePerKg}
+                        onChange={e => updateMaterialRow(m.id, 'unitPricePerKg', e.target.value)}
+                        required
+                      />
+                    </td>
+
+                    <td style={{ fontWeight: '700', color: 'var(--text-primary)' }}>
+                      ₹ {m.totalMaterialCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </td>
+
+                    <td>
+                      <button type="button" className="icon-btn-danger" onClick={() => removeMaterialRow(m.id)}>
+                        ✕
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
 
