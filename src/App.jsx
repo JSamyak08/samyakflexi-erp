@@ -65,7 +65,8 @@ import {
   fetchPrintingMachines, savePrintingMachineToSupabase, deletePrintingMachineFromSupabase,
   fetchProductionSchedules, saveProductionScheduleToSupabase, deleteProductionScheduleFromSupabase,
   fetchClients, saveClientToSupabase, deleteClientFromSupabase,
-  fetchJobMasters, saveJobMasterToSupabase, deleteJobMasterFromSupabase
+  fetchJobMasters, saveJobMasterToSupabase, deleteJobMasterFromSupabase,
+  seedInitialDataToSupabase
 } from './services/supabaseDataService';
 import JobMasterDirectory from './components/JobMasterDirectory';
 import { initialInventoryRolls, initialDispatchShipments } from './factoryStore';
@@ -179,36 +180,13 @@ export default function App() {
     return () => { isMounted = false; };
   }, []);
 
-  // Helper to merge local items with Supabase items safely without wiping local additions
-  const mergeDatasets = (localItems = [], remoteItems = [], keyField = 'id') => {
-    if (!remoteItems || remoteItems.length === 0) return localItems;
-    if (!localItems || localItems.length === 0) return remoteItems;
-
-    const map = new Map();
-    // 1. Load remote Supabase records
-    remoteItems.forEach(item => {
-      const key = item[keyField] || item.id || item.grnNo || item.sku;
-      if (key) map.set(String(key), item);
-    });
-
-    // 2. Preserve local items if missing from remote (e.g. created locally before DB sync)
-    localItems.forEach(item => {
-      const key = item[keyField] || item.id || item.grnNo || item.sku;
-      if (key && !map.has(String(key))) {
-        map.set(String(key), item);
-      }
-    });
-
-    return Array.from(map.values());
-  };
-
-  // Load live data from Supabase PostgreSQL & merge seamlessly with local state
+  // Load live data from Supabase PostgreSQL as AUTHORITATIVE source of truth
   useEffect(() => {
     if (!isSupaActive) return;
 
     async function loadSupabaseData() {
       try {
-        const [
+        let [
           supaOrders, supaVendors, supaInv, supaGRNs, supaCyls, 
           supaProd, supaUsers, supaSheets, supaRolls, supaShipments,
           supaMachines, supaSchedules, supaClients, supaJobMasters
@@ -229,22 +207,46 @@ export default function App() {
           fetchJobMasters()
         ]);
 
-        setOrders(prev => mergeDatasets(prev, supaOrders, 'id'));
-        setVendors(prev => mergeDatasets(prev, supaVendors, 'id'));
-        setInventory(prev => mergeDatasets(prev, supaInv, 'id'));
-        setGrns(prev => mergeDatasets(prev, supaGRNs, 'grnNo'));
-        setCylinders(prev => mergeDatasets(prev, supaCyls, 'id'));
-        setProductionRecords(prev => mergeDatasets(prev, supaProd, 'id'));
-        setUsers(prev => mergeDatasets(prev, supaUsers, 'id'));
-        setJobDataSheets(prev => mergeDatasets(prev, supaSheets, 'jobId'));
-        setInventoryRolls(prev => mergeDatasets(prev, supaRolls, 'id'));
-        setDispatchShipments(prev => mergeDatasets(prev, supaShipments, 'id'));
-        setMachines(prev => mergeDatasets(prev, supaMachines, 'id'));
-        setSchedules(prev => mergeDatasets(prev, supaSchedules, 'id'));
-        setClients(prev => mergeDatasets(prev, supaClients, 'id'));
-        setJobMasters(prev => mergeDatasets(prev, supaJobMasters, 'id'));
+        // If DB is completely empty across core tables (brand new DB setup), automatically seed starter records into DB
+        const isDbEmpty = (!supaOrders || supaOrders.length === 0) &&
+                          (!supaVendors || supaVendors.length === 0) &&
+                          (!supaInv || supaInv.length === 0);
+
+        if (isDbEmpty) {
+          console.log("[Supabase Sync] Fresh database detected. Auto-seeding initial ERP factory data into Supabase...");
+          await seedInitialDataToSupabase();
+          // Re-fetch clean data straight from Supabase after seeding
+          [
+            supaOrders, supaVendors, supaInv, supaGRNs, supaCyls, 
+            supaProd, supaUsers, supaSheets, supaRolls, supaShipments,
+            supaMachines, supaSchedules, supaClients, supaJobMasters
+          ] = await Promise.all([
+            fetchOrders(), fetchVendors(), fetchInventory(), fetchGRNs(), fetchCylinders(),
+            fetchProductionRecords(), fetchUsers(), fetchJobDataSheets(), fetchInventoryRolls(),
+            fetchDispatchShipments(), fetchPrintingMachines(), fetchProductionSchedules(),
+            fetchClients(), fetchJobMasters()
+          ]);
+        }
+
+        // Supabase DB is the AUTHORITATIVE Source of Truth.
+        // Overwrite in-memory state with live data fetched directly from Supabase!
+        if (Array.isArray(supaOrders)) setOrders(supaOrders);
+        if (Array.isArray(supaVendors)) setVendors(supaVendors);
+        if (Array.isArray(supaInv)) setInventory(supaInv);
+        if (Array.isArray(supaGRNs)) setGrns(supaGRNs);
+        if (Array.isArray(supaCyls)) setCylinders(supaCyls);
+        if (Array.isArray(supaProd)) setProductionRecords(supaProd);
+        if (Array.isArray(supaUsers)) setUsers(supaUsers);
+        if (Array.isArray(supaSheets)) setJobDataSheets(supaSheets);
+        if (Array.isArray(supaRolls)) setInventoryRolls(supaRolls);
+        if (Array.isArray(supaShipments)) setDispatchShipments(supaShipments);
+        if (Array.isArray(supaMachines)) setMachines(supaMachines);
+        if (Array.isArray(supaSchedules)) setSchedules(supaSchedules);
+        if (Array.isArray(supaClients)) setClients(supaClients);
+        if (Array.isArray(supaJobMasters)) setJobMasters(supaJobMasters);
+
       } catch (err) {
-        console.warn("[Supabase Sync Notice] Multi-table fetch notice:", err);
+        console.warn("[Supabase Sync Notice] Authoritative hydration notice:", err);
       }
     }
 

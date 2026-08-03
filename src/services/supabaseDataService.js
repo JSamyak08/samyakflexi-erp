@@ -1021,3 +1021,5 @@ export async function seedAllDataToSupabase() {
       : 'Factory seed data loaded locally. Run supabase_schema.sql to create missing tables.'
   };
 }
+
+export const seedInitialDataToSupabase = seedAllDataToSupabase;
