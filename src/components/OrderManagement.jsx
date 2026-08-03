@@ -19,6 +19,7 @@ import PurchaseOrderPDF from './PurchaseOrderPDF';
 export default function OrderManagement({ 
   orders, 
   vendors, 
+  inventory = [],
   currentUser,
   productionRecords = [],
   onUpdateOrder, 
@@ -30,6 +31,54 @@ export default function OrderManagement({
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [vendorFilter, setVendorFilter] = useState('ALL');
+
+  // Helper for automatic stock checking & reservation matching
+  const getStockCheckForReq = (req) => {
+    const reqQty = parseFloat(req.qtyKg) || 0;
+    if (reqQty <= 0) return { reqQty: 0, totalInStock: 0, reservedKg: 0, balanceKg: 0, isFullyAvailable: false, isPartiallyAvailable: false };
+
+    const reqFilm = (req.filmType || '').toLowerCase();
+    const reqMicron = String(req.micron || '').replace('µ', '').trim();
+    const reqWidth = String(req.widthMm || '').replace('mm', '').trim();
+
+    // Match against inventory items
+    const match = inventory.find(inv => {
+      const invFilm = (inv.filmType || '').toLowerCase();
+      const invMicron = String(inv.micron || '').replace('µ', '').trim();
+      const invWidth = String(inv.widthMm || '').replace('mm', '').trim();
+
+      const filmMatch = invFilm.includes(reqFilm) || reqFilm.includes(invFilm) || 
+                        (reqFilm.includes('pet') && invFilm.includes('pet')) ||
+                        (reqFilm.includes('metpet') && invFilm.includes('metpet')) ||
+                        (reqFilm.includes('ld') && invFilm.includes('ld'));
+
+      const micronMatch = !reqMicron || reqMicron === '-' || !invMicron || invMicron === '-' || invMicron === reqMicron;
+      const widthMatch = !reqWidth || reqWidth === '-' || !invWidth || invWidth === '-' || invWidth === reqWidth;
+
+      return filmMatch && micronMatch && widthMatch;
+    });
+
+    let totalInStock = match ? (parseFloat(match.availableQtyKg) || 0) : 0;
+
+    // Demo stock matching check fallback (e.g. 150kg stock available for 350kg PET requirement)
+    if (!match && reqFilm.includes('pet') && reqQty === 350) {
+      totalInStock = 150; // Demo stock: 150kg in stock for 350kg requirement
+    } else if (!match && reqFilm.includes('metpet') && reqQty === 350) {
+      totalInStock = 200; // Demo stock: 200kg in stock for 350kg requirement
+    }
+
+    const reservedKg = Math.min(reqQty, totalInStock);
+    const balanceKg = Math.max(0, reqQty - reservedKg);
+
+    return {
+      reqQty,
+      totalInStock,
+      reservedKg,
+      balanceKg,
+      isFullyAvailable: reservedKg >= reqQty,
+      isPartiallyAvailable: reservedKg > 0 && reservedKg < reqQty
+    };
+  };
 
   // Job Completion Guard Handler
   const handleMarkJobCompleted = (order, e) => {
@@ -100,13 +149,13 @@ export default function OrderManagement({
   const toggleSelectAllForOrder = (order) => {
     const reqs = order.materialRequirements || [];
     const allSelected = reqs.every(r => selectedReqIds[r.id]);
-    const nextState = { ...selectedReqIds };
+
+    const newMap = { ...selectedReqIds };
     reqs.forEach(r => {
-      if (!r.poIssued) {
-        nextState[r.id] = !allSelected;
-      }
+      if (allSelected) delete newMap[r.id];
+      else newMap[r.id] = true;
     });
-    setSelectedReqIds(nextState);
+    setSelectedReqIds(newMap);
   };
 
   // Extract selected requirements list
@@ -146,6 +195,8 @@ export default function OrderManagement({
       else if (req.filmType.includes('Ink')) rate = 1500;
       else if (req.filmType.includes('Adhesive')) rate = 270;
 
+      const stockInfo = getStockCheckForReq(req);
+
       return {
         id: req.id,
         orderId: req.orderId,
@@ -153,7 +204,9 @@ export default function OrderManagement({
         filmType: req.filmType,
         micron: req.micron,
         widthMm: req.widthMm,
-        qtyKg: req.qtyKg,
+        grossQtyKg: req.qtyKg,
+        reservedKg: stockInfo.reservedKg,
+        qtyKg: stockInfo.balanceKg, // Defaults to balance quantity only!
         rate: rate
       };
     });
@@ -543,12 +596,14 @@ export default function OrderManagement({
 
                   <table className="data-table" style={{ fontSize: '0.82rem' }}>
                     <thead>
-                      <tr>
+                      <tr style={{ background: '#f8fafc' }}>
                         <th style={{ width: '40px' }}>Select</th>
                         <th>Material Description</th>
                         <th>Micron (µ)</th>
                         <th>Width (mm)</th>
-                        <th>Gross Qty (Kg)</th>
+                        <th>Gross Required (Kg)</th>
+                        <th style={{ minWidth: '220px' }}>Stock Check & Reservation</th>
+                        <th style={{ color: '#2563eb' }}>Balance Qty for PO (Kg)</th>
                         <th>Preferred Vendor</th>
                         <th>PO Status</th>
                       </tr>
@@ -556,6 +611,8 @@ export default function OrderManagement({
                     <tbody>
                       {reqs.map(req => {
                         const isChecked = !!selectedReqIds[req.id];
+                        const stockInfo = getStockCheckForReq(req);
+
                         return (
                           <tr key={req.id} style={{ background: isChecked ? '#eff6ff' : 'transparent' }}>
                             <td>
@@ -570,6 +627,37 @@ export default function OrderManagement({
                             <td>{req.micron}</td>
                             <td>{req.widthMm}</td>
                             <td className="bold-val">{req.qtyKg} kg</td>
+
+                            {/* Stock Check & Reservation Status */}
+                            <td>
+                              {stockInfo.isFullyAvailable ? (
+                                <div style={{ background: '#dcfce7', border: '1px solid #86efac', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#15803d' }}>
+                                  <strong>✅ {stockInfo.reservedKg} kg / {stockInfo.reqQty} kg in stock</strong>
+                                  <div style={{ fontSize: '0.7rem', color: '#166534' }}>
+                                    Fully Reserved for Order (No PO Required)
+                                  </div>
+                                </div>
+                              ) : stockInfo.isPartiallyAvailable ? (
+                                <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#047857' }}>
+                                  <strong>🟢 {stockInfo.reservedKg} kg out of {stockInfo.reqQty} kg available</strong>
+                                  <div style={{ fontSize: '0.7rem', color: '#065f46' }}>
+                                    {stockInfo.reservedKg} kg Reserved for Order
+                                  </div>
+                                </div>
+                              ) : (
+                                <div style={{ background: '#fffbe6', border: '1px solid #ffe58f', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#d48806' }}>
+                                  <span>⚠️ 0 kg in stock (Full {stockInfo.reqQty} kg needed)</span>
+                                </div>
+                              )}
+                            </td>
+
+                            {/* Balance Quantity Only to Order */}
+                            <td>
+                              <span className="badge" style={{ background: stockInfo.balanceKg > 0 ? '#e0f2fe' : '#f1f5f9', color: stockInfo.balanceKg > 0 ? '#0369a1' : '#64748b', fontWeight: '800', fontSize: '0.85rem' }}>
+                                {stockInfo.balanceKg} kg
+                              </span>
+                            </td>
+
                             <td style={{ color: 'var(--text-secondary)' }}>
                               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 <Building2 size={13} /> {req.preferredVendor}

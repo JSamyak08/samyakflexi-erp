@@ -1058,6 +1058,7 @@ export default function App() {
           <OrderManagement 
             orders={orders} 
             vendors={vendors} 
+            inventory={inventory}
             currentUser={currentUser}
             productionRecords={productionRecords}
             onUpdateOrder={handleUpdateOrder} 
