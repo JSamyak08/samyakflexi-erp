@@ -111,22 +111,26 @@ export default function App() {
     return fallbackDefault;
   };
 
-  // Shared Global State with dual-persistence (Supabase + localStorage fallback)
-  const [isSupaActive, setIsSupaActive] = useState(() => isSupabaseConfigured());
-  const [orders, setOrders] = useState(() => loadLocalState('orders', initialOrders));
-  const [vendors, setVendors] = useState(() => loadLocalState('vendors', initialVendors));
-  const [inventory, setInventory] = useState(() => loadLocalState('inventory', initialInventory));
-  const [grns, setGrns] = useState(() => loadLocalState('grns', initialGRNs));
-  const [users, setUsers] = useState(() => loadLocalState('users', initialUsers));
-  const [jobDataSheets, setJobDataSheets] = useState(() => loadLocalState('job_datasheets', initialJobDataSheets || []));
-  const [cylinders, setCylinders] = useState(() => loadLocalState('cylinders', initialCylinders));
-  const [productionRecords, setProductionRecords] = useState(() => loadLocalState('production_records', initialProductionRecords));
-  const [inventoryRolls, setInventoryRolls] = useState(() => loadLocalState('inventory_rolls', initialInventoryRolls));
-  const [dispatchShipments, setDispatchShipments] = useState(() => loadLocalState('dispatch_shipments', initialDispatchShipments));
-  const [machines, setMachines] = useState(() => loadLocalState('printing_machines', initialMachines));
-  const [schedules, setSchedules] = useState(() => loadLocalState('production_schedules', initialProductionSchedules));
-  const [clients, setClients] = useState(() => loadLocalState('clients', initialClients));
-  const [jobMasters, setJobMasters] = useState(() => loadLocalState('job_masters', initialJobMasters));
+  // Shared Global State with dual-persistence (Supabase Authoritative + localStorage fallback)
+  const isSupaConfigured = isSupabaseConfigured();
+  const [isSupaActive, setIsSupaActive] = useState(isSupaConfigured);
+
+  // When Supabase is configured, initialize state to empty arrays [] and let Supabase fetch populate state authoritatively.
+  // Fall back to local storage seeds ONLY if Supabase is unconfigured / offline.
+  const [orders, setOrders] = useState(() => isSupaConfigured ? [] : loadLocalState('orders', initialOrders));
+  const [vendors, setVendors] = useState(() => isSupaConfigured ? [] : loadLocalState('vendors', initialVendors));
+  const [inventory, setInventory] = useState(() => isSupaConfigured ? [] : loadLocalState('inventory', initialInventory));
+  const [grns, setGrns] = useState(() => isSupaConfigured ? [] : loadLocalState('grns', initialGRNs));
+  const [users, setUsers] = useState(() => isSupaConfigured ? [] : loadLocalState('users', initialUsers));
+  const [jobDataSheets, setJobDataSheets] = useState(() => isSupaConfigured ? [] : loadLocalState('job_datasheets', initialJobDataSheets || []));
+  const [cylinders, setCylinders] = useState(() => isSupaConfigured ? [] : loadLocalState('cylinders', initialCylinders));
+  const [productionRecords, setProductionRecords] = useState(() => isSupaConfigured ? [] : loadLocalState('production_records', initialProductionRecords));
+  const [inventoryRolls, setInventoryRolls] = useState(() => isSupaConfigured ? [] : loadLocalState('inventory_rolls', initialInventoryRolls));
+  const [dispatchShipments, setDispatchShipments] = useState(() => isSupaConfigured ? [] : loadLocalState('dispatch_shipments', initialDispatchShipments));
+  const [machines, setMachines] = useState(() => isSupaConfigured ? [] : loadLocalState('printing_machines', initialMachines));
+  const [schedules, setSchedules] = useState(() => isSupaConfigured ? [] : loadLocalState('production_schedules', initialProductionSchedules));
+  const [clients, setClients] = useState(() => isSupaConfigured ? [] : loadLocalState('clients', initialClients));
+  const [jobMasters, setJobMasters] = useState(() => isSupaConfigured ? [] : loadLocalState('job_masters', initialJobMasters));
   const [selectedJobMasterForPunch, setSelectedJobMasterForPunch] = useState(null);
 
   // Reactive listener for Supabase credential updates
