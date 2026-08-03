@@ -57,18 +57,7 @@ export default function ProductionRecordManagement({
 
   const [materialsList, setMaterialsList] = useState(DEFAULT_6_INGREDIENTS);
   
-  // Processing Cost Per Kg (Default from Settings: ₹ 25/kg)
-  const [processingCostPerKg, setProcessingCostPerKg] = useState(25);
-
-  // Scrap / Wastage breakdown fields (in kg)
-  const [printingPlainSettingWastageKg, setPrintingPlainSettingWastageKg] = useState(15.0);
-  const [printingWastageKg, setPrintingWastageKg] = useState(12.5);
-  const [laminationPlainSubstrateWastageKg, setLaminationPlainSubstrateWastageKg] = useState(10.0);
-  const [laminateWastageKg, setLaminateWastageKg] = useState(8.0);
-  const [trimWastageKg, setTrimWastageKg] = useState(14.0);
-  const [scrapRatePerKg, setScrapRatePerKg] = useState(20); // ₹ 20/kg scrap value
-
-  const [recordNotes, setRecordNotes] = useState('');
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
 
   // Helper to open 'Start Production' for a specific punched job/order
   const handleStartProductionForOrder = (ord) => {
@@ -160,15 +149,25 @@ export default function ProductionRecordManagement({
   // Formula: (Total Qty produced x Default Processing Cost) + (Total Cost of Ingredients) + Scrap = Total Cost of Production
   const finalProductionCostRs = totalProcessingCostRs + totalMaterialCostRs + totalScrapCostRs;
 
-  // Save / Fill by Plant Manager
-  const handleSubmitRecord = (e) => {
-    e.preventDefault();
+  // Step 1: Open Detailed Confirmation Popup
+  const handleOpenConfirmModal = (e) => {
+    if (e) e.preventDefault();
 
     if (!selectedOrder) {
       alert('Please select an order for this Production Record.');
       return;
     }
 
+    if (calculatedMaterials.length === 0) {
+      alert('Please add at least one ingredient material line.');
+      return;
+    }
+
+    setIsConfirmModalOpen(true);
+  };
+
+  // Step 2: Final Submit upon confirmation
+  const handleFinalSubmitRecord = () => {
     const newRecord = {
       id: `REC-${Date.now()}`,
       orderId: selectedOrder.id,
@@ -178,7 +177,16 @@ export default function ProductionRecordManagement({
       materialsList: calculatedMaterials,
       totalProductionQtyKg: totalNetQtyKg,
       totalMaterialCostRs: totalMaterialCostRs,
-      processingCostRs: parseFloat(processingCostRs) || 0,
+      processingCostPerKg: parseFloat(processingCostPerKg) || 25,
+      totalProcessingCostRs: totalProcessingCostRs,
+      printingPlainSettingWastageKg: parseFloat(printingPlainSettingWastageKg) || 0,
+      printingWastageKg: parseFloat(printingWastageKg) || 0,
+      laminationPlainSubstrateWastageKg: parseFloat(laminationPlainSubstrateWastageKg) || 0,
+      laminateWastageKg: parseFloat(laminateWastageKg) || 0,
+      trimWastageKg: parseFloat(trimWastageKg) || 0,
+      totalScrapQtyKg: totalScrapQtyKg,
+      scrapRatePerKg: parseFloat(scrapRatePerKg) || 0,
+      totalScrapCostRs: totalScrapCostRs,
       finalProductionCostRs: finalProductionCostRs,
       status: "Filled by Plant Manager",
       filledBy: `${currentUser.name} (${currentUser.role})`,
@@ -188,10 +196,10 @@ export default function ProductionRecordManagement({
     };
 
     if (onSaveProductionRecord) onSaveProductionRecord(newRecord);
-    alert(`Production Record for "${selectedOrder.jobName}" saved & submitted for Admin Approval!\nAvailable stock and roll balance for scanned barcodes updated successfully.`);
+    setIsConfirmModalOpen(false);
+    alert(`🎉 Production Record for "${selectedOrder.jobName}" saved & submitted for Admin Approval!\n\nAvailable stock and roll balance for scanned barcodes updated successfully.`);
     setActiveTab('list');
   };
-
   const filteredRecords = productionRecords.filter(r => {
     const matchesSearch = r.jobName.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           r.orderId.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -575,7 +583,7 @@ export default function ProductionRecordManagement({
 
       {/* VIEW 3: FILL NEW PRODUCTION RECORD (PLANT MANAGER) */}
       {activeTab === 'new_record' && (
-        <form onSubmit={handleSubmitRecord} className="glass-panel" style={{ padding: '28px' }}>
+        <form onSubmit={handleOpenConfirmModal} className="glass-panel" style={{ padding: '28px' }}>
           <h3 style={{ fontSize: '1.3rem', fontWeight: '800', marginBottom: '20px', color: 'var(--text-primary)' }}>
             📝 Fill Job Production Record & Ingredient Usage
           </h3>
@@ -950,11 +958,105 @@ export default function ProductionRecordManagement({
             <button type="button" className="btn-secondary" onClick={() => setActiveTab('list')}>
               Cancel
             </button>
-            <button type="submit" className="btn-primary">
-              <CheckCircle2 size={16} /> Submit Record for Admin Approval
+            <button 
+              type="button" 
+              className="btn-primary" 
+              style={{ background: '#059669', borderColor: '#059669', padding: '10px 20px', fontSize: '0.9rem' }}
+              onClick={handleOpenConfirmModal}
+            >
+              <CheckCircle2 size={18} /> Submit Record for Admin Approval
             </button>
           </div>
         </form>
+      )}
+
+      {/* DETAILED CONFIRMATION POPUP MODAL */}
+      {isConfirmModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsConfirmModalOpen(false)}>
+          <div className="glass-card modal-content" style={{ width: '680px', maxWidth: '95vw', padding: '28px' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ fontSize: '1.3rem', fontWeight: '800', marginBottom: '8px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <FileSpreadsheet style={{ color: 'var(--primary-brand)' }} /> Confirm Job Production Record Submission
+            </h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '20px' }}>
+              Please review the final costing, material consumption, and inventory roll returns before submitting for Admin approval.
+            </p>
+
+            {/* Job & Client Meta Header */}
+            <div style={{ background: '#f8fafc', padding: '16px 20px', borderRadius: '10px', marginBottom: '20px', border: '1px solid #e2e8f0', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', fontSize: '0.85rem' }}>
+              <div><span style={{ color: 'var(--text-muted)' }}>Job ID / Order:</span> <strong style={{ color: 'var(--primary-brand)' }}>{selectedOrder?.id}</strong></div>
+              <div><span style={{ color: 'var(--text-muted)' }}>Job Name:</span> <strong>{selectedOrder?.jobName}</strong></div>
+              <div><span style={{ color: 'var(--text-muted)' }}>Customer / Client:</span> <strong>{selectedOrder?.clientName}</strong></div>
+              <div><span style={{ color: 'var(--text-muted)' }}>Recorded By:</span> <strong>{currentUser.name} ({currentUser.role})</strong></div>
+            </div>
+
+            {/* Itemized Material Usage Preview */}
+            <div style={{ marginBottom: '20px' }}>
+              <h4 style={{ fontSize: '0.85rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                📦 Consumed Materials & Roll Return Summary ({calculatedMaterials.length} Lines)
+              </h4>
+              <div style={{ maxHeight: '160px', overflowY: 'auto', border: '1px solid #cbd5e1', borderRadius: '8px' }}>
+                <table className="data-table" style={{ fontSize: '0.78rem' }}>
+                  <thead>
+                    <tr style={{ background: '#f1f5f9' }}>
+                      <th>Material</th>
+                      <th>Barcode Tag</th>
+                      <th>Issued</th>
+                      <th>Returned</th>
+                      <th>Net Consumed</th>
+                      <th>Total Cost</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {calculatedMaterials.map((m, idx) => (
+                      <tr key={idx}>
+                        <td style={{ fontWeight: '600' }}>{m.filmType}</td>
+                        <td><code>{m.barcode || 'Standard Stock'}</code></td>
+                        <td>{m.issueQtyKg} kg</td>
+                        <td style={{ color: (parseFloat(m.returnQtyKg) || 0) > 0 ? '#047857' : 'inherit', fontWeight: '600' }}>
+                          {m.returnQtyKg || 0} kg
+                        </td>
+                        <td style={{ fontWeight: '700' }}>{m.netConsumedQtyKg} kg</td>
+                        <td style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>₹ {m.totalMaterialCost.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Costing Summary Box */}
+            <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '16px 20px', borderRadius: '10px', marginBottom: '24px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', fontSize: '0.85rem', marginBottom: '12px' }}>
+                <div>Net Produced Qty: <strong>{totalNetQtyKg.toLocaleString()} kg</strong></div>
+                <div>Total Ingredients Cost: <strong>₹ {totalMaterialCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
+                <div>Processing Cost (₹ {processingCostPerKg}/kg): <strong>₹ {totalProcessingCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
+                <div>Scrap & Wastage ({totalScrapQtyKg.toFixed(1)} kg): <strong>₹ {totalScrapCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
+              </div>
+
+              <div style={{ borderTop: '1px solid #6ee7b7', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontWeight: '800', color: '#065f46', fontSize: '0.9rem' }}>TOTAL COST OF PRODUCTION:</span>
+                <span style={{ fontSize: '1.5rem', fontWeight: '900', color: '#047857' }}>
+                  ₹ {finalProductionCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+              <button type="button" className="btn-secondary" style={{ padding: '8px 16px' }} onClick={() => setIsConfirmModalOpen(false)}>
+                ← Review & Edit
+              </button>
+              <button 
+                type="button" 
+                className="btn-primary" 
+                style={{ background: '#059669', borderColor: '#059669', padding: '8px 20px', fontSize: '0.88rem' }}
+                onClick={handleFinalSubmitRecord}
+              >
+                <CheckCircle2 size={16} /> Confirm & Submit to Admin
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
