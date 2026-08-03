@@ -56,8 +56,20 @@ export default function ProductionRecordManagement({
   ];
 
   const [materialsList, setMaterialsList] = useState(DEFAULT_6_INGREDIENTS);
-  
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+
+  // Processing Cost Per Kg (Default from Settings: ₹ 25/kg)
+  const [processingCostPerKg, setProcessingCostPerKg] = useState(25);
+
+  // Scrap / Wastage breakdown fields (in kg)
+  const [printingPlainSettingWastageKg, setPrintingPlainSettingWastageKg] = useState(15.0);
+  const [printingWastageKg, setPrintingWastageKg] = useState(12.5);
+  const [laminationPlainSubstrateWastageKg, setLaminationPlainSubstrateWastageKg] = useState(10.0);
+  const [laminateWastageKg, setLaminateWastageKg] = useState(8.0);
+  const [trimWastageKg, setTrimWastageKg] = useState(14.0);
+  const [scrapRatePerKg, setScrapRatePerKg] = useState(20); // ₹ 20/kg scrap value
+
+  const [recordNotes, setRecordNotes] = useState('');
 
   // Helper to open 'Start Production' for a specific punched job/order
   const handleStartProductionForOrder = (ord) => {
