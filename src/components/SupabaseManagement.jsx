@@ -16,7 +16,8 @@ import {
   Zap,
   Layers,
   ArrowRight,
-  Trash2
+  Trash2,
+  Cloud
 } from 'lucide-react';
 import { 
   isSupabaseConfigured, 
