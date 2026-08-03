@@ -1046,6 +1046,7 @@ export default function App() {
             grns={grns}
             vendors={vendors}
             orders={orders}
+            productionRecords={productionRecords}
             onAddGRN={handleAddGRN}
             onUpdateGRN={handleUpdateGRN}
             onUpdateInventory={handleUpdateInventory}

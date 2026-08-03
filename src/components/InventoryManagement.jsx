@@ -24,7 +24,9 @@ import {
   Scale,
   Barcode,
   Scan,
-  FileText
+  FileText,
+  Check,
+  History
 } from 'lucide-react';
 import GRNPDF from './GRNPDF';
 import WeighingScaleInput from './WeighingScaleInput';
@@ -37,7 +39,8 @@ import {
   generateBarcodeId, 
   generateVendorId,
   initialInventoryRolls, 
-  initialDispatchShipments 
+  initialDispatchShipments,
+  initialStockAdjustments
 } from '../factoryStore';
 
 export default function InventoryManagement({ 
@@ -45,6 +48,7 @@ export default function InventoryManagement({
   grns, 
   vendors, 
   orders, 
+  productionRecords = [],
   onAddGRN, 
   onUpdateGRN, 
   onUpdateInventory,
@@ -63,6 +67,38 @@ export default function InventoryManagement({
   const [qcInspectingGRN, setQcInspectingGRN] = useState(null);
   const [qcNotesInput, setQcNotesInput] = useState('');
   const [selectedItemForPurchaseHistory, setSelectedItemForPurchaseHistory] = useState(null);
+
+  // Updatable Barcodes & Stock Ledger Adjustments state
+  const [customBarcodesMap, setCustomBarcodesMap] = useState(() => {
+    try {
+      const saved = localStorage.getItem('samyak_erp_custom_barcodes');
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      return {};
+    }
+  });
+
+  const [stockLedgerAdjustments, setStockLedgerAdjustments] = useState(() => {
+    try {
+      const saved = localStorage.getItem('samyak_erp_stock_adjustments');
+      return saved ? JSON.parse(saved) : initialStockAdjustments;
+    } catch (e) {
+      return initialStockAdjustments;
+    }
+  });
+
+  const [editingTxId, setEditingTxId] = useState(null);
+  const [editingBarcodeVal, setEditingBarcodeVal] = useState('');
+
+  // Ledger Filter & Quick Adjustment State
+  const [ledgerFilterTab, setLedgerFilterTab] = useState('all'); // 'all', 'inward', 'usage', 'reconciliation'
+  const [ledgerSearchTerm, setLedgerSearchTerm] = useState('');
+
+  const [isQuickAdjOpen, setIsQuickAdjOpen] = useState(false);
+  const [adjType, setAdjType] = useState('Physical Audit (+)');
+  const [adjQtyKg, setAdjQtyKg] = useState(10);
+  const [adjBarcode, setAdjBarcode] = useState('');
+  const [adjReason, setAdjReason] = useState('Physical Stock Count Variance');
 
   // Barcode Printer & Packing List Modals State
   const [selectedRollForBarcodeModal, setSelectedRollForBarcodeModal] = useState(null);
@@ -101,6 +137,57 @@ export default function InventoryManagement({
     "BOPP Natural", "Metalised BOPP", "Pearlised BOPP", 
     "CPP Natural", "Metalised CPP", "Liquid Inks", "Solvent-less Adhesive", "Solvents"
   ];
+
+  const handleSaveCustomBarcode = (txId, newBarcodeStr) => {
+    if (!newBarcodeStr.trim()) return;
+    const updated = { ...customBarcodesMap, [txId]: newBarcodeStr.trim() };
+    setCustomBarcodesMap(updated);
+    try {
+      localStorage.setItem('samyak_erp_custom_barcodes', JSON.stringify(updated));
+    } catch (e) {}
+    setEditingTxId(null);
+    setEditingBarcodeVal('');
+  };
+
+  const handleAddLedgerAdjustment = (e, filmType, micron, widthMm) => {
+    if (e) e.preventDefault();
+    const isNegative = adjType.includes('-');
+    const qty = isNegative ? -Math.abs(parseFloat(adjQtyKg) || 0) : Math.abs(parseFloat(adjQtyKg) || 0);
+    const newAdj = {
+      id: `ADJ-${Date.now()}`,
+      filmType,
+      micron,
+      widthMm,
+      date: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      type: adjType,
+      qtyKg: qty,
+      barcode: adjBarcode.trim() || `BAR-${filmType.toUpperCase()}-ADJ-${Math.floor(100 + Math.random() * 900)}`,
+      reason: adjReason.trim() || 'Physical Stock Audit Correction',
+      adjustedBy: 'Store Manager'
+    };
+
+    const updated = [newAdj, ...stockLedgerAdjustments];
+    setStockLedgerAdjustments(updated);
+    try {
+      localStorage.setItem('samyak_erp_stock_adjustments', JSON.stringify(updated));
+    } catch (err) {}
+
+    // Update item available stock in main inventory list
+    if (onUpdateInventory && selectedItemForPurchaseHistory) {
+      const updatedInv = inventory.map(invItem => {
+        if (invItem.filmType.toLowerCase() === filmType.toLowerCase()) {
+          return { ...invItem, availableQtyKg: Math.max(0, (invItem.availableQtyKg || 0) + qty) };
+        }
+        return invItem;
+      });
+      onUpdateInventory(updatedInv);
+    }
+
+    setIsQuickAdjOpen(false);
+    setAdjQtyKg(10);
+    setAdjBarcode('');
+    setAdjReason('Physical Stock Count Variance');
+  };
 
   const toggleVendorMaterial = (mat) => {
     setNewVendorMaterials(prev => 
@@ -1349,114 +1436,469 @@ export default function InventoryManagement({
           </div>
         </div>
       )}
-      {/* Item GRN Purchase History Modal */}
+      {/* Raw Material Stock Ledger & Barcode Tracking Modal */}
       {selectedItemForPurchaseHistory && (() => {
         const item = selectedItemForPurchaseHistory;
-        // Filter matching GRNs by filmType (and micron/width if available)
-        const matchingGRNs = grns.filter(g => 
-          g.filmType.toLowerCase() === item.filmType.toLowerCase()
-        );
+        const filmTypeLower = (item.filmType || '').toLowerCase();
 
-        const totalPurchasedKg = matchingGRNs.reduce((sum, g) => sum + (g.netWeightKg || 0), 0);
-        const totalSpendRs = matchingGRNs.reduce((sum, g) => sum + ((g.netWeightKg || 0) * (g.purchaseRatePerKg || 120)), 0);
-        const avgPurchaseRate = totalPurchasedKg > 0 ? (totalSpendRs / totalPurchasedKg) : 0;
+        // 1. Gather Inward Receipts (GRNs)
+        const matchingGRNs = grns.filter(g => (g.filmType || '').toLowerCase() === filmTypeLower);
+        const inwardTxLines = matchingGRNs.map(g => {
+          const txId = `GRN_${g.grnNo || g.id}`;
+          const rate = g.purchaseRatePerKg || DEFAULT_DAILY_RATES[g.filmType] || 120;
+          const qty = g.netWeightKg || 0;
+          return {
+            txId,
+            category: 'inward',
+            type: 'Inward (GRN)',
+            date: g.receivedDate || '2026-07-24',
+            refNo: g.grnNo,
+            subRef: g.poNumber ? `PO: ${g.poNumber}` : 'Direct Inward',
+            partyName: g.vendorName || 'Supplier',
+            subParty: g.invoiceNo ? `Inv: ${g.invoiceNo}` : 'Direct Receipt',
+            inwardQtyKg: qty,
+            outwardQtyKg: 0,
+            adjQtyKg: 0,
+            ratePerKg: rate,
+            totalValue: qty * rate,
+            barcode: customBarcodesMap[txId] || g.batchNo || `BAR-${g.filmType.toUpperCase()}-${g.grnNo}`,
+            status: g.status || 'Approved',
+            notes: `${g.rollsReceived || 1} roll(s) received`
+          };
+        });
+
+        // 2. Gather Job Material Consumptions from Production Records
+        const jobUsageLines = [];
+        (productionRecords || []).forEach(rec => {
+          (rec.materialsList || []).forEach((mat, idx) => {
+            const matFilm = (mat.filmType || '').toLowerCase();
+            if (matFilm.includes(filmTypeLower) || filmTypeLower.includes(matFilm)) {
+              const txId = `JOB_${rec.id}_${mat.id || idx}`;
+              const qty = mat.netConsumedQtyKg || mat.issueQtyKg || 0;
+              const rate = mat.unitPricePerKg || DEFAULT_DAILY_RATES[item.filmType] || 120;
+              jobUsageLines.push({
+                txId,
+                category: 'usage',
+                type: 'Job Usage',
+                date: rec.dateFilled || rec.approvalDate || '2026-07-23',
+                refNo: rec.jobName || 'Job Production',
+                subRef: `Order: ${rec.orderId || 'ORD'}`,
+                partyName: rec.clientName || 'Customer',
+                subParty: `Plant Mgr: ${rec.filledBy ? rec.filledBy.split(' ')[0] : 'Production'}`,
+                inwardQtyKg: 0,
+                outwardQtyKg: qty,
+                adjQtyKg: 0,
+                ratePerKg: rate,
+                totalValue: qty * rate,
+                barcode: customBarcodesMap[txId] || mat.barcode || `BAR-${item.filmType.toUpperCase()}-JOB-${(rec.orderId || '89').replace('ORD-2026-', '')}`,
+                status: rec.status || 'In Production',
+                notes: `Issued: ${mat.issueQtyKg || 0}kg | Return: ${mat.returnQtyKg || 0}kg`
+              });
+            }
+          });
+        });
+
+        // 3. Gather Physical Reconciliation Adjustments
+        const adjLines = (stockLedgerAdjustments || [])
+          .filter(a => (a.filmType || '').toLowerCase() === filmTypeLower)
+          .map(a => {
+            const txId = `ADJ_${a.id}`;
+            const qty = a.qtyKg || 0;
+            const rate = DEFAULT_DAILY_RATES[item.filmType] || 120;
+            return {
+              txId,
+              category: 'reconciliation',
+              type: a.type || (qty >= 0 ? 'Physical Audit (+)' : 'Physical Audit (-)'),
+              date: a.date || '2026-07-25',
+              refNo: `Audit Ref: ${a.id}`,
+              subRef: a.type || 'Audit Variance',
+              partyName: a.adjustedBy || 'Store Manager',
+              subParty: 'Physical Inventory',
+              inwardQtyKg: qty > 0 ? qty : 0,
+              outwardQtyKg: qty < 0 ? Math.abs(qty) : 0,
+              adjQtyKg: qty,
+              ratePerKg: rate,
+              totalValue: Math.abs(qty) * rate,
+              barcode: customBarcodesMap[txId] || a.barcode || `BAR-AUDIT-${a.id}`,
+              status: 'Reconciled',
+              notes: a.reason || 'Physical Stock Reconciliation'
+            };
+          });
+
+        // 4. Combine and Sort Chronologically (Oldest First to calculate running balance)
+        const allTxLines = [...inwardTxLines, ...jobUsageLines, ...adjLines];
+        allTxLines.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        // 5. Calculate Running Balance
+        let runningStock = 0;
+        const ledgerWithBalance = allTxLines.map(tx => {
+          if (tx.category === 'inward') {
+            runningStock += tx.inwardQtyKg;
+          } else if (tx.category === 'usage') {
+            runningStock -= tx.outwardQtyKg;
+          } else if (tx.category === 'reconciliation') {
+            runningStock += tx.adjQtyKg;
+          }
+          return { ...tx, runningBalance: Math.max(0, runningStock) };
+        });
+
+        // 6. Reverse to Newest First for Display & Apply Filters
+        const displayLines = [...ledgerWithBalance].reverse().filter(tx => {
+          if (ledgerFilterTab !== 'all' && tx.category !== ledgerFilterTab) return false;
+          if (ledgerSearchTerm.trim()) {
+            const q = ledgerSearchTerm.toLowerCase();
+            return (
+              tx.refNo.toLowerCase().includes(q) ||
+              tx.partyName.toLowerCase().includes(q) ||
+              tx.barcode.toLowerCase().includes(q) ||
+              tx.type.toLowerCase().includes(q) ||
+              (tx.notes && tx.notes.toLowerCase().includes(q))
+            );
+          }
+          return true;
+        });
+
+        // Summary Calculations
+        const totalPurchasedKg = inwardTxLines.reduce((sum, tx) => sum + tx.inwardQtyKg, 0);
+        const totalSpendRs = inwardTxLines.reduce((sum, tx) => sum + tx.totalValue, 0);
+        const avgPurchaseRate = totalPurchasedKg > 0 ? (totalSpendRs / totalPurchasedKg) : (DEFAULT_DAILY_RATES[item.filmType] || 120);
+
+        const totalConsumedJobKg = jobUsageLines.reduce((sum, tx) => sum + tx.outwardQtyKg, 0);
+        const totalReconciliationAdjKg = adjLines.reduce((sum, tx) => sum + tx.adjQtyKg, 0);
+        const netAvailableBalanceKg = Math.max(0, totalPurchasedKg - totalConsumedJobKg + totalReconciliationAdjKg);
 
         return (
           <div className="modal-overlay" onClick={() => setSelectedItemForPurchaseHistory(null)}>
-            <div className="modal-content" style={{ maxWidth: '850px', width: '90%' }} onClick={e => e.stopPropagation()}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '12px', borderBottom: '1px solid var(--border-color)' }}>
+            <div className="modal-content" style={{ maxWidth: '1150px', width: '95%', maxHeight: '92vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+              
+              {/* Modal Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid var(--border-color)' }}>
                 <div>
-                  <h3 style={{ fontSize: '1.25rem', fontWeight: '800', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Clock style={{ color: '#2563eb' }} /> GRN Purchase & Receipt History
+                  <h3 style={{ fontSize: '1.3rem', fontWeight: '800', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <History style={{ color: '#2563eb' }} /> Raw Material Stock Ledger & Barcode History
                   </h3>
                   <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                    Item: <strong>{item.filmType} Film ({item.micron}µ x {item.widthMm}mm)</strong>
+                    Material: <strong>{item.filmType} Film ({item.micron}µ x {item.widthMm}mm)</strong> | Density: {item.density || '1.0'} | Location: {item.location || 'Store Bay'}
                   </p>
                 </div>
-                <button className="btn-secondary" style={{ padding: '4px 10px' }} onClick={() => setSelectedItemForPurchaseHistory(null)}>✕ Close</button>
-              </div>
-
-              {/* Summary Metrics Banner */}
-              <div className="glass-card" style={{ background: '#f8fafc', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', padding: '16px', marginBottom: '20px' }}>
-                <div>
-                  <span className="stats-title">Historical Purchased Qty</span>
-                  <div style={{ fontSize: '1.3rem', fontWeight: '800', color: 'var(--text-primary)', marginTop: '4px' }}>
-                    {totalPurchasedKg > 0 ? `${totalPurchasedKg.toLocaleString()} kg` : `${item.availableQtyKg.toLocaleString()} kg`}
-                  </div>
-                </div>
-
-                <div>
-                  <span className="stats-title">Avg Purchase Rate</span>
-                  <div style={{ fontSize: '1.3rem', fontWeight: '800', color: '#2563eb', marginTop: '4px' }}>
-                    ₹ {avgPurchaseRate > 0 ? avgPurchaseRate.toFixed(2) : (DEFAULT_DAILY_RATES[item.filmType] || 120).toFixed(2)} / kg
-                  </div>
-                </div>
-
-                <div>
-                  <span className="stats-title">Total Spend Value</span>
-                  <div style={{ fontSize: '1.3rem', fontWeight: '800', color: '#047857', marginTop: '4px' }}>
-                    ₹ {totalSpendRs > 0 ? totalSpendRs.toLocaleString(undefined, { minimumFractionDigits: 2 }) : (item.availableQtyKg * (DEFAULT_DAILY_RATES[item.filmType] || 120)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <button 
+                    className="btn-primary" 
+                    style={{ background: '#4f46e5', borderColor: '#4f46e5', padding: '6px 14px', fontSize: '0.85rem' }}
+                    onClick={() => setIsQuickAdjOpen(!isQuickAdjOpen)}
+                  >
+                    <Plus size={15} /> {isQuickAdjOpen ? 'Close Form' : 'Quick Stock Adjustment'}
+                  </button>
+                  <button className="btn-secondary" style={{ padding: '6px 12px' }} onClick={() => setSelectedItemForPurchaseHistory(null)}>
+                    ✕ Close
+                  </button>
                 </div>
               </div>
 
-              {/* Date-wise GRN Purchase Table */}
-              <h4 style={{ fontSize: '0.95rem', fontWeight: '700', marginBottom: '12px', color: 'var(--text-primary)' }}>
-                📅 Inward Receipt Entries (Date-Wise)
-              </h4>
+              {/* Quick Physical Stock Adjustment Form (Collapsible) */}
+              {isQuickAdjOpen && (
+                <div className="glass-card" style={{ background: '#f0f9ff', border: '1px solid #bae6fd', padding: '16px', marginBottom: '20px' }}>
+                  <h4 style={{ fontSize: '0.95rem', fontWeight: '700', color: '#0369a1', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <FileSpreadsheet size={16} /> Physical Stock Reconciliation Entry
+                  </h4>
+                  <form onSubmit={e => handleAddLedgerAdjustment(e, item.filmType, item.micron, item.widthMm)}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
+                      <div className="form-group">
+                        <label style={{ fontSize: '0.8rem' }}>Adjustment Type *</label>
+                        <select className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={adjType} onChange={e => setAdjType(e.target.value)}>
+                          <option value="Physical Audit (+)">Physical Audit (+) Surplus Addition</option>
+                          <option value="Physical Audit (-)">Physical Audit (-) Deficit Deduction</option>
+                        </select>
+                      </div>
 
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Date & Time</th>
-                    <th>GRN No / Ref PO</th>
-                    <th>Vendor Name</th>
-                    <th>Invoice No</th>
-                    <th>Qty Received</th>
-                    <th>Purchase Rate</th>
-                    <th>Total Value (₹)</th>
-                    <th>Batch & Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {matchingGRNs.length === 0 ? (
-                    <tr>
-                      <td colSpan="8" style={{ textCenter: 'center', padding: '24px', color: 'var(--text-muted)' }}>
-                        No past GRN inward records found for this specific film type.
-                      </td>
+                      <div className="form-group">
+                        <label style={{ fontSize: '0.8rem' }}>Variance Qty (Kg) *</label>
+                        <input 
+                          type="number" 
+                          step="0.1" 
+                          className="form-control" 
+                          style={{ padding: '6px 10px', fontSize: '0.85rem' }} 
+                          required 
+                          value={adjQtyKg} 
+                          onChange={e => setAdjQtyKg(e.target.value)} 
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label style={{ fontSize: '0.8rem' }}>Barcode / Roll Tag</label>
+                        <input 
+                          type="text" 
+                          className="form-control" 
+                          style={{ padding: '6px 10px', fontSize: '0.85rem' }} 
+                          placeholder="e.g. BAR-PET-AUDIT-05" 
+                          value={adjBarcode} 
+                          onChange={e => setAdjBarcode(e.target.value)} 
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label style={{ fontSize: '0.8rem' }}>Audit Reason / Note</label>
+                        <input 
+                          type="text" 
+                          className="form-control" 
+                          style={{ padding: '6px 10px', fontSize: '0.85rem' }} 
+                          placeholder="e.g. Physical count variance in Row B" 
+                          value={adjReason} 
+                          onChange={e => setAdjReason(e.target.value)} 
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px' }}>
+                      <button type="button" className="btn-secondary" style={{ padding: '4px 12px', fontSize: '0.8rem' }} onClick={() => setIsQuickAdjOpen(false)}>Cancel</button>
+                      <button type="submit" className="btn-primary" style={{ padding: '4px 14px', fontSize: '0.8rem', background: '#0284c7', borderColor: '#0284c7' }}>
+                        <CheckCircle2 size={14} /> Commit Stock Adjustment
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* 4 Summary Ledger KPI Cards */}
+              <div className="glass-card" style={{ background: '#f8fafc', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', padding: '16px', marginBottom: '20px' }}>
+                <div>
+                  <span className="stats-title" style={{ fontSize: '0.75rem' }}>Total Inwards (GRNs)</span>
+                  <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#047857', marginTop: '4px' }}>
+                    + {totalPurchasedKg.toLocaleString()} kg
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{inwardTxLines.length} inward receipts</div>
+                </div>
+
+                <div>
+                  <span className="stats-title" style={{ fontSize: '0.75rem' }}>Used in Job Production</span>
+                  <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#dc2626', marginTop: '4px' }}>
+                    - {totalConsumedJobKg.toLocaleString()} kg
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{jobUsageLines.length} job issues</div>
+                </div>
+
+                <div>
+                  <span className="stats-title" style={{ fontSize: '0.75rem' }}>Reconciliation Audits</span>
+                  <div style={{ fontSize: '1.2rem', fontWeight: '800', color: totalReconciliationAdjKg >= 0 ? '#2563eb' : '#d97706', marginTop: '4px' }}>
+                    {totalReconciliationAdjKg >= 0 ? `+ ${totalReconciliationAdjKg}` : `- ${Math.abs(totalReconciliationAdjKg)}`} kg
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{adjLines.length} audit entries</div>
+                </div>
+
+                <div>
+                  <span className="stats-title" style={{ fontSize: '0.75rem' }}>Current Net Stock Balance</span>
+                  <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#0f172a', marginTop: '4px' }}>
+                    {netAvailableBalanceKg.toLocaleString()} kg
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#2563eb', fontWeight: '600' }}>
+                    Avg Rate: ₹ {avgPurchaseRate.toFixed(2)}/kg
+                  </div>
+                </div>
+              </div>
+
+              {/* Filters & Search Toolbar */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+                
+                {/* Search Bar */}
+                <div style={{ position: 'relative', width: '280px' }}>
+                  <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                  <input
+                    type="text"
+                    className="form-control"
+                    style={{ paddingLeft: '32px', paddingRight: '10px', paddingTop: '6px', paddingBottom: '6px', fontSize: '0.825rem' }}
+                    placeholder="Search by Barcode, Job, GRN or Vendor..."
+                    value={ledgerSearchTerm}
+                    onChange={e => setLedgerSearchTerm(e.target.value)}
+                  />
+                </div>
+
+                {/* Ledger Subtab Pills */}
+                <div style={{ display: 'flex', gap: '6px', background: '#e2e8f0', padding: '4px', borderRadius: '8px' }}>
+                  <button 
+                    className={`btn-secondary`}
+                    style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerFilterTab === 'all' ? '#ffffff' : 'transparent', fontWeight: ledgerFilterTab === 'all' ? '700' : '500', color: ledgerFilterTab === 'all' ? '#0f172a' : 'var(--text-secondary)' }}
+                    onClick={() => setLedgerFilterTab('all')}
+                  >
+                    📋 All Ledger ({allTxLines.length})
+                  </button>
+
+                  <button 
+                    className={`btn-secondary`}
+                    style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerFilterTab === 'inward' ? '#ffffff' : 'transparent', fontWeight: ledgerFilterTab === 'inward' ? '700' : '500', color: ledgerFilterTab === 'inward' ? '#047857' : 'var(--text-secondary)' }}
+                    onClick={() => setLedgerFilterTab('inward')}
+                  >
+                    📥 Inwards ({inwardTxLines.length})
+                  </button>
+
+                  <button 
+                    className={`btn-secondary`}
+                    style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerFilterTab === 'usage' ? '#ffffff' : 'transparent', fontWeight: ledgerFilterTab === 'usage' ? '700' : '500', color: ledgerFilterTab === 'usage' ? '#7f1d1d' : 'var(--text-secondary)' }}
+                    onClick={() => setLedgerFilterTab('usage')}
+                  >
+                    📤 Job Usage ({jobUsageLines.length})
+                  </button>
+
+                  <button 
+                    className={`btn-secondary`}
+                    style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerFilterTab === 'reconciliation' ? '#ffffff' : 'transparent', fontWeight: ledgerFilterTab === 'reconciliation' ? '700' : '500', color: ledgerFilterTab === 'reconciliation' ? '#1e40af' : 'var(--text-secondary)' }}
+                    onClick={() => setLedgerFilterTab('reconciliation')}
+                  >
+                    ⚖️ Audit Adj ({adjLines.length})
+                  </button>
+                </div>
+
+              </div>
+
+              {/* Comprehensive Material Stock Ledger Table */}
+              <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+                <table className="data-table" style={{ fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr style={{ background: '#f1f5f9' }}>
+                      <th>Date & Time</th>
+                      <th>Transaction Type</th>
+                      <th>Ref Doc / Job Name</th>
+                      <th>Party / Plant Manager</th>
+                      <th style={{ minWidth: '180px' }}>Barcode / Roll ID (Updatable)</th>
+                      <th style={{ color: '#047857' }}>Inward (+ Kg)</th>
+                      <th style={{ color: '#dc2626' }}>Job Usage (- Kg)</th>
+                      <th style={{ color: '#2563eb' }}>Audit Adj (± Kg)</th>
+                      <th>Stock Balance (Kg)</th>
+                      <th>Rate & Value (₹)</th>
                     </tr>
-                  ) : (
-                    matchingGRNs.map((g, idx) => {
-                      const rate = g.purchaseRatePerKg || DEFAULT_DAILY_RATES[g.filmType] || 120;
-                      const val = (g.netWeightKg || 0) * rate;
-                      return (
-                        <tr key={idx}>
-                          <td style={{ fontSize: '0.85rem' }}>{g.receivedDate}</td>
-                          <td>
-                            <div style={{ fontWeight: '700', color: '#2563eb' }}>{g.grnNo}</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{g.poNumber}</div>
-                          </td>
-                          <td style={{ fontWeight: '600' }}>{g.vendorName}</td>
-                          <td>{g.invoiceNo || 'N/A'}</td>
-                          <td style={{ fontWeight: '700' }}>{g.netWeightKg.toLocaleString()} kg <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>({g.rollsReceived} rolls)</span></td>
-                          <td style={{ fontWeight: '700', color: '#2563eb' }}>₹ {rate.toFixed(2)}</td>
-                          <td style={{ fontWeight: '700', color: '#047857' }}>₹ {val.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                          <td>
-                            <code style={{ fontSize: '0.75rem' }}>{g.batchNo}</code>
-                            <div style={{ marginTop: '2px' }}>
-                              {g.status === 'Approved' ? (
-                                <span className="badge badge-us" style={{ fontSize: '0.7rem' }}>Approved</span>
-                              ) : (
-                                <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>Pending QC</span>
+                  </thead>
+                  <tbody>
+                    {displayLines.length === 0 ? (
+                      <tr>
+                        <td colSpan="10" style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
+                          No transaction records found matching the filter criteria.
+                        </td>
+                      </tr>
+                    ) : (
+                      displayLines.map((tx, idx) => {
+                        const isEditingThisBarcode = editingTxId === tx.txId;
+                        return (
+                          <tr key={tx.txId || idx} style={{ background: tx.category === 'reconciliation' ? '#f0f9ff' : (tx.category === 'usage' ? '#fff5f5' : 'transparent') }}>
+                            <td style={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>{tx.date}</td>
+                            
+                            {/* Category Badge */}
+                            <td>
+                              {tx.category === 'inward' && (
+                                <span className="badge badge-us" style={{ fontSize: '0.72rem', background: '#dcfce7', color: '#15803d' }}>
+                                  📥 GRN Inward
+                                </span>
                               )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
+                              {tx.category === 'usage' && (
+                                <span className="badge badge-error" style={{ fontSize: '0.72rem', background: '#fee2e2', color: '#b91c1c' }}>
+                                  📤 Job Usage
+                                </span>
+                              )}
+                              {tx.category === 'reconciliation' && (
+                                <span className="badge badge-warning" style={{ fontSize: '0.72rem', background: '#e0f2fe', color: '#0369a1' }}>
+                                  ⚖️ Physical Audit
+                                </span>
+                              )}
+                            </td>
+
+                            {/* Ref Doc / Job */}
+                            <td>
+                              <div style={{ fontWeight: '700', color: tx.category === 'usage' ? '#991b1b' : '#2563eb' }}>
+                                {tx.refNo}
+                              </div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{tx.subRef}</div>
+                            </td>
+
+                            {/* Party */}
+                            <td>
+                              <div style={{ fontWeight: '600' }}>{tx.partyName}</div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{tx.subParty}</div>
+                            </td>
+
+                            {/* Updatable Barcode Column */}
+                            <td>
+                              {isEditingThisBarcode ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <input 
+                                    type="text" 
+                                    className="form-control" 
+                                    style={{ padding: '2px 6px', fontSize: '0.78rem', width: '130px' }}
+                                    autoFocus
+                                    value={editingBarcodeVal} 
+                                    onChange={e => setEditingBarcodeVal(e.target.value)}
+                                    onKeyDown={e => {
+                                      if (e.key === 'Enter') handleSaveCustomBarcode(tx.txId, editingBarcodeVal);
+                                      if (e.key === 'Escape') setEditingTxId(null);
+                                    }}
+                                  />
+                                  <button 
+                                    type="button" 
+                                    style={{ background: '#16a34a', color: '#fff', border: 'none', borderRadius: '4px', padding: '2px 6px', cursor: 'pointer', fontSize: '0.75rem' }}
+                                    onClick={() => handleSaveCustomBarcode(tx.txId, editingBarcodeVal)}
+                                    title="Save Barcode"
+                                  >
+                                    <Check size={12} />
+                                  </button>
+                                  <button 
+                                    type="button" 
+                                    style={{ background: '#94a3b8', color: '#fff', border: 'none', borderRadius: '4px', padding: '2px 6px', cursor: 'pointer', fontSize: '0.75rem' }}
+                                    onClick={() => setEditingTxId(null)}
+                                    title="Cancel"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              ) : (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <code style={{ fontSize: '0.78rem', background: '#f1f5f9', color: '#0f172a', padding: '2px 6px', borderRadius: '4px', border: '1px solid #cbd5e1', fontWeight: '600' }}>
+                                    {tx.barcode}
+                                  </code>
+                                  <button 
+                                    type="button" 
+                                    style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+                                    onClick={() => {
+                                      setEditingTxId(tx.txId);
+                                      setEditingBarcodeVal(tx.barcode);
+                                    }}
+                                    title="Click to edit/update barcode string"
+                                  >
+                                    <Edit3 size={13} />
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+
+                            {/* Inward Qty */}
+                            <td style={{ fontWeight: '700', color: tx.inwardQtyKg > 0 ? '#047857' : 'var(--text-muted)' }}>
+                              {tx.inwardQtyKg > 0 ? `+ ${tx.inwardQtyKg.toLocaleString()} kg` : '-'}
+                            </td>
+
+                            {/* Job Usage Qty */}
+                            <td style={{ fontWeight: '700', color: tx.outwardQtyKg > 0 ? '#dc2626' : 'var(--text-muted)' }}>
+                              {tx.outwardQtyKg > 0 ? `- ${tx.outwardQtyKg.toLocaleString()} kg` : '-'}
+                            </td>
+
+                            {/* Audit Adj Qty */}
+                            <td style={{ fontWeight: '700', color: tx.adjQtyKg !== 0 ? (tx.adjQtyKg > 0 ? '#2563eb' : '#d97706') : 'var(--text-muted)' }}>
+                              {tx.adjQtyKg !== 0 ? (tx.adjQtyKg > 0 ? `+ ${tx.adjQtyKg} kg` : `- ${Math.abs(tx.adjQtyKg)} kg`) : '-'}
+                            </td>
+
+                            {/* Running Balance */}
+                            <td style={{ fontWeight: '800', color: '#0f172a', background: '#f8fafc' }}>
+                              {tx.runningBalance.toLocaleString()} kg
+                            </td>
+
+                            {/* Rate & Total Value */}
+                            <td>
+                              <div style={{ fontWeight: '700', color: '#047857' }}>₹ {tx.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>₹ {tx.ratePerKg.toFixed(2)}/kg</div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
             </div>
           </div>
         );
