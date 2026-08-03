@@ -45,41 +45,49 @@ export default function ProductionRecordManagement({
 
   // Form State for creating/editing a Production Record
   const [selectedOrder, setSelectedOrder] = useState(orders[0] || null);
-  const [materialsList, setMaterialsList] = useState([
-    { id: '1', filmType: 'PET', micron: 12, widthMm: 1000, barcode: 'BAR-PET-089-1', issueQtyKg: 400, returnQtyKg: 14.5, unitPricePerKg: 125 },
-    { id: '2', filmType: 'METPET', micron: 12, widthMm: 1000, barcode: 'BAR-METPET-089-2', issueQtyKg: 400, returnQtyKg: 12.0, unitPricePerKg: 140 },
-    { id: '3', filmType: 'Natural LD GP Film', micron: 35, widthMm: 1005, barcode: 'BAR-LD-089-3', issueQtyKg: 850, returnQtyKg: 40.0, unitPricePerKg: 115 },
-    { id: '4', filmType: 'Liquid Inks & Solvents', micron: '-', widthMm: '-', barcode: 'BAR-INK-089-4', issueQtyKg: 55, returnQtyKg: 3.0, unitPricePerKg: 1500 },
-    { id: '5', filmType: 'Solvent-less Adhesive', micron: '-', widthMm: '-', barcode: 'BAR-ADH-089-5', issueQtyKg: 48, returnQtyKg: 1.5, unitPricePerKg: 270 }
-  ]);
-  const [processingCostRs, setProcessingCostRs] = useState(45000);
+  
+  const DEFAULT_6_INGREDIENTS = [
+    { id: '1', filmType: 'PET Film', micron: '12', widthMm: '1000', barcode: '', issueQtyKg: 400, returnQtyKg: 0, unitPricePerKg: 125 },
+    { id: '2', filmType: 'METPET Film', micron: '12', widthMm: '1000', barcode: '', issueQtyKg: 400, returnQtyKg: 0, unitPricePerKg: 140 },
+    { id: '3', filmType: 'Natural LD Film', micron: '35', widthMm: '1005', barcode: '', issueQtyKg: 850, returnQtyKg: 0, unitPricePerKg: 115 },
+    { id: '4', filmType: 'Ethyl Acetate (Solvent)', micron: '-', widthMm: '-', barcode: '', issueQtyKg: 55, returnQtyKg: 0, unitPricePerKg: 210 },
+    { id: '5', filmType: 'Toluene (Solvent)', micron: '-', widthMm: '-', barcode: '', issueQtyKg: 40, returnQtyKg: 0, unitPricePerKg: 185 },
+    { id: '6', filmType: 'MIBK (Solvent)', micron: '-', widthMm: '-', barcode: '', issueQtyKg: 25, returnQtyKg: 0, unitPricePerKg: 260 }
+  ];
+
+  const [materialsList, setMaterialsList] = useState(DEFAULT_6_INGREDIENTS);
+  
+  // Processing Cost Per Kg (Default from Settings: ₹ 25/kg)
+  const [processingCostPerKg, setProcessingCostPerKg] = useState(25);
+
+  // Scrap / Wastage breakdown fields (in kg)
+  const [printingPlainSettingWastageKg, setPrintingPlainSettingWastageKg] = useState(15.0);
+  const [printingWastageKg, setPrintingWastageKg] = useState(12.5);
+  const [laminationPlainSubstrateWastageKg, setLaminationPlainSubstrateWastageKg] = useState(10.0);
+  const [laminateWastageKg, setLaminateWastageKg] = useState(8.0);
+  const [trimWastageKg, setTrimWastageKg] = useState(14.0);
+  const [scrapRatePerKg, setScrapRatePerKg] = useState(20); // ₹ 20/kg scrap value
+
   const [recordNotes, setRecordNotes] = useState('');
 
   // Helper to open 'Start Production' for a specific punched job/order
   const handleStartProductionForOrder = (ord) => {
     setSelectedOrder(ord);
     setSelectedRecord(null);
-    const ordNumStr = (ord.id || '89').replace('ORD-2026-', '');
     if (ord.materialRequirements && ord.materialRequirements.length > 0) {
       const mappedList = ord.materialRequirements.map((req, idx) => ({
         id: String(idx + 1),
         filmType: req.filmType,
         micron: req.micron,
         widthMm: req.widthMm,
-        barcode: `BAR-${(req.filmType || 'PET').toUpperCase().replace(/\s+/g, '')}-${ordNumStr}-${idx + 1}`,
+        barcode: '', // Empty by default
         issueQtyKg: Math.round(req.qtyKg * 1.05),
-        returnQtyKg: Math.round(req.qtyKg * 0.05),
+        returnQtyKg: 0, // Default Unused Return is 0
         unitPricePerKg: DEFAULT_DAILY_RATES[req.filmType] || 120
       }));
       setMaterialsList(mappedList);
     } else {
-      setMaterialsList([
-        { id: '1', filmType: 'PET', micron: 12, widthMm: 1000, barcode: `BAR-PET-${ordNumStr}-1`, issueQtyKg: 400, returnQtyKg: 14.5, unitPricePerKg: 125 },
-        { id: '2', filmType: 'METPET', micron: 12, widthMm: 1000, barcode: `BAR-METPET-${ordNumStr}-2`, issueQtyKg: 400, returnQtyKg: 12.0, unitPricePerKg: 140 },
-        { id: '3', filmType: 'Natural LD GP Film', micron: 35, widthMm: 1005, barcode: `BAR-LD-${ordNumStr}-3`, issueQtyKg: 850, returnQtyKg: 40.0, unitPricePerKg: 115 },
-        { id: '4', filmType: 'Liquid Inks & Solvents', micron: '-', widthMm: '-', barcode: `BAR-INK-${ordNumStr}-4`, issueQtyKg: 55, returnQtyKg: 3.0, unitPricePerKg: 1500 },
-        { id: '5', filmType: 'Solvent-less Adhesive', micron: '-', widthMm: '-', barcode: `BAR-ADH-${ordNumStr}-5`, issueQtyKg: 48, returnQtyKg: 1.5, unitPricePerKg: 270 }
-      ]);
+      setMaterialsList(DEFAULT_6_INGREDIENTS);
     }
     setActiveTab('new_record');
   };
@@ -97,12 +105,12 @@ export default function ProductionRecordManagement({
       ...prev,
       {
         id: String(Date.now()),
-        filmType: 'PET',
-        micron: 12,
-        widthMm: 1000,
-        barcode: `BAR-PET-${Date.now().toString().slice(-4)}`,
+        filmType: 'PET Film',
+        micron: '12',
+        widthMm: '1000',
+        barcode: '', // Empty by default
         issueQtyKg: 100,
-        returnQtyKg: 0,
+        returnQtyKg: 0, // Default Unused Return is 0
         unitPricePerKg: 125
       }
     ]);
@@ -137,7 +145,20 @@ export default function ProductionRecordManagement({
 
   const totalNetQtyKg = calculatedMaterials.reduce((sum, m) => sum + m.netConsumedQtyKg, 0);
   const totalMaterialCostRs = calculatedMaterials.reduce((sum, m) => sum + m.totalMaterialCost, 0);
-  const finalProductionCostRs = totalMaterialCostRs + (parseFloat(processingCostRs) || 0);
+  
+  // Total Processing Cost = Total Qty Produced x Processing Cost Per Kg
+  const totalProcessingCostRs = totalNetQtyKg * (parseFloat(processingCostPerKg) || 0);
+
+  // Total Scrap Weight = Printing Plain Setting + Printing Wastage + Lamination Plain Substrate + Laminate Wastage + Trim Wastage
+  const totalScrapQtyKg = (parseFloat(printingPlainSettingWastageKg) || 0) +
+                         (parseFloat(printingWastageKg) || 0) +
+                         (parseFloat(laminationPlainSubstrateWastageKg) || 0) +
+                         (parseFloat(laminateWastageKg) || 0) +
+                         (parseFloat(trimWastageKg) || 0);
+  const totalScrapCostRs = totalScrapQtyKg * (parseFloat(scrapRatePerKg) || 0);
+
+  // Formula: (Total Qty produced x Default Processing Cost) + (Total Cost of Ingredients) + Scrap = Total Cost of Production
+  const finalProductionCostRs = totalProcessingCostRs + totalMaterialCostRs + totalScrapCostRs;
 
   // Save / Fill by Plant Manager
   const handleSubmitRecord = (e) => {
@@ -589,16 +610,23 @@ export default function ProductionRecordManagement({
 
           {/* Ingredient Materials Form Table */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <h4 style={{ fontSize: '1rem', fontWeight: '700' }}>Ingredient Materials Issued & Returned List</h4>
-            <button type="button" className="btn-secondary" style={{ padding: '5px 12px', fontSize: '0.8rem' }} onClick={addMaterialRow}>
-              <Plus size={14} /> Add Ingredient Row
+            <div>
+              <h4 style={{ fontSize: '1rem', fontWeight: '700', color: 'var(--text-primary)' }}>
+                📦 Ingredient Materials Issued & Returned List
+              </h4>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                Select raw material from inventory dropdown or scan roll barcode to auto-populate rate, width, micron, and roll quantity.
+              </p>
+            </div>
+            <button type="button" className="btn-secondary" style={{ padding: '6px 14px', fontSize: '0.8rem' }} onClick={addMaterialRow}>
+              <Plus size={14} /> Add Raw Material Row
             </button>
           </div>
 
           <table className="data-table" style={{ marginBottom: '24px' }}>
             <thead>
               <tr style={{ background: '#f8fafc' }}>
-                <th>Raw Material / Ingredient</th>
+                <th style={{ minWidth: '200px' }}>Raw Material / Ingredient</th>
                 <th style={{ minWidth: '180px' }}>Barcode / Roll ID (Scan 📷)</th>
                 <th style={{ width: '75px' }}>Micron</th>
                 <th style={{ width: '85px' }}>Width (mm)</th>
@@ -613,42 +641,81 @@ export default function ProductionRecordManagement({
             <tbody>
               {calculatedMaterials.map((m) => {
                 const isPartialReturn = (parseFloat(m.returnQtyKg) || 0) > 0;
+                const rawMaterialOptions = [
+                  ...new Set([
+                    'PET Film',
+                    'METPET Film',
+                    'Natural LD Film',
+                    'Ethyl Acetate (Solvent)',
+                    'Toluene (Solvent)',
+                    'MIBK (Solvent)',
+                    'Liquid Inks & Solvents',
+                    'Solvent-less Adhesive',
+                    'Solvent-based Adhesive',
+                    'Milky LD Film',
+                    'BOPP Natural',
+                    'Metalised BOPP',
+                    'Pearlised BOPP',
+                    'CPP Natural',
+                    'Metalised CPP',
+                    ...inventory.map(i => i.filmType).filter(Boolean)
+                  ])
+                ];
+
                 return (
                   <tr key={m.id}>
+                    {/* Searchable / Select Dropdown for Raw Material */}
                     <td>
-                      <input 
-                        type="text" 
+                      <select 
                         className="form-control"
-                        style={{ fontWeight: '600' }}
+                        style={{ fontWeight: '600', minWidth: '180px' }}
                         value={m.filmType}
-                        onChange={e => updateMaterialRow(m.id, 'filmType', e.target.value)}
-                        required
-                      />
+                        onChange={e => {
+                          const val = e.target.value;
+                          updateMaterialRow(m.id, 'filmType', val);
+                          if (DEFAULT_DAILY_RATES[val]) {
+                            updateMaterialRow(m.id, 'unitPricePerKg', DEFAULT_DAILY_RATES[val]);
+                          }
+                        }}
+                      >
+                        {rawMaterialOptions.map(opt => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </select>
                     </td>
 
-                    {/* Barcode Scanner / Selector Input */}
+                    {/* Barcode Scanner / Picker (Auto-populates Rate, Width, Micron, Issued Qty, Sets Unused Return to 0) */}
                     <td>
                       <div style={{ position: 'relative' }}>
                         <input 
                           type="text" 
                           className="form-control"
-                          style={{ paddingLeft: '28px', fontSize: '0.8rem', fontFamily: 'monospace', fontWeight: '700', background: '#f8fafc' }}
+                          style={{ paddingLeft: '28px', fontSize: '0.8rem', fontFamily: 'monospace', fontWeight: '700', background: m.barcode ? '#f0f9ff' : '#ffffff' }}
                           placeholder="Scan or type Barcode..."
                           value={m.barcode || ''}
                           onChange={e => {
                             const val = e.target.value;
                             updateMaterialRow(m.id, 'barcode', val);
-                            // Auto-fetch stock if matched with inventory item ID or batch
-                            const match = inventory.find(inv => (inv.lastBatch || '').toLowerCase() === val.trim().toLowerCase() || (inv.id || '').toLowerCase() === val.trim().toLowerCase());
-                            if (match) {
-                              updateMaterialRow(m.id, 'issueQtyKg', match.availableQtyKg || 400);
-                              updateMaterialRow(m.id, 'filmType', match.filmType);
-                              updateMaterialRow(m.id, 'micron', match.micron);
-                              updateMaterialRow(m.id, 'widthMm', match.widthMm);
+                            if (val.trim()) {
+                              const match = inventory.find(inv => 
+                                (inv.lastBatch || '').toLowerCase() === val.trim().toLowerCase() || 
+                                (inv.id || '').toLowerCase() === val.trim().toLowerCase() ||
+                                (inv.filmType || '').toLowerCase() === val.trim().toLowerCase()
+                              );
+                              if (match) {
+                                updateMaterialRow(m.id, 'issueQtyKg', match.availableQtyKg || 400);
+                                updateMaterialRow(m.id, 'returnQtyKg', 0); // Default Unused Return is 0
+                                if (match.filmType) updateMaterialRow(m.id, 'filmType', match.filmType);
+                                if (match.micron) updateMaterialRow(m.id, 'micron', match.micron);
+                                if (match.widthMm) updateMaterialRow(m.id, 'widthMm', match.widthMm);
+                                if (match.unitPricePerKg || DEFAULT_DAILY_RATES[match.filmType]) {
+                                  updateMaterialRow(m.id, 'unitPricePerKg', match.unitPricePerKg || DEFAULT_DAILY_RATES[match.filmType] || 120);
+                                }
+                              }
                             }
                           }}
                         />
-                        <Scan size={14} style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', color: '#2563eb' }} />
+                        <Scan size={14} style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', color: m.barcode ? '#0284c7' : '#94a3b8' }} />
                       </div>
                     </td>
 
@@ -700,11 +767,11 @@ export default function ProductionRecordManagement({
                       </div>
                       {isPartialReturn ? (
                         <span className="badge badge-warning" style={{ fontSize: '0.68rem', padding: '1px 5px', marginTop: '3px', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' }}>
-                          📦 {m.returnQtyKg} kg returned to {m.barcode || 'barcode'}
+                          📦 {m.returnQtyKg} kg returned to store
                         </span>
                       ) : (
                         <span className="badge badge-us" style={{ fontSize: '0.68rem', padding: '1px 5px', marginTop: '3px' }}>
-                          Fully Consumed
+                          Default Return: 0 kg
                         </span>
                       )}
                     </td>
@@ -735,31 +802,143 @@ export default function ProductionRecordManagement({
             </tbody>
           </table>
 
-          {/* Cost Summary Box */}
-          <div className="glass-card" style={{ background: '#f8fafc', padding: '20px', marginBottom: '24px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
+          {/* SCRAP & WASTAGE BREAKDOWN SECTION */}
+          <div className="glass-card" style={{ background: '#fffbeb', border: '1px solid #fde68a', padding: '20px', marginBottom: '24px' }}>
+            <h4 style={{ fontSize: '0.95rem', fontWeight: '800', color: '#b45309', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              ♻️ Production Scrap & Wastage Breakdown (in Kg)
+            </h4>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '14px' }}>
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: '700', color: '#78350f' }}>
+                  Printing Plain Setting (kg)
+                </label>
+                <input 
+                  type="number" 
+                  step="0.1"
+                  className="form-control"
+                  style={{ marginTop: '4px', background: '#ffffff' }}
+                  value={printingPlainSettingWastageKg}
+                  onChange={e => setPrintingPlainSettingWastageKg(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: '700', color: '#78350f' }}>
+                  Printing Wastage (kg)
+                </label>
+                <input 
+                  type="number" 
+                  step="0.1"
+                  className="form-control"
+                  style={{ marginTop: '4px', background: '#ffffff' }}
+                  value={printingWastageKg}
+                  onChange={e => setPrintingWastageKg(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: '700', color: '#78350f' }}>
+                  Lamination Plain Substrate (kg)
+                </label>
+                <input 
+                  type="number" 
+                  step="0.1"
+                  className="form-control"
+                  style={{ marginTop: '4px', background: '#ffffff' }}
+                  value={laminationPlainSubstrateWastageKg}
+                  onChange={e => setLaminationPlainSubstrateWastageKg(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: '700', color: '#78350f' }}>
+                  Laminate Wastage (kg)
+                </label>
+                <input 
+                  type="number" 
+                  step="0.1"
+                  className="form-control"
+                  style={{ marginTop: '4px', background: '#ffffff' }}
+                  value={laminateWastageKg}
+                  onChange={e => setLaminateWastageKg(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: '700', color: '#78350f' }}>
+                  Trim Wastage (kg)
+                </label>
+                <input 
+                  type="number" 
+                  step="0.1"
+                  className="form-control"
+                  style={{ marginTop: '4px', background: '#ffffff' }}
+                  value={trimWastageKg}
+                  onChange={e => setTrimWastageKg(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: '700', color: '#78350f' }}>
+                  Scrap Rate (₹ / kg)
+                </label>
+                <input 
+                  type="number" 
+                  step="0.1"
+                  className="form-control"
+                  style={{ marginTop: '4px', background: '#ffffff', fontWeight: '700' }}
+                  value={scrapRatePerKg}
+                  onChange={e => setScrapRatePerKg(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px dashed #fcd34d', display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#92400e' }}>
+              <div>Total Scrap Qty: <strong>{totalScrapQtyKg.toFixed(1)} kg</strong></div>
+              <div>Total Scrap Cost: <strong>₹ {totalScrapCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
+            </div>
+          </div>
+
+          {/* Cost Summary Box with Formula */}
+          <div className="glass-card" style={{ background: '#f8fafc', padding: '24px', marginBottom: '24px' }}>
+            <div style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--primary-brand)', marginBottom: '16px' }}>
+              📐 COST OF PRODUCTION FORMULA: (Total Qty Produced × Processing Cost Rate) + (Ingredients Cost) + (Scrap Cost)
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px' }}>
+              <div>
+                <span className="stats-title">Total Net Qty Produced</span>
+                <div style={{ fontSize: '1.3rem', fontWeight: '800', marginTop: '4px' }}>
+                  {totalNetQtyKg.toLocaleString()} <span style={{ fontSize: '0.85rem' }}>kg</span>
+                </div>
+              </div>
+
               <div>
                 <span className="stats-title">Total Ingredients Cost</span>
-                <div style={{ fontSize: '1.4rem', fontWeight: '800' }}>
+                <div style={{ fontSize: '1.3rem', fontWeight: '800', marginTop: '4px' }}>
                   ₹ {totalMaterialCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </div>
               </div>
 
               <div>
-                <label style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                  Processing & Lamination Cost (₹)
+                <label style={{ fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                  Processing & Lamination Rate (₹ / kg)
                 </label>
                 <input 
                   type="number" 
                   className="form-control" 
-                  style={{ marginTop: '4px', fontSize: '1.1rem', fontWeight: '700' }}
-                  value={processingCostRs}
-                  onChange={e => setProcessingCostRs(e.target.value)}
+                  style={{ marginTop: '4px', fontSize: '1rem', fontWeight: '700' }}
+                  value={processingCostPerKg}
+                  onChange={e => setProcessingCostPerKg(e.target.value)}
                 />
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  Cost: ₹ {totalProcessingCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </div>
               </div>
 
               <div style={{ borderLeft: '2px solid #cbd5e1', paddingLeft: '20px' }}>
-                <span className="stats-title" style={{ color: '#047857' }}>FINAL COST OF PRODUCTION</span>
+                <span className="stats-title" style={{ color: '#047857' }}>TOTAL COST OF PRODUCTION</span>
                 <div style={{ fontSize: '1.6rem', fontWeight: '900', color: '#047857', marginTop: '4px' }}>
                   ₹ {finalProductionCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </div>
