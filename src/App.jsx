@@ -232,6 +232,52 @@ export default function App() {
           ]);
         }
 
+        // Auto-heal Job Masters if job_masters table in Supabase is empty but initial seeds or cylinders exist
+        if (!supaJobMasters || supaJobMasters.length === 0) {
+          console.log("[Supabase Sync] Recovering/Syncing Job Master records into Supabase...");
+          const existingJobSkus = new Set((supaJobMasters || []).map(j => j.skuCode));
+          
+          for (const j of (initialJobMasters || [])) {
+            if (j.skuCode && !existingJobSkus.has(j.skuCode)) {
+              await saveJobMasterToSupabase(j);
+              existingJobSkus.add(j.skuCode);
+            }
+          }
+          
+          if (Array.isArray(supaCyls)) {
+            for (const c of supaCyls) {
+              if (c.sku && !existingJobSkus.has(c.sku)) {
+                const recovered = {
+                  id: `JM-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+                  skuCode: c.sku,
+                  jobName: c.jobName || 'Factory Job Structure',
+                  clientName: c.clientGroup || c.clientName || 'General Client',
+                  structure: 'PET 12µ / METPET 12µ / Natural GP LD 35µ',
+                  printWidthMm: Number(c.faceLengthMm) || 1000,
+                  repeatLengthMm: Number(c.circumferenceMm) || 400,
+                  pouchOpenWidth: 120,
+                  pouchHeight: 150,
+                  layers: [
+                    { id: 1, filmType: 'PET', micron: 12 },
+                    { id: 2, filmType: 'METPET', micron: 12 },
+                    { id: 3, filmType: 'Natural GP LD', micron: 35 }
+                  ],
+                  cylinderSku: c.sku,
+                  cylinderCost: c.cylinderCost || '₹ 35,000',
+                  colorsCount: Number(c.colorsCount) || 6,
+                  engravuresName: c.engravuresName || '',
+                  costBorneBy: c.costBorneBy || 'Client (100%)',
+                  utilisationLimit: Number(c.utilisationLimit) || 10000,
+                  creationDate: new Date().toISOString().split('T')[0]
+                };
+                await saveJobMasterToSupabase(recovered);
+                existingJobSkus.add(c.sku);
+              }
+            }
+          }
+          supaJobMasters = await fetchJobMasters();
+        }
+
         // Supabase DB is the AUTHORITATIVE Source of Truth.
         // Overwrite in-memory state with live data fetched directly from Supabase!
         if (Array.isArray(supaOrders)) setOrders(supaOrders);

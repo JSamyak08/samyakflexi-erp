@@ -172,19 +172,43 @@ export default function JobMasterDirectory({
 
   const getNextSerialSkuCode = () => {
     let maxIndex = 0;
-    (jobMasters || []).forEach(j => {
-      if (j.skuCode) {
-        const matches = j.skuCode.match(/\d+/g);
-        if (matches) {
-          const num = parseInt(matches[matches.length - 1], 10);
-          if (!isNaN(num) && num > maxIndex) maxIndex = num;
-        }
+
+    const checkStringForNum = (str) => {
+      if (!str) return;
+      const matches = String(str).match(/\d+/g);
+      if (matches) {
+        const num = parseInt(matches[matches.length - 1], 10);
+        if (!isNaN(num) && num > maxIndex) maxIndex = num;
       }
+    };
+
+    (jobMasters || []).forEach(j => {
+      checkStringForNum(j.skuCode);
+      checkStringForNum(j.sku);
+      checkStringForNum(j.cylinderSku);
     });
 
-    const nextNum = maxIndex > 0 ? maxIndex + 1 : (jobMasters ? jobMasters.length : 0) + 1;
+    (cylinders || []).forEach(c => {
+      checkStringForNum(c.sku);
+      checkStringForNum(c.skuCode);
+    });
+
+    (orders || []).forEach(o => {
+      checkStringForNum(o.skuCode);
+      checkStringForNum(o.sku);
+    });
+
+    const nextNum = maxIndex + 1;
     return `SKU-2026-${String(nextNum).padStart(3, '0')}`;
   };
+
+  const isSkuDuplicate = useMemo(() => {
+    const code = (skuCode || '').trim().toLowerCase();
+    if (!code) return false;
+    const existsInJobs = (jobMasters || []).some(j => (j.skuCode || j.sku || j.cylinderSku || '').toLowerCase() === code);
+    const existsInCylinders = (cylinders || []).some(c => (c.sku || c.skuCode || '').toLowerCase() === code);
+    return existsInJobs || existsInCylinders;
+  }, [skuCode, jobMasters, cylinders]);
 
   const handleOpenCreateModal = () => {
     setSkuCode(getNextSerialSkuCode());
@@ -193,10 +217,15 @@ export default function JobMasterDirectory({
     setIsCreateModalOpen(true);
   };
 
-  const handleCreateJobMaster = (e) => {
+  const handleCreateJobMaster = async (e) => {
     e.preventDefault();
     if (!jobName.trim() || !clientName.trim() || !skuCode.trim()) {
       alert("Job Name, Client Name, and SKU Code are required!");
+      return;
+    }
+
+    if (isSkuDuplicate) {
+      alert(`SKU Code "${skuCode.trim()}" is already in use! Please enter or generate a unique SKU Code.`);
       return;
     }
 
@@ -223,10 +252,10 @@ export default function JobMasterDirectory({
       creationDate: new Date().toISOString().split('T')[0]
     };
 
-    if (onAddJobMaster) onAddJobMaster(newJobMaster);
+    if (onAddJobMaster) await onAddJobMaster(newJobMaster);
 
     if (createCylinder && onAddCylinder) {
-      onAddCylinder({
+      await onAddCylinder({
         id: Date.now(),
         sku: skuCode.trim(),
         jobName: jobName.trim(),
@@ -603,7 +632,22 @@ export default function JobMasterDirectory({
 
             <form onSubmit={handleCreateJobMaster}>
               <div className="form-grid">
-                <div className="form-group"><label>SKU Code *</label><input type="text" className="form-control" required value={skuCode} onChange={e => setSkuCode(e.target.value)} /></div>
+                <div className="form-group">
+                  <label>SKU Code *</label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    required 
+                    style={{ borderColor: isSkuDuplicate ? '#ef4444' : undefined, background: isSkuDuplicate ? '#fef2f2' : undefined }}
+                    value={skuCode} 
+                    onChange={e => setSkuCode(e.target.value)} 
+                  />
+                  {isSkuDuplicate && (
+                    <div style={{ color: '#dc2626', fontSize: '0.75rem', fontWeight: '700', marginTop: '4px' }}>
+                      ⚠️ SKU Code "{skuCode}" already exists! Must be unique.
+                    </div>
+                  )}
+                </div>
                 <div className="form-group"><label>Job Name *</label><input type="text" className="form-control" required value={jobName} onChange={e => setJobName(e.target.value)} /></div>
                 {/* SEARCHABLE CLIENT DROPDOWN WITH QUICK ONBOARDING */}
                 <div className="form-group" style={{ gridColumn: 'span 2', position: 'relative' }}>
