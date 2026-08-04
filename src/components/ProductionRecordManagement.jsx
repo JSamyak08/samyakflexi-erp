@@ -439,9 +439,9 @@ export default function ProductionRecordManagement({
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{rec.clientName} • <span style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>{rec.jobMasterId || 'JM-2026-089'}</span></div>
                       </td>
                       <td>{rec.dateFilled}</td>
-                      <td style={{ fontWeight: '600' }}>{rec.totalProductionQtyKg.toLocaleString()} kg</td>
-                      <td>₹ {rec.totalMaterialCostRs.toLocaleString()}</td>
-                      <td style={{ fontWeight: '700', color: '#047857' }}>₹ {rec.finalProductionCostRs.toLocaleString()}</td>
+                      <td style={{ fontWeight: '600' }}>{(rec.totalProductionQtyKg ?? 0).toLocaleString()} kg</td>
+                      <td>₹ {(rec.totalMaterialCostRs ?? 0).toLocaleString()}</td>
+                      <td style={{ fontWeight: '700', color: '#047857' }}>₹ {(rec.finalProductionCostRs ?? 0).toLocaleString()}</td>
                       <td>
                         {rec.status === 'Approved by Admin' ? (
                           <span className="badge badge-us">
@@ -572,7 +572,7 @@ export default function ProductionRecordManagement({
             <div>
               <span className="stats-title">Total Material Issued / Consumed</span>
               <div style={{ fontSize: '1.4rem', fontWeight: '800', marginTop: '4px' }}>
-                {selectedRecord.totalProductionQtyKg.toLocaleString()} <span style={{ fontSize: '0.9rem' }}>kg</span>
+                {(selectedRecord.totalProductionQtyKg ?? 0).toLocaleString()} <span style={{ fontSize: '0.9rem' }}>kg</span>
               </div>
             </div>
 
@@ -930,7 +930,7 @@ export default function ProductionRecordManagement({
               <div>
                 <span className="stats-title">Total Net Qty Produced</span>
                 <div style={{ fontSize: '1.3rem', fontWeight: '800', marginTop: '4px' }}>
-                  {totalNetQtyKg.toLocaleString()} <span style={{ fontSize: '0.85rem' }}>kg</span>
+                  {(totalNetQtyKg ?? 0).toLocaleString()} <span style={{ fontSize: '0.85rem' }}>kg</span>
                 </div>
               </div>
 
@@ -1028,7 +1028,7 @@ export default function ProductionRecordManagement({
                           {m.returnQtyKg || 0} kg
                         </td>
                         <td style={{ fontWeight: '700' }}>{m.netConsumedQtyKg} kg</td>
-                        <td style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>₹ {m.totalMaterialCost.toLocaleString()}</td>
+                        <td style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>₹ {(m.totalMaterialCost ?? 0).toLocaleString()}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1039,7 +1039,7 @@ export default function ProductionRecordManagement({
             {/* Costing Summary Box */}
             <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '16px 20px', borderRadius: '10px', marginBottom: '24px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', fontSize: '0.85rem', marginBottom: '12px' }}>
-                <div>Net Produced Qty: <strong>{totalNetQtyKg.toLocaleString()} kg</strong></div>
+                <div>Net Produced Qty: <strong>{(totalNetQtyKg ?? 0).toLocaleString()} kg</strong></div>
                 <div>Total Ingredients Cost: <strong>₹ {totalMaterialCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
                 <div>Processing Cost (₹ {processingCostPerKg}/kg): <strong>₹ {totalProcessingCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
                 <div>Scrap & Wastage ({totalScrapQtyKg.toFixed(1)} kg): <strong>₹ {totalScrapCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>

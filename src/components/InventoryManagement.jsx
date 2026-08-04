@@ -830,9 +830,9 @@ export default function InventoryManagement({
                       <td>{item.widthMm} mm</td>
                       <td>{item.density}</td>
                       <td style={{ fontSize: '1.1rem', fontWeight: '800', color: isLow ? '#ef4444' : '#34d399' }}>
-                        {item.availableQtyKg.toLocaleString()} kg
+                        {(item.availableQtyKg ?? 0).toLocaleString()} kg
                       </td>
-                      <td style={{ color: 'var(--text-secondary)' }}>{item.allocatedQtyKg.toLocaleString()} kg</td>
+                      <td style={{ color: 'var(--text-secondary)' }}>{(item.allocatedQtyKg ?? 0).toLocaleString()} kg</td>
                       <td>{item.location}</td>
                       <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                         <div>{item.lastVendor}</div>
@@ -1368,7 +1368,7 @@ export default function InventoryManagement({
                           <td style={{ fontWeight: '700', color: 'var(--accent-color)' }}>{item.id}</td>
                           <td style={{ fontWeight: '600' }}>{item.filmType} Film</td>
                           <td>{item.micron}µ / {item.widthMm}mm</td>
-                          <td style={{ fontWeight: '700' }}>{item.availableQtyKg.toLocaleString()} kg</td>
+                          <td style={{ fontWeight: '700' }}>{(item.availableQtyKg ?? 0).toLocaleString()} kg</td>
                           <td style={{ width: '170px' }}>
                             <input 
                               type="number" 
@@ -1963,7 +1963,7 @@ export default function InventoryManagement({
                 <div>
                   <span className="stats-title" style={{ fontSize: '0.75rem' }}>Total Inwards (GRNs)</span>
                   <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#047857', marginTop: '4px' }}>
-                    + {totalPurchasedKg.toLocaleString()} kg
+                    + {(totalPurchasedKg ?? 0).toLocaleString()} kg
                   </div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{inwardTxLines.length} inward receipts</div>
                 </div>
@@ -1971,7 +1971,7 @@ export default function InventoryManagement({
                 <div>
                   <span className="stats-title" style={{ fontSize: '0.75rem' }}>Used in Job Production</span>
                   <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#dc2626', marginTop: '4px' }}>
-                    - {totalConsumedJobKg.toLocaleString()} kg
+                    - {(totalConsumedJobKg ?? 0).toLocaleString()} kg
                   </div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{jobUsageLines.length} job issues</div>
                 </div>
@@ -1987,7 +1987,7 @@ export default function InventoryManagement({
                 <div>
                   <span className="stats-title" style={{ fontSize: '0.75rem' }}>Current Net Stock Balance</span>
                   <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#0f172a', marginTop: '4px' }}>
-                    {netAvailableBalanceKg.toLocaleString()} kg
+                    {(netAvailableBalanceKg ?? 0).toLocaleString()} kg
                   </div>
                   <div style={{ fontSize: '0.75rem', color: '#2563eb', fontWeight: '600' }}>
                     Avg Rate: ₹ {avgPurchaseRate.toFixed(2)}/kg
@@ -2167,12 +2167,12 @@ export default function InventoryManagement({
 
                             {/* Inward Qty */}
                             <td style={{ fontWeight: '700', color: tx.inwardQtyKg > 0 ? '#047857' : 'var(--text-muted)' }}>
-                              {tx.inwardQtyKg > 0 ? `+ ${tx.inwardQtyKg.toLocaleString()} kg` : '-'}
+                              {tx.inwardQtyKg > 0 ? `+ ${(tx.inwardQtyKg ?? 0).toLocaleString()} kg` : '-'}
                             </td>
 
                             {/* Job Usage Qty */}
                             <td style={{ fontWeight: '700', color: tx.outwardQtyKg > 0 ? '#dc2626' : 'var(--text-muted)' }}>
-                              {tx.outwardQtyKg > 0 ? `- ${tx.outwardQtyKg.toLocaleString()} kg` : '-'}
+                              {tx.outwardQtyKg > 0 ? `- ${(tx.outwardQtyKg ?? 0).toLocaleString()} kg` : '-'}
                             </td>
 
                             {/* Audit Adj Qty */}
@@ -2182,7 +2182,7 @@ export default function InventoryManagement({
 
                             {/* Running Balance */}
                             <td style={{ fontWeight: '800', color: '#0f172a', background: '#f8fafc' }}>
-                              {tx.runningBalance.toLocaleString()} kg
+                              {(tx.runningBalance ?? 0).toLocaleString()} kg
                             </td>
 
                             {/* Rate & Total Value */}

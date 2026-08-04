@@ -330,7 +330,7 @@ export default function VendorManagement({ vendors = [], orders = [], onAddVendo
                                   ))}
                                 </td>
                                 <td style={{ fontWeight: '800', color: '#047857' }}>
-                                  ₹{totalVal.toLocaleString()}
+                                  ₹{(totalVal ?? 0).toLocaleString()}
                                 </td>
                                 <td>
                                   <button 

@@ -215,7 +215,7 @@ export default function GRNPDF({ grnData, onClose }) {
                 <td className="center">{micron} µ</td>
                 <td className="center">{widthMm} mm</td>
                 <td className="center">{rollsReceived} Rolls</td>
-                <td className="right" style={{ fontWeight: 'bold' }}>{netWeightKg.toLocaleString()} Kg</td>
+                <td className="right" style={{ fontWeight: 'bold' }}>{(netWeightKg ?? 0).toLocaleString()} Kg</td>
                 <td className="right">{formatINR(unitPrice)}</td>
                 <td className="right">{formatINR(totalTaxable)}</td>
               </tr>
@@ -223,7 +223,7 @@ export default function GRNPDF({ grnData, onClose }) {
             <tfoot>
               <tr>
                 <td colSpan="6" className="right" style={{ fontWeight: 'bold' }}>Total Quantity Inwarded</td>
-                <td className="right" style={{ fontWeight: 'bold' }}>{netWeightKg.toLocaleString()} Kg</td>
+                <td className="right" style={{ fontWeight: 'bold' }}>{(netWeightKg ?? 0).toLocaleString()} Kg</td>
                 <td colSpan="2"></td>
               </tr>
             </tfoot>

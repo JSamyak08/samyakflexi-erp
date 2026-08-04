@@ -521,7 +521,7 @@ export default function OrderManagement({
                     <div style={{ display: 'flex', gap: '16px', fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
                       <span>Client: <b>{order.clientName}</b></span>
                       <span>Structure: <b>{order.structure}</b></span>
-                      <span>Order Qty: <b>{order.orderQtyKg.toLocaleString()} kg</b> ({order.orderType})</span>
+                      <span>Order Qty: <b>{(order.orderQtyKg ?? 0).toLocaleString()} kg</b> ({order.orderType})</span>
                     </div>
                   </div>
                 </div>
@@ -773,7 +773,7 @@ export default function OrderManagement({
                               />
                             </td>
                             <td style={{ textAlign: 'right', fontWeight: '800', color: 'var(--primary-brand)' }}>
-                              ₹{(qty * rate).toLocaleString()}
+                              ₹{((qty * rate) ?? 0).toLocaleString()}
                             </td>
                           </tr>
                         );

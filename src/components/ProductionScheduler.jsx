@@ -1113,7 +1113,7 @@ export default function ProductionScheduler({
                       </div>
                     </td>
                     <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{order.structure}</td>
-                    <td className="bold-val">{order.orderQtyKg.toLocaleString()} kg</td>
+                    <td className="bold-val">{(order.orderQtyKg ?? 0).toLocaleString()} kg</td>
                     <td style={{ color: order.isOverdue ? '#dc2626' : 'inherit', fontWeight: order.isOverdue ? 'bold' : 'normal' }}>
                       {order.targetDeliveryDate}
                     </td>
@@ -1373,7 +1373,7 @@ export default function ProductionScheduler({
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', fontSize: '0.8rem' }}>
                     <div>
                       <span style={{ color: '#047857' }}>Total Length:</span>
-                      <div style={{ fontWeight: '800' }}>{previewMetrics.totalLengthMeters.toLocaleString()} meters</div>
+                      <div style={{ fontWeight: '800' }}>{(previewMetrics.totalLengthMeters ?? 0).toLocaleString()} meters</div>
                     </div>
                     <div>
                       <span style={{ color: '#047857' }}>Net Run Time:</span>
