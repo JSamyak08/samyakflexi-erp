@@ -13,6 +13,7 @@ export const TAB_SLUG_MAP = {
   job_masters: '/job-masters',
   vendors: '/vendors',
   inventory: '/inventory',
+  material_indents: '/material-indents',
   user_management: '/user-management',
   cylinders: '/rotogravure-cylinders',
   printing_scheduler: '/printing-scheduler',
@@ -51,6 +52,9 @@ export const SLUG_TAB_MAP = {
 
   '/inventory': 'inventory',
   'inventory': 'inventory',
+
+  '/material-indents': 'material_indents',
+  'material-indents': 'material_indents',
 
   '/user-management': 'user_management',
   'user-management': 'user_management',

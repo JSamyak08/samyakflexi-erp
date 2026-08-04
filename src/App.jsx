@@ -50,6 +50,7 @@ import ProductionScheduler from './components/ProductionScheduler';
 import ClientManagement from './components/ClientManagement';
 import SupabaseManagement from './components/SupabaseManagement';
 import DocumentSettings from './components/DocumentSettings';
+import ConsumablesAndIndents from './components/ConsumablesAndIndents';
 import { getTabFromUrl, pushSlugState } from './utils/slugRouter';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import { 
@@ -771,6 +772,14 @@ export default function App() {
           </div>
 
           <div 
+            className={`nav-item ${activeTab === 'material_indents' ? 'active' : ''}`}
+            onClick={() => handleTabChange('material_indents')}
+          >
+            <ClipboardList size={18} />
+            Material Indents & Store
+          </div>
+
+          <div 
             className={`nav-item ${activeTab === 'user_management' ? 'active' : ''}`}
             onClick={() => handleTabChange('user_management')}
           >
@@ -837,6 +846,7 @@ export default function App() {
               {activeTab === 'clients' && 'Client Onboarding & Directory'}
               {activeTab === 'vendors' && 'Vendor Onboarding & Directory'}
               {activeTab === 'inventory' && 'Raw Material Inventory, GRN & Quality Control'}
+              {activeTab === 'material_indents' && 'Material Indents Requisitions & Consumable Store'}
               {activeTab === 'user_management' && 'Departmental User Management (RBAC)'}
               {activeTab === 'cylinders' && 'Rotogravure Cylinder Database'}
               {activeTab === 'printing_scheduler' && 'Printing Machine Production Scheduler & Time Board'}
@@ -1187,6 +1197,14 @@ export default function App() {
             dispatchShipments={dispatchShipments}
             onAddRoll={handleAddRoll}
             onAddDispatchShipment={handleAddDispatchShipment}
+          />
+        )}
+
+        {/* TAB: MATERIAL INDENTS & CONSUMABLE STORE */}
+        {activeTab === 'material_indents' && (
+          <ConsumablesAndIndents 
+            userRole={currentUser?.role || "Store Manager"}
+            userName={currentUser?.name || "Virendra Singh"}
           />
         )}
 
