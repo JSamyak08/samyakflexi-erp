@@ -1148,6 +1148,7 @@ export default function App() {
             userRole={currentUser?.role}
             onAddOrder={handleAddOrder}
             onAddJobMaster={handleAddJobMaster}
+            onAddClient={handleAddClient}
           />
         )}
 

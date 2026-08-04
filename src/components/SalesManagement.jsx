@@ -60,7 +60,8 @@ export default function SalesManagement({
   currentUser,
   userRole = "Sales Manager",
   onAddOrder,
-  onAddJobMaster
+  onAddJobMaster,
+  onAddClient
 }) {
   const isSalesAuthorized = useMemo(() => {
     if (!currentUser && !userRole) return true;
@@ -102,7 +103,7 @@ export default function SalesManagement({
 
   // Form State for Create / Edit / Amend Quotation
   const [editingQuotationId, setEditingQuotationId] = useState(null);
-  const [quotationNo, setQuotationNo] = useState('SIL/QTN/26-27/003');
+  const [quotationNo, setQuotationNo] = useState('');
   const [revisionNo, setRevisionNo] = useState(0);
   const [amendmentNo, setAmendmentNo] = useState('Rev 00');
   const [enquiryDate, setEnquiryDate] = useState(new Date().toISOString().split('T')[0]);
@@ -111,86 +112,123 @@ export default function SalesManagement({
   defaultDelivery.setDate(defaultDelivery.getDate() + 14);
   const [estimatedDeliveryDate, setEstimatedDeliveryDate] = useState(defaultDelivery.toISOString().split('T')[0]);
 
-  const [salesManager, setSalesManager] = useState(currentUser?.name || 'Samyak Jain (Sales Manager)');
+  const [salesManager, setSalesManager] = useState(currentUser?.name || '');
   
-  // Client Form Details
-  const [selectedClientName, setSelectedClientName] = useState(clients[0]?.name || 'Britannia Industries Ltd');
-  const [clientAddress, setClientAddress] = useState(clients[0]?.address || 'Britannia Executive Centre, Pithampur Sector 3, MP');
-  const [clientGstin, setClientGstin] = useState(clients[0]?.gstin || '23AABCB1234F1Z1');
-  const [contactPerson, setContactPerson] = useState(clients[0]?.contactPerson || 'Rajesh Sharma');
-  const [contactPhone, setContactPhone] = useState(clients[0]?.phone || '+91 98260 11223');
-  const [contactEmail, setContactEmail] = useState(clients[0]?.email || 'rsharma@britannia.co.in');
+  // Client Form Details — always start blank, filled only from Directory
+  const [selectedClientName, setSelectedClientName] = useState('');
+  const [clientAddress, setClientAddress] = useState('');
+  const [clientGstin, setClientGstin] = useState('');
+  const [contactPerson, setContactPerson] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+
+  // Client search state
+  const [clientSearchQuery, setClientSearchQuery] = useState('');
+  const [showClientDropdown, setShowClientDropdown] = useState(false);
+
+  // Add New Customer inline form
+  const [showNewClientForm, setShowNewClientForm] = useState(false);
+  const [newClientName, setNewClientName] = useState('');
+  const [newClientAddress, setNewClientAddress] = useState('');
+  const [newClientGstin, setNewClientGstin] = useState('');
+  const [newClientContactPerson, setNewClientContactPerson] = useState('');
+  const [newClientPhone, setNewClientPhone] = useState('');
+  const [newClientEmail, setNewClientEmail] = useState('');
 
   // Commercial Terms Form Fields
-  const [paymentTerms, setPaymentTerms] = useState('30 Days Net from date of Invoice');
-  const [cylinderTerms, setCylinderTerms] = useState('Cylinder Development Cost borne by Client @ ₹6,500/cylinder');
-  const [transportTerms, setTransportTerms] = useState('Freight Included (FOR Pithampur Factory)');
+  const [paymentTerms, setPaymentTerms] = useState('');
+  const [cylinderTerms, setCylinderTerms] = useState('');
+  const [transportTerms, setTransportTerms] = useState('');
   const [comments, setComments] = useState('');
 
-  // Line Items
-  const [items, setItems] = useState([
-    {
-      id: 1,
-      jobTitle: 'Britannia Bourbon 250g Packaging',
-      structure: 'PET 12µ / METPET 12µ / Natural GP LD 35µ',
-      materialFormat: 'Roll Form',
-      quantity: 5000,
-      uom: 'Kg',
-      ratePerUom: 245.00,
-      printWidthMm: 1000,
-      repeatLengthMm: 400,
-      gstPct: 18
-    }
-  ]);
+  // Line Items — start blank
+  const [items, setItems] = useState([{
+    id: 1, jobTitle: '', structure: '', materialFormat: 'Roll Form',
+    quantity: '', uom: 'Kg', ratePerUom: '', printWidthMm: '', repeatLengthMm: '', gstPct: 18
+  }]);
 
   const [termsList, setTermsList] = useState(DEFAULT_QUOTATION_TERMS);
 
-  // Sync client details when client selection changes
-  const handleClientSelectChange = (clientNameVal) => {
-    setSelectedClientName(clientNameVal);
-    const matched = clients.find(c => c.name === clientNameVal);
-    if (matched) {
-      setClientAddress(matched.address || '');
-      setClientGstin(matched.gstin || '');
-      setContactPerson(matched.contactPerson || '');
-      setContactPhone(matched.phone || '');
-      setContactEmail(matched.email || '');
-    }
+  // Filtered client suggestions based on search query
+  const clientSuggestions = useMemo(() => {
+    if (!clientSearchQuery.trim()) return clients;
+    const q = clientSearchQuery.toLowerCase();
+    return clients.filter(c =>
+      (c.name || c.companyName || '').toLowerCase().includes(q) ||
+      (c.gstin || '').toLowerCase().includes(q) ||
+      (c.contactPerson || '').toLowerCase().includes(q)
+    );
+  }, [clients, clientSearchQuery]);
+
+  // Fill all client fields from the selected client record
+  const handleSelectClient = (client) => {
+    const name = client.name || client.companyName || '';
+    setSelectedClientName(name);
+    setClientSearchQuery(name);
+    setClientAddress(client.address || '');
+    setClientGstin(client.gstin || '');
+    setContactPerson(client.contactPerson || '');
+    setContactPhone(client.phone || client.contactNo || '');
+    setContactEmail(client.email || '');
+    setShowClientDropdown(false);
   };
 
-  // Open Create Form
+  // Save new customer and auto-select them
+  const handleSaveNewClient = () => {
+    if (!newClientName.trim()) {
+      alert('Company Name is required!');
+      return;
+    }
+    const newClient = {
+      id: `CLT-${Date.now()}`,
+      name: newClientName.trim(),
+      companyName: newClientName.trim(),
+      address: newClientAddress.trim(),
+      gstin: newClientGstin.trim(),
+      contactPerson: newClientContactPerson.trim(),
+      phone: newClientPhone.trim(),
+      email: newClientEmail.trim(),
+      createdAt: new Date().toISOString()
+    };
+    if (onAddClient) onAddClient(newClient);
+    // Auto-select the newly added client
+    handleSelectClient(newClient);
+    // Reset new client form
+    setShowNewClientForm(false);
+    setNewClientName(''); setNewClientAddress('');
+    setNewClientGstin(''); setNewClientContactPerson('');
+    setNewClientPhone(''); setNewClientEmail('');
+  };
+
+  // Open Create Form — everything blank, no seed data
   const handleOpenCreateForm = () => {
     setEditingQuotationId(null);
-    const nextQtnNo = `SIL/QTN/26-27/00${quotations.length + 1}`;
-    setQuotationNo(nextQtnNo);
+    const nextNum = String(quotations.length + 1).padStart(3, '0');
+    const fy = '26-27';
+    setQuotationNo(`SIL/QTN/${fy}/${nextNum}`);
     setRevisionNo(0);
     setAmendmentNo('Rev 00');
     setEnquiryDate(new Date().toISOString().split('T')[0]);
-    
     const targetDate = new Date();
     targetDate.setDate(targetDate.getDate() + 14);
     setEstimatedDeliveryDate(targetDate.toISOString().split('T')[0]);
-
-    if (clients.length > 0) {
-      handleClientSelectChange(clients[0].name);
-    }
-
-    setItems([
-      {
-        id: 1,
-        jobTitle: 'New Product Packaging Job',
-        structure: 'PET 12µ / METPET 12µ / Natural LDPE 40µ',
-        materialFormat: 'Roll Form',
-        quantity: 2000,
-        uom: 'Kg',
-        ratePerUom: 250.00,
-        printWidthMm: 1000,
-        repeatLengthMm: 400,
-        gstPct: 18
-      }
-    ]);
-    setTermsList(DEFAULT_QUOTATION_TERMS);
+    setSalesManager(currentUser?.name || currentUser?.fullName || '');
+    // Client fields — blank
+    setSelectedClientName('');
+    setClientSearchQuery('');
+    setClientAddress('');
+    setClientGstin('');
+    setContactPerson('');
+    setContactPhone('');
+    setContactEmail('');
+    // Items — single blank row
+    setItems([{ id: 1, jobTitle: '', structure: '', materialFormat: 'Roll Form', quantity: '', uom: 'Kg', ratePerUom: '', printWidthMm: '', repeatLengthMm: '', gstPct: 18 }]);
+    setPaymentTerms('');
+    setCylinderTerms('');
+    setTransportTerms('');
     setComments('');
+    setTermsList(DEFAULT_QUOTATION_TERMS);
+    setShowNewClientForm(false);
     setActiveSubTab('create');
   };
 
@@ -754,24 +792,182 @@ export default function SalesManagement({
 
           {/* Client Details Section */}
           <div style={{ background: '#f8fafc', padding: '18px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
-            <h4 style={{ fontSize: '0.95rem', fontWeight: '800', color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Building2 size={16} /> Customer / Client Details (Auto-linked Directory)
-            </h4>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <h4 style={{ fontSize: '0.95rem', fontWeight: '800', color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Building2 size={16} /> Customer / Client Details (Auto-linked Directory)
+              </h4>
+              <button 
+                type="button" 
+                className="btn-secondary" 
+                style={{ padding: '4px 10px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#0284c7', borderColor: '#bae6fd' }}
+                onClick={() => setShowNewClientForm(!showNewClientForm)}
+              >
+                <Plus size={14} /> {showNewClientForm ? 'Cancel Add Customer' : '+ Add New Customer'}
+              </button>
+            </div>
+
+            {/* Inline New Customer Creation Form */}
+            {showNewClientForm && (
+              <div style={{ background: '#ffffff', padding: '16px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '18px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                <h5 style={{ fontSize: '0.88rem', fontWeight: '800', color: '#0f172a', marginBottom: '12px' }}>
+                  ➕ Quick Add New Customer to Directory
+                </h5>
+                <div className="form-grid-2">
+                  <div>
+                    <label className="form-label">Customer / Company Name *</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="e.g. Acme Foods Pvt Ltd"
+                      value={newClientName} 
+                      onChange={e => setNewClientName(e.target.value)} 
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label">GSTIN Number</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="e.g. 23AAACA1234F1Z1"
+                      value={newClientGstin} 
+                      onChange={e => setNewClientGstin(e.target.value)} 
+                    />
+                  </div>
+                  <div className="form-group-full">
+                    <label className="form-label">Registered Address</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="Full Address"
+                      value={newClientAddress} 
+                      onChange={e => setNewClientAddress(e.target.value)} 
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label">Contact Person</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="Name"
+                      value={newClientContactPerson} 
+                      onChange={e => setNewClientContactPerson(e.target.value)} 
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label">Contact Mobile / Phone</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="Phone Number"
+                      value={newClientPhone} 
+                      onChange={e => setNewClientPhone(e.target.value)} 
+                    />
+                  </div>
+                  <div className="form-group-full">
+                    <label className="form-label">Contact Email Address</label>
+                    <input 
+                      type="email" 
+                      className="form-control" 
+                      placeholder="Email"
+                      value={newClientEmail} 
+                      onChange={e => setNewClientEmail(e.target.value)} 
+                    />
+                  </div>
+                </div>
+                <div style={{ marginTop: '12px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                  <button 
+                    type="button" 
+                    className="btn-secondary" 
+                    style={{ padding: '4px 12px', fontSize: '0.8rem' }}
+                    onClick={() => setShowNewClientForm(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn-primary" 
+                    style={{ padding: '4px 14px', fontSize: '0.8rem' }}
+                    onClick={handleSaveNewClient}
+                  >
+                    Save & Select Customer
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="form-grid-2">
-              <div>
-                <label className="form-label">Select Customer (Client Directory) *</label>
-                <select 
-                  className="form-control" 
-                  style={{ fontWeight: '700' }}
-                  value={selectedClientName} 
-                  onChange={e => handleClientSelectChange(e.target.value)}
-                  required
-                >
-                  {clients.map(c => (
-                    <option key={c.id || c.name} value={c.name}>{c.name} ({c.gstin || 'GSTIN N/A'})</option>
-                  ))}
-                </select>
+              <div style={{ position: 'relative' }}>
+                <label className="form-label">Search & Select Customer (Client Directory) *</label>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    style={{ fontWeight: '700' }}
+                    placeholder="Type to search existing customer..."
+                    value={clientSearchQuery || selectedClientName} 
+                    onChange={e => {
+                      setClientSearchQuery(e.target.value);
+                      setSelectedClientName(e.target.value);
+                      setShowClientDropdown(true);
+                    }}
+                    onFocus={() => setShowClientDropdown(true)}
+                    required
+                  />
+                </div>
+
+                {/* Autocomplete Dropdown List */}
+                {showClientDropdown && (
+                  <div 
+                    style={{ 
+                      position: 'absolute', 
+                      top: '100%', 
+                      left: 0, 
+                      right: 0, 
+                      zIndex: 100, 
+                      background: '#ffffff', 
+                      border: '1px solid #cbd5e1', 
+                      borderRadius: '6px', 
+                      maxHeight: '220px', 
+                      overflowY: 'auto',
+                      boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' 
+                    }}
+                  >
+                    {clientSuggestions.length > 0 ? (
+                      clientSuggestions.map(c => {
+                        const name = c.name || c.companyName || '';
+                        return (
+                          <div 
+                            key={c.id || name}
+                            style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}
+                            onMouseDown={() => handleSelectClient(c)}
+                            onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                            onMouseLeave={e => e.currentTarget.style.background = '#ffffff'}
+                          >
+                            <div style={{ fontWeight: '700', fontSize: '0.88rem', color: '#0f172a' }}>{name}</div>
+                            <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                              GSTIN: {c.gstin || 'N/A'} {c.contactPerson ? `| Contact: ${c.contactPerson}` : ''}
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div style={{ padding: '12px', fontSize: '0.82rem', color: '#64748b', textAlign: 'center' }}>
+                        No customer found matching "{clientSearchQuery}". <br/>
+                        <button 
+                          type="button" 
+                          style={{ color: '#0284c7', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 'bold', marginTop: '4px' }}
+                          onClick={() => {
+                            setNewClientName(clientSearchQuery);
+                            setShowNewClientForm(true);
+                            setShowClientDropdown(false);
+                          }}
+                        >
+                          + Click to Add "{clientSearchQuery}" as New Customer
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>
