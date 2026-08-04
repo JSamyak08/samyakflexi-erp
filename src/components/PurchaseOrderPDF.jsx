@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
 import { COMPANY_DETAILS } from '../factoryStore';
-import { numberToWords, formatINR } from '../utils/pdfHelpers';
+import { numberToWords, formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 
 export default function PurchaseOrderPDF({ poData, onClose }) {
@@ -18,7 +18,6 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
   const signatureImage = getAuthorisedSignature();
   const logoImage = getCompanyLogo();
 
-
   const {
     poDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
     deliveryDate = "24/07/2026",
@@ -30,6 +29,16 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
     vendor = {},
     items = []
   } = poData;
+
+  const supplier = {
+    name: vendor.companyName || vendor.name || "Creative Marketing",
+    address: vendor.address || "Sadhuwasvani Nagar, 2-B, Near Sadhuwasvani Garden, Indore (Madhya Pradesh) India - 452007",
+    email: vendor.email || "creativemarketing.ak@gmail.com",
+    contactNo: vendor.phone || vendor.contactNo || "9425066225",
+    gstin: vendor.gstin || "23AAQFC4167Q1ZT",
+    contactPerson: vendor.contactPerson || "Abhijeet Kher",
+    stateCode: (vendor.gstin || "23").substring(0, 2)
+  };
 
   const handleUpdateTerm = (index, value) => {
     const updated = [...currentTerms];
@@ -45,8 +54,6 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
     setCurrentTerms(prev => prev.filter((_, i) => i !== index));
   };
 
-
-
   // Standard sample items if empty
   const poItems = items && items.length > 0 ? items : [
     {
@@ -56,9 +63,7 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
       make: "Flint",
       hsnCode: "3215",
       qtyKg: 400,
-      rate: 250,
-      cgstRate: 9,
-      sgstRate: 9
+      rate: 250
     },
     {
       id: 2,
@@ -67,53 +72,7 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
       make: "Flint",
       hsnCode: "3215",
       qtyKg: 500,
-      rate: 240,
-      cgstRate: 9,
-      sgstRate: 9
-    },
-    {
-      id: 3,
-      description: "Flint ARSR Magenta (REVERSE)",
-      itemId: "WCL4-303K-01FW",
-      make: "Flint",
-      hsnCode: "3215",
-      qtyKg: 80,
-      rate: 410,
-      cgstRate: 9,
-      sgstRate: 9
-    },
-    {
-      id: 4,
-      description: "Flint PET Lam Red Lacquer Ink",
-      itemId: "WCL4-37AK-01GU",
-      make: "Flint",
-      hsnCode: "3215",
-      qtyKg: 94,
-      rate: 400,
-      cgstRate: 9,
-      sgstRate: 9
-    },
-    {
-      id: 5,
-      description: "BOPP LAM ADHESION INK",
-      itemId: "GBLEB011",
-      make: "Flint",
-      hsnCode: "35069999",
-      qtyKg: 100,
-      rate: 395,
-      cgstRate: 9,
-      sgstRate: 9
-    },
-    {
-      id: 6,
-      description: "Flint AR Orange (REVERSE)",
-      itemId: "WCL4-205K-01FW",
-      make: "Flint",
-      hsnCode: "3215",
-      qtyKg: 180,
-      rate: 290,
-      cgstRate: 9,
-      sgstRate: 9
+      rate: 240
     }
   ];
 
@@ -125,31 +84,13 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
     return acc + (qty * rate);
   }, 0);
 
-  const totalCgst = poItems.reduce((acc, item) => {
-    const qty = parseFloat(item.qtyKg) || 0;
-    const rate = parseFloat(item.rate) || 0;
-    const cgstPct = parseFloat(item.cgstRate) || 9;
-    return acc + ((qty * rate * cgstPct) / 100);
-  }, 0);
-
-  const totalSgst = poItems.reduce((acc, item) => {
-    const qty = parseFloat(item.qtyKg) || 0;
-    const rate = parseFloat(item.rate) || 0;
-    const sgstPct = parseFloat(item.sgstRate) || 9;
-    return acc + ((qty * rate * sgstPct) / 100);
-  }, 0);
-
-  const totalTax = totalCgst + totalSgst;
-  const grandTotal = totalTaxable + totalTax;
-
-  const supplier = {
-    name: vendor.companyName || vendor.name || "Creative Marketing",
-    address: vendor.address || "Sadhuwasvani Nagar, 2-B, Near Sadhuwasvani Garden, Indore (Madhya Pradesh) India - 452007",
-    email: vendor.email || "creativemarketing.ak@gmail.com",
-    contactNo: vendor.phone || vendor.contactNo || "9425066225",
-    gstin: vendor.gstin || "23AAQFC4167Q1ZT",
-    contactPerson: vendor.contactPerson || "Abhijeet Kher"
-  };
+  // Indian GST Calculation (Vendor in 23 MP: CGST 9% + SGST 9% vs Inter-state: IGST 18%)
+  const gstInfo = calculateGSTBreakdown(supplier.gstin, supplier.address, totalTaxable, 18, COMPANY_DETAILS.gstin || '23AAACS9988F1Z1');
+  const totalCgst = gstInfo.cgstAmount;
+  const totalSgst = gstInfo.sgstAmount;
+  const totalIgst = gstInfo.igstAmount;
+  const totalTax = gstInfo.totalGstAmount;
+  const grandTotal = gstInfo.grandTotal;
 
   return (
     <div className="pdf-modal-overlay">
@@ -389,9 +330,9 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
                       <table className="tax-subtable">
                         <thead>
                           <tr>
-                            <th>CGST</th>
-                            <th>SGST</th>
-                            <th>IGST</th>
+                            <th>CGST ({gstInfo.cgstRatePct}%)</th>
+                            <th>SGST ({gstInfo.sgstRatePct}%)</th>
+                            <th>IGST ({gstInfo.igstRatePct}%)</th>
                             <th>Cess</th>
                           </tr>
                         </thead>
@@ -399,7 +340,7 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
                           <tr>
                             <td>{formatINR(totalCgst)}</td>
                             <td>{formatINR(totalSgst)}</td>
-                            <td>₹0.00</td>
+                            <td>{formatINR(totalIgst)}</td>
                             <td>₹0.00</td>
                           </tr>
                         </tbody>

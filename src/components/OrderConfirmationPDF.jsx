@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
 import { COMPANY_DETAILS, initialClients } from '../factoryStore';
-import { numberToWords, formatINR } from '../utils/pdfHelpers';
+import { numberToWords, formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 
 export default function OrderConfirmationPDF({ calculationData, onClose, clientDetails, clients }) {
@@ -57,13 +57,6 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
     { filmType: "Natural LD GP Film", micron: 30, density: 0.93, gsm: 27.9, netKg: 617.2, grossKg: 648.1, pricePerKg: 115, totalCost: 74531.5 }
   ];
 
-  const totalRawMaterialKg = (summary.totalFilmGrossKg || 0) + (inkDetails.grossKg || 0) + (adhesiveDetails.grossKg || 0) || 1088.4;
-  const totalTaxable = summary.totalRawMaterialCost || 135000;
-  const cgstAmt = totalTaxable * 0.09;
-  const sgstAmt = totalTaxable * 0.09;
-  const totalTax = cgstAmt + sgstAmt;
-  const grandTotal = totalTaxable + totalTax;
-
   // Resolve Client Details dynamically from Client Directory / Job Master
   const targetClientName = calculationData?.clientName || clientName || "";
   const clientStore = (clients && clients.length > 0) ? clients : initialClients;
@@ -88,6 +81,17 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
     contactNo: matchedClient?.phone || matchedClient?.contactNo || "N/A",
     gstin: matchedClient?.gstin || "N/A"
   };
+
+  const totalRawMaterialKg = (summary.totalFilmGrossKg || 0) + (inkDetails.grossKg || 0) + (adhesiveDetails.grossKg || 0) || 1088.4;
+  const totalTaxable = summary.totalRawMaterialCost || 135000;
+  
+  // Calculate Indian GST applicability (Intra-State 23 MP: CGST 9% + SGST 9% vs Inter-State: IGST 18%)
+  const gstInfo = calculateGSTBreakdown(clientInfo.gstin, clientInfo.address, totalTaxable, 18, COMPANY_DETAILS.gstin || '23AAACS9988F1Z1');
+  const cgstAmt = gstInfo.cgstAmount;
+  const sgstAmt = gstInfo.sgstAmount;
+  const igstAmt = gstInfo.igstAmount;
+  const totalTax = gstInfo.totalGstAmount;
+  const grandTotal = gstInfo.grandTotal;
 
   return (
     <div className="pdf-modal-overlay">
@@ -320,9 +324,9 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
                       <table className="tax-subtable">
                         <thead>
                           <tr>
-                            <th>CGST (9%)</th>
-                            <th>SGST (9%)</th>
-                            <th>IGST</th>
+                            <th>CGST ({gstInfo.cgstRatePct}%)</th>
+                            <th>SGST ({gstInfo.sgstRatePct}%)</th>
+                            <th>IGST ({gstInfo.igstRatePct}%)</th>
                             <th>Cess</th>
                           </tr>
                         </thead>
@@ -330,7 +334,7 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
                           <tr>
                             <td>{formatINR(cgstAmt)}</td>
                             <td>{formatINR(sgstAmt)}</td>
-                            <td>₹0.00</td>
+                            <td>{formatINR(igstAmt)}</td>
                             <td>₹0.00</td>
                           </tr>
                         </tbody>
