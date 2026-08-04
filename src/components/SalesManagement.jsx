@@ -53,6 +53,37 @@ export const DEFAULT_QUOTATION_TERMS = [
   "5. Payment terms strict as per agreed credit terms."
 ];
 
+// Standard Film Types for Flexible Packaging Layers
+export const STANDARD_FILM_TYPES = [
+  "PET",
+  "METPET",
+  "Natural LD GP Film",
+  "Milky LD GP Film",
+  "Natural LD Metallocene Film",
+  "Milky LD Metallocene Film",
+  "Milky Atta (High Dart) Film",
+  "Natural GP LD",
+  "White LD",
+  "BOPP Natural",
+  "Metalised BOPP",
+  "Pearlised BOPP",
+  "CPP Natural",
+  "Metalised CPP",
+  "Paper",
+  "Aluminium Foil"
+];
+
+// Helper to compute combined structure string from layers array
+export function getStructureString(item) {
+  if (item && item.layers && item.layers.length > 0) {
+    return item.layers
+      .map(l => `${l.filmType || 'PET'}${l.micron ? ' ' + l.micron + 'µ' : ''}`)
+      .filter(Boolean)
+      .join(' / ');
+  }
+  return item?.structure || '';
+}
+
 export default function SalesManagement({
   orders = [],
   clients = [],
@@ -221,8 +252,23 @@ export default function SalesManagement({
     setContactPerson('');
     setContactPhone('');
     setContactEmail('');
-    // Items — single blank row
-    setItems([{ id: 1, jobTitle: '', structure: '', materialFormat: 'Roll Form', quantity: '', uom: 'Kg', ratePerUom: '', printWidthMm: '', repeatLengthMm: '', gstPct: 18 }]);
+    // Items — single row with structured film layers
+    setItems([{ 
+      id: 1, 
+      jobTitle: '', 
+      structure: 'PET 12µ / Natural GP LD 40µ', 
+      materialFormat: 'Roll Form', 
+      quantity: '', 
+      uom: 'Kg', 
+      ratePerUom: '', 
+      printWidthMm: '', 
+      repeatLengthMm: '', 
+      gstPct: 18,
+      layers: [
+        { id: 1, filmType: 'PET', micron: 12 },
+        { id: 2, filmType: 'Natural GP LD', micron: 40 }
+      ]
+    }]);
     setPaymentTerms('');
     setCylinderTerms('');
     setTransportTerms('');
@@ -273,8 +319,10 @@ export default function SalesManagement({
       const rate = parseFloat(it.ratePerUom) || 0;
       const taxable = qty * rate;
       const gst = (taxable * (parseFloat(it.gstPct) || 18)) / 100;
+      const computedStructure = getStructureString(it);
       return {
         ...it,
+        structure: computedStructure,
         taxableAmount: taxable,
         gstAmount: gst,
         totalAmount: taxable + gst
@@ -357,17 +405,18 @@ export default function SalesManagement({
       skuCode: `SKU-${qtn.clientName.substring(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`,
       jobName: mainItem.jobTitle || 'Custom Flexible Packaging Job',
       clientName: qtn.clientName,
-      structure: mainItem.structure || 'PET 12µ / METPET 12µ / LDPE 40µ',
+      structure: mainItem.structure || getStructureString(mainItem) || 'PET 12µ / LDPE 40µ',
       printWidthMm: mainItem.printWidthMm || 1000,
       repeatLengthMm: mainItem.repeatLengthMm || 400,
       pouchOpenWidth: 120,
       pouchHeight: 160,
       materialFormat: mainItem.materialFormat || 'Roll Form',
-      layers: [
-        { id: 1, filmType: 'PET', micron: 12 },
-        { id: 2, filmType: 'METPET', micron: 12 },
-        { id: 3, filmType: 'LDPE', micron: 40 }
-      ],
+      layers: (mainItem.layers && mainItem.layers.length > 0) 
+        ? mainItem.layers 
+        : [
+            { id: 1, filmType: 'PET', micron: 12 },
+            { id: 2, filmType: 'Natural GP LD', micron: 40 }
+          ],
       cylinderSku: `CYL-${qtn.clientName.substring(0, 3).toUpperCase()}-001`,
       cylinderCost: qtn.cylinderTerms || '₹ 35,000',
       colorsCount: 6,
@@ -394,11 +443,17 @@ export default function SalesManagement({
       deliveryDate: qtn.estimatedDeliveryDate,
       poNumber: `PO-QTN-${qtn.quotationNo}`,
       status: 'Confirmed',
-      materialRequirements: [
-        { filmType: 'PET', micron: 12, widthMm: mainItem.printWidthMm || 1000, qtyKg: (mainItem.quantity || 2000) * 0.3 },
-        { filmType: 'METPET', micron: 12, widthMm: mainItem.printWidthMm || 1000, qtyKg: (mainItem.quantity || 2000) * 0.3 },
-        { filmType: 'Natural GP LD', micron: 40, widthMm: (mainItem.printWidthMm || 1000) + 5, qtyKg: (mainItem.quantity || 2000) * 0.4 }
-      ]
+      materialRequirements: (mainItem.layers && mainItem.layers.length > 0)
+        ? mainItem.layers.map((l, lIdx) => ({
+            filmType: l.filmType,
+            micron: parseFloat(l.micron) || 12,
+            widthMm: (mainItem.printWidthMm || 1000) + (lIdx === mainItem.layers.length - 1 ? 5 : 0),
+            qtyKg: ((parseFloat(mainItem.quantity) || 2000) * (1 / mainItem.layers.length))
+          }))
+        : [
+            { filmType: 'PET', micron: 12, widthMm: mainItem.printWidthMm || 1000, qtyKg: (mainItem.quantity || 2000) * 0.5 },
+            { filmType: 'Natural GP LD', micron: 40, widthMm: (mainItem.printWidthMm || 1000) + 5, qtyKg: (mainItem.quantity || 2000) * 0.5 }
+          ]
     };
 
     if (onAddOrder) {
@@ -1034,7 +1089,21 @@ export default function SalesManagement({
                 type="button" 
                 className="btn-secondary" 
                 style={{ padding: '4px 10px', fontSize: '0.78rem' }}
-                onClick={() => setItems([...items, { id: Date.now(), jobTitle: 'New Product Packaging', structure: 'PET 12µ / LDPE 40µ', materialFormat: 'Roll Form', quantity: 1000, uom: 'Kg', ratePerUom: 240, printWidthMm: 1000, repeatLengthMm: 400, gstPct: 18 }])}
+                onClick={() => setItems([...items, { 
+                  id: Date.now(), 
+                  jobTitle: '', 
+                  materialFormat: 'Roll Form', 
+                  quantity: '', 
+                  uom: 'Kg', 
+                  ratePerUom: '', 
+                  printWidthMm: 1000, 
+                  repeatLengthMm: 400, 
+                  gstPct: 18,
+                  layers: [
+                    { id: 1, filmType: 'PET', micron: 12 },
+                    { id: 2, filmType: 'Natural GP LD', micron: 40 }
+                  ]
+                }])}
               >
                 <Plus size={14} /> + Add Product Item
               </button>
@@ -1043,12 +1112,12 @@ export default function SalesManagement({
             <table className="data-table" style={{ background: '#ffffff' }}>
               <thead>
                 <tr style={{ background: '#f8fafc' }}>
-                  <th>Job Title / Product</th>
-                  <th>Structure Spec</th>
-                  <th>Material Format *</th>
-                  <th>Qty</th>
-                  <th>UOM</th>
-                  <th>Rate (₹)</th>
+                  <th style={{ width: '22%' }}>Job Title / Product</th>
+                  <th style={{ width: '38%' }}>Structure (Film Dropdown & Micron)</th>
+                  <th style={{ width: '14%' }}>Material Format *</th>
+                  <th style={{ width: '8%' }}>Qty</th>
+                  <th style={{ width: '8%' }}>UOM</th>
+                  <th style={{ width: '10%' }}>Rate (₹)</th>
                   <th>Total (₹)</th>
                   <th>Actions</th>
                 </tr>
@@ -1058,6 +1127,10 @@ export default function SalesManagement({
                   const qty = parseFloat(it.quantity) || 0;
                   const rate = parseFloat(it.ratePerUom) || 0;
                   const total = qty * rate * 1.18;
+                  const currentLayers = it.layers || [
+                    { id: 1, filmType: 'PET', micron: 12 },
+                    { id: 2, filmType: 'Natural GP LD', micron: 40 }
+                  ];
 
                   return (
                     <tr key={it.id || idx}>
@@ -1066,6 +1139,7 @@ export default function SalesManagement({
                           type="text" 
                           className="form-control" 
                           style={{ padding: '4px 8px', fontSize: '0.82rem', fontWeight: '700' }}
+                          placeholder="e.g. Britannia Bourbon 250g"
                           value={it.jobTitle} 
                           onChange={e => {
                             const updated = [...items];
@@ -1075,19 +1149,90 @@ export default function SalesManagement({
                           required 
                         />
                       </td>
-                      <td>
-                        <input 
-                          type="text" 
-                          className="form-control" 
-                          style={{ padding: '4px 8px', fontSize: '0.8rem' }}
-                          value={it.structure} 
-                          onChange={e => {
-                            const updated = [...items];
-                            updated[idx].structure = e.target.value;
-                            setItems(updated);
-                          }} 
-                          required 
-                        />
+                      <td style={{ verticalAlign: 'top', background: '#fafafa', padding: '8px' }}>
+                        {/* Film Layers Builder */}
+                        {currentLayers.map((layer, lIdx) => (
+                          <div key={layer.id || lIdx} style={{ display: 'flex', gap: '4px', alignItems: 'center', marginBottom: '4px' }}>
+                            <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 'bold', width: '24px' }}>
+                              L{lIdx + 1}:
+                            </span>
+                            {/* Film Type Dropdown */}
+                            <select 
+                              className="form-control" 
+                              style={{ padding: '2px 4px', fontSize: '0.78rem', flex: 2, fontWeight: '700' }}
+                              value={layer.filmType || 'PET'}
+                              onChange={e => {
+                                const updated = [...items];
+                                if (!updated[idx].layers) updated[idx].layers = [...currentLayers];
+                                updated[idx].layers[lIdx].filmType = e.target.value;
+                                updated[idx].structure = getStructureString(updated[idx]);
+                                setItems(updated);
+                              }}
+                            >
+                              {STANDARD_FILM_TYPES.map(f => (
+                                <option key={f} value={f}>{f}</option>
+                              ))}
+                            </select>
+
+                            {/* Micron Field */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flex: 1 }}>
+                              <input 
+                                type="number" 
+                                step="any"
+                                className="form-control" 
+                                style={{ padding: '2px 4px', fontSize: '0.78rem', textAlign: 'center', fontWeight: '700' }}
+                                placeholder="Micron"
+                                value={layer.micron || ''}
+                                onChange={e => {
+                                  const updated = [...items];
+                                  if (!updated[idx].layers) updated[idx].layers = [...currentLayers];
+                                  updated[idx].layers[lIdx].micron = e.target.value;
+                                  updated[idx].structure = getStructureString(updated[idx]);
+                                  setItems(updated);
+                                }}
+                              />
+                              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 'bold' }}>µ</span>
+                            </div>
+
+                            {/* Remove Layer Icon */}
+                            {currentLayers.length > 1 && (
+                              <button 
+                                type="button" 
+                                style={{ border: 'none', background: 'none', color: '#ef4444', cursor: 'pointer', padding: '0 2px' }}
+                                onClick={() => {
+                                  const updated = [...items];
+                                  updated[idx].layers = currentLayers.filter((_, i) => i !== lIdx);
+                                  updated[idx].structure = getStructureString(updated[idx]);
+                                  setItems(updated);
+                                }}
+                                title="Remove Layer"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+
+                        {/* Add Layer & Computed Structure Summary */}
+                        <div style={{ marginTop: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <button 
+                            type="button" 
+                            style={{ background: 'none', border: '1px dashed #cbd5e1', borderRadius: '4px', padding: '2px 6px', fontSize: '0.72rem', color: '#0284c7', cursor: 'pointer', fontWeight: 'bold' }}
+                            onClick={() => {
+                              const updated = [...items];
+                              const nextFilm = currentLayers.length === 1 ? 'METPET' : 'Natural GP LD';
+                              const nextMicron = currentLayers.length === 1 ? 12 : 35;
+                              updated[idx].layers = [...currentLayers, { id: Date.now(), filmType: nextFilm, micron: nextMicron }];
+                              updated[idx].structure = getStructureString(updated[idx]);
+                              setItems(updated);
+                            }}
+                          >
+                            + Add Layer
+                          </button>
+                          <div style={{ fontSize: '0.72rem', fontWeight: '800', color: '#047857' }}>
+                            {getStructureString(it) || 'PET 12µ / LD 40µ'}
+                          </div>
+                        </div>
                       </td>
                       <td>
                         <select 
