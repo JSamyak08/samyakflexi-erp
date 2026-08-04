@@ -31,19 +31,20 @@ const removeCookie = (name) => {
  * Multi-layer credential retrieval (LocalStorage -> SessionStorage -> Cookie -> Env)
  */
 export const getSupabaseCredentials = () => {
-  const url = 
-    localStorage.getItem('samyak_supabase_url') ||
-    sessionStorage.getItem('samyak_supabase_url') ||
-    getCookie('samyak_supabase_url') ||
-    import.meta.env.VITE_SUPABASE_URL || '';
+  let url = '';
+  let key = '';
 
-  const key = 
-    localStorage.getItem('samyak_supabase_key') ||
-    sessionStorage.getItem('samyak_supabase_key') ||
-    getCookie('samyak_supabase_key') ||
-    import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+  try { url = localStorage.getItem('samyak_supabase_url'); } catch (e) {}
+  if (!url) try { url = sessionStorage.getItem('samyak_supabase_url'); } catch (e) {}
+  if (!url) url = getCookie('samyak_supabase_url');
+  if (!url) url = import.meta.env.VITE_SUPABASE_URL || '';
 
-  return { url: url.trim(), key: key.trim() };
+  try { key = localStorage.getItem('samyak_supabase_key'); } catch (e) {}
+  if (!key) try { key = sessionStorage.getItem('samyak_supabase_key'); } catch (e) {}
+  if (!key) key = getCookie('samyak_supabase_key');
+  if (!key) key = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+
+  return { url: (url || '').trim(), key: (key || '').trim() };
 };
 
 /**
@@ -208,22 +209,22 @@ export const saveSupabaseCredentials = (supabaseUrl, supabaseAnonKey) => {
   const trimmedKey = (supabaseAnonKey || '').trim();
 
   if (trimmedUrl) {
-    localStorage.setItem('samyak_supabase_url', trimmedUrl);
-    sessionStorage.setItem('samyak_supabase_url', trimmedUrl);
+    try { localStorage.setItem('samyak_supabase_url', trimmedUrl); } catch (e) {}
+    try { sessionStorage.setItem('samyak_supabase_url', trimmedUrl); } catch (e) {}
     setCookie('samyak_supabase_url', trimmedUrl);
   } else {
-    localStorage.removeItem('samyak_supabase_url');
-    sessionStorage.removeItem('samyak_supabase_url');
+    try { localStorage.removeItem('samyak_supabase_url'); } catch (e) {}
+    try { sessionStorage.removeItem('samyak_supabase_url'); } catch (e) {}
     removeCookie('samyak_supabase_url');
   }
 
   if (trimmedKey) {
-    localStorage.setItem('samyak_supabase_key', trimmedKey);
-    sessionStorage.setItem('samyak_supabase_key', trimmedKey);
+    try { localStorage.setItem('samyak_supabase_key', trimmedKey); } catch (e) {}
+    try { sessionStorage.setItem('samyak_supabase_key', trimmedKey); } catch (e) {}
     setCookie('samyak_supabase_key', trimmedKey);
   } else {
-    localStorage.removeItem('samyak_supabase_key');
-    sessionStorage.removeItem('samyak_supabase_key');
+    try { localStorage.removeItem('samyak_supabase_key'); } catch (e) {}
+    try { sessionStorage.removeItem('samyak_supabase_key'); } catch (e) {}
     removeCookie('samyak_supabase_key');
   }
 
@@ -243,10 +244,10 @@ export const saveSupabaseCredentials = (supabaseUrl, supabaseAnonKey) => {
  * Clear custom Supabase credentials from all local storages
  */
 export const clearSupabaseCredentials = () => {
-  localStorage.removeItem('samyak_supabase_url');
-  localStorage.removeItem('samyak_supabase_key');
-  sessionStorage.removeItem('samyak_supabase_url');
-  sessionStorage.removeItem('samyak_supabase_key');
+  try { localStorage.removeItem('samyak_supabase_url'); } catch (e) {}
+  try { localStorage.removeItem('samyak_supabase_key'); } catch (e) {}
+  try { sessionStorage.removeItem('samyak_supabase_url'); } catch (e) {}
+  try { sessionStorage.removeItem('samyak_supabase_key'); } catch (e) {}
   removeCookie('samyak_supabase_url');
   removeCookie('samyak_supabase_key');
 

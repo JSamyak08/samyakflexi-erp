@@ -33,11 +33,13 @@ export default function JobMasterDirectory({
   onAddJobMaster,
   onAddCylinder,
   onAddClient,
-  onPunchOrderFromJobMaster
+  onPunchOrderFromJobMaster,
+  onUpdateJobMaster
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedJob, setSelectedJob] = useState(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [editingJobId, setEditingJobId] = useState(null);
   const [activeJobCardData, setActiveJobCardData] = useState(null);
 
   // Form State for New Job Master
@@ -211,9 +213,44 @@ export default function JobMasterDirectory({
   }, [skuCode, jobMasters, cylinders]);
 
   const handleOpenCreateModal = () => {
+    setEditingJobId(null);
     setSkuCode(getNextSerialSkuCode());
     setJobName('');
     setClientName('');
+    setPrintWidthMm('1000');
+    setRepeatLengthMm('400');
+    setPouchOpenWidth('120');
+    setPouchHeight('150');
+    setColorsCount(6);
+    setCylinderCost('35000');
+    setCostBorneBy('Client (100%)');
+    setUtilisationLimit(10000);
+    const defaultFilm = availableFilmTypes[0] || 'PET';
+    setLayers([
+      { id: Date.now(), filmType: defaultFilm, micron: 12 },
+      { id: Date.now()+1, filmType: availableFilmTypes[1] || 'METPET', micron: 12 },
+      { id: Date.now()+2, filmType: availableFilmTypes[2] || 'Natural GP LD', micron: 35 }
+    ]);
+    setIsCreateModalOpen(true);
+  };
+
+  const handleOpenEditModal = (job) => {
+    setEditingJobId(job.id);
+    setSkuCode(job.skuCode || '');
+    setJobName(job.jobName || '');
+    setClientName(job.clientName || '');
+    setPrintWidthMm(job.printWidthMm ? String(job.printWidthMm) : '1000');
+    setRepeatLengthMm(job.repeatLengthMm ? String(job.repeatLengthMm) : '400');
+    setPouchOpenWidth(job.pouchOpenWidth ? String(job.pouchOpenWidth) : '120');
+    setPouchHeight(job.pouchHeight ? String(job.pouchHeight) : '150');
+    setColorsCount(job.colorsCount || 6);
+    setCylinderCost(job.cylinderCost ? String(job.cylinderCost).replace(/[^0-9]/g, '') : '35000');
+    setCostBorneBy(job.costBorneBy || 'Client (100%)');
+    setEngravuresName(job.engravuresName || 'Acme Rotogravure Engravers');
+    setUtilisationLimit(job.utilisationLimit || 10000);
+    if (job.layers && job.layers.length > 0) {
+      setLayers(job.layers.map(l => ({ ...l, id: l.id || Date.now() + Math.random() })));
+    }
     setIsCreateModalOpen(true);
   };
 
@@ -224,13 +261,42 @@ export default function JobMasterDirectory({
       return;
     }
 
-    if (isSkuDuplicate) {
+    if (!editingJobId && isSkuDuplicate) {
       alert(`SKU Code "${skuCode.trim()}" is already in use! Please enter or generate a unique SKU Code.`);
       return;
     }
 
-    const jobMasterId = `JM-2026-${String((jobMasters ? jobMasters.length : 0) + 101).padStart(3, '0')}`;
     const structureSummary = layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
+    
+    if (editingJobId) {
+      const existingJob = jobMasters.find(j => j.id === editingJobId) || {};
+      const updatedJobMaster = {
+        ...existingJob,
+        skuCode: skuCode.trim(),
+        jobName: jobName.trim(),
+        clientName: clientName.trim(),
+        structure: structureSummary,
+        printWidthMm: parseFloat(printWidthMm) || 1000,
+        repeatLengthMm: parseFloat(repeatLengthMm) || 400,
+        pouchOpenWidth: parseFloat(pouchOpenWidth) || 0,
+        pouchHeight: parseFloat(pouchHeight) || 0,
+        layers,
+        cylinderSku: skuCode.trim(),
+        cylinderCost: `₹ ${parseInt(cylinderCost || 0).toLocaleString()}`,
+        colorsCount: parseInt(colorsCount) || 6,
+        engravuresName,
+        costBorneBy,
+        utilisationLimit: parseFloat(utilisationLimit) || 10000
+      };
+
+      if (onUpdateJobMaster) await onUpdateJobMaster(updatedJobMaster);
+      setIsCreateModalOpen(false);
+      setSelectedJob(updatedJobMaster);
+      alert(`Job Master ${updatedJobMaster.id} updated successfully!`);
+      return;
+    }
+
+    const jobMasterId = `JM-2026-${String((jobMasters ? jobMasters.length : 0) + 101).padStart(3, '0')}`;
 
     const newJobMaster = {
       id: jobMasterId,
@@ -611,6 +677,7 @@ export default function JobMasterDirectory({
                 <td>
                   <div style={{ display: 'flex', gap: '6px' }}>
                     <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => setSelectedJob(job)}>View Profile</button>
+                    <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => handleOpenEditModal(job)}>Edit</button>
                     <button className="btn-primary" style={{ padding: '4px 10px', fontSize: '0.75rem', background: '#047857' }} onClick={() => onPunchOrderFromJobMaster && onPunchOrderFromJobMaster(job)}>Punch Order</button>
                   </div>
                 </td>
@@ -622,25 +689,26 @@ export default function JobMasterDirectory({
 
       {isCreateModalOpen && (
         <div className="modal-overlay" onClick={() => setIsCreateModalOpen(false)}>
-          <div className="glass-card modal-content" style={{ width: '720px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <div className="modal-content" style={{ width: '800px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '1.2rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <FileCode size={20} style={{ color: 'var(--primary-brand)' }} /> Create New Job Master
+                <FileCode size={20} style={{ color: 'var(--primary-brand)' }} /> {editingJobId ? 'Edit Job Master' : 'Create New Job Master'}
               </h3>
               <button className="btn-secondary" style={{ padding: '4px' }} onClick={() => setIsCreateModalOpen(false)}><X size={18} /></button>
             </div>
 
             <form onSubmit={handleCreateJobMaster}>
               <div className="form-grid">
-                <div className="form-group">
-                  <label>SKU Code *</label>
+                <div>
+                  <label className="form-label">SKU Code (Auto-generated/Custom) *</label>
                   <input 
                     type="text" 
                     className="form-control" 
-                    required 
-                    style={{ borderColor: isSkuDuplicate ? '#ef4444' : undefined, background: isSkuDuplicate ? '#fef2f2' : undefined }}
                     value={skuCode} 
-                    onChange={e => setSkuCode(e.target.value)} 
+                    onChange={(e) => setSkuCode(e.target.value.toUpperCase())}
+                    required
+                    disabled={!!editingJobId}
+                    style={editingJobId ? { backgroundColor: '#f1f5f9', cursor: 'not-allowed' } : {}}
                   />
                   {isSkuDuplicate && (
                     <div style={{ color: '#dc2626', fontSize: '0.75rem', fontWeight: '700', marginTop: '4px' }}>
@@ -649,7 +717,7 @@ export default function JobMasterDirectory({
                   )}
                 </div>
                 <div className="form-group"><label>Job Name *</label><input type="text" className="form-control" required value={jobName} onChange={e => setJobName(e.target.value)} /></div>
-                {/* SEARCHABLE CLIENT DROPDOWN WITH QUICK ONBOARDING */}
+                
                 <div className="form-group" style={{ gridColumn: 'span 2', position: 'relative' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                     <label style={{ fontWeight: '700', fontSize: '0.85rem' }}>Client Name *</label>
@@ -663,7 +731,6 @@ export default function JobMasterDirectory({
                     </button>
                   </div>
 
-                  {/* Searchable Dropdown Combo Box */}
                   <div style={{ position: 'relative' }}>
                     <div style={{ display: 'flex', alignItems: 'center' }}>
                       <input 
@@ -690,7 +757,6 @@ export default function JobMasterDirectory({
                       )}
                     </div>
 
-                    {/* Dropdown Options List */}
                     {isClientDropdownOpen && (
                       <div 
                         style={{ 
@@ -750,12 +816,6 @@ export default function JobMasterDirectory({
                       </div>
                     )}
                   </div>
-
-                  {onboardSuccessNotice && (
-                    <div style={{ fontSize: '0.78rem', color: '#047857', marginTop: '4px', fontWeight: '700' }}>
-                      {onboardSuccessNotice}
-                    </div>
-                  )}
                 </div>
 
                 <div className="form-group"><label>Print Width (mm)</label><input type="number" className="form-control" value={printWidthMm} onChange={e => setPrintWidthMm(e.target.value)} /></div>
@@ -781,43 +841,54 @@ export default function JobMasterDirectory({
                 ))}
               </div>
 
-              {/* Checkbox for Cylinder Creation */}
-              <div style={{ marginTop: '16px', background: '#ecfdf5', padding: '12px', borderRadius: '8px', border: '1px solid #a7f3d0' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: '600', color: '#047857' }}>
-                  <input type="checkbox" checked={createCylinder} onChange={e => setCreateCylinder(e.target.checked)} />
-                  Also create & link a Rotogravure Cylinder Record for this Job Master
-                </label>
-
-                {createCylinder && (
-                  <div className="form-grid" style={{ marginTop: '12px' }}>
-                    <div className="form-group">
-                      <label>Number of Colors</label>
-                      <input type="number" className="form-control" value={colorsCount} onChange={e => setColorsCount(e.target.value)} />
-                    </div>
-                    <div className="form-group">
-                      <label>Cylinder Set Cost (₹)</label>
-                      <input type="number" className="form-control" value={cylinderCost} onChange={e => setCylinderCost(e.target.value)} />
-                    </div>
-                    <div className="form-group">
-                      <label>Cost Borne By</label>
-                      <select className="form-control" value={costBorneBy} onChange={e => setCostBorneBy(e.target.value)}>
-                        <option value="Client (100%)">Client (100%)</option>
-                        <option value="Us (100%)">Us / Samyak (100%)</option>
-                        <option value="Both (50/50)">Both (50/50)</option>
-                      </select>
-                    </div>
-                    <div className="form-group">
-                      <label>Engraver Name</label>
-                      <input type="text" className="form-control" value={engravuresName} onChange={e => setEngravuresName(e.target.value)} />
+              {!editingJobId && (
+                <div style={{ marginTop: '24px', padding: '16px', background: 'rgba(59, 130, 246, 0.05)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <input 
+                        type="checkbox" 
+                        id="createCylinder"
+                        checked={createCylinder}
+                        onChange={(e) => setCreateCylinder(e.target.checked)}
+                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                      />
+                      <label htmlFor="createCylinder" style={{ fontWeight: '600', cursor: 'pointer', margin: 0 }}>
+                        Auto-generate Printing Cylinders Asset
+                      </label>
                     </div>
                   </div>
-                )}
-              </div>
+
+                  {createCylinder && (
+                    <div className="form-grid" style={{ marginTop: '12px' }}>
+                      <div className="form-group">
+                        <label>Number of Colors</label>
+                        <input type="number" className="form-control" value={colorsCount} onChange={e => setColorsCount(e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label>Cylinder Set Cost (₹)</label>
+                        <input type="number" className="form-control" value={cylinderCost} onChange={e => setCylinderCost(e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label>Cost Borne By</label>
+                        <select className="form-control" value={costBorneBy} onChange={e => setCostBorneBy(e.target.value)}>
+                          <option value="Client (100%)">Client (100%)</option>
+                          <option value="Us (100%)">Us / Samyak (100%)</option>
+                          <option value="Both (50/50)">Both (50/50)</option>
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>Engraver Name</label>
+                        <input type="text" className="form-control" value={engravuresName} onChange={e => setEngravuresName(e.target.value)} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
                 <button type="button" className="btn-secondary" onClick={() => setIsCreateModalOpen(false)}>Cancel</button>
                 <button type="submit" className="btn-primary" disabled={isSkuDuplicate} style={isSkuDuplicate ? { opacity: 0.6, cursor: 'not-allowed' } : {}}>
-                  <CheckCircle2 size={16} /> Save Job Master
+                  <CheckCircle2 size={16} /> {editingJobId ? 'Save Changes' : 'Save Job Master'}
                 </button>
               </div>
             </form>

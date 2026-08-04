@@ -759,6 +759,15 @@ export default function App() {
     }
   };
 
+  const handleUpdateJobMaster = async (updatedJobMaster) => {
+    setJobMasters(prev => prev.map(j => j.id === updatedJobMaster.id ? updatedJobMaster : j));
+    try {
+      await saveJobMasterToSupabase(updatedJobMaster);
+    } catch (err) {
+      console.warn("[Sync Notice] Job Master updated locally. Supabase notice:", err);
+    }
+  };
+
   const handlePunchOrderFromJobMaster = (jobMaster) => {
     setSelectedJobMasterForPunch(jobMaster);
     handleTabChange('job_punching');
@@ -1037,6 +1046,7 @@ export default function App() {
             orders={orders}
             clients={clients}
             onAddJobMaster={handleAddJobMaster}
+            onUpdateJobMaster={handleUpdateJobMaster}
             onAddCylinder={handleAddCylinder}
             onAddClient={handleAddClient}
             onPunchOrderFromJobMaster={handlePunchOrderFromJobMaster}
