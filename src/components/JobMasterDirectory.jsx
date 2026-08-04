@@ -29,8 +29,10 @@ export default function JobMasterDirectory({
   cylinders = [], 
   productionRecords = [], 
   orders = [],
+  clients = [],
   onAddJobMaster,
   onAddCylinder,
+  onAddClient,
   onPunchOrderFromJobMaster
 }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -41,11 +43,96 @@ export default function JobMasterDirectory({
   // Form State for New Job Master
   const [jobName, setJobName] = useState('');
   const [clientName, setClientName] = useState('');
+  const [clientSearchTerm, setClientSearchTerm] = useState('');
+  const [isClientDropdownOpen, setIsClientDropdownOpen] = useState(false);
+
+  // Quick Client Onboarding Modal State
+  const [isOnboardModalOpen, setIsOnboardModalOpen] = useState(false);
+  const [newClientName, setNewClientName] = useState('');
+  const [newContactPerson, setNewContactPerson] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newGstin, setNewGstin] = useState('');
+  const [newAddress, setNewAddress] = useState('');
+  const [newPaymentTerms, setNewPaymentTerms] = useState('30 Days Net');
+  const [onboardSuccessNotice, setOnboardSuccessNotice] = useState('');
+
   const [skuCode, setSkuCode] = useState('');
   const [printWidthMm, setPrintWidthMm] = useState('1000');
   const [repeatLengthMm, setRepeatLengthMm] = useState('400');
   const [pouchOpenWidth, setPouchOpenWidth] = useState('120');
   const [pouchHeight, setPouchHeight] = useState('150');
+
+  // Unified Unique Clients Options (from clients prop + orders + jobMasters)
+  const allClientOptions = useMemo(() => {
+    const map = new Map();
+    (clients || []).forEach(c => {
+      const name = c.name || c.companyName;
+      if (name && !map.has(name)) {
+        map.set(name, { id: c.id, name, gstin: c.gstin, phone: c.phone });
+      }
+    });
+    (orders || []).forEach(o => {
+      if (o.clientName && !map.has(o.clientName)) {
+        map.set(o.clientName, { id: `CLI-${o.clientName}`, name: o.clientName });
+      }
+    });
+    (jobMasters || []).forEach(j => {
+      if (j.clientName && !map.has(j.clientName)) {
+        map.set(j.clientName, { id: `CLI-${j.clientName}`, name: j.clientName });
+      }
+    });
+    return Array.from(map.values());
+  }, [clients, orders, jobMasters]);
+
+  const filteredClients = useMemo(() => {
+    const query = (clientSearchTerm || '').toLowerCase().trim();
+    if (!query) return allClientOptions;
+    return allClientOptions.filter(c => c.name.toLowerCase().includes(query));
+  }, [allClientOptions, clientSearchTerm]);
+
+  const handleOnboardClientSubmit = (e) => {
+    e.preventDefault();
+    if (!newClientName.trim()) {
+      alert("Company / Client Name is required!");
+      return;
+    }
+
+    const createdClient = {
+      id: `CLI-2026-${Date.now().toString().slice(-4)}`,
+      name: newClientName.trim(),
+      companyName: newClientName.trim(),
+      contactPerson: newContactPerson.trim(),
+      phone: newPhone.trim(),
+      email: newEmail.trim(),
+      gstin: newGstin.trim(),
+      address: newAddress.trim(),
+      paymentTerms: newPaymentTerms,
+      createdAt: new Date().toISOString()
+    };
+
+    if (onAddClient) {
+      onAddClient(createdClient);
+    }
+
+    // Auto-fill Client Name in Job Master creation form!
+    setClientName(createdClient.name);
+    setClientSearchTerm(createdClient.name);
+    setIsClientDropdownOpen(false);
+    setIsOnboardModalOpen(false);
+
+    // Show notice
+    setOnboardSuccessNotice(`✨ New Client "${createdClient.name}" Onboarded & Auto-Filled!`);
+    setTimeout(() => setOnboardSuccessNotice(''), 4000);
+
+    // Clear onboarding form
+    setNewClientName('');
+    setNewContactPerson('');
+    setNewPhone('');
+    setNewEmail('');
+    setNewGstin('');
+    setNewAddress('');
+  };
   
   // Layer state
   const availableFilmTypes = Object.keys(FILM_DENSITIES);
@@ -518,7 +605,115 @@ export default function JobMasterDirectory({
               <div className="form-grid">
                 <div className="form-group"><label>SKU Code *</label><input type="text" className="form-control" required value={skuCode} onChange={e => setSkuCode(e.target.value)} /></div>
                 <div className="form-group"><label>Job Name *</label><input type="text" className="form-control" required value={jobName} onChange={e => setJobName(e.target.value)} /></div>
-                <div className="form-group" style={{ gridColumn: 'span 2' }}><label>Client Name *</label><input type="text" className="form-control" required value={clientName} onChange={e => setClientName(e.target.value)} /></div>
+                {/* SEARCHABLE CLIENT DROPDOWN WITH QUICK ONBOARDING */}
+                <div className="form-group" style={{ gridColumn: 'span 2', position: 'relative' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label style={{ fontWeight: '700', fontSize: '0.85rem' }}>Client Name *</label>
+                    <button 
+                      type="button"
+                      className="btn-secondary"
+                      style={{ padding: '3px 10px', fontSize: '0.75rem', color: '#047857', borderColor: '#a7f3d0', background: '#ecfdf5', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontWeight: '700' }}
+                      onClick={() => setIsOnboardModalOpen(true)}
+                    >
+                      <Plus size={13} /> Onboard New Client
+                    </button>
+                  </div>
+
+                  {/* Searchable Dropdown Combo Box */}
+                  <div style={{ position: 'relative' }}>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      <input 
+                        type="text" 
+                        className="form-control"
+                        placeholder="Type to search existing clients or pick below..."
+                        required
+                        value={clientName}
+                        onChange={e => {
+                          setClientName(e.target.value);
+                          setClientSearchTerm(e.target.value);
+                          setIsClientDropdownOpen(true);
+                        }}
+                        onFocus={() => setIsClientDropdownOpen(true)}
+                      />
+                      {clientName && (
+                        <button 
+                          type="button" 
+                          style={{ position: 'absolute', right: '10px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                          onClick={() => { setClientName(''); setClientSearchTerm(''); setIsClientDropdownOpen(true); }}
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Dropdown Options List */}
+                    {isClientDropdownOpen && (
+                      <div 
+                        style={{ 
+                          position: 'absolute', 
+                          top: '100%', 
+                          left: 0, 
+                          right: 0, 
+                          zIndex: 100, 
+                          background: '#ffffff', 
+                          border: '1px solid #cbd5e1', 
+                          borderRadius: '8px', 
+                          boxShadow: '0 10px 25px -5px rgba(0,0,0,0.15)', 
+                          maxHeight: '210px', 
+                          overflowY: 'auto',
+                          marginTop: '4px'
+                        }}
+                      >
+                        {filteredClients.length === 0 ? (
+                          <div style={{ padding: '12px', fontSize: '0.82rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+                            No matching clients found. 
+                            <button 
+                              type="button" 
+                              style={{ marginLeft: '8px', color: '#047857', border: 'none', background: 'none', fontWeight: '700', cursor: 'pointer', textDecoration: 'underline' }}
+                              onClick={() => { setIsClientDropdownOpen(false); setIsOnboardModalOpen(true); }}
+                            >
+                              Onboard "{clientSearchTerm}"
+                            </button>
+                          </div>
+                        ) : (
+                          filteredClients.map(c => (
+                            <div 
+                              key={c.id || c.name}
+                              style={{ 
+                                padding: '10px 14px', 
+                                fontSize: '0.85rem', 
+                                cursor: 'pointer', 
+                                borderBottom: '1px solid #f1f5f9',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                background: clientName === c.name ? '#eff6ff' : 'transparent'
+                              }}
+                              onMouseDown={() => {
+                                setClientName(c.name);
+                                setClientSearchTerm(c.name);
+                                setIsClientDropdownOpen(false);
+                              }}
+                            >
+                              <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>
+                                <Building2 size={13} style={{ display: 'inline', marginRight: '6px', color: 'var(--primary-brand)' }} />
+                                {c.name}
+                              </span>
+                              {c.gstin && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>GST: {c.gstin}</span>}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {onboardSuccessNotice && (
+                    <div style={{ fontSize: '0.78rem', color: '#047857', marginTop: '4px', fontWeight: '700' }}>
+                      {onboardSuccessNotice}
+                    </div>
+                  )}
+                </div>
+
                 <div className="form-group"><label>Print Width (mm)</label><input type="number" className="form-control" value={printWidthMm} onChange={e => setPrintWidthMm(e.target.value)} /></div>
                 <div className="form-group"><label>Repeat Length (mm)</label><input type="number" className="form-control" value={repeatLengthMm} onChange={e => setRepeatLengthMm(e.target.value)} /></div>
                 <div className="form-group"><label>Pouch Width (mm)</label><input type="number" className="form-control" value={pouchOpenWidth} onChange={e => setPouchOpenWidth(e.target.value)} /></div>
@@ -579,6 +774,117 @@ export default function JobMasterDirectory({
                 <button type="button" className="btn-secondary" onClick={() => setIsCreateModalOpen(false)}>Cancel</button>
                 <button type="submit" className="btn-primary">
                   <CheckCircle2 size={16} /> Save Job Master
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* QUICK CLIENT ONBOARDING MODAL */}
+      {isOnboardModalOpen && (
+        <div className="modal-overlay" style={{ zIndex: 2000 }} onClick={() => setIsOnboardModalOpen(false)}>
+          <div className="glass-card modal-content" style={{ width: '560px', maxWidth: '95vw', padding: '24px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '1.15rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)' }}>
+                <Building2 size={20} style={{ color: 'var(--primary-brand)' }} /> Quick Client Onboarding
+              </h3>
+              <button type="button" className="btn-secondary" style={{ padding: '4px' }} onClick={() => setIsOnboardModalOpen(false)}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleOnboardClientSubmit}>
+              <div className="form-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)', gap: '14px' }}>
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label style={{ fontWeight: '700' }}>Company / Client Name *</label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    required 
+                    placeholder="e.g. Britannia Industries Ltd"
+                    value={newClientName} 
+                    onChange={e => setNewClientName(e.target.value)} 
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Contact Person</label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    placeholder="e.g. Mr. Rajesh Sharma"
+                    value={newContactPerson} 
+                    onChange={e => setNewContactPerson(e.target.value)} 
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Phone Number</label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    placeholder="+91 98260 XXXXX"
+                    value={newPhone} 
+                    onChange={e => setNewPhone(e.target.value)} 
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Email Address</label>
+                  <input 
+                    type="email" 
+                    className="form-control" 
+                    placeholder="purchase@client.com"
+                    value={newEmail} 
+                    onChange={e => setNewEmail(e.target.value)} 
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>GSTIN Number</label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    placeholder="23AAACB1234C1Z5"
+                    value={newGstin} 
+                    onChange={e => setNewGstin(e.target.value)} 
+                  />
+                </div>
+
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label>Factory / Billing Address</label>
+                  <textarea 
+                    className="form-control" 
+                    rows="2" 
+                    placeholder="Plot 45, Pithampur Industrial Area, Sector 3, Dhar MP"
+                    value={newAddress} 
+                    onChange={e => setNewAddress(e.target.value)} 
+                  />
+                </div>
+
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label>Payment Terms</label>
+                  <select 
+                    className="form-control"
+                    value={newPaymentTerms}
+                    onChange={e => setNewPaymentTerms(e.target.value)}
+                  >
+                    <option value="30 Days Net">30 Days Net</option>
+                    <option value="15 Days Net">15 Days Net</option>
+                    <option value="45 Days Net">45 Days Net</option>
+                    <option value="50% Advance, Balance Before Dispatch">50% Advance, Balance Before Dispatch</option>
+                    <option value="Immediate / Cash on Delivery">Immediate / Cash on Delivery</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button type="button" className="btn-secondary" onClick={() => setIsOnboardModalOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary" style={{ background: '#047857', borderColor: '#047857' }}>
+                  <CheckCircle2 size={16} /> Save Client & Auto-Fill
                 </button>
               </div>
             </form>

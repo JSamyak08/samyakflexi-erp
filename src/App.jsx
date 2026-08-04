@@ -850,8 +850,10 @@ export default function App() {
             cylinders={cylinders}
             productionRecords={productionRecords}
             orders={orders}
+            clients={clients}
             onAddJobMaster={handleAddJobMaster}
             onAddCylinder={handleAddCylinder}
+            onAddClient={handleAddClient}
             onPunchOrderFromJobMaster={handlePunchOrderFromJobMaster}
           />
         )}
