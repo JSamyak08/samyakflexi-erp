@@ -5,6 +5,7 @@
 
 export const TAB_SLUG_MAP = {
   dashboard: '/dashboard',
+  sales: '/sales-management',
   production_records: '/production-records',
   job_punching: '/job-punching',
   orders: '/orders',
@@ -27,6 +28,9 @@ export const SLUG_TAB_MAP = {
   
   '/dashboard': 'dashboard',
   'dashboard': 'dashboard',
+
+  '/sales-management': 'sales',
+  'sales-management': 'sales',
 
   '/production-records': 'production_records',
   'production-records': 'production_records',

@@ -51,6 +51,7 @@ import ClientManagement from './components/ClientManagement';
 import SupabaseManagement from './components/SupabaseManagement';
 import DocumentSettings from './components/DocumentSettings';
 import ConsumablesAndIndents from './components/ConsumablesAndIndents';
+import SalesManagement from './components/SalesManagement';
 import { getTabFromUrl, pushSlugState } from './utils/slugRouter';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import { 
@@ -706,6 +707,14 @@ export default function App() {
           </div>
 
           <div 
+            className={`nav-item ${activeTab === 'sales' ? 'active' : ''}`}
+            onClick={() => handleTabChange('sales')}
+          >
+            <ShoppingBag size={18} />
+            Sales & Quotations Engine
+          </div>
+
+          <div 
             className={`nav-item ${activeTab === 'job_punching' ? 'active' : ''}`}
             onClick={() => handleTabChange('job_punching')}
           >
@@ -830,6 +839,7 @@ export default function App() {
           <div>
             <h1 style={{ fontSize: '1.6rem', fontWeight: '700' }}>
               {activeTab === 'dashboard' && 'Executive Operations Dashboard'}
+              {activeTab === 'sales' && 'Sales Management & Professional Quotation Engine'}
               {activeTab === 'production_records' && 'Job Production Records & Approval Workflow'}
               {activeTab === 'job_punching' && 'Order Confirmation & Job Punching'}
               {activeTab === 'orders' && 'Order Management & PO Issuance'}
@@ -1126,6 +1136,19 @@ export default function App() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* TAB: SALES MANAGEMENT & QUOTATION ENGINE */}
+        {activeTab === 'sales' && (
+          <SalesManagement 
+            orders={orders}
+            clients={clients}
+            jobMasters={jobMasters}
+            currentUser={currentUser}
+            userRole={currentUser?.role}
+            onAddOrder={handleAddOrder}
+            onAddJobMaster={handleAddJobMaster}
+          />
         )}
 
         {/* TAB 0.5: JOB PUNCHING & COSTING ENGINE */}
