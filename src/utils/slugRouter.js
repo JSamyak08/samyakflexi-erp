@@ -9,6 +9,8 @@ export const TAB_SLUG_MAP = {
   job_punching: '/job-punching',
   orders: '/orders',
   job_datasheet: '/job-datasheet',
+  clients: '/clients-directory',
+  job_masters: '/job-masters',
   vendors: '/vendors',
   inventory: '/inventory',
   user_management: '/user-management',
@@ -37,6 +39,12 @@ export const SLUG_TAB_MAP = {
 
   '/job-datasheet': 'job_datasheet',
   'job-datasheet': 'job_datasheet',
+
+  '/clients-directory': 'clients',
+  'clients-directory': 'clients',
+
+  '/job-masters': 'job_masters',
+  'job-masters': 'job_masters',
 
   '/vendors': 'vendors',
   'vendors': 'vendors',
