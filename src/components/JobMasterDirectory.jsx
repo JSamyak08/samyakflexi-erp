@@ -816,7 +816,7 @@ export default function JobMasterDirectory({
 
               <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
                 <button type="button" className="btn-secondary" onClick={() => setIsCreateModalOpen(false)}>Cancel</button>
-                <button type="submit" className="btn-primary">
+                <button type="submit" className="btn-primary" disabled={isSkuDuplicate} style={isSkuDuplicate ? { opacity: 0.6, cursor: 'not-allowed' } : {}}>
                   <CheckCircle2 size={16} /> Save Job Master
                 </button>
               </div>
