@@ -18,7 +18,10 @@ import {
   TrendingUp,
   Sparkles,
   Upload,
-  Paperclip
+  Paperclip,
+  Filter,
+  RotateCcw,
+  SlidersHorizontal
 } from 'lucide-react';
 import { calculateUtilisation } from '../dataStore';
 import { FILM_DENSITIES } from '../factoryStore';
@@ -41,6 +44,13 @@ export default function JobMasterDirectory({
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingJobId, setEditingJobId] = useState(null);
   const [activeJobCardData, setActiveJobCardData] = useState(null);
+
+  // Filter States for Job Masters Technical Directory
+  const [clientFilter, setClientFilter] = useState('ALL');
+  const [substrateFilter, setSubstrateFilter] = useState('ALL');
+  const [layerCountFilter, setLayerCountFilter] = useState('ALL');
+  const [colorsFilter, setColorsFilter] = useState('ALL');
+  const [costBorneFilter, setCostBorneFilter] = useState('ALL');
 
   // Form State for New Job Master
   const [jobName, setJobName] = useState('');
@@ -117,14 +127,10 @@ export default function JobMasterDirectory({
       onAddClient(createdClient);
     }
 
-    // Auto-fill Client Name in Job Master creation form!
-    setClientName(createdClient.name);
-    setClientSearchTerm(createdClient.name);
+    setClientName(newClientName.trim());
     setIsClientDropdownOpen(false);
     setIsOnboardModalOpen(false);
-
-    // Show notice
-    setOnboardSuccessNotice(`✨ New Client "${createdClient.name}" Onboarded & Auto-Filled!`);
+    setOnboardSuccessNotice(`Client "${newClientName.trim()}" onboarded and selected!`);
     setTimeout(() => setOnboardSuccessNotice(''), 4000);
 
     // Clear onboarding form
@@ -136,17 +142,16 @@ export default function JobMasterDirectory({
     setNewAddress('');
   };
   
-  // Layer state
-  const availableFilmTypes = Object.keys(FILM_DENSITIES);
-  const [layers, setLayers] = useState([
-    { id: 1, filmType: availableFilmTypes[0] || 'PET', micron: 12 },
-    { id: 2, filmType: availableFilmTypes[1] || 'METPET', micron: 12 },
-    { id: 3, filmType: availableFilmTypes[2] || 'Natural GP LD', micron: 35 }
-  ]);
+  // Unique available film types for multi-layer structure builder
+  const availableFilmTypes = useMemo(() => Object.keys(FILM_DENSITIES), []);
 
-  // Cylinder creation state
-  const [createCylinder, setCreateCylinder] = useState(true);
   const [colorsCount, setColorsCount] = useState(6);
+  const [createCylinder, setCreateCylinder] = useState(true);
+  const [layers, setLayers] = useState([
+    { id: 1, filmType: 'PET', micron: 12 },
+    { id: 2, filmType: 'METPET', micron: 12 },
+    { id: 3, filmType: 'Natural GP LD', micron: 35 }
+  ]);
   const [cylinderCost, setCylinderCost] = useState('35000');
   const [costBorneBy, setCostBorneBy] = useState('Client (100%)');
   const [engravuresName, setEngravuresName] = useState('Acme Rotogravure Engravers');
@@ -154,13 +159,78 @@ export default function JobMasterDirectory({
 
   const filteredJobMasters = useMemo(() => {
     if (!jobMasters) return [];
-    return jobMasters.filter(j => 
-      j.jobName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (j.id && j.id.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (j.skuCode && j.skuCode.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (j.clientName && j.clientName.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
-  }, [jobMasters, searchTerm]);
+    return jobMasters.filter(j => {
+      // 1. Search Query Filter
+      const search = (searchTerm || '').toLowerCase().trim();
+      if (search) {
+        const matchName = (j.jobName || '').toLowerCase().includes(search);
+        const matchId = (j.id || '').toLowerCase().includes(search);
+        const matchSku = (j.skuCode || j.sku || j.cylinderSku || '').toLowerCase().includes(search);
+        const matchClient = (j.clientName || '').toLowerCase().includes(search);
+        const matchStructure = (j.structure || '').toLowerCase().includes(search);
+        if (!matchName && !matchId && !matchSku && !matchClient && !matchStructure) return false;
+      }
+
+      // 2. Client Filter
+      if (clientFilter !== 'ALL') {
+        if ((j.clientName || '').toLowerCase().trim() !== clientFilter.toLowerCase().trim()) return false;
+      }
+
+      // 3. Substrate / Film Filter
+      if (substrateFilter !== 'ALL') {
+        const subSearch = substrateFilter.toLowerCase();
+        const hasFilmInLayers = (j.layers || []).some(l => (l.filmType || '').toLowerCase().includes(subSearch));
+        const hasFilmInStructure = (j.structure || '').toLowerCase().includes(subSearch);
+        if (!hasFilmInLayers && !hasFilmInStructure) return false;
+      }
+
+      // 4. Layer Count Filter
+      if (layerCountFilter !== 'ALL') {
+        const count = j.layers ? j.layers.length : (j.structure ? j.structure.split('/').length : 0);
+        if (layerCountFilter === '2' && count !== 2) return false;
+        if (layerCountFilter === '3' && count !== 3) return false;
+        if (layerCountFilter === '4+' && count < 4) return false;
+      }
+
+      // 5. Colors Filter
+      if (colorsFilter !== 'ALL') {
+        const colors = parseInt(j.colorsCount || 0, 10);
+        if (colorsFilter === '1-4' && (colors < 1 || colors > 4)) return false;
+        if (colorsFilter === '5-7' && (colors < 5 || colors > 7)) return false;
+        if (colorsFilter === '8+' && colors < 8) return false;
+      }
+
+      // 6. Cost Borne By Filter
+      if (costBorneFilter !== 'ALL') {
+        const costStr = (j.costBorneBy || '').toLowerCase();
+        if (costBorneFilter === 'client' && !costStr.includes('client')) return false;
+        if (costBorneFilter === 'us' && !costStr.includes('us')) return false;
+        if (costBorneFilter === 'both' && !costStr.includes('both')) return false;
+      }
+
+      return true;
+    });
+  }, [jobMasters, searchTerm, clientFilter, substrateFilter, layerCountFilter, colorsFilter, costBorneFilter]);
+
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (searchTerm.trim()) count++;
+    if (clientFilter !== 'ALL') count++;
+    if (substrateFilter !== 'ALL') count++;
+    if (layerCountFilter !== 'ALL') count++;
+    if (colorsFilter !== 'ALL') count++;
+    if (costBorneFilter !== 'ALL') count++;
+    return count;
+  }, [searchTerm, clientFilter, substrateFilter, layerCountFilter, colorsFilter, costBorneFilter]);
+
+  const resetAllFilters = () => {
+    setSearchTerm('');
+    setClientFilter('ALL');
+    setSubstrateFilter('ALL');
+    setLayerCountFilter('ALL');
+    setColorsFilter('ALL');
+    setCostBorneFilter('ALL');
+  };
 
   const addLayer = () => {
     const defaultFilm = availableFilmTypes[0] || 'PET';
@@ -654,37 +724,215 @@ export default function JobMasterDirectory({
         </div>
       </div>
 
+      {/* FILTER TOOLBAR PANEL */}
+      <div className="glass-panel" style={{ padding: '18px 22px', background: '#ffffff' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+            <SlidersHorizontal size={18} style={{ color: 'var(--primary-brand)' }} /> Filter Job Technical Directory
+            {activeFiltersCount > 0 && (
+              <span className="badge badge-info" style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '12px' }}>
+                {activeFiltersCount} Active {activeFiltersCount === 1 ? 'Filter' : 'Filters'}
+              </span>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: '600' }}>
+              Showing <strong>{filteredJobMasters.length}</strong> of <strong>{jobMasters.length}</strong> Job Masters
+            </span>
+            {activeFiltersCount > 0 && (
+              <button 
+                onClick={resetAllFilters} 
+                className="btn-secondary" 
+                style={{ fontSize: '0.75rem', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#dc2626', borderColor: '#fca5a5', cursor: 'pointer' }}
+              >
+                <RotateCcw size={12} /> Reset Filters
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Dropdown Filters Grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '12px', alignItems: 'center' }}>
+          {/* Client Filter */}
+          <div>
+            <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>
+              Client Directory
+            </label>
+            <select 
+              className="form-control" 
+              style={{ fontSize: '0.85rem', padding: '6px 10px' }} 
+              value={clientFilter} 
+              onChange={e => setClientFilter(e.target.value)}
+            >
+              <option value="ALL">All Clients ({allClientOptions.length})</option>
+              {allClientOptions.map(c => (
+                <option key={c.id || c.name} value={c.name}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Substrate Film Filter */}
+          <div>
+            <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>
+              Film Substrate
+            </label>
+            <select 
+              className="form-control" 
+              style={{ fontSize: '0.85rem', padding: '6px 10px' }} 
+              value={substrateFilter} 
+              onChange={e => setSubstrateFilter(e.target.value)}
+            >
+              <option value="ALL">All Substrates</option>
+              <option value="PET">PET Film</option>
+              <option value="METPET">METPET Film</option>
+              <option value="LD">LD / LDPE Films</option>
+              <option value="BOPP">BOPP Natural / Met / Pearlised</option>
+              <option value="CPP">CPP Films</option>
+              <option value="Atta">Atta (High Dart) Film</option>
+              <option value="Metallocene">Metallocene Film</option>
+            </select>
+          </div>
+
+          {/* Layer Count Filter */}
+          <div>
+            <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>
+              Layer Structure
+            </label>
+            <select 
+              className="form-control" 
+              style={{ fontSize: '0.85rem', padding: '6px 10px' }} 
+              value={layerCountFilter} 
+              onChange={e => setLayerCountFilter(e.target.value)}
+            >
+              <option value="ALL">All Layer Counts</option>
+              <option value="2">2-Layer Laminates</option>
+              <option value="3">3-Layer Laminates</option>
+              <option value="4+">4+ Layer Laminates</option>
+            </select>
+          </div>
+
+          {/* Printing Colors Filter */}
+          <div>
+            <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>
+              Printing Colors
+            </label>
+            <select 
+              className="form-control" 
+              style={{ fontSize: '0.85rem', padding: '6px 10px' }} 
+              value={colorsFilter} 
+              onChange={e => setColorsFilter(e.target.value)}
+            >
+              <option value="ALL">All Color Counts</option>
+              <option value="1-4">1 - 4 Colors</option>
+              <option value="5-7">5 - 7 Colors</option>
+              <option value="8+">8+ Colors</option>
+            </select>
+          </div>
+
+          {/* Cylinder Cost Borne Filter */}
+          <div>
+            <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>
+              Cylinder Cost Borne By
+            </label>
+            <select 
+              className="form-control" 
+              style={{ fontSize: '0.85rem', padding: '6px 10px' }} 
+              value={costBorneFilter} 
+              onChange={e => setCostBorneFilter(e.target.value)}
+            >
+              <option value="ALL">All Cost Models</option>
+              <option value="client">Client (100%)</option>
+              <option value="us">Us / Factory (100%)</option>
+              <option value="both">Both (50/50 Shared)</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Quick Filter Preset Chips */}
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #f1f5f9', alignItems: 'center' }}>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: '600', marginRight: '4px' }}>
+            Quick Presets:
+          </span>
+          <button 
+            type="button"
+            className="preset-chip" 
+            style={{ fontSize: '0.75rem', padding: '4px 10px', background: activeFiltersCount === 0 ? 'var(--primary-brand)' : '#f1f5f9', color: activeFiltersCount === 0 ? '#ffffff' : '#334155', cursor: 'pointer' }} 
+            onClick={resetAllFilters}
+          >
+            All Jobs ({jobMasters.length})
+          </button>
+          <button 
+            type="button"
+            className="preset-chip" 
+            style={{ fontSize: '0.75rem', padding: '4px 10px', background: layerCountFilter === '3' ? 'var(--primary-brand)' : '#f1f5f9', color: layerCountFilter === '3' ? '#ffffff' : '#334155', cursor: 'pointer' }} 
+            onClick={() => { resetAllFilters(); setLayerCountFilter('3'); }}
+          >
+            3-Layer Structures
+          </button>
+          <button 
+            type="button"
+            className="preset-chip" 
+            style={{ fontSize: '0.75rem', padding: '4px 10px', background: substrateFilter === 'PET' ? 'var(--primary-brand)' : '#f1f5f9', color: substrateFilter === 'PET' ? '#ffffff' : '#334155', cursor: 'pointer' }} 
+            onClick={() => { resetAllFilters(); setSubstrateFilter('PET'); }}
+          >
+            PET Substrates
+          </button>
+          <button 
+            type="button"
+            className="preset-chip" 
+            style={{ fontSize: '0.75rem', padding: '4px 10px', background: costBorneFilter === 'client' ? 'var(--primary-brand)' : '#f1f5f9', color: costBorneFilter === 'client' ? '#ffffff' : '#334155', cursor: 'pointer' }} 
+            onClick={() => { resetAllFilters(); setCostBorneFilter('client'); }}
+          >
+            Client-Owned Cylinders
+          </button>
+        </div>
+      </div>
+
       <div className="glass-panel" style={{ padding: '20px' }}>
-        <table className="data-table">
-          <thead>
-            <tr><th>Job Master ID</th><th>SKU Code</th><th>Job Name</th><th>Client Name</th><th>Laminate Structure</th><th>Print Width x Repeat</th><th>Colors & Engraver</th><th>Actions</th></tr>
-          </thead>
-          <tbody>
-            {filteredJobMasters.map(job => (
-              <tr key={job.id}>
-                <td style={{ fontWeight: '800', color: 'var(--primary-brand)' }}>{job.id}</td>
-                <td><span className="badge badge-both">{job.skuCode}</span></td>
-                <td style={{ fontWeight: '700' }}>{job.jobName}</td>
-                <td style={{ color: 'var(--text-secondary)' }}>{job.clientName}</td>
-                <td style={{ fontSize: '0.8rem', fontWeight: '600' }}>{job.structure}</td>
-                <td>{job.printWidthMm}mm x {job.repeatLengthMm}mm</td>
-                <td>
-                  <div style={{ fontSize: '0.8rem' }}>
-                    🎨 <b>{job.colorsCount || 6} Colors</b>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{job.engravuresName}</div>
-                  </div>
-                </td>
-                <td>
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => setSelectedJob(job)}>View Profile</button>
-                    <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => handleOpenEditModal(job)}>Edit</button>
-                    <button className="btn-primary" style={{ padding: '4px 10px', fontSize: '0.75rem', background: '#047857' }} onClick={() => onPunchOrderFromJobMaster && onPunchOrderFromJobMaster(job)}>Punch Order</button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {filteredJobMasters.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--text-secondary)' }}>
+            <Filter size={40} style={{ color: 'var(--text-muted)', marginBottom: '12px', opacity: 0.5 }} />
+            <h4 style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '6px' }}>No Matching Job Masters Found</h4>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+              No technical job structures match your current search and filter selections.
+            </p>
+            <button className="btn-secondary" onClick={resetAllFilters} style={{ margin: '0 auto', display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+              <RotateCcw size={14} /> Reset All Filters
+            </button>
+          </div>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr><th>Job Master ID</th><th>SKU Code</th><th>Job Name</th><th>Client Name</th><th>Laminate Structure</th><th>Print Width x Repeat</th><th>Colors & Engraver</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+              {filteredJobMasters.map(job => (
+                <tr key={job.id}>
+                  <td style={{ fontWeight: '800', color: 'var(--primary-brand)' }}>{job.id}</td>
+                  <td><span className="badge badge-both">{job.skuCode}</span></td>
+                  <td style={{ fontWeight: '700' }}>{job.jobName}</td>
+                  <td style={{ color: 'var(--text-secondary)' }}>{job.clientName}</td>
+                  <td style={{ fontSize: '0.8rem', fontWeight: '600' }}>{job.structure}</td>
+                  <td>{job.printWidthMm}mm x {job.repeatLengthMm}mm</td>
+                  <td>
+                    <div style={{ fontSize: '0.8rem' }}>
+                      🎨 <b>{job.colorsCount || 6} Colors</b>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{job.engravuresName}</div>
+                    </div>
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => setSelectedJob(job)}>View Profile</button>
+                      <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => handleOpenEditModal(job)}>Edit</button>
+                      <button className="btn-primary" style={{ padding: '4px 10px', fontSize: '0.75rem', background: '#047857' }} onClick={() => onPunchOrderFromJobMaster && onPunchOrderFromJobMaster(job)}>Punch Order</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
       {isCreateModalOpen && (

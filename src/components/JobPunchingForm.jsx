@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import OrderConfirmationPDF from './OrderConfirmationPDF';
 
-export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, initialJobMasterData }) {
+export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, initialJobMasterData, clients = [], jobMasters = [] }) {
   // Form State
   const [jobName, setJobName] = useState(() => initialJobMasterData?.jobName || 'Britannia Bourbon 250g Packaging');
   const [clientName, setClientName] = useState(() => initialJobMasterData?.clientName || 'Britannia Industries Ltd');
@@ -48,6 +48,37 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       if (initialJobMasterData.layers && initialJobMasterData.layers.length > 0) setLayers(initialJobMasterData.layers);
     }
   }, [initialJobMasterData]);
+
+  // Auto-sync Print Width, Repeat Length, Client, Colors & Layers whenever jobName matches a Job Master
+  React.useEffect(() => {
+    if (!jobName) return;
+    const allJM = (jobMasters && jobMasters.length > 0) ? jobMasters : initialJobMasters;
+    const search = jobName.toLowerCase().trim();
+    const matchedJM = allJM.find(j => (j.jobName || '').toLowerCase().trim() === search) ||
+                      allJM.find(j => (j.jobName || '').toLowerCase().includes(search));
+    if (matchedJM) {
+      if (matchedJM.printWidthMm) setPrintWidthMm(matchedJM.printWidthMm);
+      if (matchedJM.repeatLengthMm) setRepeatLengthMm(matchedJM.repeatLengthMm);
+      if (matchedJM.clientName && (!clientName || clientName === 'Britannia Industries Ltd')) setClientName(matchedJM.clientName);
+      if (matchedJM.colorsCount) setColorsCount(matchedJM.colorsCount);
+      if (matchedJM.layers && matchedJM.layers.length > 0) setLayers(matchedJM.layers);
+    }
+  }, [jobName, jobMasters]);
+
+  // Lookup matched client in Client Directory
+  const matchedClient = useMemo(() => {
+    if (!clientName) return null;
+    const search = clientName.toLowerCase().trim();
+    if (!search) return null;
+
+    const list = (clients && clients.length > 0) ? clients : [];
+    return list.find(c => (c.name || c.companyName || '').toLowerCase().trim() === search) ||
+           list.find(c => (c.name || c.companyName || '').toLowerCase().includes(search) || search.includes((c.name || c.companyName || '').toLowerCase().trim())) ||
+           list.find(c => {
+             const firstWord = search.split(' ')[0];
+             return firstWord && firstWord.length > 3 && (c.name || c.companyName || '').toLowerCase().includes(firstWord);
+           }) || null;
+  }, [clientName, clients]);
 
   // Editable Daily Prices State
   const [filmPrices, setFilmPrices] = useState({ ...DEFAULT_DAILY_RATES });
@@ -116,10 +147,10 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
 
   // Live calculation results
   const calculationResults = useMemo(() => {
-    return calculateJobRawMaterials({
+    const calc = calculateJobRawMaterials({
       jobName,
-      printWidthMm: parseFloat(printWidthMm) || 0,
-      repeatLengthMm: parseFloat(repeatLengthMm) || 0,
+      printWidthMm: parseFloat(printWidthMm) || 1000,
+      repeatLengthMm: parseFloat(repeatLengthMm) || 400,
       orderQtyKg: parseFloat(orderQtyKg) || 0,
       orderType,
       inkGsm: parseFloat(inkGsm) || 0,
@@ -129,8 +160,19 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       inkPrice: parseFloat(inkPrice) || 1500,
       adhesivePrice: parseFloat(adhesivePrice) || 270
     });
+
+    return {
+      ...calc,
+      jobName,
+      clientName,
+      clientDetails: matchedClient,
+      printWidthMm: parseFloat(printWidthMm) || 1000,
+      repeatLengthMm: parseFloat(repeatLengthMm) || 400
+    };
   }, [
     jobName,
+    clientName,
+    matchedClient,
     printWidthMm,
     repeatLengthMm,
     orderQtyKg,
@@ -206,6 +248,9 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       id: orderId,
       jobName,
       clientName,
+      clientDetails: matchedClient,
+      printWidthMm: parseFloat(printWidthMm) || 1000,
+      repeatLengthMm: parseFloat(repeatLengthMm) || 400,
       orderDate: new Date().toISOString().split('T')[0],
       targetDeliveryDate: targetDate.toISOString().split('T')[0],
       orderQtyKg: parseFloat(orderQtyKg),
@@ -240,6 +285,8 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       {showPDFModal && (
         <OrderConfirmationPDF 
           calculationData={calculationResults} 
+          clientDetails={matchedClient}
+          clients={clients}
           onClose={handleClosePDFAndNavigate} 
         />
       )}
@@ -302,10 +349,27 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
               <input 
                 type="text" 
                 className="form-control"
+                list="job-masters-options-list"
                 value={jobName}
-                onChange={e => setJobName(e.target.value)}
+                onChange={e => {
+                  const val = e.target.value;
+                  setJobName(val);
+                  const selectedJM = (jobMasters || []).find(j => j.jobName === val);
+                  if (selectedJM) {
+                    if (selectedJM.clientName) setClientName(selectedJM.clientName);
+                    if (selectedJM.printWidthMm) setPrintWidthMm(selectedJM.printWidthMm);
+                    if (selectedJM.repeatLengthMm) setRepeatLengthMm(selectedJM.repeatLengthMm);
+                    if (selectedJM.colorsCount) setColorsCount(selectedJM.colorsCount);
+                    if (selectedJM.layers && selectedJM.layers.length > 0) setLayers(selectedJM.layers);
+                  }
+                }}
                 placeholder="e.g. Britannia Bourbon 250g"
               />
+              <datalist id="job-masters-options-list">
+                {(jobMasters || []).map((j, i) => (
+                  <option key={j.id || i} value={j.jobName}>{j.clientName ? `${j.jobName} (${j.clientName})` : j.jobName}</option>
+                ))}
+              </datalist>
             </div>
 
             <div className="form-group">
@@ -313,10 +377,16 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
               <input 
                 type="text" 
                 className="form-control"
+                list="client-options-list"
                 value={clientName}
                 onChange={e => setClientName(e.target.value)}
                 placeholder="e.g. Britannia Industries"
               />
+              <datalist id="client-options-list">
+                {(clients || []).map((c, i) => (
+                  <option key={c.id || i} value={c.name || c.companyName} />
+                ))}
+              </datalist>
             </div>
 
             <div className="form-group">

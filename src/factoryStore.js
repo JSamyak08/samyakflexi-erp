@@ -442,6 +442,8 @@ export const initialOrders = [
     id: "ORD-2026-089",
     jobName: "Britannia Bourbon 250g Packaging",
     clientName: "Britannia Industries Ltd",
+    printWidthMm: 1000,
+    repeatLengthMm: 400,
     orderDate: "2026-07-10",
     targetDeliveryDate: "2026-07-22", // Past target date -> DELAYED!
     orderQtyKg: 2500,
@@ -463,6 +465,8 @@ export const initialOrders = [
     id: "ORD-2026-090",
     jobName: "P&G Ariel Matic 1kg Pouch",
     clientName: "Procter & Gamble",
+    printWidthMm: 1050,
+    repeatLengthMm: 420,
     orderDate: "2026-07-18",
     targetDeliveryDate: "2026-07-28",
     orderQtyKg: 1500,
@@ -483,6 +487,8 @@ export const initialOrders = [
     id: "ORD-2026-091",
     jobName: "Surf Excel 500ml Refill Pack",
     clientName: "Hindustan Unilever",
+    printWidthMm: 920,
+    repeatLengthMm: 450,
     orderDate: "2026-07-12",
     targetDeliveryDate: "2026-07-20", // Past target date -> DELAYED!
     orderQtyKg: 450,
@@ -502,6 +508,8 @@ export const initialOrders = [
     id: "ORD-2026-092",
     jobName: "Sanchi Milk 500ml Film",
     clientName: "MP State Cooperative Dairy",
+    printWidthMm: 985,
+    repeatLengthMm: 380,
     orderDate: "2026-07-22",
     targetDeliveryDate: "2026-07-30",
     orderQtyKg: 3000,
@@ -1051,7 +1059,8 @@ export const initialClients = [
     address: "Plot No. 18, 19, Vikram Udyog Nagar, Palda, Indore MP",
     paymentTerms: "15 Days Net",
     contactPerson: "Management Office",
-    phone: "+91 98260 55443"
+    phone: "+91 98260 55443",
+    email: "info@nyrachocolates.com"
   },
   {
     id: "CLI-101",
@@ -1060,7 +1069,8 @@ export const initialClients = [
     address: "Plot 12, Pithampur Industrial Estate, Dhar, M.P. - 454775",
     paymentTerms: "30 Days Credit",
     contactPerson: "Rajesh Sharma",
-    phone: "+91 9826012345"
+    phone: "+91 9826012345",
+    email: "procurement@britannia.co.in"
   },
   {
     id: "CLI-102",
@@ -1069,7 +1079,8 @@ export const initialClients = [
     address: "Unilever House, B. D. Sawant Marg, Chakala, Andheri (E), Mumbai",
     paymentTerms: "45 Days Credit",
     contactPerson: "Anish Gupta",
-    phone: "+91 9821098765"
+    phone: "+91 9821098765",
+    email: "contact@unilever.com"
   },
   {
     id: "CLI-103",
@@ -1078,7 +1089,18 @@ export const initialClients = [
     address: "Fortune House, Near Navrangpura Railway Crossing, Ahmedabad",
     paymentTerms: "15 Days Credit",
     contactPerson: "Vikram Patel",
-    phone: "+91 9898011223"
+    phone: "+91 9898011223",
+    email: "supply@adaniwilmar.com"
+  },
+  {
+    id: "CLI-104",
+    name: "Procter & Gamble",
+    gstin: "27AAACP9999P1Z3",
+    address: "P&G Plaza, Cardinal Gracias Road, Chakala, Andheri East, Mumbai, Maharashtra 400099",
+    paymentTerms: "30 Days Credit",
+    contactPerson: "Rajesh Kulkarni",
+    phone: "+91 9820123456",
+    email: "kulkarni.r@pg.com"
   }
 ];
 

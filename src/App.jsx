@@ -1123,6 +1123,8 @@ export default function App() {
             onSaveOrder={handleAddOrder}
             onNavigateToDashboard={() => handleTabChange('orders')}
             initialJobMasterData={selectedJobMasterForPunch}
+            clients={clients}
+            jobMasters={jobMasters}
           />
         )}
 

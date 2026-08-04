@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
-import { COMPANY_DETAILS } from '../factoryStore';
+import { COMPANY_DETAILS, initialClients } from '../factoryStore';
 import { numberToWords, formatINR } from '../utils/pdfHelpers';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 
-export default function OrderConfirmationPDF({ calculationData, onClose }) {
+export default function OrderConfirmationPDF({ calculationData, onClose, clientDetails, clients }) {
   const defaultDocRef = generateDocRefNumber('ocn');
   const savedTerms = getDocumentTerms();
 
@@ -36,8 +36,8 @@ export default function OrderConfirmationPDF({ calculationData, onClose }) {
   const {
     jobName = "Britannia Bourbon 250g",
     clientName = "Britannia Industries Ltd",
-    printWidthMm = 1000,
-    repeatLengthMm = 400,
+    printWidthMm: rawPrintWidth,
+    repeatLengthMm: rawRepeatLength,
     orderQtyKg = 1000,
     orderType = "Reel",
     wastagePct = 5,
@@ -47,7 +47,10 @@ export default function OrderConfirmationPDF({ calculationData, onClose }) {
     inkDetails = {},
     adhesiveDetails = {},
     summary = {}
-  } = calculationData;
+  } = calculationData || {};
+
+  const printWidthMm = rawPrintWidth || calculationData?.jobMasterData?.printWidthMm || calculationData?.orderData?.printWidthMm || 1000;
+  const repeatLengthMm = rawRepeatLength || calculationData?.jobMasterData?.repeatLengthMm || calculationData?.orderData?.repeatLengthMm || 400;
 
   const layersList = layerResults.length > 0 ? layerResults : [
     { filmType: "PET Film", micron: 12, density: 1.4, gsm: 16.8, netKg: 371.7, grossKg: 390.3, pricePerKg: 125, totalCost: 48787.5 },
@@ -61,13 +64,29 @@ export default function OrderConfirmationPDF({ calculationData, onClose }) {
   const totalTax = cgstAmt + sgstAmt;
   const grandTotal = totalTaxable + totalTax;
 
+  // Resolve Client Details dynamically from Client Directory / Job Master
+  const targetClientName = calculationData?.clientName || clientName || "";
+  const clientStore = (clients && clients.length > 0) ? clients : initialClients;
+
+  const matchedClient = 
+    clientDetails || 
+    calculationData?.clientDetails || 
+    (targetClientName ? (
+      clientStore.find(c => (c.name || c.companyName || '').toLowerCase().trim() === targetClientName.toLowerCase().trim()) ||
+      clientStore.find(c => (c.name || c.companyName || '').toLowerCase().includes(targetClientName.toLowerCase().trim()) || targetClientName.toLowerCase().includes((c.name || c.companyName || '').toLowerCase().trim())) ||
+      clientStore.find(c => {
+        const firstWord = targetClientName.toLowerCase().trim().split(' ')[0];
+        return firstWord && firstWord.length > 3 && (c.name || c.companyName || '').toLowerCase().includes(firstWord);
+      })
+    ) : null);
+
   const clientInfo = {
-    name: clientName || "Britannia Industries Ltd",
-    address: "Plot 12, Pithampur Industrial Estate, Dhar, M.P. - 454775",
-    contactPerson: "Rajesh Sharma (Procurement Head)",
-    email: "procurement@britannia.co.in",
-    contactNo: "+91 9826012345",
-    gstin: "23AAACB1234F1Z5"
+    name: matchedClient?.name || matchedClient?.companyName || targetClientName || "Client Name N/A",
+    address: matchedClient?.address || "Address Not Specified in Client Directory",
+    contactPerson: matchedClient?.contactPerson || "N/A",
+    email: matchedClient?.email || (matchedClient?.contactPerson ? `${matchedClient.contactPerson.toLowerCase().replace(/\s+/g, '.')}@${(matchedClient?.name || 'client').toLowerCase().replace(/[^a-z0-9]/g, '')}.com` : "N/A"),
+    contactNo: matchedClient?.phone || matchedClient?.contactNo || "N/A",
+    gstin: matchedClient?.gstin || "N/A"
   };
 
   return (
