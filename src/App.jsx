@@ -1203,8 +1203,10 @@ export default function App() {
         {/* TAB: MATERIAL INDENTS & CONSUMABLE STORE */}
         {activeTab === 'material_indents' && (
           <ConsumablesAndIndents 
-            userRole={currentUser?.role || "Store Manager"}
-            userName={currentUser?.name || "Virendra Singh"}
+            userRole={currentUser?.role || "Admin"}
+            userName={currentUser?.name || "Samyak Jain"}
+            vendors={vendors}
+            orders={orders}
           />
         )}
 

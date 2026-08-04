@@ -28,8 +28,14 @@ import {
   TrendingDown,
   Wrench,
   Droplets,
-  Container
+  Container,
+  Lock,
+  DollarSign,
+  ShoppingBag
 } from 'lucide-react';
+import PurchaseOrderPDF from './PurchaseOrderPDF';
+import { generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
+import { initialVendors } from '../factoryStore';
 
 // Default Plant Machine List for flexible packaging operations
 export const PLANT_MACHINES = [
@@ -289,11 +295,27 @@ export const initialMachineIssues = [
 ];
 
 export default function ConsumablesAndIndents({ 
-  userRole = "Store Manager",
-  userName = "Virendra Singh"
+  userRole = "Admin",
+  userName = "Samyak Jain",
+  vendors = [],
+  orders = [],
+  onAddPO
 }) {
   // Navigation Sub-Tabs: "store" (Consumables Store) | "indents" (Material Indents & Requisitions) | "issues" (Machine Issue Audit Log)
   const [activeSubTab, setActiveSubTab] = useState("store");
+
+  // Role-Based Admin Permission Check for Issuing Purchase Orders
+  const isAdminRole = useMemo(() => {
+    if (!userRole) return false;
+    const role = String(userRole).toLowerCase().trim();
+    return role.includes('admin') || role.includes('plant') || role.includes('director') || role.includes('manager') || role.includes('super');
+  }, [userRole]);
+
+  // Vendors List Fallback
+  const availableVendors = useMemo(() => {
+    if (vendors && vendors.length > 0) return vendors;
+    return initialVendors;
+  }, [vendors]);
 
   // State Datasets
   const [consumables, setConsumables] = useState(initialConsumablesStore);
@@ -317,6 +339,153 @@ export default function ConsumablesAndIndents({
   const [selectedItemForRestock, setSelectedItemForRestock] = useState(null);
 
   const [isNewItemModalOpen, setIsNewItemModalOpen] = useState(false);
+
+  // Purchase Order Generation Modal Controls (Admin Restricted)
+  const [isRaisePOModalOpen, setIsRaisePOModalOpen] = useState(false);
+  const [targetIndentForPO, setTargetIndentForPO] = useState(null);
+  const [targetItemForPO, setTargetItemForPO] = useState(null);
+
+  // Form State for PO Generation
+  const [poNumber, setPoNumber] = useState("");
+  const [selectedVendorName, setSelectedVendorName] = useState("");
+  const [poQty, setPoQty] = useState(100);
+  const [poUnitPrice, setPoUnitPrice] = useState(100);
+  const [poGstPct, setPoGstPct] = useState(18);
+  const [poDeliveryDate, setPoDeliveryDate] = useState("");
+  const [poPaymentTerms, setPoPaymentTerms] = useState("30 Days Net");
+  const [poTermsAndConditions, setPoTermsAndConditions] = useState("");
+  const [poRemarks, setPoRemarks] = useState("");
+
+  // PO PDF Viewer Modal State
+  const [activePOData, setActivePOData] = useState(null);
+
+  // Handle Open Raise PO Modal from Indent (Admin Restricted)
+  const handleOpenRaisePO = (indent, itemRow = null) => {
+    if (!isAdminRole) {
+      alert(`Access Restricted!\n\nPermission to issue Purchase Orders directly from Material Indents is restricted strictly to the Admin / Plant Manager role.\n\nYour current logged-in role is: "${userRole}". Please contact Admin to issue POs.`);
+      return;
+    }
+
+    setTargetIndentForPO(indent);
+    const item = itemRow || (indent.items && indent.items[0]) || {};
+    setTargetItemForPO(item);
+
+    // Auto-generate PO Number using settingsService doc reference generator
+    const nextPoNum = generateDocRefNumber('po');
+    setPoNumber(nextPoNum);
+
+    // Prefill Quantity
+    const qty = parseFloat(item.reqQty || item.qty || 100);
+    setPoQty(qty);
+
+    // Find matching item in Consumables store for unit cost prefill
+    const itemTitle = (item.name || item.itemName || '').toLowerCase();
+    const matchedStoreItem = consumables.find(c => c.name.toLowerCase().includes(itemTitle));
+    const unitPrice = matchedStoreItem ? matchedStoreItem.unitCost : (item.unitCost || 250);
+    setPoUnitPrice(unitPrice);
+
+    // Pre-select Vendor from database matching category or name
+    const list = availableVendors;
+    const cat = (item.category || '').toLowerCase();
+    let matchedVendor = list.find(v => (v.companyName || '').toLowerCase().includes('siegwerk') && cat.includes('ink'));
+    if (!matchedVendor) matchedVendor = list.find(v => (v.companyName || '').toLowerCase().includes('henkel') && cat.includes('adhesive'));
+    if (!matchedVendor) matchedVendor = list.find(v => (v.companyName || '').toLowerCase().includes('mdc') && cat.includes('blade'));
+    if (!matchedVendor) matchedVendor = list.find(v => (v.companyName || '').toLowerCase().includes('flexipoly') || (v.companyName || '').toLowerCase().includes('malwa'));
+    if (!matchedVendor) matchedVendor = list[0];
+
+    setSelectedVendorName(matchedVendor ? matchedVendor.companyName : (list[0]?.companyName || "Siegwerk Inks Ltd"));
+
+    // Pre-fill Target Delivery Date (7 days from today)
+    const targetDate = new Date();
+    targetDate.setDate(targetDate.getDate() + 7);
+    setPoDeliveryDate(targetDate.toISOString().split('T')[0]);
+
+    // Pre-fill Terms & Conditions from settingsService
+    const savedTerms = getDocumentTerms();
+    setPoPaymentTerms(savedTerms.paymentTerms || "30 Days Net from date of acceptance");
+    const termsText = (savedTerms.poTerms || [
+      "1. Material subject to quality inspection & lab clearance on receipt at factory.",
+      "2. Official Tax Invoice with GSTIN & HSN/SAC codes mandatory along with delivery challan.",
+      "3. Payment 30 Days Net from date of material acceptance.",
+      "4. Delivery at Samyak International Ltd, Sector III Pithampur (MP)."
+    ]).join('\n');
+    setPoTermsAndConditions(termsText);
+
+    setPoRemarks(`Material Purchase Order raised against Requisition Indent ${indent.indentNo}`);
+    setIsRaisePOModalOpen(true);
+  };
+
+  // Submit Purchase Order
+  const handleConfirmIssuePO = (e) => {
+    e.preventDefault();
+    if (!selectedVendorName) {
+      alert("Please select a Vendor from the dropdown to issue the Purchase Order.");
+      return;
+    }
+
+    const qty = parseFloat(poQty) || 0;
+    const price = parseFloat(poUnitPrice) || 0;
+    const totalTaxable = qty * price;
+    const gstRate = parseFloat(poGstPct) || 18;
+    const gstAmt = (totalTaxable * gstRate) / 100;
+    const totalAmount = totalTaxable + gstAmt;
+
+    const vendorObj = availableVendors.find(v => v.companyName === selectedVendorName) || {
+      companyName: selectedVendorName,
+      contactPerson: "Vendor Representative",
+      address: "Pithampur / Indore Industrial Area",
+      gstin: "23AABCV00001Z0",
+      phone: "+91 98260 00000",
+      email: "orders@vendor.com"
+    };
+
+    // Update Indent status to "PO Issued"
+    setIndents(prev => prev.map(ind => {
+      if (ind.id === targetIndentForPO.id) {
+        return {
+          ...ind,
+          status: "PO Issued",
+          poNumber: poNumber,
+          vendorName: selectedVendorName,
+          poDate: new Date().toISOString().split('T')[0]
+        };
+      }
+      return ind;
+    }));
+
+    // Formatted PO Object for PurchaseOrderPDF viewer & central store
+    const poPayload = {
+      poNumber: poNumber,
+      poDate: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+      deliveryDate: new Date(poDeliveryDate || new Date()).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+      indentNumber: targetIndentForPO ? targetIndentForPO.indentNo : "IND-2026-001",
+      paymentTerms: poPaymentTerms,
+      logisticDetails: "Freight Included to Pithampur Factory",
+      vendor: vendorObj,
+      items: [
+        {
+          id: 1,
+          description: targetItemForPO ? (targetItemForPO.name || targetItemForPO.itemName) : "Material Requisition Consumable",
+          itemId: targetItemForPO?.itemCode || "CON-MAT-001",
+          make: targetItemForPO?.category || "Factory Supply",
+          hsnCode: "3215",
+          qtyKg: qty,
+          rate: price,
+          cgstRate: gstRate / 2,
+          sgstRate: gstRate / 2,
+          totalAmount: totalAmount
+        }
+      ]
+    };
+
+    if (onAddPO) {
+      onAddPO(poPayload);
+    }
+
+    setIsRaisePOModalOpen(false);
+    setActivePOData(poPayload); // Open PO PDF viewer immediately!
+    alert(`Purchase Order ${poNumber} issued successfully to ${selectedVendorName}!`);
+  };
 
   // New Issue Form Data
   const [issueMachine, setIssueMachine] = useState(PLANT_MACHINES[0]);
@@ -1043,7 +1212,7 @@ export default function ConsumablesAndIndents({
                           {indent.remarks}
                         </td>
                         <td>
-                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
                             <button 
                               className="btn-secondary" 
                               style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
@@ -1051,6 +1220,25 @@ export default function ConsumablesAndIndents({
                               title="Print Material Indent Note"
                             >
                               <Printer size={13} /> Print Slip
+                            </button>
+
+                            {/* Raise PO Button (Admin Restricted) */}
+                            <button 
+                              className="btn-primary" 
+                              style={{ 
+                                padding: '4px 10px', 
+                                fontSize: '0.75rem', 
+                                background: indent.poNumber ? '#047857' : (isAdminRole ? 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)' : '#94a3b8'),
+                                cursor: isAdminRole ? 'pointer' : 'not-allowed',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}
+                              onClick={() => handleOpenRaisePO(indent)}
+                              title={isAdminRole ? (indent.poNumber ? `View/Re-issue PO ${indent.poNumber}` : "Issue Official Purchase Order (Admin Only)") : "Permission Denied: PO Issuance restricted to Admin Role"}
+                            >
+                              {!isAdminRole && <Lock size={12} />}
+                              <FileText size={13} /> {indent.poNumber ? `PO: ${indent.poNumber}` : 'Raise PO'}
                             </button>
 
                             {isPending && (
@@ -1075,7 +1263,7 @@ export default function ConsumablesAndIndents({
                             {isApproved && (
                               <button 
                                 className="btn-primary" 
-                                style={{ padding: '4px 8px', fontSize: '0.75rem', background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)' }}
+                                style={{ padding: '4px 8px', fontSize: '0.75rem', background: 'linear-gradient(135deg, #059669 0%, #047857 100%)' }}
                                 onClick={() => handleUpdateIndentStatus(indent.id, 'Issued to Machine')}
                               >
                                 Mark Issued
@@ -1642,6 +1830,173 @@ export default function ConsumablesAndIndents({
             </div>
           </div>
         </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: RAISE PURCHASE ORDER FROM INDENT (ADMIN RESTRICTED) */}
+      {/* ========================================================================= */}
+      {isRaisePOModalOpen && targetIndentForPO && (
+        <div className="modal-overlay" onClick={() => setIsRaisePOModalOpen(false)}>
+          <div className="modal-content glass-panel" style={{ width: '800px', maxHeight: '90vh', overflowY: 'auto', padding: '24px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary-brand)' }}>
+                <ShoppingBag size={20} /> Issue Official Purchase Order (Admin Restricted)
+              </h3>
+              <button className="btn-secondary" style={{ padding: '4px' }} onClick={() => setIsRaisePOModalOpen(false)}><X size={18} /></button>
+            </div>
+
+            <form onSubmit={handleConfirmIssuePO}>
+              {/* Linked Indent Information Header */}
+              <div style={{ background: '#f0f9ff', padding: '14px 18px', borderRadius: '8px', border: '1px solid #bae6fd', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: '#0369a1', fontWeight: '800', letterSpacing: '0.5px' }}>LINKED REQUISITION INDENT</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#0c4a6e', marginTop: '2px' }}>
+                    {targetIndentForPO.indentNo} — {targetIndentForPO.department}
+                  </div>
+                  <div style={{ fontSize: '0.85rem', color: '#0369a1', marginTop: '4px' }}>
+                    Item: <b>{targetItemForPO?.name || targetItemForPO?.itemName || 'Consumable'}</b> ({targetItemForPO?.category || 'General Store'})
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <span className="badge badge-info" style={{ fontSize: '0.8rem', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <Lock size={12} /> Admin Role Authorized
+                  </span>
+                  <div style={{ fontSize: '0.75rem', color: '#0284c7', marginTop: '4px' }}>Priority: <b>{targetIndentForPO.priority}</b></div>
+                </div>
+              </div>
+
+              <div className="form-grid">
+                <div>
+                  <label className="form-label">PO Number (Auto Sequence Synced) *</label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    style={{ fontWeight: '800', fontFamily: 'monospace', color: 'var(--primary-brand)' }}
+                    value={poNumber} 
+                    onChange={e => setPoNumber(e.target.value)} 
+                    required 
+                  />
+                  <small style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Auto-synced from Document Prefix Settings counter</small>
+                </div>
+
+                <div>
+                  <label className="form-label">Select Vendor (Linked Master Directory) *</label>
+                  <select 
+                    className="form-control" 
+                    style={{ fontWeight: '700' }}
+                    value={selectedVendorName} 
+                    onChange={e => setSelectedVendorName(e.target.value)}
+                    required
+                  >
+                    {availableVendors.map(v => (
+                      <option key={v.id || v.companyName} value={v.companyName}>
+                        {v.companyName} (Materials: {(v.materials || []).join(', ') || 'Supplies'})
+                      </option>
+                    ))}
+                  </select>
+                  <small style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>GSTIN & Address auto-linked from Vendor Directory</small>
+                </div>
+
+                <div>
+                  <label className="form-label">Order Quantity ({targetItemForPO?.unit || 'Kg'}) *</label>
+                  <input 
+                    type="number" 
+                    step="any"
+                    className="form-control" 
+                    style={{ fontWeight: '700' }}
+                    value={poQty} 
+                    onChange={e => setPoQty(e.target.value)} 
+                    required 
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">Purchase Rate / Unit Price (₹) *</label>
+                  <input 
+                    type="number" 
+                    step="any"
+                    className="form-control" 
+                    style={{ fontWeight: '700' }}
+                    value={poUnitPrice} 
+                    onChange={e => setPoUnitPrice(e.target.value)} 
+                    required 
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">GST Tax Rate (%) *</label>
+                  <select className="form-control" value={poGstPct} onChange={e => setPoGstPct(e.target.value)}>
+                    <option value="18">18% GST (Standard Consumables)</option>
+                    <option value="12">12% GST</option>
+                    <option value="5">5% GST</option>
+                    <option value="0">0% Exempted</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="form-label">Target Delivery Date *</label>
+                  <input 
+                    type="date" 
+                    className="form-control" 
+                    value={poDeliveryDate} 
+                    onChange={e => setPoDeliveryDate(e.target.value)} 
+                    required 
+                  />
+                </div>
+              </div>
+
+              {/* PO Live Value Calculation Summary */}
+              <div style={{ background: '#f8fafc', padding: '14px 18px', borderRadius: '8px', border: '1px solid #e2e8f0', margin: '18px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  <div>Taxable Subtotal: <b>₹ {((parseFloat(poQty) || 0) * (parseFloat(poUnitPrice) || 0)).toLocaleString('en-IN')}</b></div>
+                  <div style={{ marginTop: '2px' }}>GST Amount ({poGstPct}%): <b>₹ {(((parseFloat(poQty) || 0) * (parseFloat(poUnitPrice) || 0) * parseFloat(poGstPct || 18)) / 100).toLocaleString('en-IN')}</b></div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>NET PURCHASE ORDER VALUE</div>
+                  <div style={{ fontSize: '1.3rem', fontWeight: '900', color: '#047857' }}>
+                    ₹ {(((parseFloat(poQty) || 0) * (parseFloat(poUnitPrice) || 0)) * (1 + parseFloat(poGstPct || 18) / 100)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '14px' }}>
+                <label className="form-label">Payment Terms</label>
+                <input 
+                  type="text" 
+                  className="form-control" 
+                  placeholder="e.g. 30 Days Net from date of material acceptance"
+                  value={poPaymentTerms} 
+                  onChange={e => setPoPaymentTerms(e.target.value)} 
+                />
+              </div>
+
+              <div>
+                <label className="form-label">PO Terms & Conditions (Prefilled from Settings)</label>
+                <textarea 
+                  className="form-control" 
+                  rows="4" 
+                  style={{ fontSize: '0.85rem', lineHeight: '1.5' }}
+                  value={poTermsAndConditions} 
+                  onChange={e => setPoTermsAndConditions(e.target.value)} 
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                <button type="button" className="btn-secondary" onClick={() => setIsRaisePOModalOpen(false)}>Cancel</button>
+                <button type="submit" className="btn-primary" style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', fontWeight: '800' }}>
+                  <FileText size={16} /> Issue Purchase Order & Open PDF Slip
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* OVERLAY: PURCHASE ORDER PDF PREVIEW MODAL */}
+      {/* ========================================================================= */}
+      {activePOData && (
+        <PurchaseOrderPDF poData={activePOData} onClose={() => setActivePOData(null)} />
       )}
 
     </div>
