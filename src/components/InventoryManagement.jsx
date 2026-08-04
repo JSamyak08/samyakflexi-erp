@@ -687,10 +687,38 @@ export default function InventoryManagement({
 
   const pendingQCGRNs = grns.filter(g => g.status === 'Pending QC');
 
-  const filteredInventory = inventory.filter(i => 
-    i.filmType.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    i.location.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredInventory = inventory.filter(i => {
+    // 1. Category Filter
+    if (stockCategoryFilter && stockCategoryFilter !== 'ALL') {
+      const itemCat = i.category || 'Film Substrates';
+      if (itemCat !== stockCategoryFilter) {
+        return false;
+      }
+    }
+
+    // 2. Search Text Filter
+    if (!searchTerm || !searchTerm.trim()) return true;
+    const term = searchTerm.toLowerCase().trim();
+    const title = (i.itemName || `${i.filmType || ''} Film`).toLowerCase();
+    const filmType = (i.filmType || '').toLowerCase();
+    const location = (i.location || '').toLowerCase();
+    const itemCode = (i.itemCode || '').toLowerCase();
+    const id = (i.id || '').toLowerCase();
+    const category = (i.category || 'Film Substrates').toLowerCase();
+    const vendor = (i.vendor || '').toLowerCase();
+    const micronStr = i.micron ? `${i.micron}` : '';
+    const widthStr = i.widthMm ? `${i.widthMm}` : '';
+
+    return title.includes(term) ||
+      filmType.includes(term) ||
+      location.includes(term) ||
+      itemCode.includes(term) ||
+      id.includes(term) ||
+      category.includes(term) ||
+      vendor.includes(term) ||
+      micronStr.includes(term) ||
+      widthStr.includes(term);
+  });
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -1704,15 +1732,21 @@ export default function InventoryManagement({
                 onChange={e => setStockSearchTerm(e.target.value)}
               />
               <select className="form-control" value={selectedInvItem?.id} onChange={e => setSelectedInvItem(inventory.find(i => i.id === e.target.value))}>
-                {inventory.filter(i => 
-                  i.filmType.toLowerCase().includes(stockSearchTerm.toLowerCase()) ||
-                  i.id.toLowerCase().includes(stockSearchTerm.toLowerCase()) ||
-                  `${i.micron}`.includes(stockSearchTerm) ||
-                  `${i.widthMm}`.includes(stockSearchTerm) ||
-                  i.location.toLowerCase().includes(stockSearchTerm.toLowerCase())
-                ).map(i => (
+                {inventory.filter(i => {
+                  const s = (stockSearchTerm || '').toLowerCase();
+                  const filmType = (i.filmType || '').toLowerCase();
+                  const itemName = (i.itemName || '').toLowerCase();
+                  const id = (i.id || '').toLowerCase();
+                  const loc = (i.location || '').toLowerCase();
+                  return filmType.includes(s) ||
+                    itemName.includes(s) ||
+                    id.includes(s) ||
+                    `${i.micron || ''}`.includes(s) ||
+                    `${i.widthMm || ''}`.includes(s) ||
+                    loc.includes(s);
+                }).map(i => (
                   <option key={i.id} value={i.id}>
-                    {i.id} - {i.filmType} {i.micron}µ ({i.widthMm}mm) | Location: {i.location} | Avail: {i.availableQtyKg}kg
+                    {i.id} - {i.itemName || `${i.filmType} ${i.micron}µ (${i.widthMm}mm)`} | Location: {i.location} | Avail: {i.availableQtyKg}{i.unit || 'kg'}
                   </option>
                 ))}
               </select>
