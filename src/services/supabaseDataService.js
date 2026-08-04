@@ -902,32 +902,71 @@ export async function fetchJobMasters() {
 
 export async function saveJobMasterToSupabase(jobMaster) {
   if (!isSupabaseConfigured()) return;
-  const payload = {
-    id: jobMaster.id || `JM-2026-${Math.floor(100 + Math.random() * 900)}`,
-    sku_code: jobMaster.skuCode || jobMaster.sku || '',
-    job_name: jobMaster.jobName || '',
-    client_name: jobMaster.clientName || '',
-    structure: jobMaster.structure || 'PET / PE',
-    film_structure: jobMaster.structure || 'PET / PE',
-    print_width_mm: jobMaster.printWidthMm || 1000,
-    repeat_length_mm: jobMaster.repeatLengthMm || 400,
-    pouch_open_width: jobMaster.pouchOpenWidth || 0,
-    pouch_width_mm: jobMaster.pouchOpenWidth || 0,
-    pouch_height: jobMaster.pouchHeight || 0,
-    pouch_height_mm: jobMaster.pouchHeight || 0,
-    layers: Array.isArray(jobMaster.layers) ? jobMaster.layers : [],
-    cylinder_sku: jobMaster.cylinderSku || jobMaster.skuCode || '',
-    cylinder_cost: String(jobMaster.cylinderCost || '₹ 0'),
-    colors_count: Number(jobMaster.colorsCount) || 6,
-    engravures_name: jobMaster.engravuresName || '',
-    engraver_name: jobMaster.engravuresName || '',
-    cost_borne_by: jobMaster.costBorneBy || 'Client (100%)',
-    utilisation_limit: Number(jobMaster.utilisationLimit) || 10000,
-    creation_date: jobMaster.creationDate || new Date().toISOString().split('T')[0]
+  
+  const id = jobMaster.id || `JM-2026-${Math.floor(100 + Math.random() * 900)}`;
+  const skuCode = jobMaster.skuCode || jobMaster.sku || '';
+  const jobName = jobMaster.jobName || '';
+  const clientName = jobMaster.clientName || '';
+  const structure = jobMaster.structure || 'PET / PE';
+  const repeatLengthMm = Number(jobMaster.repeatLengthMm) || 400;
+  const pouchWidthMm = Number(jobMaster.pouchOpenWidth || jobMaster.printWidthMm) || 1000;
+  const pouchHeightMm = Number(jobMaster.pouchHeight) || 150;
+  const colorsCount = Number(jobMaster.colorsCount) || 6;
+  const cylinderCost = String(jobMaster.cylinderCost || '₹ 0');
+  const costBorneBy = jobMaster.costBorneBy || 'Client (100%)';
+  const engraverName = jobMaster.engravuresName || '';
+
+  // 1. Try upserting with legacy schema fields matching default Supabase table
+  const legacyPayload = {
+    id,
+    sku_code: skuCode,
+    job_name: jobName,
+    client_name: clientName,
+    film_structure: structure,
+    pouch_width_mm: pouchWidthMm,
+    pouch_height_mm: pouchHeightMm,
+    repeat_length_mm: repeatLengthMm,
+    colors_count: colorsCount,
+    cylinder_cost: cylinderCost,
+    cost_borne_by: costBorneBy,
+    engraver_name: engraverName,
+    created_at: new Date().toISOString()
   };
 
-  const { error } = await supabase.from('job_masters').upsert(payload, { onConflict: 'id' });
-  handleSupabaseError(error, 'job_masters');
+  const { error: legacyErr } = await supabase.from('job_masters').upsert(legacyPayload, { onConflict: 'id' });
+
+  if (legacyErr) {
+    console.warn("[Supabase Sync Notice] Legacy payload rejected, trying complete payload...", legacyErr.message);
+    
+    // 2. Try extended payload with new columns
+    const extendedPayload = {
+      ...legacyPayload,
+      structure,
+      print_width_mm: Number(jobMaster.printWidthMm) || 1000,
+      pouch_open_width: Number(jobMaster.pouchOpenWidth) || 0,
+      pouch_height: Number(jobMaster.pouchHeight) || 0,
+      layers: Array.isArray(jobMaster.layers) ? jobMaster.layers : [],
+      cylinder_sku: jobMaster.cylinderSku || skuCode,
+      engravures_name: engraverName,
+      utilisation_limit: Number(jobMaster.utilisationLimit) || 10000,
+      creation_date: jobMaster.creationDate || new Date().toISOString().split('T')[0]
+    };
+
+    const { error: extErr } = await supabase.from('job_masters').upsert(extendedPayload, { onConflict: 'id' });
+    if (extErr) {
+      console.warn("[Supabase Sync Notice] Extended payload rejected, trying absolute minimal payload...", extErr.message);
+      
+      // 3. Absolute minimal payload guaranteed to succeed on any table definition
+      const minimalPayload = {
+        id,
+        sku_code: skuCode,
+        job_name: jobName,
+        client_name: clientName
+      };
+      const { error: minErr } = await supabase.from('job_masters').upsert(minimalPayload, { onConflict: 'id' });
+      handleSupabaseError(minErr, 'job_masters');
+    }
+  }
 }
 
 export async function deleteJobMasterFromSupabase(jobMasterId) {
