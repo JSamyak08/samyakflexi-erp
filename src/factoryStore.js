@@ -1070,6 +1070,15 @@ export const initialProductionSchedules = [
  */
 export const initialClients = [
   {
+    id: "CLI-2026-2710",
+    name: "Nyra Chocolates Pvt Ltd",
+    gstin: "23AAAFCN6172L1Z8",
+    address: "Plot No. 18, 19, Vikram Udyog Nagar, Palda, Indore MP",
+    paymentTerms: "15 Days Net",
+    contactPerson: "Management Office",
+    phone: "+91 98260 55443"
+  },
+  {
     id: "CLI-101",
     name: "Britannia Industries Ltd",
     gstin: "23AAACB1234F1Z5",

@@ -278,6 +278,46 @@ export default function App() {
           supaJobMasters = await fetchJobMasters();
         }
 
+        // Auto-heal Clients if clients table in Supabase is empty
+        if (!supaClients || supaClients.length === 0) {
+          console.log("[Supabase Sync] Recovering/Syncing Clients into Supabase...");
+          const existingClientNames = new Set((supaClients || []).map(c => c.name));
+
+          for (const c of (initialClients || [])) {
+            if (c.name && !existingClientNames.has(c.name)) {
+              await saveClientToSupabase(c);
+              existingClientNames.add(c.name);
+            }
+          }
+
+          if (Array.isArray(supaCyls)) {
+            for (const cy of supaCyls) {
+              const name = cy.clientGroup || cy.clientName;
+              if (name && !existingClientNames.has(name)) {
+                await saveClientToSupabase({
+                  id: `CLI-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+                  name: name,
+                  companyName: name,
+                  gstin: '23AAAFCN6172L1Z8',
+                  address: 'Industrial Area, Indore MP',
+                  paymentTerms: '15 Days Net'
+                });
+                existingClientNames.add(name);
+              }
+            }
+          }
+          supaClients = await fetchClients();
+        }
+
+        // Auto-heal Vendors if vendors table in Supabase is empty
+        if (!supaVendors || supaVendors.length === 0) {
+          console.log("[Supabase Sync] Syncing Vendors into Supabase...");
+          for (const v of (initialVendors || [])) {
+            await saveVendorToSupabase(v);
+          }
+          supaVendors = await fetchVendors();
+        }
+
         // Supabase DB is the AUTHORITATIVE Source of Truth.
         // Overwrite in-memory state with live data fetched directly from Supabase!
         if (Array.isArray(supaOrders)) setOrders(supaOrders);
