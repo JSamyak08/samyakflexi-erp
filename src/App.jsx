@@ -228,41 +228,7 @@ export default function App() {
         fetchSafe(fetchJobMasters, 'Job Masters')
       ]);
 
-      // If DB is completely empty across core tables (brand new DB setup), automatically seed starter records into DB
-      const isDbEmpty = (supaOrders && supaOrders.length === 0) &&
-                        (supaVendors && supaVendors.length === 0) &&
-                        (supaInv && supaInv.length === 0);
-
-      if (isDbEmpty) {
-        console.log("[Supabase Sync] Fresh database detected. Auto-seeding initial ERP factory data into Supabase...");
-        try {
-          await seedInitialDataToSupabase();
-        } catch (e) {
-          console.warn("[Supabase Sync Notice] Seeding failed:", e);
-        }
-        
-        // Re-fetch clean data straight from Supabase after seeding
-        [
-          supaOrders, supaVendors, supaInv, supaGRNs, supaCyls, 
-          supaProd, supaUsers, supaSheets, supaRolls, supaShipments,
-          supaMachines, supaSchedules, supaClients, supaJobMasters
-        ] = await Promise.all([
-          fetchSafe(fetchOrders, 'Orders'),
-          fetchSafe(fetchVendors, 'Vendors'),
-          fetchSafe(fetchInventory, 'Inventory'),
-          fetchSafe(fetchGRNs, 'GRNs'),
-          fetchSafe(fetchCylinders, 'Cylinders'),
-          fetchSafe(fetchProductionRecords, 'Production Records'),
-          fetchSafe(fetchUsers, 'Users'),
-          fetchSafe(fetchJobDataSheets, 'Job Data Sheets'),
-          fetchSafe(fetchInventoryRolls, 'Inventory Rolls'),
-          fetchSafe(fetchDispatchShipments, 'Dispatch Shipments'),
-          fetchSafe(fetchPrintingMachines, 'Printing Machines'),
-          fetchSafe(fetchProductionSchedules, 'Production Schedules'),
-          fetchSafe(fetchClients, 'Clients'),
-          fetchSafe(fetchJobMasters, 'Job Masters')
-        ]);
-      }
+      // Auto-seeding has been disabled for production environment to prevent dummy data generation.
 
       // Auto-heal Job Masters if job_masters table in Supabase is empty but initial seeds or cylinders exist
       if (supaJobMasters && supaJobMasters.length === 0) {
