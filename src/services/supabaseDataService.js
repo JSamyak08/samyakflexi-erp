@@ -951,7 +951,6 @@ export async function saveJobMasterToSupabase(jobMaster) {
   const costBorneBy = jobMaster.costBorneBy || 'Client (100%)';
   const engraverName = jobMaster.engravuresName || '';
 
-  // 1. Try upserting with legacy schema fields matching default Supabase table
   const legacyPayload = {
     id,
     sku_code: skuCode,
@@ -968,28 +967,30 @@ export async function saveJobMasterToSupabase(jobMaster) {
     created_at: new Date().toISOString()
   };
 
-  const { error: legacyErr } = await supabase.from('job_masters').upsert(legacyPayload, { onConflict: 'id' });
+  const extendedPayload = {
+    ...legacyPayload,
+    structure,
+    print_width_mm: Number(jobMaster.printWidthMm) || 1000,
+    pouch_open_width: Number(jobMaster.pouchOpenWidth) || 0,
+    pouch_height: Number(jobMaster.pouchHeight) || 0,
+    layers: Array.isArray(jobMaster.layers) ? jobMaster.layers : [],
+    cylinder_sku: jobMaster.cylinderSku || skuCode,
+    engravures_name: engraverName,
+    utilisation_limit: Number(jobMaster.utilisationLimit) || 10000,
+    creation_date: jobMaster.creationDate || new Date().toISOString().split('T')[0]
+  };
 
-  if (legacyErr) {
-    console.warn("[Supabase Sync Notice] Legacy payload rejected, trying complete payload...", legacyErr.message);
+  // 1. Try extended payload with new columns (including layers) FIRST
+  const { error: extErr } = await supabase.from('job_masters').upsert(extendedPayload, { onConflict: 'id' });
+
+  if (extErr) {
+    console.warn("[Supabase Sync Notice] Extended payload rejected, trying legacy payload...", extErr.message);
     
-    // 2. Try extended payload with new columns
-    const extendedPayload = {
-      ...legacyPayload,
-      structure,
-      print_width_mm: Number(jobMaster.printWidthMm) || 1000,
-      pouch_open_width: Number(jobMaster.pouchOpenWidth) || 0,
-      pouch_height: Number(jobMaster.pouchHeight) || 0,
-      layers: Array.isArray(jobMaster.layers) ? jobMaster.layers : [],
-      cylinder_sku: jobMaster.cylinderSku || skuCode,
-      engravures_name: engraverName,
-      utilisation_limit: Number(jobMaster.utilisationLimit) || 10000,
-      creation_date: jobMaster.creationDate || new Date().toISOString().split('T')[0]
-    };
+    // 2. Try legacy payload
+    const { error: legacyErr } = await supabase.from('job_masters').upsert(legacyPayload, { onConflict: 'id' });
 
-    const { error: extErr } = await supabase.from('job_masters').upsert(extendedPayload, { onConflict: 'id' });
-    if (extErr) {
-      console.warn("[Supabase Sync Notice] Extended payload rejected, trying absolute minimal payload...", extErr.message);
+    if (legacyErr) {
+      console.warn("[Supabase Sync Notice] Legacy payload rejected, trying absolute minimal payload...", legacyErr.message);
       
       // 3. Absolute minimal payload guaranteed to succeed on any table definition
       const minimalPayload = {
