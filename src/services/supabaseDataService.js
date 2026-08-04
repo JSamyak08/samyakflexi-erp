@@ -1035,9 +1035,9 @@ export async function fetchJobMasters() {
       jobName: j.job_name || '',
       clientName: j.client_name || '',
       structure: j.structure || j.film_structure || 'PET / PE',
-      printWidthMm: Number(j.print_width_mm) || 1000,
-      repeatLengthMm: Number(j.repeat_length_mm) || 400,
-      pouchOpenWidth: Number(j.pouch_open_width || j.pouch_width_mm) || 0,
+      printWidthMm: Number(j.print_width_mm || j.print_width || j.pouch_width_mm || j.width_mm || j.pouch_open_width) || 1000,
+      repeatLengthMm: Number(j.repeat_length_mm || j.repeat_length || j.circumference_mm) || 400,
+      pouchOpenWidth: Number(j.pouch_open_width) || 0,
       pouchHeight: Number(j.pouch_height || j.pouch_height_mm) || 0,
       layers: Array.isArray(j.layers) ? j.layers : [],
       cylinderSku: j.cylinder_sku || j.sku_code || '',
@@ -1063,8 +1063,9 @@ export async function saveJobMasterToSupabase(jobMaster) {
   const jobName = jobMaster.jobName || '';
   const clientName = jobMaster.clientName || '';
   const structure = jobMaster.structure || 'PET / PE';
-  const repeatLengthMm = Number(jobMaster.repeatLengthMm) || 400;
-  const pouchWidthMm = Number(jobMaster.pouchOpenWidth || jobMaster.printWidthMm) || 1000;
+  const printWidthMm = Number(jobMaster.printWidthMm || jobMaster.pouchWidthMm || jobMaster.pouch_width_mm) || 1000;
+  const repeatLengthMm = Number(jobMaster.repeatLengthMm || jobMaster.repeat_length_mm) || 400;
+  const pouchWidthMm = Number(jobMaster.pouchOpenWidth) || printWidthMm;
   const pouchHeightMm = Number(jobMaster.pouchHeight) || 150;
   const colorsCount = Number(jobMaster.colorsCount) || 6;
   const cylinderCost = String(jobMaster.cylinderCost || '₹ 0');
@@ -1077,7 +1078,7 @@ export async function saveJobMasterToSupabase(jobMaster) {
     job_name: jobName,
     client_name: clientName,
     film_structure: structure,
-    pouch_width_mm: pouchWidthMm,
+    pouch_width_mm: printWidthMm,
     pouch_height_mm: pouchHeightMm,
     repeat_length_mm: repeatLengthMm,
     colors_count: colorsCount,
@@ -1090,7 +1091,7 @@ export async function saveJobMasterToSupabase(jobMaster) {
   const extendedPayload = {
     ...legacyPayload,
     structure,
-    print_width_mm: Number(jobMaster.printWidthMm) || 1000,
+    print_width_mm: printWidthMm,
     pouch_open_width: Number(jobMaster.pouchOpenWidth) || 0,
     pouch_height: Number(jobMaster.pouchHeight) || 0,
     layers: Array.isArray(jobMaster.layers) ? jobMaster.layers : [],
