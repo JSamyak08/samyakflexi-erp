@@ -1133,6 +1133,131 @@ export async function deleteJobMasterFromSupabase(jobMasterId) {
   handleSupabaseError(error, 'job_masters');
 }
 
+/**
+ * -----------------------------------------------------------------------------
+ * 12. SALES QUOTATIONS SUPABASE OPERATIONS
+ * -----------------------------------------------------------------------------
+ */
+
+export async function fetchSalesQuotations() {
+  if (!isSupabaseConfigured()) return [];
+
+  try {
+    const { data, error } = await supabase
+      .from('sales_quotations')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      handleSupabaseError(error, 'sales_quotations');
+      return [];
+    }
+
+    if (data && data.length > 0) {
+      return data.map(q => ({
+        id: q.id,
+        quotationNo: q.quotation_no,
+        revisionNo: q.revision_no || 0,
+        amendmentNo: q.amendment_no || 'Rev 00',
+        enquiryDate: q.enquiry_date,
+        estimatedDeliveryDate: q.estimated_delivery_date,
+        salesManager: q.sales_manager,
+        clientName: q.client_name,
+        clientAddress: q.client_address,
+        clientGstin: q.client_gstin,
+        contactPerson: q.contact_person,
+        contactPhone: q.contact_phone,
+        contactEmail: q.contact_email,
+        paymentTerms: q.payment_terms,
+        cylinderTerms: q.cylinder_terms,
+        transportTerms: q.transport_terms,
+        status: q.status,
+        ocnRefNo: q.ocn_ref_no || '',
+        convertedDate: q.converted_date || '',
+        items: q.items || [],
+        termsAndConditions: q.terms_and_conditions || [],
+        comments: q.comments || '',
+        createdAt: q.created_at
+      }));
+    }
+  } catch (err) {
+    handleSupabaseError(err, 'sales_quotations exception');
+  }
+
+  return [];
+}
+
+export async function saveSalesQuotationToSupabase(quotation) {
+  if (!isSupabaseConfigured() || !quotation) return null;
+
+  try {
+    await ensureValidSession();
+
+    const payload = {
+      id: quotation.id,
+      quotation_no: quotation.quotationNo,
+      revision_no: quotation.revisionNo || 0,
+      amendment_no: quotation.amendmentNo || 'Rev 00',
+      enquiry_date: quotation.enquiryDate,
+      estimated_delivery_date: quotation.estimatedDeliveryDate,
+      sales_manager: quotation.salesManager,
+      client_name: quotation.clientName,
+      client_address: quotation.clientAddress,
+      client_gstin: quotation.clientGstin,
+      contact_person: quotation.contactPerson,
+      contact_phone: quotation.contactPhone,
+      contact_email: quotation.contactEmail,
+      payment_terms: quotation.paymentTerms,
+      cylinder_terms: quotation.cylinderTerms,
+      transport_terms: quotation.transportTerms,
+      status: quotation.status,
+      ocn_ref_no: quotation.ocnRefNo || '',
+      converted_date: quotation.convertedDate || '',
+      items: quotation.items || [],
+      terms_and_conditions: quotation.termsAndConditions || [],
+      comments: quotation.comments || ''
+    };
+
+    const { data, error } = await supabase
+      .from('sales_quotations')
+      .upsert([payload], { onConflict: 'id' })
+      .select();
+
+    if (error) {
+      handleSupabaseError(error, 'sales_quotations');
+      return null;
+    }
+
+    return data ? data[0] : null;
+  } catch (err) {
+    handleSupabaseError(err, 'sales_quotations exception');
+    return null;
+  }
+}
+
+export async function deleteSalesQuotationFromSupabase(id) {
+  if (!isSupabaseConfigured() || !id) return false;
+
+  try {
+    await ensureValidSession();
+
+    const { error } = await supabase
+      .from('sales_quotations')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      handleSupabaseError(error, 'sales_quotations');
+      return false;
+    }
+
+    return true;
+  } catch (err) {
+    handleSupabaseError(err, 'sales_quotations exception');
+    return false;
+  }
+}
+
 // ============================================================================
 // ONE-CLICK SEED MIGRATION: SEED ALL INITIAL FACTORY DATA TO SUPABASE
 // ============================================================================

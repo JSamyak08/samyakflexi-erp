@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   ShoppingBag, 
   Plus, 
@@ -28,6 +28,11 @@ import {
 import SalesQuotationPDF from './SalesQuotationPDF';
 import { initialSalesQuotations } from '../factoryStore';
 import { generateDocRefNumber } from '../services/settingsService';
+import { 
+  fetchSalesQuotations, 
+  saveSalesQuotationToSupabase, 
+  deleteSalesQuotationFromSupabase 
+} from '../services/supabaseDataService';
 
 // Standard Material Formats for Flexible Packaging & Cylinders
 export const MATERIAL_FORMATS = [
@@ -71,6 +76,22 @@ export default function SalesManagement({
       return initialSalesQuotations;
     }
   });
+
+  // Fetch sales quotations from Supabase on mount
+  useEffect(() => {
+    let isMounted = true;
+    async function loadData() {
+      const remote = await fetchSalesQuotations();
+      if (isMounted && remote && remote.length > 0) {
+        setQuotations(remote);
+        try {
+          localStorage.setItem('samyak_erp_sales_quotations', JSON.stringify(remote));
+        } catch (e) {}
+      }
+    }
+    loadData();
+    return () => { isMounted = false; };
+  }, []);
 
   const [activeSubTab, setActiveSubTab] = useState('list'); // 'list', 'create'
   const [searchTerm, setSearchTerm] = useState('');
@@ -259,9 +280,23 @@ export default function SalesManagement({
       localStorage.setItem('samyak_erp_sales_quotations', JSON.stringify(updatedList));
     } catch (err) {}
 
+    // Live sync to Supabase PostgreSQL table
+    saveSalesQuotationToSupabase(newQtn);
+
     setActiveSubTab('list');
     setActiveQuotationForPDF(newQtn); // Open PDF preview!
     alert(`Sales Quotation ${quotationNo} (${amendmentNo}) saved & sent to client! Opening PDF preview now.`);
+  };
+
+  // Delete Sales Quotation
+  const handleDeleteQuotation = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this Sales Quotation?")) return;
+    const updated = quotations.filter(q => q.id !== id);
+    setQuotations(updated);
+    try {
+      localStorage.setItem('samyak_erp_sales_quotations', JSON.stringify(updated));
+    } catch (e) {}
+    await deleteSalesQuotationFromSupabase(id);
   };
 
   // Convert Sales Quotation to Order Confirmation Note (OCN) & Job Master
@@ -333,14 +368,16 @@ export default function SalesManagement({
     }
 
     // 3. Update Quotation Status
+    let updatedTarget = null;
     const updatedQuotations = quotations.map(q => {
       if (q.id === qtn.id) {
-        return {
+        updatedTarget = {
           ...q,
           status: "Confirmed (Converted to OCN)",
           ocnRefNo: ocnNo,
           convertedDate: new Date().toISOString().split('T')[0]
         };
+        return updatedTarget;
       }
       return q;
     });
@@ -349,6 +386,11 @@ export default function SalesManagement({
     try {
       localStorage.setItem('samyak_erp_sales_quotations', JSON.stringify(updatedQuotations));
     } catch (err) {}
+
+    // Live sync converted quotation status to Supabase
+    if (updatedTarget) {
+      saveSalesQuotationToSupabase(updatedTarget);
+    }
 
     alert(`🎉 SUCCESS!\n\nSales Quotation ${qtn.quotationNo} has been CONVERTED to Order Confirmation Note (${ocnNo}).\n\n- Job Master "${newJobMaster.jobName}" (${newJobMaster.id}) created in Job Master Directory.\n- Order ${newOrder.id} is now LIVE across Production, Inventory & Cylinder scheduling!`);
   };
@@ -620,6 +662,16 @@ export default function SalesManagement({
                               title="Create Amended Revision (Rev 01, Rev 02)"
                             >
                               <RotateCcw size={13} /> Amend
+                            </button>
+
+                            {/* Delete Quotation Button */}
+                            <button 
+                              className="btn-secondary" 
+                              style={{ padding: '4px 8px', fontSize: '0.75rem', color: '#ef4444', borderColor: '#fca5a5' }}
+                              onClick={() => handleDeleteQuotation(qtn.id)}
+                              title="Delete Sales Quotation"
+                            >
+                              <Trash2 size={13} /> Delete
                             </button>
                           </div>
                         </td>
