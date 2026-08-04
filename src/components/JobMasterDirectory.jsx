@@ -21,7 +21,8 @@ import {
   Paperclip,
   Filter,
   RotateCcw,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Trash2
 } from 'lucide-react';
 import { calculateUtilisation } from '../dataStore';
 import { FILM_DENSITIES } from '../factoryStore';
@@ -37,7 +38,8 @@ export default function JobMasterDirectory({
   onAddCylinder,
   onAddClient,
   onPunchOrderFromJobMaster,
-  onUpdateJobMaster
+  onUpdateJobMaster,
+  onDeleteJobMaster
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedJob, setSelectedJob] = useState(null);
@@ -277,10 +279,26 @@ export default function JobMasterDirectory({
   const isSkuDuplicate = useMemo(() => {
     const code = (skuCode || '').trim().toLowerCase();
     if (!code) return false;
-    const existsInJobs = (jobMasters || []).some(j => (j.skuCode || j.sku || j.cylinderSku || '').toLowerCase() === code);
-    const existsInCylinders = (cylinders || []).some(c => (c.sku || c.skuCode || '').toLowerCase() === code);
-    return existsInJobs || existsInCylinders;
-  }, [skuCode, jobMasters, cylinders]);
+    // Only check actual job master SKU codes, excluding the job currently being edited
+    const existsInJobs = (jobMasters || []).some(j => 
+      j.id !== editingJobId && 
+      ((j.skuCode || j.sku || '').toLowerCase() === code)
+    );
+    return existsInJobs;
+  }, [skuCode, jobMasters, editingJobId]);
+
+  const handleConfirmDeleteJobMaster = (job) => {
+    if (!job) return;
+    if (window.confirm(`Are you sure you want to delete Job Master "${job.jobName}" (${job.skuCode || job.id})?\n\nThis action cannot be undone.`)) {
+      if (onDeleteJobMaster) {
+        onDeleteJobMaster(job.id);
+      }
+      if (selectedJob && selectedJob.id === job.id) {
+        setSelectedJob(null);
+      }
+      alert(`Job Master "${job.jobName}" deleted successfully.`);
+    }
+  };
 
   const handleOpenCreateModal = () => {
     setEditingJobId(null);
@@ -554,8 +572,14 @@ export default function JobMasterDirectory({
                 <Upload size={16} /> {selectedJob.jobCardFileUrl ? 'Replace Artwork / Job Card' : 'Upload Job Card PDF'}
                 <input type="file" accept=".pdf,image/*" style={{ display: 'none' }} onChange={handleFileUpload} />
               </label>
+              <button className="btn-secondary" style={{ padding: '10px 14px', fontSize: '0.85rem', fontWeight: '700' }} onClick={() => handleOpenEditModal(selectedJob)} title="Edit Job Master">
+                <Edit size={16} /> Edit Specs
+              </button>
               <button className="btn-primary" style={{ padding: '10px 18px', fontSize: '0.9rem', fontWeight: '700', background: 'linear-gradient(135deg, #059669 0%, #047857 100%)' }} onClick={() => onPunchOrderFromJobMaster && onPunchOrderFromJobMaster(selectedJob)}>
                 <Calculator size={18} /> Punch New Order
+              </button>
+              <button className="btn-secondary" style={{ padding: '10px 14px', fontSize: '0.85rem', fontWeight: '700', color: '#dc2626', borderColor: '#fca5a5' }} onClick={() => handleConfirmDeleteJobMaster(selectedJob)} title="Delete Job Master">
+                <Trash2 size={16} /> Delete
               </button>
             </div>
           </div>
@@ -850,53 +874,72 @@ export default function JobMasterDirectory({
         </div>
 
         {/* Quick Filter Preset Chips */}
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #f1f5f9', alignItems: 'center' }}>
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: '600', marginRight: '4px' }}>
-            Quick Presets:
-          </span>
-          <button 
-            type="button"
-            className="preset-chip" 
-            style={{ fontSize: '0.75rem', padding: '4px 10px', background: activeFiltersCount === 0 ? 'var(--primary-brand)' : '#f1f5f9', color: activeFiltersCount === 0 ? '#ffffff' : '#334155', cursor: 'pointer' }} 
-            onClick={resetAllFilters}
-          >
-            All Jobs ({jobMasters.length})
-          </button>
-          <button 
-            type="button"
-            className="preset-chip" 
-            style={{ fontSize: '0.75rem', padding: '4px 10px', background: layerCountFilter === '3' ? 'var(--primary-brand)' : '#f1f5f9', color: layerCountFilter === '3' ? '#ffffff' : '#334155', cursor: 'pointer' }} 
-            onClick={() => { resetAllFilters(); setLayerCountFilter('3'); }}
-          >
-            3-Layer Structures
-          </button>
-          <button 
-            type="button"
-            className="preset-chip" 
-            style={{ fontSize: '0.75rem', padding: '4px 10px', background: substrateFilter === 'PET' ? 'var(--primary-brand)' : '#f1f5f9', color: substrateFilter === 'PET' ? '#ffffff' : '#334155', cursor: 'pointer' }} 
-            onClick={() => { resetAllFilters(); setSubstrateFilter('PET'); }}
-          >
-            PET Substrates
-          </button>
-          <button 
-            type="button"
-            className="preset-chip" 
-            style={{ fontSize: '0.75rem', padding: '4px 10px', background: costBorneFilter === 'client' ? 'var(--primary-brand)' : '#f1f5f9', color: costBorneFilter === 'client' ? '#ffffff' : '#334155', cursor: 'pointer' }} 
-            onClick={() => { resetAllFilters(); setCostBorneFilter('client'); }}
-          >
-            Client-Owned Cylinders
-          </button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #f1f5f9' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: '600', marginRight: '4px' }}>
+              Quick Presets:
+            </span>
+            <button 
+              type="button"
+              className="preset-chip" 
+              style={{ fontSize: '0.75rem', padding: '4px 10px', background: activeFiltersCount === 0 ? 'var(--primary-brand)' : '#f1f5f9', color: activeFiltersCount === 0 ? '#ffffff' : '#334155', cursor: 'pointer' }} 
+              onClick={resetAllFilters}
+            >
+              All Jobs ({jobMasters.length})
+            </button>
+            <button 
+              type="button"
+              className="preset-chip" 
+              style={{ fontSize: '0.75rem', padding: '4px 10px', background: layerCountFilter === '3' ? 'var(--primary-brand)' : '#f1f5f9', color: layerCountFilter === '3' ? '#ffffff' : '#334155', cursor: 'pointer' }} 
+              onClick={() => { resetAllFilters(); setLayerCountFilter('3'); }}
+            >
+              3-Layer Structures
+            </button>
+            <button 
+              type="button"
+              className="preset-chip" 
+              style={{ fontSize: '0.75rem', padding: '4px 10px', background: substrateFilter === 'PET' ? 'var(--primary-brand)' : '#f1f5f9', color: substrateFilter === 'PET' ? '#ffffff' : '#334155', cursor: 'pointer' }} 
+              onClick={() => { resetAllFilters(); setSubstrateFilter('PET'); }}
+            >
+              PET Substrates
+            </button>
+            <button 
+              type="button"
+              className="preset-chip" 
+              style={{ fontSize: '0.75rem', padding: '4px 10px', background: costBorneFilter === 'client' ? 'var(--primary-brand)' : '#f1f5f9', color: costBorneFilter === 'client' ? '#ffffff' : '#334155', cursor: 'pointer' }} 
+              onClick={() => { resetAllFilters(); setCostBorneFilter('client'); }}
+            >
+              Client-Owned Cylinders
+            </button>
+          </div>
+
+          {activeFiltersCount > 0 && (
+            <button className="btn-secondary" onClick={resetAllFilters} style={{ padding: '4px 10px', fontSize: '0.75rem', color: '#dc2626', borderColor: '#fca5a5', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <RotateCcw size={12} /> Clear Filters ({activeFiltersCount})
+            </button>
+          )}
         </div>
       </div>
 
+      {/* Main Jobs Directory Table */}
       <div className="glass-panel" style={{ padding: '20px' }}>
+        <div style={{ marginBottom: '16px', maxWidth: '400px', position: 'relative' }}>
+          <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+          <input 
+            type="text" 
+            className="form-control" 
+            placeholder="Search Job Name, SKU, Client..." 
+            style={{ paddingLeft: '38px' }}
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+          />
+        </div>
+
         {filteredJobMasters.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--text-secondary)' }}>
-            <Filter size={40} style={{ color: 'var(--text-muted)', marginBottom: '12px', opacity: 0.5 }} />
-            <h4 style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '6px' }}>No Matching Job Masters Found</h4>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-              No technical job structures match your current search and filter selections.
-            </p>
+          <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-secondary)' }}>
+            <Filter size={36} style={{ color: 'var(--text-muted)', marginBottom: '12px' }} />
+            <h4 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '4px' }}>No Job Masters Found</h4>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>No jobs match your currently applied filters.</p>
             <button className="btn-secondary" onClick={resetAllFilters} style={{ margin: '0 auto', display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
               <RotateCcw size={14} /> Reset All Filters
             </button>
@@ -922,10 +965,13 @@ export default function JobMasterDirectory({
                     </div>
                   </td>
                   <td>
-                    <div style={{ display: 'flex', gap: '6px' }}>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                       <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => setSelectedJob(job)}>View Profile</button>
                       <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => handleOpenEditModal(job)}>Edit</button>
                       <button className="btn-primary" style={{ padding: '4px 10px', fontSize: '0.75rem', background: '#047857' }} onClick={() => onPunchOrderFromJobMaster && onPunchOrderFromJobMaster(job)}>Punch Order</button>
+                      <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.75rem', color: '#dc2626', borderColor: '#fca5a5' }} onClick={() => handleConfirmDeleteJobMaster(job)} title="Delete Job Master">
+                        <Trash2 size={13} />
+                      </button>
                     </div>
                   </td>
                 </tr>

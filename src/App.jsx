@@ -638,6 +638,15 @@ export default function App() {
     }
   };
 
+  const handleDeleteJobMaster = async (jobMasterId) => {
+    setJobMasters(prev => prev.filter(j => j.id !== jobMasterId));
+    try {
+      await deleteJobMasterFromSupabase(jobMasterId);
+    } catch (err) {
+      console.warn("[Sync Notice] Job Master deleted locally. Supabase notice:", err);
+    }
+  };
+
   const handlePunchOrderFromJobMaster = (jobMaster) => {
     setSelectedJobMasterForPunch(jobMaster);
     handleTabChange('job_punching');
@@ -917,6 +926,7 @@ export default function App() {
             clients={clients}
             onAddJobMaster={handleAddJobMaster}
             onUpdateJobMaster={handleUpdateJobMaster}
+            onDeleteJobMaster={handleDeleteJobMaster}
             onAddCylinder={handleAddCylinder}
             onAddClient={handleAddClient}
             onPunchOrderFromJobMaster={handlePunchOrderFromJobMaster}
