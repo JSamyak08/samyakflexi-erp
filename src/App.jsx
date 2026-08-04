@@ -375,7 +375,7 @@ export default function App() {
     }
 
     loadSupabaseData();
-  }, [isSupaActive]);
+  }, [isSupaActive, isAuthReady, isAuthenticated]);
 
   const handleSaveMachine = (newMachine) => {
     setMachines(prev => [newMachine, ...prev.filter(m => m.id !== newMachine.id)]);
