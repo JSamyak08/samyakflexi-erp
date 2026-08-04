@@ -116,6 +116,12 @@ export default function App() {
   const isSupaConfigured = isSupabaseConfigured();
   const [isSupaActive, setIsSupaActive] = useState(isSupaConfigured);
 
+  // Authentication & Active User Session State
+  const [currentUser, setCurrentUser] = useState(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthReady, setIsAuthReady] = useState(!isSupaConfigured);
+
+
   // When Supabase is configured, initialize state to empty arrays [] and let Supabase fetch populate state authoritatively.
   // Fall back to local storage seeds ONLY if Supabase is unconfigured / offline.
   const [orders, setOrders] = useState(() => isSupaConfigured ? [] : loadLocalState('orders', initialOrders));
@@ -410,10 +416,7 @@ export default function App() {
     deleteProductionScheduleFromSupabase(scheduleId);
   };
 
-  // Authentication & Active User Session State
-  const [currentUser, setCurrentUser] = useState(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isAuthReady, setIsAuthReady] = useState(!isSupabaseConfigured());
+
 
   // Initialize Supabase Auth state
   useEffect(() => {
