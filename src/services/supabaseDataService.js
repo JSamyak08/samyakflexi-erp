@@ -6,6 +6,19 @@
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 import { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl } from './supabaseStorageService';
 export { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl };
+
+/**
+ * Ensures a valid Supabase Auth session exists.
+ * Throws an error if unauthenticated, preventing 401s on database writes.
+ */
+async function ensureValidSession() {
+  if (!isSupabaseConfigured()) return; // Local fallback mode ignores auth
+  const { data: { session }, error } = await supabase.auth.getSession();
+  if (error || !session) {
+    throw new Error('401 Unauthorized: Valid Supabase session required for this operation.');
+  }
+}
+
 import { 
   initialOrders, 
   initialVendors, 
@@ -76,6 +89,7 @@ export async function fetchOrders() {
 
 export async function saveOrderToSupabase(order) {
   if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
   const targetDateVal = order.targetDeliveryDate || order.deliveryDate || new Date().toISOString().split('T')[0];
 
   const payload = {
@@ -96,6 +110,7 @@ export async function saveOrderToSupabase(order) {
 
 export async function deleteOrderFromSupabase(orderId) {
   if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
   const { error } = await supabase.from('orders').delete().eq('id', orderId);
   handleSupabaseError(error, 'orders');
 }
@@ -135,6 +150,7 @@ export async function fetchVendors() {
 
 export async function saveVendorToSupabase(vendor) {
   if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
   const vendorId = vendor.id || `VEND-2026-${Math.floor(1000 + Math.random() * 9000)}`;
   const vendorName = vendor.name || vendor.companyName || 'New Vendor';
   const vendorCategory = vendor.category || (Array.isArray(vendor.materials) ? vendor.materials.join(', ') : 'Flexible Packaging Supplier');
@@ -156,6 +172,7 @@ export async function saveVendorToSupabase(vendor) {
 
 export async function deleteVendorFromSupabase(vendorId) {
   if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
   const { error } = await supabase.from('vendors').delete().eq('id', vendorId);
   if (error) {
     console.error("Error deleting vendor from Supabase:", error);
@@ -194,6 +211,7 @@ export async function fetchClients() {
 
 export async function saveClientToSupabase(client) {
   if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
   const clientId = client.id || `CLI-${Math.floor(1000 + Math.random() * 9000)}`;
 
   const { error } = await supabase.from('clients').upsert({
@@ -211,6 +229,7 @@ export async function saveClientToSupabase(client) {
 
 export async function deleteClientFromSupabase(clientId) {
   if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
   try {
     const { error } = await supabase.from('clients').delete().eq('id', clientId);
     handleSupabaseError(error, 'clients');
@@ -258,6 +277,7 @@ export async function fetchInventory() {
 
 export async function saveInventoryItemToSupabase(item) {
   if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
   const filmTypeStr = item.filmType || 'PET';
   const itemNameStr = item.itemName || `${filmTypeStr} ${item.micron || 12}µ (${item.widthMm || 1000}mm)`;
   const itemCodeStr = item.itemCode || item.id || `INV-${Math.floor(100 + Math.random() * 900)}`;
@@ -280,6 +300,7 @@ export async function saveInventoryItemToSupabase(item) {
 
 export async function deleteInventoryItemFromSupabase(itemId) {
   if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
   const { error } = await supabase.from('inventory').delete().eq('id', itemId);
   if (error) {
     console.error("Error deleting inventory from Supabase:", error);
@@ -321,6 +342,7 @@ export async function fetchGRNs() {
 
 export async function saveGRNToSupabase(grn) {
   if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
   const grnId = grn.id || grn.grnNo || `GRN-2026-${Math.floor(100 + Math.random() * 900)}`;
   const itemNameVal = grn.itemName || (grn.filmType ? `${grn.filmType} ${grn.micron || 12}µ (${grn.widthMm || 1000}mm)` : 'Raw Material Film');
   const weightVal = Number(grn.receivedQtyKg || grn.netWeightKg) || 0;
@@ -384,6 +406,7 @@ export async function fetchCylinders() {
 
 export async function saveCylinderToSupabase(cyl) {
   if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
   const rateVal = cyl.rate !== undefined ? cyl.rate : cyl.ratePerSqInch;
   const { error } = await supabase.from('cylinders').upsert({
     id: cyl.id || `CYL-${Math.floor(100 + Math.random() * 900)}`,
@@ -411,6 +434,7 @@ export async function saveCylinderToSupabase(cyl) {
 
 export async function deleteCylinderFromSupabase(cylinderId) {
   if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
   try {
     const { error } = await supabase.from('cylinders').delete().eq('id', cylinderId);
     handleSupabaseError(error, 'cylinders');
@@ -455,6 +479,7 @@ export async function fetchProductionRecords() {
 
 export async function saveProductionRecordToSupabase(record) {
   if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
   const { error } = await supabase.from('production_records').upsert({
     id: record.id || `PROD-${Math.floor(100 + Math.random() * 900)}`,
     order_id: record.orderId,
@@ -502,6 +527,7 @@ export async function fetchUsers() {
 
 export async function saveUserToSupabase(user) {
   if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
   const { error } = await supabase.from('users').upsert({
     id: user.id || `USR-${Math.floor(100 + Math.random() * 900)}`,
     username: user.email?.toLowerCase(),
@@ -555,6 +581,7 @@ export async function fetchJobDataSheets() {
 
 export async function saveJobDataSheetToSupabase(sheet) {
   if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
   const { error } = await supabase.from('job_datasheets').upsert({
     id: sheet.id || `JDS-${Date.now()}`,
     job_id: sheet.jobId,
@@ -578,6 +605,7 @@ export async function saveJobDataSheetToSupabase(sheet) {
 
 export async function deleteJobDataSheetFromSupabase(sheetId) {
   if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
   const { error } = await supabase.from('job_datasheets').delete().eq('id', sheetId);
   handleSupabaseError(error, 'job_datasheets');
 }
@@ -656,6 +684,7 @@ export async function fetchInventoryRolls() {
 
 export async function saveInventoryRollToSupabase(roll) {
   if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
   const { error } = await supabase.from('inventory_rolls').upsert({
     barcode_id: roll.barcodeId,
     roll_type: roll.rollType || 'RAW_MATERIAL',
@@ -716,6 +745,7 @@ export async function fetchDispatchShipments() {
 
 export async function saveDispatchShipmentToSupabase(shipment) {
   if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
   const { error } = await supabase.from('dispatch_shipments').upsert({
     dispatch_id: shipment.dispatchId,
     order_id: shipment.orderId,
@@ -766,6 +796,7 @@ export async function fetchPrintingMachines() {
 
 export async function savePrintingMachineToSupabase(machine) {
   if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
   const { error } = await supabase.from('printing_machines').upsert({
     id: machine.id || `MAC-PRINT-${Math.floor(10 + Math.random() * 90)}`,
     name: machine.name,
@@ -783,6 +814,7 @@ export async function savePrintingMachineToSupabase(machine) {
 
 export async function deletePrintingMachineFromSupabase(machineId) {
   if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
   const { error } = await supabase.from('printing_machines').delete().eq('id', machineId);
   handleSupabaseError(error, 'printing_machines');
 }
@@ -828,6 +860,7 @@ export async function fetchProductionSchedules() {
 
 export async function saveProductionScheduleToSupabase(schedule) {
   if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
   const { error } = await supabase.from('production_schedules').upsert({
     id: schedule.id || `SCHED-2026-${Math.floor(100 + Math.random() * 900)}`,
     order_id: schedule.orderId,
@@ -857,6 +890,7 @@ export async function saveProductionScheduleToSupabase(schedule) {
 
 export async function deleteProductionScheduleFromSupabase(scheduleId) {
   if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
   const { error } = await supabase.from('production_schedules').delete().eq('id', scheduleId);
   handleSupabaseError(error, 'production_schedules');
 }
@@ -902,6 +936,7 @@ export async function fetchJobMasters() {
 
 export async function saveJobMasterToSupabase(jobMaster) {
   if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
   
   const id = jobMaster.id || `JM-2026-${Math.floor(100 + Math.random() * 900)}`;
   const skuCode = jobMaster.skuCode || jobMaster.sku || '';
@@ -971,6 +1006,7 @@ export async function saveJobMasterToSupabase(jobMaster) {
 
 export async function deleteJobMasterFromSupabase(jobMasterId) {
   if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
   const { error } = await supabase.from('job_masters').delete().eq('id', jobMasterId);
   handleSupabaseError(error, 'job_masters');
 }

@@ -186,7 +186,7 @@ export default function App() {
 
   // Load live data from Supabase PostgreSQL as AUTHORITATIVE source of truth
   useEffect(() => {
-    if (!isSupaActive) return;
+    if (!isSupaActive || !isAuthReady || !isAuthenticated) return;
 
     async function loadSupabaseData() {
       // Helper to fetch data with individual error handling
@@ -410,38 +410,88 @@ export default function App() {
   };
 
   // Authentication & Active User Session State
-  const [currentUser, setCurrentUser] = useState(() => {
-    try {
-      const savedUser = localStorage.getItem('samyak_erp_user');
-      return savedUser ? JSON.parse(savedUser) : null;
-    } catch {
-      return null;
+  const [currentUser, setCurrentUser] = useState(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthReady, setIsAuthReady] = useState(!isSupabaseConfigured());
+
+  // Initialize Supabase Auth state
+  useEffect(() => {
+    if (!isSupaActive) return;
+
+    let mounted = true;
+
+    async function initAuth() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (mounted) {
+          if (session?.user) {
+            const user = {
+              id: session.user.id,
+              name: session.user.user_metadata?.full_name || session.user.email.split('@')[0],
+              email: session.user.email,
+              role: session.user.user_metadata?.role || 'Admin',
+              department: 'Executive Management',
+              status: 'Active'
+            };
+            setCurrentUser(user);
+            setIsAuthenticated(true);
+          } else {
+            setCurrentUser(null);
+            setIsAuthenticated(false);
+          }
+          setIsAuthReady(true);
+        }
+      } catch (err) {
+        console.warn('Failed to get Supabase session on mount:', err);
+        if (mounted) setIsAuthReady(true);
+      }
     }
-  });
 
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    return !!localStorage.getItem('samyak_erp_user');
-  });
+    initAuth();
 
-  // Login Handler
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
+      if (session?.user) {
+        const user = {
+          id: session.user.id,
+          name: session.user.user_metadata?.full_name || session.user.email.split('@')[0],
+          email: session.user.email,
+          role: session.user.user_metadata?.role || 'Admin',
+          department: 'Executive Management',
+          status: 'Active'
+        };
+        setCurrentUser(user);
+        setIsAuthenticated(true);
+      } else {
+        setCurrentUser(null);
+        setIsAuthenticated(false);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      if (authListener && authListener.subscription) {
+        authListener.subscription.unsubscribe();
+      }
+    };
+  }, [isSupaActive]);
+
+  // Login Handler (for UI updates, authService handles Supabase login)
   const handleLogin = (user) => {
-    setCurrentUser(user);
-    setIsAuthenticated(true);
-    try {
-      localStorage.setItem('samyak_erp_user', JSON.stringify(user));
-    } catch (e) {
-      console.error("Failed to save auth session", e);
+    if (!isSupaActive) {
+      setCurrentUser(user);
+      setIsAuthenticated(true);
     }
   };
 
-  // Logout Handler
+  // Logout Handler (for UI updates, authService handles Supabase logout)
   const handleLogout = () => {
-    setCurrentUser(null);
-    setIsAuthenticated(false);
-    try {
-      localStorage.removeItem('samyak_erp_user');
-    } catch (e) {
-      console.error("Failed to remove auth session", e);
+    if (!isSupaActive) {
+      setCurrentUser(null);
+      setIsAuthenticated(false);
+    } else {
+      // With Supabase, we call the sign out method
+      supabase.auth.signOut().catch(console.warn);
     }
   };
 
@@ -709,6 +759,18 @@ export default function App() {
     setSelectedJobMasterForPunch(jobMaster);
     handleTabChange('job_punching');
   };
+
+  // Render Loading Screen if auth state is not initialized
+  if (!isAuthReady) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: 'var(--bg-main)' }}>
+        <div style={{ color: 'var(--text-primary)', fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div className="spinner" style={{ width: '24px', height: '24px', border: '3px solid var(--primary-brand)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+          Authenticating with Supabase...
+        </div>
+      </div>
+    );
+  }
 
   // Render Authentication Screen if user is not signed in
   if (!isAuthenticated || !currentUser) {
