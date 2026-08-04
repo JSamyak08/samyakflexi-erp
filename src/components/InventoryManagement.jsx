@@ -81,7 +81,12 @@ export default function InventoryManagement({
   const [stockLedgerAdjustments, setStockLedgerAdjustments] = useState(() => {
     try {
       const saved = localStorage.getItem('samyak_erp_stock_adjustments');
-      return saved ? JSON.parse(saved) : initialStockAdjustments;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Clean up legacy hardcoded dummy data from local storage
+        return parsed.filter(adj => !['ADJ-2026-001', 'ADJ-2026-002'].includes(adj.id));
+      }
+      return initialStockAdjustments;
     } catch (e) {
       return initialStockAdjustments;
     }
@@ -1721,7 +1726,11 @@ export default function InventoryManagement({
         const filmTypeLower = (item.filmType || '').toLowerCase();
 
         // 1. Gather Inward Receipts (GRNs)
-        const matchingGRNs = grns.filter(g => (g.filmType || '').toLowerCase() === filmTypeLower);
+        const matchingGRNs = grns.filter(g => 
+          (g.filmType || '').toLowerCase() === filmTypeLower &&
+          Number(g.micron || 0) === Number(item.micron || 0) &&
+          Number(g.widthMm || 0) === Number(item.widthMm || 0)
+        );
         const inwardTxLines = matchingGRNs.map(g => {
           const txId = `GRN_${g.grnNo || g.id}`;
           const rate = g.purchaseRatePerKg || DEFAULT_DAILY_RATES[g.filmType] || 120;
@@ -1751,7 +1760,14 @@ export default function InventoryManagement({
         (productionRecords || []).forEach(rec => {
           (rec.materialsList || []).forEach((mat, idx) => {
             const matFilm = (mat.filmType || '').toLowerCase();
-            if (matFilm.includes(filmTypeLower) || filmTypeLower.includes(matFilm)) {
+            const matMicron = Number(mat.micron || 0);
+            const matWidth = Number(mat.widthMm || 0);
+            
+            if (
+              (matFilm.includes(filmTypeLower) || filmTypeLower.includes(matFilm)) &&
+              matMicron === Number(item.micron || 0) &&
+              matWidth === Number(item.widthMm || 0)
+            ) {
               const txId = `JOB_${rec.id}_${mat.id || idx}`;
               const qty = mat.netConsumedQtyKg || mat.issueQtyKg || 0;
               const rate = mat.unitPricePerKg || DEFAULT_DAILY_RATES[item.filmType] || 120;
@@ -1779,7 +1795,11 @@ export default function InventoryManagement({
 
         // 3. Gather Physical Reconciliation Adjustments
         const adjLines = (stockLedgerAdjustments || [])
-          .filter(a => (a.filmType || '').toLowerCase() === filmTypeLower)
+          .filter(a => 
+            (a.filmType || '').toLowerCase() === filmTypeLower &&
+            Number(a.micron || 0) === Number(item.micron || 0) &&
+            Number(a.widthMm || 0) === Number(item.widthMm || 0)
+          )
           .map(a => {
             const txId = `ADJ_${a.id}`;
             const qty = a.qtyKg || 0;

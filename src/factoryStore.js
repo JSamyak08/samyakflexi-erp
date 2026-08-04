@@ -740,32 +740,7 @@ export const initialProductionRecords = [
 /**
  * Seed Stock Ledger Physical Reconciliation Adjustments
  */
-export const initialStockAdjustments = [
-  {
-    id: "ADJ-2026-001",
-    filmType: "PET",
-    micron: 12,
-    widthMm: 1000,
-    date: "2026-07-25 10:30 AM",
-    type: "Physical Audit (+)",
-    qtyKg: 25.0,
-    barcode: "BAR-PET-AUDIT-01",
-    reason: "Monthly Barcode Physical Reconciliation surplus found in Row B-3",
-    adjustedBy: "Sanjay Kumar (Store Manager)"
-  },
-  {
-    id: "ADJ-2026-002",
-    filmType: "METPET",
-    micron: 12,
-    widthMm: 1000,
-    date: "2026-07-21 02:15 PM",
-    type: "Physical Audit (-)",
-    qtyKg: -10.0,
-    barcode: "BAR-MET-AUDIT-02",
-    reason: "Damaged edge core roll written off during physical count",
-    adjustedBy: "Sanjay Kumar (Store Manager)"
-  }
-];
+export const initialStockAdjustments = [];
 
 /**
  * Helper to check if current date is within the last 2 days of the current month
