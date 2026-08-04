@@ -228,22 +228,40 @@ CREATE TABLE IF NOT EXISTS public.clients (
 -- 14. JOB MASTERS DIRECTORY TABLE
 CREATE TABLE IF NOT EXISTS public.job_masters (
     id TEXT PRIMARY KEY,
-    sku_code TEXT UNIQUE NOT NULL,
+    sku_code TEXT,
     job_name TEXT NOT NULL,
     client_name TEXT NOT NULL,
-    pouch_width_mm NUMERIC,
-    pouch_height_mm NUMERIC,
+    structure TEXT,
+    print_width_mm NUMERIC,
     repeat_length_mm NUMERIC,
-    film_structure TEXT,
-    colors_count INT DEFAULT 8,
+    pouch_open_width NUMERIC,
+    pouch_height NUMERIC,
+    layers JSONB DEFAULT '[]'::jsonb,
+    cylinder_sku TEXT,
     cylinder_cost TEXT,
+    colors_count INT DEFAULT 6,
+    engravures_name TEXT,
     cost_borne_by TEXT,
-    engraver_name TEXT,
-    printing_process TEXT DEFAULT 'Rotogravure Reverse',
-    target_gsm NUMERIC,
-    artwork_url TEXT,
+    utilisation_limit NUMERIC DEFAULT 10000,
+    creation_date DATE DEFAULT CURRENT_DATE,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Ensure all columns exist on job_masters if table was previously created with older schema
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS sku_code TEXT;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS structure TEXT;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS print_width_mm NUMERIC;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS repeat_length_mm NUMERIC;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS pouch_open_width NUMERIC;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS pouch_height NUMERIC;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS layers JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS cylinder_sku TEXT;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS cylinder_cost TEXT;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS colors_count INT DEFAULT 6;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS engravures_name TEXT;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS cost_borne_by TEXT;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS utilisation_limit NUMERIC DEFAULT 10000;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS creation_date DATE DEFAULT CURRENT_DATE;
 
 -- Enable Row Level Security (RLS) & Grant Permissive Access to Anon & Authenticated Roles for Internal ERP
 DO $$ 

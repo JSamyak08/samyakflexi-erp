@@ -878,21 +878,21 @@ export async function fetchJobMasters() {
     return data.map(j => ({
       id: j.id,
       skuCode: j.sku_code || j.sku || '',
-      jobName: j.job_name,
-      clientName: j.client_name,
-      structure: j.structure,
+      jobName: j.job_name || '',
+      clientName: j.client_name || '',
+      structure: j.structure || j.film_structure || 'PET / PE',
       printWidthMm: Number(j.print_width_mm) || 1000,
       repeatLengthMm: Number(j.repeat_length_mm) || 400,
-      pouchOpenWidth: Number(j.pouch_open_width) || 0,
-      pouchHeight: Number(j.pouch_height) || 0,
-      layers: j.layers || [],
-      cylinderSku: j.cylinder_sku || j.sku_code,
+      pouchOpenWidth: Number(j.pouch_open_width || j.pouch_width_mm) || 0,
+      pouchHeight: Number(j.pouch_height || j.pouch_height_mm) || 0,
+      layers: Array.isArray(j.layers) ? j.layers : [],
+      cylinderSku: j.cylinder_sku || j.sku_code || '',
       cylinderCost: j.cylinder_cost || '₹ 0',
       colorsCount: Number(j.colors_count) || 6,
-      engravuresName: j.engravures_name || '',
+      engravuresName: j.engravures_name || j.engraver_name || '',
       costBorneBy: j.cost_borne_by || 'Client (100%)',
       utilisationLimit: Number(j.utilisation_limit) || 10000,
-      creationDate: j.creation_date || new Date().toISOString().split('T')[0]
+      creationDate: j.creation_date || j.created_at ? String(j.created_at).split('T')[0] : new Date().toISOString().split('T')[0]
     }));
   } catch (err) {
     console.error("Error fetching job masters from Supabase:", err);
@@ -902,26 +902,31 @@ export async function fetchJobMasters() {
 
 export async function saveJobMasterToSupabase(jobMaster) {
   if (!isSupabaseConfigured()) return;
-  const { error } = await supabase.from('job_masters').upsert({
+  const payload = {
     id: jobMaster.id || `JM-2026-${Math.floor(100 + Math.random() * 900)}`,
     sku_code: jobMaster.skuCode || jobMaster.sku || '',
-    job_name: jobMaster.jobName,
-    client_name: jobMaster.clientName,
+    job_name: jobMaster.jobName || '',
+    client_name: jobMaster.clientName || '',
     structure: jobMaster.structure || 'PET / PE',
+    film_structure: jobMaster.structure || 'PET / PE',
     print_width_mm: jobMaster.printWidthMm || 1000,
     repeat_length_mm: jobMaster.repeatLengthMm || 400,
     pouch_open_width: jobMaster.pouchOpenWidth || 0,
+    pouch_width_mm: jobMaster.pouchOpenWidth || 0,
     pouch_height: jobMaster.pouchHeight || 0,
-    layers: jobMaster.layers || [],
-    cylinder_sku: jobMaster.cylinderSku || jobMaster.skuCode,
-    cylinder_cost: jobMaster.cylinderCost || '₹ 0',
-    colors_count: jobMaster.colorsCount || 6,
+    pouch_height_mm: jobMaster.pouchHeight || 0,
+    layers: Array.isArray(jobMaster.layers) ? jobMaster.layers : [],
+    cylinder_sku: jobMaster.cylinderSku || jobMaster.skuCode || '',
+    cylinder_cost: String(jobMaster.cylinderCost || '₹ 0'),
+    colors_count: Number(jobMaster.colorsCount) || 6,
     engravures_name: jobMaster.engravuresName || '',
+    engraver_name: jobMaster.engravuresName || '',
     cost_borne_by: jobMaster.costBorneBy || 'Client (100%)',
-    utilisation_limit: jobMaster.utilisationLimit || 10000,
+    utilisation_limit: Number(jobMaster.utilisationLimit) || 10000,
     creation_date: jobMaster.creationDate || new Date().toISOString().split('T')[0]
-  }, { onConflict: 'id' });
+  };
 
+  const { error } = await supabase.from('job_masters').upsert(payload, { onConflict: 'id' });
   handleSupabaseError(error, 'job_masters');
 }
 
