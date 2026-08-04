@@ -282,7 +282,7 @@ export async function saveInventoryItemToSupabase(item) {
   const itemNameStr = item.itemName || `${filmTypeStr} ${item.micron || 12}µ (${item.widthMm || 1000}mm)`;
   const itemCodeStr = item.itemCode || item.id || `INV-${Math.floor(100 + Math.random() * 900)}`;
 
-  const { error } = await supabase.from('inventory').upsert({
+  const fullPayload = {
     id: item.id,
     item_code: itemCodeStr,
     item_name: itemNameStr,
@@ -293,9 +293,24 @@ export async function saveInventoryItemToSupabase(item) {
     reorder_level_kg: Number(item.reorderLevelKg) || 0,
     unit_price: Number(item.unitPrice) || 0,
     location: item.location || 'Bay A'
-  }, { onConflict: 'id' });
+  };
 
-  handleSupabaseError(error, 'inventory');
+  const { error: fullError } = await supabase.from('inventory').upsert(fullPayload, { onConflict: 'id' });
+
+  if (fullError) {
+    console.warn("[Supabase Sync Notice] Full inventory payload failed, trying minimal payload.", fullError.message);
+    const minimalPayload = {
+      id: item.id,
+      item_code: itemCodeStr,
+      item_name: itemNameStr,
+      stock_qty_kg: Number(item.availableQtyKg) || 0,
+      unit_price: Number(item.unitPrice) || 0
+    };
+    const { error: minimalError } = await supabase.from('inventory').upsert(minimalPayload, { onConflict: 'id' });
+    if (minimalError) {
+      handleSupabaseError(minimalError, 'inventory');
+    }
+  }
 }
 
 export async function deleteInventoryItemFromSupabase(itemId) {
@@ -347,7 +362,7 @@ export async function saveGRNToSupabase(grn) {
   const itemNameVal = grn.itemName || (grn.filmType ? `${grn.filmType} ${grn.micron || 12}µ (${grn.widthMm || 1000}mm)` : 'Raw Material Film');
   const weightVal = Number(grn.receivedQtyKg || grn.netWeightKg) || 0;
 
-  const { error } = await supabase.from('grns').upsert({
+  const fullPayload = {
     id: grnId,
     grn_number: grn.grnNo || grnId,
     vendor_id: grn.vendorName || grn.vendorId || 'General Vendor',
@@ -358,9 +373,24 @@ export async function saveGRNToSupabase(grn) {
     received_qty_kg: weightVal,
     status: grn.status || 'Pending QC',
     qc_remarks: grn.qcNotes || ''
-  }, { onConflict: 'id' });
+  };
 
-  handleSupabaseError(error, 'grns');
+  const { error: fullError } = await supabase.from('grns').upsert(fullPayload, { onConflict: 'id' });
+
+  if (fullError) {
+    console.warn("[Supabase Sync Notice] Full GRN payload failed, trying minimal payload.", fullError.message);
+    const minimalPayload = {
+      id: grnId,
+      grn_number: grn.grnNo || grnId,
+      item_name: itemNameVal,
+      received_qty_kg: weightVal,
+      status: grn.status || 'Pending QC'
+    };
+    const { error: minimalError } = await supabase.from('grns').upsert(minimalPayload, { onConflict: 'id' });
+    if (minimalError) {
+      handleSupabaseError(minimalError, 'grns');
+    }
+  }
 }
 
 // ============================================================================
