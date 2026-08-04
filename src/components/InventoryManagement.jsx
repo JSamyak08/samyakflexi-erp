@@ -92,6 +92,15 @@ export default function InventoryManagement({
     }
   });
 
+  const [storeIssueTransactions, setStoreIssueTransactions] = useState(() => {
+    try {
+      const saved = localStorage.getItem('samyak_erp_store_issue_transactions');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
   const [editingTxId, setEditingTxId] = useState(null);
   const [editingBarcodeVal, setEditingBarcodeVal] = useState('');
 
@@ -154,21 +163,28 @@ export default function InventoryManagement({
     setEditingBarcodeVal('');
   };
 
-  const handleAddLedgerAdjustment = (e, filmType, micron, widthMm) => {
+  const handleAddLedgerAdjustment = (e, targetItem) => {
     if (e) e.preventDefault();
+    const item = targetItem || selectedItemForPurchaseHistory;
+    if (!item) return;
+
     const isNegative = adjType.includes('-');
     const qty = isNegative ? -Math.abs(parseFloat(adjQtyKg) || 0) : Math.abs(parseFloat(adjQtyKg) || 0);
     const newAdj = {
       id: `ADJ-${Date.now()}`,
-      filmType,
-      micron,
-      widthMm,
-      date: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      itemId: item.id,
+      itemCode: item.itemCode,
+      itemName: item.itemName || `${item.filmType} ${item.micron}µ`,
+      category: item.category || 'Film Substrates',
+      filmType: item.filmType,
+      micron: item.micron,
+      widthMm: item.widthMm,
+      date: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
       type: adjType,
       qtyKg: qty,
-      barcode: adjBarcode.trim() || `BAR-${filmType.toUpperCase()}-ADJ-${Math.floor(100 + Math.random() * 900)}`,
+      barcode: adjBarcode.trim() || `BAR-${(item.filmType || 'ADJ').toUpperCase().replace(/\s+/g, '')}-ADJ-${Math.floor(100 + Math.random() * 900)}`,
       reason: adjReason.trim() || 'Physical Stock Audit Correction',
-      adjustedBy: 'Store Manager'
+      adjustedBy: 'Store Mgr Dilip Joshi'
     };
 
     const updated = [newAdj, ...stockLedgerAdjustments];
@@ -177,10 +193,10 @@ export default function InventoryManagement({
       localStorage.setItem('samyak_erp_stock_adjustments', JSON.stringify(updated));
     } catch (err) {}
 
-    // Update item available stock in main inventory list
-    if (onUpdateInventory && selectedItemForPurchaseHistory) {
+    // Update item available stock in main inventory list for the specific item
+    if (onUpdateInventory) {
       const updatedInv = inventory.map(invItem => {
-        if (invItem.filmType.toLowerCase() === filmType.toLowerCase()) {
+        if (invItem.id === item.id) {
           return { ...invItem, availableQtyKg: Math.max(0, (invItem.availableQtyKg || 0) + qty) };
         }
         return invItem;
@@ -508,7 +524,7 @@ export default function InventoryManagement({
     alert(`GRN ${updatedGRN.grnNo} has been marked as ${status}!`);
   };
 
-  // Issue / Return Submit
+  // Issue / Return Submit (Records transaction in Store Issue/Return Ledger)
   const handleIssueReturnSubmit = () => {
     if (!selectedInvItem || issueQtyKg <= 0) return;
 
@@ -517,25 +533,57 @@ export default function InventoryManagement({
     const idx = updatedInv.findIndex(i => i.id === selectedInvItem.id);
 
     if (idx >= 0) {
+      const item = updatedInv[idx];
+      const unitStr = item.unit || 'Kg';
+      const itemNameStr = item.itemName || `${item.filmType} ${item.micron !== '-' ? `${item.micron}µ` : ''}`;
+
       if (issueType === 'issue') {
-        if (updatedInv[idx].availableQtyKg < qty) {
-          alert(`Insufficient available stock! Only ${updatedInv[idx].availableQtyKg} kg available.`);
+        if (item.availableQtyKg < qty) {
+          alert(`Insufficient available stock! Only ${item.availableQtyKg} ${unitStr} available.`);
           return;
         }
-        updatedInv[idx].availableQtyKg -= qty;
-        updatedInv[idx].allocatedQtyKg += qty;
-        alert(`Issued ${qty} kg of ${updatedInv[idx].filmType} ${updatedInv[idx].micron}µ to Job: ${issueJobName}`);
+        item.availableQtyKg -= qty;
+        item.allocatedQtyKg = (item.allocatedQtyKg || 0) + qty;
       } else {
-        updatedInv[idx].availableQtyKg += qty;
-        if (updatedInv[idx].allocatedQtyKg >= qty) {
-          updatedInv[idx].allocatedQtyKg -= qty;
+        item.availableQtyKg += qty;
+        if ((item.allocatedQtyKg || 0) >= qty) {
+          item.allocatedQtyKg -= qty;
         }
-        alert(`Returned ${qty} kg of ${updatedInv[idx].filmType} ${updatedInv[idx].micron}µ back to Store Inventory.`);
       }
+
+      // Record in storeIssueTransactions
+      const newTx = {
+        id: `ISS-${Date.now()}`,
+        itemId: item.id,
+        itemCode: item.itemCode,
+        itemName: itemNameStr,
+        filmType: item.filmType,
+        micron: item.micron,
+        widthMm: item.widthMm,
+        category: item.category || 'Film Substrates',
+        issueType: issueType, // 'issue' | 'return'
+        jobName: issueJobName || 'General Production Floor',
+        qtyKg: qty,
+        unit: unitStr,
+        date: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
+        issuedBy: 'Store Mgr Dilip Joshi',
+        notes: issueType === 'issue'
+          ? `Issued ${qty} ${unitStr} to Job: ${issueJobName || 'Production'}`
+          : `Returned ${qty} ${unitStr} from Job: ${issueJobName || 'Production'} back to Store`,
+        barcode: item.lastBatch || `BAR-ISS-${item.id}`
+      };
+
+      const updatedTxList = [newTx, ...storeIssueTransactions];
+      setStoreIssueTransactions(updatedTxList);
+      try {
+        localStorage.setItem('samyak_erp_store_issue_transactions', JSON.stringify(updatedTxList));
+      } catch (e) {}
 
       if (onUpdateInventory) {
         onUpdateInventory(updatedInv);
       }
+
+      alert(`${issueType === 'issue' ? 'Issued' : 'Returned'} ${qty} ${unitStr} of ${itemNameStr} successfully! Ledger updated.`);
     }
 
     setIsIssueModalOpen(false);
@@ -584,11 +632,31 @@ export default function InventoryManagement({
     reader.readAsText(file);
   };
 
-  // Commit Reconciliation Variances to System Stock
+  // Commit Reconciliation Variances to System Stock & Stock Ledger
   const handleCommitReconciliation = () => {
+    const newAdjustments = [];
     let updatedInv = inventory.map(item => {
       const physicalQty = physicalCounts[item.id];
       if (physicalQty !== undefined && !isNaN(physicalQty)) {
+        const variance = parseFloat(physicalQty) - item.availableQtyKg;
+        if (Math.abs(variance) > 0.001) {
+          newAdjustments.push({
+            id: `ADJ-REC-${Date.now()}-${item.id}`,
+            itemId: item.id,
+            itemCode: item.itemCode,
+            itemName: item.itemName || `${item.filmType} ${item.micron}µ`,
+            category: item.category || 'Film Substrates',
+            filmType: item.filmType,
+            micron: item.micron,
+            widthMm: item.widthMm,
+            date: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
+            type: variance > 0 ? 'Physical Audit (+)' : 'Physical Audit (-)',
+            qtyKg: variance,
+            barcode: `BAR-AUDIT-${item.id}-${Math.floor(100 + Math.random() * 900)}`,
+            reason: 'Monthly Physical Stock Audit Reconciliation',
+            adjustedBy: 'Store Mgr Dilip Joshi'
+          });
+        }
         return {
           ...item,
           availableQtyKg: parseFloat(physicalQty)
@@ -597,10 +665,18 @@ export default function InventoryManagement({
       return item;
     });
 
+    if (newAdjustments.length > 0) {
+      const updatedAdj = [...newAdjustments, ...stockLedgerAdjustments];
+      setStockLedgerAdjustments(updatedAdj);
+      try {
+        localStorage.setItem('samyak_erp_stock_adjustments', JSON.stringify(updatedAdj));
+      } catch (e) {}
+    }
+
     if (onUpdateInventory) {
       onUpdateInventory(updatedInv);
     }
-    alert("Monthly Physical Stock Reconciliation completed successfully! System available stock updated.");
+    alert("Monthly Physical Stock Reconciliation completed successfully! System available stock and audit ledger updated.");
   };
 
   // Download Bulk Inventory CSV Template
@@ -1881,14 +1957,71 @@ export default function InventoryManagement({
       {/* Raw Material Stock Ledger & Barcode Tracking Modal */}
       {selectedItemForPurchaseHistory && (() => {
         const item = selectedItemForPurchaseHistory;
-        const filmTypeLower = (item.filmType || '').toLowerCase();
+        const unitStr = item.unit || 'Kg';
+
+        // Universal Item Matcher for Films, Inks, Solvents, Adhesives, Blades, Tapes, PPE & Spares
+        const isItemMatch = (candidate, target) => {
+          if (!candidate || !target) return false;
+          // 1. Direct ID / Code match
+          if (candidate.itemId && (candidate.itemId === target.id || candidate.itemId === target.itemCode)) return true;
+          if (candidate.id && (candidate.id === target.id || candidate.id === target.itemCode)) return true;
+          if (candidate.itemCode && (candidate.itemCode === target.itemCode || candidate.itemCode === target.id)) return true;
+
+          // 2. Strict Item Name match
+          const cName = (candidate.itemName || candidate.filmType || '').trim().toLowerCase();
+          const tName = (target.itemName || target.filmType || '').trim().toLowerCase();
+          if (cName && tName && (cName === tName)) return true;
+
+          // 3. Category & Film / Substrate match
+          const isTargetFilm = (target.category || 'Film Substrates') === 'Film Substrates';
+          const isCandidateFilm = (candidate.category || 'Film Substrates') === 'Film Substrates' || 
+            ['PET', 'METPET', 'BOPP', 'LDPE', 'CPP', 'POLY', 'LD'].some(f => (candidate.filmType || '').toUpperCase().includes(f));
+
+          if (isTargetFilm && isCandidateFilm) {
+            const normalizeFilm = (str) => (str || '')
+              .toLowerCase()
+              .replace(/film/g, '')
+              .replace(/substrates?/g, '')
+              .replace(/\s+/g, ' ')
+              .trim();
+            const cFilm = normalizeFilm(candidate.filmType);
+            const tFilm = normalizeFilm(target.filmType);
+            const filmMatches = cFilm === tFilm || (cFilm && tFilm && (cFilm.includes(tFilm) || tFilm.includes(cFilm)));
+            
+            // Numeric specs check
+            const cMicron = parseFloat(candidate.micron);
+            const tMicron = parseFloat(target.micron);
+            const micronMatches = (isNaN(cMicron) && isNaN(tMicron)) || (cMicron === tMicron) || !target.micron || target.micron === '-';
+
+            const cWidth = parseFloat(candidate.widthMm);
+            const tWidth = parseFloat(target.widthMm);
+            const widthMatches = (isNaN(cWidth) && isNaN(tWidth)) || (cWidth === tWidth) || !target.widthMm || target.widthMm === '-';
+
+            if (filmMatches && micronMatches && widthMatches) return true;
+          }
+
+          // 4. Non-Film Category Match (Inks, Solvents, Adhesives, Blades, PPE, Spares)
+          if (!isTargetFilm) {
+            const cCat = (candidate.category || '').toLowerCase();
+            const tCat = (target.category || '').toLowerCase();
+            if (cCat && tCat && cCat === tCat) {
+              if (cName && tName && (cName.includes(tName) || tName.includes(cName))) return true;
+            }
+            if (cName && tName) {
+              if (tName.includes('ink') && cName.includes('ink')) return true;
+              if (tName.includes('solvent') && cName.includes('solvent')) return true;
+              if (tName.includes('adhesive') && cName.includes('adhesive')) return true;
+              if (tName.includes('blade') && cName.includes('blade')) return true;
+              if (tName.includes('tape') && cName.includes('tape')) return true;
+              if (tName.includes('glove') && cName.includes('glove')) return true;
+            }
+          }
+
+          return false;
+        };
 
         // 1. Gather Inward Receipts (GRNs)
-        const matchingGRNs = grns.filter(g => 
-          (g.filmType || '').toLowerCase() === filmTypeLower &&
-          Number(g.micron || 0) === Number(item.micron || 0) &&
-          Number(g.widthMm || 0) === Number(item.widthMm || 0)
-        );
+        const matchingGRNs = (grns || []).filter(g => isItemMatch(g, item));
         const inwardTxLines = matchingGRNs.map(g => {
           const txId = `GRN_${g.grnNo || g.id}`;
           const rate = g.purchaseRatePerKg || DEFAULT_DAILY_RATES[g.filmType] || 120;
@@ -1896,20 +2029,20 @@ export default function InventoryManagement({
           return {
             txId,
             category: 'inward',
-            type: 'Inward (GRN)',
+            type: g.status === 'Approved' ? '📥 GRN Inward (Approved)' : '📥 GRN Inward (Pending QC)',
             date: g.receivedDate || '2026-07-24',
             refNo: g.grnNo,
-            subRef: g.poNumber ? `PO: ${g.poNumber}` : 'Direct Inward',
+            subRef: g.poNumber ? `PO: ${g.poNumber}` : 'Direct Receipt',
             partyName: g.vendorName || 'Supplier',
-            subParty: g.invoiceNo ? `Inv: ${g.invoiceNo}` : 'Direct Receipt',
+            subParty: g.invoiceNo ? `Inv: ${g.invoiceNo}` : 'Vendor Receipt',
             inwardQtyKg: qty,
             outwardQtyKg: 0,
             adjQtyKg: 0,
             ratePerKg: rate,
             totalValue: qty * rate,
-            barcode: customBarcodesMap[txId] || g.batchNo || `BAR-${g.filmType.toUpperCase()}-${g.grnNo}`,
+            barcode: customBarcodesMap[txId] || g.batchNo || `BAR-GRN-${g.grnNo}`,
             status: g.status || 'Approved',
-            notes: `${g.rollsReceived || 1} roll(s) received`
+            notes: `${g.rollsReceived || 1} pkg/roll(s) | Batch: ${g.batchNo || 'N/A'}`
           };
         });
 
@@ -1917,47 +2050,62 @@ export default function InventoryManagement({
         const jobUsageLines = [];
         (productionRecords || []).forEach(rec => {
           (rec.materialsList || []).forEach((mat, idx) => {
-            const matFilm = (mat.filmType || '').toLowerCase();
-            const matMicron = Number(mat.micron || 0);
-            const matWidth = Number(mat.widthMm || 0);
-            
-            if (
-              (matFilm.includes(filmTypeLower) || filmTypeLower.includes(matFilm)) &&
-              matMicron === Number(item.micron || 0) &&
-              matWidth === Number(item.widthMm || 0)
-            ) {
+            if (isItemMatch(mat, item)) {
               const txId = `JOB_${rec.id}_${mat.id || idx}`;
               const qty = mat.netConsumedQtyKg || mat.issueQtyKg || 0;
               const rate = mat.unitPricePerKg || DEFAULT_DAILY_RATES[item.filmType] || 120;
               jobUsageLines.push({
                 txId,
                 category: 'usage',
-                type: 'Job Usage',
+                type: '📤 Job Production Usage',
                 date: rec.dateFilled || rec.approvalDate || '2026-07-23',
                 refNo: rec.jobName || 'Job Production',
                 subRef: `Order: ${rec.orderId || 'ORD'}`,
-                partyName: rec.clientName || 'Customer',
+                partyName: rec.clientName || 'Customer Job',
                 subParty: `Plant Mgr: ${rec.filledBy ? rec.filledBy.split(' ')[0] : 'Production'}`,
                 inwardQtyKg: 0,
                 outwardQtyKg: qty,
                 adjQtyKg: 0,
                 ratePerKg: rate,
                 totalValue: qty * rate,
-                barcode: customBarcodesMap[txId] || mat.barcode || `BAR-${item.filmType.toUpperCase()}-JOB-${(rec.orderId || '89').replace('ORD-2026-', '')}`,
-                status: rec.status || 'In Production',
-                notes: `Issued: ${mat.issueQtyKg || 0}kg | Return: ${mat.returnQtyKg || 0}kg`
+                barcode: customBarcodesMap[txId] || mat.barcode || `BAR-JOB-${(rec.orderId || '89').replace('ORD-2026-', '')}`,
+                status: rec.status || 'Consumed in Production',
+                notes: `Gross Issued: ${mat.issueQtyKg || 0} ${unitStr} | Returned: ${mat.returnQtyKg || 0} ${unitStr} | Net: ${qty} ${unitStr}`
               });
             }
           });
         });
 
-        // 3. Gather Physical Reconciliation Adjustments
+        // 3. Gather Manual Store Issues & Returns
+        const storeIssueLines = (storeIssueTransactions || [])
+          .filter(tx => isItemMatch(tx, item))
+          .map(tx => {
+            const isIssue = tx.issueType === 'issue';
+            const qty = tx.qtyKg || 0;
+            const rate = DEFAULT_DAILY_RATES[item.filmType] || 120;
+            return {
+              txId: tx.id,
+              category: isIssue ? 'usage' : 'inward',
+              type: isIssue ? '📤 Store Issue' : '📥 Store Return',
+              date: tx.date || '2026-07-25',
+              refNo: tx.jobName || (isIssue ? 'Store Issue' : 'Store Return'),
+              subRef: `Req: ${tx.id}`,
+              partyName: tx.issuedBy || 'Store Mgr Dilip Joshi',
+              subParty: isIssue ? 'Shopfloor Requisition' : 'Store Return',
+              inwardQtyKg: isIssue ? 0 : qty,
+              outwardQtyKg: isIssue ? qty : 0,
+              adjQtyKg: 0,
+              ratePerKg: rate,
+              totalValue: qty * rate,
+              barcode: customBarcodesMap[tx.id] || tx.barcode || `BAR-TX-${tx.id}`,
+              status: isIssue ? 'Issued' : 'Returned',
+              notes: tx.notes || (isIssue ? 'Manual shopfloor issue' : 'Unused stock returned')
+            };
+          });
+
+        // 4. Gather Physical Reconciliation & Quick Adjustments
         const adjLines = (stockLedgerAdjustments || [])
-          .filter(a => 
-            (a.filmType || '').toLowerCase() === filmTypeLower &&
-            Number(a.micron || 0) === Number(item.micron || 0) &&
-            Number(a.widthMm || 0) === Number(item.widthMm || 0)
-          )
+          .filter(a => isItemMatch(a, item))
           .map(a => {
             const txId = `ADJ_${a.id}`;
             const qty = a.qtyKg || 0;
@@ -1965,12 +2113,12 @@ export default function InventoryManagement({
             return {
               txId,
               category: 'reconciliation',
-              type: a.type || (qty >= 0 ? 'Physical Audit (+)' : 'Physical Audit (-)'),
+              type: a.type || (qty >= 0 ? '⚖️ Physical Audit (+)' : '⚖️ Physical Audit (-)'),
               date: a.date || '2026-07-25',
               refNo: `Audit Ref: ${a.id}`,
               subRef: a.type || 'Audit Variance',
-              partyName: a.adjustedBy || 'Store Manager',
-              subParty: 'Physical Inventory',
+              partyName: a.adjustedBy || 'Store Mgr Dilip Joshi',
+              subParty: 'Physical Inventory Audit',
               inwardQtyKg: qty > 0 ? qty : 0,
               outwardQtyKg: qty < 0 ? Math.abs(qty) : 0,
               adjQtyKg: qty,
@@ -1982,11 +2130,45 @@ export default function InventoryManagement({
             };
           });
 
-        // 4. Combine and Sort Chronologically (Oldest First to calculate running balance)
-        const allTxLines = [...inwardTxLines, ...jobUsageLines, ...adjLines];
-        allTxLines.sort((a, b) => new Date(a.date) - new Date(b.date));
+        // 5. Calculate Opening Stock Baseline
+        const totalTxInwards = inwardTxLines.reduce((sum, tx) => sum + tx.inwardQtyKg, 0) + storeIssueLines.filter(tx => tx.category === 'inward').reduce((sum, tx) => sum + tx.inwardQtyKg, 0);
+        const totalTxOutwards = jobUsageLines.reduce((sum, tx) => sum + tx.outwardQtyKg, 0) + storeIssueLines.filter(tx => tx.category === 'usage').reduce((sum, tx) => sum + tx.outwardQtyKg, 0);
+        const totalTxAdj = adjLines.reduce((sum, tx) => sum + tx.adjQtyKg, 0);
+        const netMovement = totalTxInwards - totalTxOutwards + totalTxAdj;
+        const currentTargetQty = item.availableQtyKg || 0;
+        const openingStockQty = Math.max(0, currentTargetQty - netMovement);
 
-        // 5. Calculate Running Balance
+        const openingStockLine = openingStockQty > 0 ? [{
+          txId: `OPEN_${item.id}`,
+          category: 'inward',
+          type: '📦 Opening Stock Balance',
+          date: '2026-07-01 08:00 AM',
+          refNo: item.itemCode || `OPN-${item.id}`,
+          subRef: 'Baseline Store Opening',
+          partyName: item.lastVendor || 'Verified Inventory Baseline',
+          subParty: `Location: ${item.location || 'Store Bay'}`,
+          inwardQtyKg: openingStockQty,
+          outwardQtyKg: 0,
+          adjQtyKg: 0,
+          ratePerKg: DEFAULT_DAILY_RATES[item.filmType] || 120,
+          totalValue: openingStockQty * (DEFAULT_DAILY_RATES[item.filmType] || 120),
+          barcode: item.lastBatch || `BAR-OPN-${item.id}`,
+          status: 'Opening Baseline',
+          notes: `Verified onboarding stock balance for ${item.itemName || item.filmType}`
+        }] : [];
+
+        // 6. Combine and Sort Chronologically (Oldest First to calculate running balance)
+        const parseTxDate = (dStr) => {
+          if (!dStr) return 0;
+          const parsed = Date.parse(dStr);
+          if (!isNaN(parsed)) return parsed;
+          return new Date(dStr).getTime() || 0;
+        };
+
+        const allTxLines = [...openingStockLine, ...inwardTxLines, ...jobUsageLines, ...storeIssueLines, ...adjLines];
+        allTxLines.sort((a, b) => parseTxDate(a.date) - parseTxDate(b.date));
+
+        // 7. Calculate Chronological Running Balance
         let runningStock = 0;
         const ledgerWithBalance = allTxLines.map(tx => {
           if (tx.category === 'inward') {
@@ -1999,16 +2181,16 @@ export default function InventoryManagement({
           return { ...tx, runningBalance: Math.max(0, runningStock) };
         });
 
-        // 6. Reverse to Newest First for Display & Apply Filters
+        // 8. Reverse to Newest First for Display & Apply Filters
         const displayLines = [...ledgerWithBalance].reverse().filter(tx => {
           if (ledgerFilterTab !== 'all' && tx.category !== ledgerFilterTab) return false;
           if (ledgerSearchTerm.trim()) {
             const q = ledgerSearchTerm.toLowerCase();
             return (
-              tx.refNo.toLowerCase().includes(q) ||
-              tx.partyName.toLowerCase().includes(q) ||
-              tx.barcode.toLowerCase().includes(q) ||
-              tx.type.toLowerCase().includes(q) ||
+              (tx.refNo && tx.refNo.toLowerCase().includes(q)) ||
+              (tx.partyName && tx.partyName.toLowerCase().includes(q)) ||
+              (tx.barcode && tx.barcode.toLowerCase().includes(q)) ||
+              (tx.type && tx.type.toLowerCase().includes(q)) ||
               (tx.notes && tx.notes.toLowerCase().includes(q))
             );
           }
@@ -2016,17 +2198,17 @@ export default function InventoryManagement({
         });
 
         // Summary Calculations
-        const totalPurchasedKg = inwardTxLines.reduce((sum, tx) => sum + tx.inwardQtyKg, 0);
-        const totalSpendRs = inwardTxLines.reduce((sum, tx) => sum + tx.totalValue, 0);
-        const avgPurchaseRate = totalPurchasedKg > 0 ? (totalSpendRs / totalPurchasedKg) : (DEFAULT_DAILY_RATES[item.filmType] || 120);
+        const totalPurchasedQty = inwardTxLines.reduce((sum, tx) => sum + tx.inwardQtyKg, 0) + openingStockQty;
+        const totalSpendRs = inwardTxLines.reduce((sum, tx) => sum + tx.totalValue, 0) + (openingStockQty * (DEFAULT_DAILY_RATES[item.filmType] || 120));
+        const avgPurchaseRate = totalPurchasedQty > 0 ? (totalSpendRs / totalPurchasedQty) : (DEFAULT_DAILY_RATES[item.filmType] || 120);
 
-        const totalConsumedJobKg = jobUsageLines.reduce((sum, tx) => sum + tx.outwardQtyKg, 0);
-        const totalReconciliationAdjKg = adjLines.reduce((sum, tx) => sum + tx.adjQtyKg, 0);
-        const netAvailableBalanceKg = Math.max(0, totalPurchasedKg - totalConsumedJobKg + totalReconciliationAdjKg);
+        const totalConsumedJobQty = jobUsageLines.reduce((sum, tx) => sum + tx.outwardQtyKg, 0) + storeIssueLines.filter(tx => tx.category === 'usage').reduce((sum, tx) => sum + tx.outwardQtyKg, 0);
+        const totalReconciliationAdjQty = adjLines.reduce((sum, tx) => sum + tx.adjQtyKg, 0);
+        const netAvailableBalance = Math.max(0, runningStock);
 
         return (
           <div className="modal-overlay" onClick={() => setSelectedItemForPurchaseHistory(null)}>
-            <div className="modal-content" style={{ maxWidth: '1150px', width: '95%', maxHeight: '92vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-content" style={{ maxWidth: '1180px', width: '96%', maxHeight: '92vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
               
               {/* Modal Header */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid var(--border-color)' }}>
@@ -2035,7 +2217,7 @@ export default function InventoryManagement({
                     <History style={{ color: '#2563eb' }} /> Raw Material Stock Ledger & Barcode History
                   </h3>
                   <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                    Material: <strong>{item.filmType} Film ({item.micron}µ x {item.widthMm}mm)</strong> | Density: {item.density || '1.0'} | Location: {item.location || 'Store Bay'}
+                    Item: <strong>{item.itemName || `${item.filmType} Film`} {item.micron && item.micron !== '-' ? `(${item.micron}µ x ${item.widthMm}mm)` : ''}</strong> | Code: <code>{item.itemCode || item.id}</code> | Category: <span className="badge badge-neutral" style={{ fontSize: '0.75rem' }}>{item.category || 'Film Substrates'}</span> | Location: {item.location || 'Store Bay'} | Unit: {unitStr}
                   </p>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -2058,7 +2240,7 @@ export default function InventoryManagement({
                   <h4 style={{ fontSize: '0.95rem', fontWeight: '700', color: '#0369a1', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <FileSpreadsheet size={16} /> Physical Stock Reconciliation Entry
                   </h4>
-                  <form onSubmit={e => handleAddLedgerAdjustment(e, item.filmType, item.micron, item.widthMm)}>
+                  <form onSubmit={e => handleAddLedgerAdjustment(e, item)}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
                       <div className="form-group">
                         <label style={{ fontSize: '0.8rem' }}>Adjustment Type *</label>
@@ -2069,7 +2251,7 @@ export default function InventoryManagement({
                       </div>
 
                       <div className="form-group">
-                        <label style={{ fontSize: '0.8rem' }}>Variance Qty (Kg) *</label>
+                        <label style={{ fontSize: '0.8rem' }}>Variance Qty ({unitStr}) *</label>
                         <input 
                           type="number" 
                           step="0.1" 
@@ -2082,12 +2264,12 @@ export default function InventoryManagement({
                       </div>
 
                       <div className="form-group">
-                        <label style={{ fontSize: '0.8rem' }}>Barcode / Roll Tag</label>
+                        <label style={{ fontSize: '0.8rem' }}>Barcode / Tag</label>
                         <input 
                           type="text" 
                           className="form-control" 
                           style={{ padding: '6px 10px', fontSize: '0.85rem' }} 
-                          placeholder="e.g. BAR-PET-AUDIT-05" 
+                          placeholder={`e.g. BAR-${(item.filmType || 'ADJ').toUpperCase().replace(/\s+/g, '')}-01`} 
                           value={adjBarcode} 
                           onChange={e => setAdjBarcode(e.target.value)} 
                         />
@@ -2119,25 +2301,25 @@ export default function InventoryManagement({
               {/* 4 Summary Ledger KPI Cards */}
               <div className="glass-card" style={{ background: '#f8fafc', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', padding: '16px', marginBottom: '20px' }}>
                 <div>
-                  <span className="stats-title" style={{ fontSize: '0.75rem' }}>Total Inwards (GRNs)</span>
+                  <span className="stats-title" style={{ fontSize: '0.75rem' }}>Total Inwards (Receipts)</span>
                   <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#047857', marginTop: '4px' }}>
-                    + {(totalPurchasedKg ?? 0).toLocaleString()} kg
+                    + {(totalPurchasedQty ?? 0).toLocaleString()} {unitStr}
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{inwardTxLines.length} inward receipts</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{inwardTxLines.length + (openingStockQty > 0 ? 1 : 0)} inward entries</div>
                 </div>
 
                 <div>
-                  <span className="stats-title" style={{ fontSize: '0.75rem' }}>Used in Job Production</span>
+                  <span className="stats-title" style={{ fontSize: '0.75rem' }}>Used / Consumed</span>
                   <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#dc2626', marginTop: '4px' }}>
-                    - {(totalConsumedJobKg ?? 0).toLocaleString()} kg
+                    - {(totalConsumedJobQty ?? 0).toLocaleString()} {unitStr}
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{jobUsageLines.length} job issues</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{jobUsageLines.length + storeIssueLines.filter(tx => tx.category === 'usage').length} job/store issues</div>
                 </div>
 
                 <div>
                   <span className="stats-title" style={{ fontSize: '0.75rem' }}>Reconciliation Audits</span>
-                  <div style={{ fontSize: '1.2rem', fontWeight: '800', color: totalReconciliationAdjKg >= 0 ? '#2563eb' : '#d97706', marginTop: '4px' }}>
-                    {totalReconciliationAdjKg >= 0 ? `+ ${totalReconciliationAdjKg}` : `- ${Math.abs(totalReconciliationAdjKg)}`} kg
+                  <div style={{ fontSize: '1.2rem', fontWeight: '800', color: totalReconciliationAdjQty >= 0 ? '#2563eb' : '#d97706', marginTop: '4px' }}>
+                    {totalReconciliationAdjQty >= 0 ? `+ ${totalReconciliationAdjQty}` : `- ${Math.abs(totalReconciliationAdjQty)}`} {unitStr}
                   </div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{adjLines.length} audit entries</div>
                 </div>
@@ -2145,10 +2327,10 @@ export default function InventoryManagement({
                 <div>
                   <span className="stats-title" style={{ fontSize: '0.75rem' }}>Current Net Stock Balance</span>
                   <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#0f172a', marginTop: '4px' }}>
-                    {(netAvailableBalanceKg ?? 0).toLocaleString()} kg
+                    {(netAvailableBalance ?? 0).toLocaleString()} {unitStr}
                   </div>
                   <div style={{ fontSize: '0.75rem', color: '#2563eb', fontWeight: '600' }}>
-                    Avg Rate: ₹ {avgPurchaseRate.toFixed(2)}/kg
+                    Avg Rate: ₹ {avgPurchaseRate.toFixed(2)}/{unitStr}
                   </div>
                 </div>
               </div>
@@ -2184,7 +2366,7 @@ export default function InventoryManagement({
                     style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerFilterTab === 'inward' ? '#ffffff' : 'transparent', fontWeight: ledgerFilterTab === 'inward' ? '700' : '500', color: ledgerFilterTab === 'inward' ? '#047857' : 'var(--text-secondary)' }}
                     onClick={() => setLedgerFilterTab('inward')}
                   >
-                    📥 Inwards ({inwardTxLines.length})
+                    📥 Inwards ({inwardTxLines.length + (openingStockQty > 0 ? 1 : 0) + storeIssueLines.filter(tx => tx.category === 'inward').length})
                   </button>
 
                   <button 
@@ -2192,7 +2374,7 @@ export default function InventoryManagement({
                     style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerFilterTab === 'usage' ? '#ffffff' : 'transparent', fontWeight: ledgerFilterTab === 'usage' ? '700' : '500', color: ledgerFilterTab === 'usage' ? '#7f1d1d' : 'var(--text-secondary)' }}
                     onClick={() => setLedgerFilterTab('usage')}
                   >
-                    📤 Job Usage ({jobUsageLines.length})
+                    📤 Consumptions / Issues ({jobUsageLines.length + storeIssueLines.filter(tx => tx.category === 'usage').length})
                   </button>
 
                   <button 
@@ -2214,12 +2396,12 @@ export default function InventoryManagement({
                       <th>Date & Time</th>
                       <th>Transaction Type</th>
                       <th>Ref Doc / Job Name</th>
-                      <th>Party / Plant Manager</th>
-                      <th style={{ minWidth: '180px' }}>Barcode / Roll ID (Updatable)</th>
-                      <th style={{ color: '#047857' }}>Inward (+ Kg)</th>
-                      <th style={{ color: '#dc2626' }}>Job Usage (- Kg)</th>
-                      <th style={{ color: '#2563eb' }}>Audit Adj (± Kg)</th>
-                      <th>Stock Balance (Kg)</th>
+                      <th>Party / Store Requisitioner</th>
+                      <th style={{ minWidth: '180px' }}>Barcode / Tag (Updatable)</th>
+                      <th style={{ color: '#047857' }}>Inward (+ {unitStr})</th>
+                      <th style={{ color: '#dc2626' }}>Usage / Issue (- {unitStr})</th>
+                      <th style={{ color: '#2563eb' }}>Audit Adj (± {unitStr})</th>
+                      <th>Stock Balance ({unitStr})</th>
                       <th>Rate & Value (₹)</th>
                     </tr>
                   </thead>
@@ -2241,17 +2423,17 @@ export default function InventoryManagement({
                             <td>
                               {tx.category === 'inward' && (
                                 <span className="badge badge-us" style={{ fontSize: '0.72rem', background: '#dcfce7', color: '#15803d' }}>
-                                  📥 GRN Inward
+                                  {tx.type || '📥 GRN Inward'}
                                 </span>
                               )}
                               {tx.category === 'usage' && (
                                 <span className="badge badge-error" style={{ fontSize: '0.72rem', background: '#fee2e2', color: '#b91c1c' }}>
-                                  📤 Job Usage
+                                  {tx.type || '📤 Job Usage'}
                                 </span>
                               )}
                               {tx.category === 'reconciliation' && (
                                 <span className="badge badge-warning" style={{ fontSize: '0.72rem', background: '#e0f2fe', color: '#0369a1' }}>
-                                  ⚖️ Physical Audit
+                                  {tx.type || '⚖️ Physical Audit'}
                                 </span>
                               )}
                             </td>
@@ -2325,28 +2507,28 @@ export default function InventoryManagement({
 
                             {/* Inward Qty */}
                             <td style={{ fontWeight: '700', color: tx.inwardQtyKg > 0 ? '#047857' : 'var(--text-muted)' }}>
-                              {tx.inwardQtyKg > 0 ? `+ ${(tx.inwardQtyKg ?? 0).toLocaleString()} kg` : '-'}
+                              {tx.inwardQtyKg > 0 ? `+ ${(tx.inwardQtyKg ?? 0).toLocaleString()} ${unitStr}` : '-'}
                             </td>
 
                             {/* Job Usage Qty */}
                             <td style={{ fontWeight: '700', color: tx.outwardQtyKg > 0 ? '#dc2626' : 'var(--text-muted)' }}>
-                              {tx.outwardQtyKg > 0 ? `- ${(tx.outwardQtyKg ?? 0).toLocaleString()} kg` : '-'}
+                              {tx.outwardQtyKg > 0 ? `- ${(tx.outwardQtyKg ?? 0).toLocaleString()} ${unitStr}` : '-'}
                             </td>
 
                             {/* Audit Adj Qty */}
                             <td style={{ fontWeight: '700', color: tx.adjQtyKg !== 0 ? (tx.adjQtyKg > 0 ? '#2563eb' : '#d97706') : 'var(--text-muted)' }}>
-                              {tx.adjQtyKg !== 0 ? (tx.adjQtyKg > 0 ? `+ ${tx.adjQtyKg} kg` : `- ${Math.abs(tx.adjQtyKg)} kg`) : '-'}
+                              {tx.adjQtyKg !== 0 ? (tx.adjQtyKg > 0 ? `+ ${tx.adjQtyKg} ${unitStr}` : `- ${Math.abs(tx.adjQtyKg)} ${unitStr}`) : '-'}
                             </td>
 
                             {/* Running Balance */}
                             <td style={{ fontWeight: '800', color: '#0f172a', background: '#f8fafc' }}>
-                              {(tx.runningBalance ?? 0).toLocaleString()} kg
+                              {(tx.runningBalance ?? 0).toLocaleString()} {unitStr}
                             </td>
 
                             {/* Rate & Total Value */}
                             <td>
                               <div style={{ fontWeight: '700', color: '#047857' }}>₹ {tx.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
-                              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>₹ {tx.ratePerKg.toFixed(2)}/kg</div>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>₹ {tx.ratePerKg.toFixed(2)}/{unitStr}</div>
                             </td>
                           </tr>
                         );

@@ -73,6 +73,37 @@ export const STANDARD_FILM_TYPES = [
   "Aluminium Foil"
 ];
 
+// Helper to parse plain structure string into layer objects
+export function parseStructureToLayers(structureStr) {
+  if (!structureStr || typeof structureStr !== 'string') {
+    return [
+      { id: 1, filmType: 'PET', micron: 12 },
+      { id: 2, filmType: 'Natural GP LD', micron: 40 }
+    ];
+  }
+  const parts = structureStr.split('/').map(p => p.trim()).filter(Boolean);
+  if (parts.length === 0) {
+    return [
+      { id: 1, filmType: 'PET', micron: 12 },
+      { id: 2, filmType: 'Natural GP LD', micron: 40 }
+    ];
+  }
+  return parts.map((part, idx) => {
+    // Matches e.g. "PET 12µ", "Natural LD 40 micron", "12 mic METPET", "BOPP 20"
+    const match = part.match(/^(.*?)(?:[ -]+)?(\d+(?:\.\d+)?)\s*(?:µ|mic|micron|u)?\s*$/i) ||
+                  part.match(/^(\d+(?:\.\d+)?)\s*(?:µ|mic|micron|u)?\s*(.*)$/i);
+    if (match) {
+      const filmCandidate = (match[1] || match[2] || '').trim();
+      const micronCandidate = parseFloat(match[2] || match[1]) || 12;
+      const matchedFilm = STANDARD_FILM_TYPES.find(f => f.toLowerCase() === filmCandidate.toLowerCase()) || 
+                          STANDARD_FILM_TYPES.find(f => filmCandidate.toLowerCase().includes(f.toLowerCase())) ||
+                          filmCandidate || 'PET';
+      return { id: idx + 1, filmType: matchedFilm, micron: micronCandidate };
+    }
+    return { id: idx + 1, filmType: part, micron: 12 };
+  });
+}
+
 // Helper to compute combined structure string from layers array
 export function getStructureString(item) {
   if (item && item.layers && item.layers.length > 0) {
@@ -299,7 +330,29 @@ export default function SalesManagement({
     setCylinderTerms(qtn.cylinderTerms);
     setTransportTerms(qtn.transportTerms);
 
-    setItems(qtn.items || []);
+    const sanitizedItems = (qtn.items || []).map(it => {
+      if (it.layers && it.layers.length > 0) return it;
+      return {
+        ...it,
+        layers: parseStructureToLayers(it.structure)
+      };
+    });
+    setItems(sanitizedItems.length > 0 ? sanitizedItems : [{
+      id: 1,
+      jobTitle: '',
+      structure: 'PET 12µ / Natural GP LD 40µ',
+      materialFormat: 'Roll Form',
+      quantity: '',
+      uom: 'Kg',
+      ratePerUom: '',
+      printWidthMm: 1000,
+      repeatLengthMm: 400,
+      gstPct: 18,
+      layers: [
+        { id: 1, filmType: 'PET', micron: 12 },
+        { id: 2, filmType: 'Natural GP LD', micron: 40 }
+      ]
+    }]);
     setTermsList(qtn.termsAndConditions || DEFAULT_QUOTATION_TERMS);
     setComments(`Amended Revision ${nextRev} based on client specification updates.`);
 

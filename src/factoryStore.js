@@ -30,7 +30,9 @@ export const FILM_DENSITIES = {
   "Metalised BOPP": 0.91,
   "Pearlised BOPP": 0.70,
   "CPP Natural": 0.91,
-  "Metalised CPP": 0.91
+  "Metalised CPP": 0.91,
+  "Paper": 0.80,
+  "Aluminium Foil": 2.70
 };
 
 export const DEFAULT_DAILY_RATES = {
