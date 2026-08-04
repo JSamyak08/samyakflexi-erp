@@ -189,52 +189,78 @@ export default function App() {
     if (!isSupaActive) return;
 
     async function loadSupabaseData() {
-      try {
-        let [
+      // Helper to fetch data with individual error handling
+      const fetchSafe = async (fetcher, name) => {
+        try {
+          const data = await fetcher();
+          return data;
+        } catch (err) {
+          console.warn(`[Supabase Sync Notice] Failed to load ${name}:`, err);
+          return null; // Return null so we don't accidentally overwrite state on failure
+        }
+      };
+
+      let [
+        supaOrders, supaVendors, supaInv, supaGRNs, supaCyls, 
+        supaProd, supaUsers, supaSheets, supaRolls, supaShipments,
+        supaMachines, supaSchedules, supaClients, supaJobMasters
+      ] = await Promise.all([
+        fetchSafe(fetchOrders, 'Orders'),
+        fetchSafe(fetchVendors, 'Vendors'),
+        fetchSafe(fetchInventory, 'Inventory'),
+        fetchSafe(fetchGRNs, 'GRNs'),
+        fetchSafe(fetchCylinders, 'Cylinders'),
+        fetchSafe(fetchProductionRecords, 'Production Records'),
+        fetchSafe(fetchUsers, 'Users'),
+        fetchSafe(fetchJobDataSheets, 'Job Data Sheets'),
+        fetchSafe(fetchInventoryRolls, 'Inventory Rolls'),
+        fetchSafe(fetchDispatchShipments, 'Dispatch Shipments'),
+        fetchSafe(fetchPrintingMachines, 'Printing Machines'),
+        fetchSafe(fetchProductionSchedules, 'Production Schedules'),
+        fetchSafe(fetchClients, 'Clients'),
+        fetchSafe(fetchJobMasters, 'Job Masters')
+      ]);
+
+      // If DB is completely empty across core tables (brand new DB setup), automatically seed starter records into DB
+      const isDbEmpty = (supaOrders && supaOrders.length === 0) &&
+                        (supaVendors && supaVendors.length === 0) &&
+                        (supaInv && supaInv.length === 0);
+
+      if (isDbEmpty) {
+        console.log("[Supabase Sync] Fresh database detected. Auto-seeding initial ERP factory data into Supabase...");
+        try {
+          await seedInitialDataToSupabase();
+        } catch (e) {
+          console.warn("[Supabase Sync Notice] Seeding failed:", e);
+        }
+        
+        // Re-fetch clean data straight from Supabase after seeding
+        [
           supaOrders, supaVendors, supaInv, supaGRNs, supaCyls, 
           supaProd, supaUsers, supaSheets, supaRolls, supaShipments,
           supaMachines, supaSchedules, supaClients, supaJobMasters
         ] = await Promise.all([
-          fetchOrders(),
-          fetchVendors(),
-          fetchInventory(),
-          fetchGRNs(),
-          fetchCylinders(),
-          fetchProductionRecords(),
-          fetchUsers(),
-          fetchJobDataSheets(),
-          fetchInventoryRolls(),
-          fetchDispatchShipments(),
-          fetchPrintingMachines(),
-          fetchProductionSchedules(),
-          fetchClients(),
-          fetchJobMasters()
+          fetchSafe(fetchOrders, 'Orders'),
+          fetchSafe(fetchVendors, 'Vendors'),
+          fetchSafe(fetchInventory, 'Inventory'),
+          fetchSafe(fetchGRNs, 'GRNs'),
+          fetchSafe(fetchCylinders, 'Cylinders'),
+          fetchSafe(fetchProductionRecords, 'Production Records'),
+          fetchSafe(fetchUsers, 'Users'),
+          fetchSafe(fetchJobDataSheets, 'Job Data Sheets'),
+          fetchSafe(fetchInventoryRolls, 'Inventory Rolls'),
+          fetchSafe(fetchDispatchShipments, 'Dispatch Shipments'),
+          fetchSafe(fetchPrintingMachines, 'Printing Machines'),
+          fetchSafe(fetchProductionSchedules, 'Production Schedules'),
+          fetchSafe(fetchClients, 'Clients'),
+          fetchSafe(fetchJobMasters, 'Job Masters')
         ]);
+      }
 
-        // If DB is completely empty across core tables (brand new DB setup), automatically seed starter records into DB
-        const isDbEmpty = (!supaOrders || supaOrders.length === 0) &&
-                          (!supaVendors || supaVendors.length === 0) &&
-                          (!supaInv || supaInv.length === 0);
-
-        if (isDbEmpty) {
-          console.log("[Supabase Sync] Fresh database detected. Auto-seeding initial ERP factory data into Supabase...");
-          await seedInitialDataToSupabase();
-          // Re-fetch clean data straight from Supabase after seeding
-          [
-            supaOrders, supaVendors, supaInv, supaGRNs, supaCyls, 
-            supaProd, supaUsers, supaSheets, supaRolls, supaShipments,
-            supaMachines, supaSchedules, supaClients, supaJobMasters
-          ] = await Promise.all([
-            fetchOrders(), fetchVendors(), fetchInventory(), fetchGRNs(), fetchCylinders(),
-            fetchProductionRecords(), fetchUsers(), fetchJobDataSheets(), fetchInventoryRolls(),
-            fetchDispatchShipments(), fetchPrintingMachines(), fetchProductionSchedules(),
-            fetchClients(), fetchJobMasters()
-          ]);
-        }
-
-        // Auto-heal Job Masters if job_masters table in Supabase is empty but initial seeds or cylinders exist
-        if (!supaJobMasters || supaJobMasters.length === 0) {
-          console.log("[Supabase Sync] Recovering/Syncing Job Master records into Supabase...");
+      // Auto-heal Job Masters if job_masters table in Supabase is empty but initial seeds or cylinders exist
+      if (supaJobMasters && supaJobMasters.length === 0) {
+        console.log("[Supabase Sync] Recovering/Syncing Job Master records into Supabase...");
+        try {
           const existingJobSkus = new Set((supaJobMasters || []).map(j => j.skuCode));
           
           for (const j of (initialJobMasters || [])) {
@@ -275,12 +301,16 @@ export default function App() {
               }
             }
           }
-          supaJobMasters = await fetchJobMasters();
+          supaJobMasters = await fetchSafe(fetchJobMasters, 'Job Masters');
+        } catch (e) {
+          console.warn("[Supabase Sync Notice] Job Masters recovery failed:", e);
         }
+      }
 
-        // Auto-heal Clients if clients table in Supabase is empty
-        if (!supaClients || supaClients.length === 0) {
-          console.log("[Supabase Sync] Recovering/Syncing Clients into Supabase...");
+      // Auto-heal Clients if clients table in Supabase is empty
+      if (supaClients && supaClients.length === 0) {
+        console.log("[Supabase Sync] Recovering/Syncing Clients into Supabase...");
+        try {
           const existingClientNames = new Set((supaClients || []).map(c => c.name));
 
           for (const c of (initialClients || [])) {
@@ -306,38 +336,41 @@ export default function App() {
               }
             }
           }
-          supaClients = await fetchClients();
+          supaClients = await fetchSafe(fetchClients, 'Clients');
+        } catch (e) {
+          console.warn("[Supabase Sync Notice] Clients recovery failed:", e);
         }
+      }
 
-        // Auto-heal Vendors if vendors table in Supabase is empty
-        if (!supaVendors || supaVendors.length === 0) {
-          console.log("[Supabase Sync] Syncing Vendors into Supabase...");
+      // Auto-heal Vendors if vendors table in Supabase is empty
+      if (supaVendors && supaVendors.length === 0) {
+        console.log("[Supabase Sync] Syncing Vendors into Supabase...");
+        try {
           for (const v of (initialVendors || [])) {
             await saveVendorToSupabase(v);
           }
-          supaVendors = await fetchVendors();
+          supaVendors = await fetchSafe(fetchVendors, 'Vendors');
+        } catch (e) {
+          console.warn("[Supabase Sync Notice] Vendors recovery failed:", e);
         }
-
-        // Supabase DB is the AUTHORITATIVE Source of Truth.
-        // Overwrite in-memory state with live data fetched directly from Supabase!
-        if (Array.isArray(supaOrders)) setOrders(supaOrders);
-        if (Array.isArray(supaVendors)) setVendors(supaVendors);
-        if (Array.isArray(supaInv)) setInventory(supaInv);
-        if (Array.isArray(supaGRNs)) setGrns(supaGRNs);
-        if (Array.isArray(supaCyls)) setCylinders(supaCyls);
-        if (Array.isArray(supaProd)) setProductionRecords(supaProd);
-        if (Array.isArray(supaUsers)) setUsers(supaUsers);
-        if (Array.isArray(supaSheets)) setJobDataSheets(supaSheets);
-        if (Array.isArray(supaRolls)) setInventoryRolls(supaRolls);
-        if (Array.isArray(supaShipments)) setDispatchShipments(supaShipments);
-        if (Array.isArray(supaMachines)) setMachines(supaMachines);
-        if (Array.isArray(supaSchedules)) setSchedules(supaSchedules);
-        if (Array.isArray(supaClients)) setClients(supaClients);
-        if (Array.isArray(supaJobMasters)) setJobMasters(supaJobMasters);
-
-      } catch (err) {
-        console.warn("[Supabase Sync Notice] Authoritative hydration notice:", err);
       }
+
+      // Supabase DB is the AUTHORITATIVE Source of Truth.
+      // Overwrite in-memory state with live data fetched directly from Supabase!
+      if (Array.isArray(supaOrders)) setOrders(supaOrders);
+      if (Array.isArray(supaVendors)) setVendors(supaVendors);
+      if (Array.isArray(supaInv)) setInventory(supaInv);
+      if (Array.isArray(supaGRNs)) setGrns(supaGRNs);
+      if (Array.isArray(supaCyls)) setCylinders(supaCyls);
+      if (Array.isArray(supaProd)) setProductionRecords(supaProd);
+      if (Array.isArray(supaUsers)) setUsers(supaUsers);
+      if (Array.isArray(supaSheets)) setJobDataSheets(supaSheets);
+      if (Array.isArray(supaRolls)) setInventoryRolls(supaRolls);
+      if (Array.isArray(supaShipments)) setDispatchShipments(supaShipments);
+      if (Array.isArray(supaMachines)) setMachines(supaMachines);
+      if (Array.isArray(supaSchedules)) setSchedules(supaSchedules);
+      if (Array.isArray(supaClients)) setClients(supaClients);
+      if (Array.isArray(supaJobMasters)) setJobMasters(supaJobMasters);
     }
 
     loadSupabaseData();
