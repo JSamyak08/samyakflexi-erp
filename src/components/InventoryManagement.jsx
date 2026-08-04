@@ -43,6 +43,35 @@ import {
   initialStockAdjustments
 } from '../factoryStore';
 
+export const INVENTORY_CATEGORIES = [
+  "Film Substrates",
+  "Printing Inks & Toners",
+  "Chemicals & Solvents",
+  "Adhesives & Hardener",
+  "Doctor Blades & Wipers",
+  "Rollers & Sleeves",
+  "Machine Spare Parts",
+  "Lubricants & Oils",
+  "Tapes & Consumables",
+  "Safety Gear (PPE)",
+  "Packaging & Cores",
+  "Other Raw Materials"
+];
+
+export const INVENTORY_UOMS = [
+  { value: "Kg", label: "Kilograms (Kg)" },
+  { value: "Litres", label: "Litres (L)" },
+  { value: "Meters", label: "Meters (m)" },
+  { value: "Rolls", label: "Rolls" },
+  { value: "Boxes", label: "Boxes / Cartons" },
+  { value: "Nos", label: "Numbers (Nos)" },
+  { value: "Pcs", label: "Pieces (Pcs)" },
+  { value: "Sets", label: "Sets" },
+  { value: "Bags", label: "Bags" },
+  { value: "Drums", label: "Drums" },
+  { value: "Sheets", label: "Sheets" }
+];
+
 export default function InventoryManagement({ 
   inventory, 
   grns, 
@@ -325,43 +354,114 @@ export default function InventoryManagement({
   const [grnWeightKg, setGrnWeightKg] = useState(1500);
   const [grnBatchNo, setGrnBatchNo] = useState('');
 
-  // Edit Stock Item State
+  // Universal Edit Stock Item State
   const [editingStockItem, setEditingStockItem] = useState(null);
+  const [editCategory, setEditCategory] = useState('Film Substrates');
+  const [editItemName, setEditItemName] = useState('');
+  const [editItemCode, setEditItemCode] = useState('');
+  const [editUnit, setEditUnit] = useState('Kg');
   const [editFilmType, setEditFilmType] = useState('PET');
   const [editMicron, setEditMicron] = useState(12);
   const [editWidthMm, setEditWidthMm] = useState(1000);
-  const [editAvailableQtyKg, setEditAvailableQtyKg] = useState(1000);
-  const [editAllocatedQtyKg, setEditAllocatedQtyKg] = useState(0);
+  const [editSubType, setEditSubType] = useState('');
+  const [editDimensions, setEditDimensions] = useState('');
+  const [editAvailableQty, setEditAvailableQty] = useState(0);
+  const [editAllocatedQty, setEditAllocatedQty] = useState(0);
   const [editLocation, setEditLocation] = useState('Bay A');
-  const [editReorderLevelKg, setEditReorderLevelKg] = useState(1000);
+  const [editReorderLevel, setEditReorderLevel] = useState(100);
+  const [editLastVendor, setEditLastVendor] = useState('');
+  const [editLastBatch, setEditLastBatch] = useState('');
 
   const openEditStockModal = (item) => {
     setEditingStockItem(item);
-    setEditFilmType(item.filmType);
-    setEditMicron(item.micron);
-    setEditWidthMm(item.widthMm);
-    setEditAvailableQtyKg(item.availableQtyKg);
-    setEditAllocatedQtyKg(item.allocatedQtyKg || 0);
-    setEditLocation(item.location);
-    setEditReorderLevelKg(item.reorderLevelKg || 1000);
+    
+    const isFilm = (item.category === 'Film Substrates') || 
+                   (!item.category && item.filmType && FILM_DENSITIES[item.filmType]) ||
+                   (!item.category && item.micron && item.micron !== '-');
+
+    const category = item.category || (isFilm ? 'Film Substrates' : 'Other Raw Materials');
+    setEditCategory(category);
+    
+    // Pre-fill Item Name
+    const defaultName = isFilm 
+      ? `${item.filmType || 'PET'} ${item.micron && item.micron !== '-' ? item.micron + 'µ' : ''} (${item.widthMm && item.widthMm !== '-' ? item.widthMm + 'mm' : ''})`.trim()
+      : (item.itemName || item.filmType || `${category} Stock Item`);
+    setEditItemName(item.itemName || defaultName);
+    
+    // Pre-fill Item Code / SKU
+    setEditItemCode(item.itemCode || item.id || '');
+    
+    // Pre-fill Unit
+    const fallbackUnit = isFilm ? 'Kg' : (
+      category === 'Chemicals & Solvents' ? 'Litres' : 
+      category === 'Doctor Blades & Wipers' ? 'Meters' : 
+      category === 'Tapes & Consumables' ? 'Rolls' : 
+      category === 'Safety Gear (PPE)' ? 'Boxes' : 
+      category === 'Machine Spare Parts' ? 'Nos' : 'Kg'
+    );
+    setEditUnit(item.unit || fallbackUnit);
+    
+    // Pre-fill Film / Sub-type attributes
+    setEditFilmType(item.filmType && FILM_DENSITIES[item.filmType] ? item.filmType : 'PET');
+    setEditMicron(item.micron && item.micron !== '-' ? item.micron : (isFilm ? 12 : ''));
+    setEditWidthMm(item.widthMm && item.widthMm !== '-' ? item.widthMm : (isFilm ? 1000 : ''));
+    setEditSubType(item.filmType && !FILM_DENSITIES[item.filmType] ? item.filmType : '');
+    setEditDimensions(item.widthMm && item.widthMm !== '-' && !isFilm ? `${item.widthMm}mm` : '');
+    
+    // Pre-fill Quantities & Thresholds (Accurate numbers from item)
+    setEditAvailableQty(item.availableQtyKg ?? item.availableWeightKg ?? 0);
+    setEditAllocatedQty(item.allocatedQtyKg ?? 0);
+    setEditReorderLevel(item.reorderLevelKg ?? 100);
+    
+    // Pre-fill Location & Vendor Logistics
+    setEditLocation(item.location || item.locationBay || 'Bay A');
+    setEditLastVendor(item.lastVendor || item.vendorName || '');
+    setEditLastBatch(item.lastBatch || item.batchNo || '');
+  };
+
+  const handleCategoryChangeInEdit = (newCategory) => {
+    setEditCategory(newCategory);
+    if (newCategory === 'Film Substrates') {
+      if (!editFilmType || !FILM_DENSITIES[editFilmType]) setEditFilmType('PET');
+      if (!editMicron || editMicron === '-') setEditMicron(12);
+      if (!editWidthMm || editWidthMm === '-') setEditWidthMm(1000);
+      setEditUnit('Kg');
+    } else {
+      if (newCategory === 'Chemicals & Solvents' && editUnit === 'Kg') setEditUnit('Litres');
+      else if (newCategory === 'Doctor Blades & Wipers' && editUnit === 'Kg') setEditUnit('Meters');
+      else if (newCategory === 'Tapes & Consumables' && editUnit === 'Kg') setEditUnit('Rolls');
+      else if (newCategory === 'Safety Gear (PPE)' && editUnit === 'Kg') setEditUnit('Boxes');
+      else if (newCategory === 'Machine Spare Parts' && editUnit === 'Kg') setEditUnit('Nos');
+    }
   };
 
   const handleSaveStockEdit = (e) => {
     e.preventDefault();
     if (!editingStockItem) return;
 
+    const isFilm = editCategory === 'Film Substrates';
+    const finalItemName = isFilm
+      ? `${editFilmType} ${editMicron}µ (${editWidthMm}mm Width)`
+      : (editItemName.trim() || `${editCategory} Stock Item`);
+
     const updatedInv = inventory.map(item => {
       if (item.id === editingStockItem.id) {
         return {
           ...item,
-          filmType: editFilmType,
-          micron: parseFloat(editMicron),
-          widthMm: parseFloat(editWidthMm),
-          density: FILM_DENSITIES[editFilmType] || 1.0,
-          availableQtyKg: parseFloat(editAvailableQtyKg),
-          allocatedQtyKg: parseFloat(editAllocatedQtyKg),
-          location: editLocation,
-          reorderLevelKg: parseFloat(editReorderLevelKg)
+          category: editCategory,
+          itemName: finalItemName,
+          itemCode: editItemCode.trim() || item.itemCode || item.id,
+          unit: editUnit,
+          filmType: isFilm ? editFilmType : (editSubType.trim() || editFilmType || editCategory),
+          micron: isFilm ? (parseFloat(editMicron) || 12) : (editMicron && editMicron !== '-' ? editMicron : '-'),
+          widthMm: isFilm ? (parseFloat(editWidthMm) || 1000) : (editDimensions.trim() ? editDimensions.replace(/[^\d.]/g, '') || '-' : (item.widthMm || '-')),
+          density: isFilm ? (FILM_DENSITIES[editFilmType] || 1.0) : 1.0,
+          availableQtyKg: parseFloat(editAvailableQty) || 0,
+          allocatedQtyKg: parseFloat(editAllocatedQty) || 0,
+          location: editLocation.trim() || 'Bay A',
+          reorderLevelKg: parseFloat(editReorderLevel) || 0,
+          lastVendor: editLastVendor.trim() || item.lastVendor,
+          lastBatch: editLastBatch.trim() || item.lastBatch
         };
       }
       return item;
@@ -372,11 +472,12 @@ export default function InventoryManagement({
     }
 
     setEditingStockItem(null);
-    alert(`Stock item ${editingStockItem.id} updated successfully!`);
+    alert(`Stock item ${editingStockItem.id} (${finalItemName}) updated successfully!`);
   };
 
   const handleDeleteStockItem = (item) => {
-    if (window.confirm(`Are you sure you want to permanently delete stock item "${item.id} - ${item.filmType} ${item.micron}µ (${item.widthMm}mm)"?`)) {
+    const displayName = item.itemName || `${item.filmType || 'Item'} ${item.micron && item.micron !== '-' ? item.micron + 'µ' : ''}`;
+    if (window.confirm(`Are you sure you want to permanently delete stock item "${item.id} - ${displayName}"?`)) {
       const updatedInv = inventory.filter(i => i.id !== item.id);
       if (onUpdateInventory) {
         onUpdateInventory(updatedInv);
@@ -1852,103 +1953,280 @@ export default function InventoryManagement({
         </div>
       )}
 
-      {/* Modal: Edit Stock Item */}
+      {/* Modal: Edit Stock Item (Universal & Category Adaptive) */}
       {editingStockItem && (
         <div className="modal-overlay" onClick={() => setEditingStockItem(null)}>
-          <div className="glass-card modal-content" style={{ width: '580px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Edit3 size={20} style={{ color: 'var(--primary-brand)' }} /> Edit Inventory Stock Item ({editingStockItem.id})
-            </h3>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '20px' }}>
-              Update stock quantities, substrate specifications, location bay, or reorder warnings.
-            </p>
+          <div className="glass-card modal-content" style={{ width: '700px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <Edit3 size={20} style={{ color: 'var(--primary-brand)' }} />
+                  <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 600 }}>Edit Stock Item</h3>
+                  <span className="badge" style={{ background: 'rgba(59, 130, 246, 0.12)', color: '#3b82f6', border: '1px solid rgba(59, 130, 246, 0.3)', fontWeight: 600 }}>
+                    {editingStockItem.id}
+                  </span>
+                  <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>
+                    {editCategory}
+                  </span>
+                </div>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.84rem', margin: 0 }}>
+                  Pre-filled with existing item parameters. All specifications adapt dynamically to the chosen item category.
+                </p>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setEditingStockItem(null)} 
+                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.2rem', padding: '4px' }}
+              >
+                ✕
+              </button>
+            </div>
 
             <form onSubmit={handleSaveStockEdit}>
-              <div className="form-grid">
-                <div className="form-group">
-                  <label>Film Substrate *</label>
-                  <select 
-                    className="form-control"
-                    value={editFilmType}
-                    onChange={e => setEditFilmType(e.target.value)}
-                  >
-                    {Object.keys(FILM_DENSITIES).map(type => (
-                      <option key={type} value={type}>{type}</option>
-                    ))}
-                  </select>
+              {/* Category & Identity */}
+              <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '16px' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--primary-brand)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Tag size={15} /> 1. Category & Item Identification
                 </div>
+                <div className="form-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+                  <div className="form-group">
+                    <label>Material Category *</label>
+                    <select 
+                      className="form-control"
+                      value={editCategory}
+                      onChange={e => handleCategoryChangeInEdit(e.target.value)}
+                    >
+                      {INVENTORY_CATEGORIES.map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
 
-                <div className="form-group">
-                  <label>Micron Gauge (µ) *</label>
-                  <input 
-                    type="number" 
-                    className="form-control"
-                    required
-                    value={editMicron}
-                    onChange={e => setEditMicron(e.target.value)}
-                  />
-                </div>
+                  <div className="form-group">
+                    <label>Item Name / Description *</label>
+                    <input 
+                      type="text" 
+                      className="form-control"
+                      required
+                      placeholder="e.g. PET 12µ (1000mm) or Ethyl Acetate Solvent"
+                      value={editItemName}
+                      onChange={e => setEditItemName(e.target.value)}
+                    />
+                  </div>
 
-                <div className="form-group">
-                  <label>Slit Width (mm) *</label>
-                  <input 
-                    type="number" 
-                    className="form-control"
-                    required
-                    value={editWidthMm}
-                    onChange={e => setEditWidthMm(e.target.value)}
-                  />
-                </div>
+                  <div className="form-group">
+                    <label>Item Code / SKU</label>
+                    <input 
+                      type="text" 
+                      className="form-control"
+                      placeholder="e.g. RM-FILM-001"
+                      value={editItemCode}
+                      onChange={e => setEditItemCode(e.target.value)}
+                    />
+                  </div>
 
-                <div className="form-group">
-                  <label>Warehouse Location Bay *</label>
-                  <input 
-                    type="text" 
-                    className="form-control"
-                    required
-                    placeholder="e.g. Bay A - Rack 3"
-                    value={editLocation}
-                    onChange={e => setEditLocation(e.target.value)}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Available Stock Qty (Kg) *</label>
-                  <input 
-                    type="number" 
-                    className="form-control"
-                    required
-                    value={editAvailableQtyKg}
-                    onChange={e => setEditAvailableQtyKg(e.target.value)}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Allocated to Jobs Qty (Kg)</label>
-                  <input 
-                    type="number" 
-                    className="form-control"
-                    value={editAllocatedQtyKg}
-                    onChange={e => setEditAllocatedQtyKg(e.target.value)}
-                  />
-                </div>
-
-                <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                  <label>Low Stock Warning Threshold (Kg)</label>
-                  <input 
-                    type="number" 
-                    className="form-control"
-                    value={editReorderLevelKg}
-                    onChange={e => setEditReorderLevelKg(e.target.value)}
-                  />
+                  <div className="form-group">
+                    <label>Unit of Measure (UOM) *</label>
+                    <select 
+                      className="form-control"
+                      value={editUnit}
+                      onChange={e => setEditUnit(e.target.value)}
+                    >
+                      {INVENTORY_UOMS.map(u => (
+                        <option key={u.value} value={u.value}>{u.label}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
-                <button type="button" className="btn-secondary" onClick={() => setEditingStockItem(null)}>Cancel</button>
-                <button type="submit" className="btn-primary">
-                  <CheckCircle2 size={16} /> Save Stock Changes
+              {/* Technical Specifications (Category Adaptive) */}
+              <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '16px' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--primary-brand)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Package size={15} /> 2. Technical Specifications & Dimensions
+                </div>
+
+                {editCategory === 'Film Substrates' ? (
+                  <div className="form-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+                    <div className="form-group">
+                      <label>Film Polymer Type *</label>
+                      <select 
+                        className="form-control"
+                        value={editFilmType}
+                        onChange={e => setEditFilmType(e.target.value)}
+                      >
+                        {Object.keys(FILM_DENSITIES).map(type => (
+                          <option key={type} value={type}>{type} ({FILM_DENSITIES[type]} g/cc)</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Micron Gauge (µ) *</label>
+                      <input 
+                        type="number" 
+                        step="0.1"
+                        className="form-control"
+                        required
+                        value={editMicron}
+                        onChange={e => setEditMicron(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Slit Width (mm) *</label>
+                      <input 
+                        type="number" 
+                        step="1"
+                        className="form-control"
+                        required
+                        value={editWidthMm}
+                        onChange={e => setEditWidthMm(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Calculated Density</label>
+                      <input 
+                        type="text" 
+                        className="form-control" 
+                        disabled 
+                        value={`${FILM_DENSITIES[editFilmType] || 1.0} g/cm³`}
+                        style={{ opacity: 0.7, background: 'rgba(255,255,255,0.05)' }}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="form-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+                    <div className="form-group">
+                      <label>Sub-Type / Grade / Shade</label>
+                      <input 
+                        type="text" 
+                        className="form-control"
+                        placeholder="e.g. Cyan Solvent Ink / High Purity / Polyurethane"
+                        value={editSubType}
+                        onChange={e => setEditSubType(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Package Size / Dimensions</label>
+                      <input 
+                        type="text" 
+                        className="form-control"
+                        placeholder="e.g. 200L Drum / 25Kg Bag / 0.15mm x 30mm"
+                        value={editDimensions}
+                        onChange={e => setEditDimensions(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Stock Balances & Thresholds */}
+              <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '16px' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--primary-brand)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Scale size={15} /> 3. Stock Balances & Reorder Thresholds ({editUnit})
+                </div>
+                <div className="form-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+                  <div className="form-group">
+                    <label>Available Stock ({editUnit}) *</label>
+                    <input 
+                      type="number" 
+                      step="any"
+                      className="form-control"
+                      required
+                      value={editAvailableQty}
+                      onChange={e => setEditAvailableQty(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Allocated to Jobs ({editUnit})</label>
+                    <input 
+                      type="number" 
+                      step="any"
+                      className="form-control"
+                      value={editAllocatedQty}
+                      onChange={e => setEditAllocatedQty(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Low Stock Warning ({editUnit})</label>
+                    <input 
+                      type="number" 
+                      step="any"
+                      className="form-control"
+                      value={editReorderLevel}
+                      onChange={e => setEditReorderLevel(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Warehouse Location & Vendor Logistics */}
+              <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '20px' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--primary-brand)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Truck size={15} /> 4. Storage Location & Logistics
+                </div>
+                <div className="form-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+                  <div className="form-group">
+                    <label>Warehouse Storage Bay / Rack *</label>
+                    <input 
+                      type="text" 
+                      className="form-control"
+                      required
+                      placeholder="e.g. Bay A - Rack 3 / Flammable Store"
+                      value={editLocation}
+                      onChange={e => setEditLocation(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Last / Preferred Supplier</label>
+                    <input 
+                      type="text" 
+                      className="form-control"
+                      placeholder="e.g. Reliance / Cosmo Films"
+                      value={editLastVendor}
+                      onChange={e => setEditLastVendor(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Last Inward Batch / Lot No</label>
+                    <input 
+                      type="text" 
+                      className="form-control"
+                      placeholder="e.g. BATCH-2026-0811"
+                      value={editLastBatch}
+                      onChange={e => setEditLastBatch(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer Actions */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
+                <button 
+                  type="button" 
+                  className="btn-danger" 
+                  style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.25)', padding: '8px 14px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  onClick={() => handleDeleteStockItem(editingStockItem)}
+                >
+                  <Trash2 size={16} /> Delete Item
                 </button>
+
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button type="button" className="btn-secondary" onClick={() => setEditingStockItem(null)}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <CheckCircle2 size={16} /> Save Stock Changes
+                  </button>
+                </div>
               </div>
             </form>
           </div>

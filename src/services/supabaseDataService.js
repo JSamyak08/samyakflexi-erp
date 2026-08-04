@@ -279,8 +279,38 @@ export async function deleteClientFromSupabase(clientId) {
 
 
 // ============================================================================
-// 3. INVENTORY & FILM STOCK
 // ============================================================================
+// 3. INVENTORY & RAW MATERIALS / CONSUMABLES
+// ============================================================================
+
+export function mapInventoryItemToDbPayload(item) {
+  if (!item) return null;
+  const category = item.category || 'Film Substrates';
+  const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films';
+  const filmTypeStr = item.filmType || (isFilm ? (item.itemName ? item.itemName.split(' ')[0] : 'PET') : '');
+  const itemCodeStr = item.itemCode || item.id || `INV-${Math.floor(100 + Math.random() * 900)}`;
+  const itemNameStr = item.itemName || (filmTypeStr ? `${filmTypeStr} ${item.micron || 12}µ (${item.widthMm || 1000}mm)` : `Item ${itemCodeStr}`);
+
+  return {
+    id: String(item.id),
+    item_code: itemCodeStr,
+    item_name: itemNameStr,
+    category: category,
+    film_type: filmTypeStr,
+    micron: (item.micron !== '-' && item.micron !== null && item.micron !== undefined && !isNaN(Number(item.micron))) ? Number(item.micron) : null,
+    width_mm: (item.widthMm !== '-' && item.widthMm !== null && item.widthMm !== undefined && !isNaN(Number(item.widthMm))) ? Number(item.widthMm) : null,
+    stock_qty_kg: Number(item.availableQtyKg ?? item.stock_qty_kg ?? 0) || 0,
+    allocated_qty_kg: Number(item.allocatedQtyKg ?? item.allocated_qty_kg ?? 0) || 0,
+    reorder_level_kg: Number(item.reorderLevelKg ?? item.reorder_level_kg ?? 0) || 0,
+    unit_price: Number(item.unitPrice ?? item.unit_price ?? 0) || 0,
+    unit: item.unit || (isFilm ? 'Kg' : (category === 'Printing Inks' || category === 'Solvents' || category === 'Lamination Adhesives' ? 'Kg' : 'Pcs')),
+    density: (item.density !== '-' && item.density !== null && item.density !== undefined && !isNaN(Number(item.density))) ? Number(item.density) : 1.0,
+    location: item.location || 'Bay A',
+    last_vendor: item.lastVendor || item.last_vendor || '',
+    last_batch: item.lastBatch || item.last_batch || '',
+    last_updated: new Date().toISOString()
+  };
+}
 
 export async function fetchInventory() {
   if (!isSupabaseConfigured()) return [];
@@ -293,19 +323,28 @@ export async function fetchInventory() {
     if (!data) return [];
 
     return data.map(i => {
-      const filmTypeVal = i.film_type || (i.item_name ? i.item_name.split(' ')[0] : 'PET');
+      const category = i.category || 'Film Substrates';
+      const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films';
+      const filmTypeVal = i.film_type || (isFilm && i.item_name ? i.item_name.split(' ')[0] : '');
+
       return {
-        id: i.id,
-        itemCode: i.item_code || i.id,
-        itemName: i.item_name || `${filmTypeVal} ${i.micron || 12}µ`,
-        category: i.category || 'Film',
-        filmType: filmTypeVal,
-        micron: Number(i.micron) || 12,
-        widthMm: Number(i.width_mm) || 1000,
-        availableQtyKg: Number(i.stock_qty_kg) || 0,
-        reorderLevelKg: Number(i.reorder_level_kg) || 0,
-        unitPrice: Number(i.unit_price) || 0,
-        location: i.location || 'Bay A'
+        id: String(i.id),
+        itemCode: i.item_code || String(i.id),
+        itemName: i.item_name || (filmTypeVal ? `${filmTypeVal} ${i.micron || 12}µ` : 'Stock Item'),
+        category: category,
+        filmType: filmTypeVal || (isFilm ? 'PET' : ''),
+        micron: (i.micron !== null && i.micron !== undefined && !isNaN(Number(i.micron))) ? Number(i.micron) : (isFilm ? 12 : '-'),
+        widthMm: (i.width_mm !== null && i.width_mm !== undefined && !isNaN(Number(i.width_mm))) ? Number(i.width_mm) : (isFilm ? 1000 : '-'),
+        availableQtyKg: Number(i.stock_qty_kg ?? i.available_qty_kg ?? 0) || 0,
+        allocatedQtyKg: Number(i.allocated_qty_kg ?? 0) || 0,
+        reorderLevelKg: Number(i.reorder_level_kg ?? 0) || 0,
+        unitPrice: Number(i.unit_price ?? 0) || 0,
+        unit: i.unit || (isFilm ? 'Kg' : (category === 'Printing Inks' || category === 'Solvents' || category === 'Lamination Adhesives' ? 'Kg' : 'Pcs')),
+        density: (i.density !== null && i.density !== undefined && !isNaN(Number(i.density))) ? Number(i.density) : (isFilm ? 1.4 : 1.0),
+        location: i.location || 'Bay A',
+        lastVendor: i.last_vendor || '',
+        lastBatch: i.last_batch || '',
+        lastUpdated: i.last_updated || new Date().toISOString()
       };
     });
   } catch (err) {
@@ -315,49 +354,75 @@ export async function fetchInventory() {
 }
 
 export async function saveInventoryItemToSupabase(item) {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !item) return;
   await ensureValidSession();
-  const filmTypeStr = item.filmType || 'PET';
-  const itemNameStr = item.itemName || `${filmTypeStr} ${item.micron || 12}µ (${item.widthMm || 1000}mm)`;
-  const itemCodeStr = item.itemCode || item.id || `INV-${Math.floor(100 + Math.random() * 900)}`;
+  const fullPayload = mapInventoryItemToDbPayload(item);
+  if (!fullPayload) return;
 
-  const fullPayload = {
-    id: item.id,
-    item_code: itemCodeStr,
-    item_name: itemNameStr,
-    category: item.category || 'Film',
-    micron: Number(item.micron) || 0,
-    width_mm: Number(item.widthMm) || 0,
-    stock_qty_kg: Number(item.availableQtyKg) || 0,
-    reorder_level_kg: Number(item.reorderLevelKg) || 0,
-    unit_price: Number(item.unitPrice) || 0,
-    location: item.location || 'Bay A'
-  };
-
+  console.log('[inventory] Saving item to Supabase:', fullPayload.id, fullPayload.item_name);
   const { error: fullError } = await supabase.from('inventory').upsert(fullPayload, { onConflict: 'id' });
 
   if (fullError) {
-    console.warn("[Supabase Sync Notice] Full inventory payload failed, trying minimal payload.", fullError.message);
-    const minimalPayload = {
-      id: item.id,
-      item_code: itemCodeStr,
-      item_name: itemNameStr,
-      stock_qty_kg: Number(item.availableQtyKg) || 0,
-      unit_price: Number(item.unitPrice) || 0
+    console.warn("[Supabase Sync Notice] Full inventory payload failed, trying base columns fallback:", fullError.message);
+    const basePayload = {
+      id: fullPayload.id,
+      item_code: fullPayload.item_code,
+      item_name: fullPayload.item_name,
+      category: fullPayload.category,
+      film_type: fullPayload.film_type,
+      micron: fullPayload.micron,
+      width_mm: fullPayload.width_mm,
+      stock_qty_kg: fullPayload.stock_qty_kg,
+      reorder_level_kg: fullPayload.reorder_level_kg,
+      unit_price: fullPayload.unit_price,
+      location: fullPayload.location,
+      last_updated: fullPayload.last_updated
     };
-    const { error: minimalError } = await supabase.from('inventory').upsert(minimalPayload, { onConflict: 'id' });
-    if (minimalError) {
-      handleSupabaseError(minimalError, 'inventory');
+    const { error: baseError } = await supabase.from('inventory').upsert(basePayload, { onConflict: 'id' });
+    if (baseError) {
+      console.warn("[Supabase Sync Notice] Base payload failed, trying minimal payload:", baseError.message);
+      const minimalPayload = {
+        id: fullPayload.id,
+        item_code: fullPayload.item_code,
+        item_name: fullPayload.item_name,
+        stock_qty_kg: fullPayload.stock_qty_kg,
+        unit_price: fullPayload.unit_price
+      };
+      const { error: minimalError } = await supabase.from('inventory').upsert(minimalPayload, { onConflict: 'id' });
+      if (minimalError) {
+        handleSupabaseError(minimalError, 'inventory');
+      }
     }
+  } else {
+    console.log('[inventory] Item saved successfully to Supabase:', fullPayload.id);
+  }
+}
+
+export async function saveInventoryBatchToSupabase(inventoryList) {
+  if (!isSupabaseConfigured() || !Array.isArray(inventoryList) || inventoryList.length === 0) return;
+  await ensureValidSession();
+  const payloads = inventoryList.map(item => mapInventoryItemToDbPayload(item)).filter(Boolean);
+
+  console.log(`[inventory] Bulk syncing ${payloads.length} items to Supabase...`);
+  const { error } = await supabase.from('inventory').upsert(payloads, { onConflict: 'id' });
+  if (error) {
+    console.warn("[inventory] Bulk upsert error, falling back to sequential upserts:", error.message);
+    for (const item of inventoryList) {
+      await saveInventoryItemToSupabase(item);
+    }
+  } else {
+    console.log(`[inventory] Successfully bulk synced ${payloads.length} items.`);
   }
 }
 
 export async function deleteInventoryItemFromSupabase(itemId) {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !itemId) return;
   await ensureValidSession();
-  const { error } = await supabase.from('inventory').delete().eq('id', itemId);
+  console.log('[inventory] Deleting item from Supabase:', itemId);
+  const { error } = await supabase.from('inventory').delete().eq('id', String(itemId));
   if (error) {
     console.error("Error deleting inventory from Supabase:", error);
+    handleSupabaseError(error, 'inventory');
     throw error;
   }
 }

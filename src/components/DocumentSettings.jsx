@@ -11,7 +11,10 @@ import {
   CheckCircle2,
   RefreshCw,
   Plus,
-  ListOrdered
+  ListOrdered,
+  Printer,
+  Cpu,
+  X
 } from 'lucide-react';
 import { 
   getCompanyLogo,
@@ -28,7 +31,7 @@ import {
   DEFAULT_DOCUMENT_TERMS
 } from '../services/settingsService';
 
-export default function DocumentSettings() {
+export default function DocumentSettings({ machines = [], onSaveMachine, onDeleteMachine }) {
   // Logo State
   const [logoImage, setLogoImage] = useState(() => getCompanyLogo());
 
@@ -42,6 +45,10 @@ export default function DocumentSettings() {
   const [termsState, setTermsState] = useState(() => getDocumentTerms());
 
   const [savedSuccess, setSavedSuccess] = useState(false);
+
+  // Plant Machine Quick-Add State
+  const [newMachineName, setNewMachineName] = useState('');
+  const [newMachineType, setNewMachineType] = useState('Rotogravure');
 
   // Handle Company Logo Upload (PNG/JPG)
   const handleLogoUpload = (e) => {
@@ -517,6 +524,119 @@ export default function DocumentSettings() {
           </div>
 
         </form>
+      </div>
+
+      {/* PLANT MACHINE DIRECTORY */}
+      <div className="glass-panel" style={{ padding: '24px' }}>
+        <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ fontSize: '1.05rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Printer size={20} style={{ color: 'var(--primary-brand)' }} /> Plant Machine Directory
+          </h3>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>All machines saved to Supabase · used across all modules</span>
+        </div>
+
+        {/* Quick Add Form */}
+        {onSaveMachine ? (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px auto', gap: '10px', marginBottom: '20px', alignItems: 'end' }}>
+            <div>
+              <label className="form-label" style={{ fontSize: '0.78rem', fontWeight: '700' }}>Machine / Plant Unit Name *</label>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="e.g. Rotogravure Press #3 (12-Color)"
+                value={newMachineName}
+                onChange={e => setNewMachineName(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (newMachineName.trim()) {
+                      onSaveMachine({ name: newMachineName.trim(), type: newMachineType, colors: 0, maxSpeedMpm: 0, maxWidthMm: 0, status: 'Active', operator: '', location: '' });
+                      setNewMachineName('');
+                      triggerSaveNotification();
+                    }
+                  }
+                }}
+              />
+            </div>
+            <div>
+              <label className="form-label" style={{ fontSize: '0.78rem', fontWeight: '700' }}>Type</label>
+              <select className="form-control" value={newMachineType} onChange={e => setNewMachineType(e.target.value)}>
+                <optgroup label="Printing">
+                  <option value="Rotogravure">Rotogravure Press</option>
+                  <option value="Flexographic">Flexographic Press</option>
+                  <option value="Digital">Digital Printing</option>
+                </optgroup>
+                <optgroup label="Post-Press">
+                  <option value="Laminator">Laminator</option>
+                  <option value="Slitter">Slitter / Rewinder</option>
+                  <option value="Pouching">Pouching Machine</option>
+                  <option value="Rewinder">Doctoring Rewinder</option>
+                  <option value="Coating">UV / Coating Machine</option>
+                </optgroup>
+                <optgroup label="Support">
+                  <option value="Workshop">Workshop / Maintenance</option>
+                  <option value="Store">Factory / Store Area</option>
+                  <option value="Lab">QC / Inspection Lab</option>
+                </optgroup>
+              </select>
+            </div>
+            <button
+              type="button"
+              className="btn-primary"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px' }}
+              onClick={() => {
+                if (!newMachineName.trim()) return;
+                onSaveMachine({ name: newMachineName.trim(), type: newMachineType, colors: 0, maxSpeedMpm: 0, maxWidthMm: 0, status: 'Active', operator: '', location: '' });
+                setNewMachineName('');
+                triggerSaveNotification();
+              }}
+            >
+              <Plus size={15} /> Add
+            </button>
+          </div>
+        ) : (
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Settings size={14} /> Connect Supabase to manage machines. For now, manage from <strong>Printing Machine Scheduler → Machine Settings</strong>.
+          </div>
+        )}
+
+        {/* Machine List */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '340px', overflowY: 'auto' }}>
+          {machines.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              <Cpu size={28} style={{ opacity: 0.3, display: 'block', margin: '0 auto 8px' }} />
+              No machines found. Add one above or go to Printing Machine Scheduler.
+            </div>
+          ) : (
+            machines.map(m => (
+              <div key={m.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: '8px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '0.68rem', fontWeight: '700', background: 'var(--primary-brand)', color: '#fff', padding: '2px 7px', borderRadius: '10px', whiteSpace: 'nowrap' }}>{m.type}</span>
+                  <span style={{ fontSize: '0.88rem', fontWeight: '600' }}>{m.name}</span>
+                  {m.location && <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>· {m.location}</span>}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '0.72rem', padding: '2px 8px', borderRadius: '8px', fontWeight: '600', background: m.status === 'Active' ? '#ecfdf5' : '#fef3c7', color: m.status === 'Active' ? '#065f46' : '#92400e' }}>{m.status}</span>
+                  {onDeleteMachine && (
+                    <button
+                      type="button"
+                      title="Remove machine"
+                      onClick={() => {
+                        if (window.confirm(`Remove "${m.name}" from the plant directory?`)) {
+                          onDeleteMachine(m.id);
+                          triggerSaveNotification();
+                        }
+                      }}
+                      style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: '2px 4px', borderRadius: '4px' }}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
 
     </div>

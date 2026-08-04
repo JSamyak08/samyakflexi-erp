@@ -1018,39 +1018,18 @@ export const generateVendorId = () => {
  * Initial Printing Machines Dataset
  */
 export const initialMachines = [
-  {
-    id: "MAC-PRINT-01",
-    name: "Rotogravure Press #1 (8-Color)",
-    type: "Rotogravure",
-    colors: 8,
-    maxSpeedMpm: 250,
-    maxWidthMm: 1200,
-    status: "Active",
-    operator: "Rajesh Sharma",
-    location: "Bay 1 - Rotogravure Hall"
-  },
-  {
-    id: "MAC-PRINT-02",
-    name: "Rotogravure Press #2 (10-Color)",
-    type: "Rotogravure",
-    colors: 10,
-    maxSpeedMpm: 300,
-    maxWidthMm: 1300,
-    status: "Active",
-    operator: "Virendra Singh",
-    location: "Bay 2 - Rotogravure Hall"
-  },
-  {
-    id: "MAC-PRINT-03",
-    name: "Flexographic Press #1 (6-Color)",
-    type: "Flexographic",
-    colors: 6,
-    maxSpeedMpm: 200,
-    maxWidthMm: 1000,
-    status: "Active",
-    operator: "Amit Patel",
-    location: "Bay 3 - Flexo Hall"
-  }
+  { id: "MAC-PRINT-01", name: "Rotogravure Press #1 (8-Color)", type: "Rotogravure", colors: 8, maxSpeedMpm: 250, maxWidthMm: 1200, status: "Active", operator: "Rajesh Sharma", location: "Bay 1 - Rotogravure Hall" },
+  { id: "MAC-PRINT-02", name: "Rotogravure Press #2 (10-Color)", type: "Rotogravure", colors: 10, maxSpeedMpm: 300, maxWidthMm: 1300, status: "Active", operator: "Virendra Singh", location: "Bay 2 - Rotogravure Hall" },
+  { id: "MAC-PRINT-03", name: "Flexographic Press #1 (6-Color)", type: "Flexographic", colors: 6, maxSpeedMpm: 200, maxWidthMm: 1000, status: "Active", operator: "Amit Patel", location: "Bay 3 - Flexo Hall" },
+  { id: "MAC-LAM-01", name: "Solventless Laminator (Nordmeccanica)", type: "Laminator", colors: 0, maxSpeedMpm: 250, maxWidthMm: 1300, status: "Active", operator: "Lamination Operator", location: "Bay 4 - Lamination Hall" },
+  { id: "MAC-LAM-02", name: "Combi Laminator (Solvent-based / Solventless)", type: "Laminator", colors: 0, maxSpeedMpm: 180, maxWidthMm: 1200, status: "Active", operator: "Lamination Operator", location: "Bay 5 - Lamination Hall" },
+  { id: "MAC-SLT-01", name: "High-Speed Slitting Machine 1", type: "Slitter", colors: 0, maxSpeedMpm: 400, maxWidthMm: 1300, status: "Active", operator: "Slitting Operator", location: "Bay 6 - Slitting Hall" },
+  { id: "MAC-SLT-02", name: "High-Speed Slitting Machine 2", type: "Slitter", colors: 0, maxSpeedMpm: 400, maxWidthMm: 1300, status: "Active", operator: "Slitting Operator", location: "Bay 6 - Slitting Hall" },
+  { id: "MAC-PCH-01", name: "Center-Seal Pouch Machine 1", type: "Pouching", colors: 0, maxSpeedMpm: 120, maxWidthMm: 600, status: "Active", operator: "Pouching Operator", location: "Bay 7 - Pouching Hall" },
+  { id: "MAC-PCH-02", name: "Three-Side Seal Pouch Machine 2", type: "Pouching", colors: 0, maxSpeedMpm: 100, maxWidthMm: 600, status: "Active", operator: "Pouching Operator", location: "Bay 7 - Pouching Hall" },
+  { id: "MAC-RWD-01", name: "Doctoring & Inspection Rewinder", type: "Rewinder", colors: 0, maxSpeedMpm: 300, maxWidthMm: 1300, status: "Active", operator: "QC Operator", location: "Bay 8 - QC & Inspection" },
+  { id: "MAC-WRK-01", name: "Maintenance & Utility Workshop", type: "Workshop", colors: 0, maxSpeedMpm: 0, maxWidthMm: 0, status: "Active", operator: "Maintenance Team", location: "Workshop Bay" },
+  { id: "MAC-STR-01", name: "General Factory & Store", type: "Store", colors: 0, maxSpeedMpm: 0, maxWidthMm: 0, status: "Active", operator: "Store Manager", location: "Main Store Room" }
 ];
 
 /**

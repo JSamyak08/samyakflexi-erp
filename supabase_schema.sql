@@ -32,19 +32,24 @@ CREATE TABLE IF NOT EXISTS public.vendors (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. INVENTORY TABLE
+-- 3. INVENTORY TABLE (RAW MATERIALS & CONSUMABLES)
 CREATE TABLE IF NOT EXISTS public.inventory (
     id TEXT PRIMARY KEY,
-    item_code TEXT NOT NULL,
+    item_code TEXT,
     item_name TEXT NOT NULL,
-    category TEXT,
+    category TEXT DEFAULT 'Film Substrates',
     film_type TEXT,
     micron NUMERIC,
     width_mm NUMERIC,
     stock_qty_kg NUMERIC DEFAULT 0,
+    allocated_qty_kg NUMERIC DEFAULT 0,
     reorder_level_kg NUMERIC DEFAULT 0,
     unit_price NUMERIC DEFAULT 0,
+    unit TEXT DEFAULT 'Kg',
+    density NUMERIC DEFAULT 1.0,
     location TEXT,
+    last_vendor TEXT,
+    last_batch TEXT,
     last_updated TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -262,6 +267,23 @@ ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS engravures_name TEXT;
 ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS cost_borne_by TEXT;
 ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS utilisation_limit NUMERIC DEFAULT 10000;
 ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS creation_date DATE DEFAULT CURRENT_DATE;
+
+-- Ensure all columns exist on inventory if table was previously created with older schema
+ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS item_code TEXT;
+ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'Film Substrates';
+ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS film_type TEXT;
+ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS micron NUMERIC;
+ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS width_mm NUMERIC;
+ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS stock_qty_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS allocated_qty_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS reorder_level_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS unit_price NUMERIC DEFAULT 0;
+ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS unit TEXT DEFAULT 'Kg';
+ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS density NUMERIC DEFAULT 1.0;
+ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS location TEXT;
+ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS last_vendor TEXT;
+ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS last_batch TEXT;
+ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS last_updated TIMESTAMPTZ DEFAULT NOW();
 
 -- Enable Row Level Security (RLS) & Grant Permissive Access to Anon & Authenticated Roles for Internal ERP
 DO $$ 

@@ -31,7 +31,8 @@ import {
   Container,
   Lock,
   DollarSign,
-  ShoppingBag
+  ShoppingBag,
+  Settings
 } from 'lucide-react';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
 import { generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
@@ -299,7 +300,8 @@ export default function ConsumablesAndIndents({
   userName = "Samyak Jain",
   vendors = [],
   orders = [],
-  onAddPO
+  onAddPO,
+  machines = []     // Live printing machines from Printing Presses & Machine Settings
 }) {
   // Navigation Sub-Tabs: "store" (Consumables Store) | "indents" (Material Indents & Requisitions) | "issues" (Machine Issue Audit Log)
   const [activeSubTab, setActiveSubTab] = useState("store");
@@ -317,7 +319,31 @@ export default function ConsumablesAndIndents({
     return initialVendors;
   }, [vendors]);
 
-  // State Datasets
+  // ─── Dynamic Machine List ────────────────────────────────────────────────────
+  // Sourced from the live machines list (Printing Presses & Machine Settings → Supabase).
+  // Entry point: Settings (Letterhead & Signature Settings → Plant Machine Directory)
+  //              or: Printing Machine Scheduler → Machine Settings tab.
+  const dynamicMachineList = useMemo(() => {
+    if (machines && machines.length > 0) {
+      return machines.map(m => m.name).filter(Boolean);
+    }
+    // Fallback when no machines are loaded yet
+    return [
+      'Printing Press 1 (8-Color Rotogravure)',
+      'Printing Press 2 (6-Color Rotogravure)',
+      'Solventless Laminator (Nordmeccanica)',
+      'Combi Laminator (Solvent-based / Solventless)',
+      'High-Speed Slitting Machine 1',
+      'High-Speed Slitting Machine 2',
+      'Center-Seal Pouch Machine 1',
+      'Three-Side Seal Pouch Machine 2',
+      'Doctoring & Inspection Rewinder',
+      'Maintenance & Utility Workshop',
+      'General Factory & Store'
+    ];
+  }, [machines]);
+
+  // ─── State Datasets ──────────────────────────────────────────────────────────
   const [consumables, setConsumables] = useState(initialConsumablesStore);
   const [indents, setIndents] = useState(initialMaterialIndents);
   const [machineIssues, setMachineIssues] = useState(initialMachineIssues);
@@ -488,7 +514,7 @@ export default function ConsumablesAndIndents({
   };
 
   // New Issue Form Data
-  const [issueMachine, setIssueMachine] = useState(PLANT_MACHINES[0]);
+  const [issueMachine, setIssueMachine] = useState('');
   const [issueQty, setIssueQty] = useState(1);
   const [issueOperator, setIssueOperator] = useState("");
   const [issueShift, setIssueShift] = useState("Morning Shift (A)");
@@ -507,7 +533,7 @@ export default function ConsumablesAndIndents({
   const [newItemStock, setNewItemStock] = useState(100);
   const [newItemMinReserve, setNewItemMinReserve] = useState(50);
   const [newItemUnitCost, setNewItemUnitCost] = useState(250);
-  const [newItemMachine, setNewItemMachine] = useState(PLANT_MACHINES[0]);
+  const [newItemMachine, setNewItemMachine] = useState('');
   const [newItemLocation, setNewItemLocation] = useState("Store Shelf A");
 
   // New Indent Form Data
@@ -515,7 +541,7 @@ export default function ConsumablesAndIndents({
   const [indentDept, setIndentDept] = useState("Production & Printing");
   const [indentRemarks, setIndentRemarks] = useState("");
   const [indentLineItems, setIndentLineItems] = useState([
-    { id: 1, itemName: "Ethyl Acetate Solvent (99.8% Purity)", category: "Chemicals & Solvents", unit: "Litres", reqQty: 200, targetMachine: PLANT_MACHINES[0] }
+    { id: 1, itemName: "Ethyl Acetate Solvent (99.8% Purity)", category: "Chemicals & Solvents", unit: "Litres", reqQty: 200, targetMachine: '' }
   ]);
 
   // Categories list
@@ -577,7 +603,7 @@ export default function ConsumablesAndIndents({
   // Open Issue Stock Modal
   const handleOpenIssueModal = (item) => {
     setSelectedItemForIssue(item);
-    setIssueMachine(item.assignedMachine !== "General Factory & Store" && item.assignedMachine !== "All Printing Presses" ? item.assignedMachine : PLANT_MACHINES[0]);
+    setIssueMachine(item.assignedMachine !== "General Factory & Store" && item.assignedMachine !== "All Printing Presses" ? item.assignedMachine : (dynamicMachineList[0] || ''));
     setIssueQty(1);
     setIssueOperator("");
     setIssueShift("Morning Shift (A)");
@@ -728,7 +754,7 @@ export default function ConsumablesAndIndents({
         category: defaultConsumable.category || "Chemicals & Solvents",
         unit: defaultConsumable.unit || "Litres",
         reqQty: 100,
-        targetMachine: PLANT_MACHINES[0]
+        targetMachine: dynamicMachineList[0] || ''
       }
     ]);
   };
@@ -797,7 +823,7 @@ export default function ConsumablesAndIndents({
             style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)' }}
             onClick={() => {
               setIndentLineItems([
-                { id: Date.now(), itemName: consumables[0]?.name || "Ethyl Acetate Solvent", category: consumables[0]?.category || "Chemicals", unit: consumables[0]?.unit || "Litres", reqQty: 100, targetMachine: PLANT_MACHINES[0] }
+                { id: Date.now(), itemName: consumables[0]?.name || "Ethyl Acetate Solvent", category: consumables[0]?.category || "Chemicals", unit: consumables[0]?.unit || "Litres", reqQty: 100, targetMachine: dynamicMachineList[0] || '' }
               ]);
               setIsIndentModalOpen(true);
             }}
@@ -951,8 +977,8 @@ export default function ConsumablesAndIndents({
                   value={machineFilter}
                   onChange={e => setMachineFilter(e.target.value)}
                 >
-                  <option value="ALL">All Machines & Plant Units</option>
-                  {PLANT_MACHINES.map(m => (
+                  <option value="ALL">All Machines &amp; Plant Units</option>
+                  {dynamicMachineList.map(m => (
                     <option key={m} value={m}>{m}</option>
                   ))}
                 </select>
@@ -1129,7 +1155,7 @@ export default function ConsumablesAndIndents({
               style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
               onClick={() => {
                 setIndentLineItems([
-                  { id: Date.now(), itemName: consumables[0]?.name || "Ethyl Acetate Solvent", category: consumables[0]?.category || "Chemicals", unit: consumables[0]?.unit || "Litres", reqQty: 100, targetMachine: PLANT_MACHINES[0] }
+                  { id: Date.now(), itemName: consumables[0]?.name || "Ethyl Acetate Solvent", category: consumables[0]?.category || "Chemicals", unit: consumables[0]?.unit || "Litres", reqQty: 100, targetMachine: dynamicMachineList[0] || '' }
                 ]);
                 setIsIndentModalOpen(true);
               }}
@@ -1360,7 +1386,7 @@ export default function ConsumablesAndIndents({
                 <div>
                   <label className="form-label">Target Machine / Plant Unit *</label>
                   <select className="form-control" value={issueMachine} onChange={e => setIssueMachine(e.target.value)}>
-                    {PLANT_MACHINES.map(m => (
+                    {dynamicMachineList.map(m => (
                       <option key={m} value={m}>{m}</option>
                     ))}
                   </select>
@@ -1527,7 +1553,7 @@ export default function ConsumablesAndIndents({
                             value={item.targetMachine} 
                             onChange={e => updateIndentLineItem(item.id, 'targetMachine', e.target.value)}
                           >
-                            {PLANT_MACHINES.map(m => (
+                            {dynamicMachineList.map(m => (
                               <option key={m} value={m}>{m}</option>
                             ))}
                           </select>
@@ -1710,10 +1736,15 @@ export default function ConsumablesAndIndents({
                 <div>
                   <label className="form-label">Assigned Machine / Usage</label>
                   <select className="form-control" value={newItemMachine} onChange={e => setNewItemMachine(e.target.value)}>
-                    {PLANT_MACHINES.map(m => (
+                    <option value="">— Select Machine / Usage Area —</option>
+                    {dynamicMachineList.map(m => (
                       <option key={m} value={m}>{m}</option>
                     ))}
                   </select>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Settings size={11} />
+                    To add a machine, go to <strong>Letterhead &amp; Settings → Plant Machine Directory</strong> or <strong>Printing Machine Scheduler → Machine Settings</strong>
+                  </div>
                 </div>
               </div>
 

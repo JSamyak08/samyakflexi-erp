@@ -1247,8 +1247,23 @@ export default function ProductionScheduler({
                 <div className="form-group">
                   <label>Machine Technology *</label>
                   <select className="form-control" value={machineType} onChange={e => setMachineType(e.target.value)}>
-                    <option value="Rotogravure">Rotogravure Press</option>
-                    <option value="Flexographic">Flexographic Press</option>
+                    <optgroup label="Printing Presses">
+                      <option value="Rotogravure">Rotogravure Press</option>
+                      <option value="Flexographic">Flexographic Press</option>
+                      <option value="Digital">Digital Printing Unit</option>
+                    </optgroup>
+                    <optgroup label="Post-Press Machinery">
+                      <option value="Laminator">Laminator (Solventless / Combi)</option>
+                      <option value="Slitter">Slitter / Rewinder</option>
+                      <option value="Pouching">Pouching Machine</option>
+                      <option value="Rewinder">Doctoring & Inspection Rewinder</option>
+                      <option value="Coating">UV / Coating Machine</option>
+                    </optgroup>
+                    <optgroup label="Support Areas">
+                      <option value="Workshop">Maintenance & Utility Workshop</option>
+                      <option value="Store">Factory / Store Area</option>
+                      <option value="Lab">Quality & Inspection Lab</option>
+                    </optgroup>
                   </select>
                 </div>
 

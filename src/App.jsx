@@ -57,7 +57,7 @@ import { isSupabaseConfigured } from './services/supabaseClient';
 import { 
   fetchOrders, saveOrderToSupabase, deleteOrderFromSupabase,
   fetchVendors, saveVendorToSupabase, deleteVendorFromSupabase,
-  fetchInventory, saveInventoryItemToSupabase, deleteInventoryItemFromSupabase,
+  fetchInventory, saveInventoryItemToSupabase, saveInventoryBatchToSupabase, deleteInventoryItemFromSupabase,
   fetchGRNs, saveGRNToSupabase,
   fetchCylinders, saveCylinderToSupabase, deleteCylinderFromSupabase,
   fetchProductionRecords, saveProductionRecordToSupabase,
@@ -255,9 +255,106 @@ export default function App() {
     loadSupabaseData();
   }, [isSupaActive, isAuthReady, isAuthenticated]);
 
+  // Realtime subscription for public.inventory to keep live stock and dashboard metrics 100% in sync
+  useEffect(() => {
+    if (!isSupaActive || !isAuthReady || !isAuthenticated) return;
+
+    console.log('[Supabase Realtime] Subscribing to public.inventory changes...');
+    const channel = supabase
+      .channel('public:inventory_changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'inventory' },
+        (payload) => {
+          console.log('[Supabase Realtime] Inventory event received:', payload.eventType, payload);
+          if (payload.eventType === 'INSERT') {
+            const newRow = payload.new;
+            if (!newRow || !newRow.id) return;
+            setInventory(prev => {
+              if (prev.some(i => String(i.id) === String(newRow.id))) return prev;
+              const category = newRow.category || 'Film Substrates';
+              const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films';
+              const filmTypeVal = newRow.film_type || (isFilm && newRow.item_name ? newRow.item_name.split(' ')[0] : '');
+              const mapped = {
+                id: String(newRow.id),
+                itemCode: newRow.item_code || String(newRow.id),
+                itemName: newRow.item_name || 'Stock Item',
+                category: category,
+                filmType: filmTypeVal || (isFilm ? 'PET' : ''),
+                micron: (newRow.micron !== null && newRow.micron !== undefined && !isNaN(Number(newRow.micron))) ? Number(newRow.micron) : (isFilm ? 12 : '-'),
+                widthMm: (newRow.width_mm !== null && newRow.width_mm !== undefined && !isNaN(Number(newRow.width_mm))) ? Number(newRow.width_mm) : (isFilm ? 1000 : '-'),
+                availableQtyKg: Number(newRow.stock_qty_kg ?? newRow.available_qty_kg ?? 0) || 0,
+                allocatedQtyKg: Number(newRow.allocated_qty_kg ?? 0) || 0,
+                reorderLevelKg: Number(newRow.reorder_level_kg ?? 0) || 0,
+                unitPrice: Number(newRow.unit_price ?? 0) || 0,
+                unit: newRow.unit || (isFilm ? 'Kg' : (category === 'Printing Inks' || category === 'Solvents' || category === 'Lamination Adhesives' ? 'Kg' : 'Pcs')),
+                density: (newRow.density !== null && newRow.density !== undefined && !isNaN(Number(newRow.density))) ? Number(newRow.density) : (isFilm ? 1.4 : 1.0),
+                location: newRow.location || 'Bay A',
+                lastVendor: newRow.last_vendor || '',
+                lastBatch: newRow.last_batch || '',
+                lastUpdated: newRow.last_updated || new Date().toISOString()
+              };
+              return [mapped, ...prev];
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedRow = payload.new;
+            if (!updatedRow || !updatedRow.id) return;
+            setInventory(prev => prev.map(i => {
+              if (String(i.id) === String(updatedRow.id)) {
+                const category = updatedRow.category || i.category || 'Film Substrates';
+                const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films';
+                const filmTypeVal = updatedRow.film_type || (isFilm && updatedRow.item_name ? updatedRow.item_name.split(' ')[0] : (i.filmType || ''));
+                return {
+                  ...i,
+                  id: String(updatedRow.id),
+                  itemCode: updatedRow.item_code || i.itemCode || String(updatedRow.id),
+                  itemName: updatedRow.item_name || i.itemName,
+                  category: category,
+                  filmType: filmTypeVal,
+                  micron: (updatedRow.micron !== null && updatedRow.micron !== undefined && !isNaN(Number(updatedRow.micron))) ? Number(updatedRow.micron) : (isFilm ? 12 : '-'),
+                  widthMm: (updatedRow.width_mm !== null && updatedRow.width_mm !== undefined && !isNaN(Number(updatedRow.width_mm))) ? Number(updatedRow.width_mm) : (isFilm ? 1000 : '-'),
+                  availableQtyKg: Number(updatedRow.stock_qty_kg ?? updatedRow.available_qty_kg ?? 0) || 0,
+                  allocatedQtyKg: Number(updatedRow.allocated_qty_kg ?? 0) || 0,
+                  reorderLevelKg: Number(updatedRow.reorder_level_kg ?? 0) || 0,
+                  unitPrice: Number(updatedRow.unit_price ?? 0) || 0,
+                  unit: updatedRow.unit || i.unit || 'Kg',
+                  density: (updatedRow.density !== null && updatedRow.density !== undefined && !isNaN(Number(updatedRow.density))) ? Number(updatedRow.density) : (i.density || 1.0),
+                  location: updatedRow.location || i.location || 'Bay A',
+                  lastVendor: updatedRow.last_vendor || i.lastVendor || '',
+                  lastBatch: updatedRow.last_batch || i.lastBatch || '',
+                  lastUpdated: updatedRow.last_updated || new Date().toISOString()
+                };
+              }
+              return i;
+            }));
+          } else if (payload.eventType === 'DELETE') {
+            const oldId = payload.old?.id;
+            if (oldId) {
+              setInventory(prev => prev.filter(i => String(i.id) !== String(oldId)));
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isSupaActive, isAuthReady, isAuthenticated]);
+
   const handleSaveMachine = (newMachine) => {
-    setMachines(prev => [newMachine, ...prev.filter(m => m.id !== newMachine.id)]);
-    savePrintingMachineToSupabase(newMachine);
+    const typePrefixMap = {
+      Rotogravure: 'PRINT', Flexographic: 'PRINT', Digital: 'PRINT',
+      Laminator: 'LAM', Slitter: 'SLT', Pouching: 'PCH',
+      Rewinder: 'RWD', Coating: 'CTG', Workshop: 'WRK', Store: 'STR', Lab: 'LAB'
+    };
+    const prefix = typePrefixMap[newMachine.type] || 'MISC';
+    const machineWithId = {
+      ...newMachine,
+      id: newMachine.id || `MAC-${prefix}-${Date.now().toString(36).toUpperCase().slice(-4)}`
+    };
+    setMachines(prev => [machineWithId, ...prev.filter(m => m.id !== machineWithId.id)]);
+    savePrintingMachineToSupabase(machineWithId);
   };
 
   const handleUpdateMachine = (updatedMachine) => {
@@ -503,10 +600,36 @@ export default function App() {
     setInventory(newInventory);
     if (Array.isArray(newInventory)) {
       try {
-        await Promise.all(newInventory.map(item => saveInventoryItemToSupabase(item)));
+        await saveInventoryBatchToSupabase(newInventory);
       } catch (err) {
-        console.warn("[Sync Notice] Inventory updated locally. Supabase notice:", err);
+        console.warn("[Sync Notice] Inventory updated. Supabase notice:", err);
       }
+    }
+  };
+
+  const handleSaveInventoryItem = async (item) => {
+    if (!item) return;
+    setInventory(prev => {
+      const exists = prev.some(i => String(i.id) === String(item.id));
+      if (exists) {
+        return prev.map(i => String(i.id) === String(item.id) ? { ...i, ...item } : i);
+      }
+      return [item, ...prev];
+    });
+    try {
+      await saveInventoryItemToSupabase(item);
+    } catch (err) {
+      console.warn("[Sync Notice] Inventory item saved. Supabase notice:", err);
+    }
+  };
+
+  const handleDeleteInventoryItem = async (itemId) => {
+    if (!itemId) return;
+    setInventory(prev => prev.filter(i => String(i.id) !== String(itemId)));
+    try {
+      await deleteInventoryItemFromSupabase(itemId);
+    } catch (err) {
+      console.warn("[Sync Notice] Inventory item deleted. Supabase notice:", err);
     }
   };
 
@@ -1195,6 +1318,8 @@ export default function App() {
             onAddGRN={handleAddGRN}
             onUpdateGRN={handleUpdateGRN}
             onUpdateInventory={handleUpdateInventory}
+            onSaveInventoryItem={handleSaveInventoryItem}
+            onDeleteInventoryItem={handleDeleteInventoryItem}
             onAddVendor={handleAddVendor}
             inventoryRolls={inventoryRolls}
             dispatchShipments={dispatchShipments}
@@ -1210,6 +1335,7 @@ export default function App() {
             userName={currentUser?.name || "Samyak Jain"}
             vendors={vendors}
             orders={orders}
+            machines={machines}
           />
         )}
 
@@ -1256,7 +1382,11 @@ export default function App() {
 
         {/* TAB 11: LETTERHEAD & SIGNATURE SETTINGS */}
         {activeTab === 'doc_settings' && (
-          <DocumentSettings />
+          <DocumentSettings
+            machines={machines}
+            onSaveMachine={handleSaveMachine}
+            onDeleteMachine={handleDeleteMachine}
+          />
         )}
       </div>
     </div>
