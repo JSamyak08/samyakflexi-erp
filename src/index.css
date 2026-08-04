@@ -1263,4 +1263,140 @@ body {
   font-weight: 500;
 }
 
+/* ========================================================================== */
+/* RESPONSIVE LAYOUT SYSTEM & MEDIA QUERIES (MOBILE, TABLET & DESKTOP) */
+/* ========================================================================== */
+
+/* Grid Utility Classes */
+.form-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.form-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.form-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.form-group-full {
+  grid-column: 1 / -1;
+}
+
+.kpi-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.kpi-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Tablet (Screens <= 1024px) */
+@media (max-width: 1024px) {
+  .app-container {
+    flex-direction: column;
+  }
+  
+  .sidebar {
+    width: 100% !important;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+    padding: 12px 16px;
+    gap: 12px;
+  }
+
+  .main-content {
+    padding: 16px 20px !important;
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .kpi-grid-4 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  .form-grid-4 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  .form-grid-2 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  .form-grid {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) !important;
+  }
+}
+
+/* Mobile Devices (Screens <= 768px) */
+@media (max-width: 768px) {
+  .main-content {
+    padding: 12px 12px !important;
+  }
+
+  .glass-panel, .erp-panel {
+    padding: 14px !important;
+  }
+
+  .kpi-grid-4, .kpi-grid-3 {
+    grid-template-columns: 1fr !important;
+  }
+
+  .form-grid-4, .form-grid-3, .form-grid-2, .form-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .form-group-full {
+    grid-column: span 1 !important;
+  }
+
+  /* Form control fixes */
+  .form-control, select.form-control, input.form-control, textarea.form-control {
+    width: 100% !important;
+    max-width: 100% !important;
+    font-size: 14px !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Header adjustments */
+  .header h1 {
+    font-size: 1.25rem !important;
+  }
+
+  .data-table th, .data-table td {
+    padding: 8px 10px !important;
+    font-size: 0.78rem !important;
+  }
+
+  /* Modal overlay on mobile */
+  .modal-content {
+    width: 95% !important;
+    max-width: 100% !important;
+    margin: 10px !important;
+    padding: 16px !important;
+  }
+}
+
 

@@ -406,7 +406,7 @@ export default function SalesManagement({
       </div>
 
       {/* Analytics KPI Metric Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
+      <div className="kpi-grid-4">
         <div className="glass-panel" style={{ padding: '20px' }}>
           <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: '700' }}>TOTAL SALES QUOTATIONS</div>
           <div style={{ fontSize: '1.6rem', fontWeight: '900', color: 'var(--primary-brand)', marginTop: '4px' }}>
@@ -652,7 +652,7 @@ export default function SalesManagement({
           </div>
 
           {/* Quotation Header Row */}
-          <div className="form-grid" style={{ marginBottom: '20px' }}>
+          <div className="form-grid-4" style={{ marginBottom: '20px' }}>
             <div>
               <label className="form-label">Quotation Number *</label>
               <input 
@@ -706,7 +706,7 @@ export default function SalesManagement({
               <Building2 size={16} /> Customer / Client Details (Auto-linked Directory)
             </h4>
 
-            <div className="form-grid">
+            <div className="form-grid-2">
               <div>
                 <label className="form-label">Select Customer (Client Directory) *</label>
                 <select 
@@ -753,7 +753,7 @@ export default function SalesManagement({
                 />
               </div>
 
-              <div style={{ gridColumn: 'span 2' }}>
+              <div className="form-group-full">
                 <label className="form-label">Customer Registered Address *</label>
                 <input 
                   type="text" 
@@ -764,7 +764,7 @@ export default function SalesManagement({
                 />
               </div>
 
-              <div style={{ gridColumn: 'span 2' }}>
+              <div className="form-group-full">
                 <label className="form-label">Contact Email Address</label>
                 <input 
                   type="email" 
@@ -933,7 +933,7 @@ export default function SalesManagement({
               💳 Commercial & Logistics Terms
             </h4>
 
-            <div className="form-grid">
+            <div className="form-grid-2">
               <div>
                 <label className="form-label">Payment Terms *</label>
                 <input 
@@ -956,7 +956,7 @@ export default function SalesManagement({
                 />
               </div>
 
-              <div style={{ gridColumn: 'span 2' }}>
+              <div className="form-group-full">
                 <label className="form-label">Transportation & Freight Terms *</label>
                 <input 
                   type="text" 
@@ -967,7 +967,7 @@ export default function SalesManagement({
                 />
               </div>
 
-              <div style={{ gridColumn: 'span 2' }}>
+              <div className="form-group-full">
                 <label className="form-label">Special Comments / Notes for Client</label>
                 <textarea 
                   className="form-control" 
