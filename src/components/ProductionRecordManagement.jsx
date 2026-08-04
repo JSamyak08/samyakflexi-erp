@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   FileSpreadsheet, 
   Plus, 
@@ -20,7 +20,8 @@ import {
   Barcode,
   Printer,
   Play,
-  Scan
+  Scan,
+  Lock
 } from 'lucide-react';
 import WeighingScaleInput from './WeighingScaleInput';
 import BarcodePrinterModal from './BarcodePrinterModal';
@@ -418,7 +419,8 @@ export default function ProductionRecordManagement({
                   <th>Date Filled</th>
                   <th>Net Produced (kg)</th>
                   <th>Material Cost (₹)</th>
-                  <th>Final Production Cost (₹)</th>
+                  <th>Final Cost (₹)</th>
+                  {isAdmin && <th>Profitability & Margin (Admin Only)</th>}
                   <th>Approval Status</th>
                   <th>Actions</th>
                 </tr>
@@ -426,46 +428,68 @@ export default function ProductionRecordManagement({
               <tbody>
                 {filteredRecords.length === 0 ? (
                   <tr>
-                    <td colSpan="8" style={{ textCenter: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+                    <td colSpan={isAdmin ? "9" : "8"} style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
                       No production records found. Click "Fill New Production Record" to create one.
                     </td>
                   </tr>
                 ) : (
-                  filteredRecords.map(rec => (
-                    <tr key={rec.id}>
-                      <td style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>{rec.orderId}</td>
-                      <td>
-                        <div style={{ fontWeight: '600' }}>{rec.jobName}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{rec.clientName} • <span style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>{rec.jobMasterId || 'JM-2026-089'}</span></div>
-                      </td>
-                      <td>{rec.dateFilled}</td>
-                      <td style={{ fontWeight: '600' }}>{(rec.totalProductionQtyKg ?? 0).toLocaleString()} kg</td>
-                      <td>₹ {(rec.totalMaterialCostRs ?? 0).toLocaleString()}</td>
-                      <td style={{ fontWeight: '700', color: '#047857' }}>₹ {(rec.finalProductionCostRs ?? 0).toLocaleString()}</td>
-                      <td>
-                        {rec.status === 'Approved by Admin' ? (
-                          <span className="badge badge-us">
-                            <CheckCircle2 size={12} /> Approved by Admin
-                          </span>
-                        ) : rec.status === 'Filled by Plant Manager' ? (
-                          <span className="badge badge-warning">
-                            <Clock size={12} /> Pending Admin Approval
-                          </span>
-                        ) : (
-                          <span className="badge badge-client">Draft</span>
+                  filteredRecords.map(rec => {
+                    const linkedOrder = orders.find(o => o.id === rec.orderId || o.jobName === rec.jobName) || {};
+                    const sellingPrice = linkedOrder.sellingPricePerKg || 245;
+                    const revenue = Math.round((rec.totalProductionQtyKg || 1000) * sellingPrice);
+                    const actualCost = rec.finalProductionCostRs || 0;
+                    const profitRs = revenue - actualCost;
+                    const marginPct = revenue > 0 ? ((profitRs / revenue) * 100).toFixed(1) : 0;
+
+                    return (
+                      <tr key={rec.id}>
+                        <td style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>{rec.orderId}</td>
+                        <td>
+                          <div style={{ fontWeight: '600' }}>{rec.jobName}</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{rec.clientName} • <span style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>{rec.jobMasterId || 'JM-2026-089'}</span></div>
+                        </td>
+                        <td>{rec.dateFilled}</td>
+                        <td style={{ fontWeight: '600' }}>{(rec.totalProductionQtyKg ?? 0).toLocaleString()} kg</td>
+                        <td>₹ {(rec.totalMaterialCostRs ?? 0).toLocaleString()}</td>
+                        <td style={{ fontWeight: '700', color: '#047857' }}>₹ {(rec.finalProductionCostRs ?? 0).toLocaleString()}</td>
+                        
+                        {/* Admin Only Profitability Column */}
+                        {isAdmin && (
+                          <td>
+                            <div style={{ fontWeight: '800', color: profitRs > 0 ? '#047857' : '#dc2626', fontSize: '0.85rem' }}>
+                              ₹ {profitRs.toLocaleString('en-IN')} ({marginPct}%)
+                            </div>
+                            <span className={`badge ${marginPct >= 15 ? 'badge-success' : marginPct >= 5 ? 'badge-info' : 'badge-danger'}`} style={{ fontSize: '0.7rem', padding: '1px 6px' }}>
+                              {marginPct >= 15 ? 'HIGH MARGIN' : marginPct >= 5 ? 'MODERATE' : 'THIN / LOSS'}
+                            </span>
+                          </td>
                         )}
-                      </td>
-                      <td>
-                        <button 
-                          className="btn-secondary" 
-                          style={{ padding: '4px 10px', fontSize: '0.75rem' }}
-                          onClick={() => setSelectedRecord(rec)}
-                        >
-                          View Record
-                        </button>
-                      </td>
-                    </tr>
-                  ))
+
+                        <td>
+                          {rec.status === 'Approved by Admin' ? (
+                            <span className="badge badge-us">
+                              <CheckCircle2 size={12} /> Approved by Admin
+                            </span>
+                          ) : rec.status === 'Filled by Plant Manager' ? (
+                            <span className="badge badge-warning">
+                              <Clock size={12} /> Pending Admin Approval
+                            </span>
+                          ) : (
+                            <span className="badge badge-client">Draft</span>
+                          )}
+                        </td>
+                        <td>
+                          <button 
+                            className="btn-secondary" 
+                            style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                            onClick={() => setSelectedRecord(rec)}
+                          >
+                            View Record
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -567,29 +591,165 @@ export default function ProductionRecordManagement({
             </tbody>
           </table>
 
-          {/* Summary Calculation Footer Card */}
-          <div className="glass-card" style={{ background: '#f8fafc', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', padding: '20px' }}>
-            <div>
-              <span className="stats-title">Total Material Issued / Consumed</span>
-              <div style={{ fontSize: '1.4rem', fontWeight: '800', marginTop: '4px' }}>
-                {(selectedRecord.totalProductionQtyKg ?? 0).toLocaleString()} <span style={{ fontSize: '0.9rem' }}>kg</span>
+          {/* ========================================================================= */}
+          {/* ADMIN ROLE ONLY: FINANCIAL PROFITABILITY & COST VARIANCE ANALYSIS */}
+          {/* ========================================================================= */}
+          {isAdmin ? (
+            <div className="glass-panel" style={{ marginTop: '24px', padding: '24px', background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)', border: '1px solid #cbd5e1', borderRadius: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #cbd5e1', paddingBottom: '12px' }}>
+                <div>
+                  <h4 style={{ fontSize: '1.15rem', fontWeight: '800', color: 'var(--primary-brand)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <DollarSign size={20} /> Admin Financial Profitability & Cost Variance Report
+                  </h4>
+                  <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                    Quoted Pre-Costing Target vs Post-Production Actual Material & Operating Costs
+                  </p>
+                </div>
+                <span className="badge badge-info" style={{ fontSize: '0.8rem', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <Lock size={12} /> Visible Only to Admin Role
+                </span>
               </div>
-            </div>
 
-            <div>
-              <span className="stats-title">Total Ingredients Cost</span>
-              <div style={{ fontSize: '1.4rem', fontWeight: '800', color: 'var(--text-primary)', marginTop: '4px' }}>
-                ₹ {selectedRecord.totalMaterialCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-              </div>
-            </div>
+              {(() => {
+                // Calculate Profitability & Variances for this job
+                const linkedOrder = orders.find(o => o.id === selectedRecord.orderId || o.jobName === selectedRecord.jobName) || orders[0] || {};
+                const preCosting = linkedOrder.calculationDetails || {};
 
-            <div style={{ borderLeft: '2px solid #cbd5e1', paddingLeft: '20px' }}>
-              <span className="stats-title" style={{ color: '#047857' }}>FINAL COST OF PRODUCTION</span>
-              <div style={{ fontSize: '1.6rem', fontWeight: '900', color: '#047857', marginTop: '4px' }}>
-                ₹ {selectedRecord.finalProductionCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-              </div>
+                const sellingPricePerKg = linkedOrder.sellingPricePerKg || 245;
+                const actualQtyKg = selectedRecord.totalProductionQtyKg || 1000;
+                const targetOrderQtyKg = linkedOrder.quantityKg || linkedOrder.jobQuantityKg || actualQtyKg;
+
+                const totalGrossRevenue = Math.round(actualQtyKg * sellingPricePerKg);
+                const actualProductionCost = selectedRecord.finalProductionCostRs || 0;
+                const netProfitRs = totalGrossRevenue - actualProductionCost;
+                const profitMarginPct = totalGrossRevenue > 0 ? ((netProfitRs / totalGrossRevenue) * 100).toFixed(1) : 0;
+
+                // Quoted Pre-Costing Target
+                const estRawMaterialCost = preCosting.summary?.totalRawMaterialCost || (targetOrderQtyKg * 140);
+                const estProcessingCost = targetOrderQtyKg * (selectedRecord.processingCostRs ? (selectedRecord.processingCostRs / actualQtyKg) : 25);
+                const estTotalCost = estRawMaterialCost + estProcessingCost;
+
+                const costVarianceRs = actualProductionCost - estTotalCost;
+                const costVariancePct = estTotalCost > 0 ? ((costVarianceRs / estTotalCost) * 100).toFixed(1) : 0;
+
+                const isHighProfit = profitMarginPct >= 20;
+                const isModerateProfit = profitMarginPct >= 10 && profitMarginPct < 20;
+                const isLowProfit = profitMarginPct >= 0 && profitMarginPct < 10;
+
+                return (
+                  <div>
+                    {/* Key Metric KPI Cards */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
+                      <div className="glass-card" style={{ padding: '16px', background: '#ffffff' }}>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: '700' }}>CONTRACT REVENUE</div>
+                        <div style={{ fontSize: '1.3rem', fontWeight: '900', color: '#0284c7', marginTop: '4px' }}>
+                          ₹ {totalGrossRevenue.toLocaleString('en-IN')}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          Selling Rate: ₹ {sellingPricePerKg}/kg
+                        </div>
+                      </div>
+
+                      <div className="glass-card" style={{ padding: '16px', background: '#ffffff' }}>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: '700' }}>QUOTED TARGET COST</div>
+                        <div style={{ fontSize: '1.3rem', fontWeight: '800', color: 'var(--text-primary)', marginTop: '4px' }}>
+                          ₹ {Math.round(estTotalCost).toLocaleString('en-IN')}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          Pre-Cost Rate: ₹ {(estTotalCost / (targetOrderQtyKg || 1)).toFixed(2)}/kg
+                        </div>
+                      </div>
+
+                      <div className="glass-card" style={{ padding: '16px', background: '#ffffff' }}>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: '700' }}>ACTUAL PRODUCTION COST</div>
+                        <div style={{ fontSize: '1.3rem', fontWeight: '900', color: costVarianceRs > 0 ? '#b91c1c' : '#047857', marginTop: '4px' }}>
+                          ₹ {Math.round(actualProductionCost).toLocaleString('en-IN')}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: costVarianceRs > 0 ? '#dc2626' : '#059669', marginTop: '2px', fontWeight: '700' }}>
+                          Variance: {costVarianceRs > 0 ? `+₹ ${Math.round(costVarianceRs).toLocaleString()} (+${costVariancePct}%)` : `-₹ ${Math.abs(Math.round(costVarianceRs)).toLocaleString()} (${costVariancePct}%)`}
+                        </div>
+                      </div>
+
+                      <div className="glass-card" style={{ padding: '16px', background: isHighProfit ? '#ecfdf5' : isModerateProfit ? '#f0f9ff' : isLowProfit ? '#fffbeb' : '#fef2f2', border: `1px solid ${isHighProfit ? '#a7f3d0' : isModerateProfit ? '#bae6fd' : isLowProfit ? '#fde68a' : '#fca5a5'}` }}>
+                        <div style={{ fontSize: '0.78rem', color: isHighProfit ? '#065f46' : isModerateProfit ? '#0369a1' : isLowProfit ? '#92400e' : '#991b1b', fontWeight: '800' }}>NET PROFIT / MARGIN</div>
+                        <div style={{ fontSize: '1.3rem', fontWeight: '900', color: isHighProfit ? '#047857' : isModerateProfit ? '#0284c7' : isLowProfit ? '#b45309' : '#dc2626', marginTop: '4px' }}>
+                          ₹ {Math.round(netProfitRs).toLocaleString('en-IN')} ({profitMarginPct}%)
+                        </div>
+                        <div style={{ marginTop: '4px' }}>
+                          <span className={`badge ${isHighProfit ? 'badge-success' : isModerateProfit ? 'badge-info' : isLowProfit ? 'badge-warning' : 'badge-danger'}`} style={{ fontSize: '0.72rem', padding: '2px 8px' }}>
+                            {isHighProfit ? '🟢 HIGH PROFIT (+20%+)' : isModerateProfit ? '🔵 GOOD MARGIN (10-20%)' : isLowProfit ? '🟡 THIN MARGIN (<10%)' : '🔴 COST OVERRUN / LOSS'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Variance Breakdown Table */}
+                    <h5 style={{ fontSize: '0.92rem', fontWeight: '800', marginBottom: '10px', color: 'var(--text-primary)' }}>
+                      📊 Cost Element Variance Breakdown
+                    </h5>
+                    <table className="data-table" style={{ background: '#ffffff' }}>
+                      <thead>
+                        <tr style={{ background: '#f8fafc' }}>
+                          <th>Cost Component</th>
+                          <th>Pre-Costing Quoted Target (₹)</th>
+                          <th>Post-Production Actual (₹)</th>
+                          <th>Cost Variance Delta (₹)</th>
+                          <th>Variance Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          const materials = selectedRecord.materialsList || [];
+                          const filmsCost = materials.filter(m => (m.filmType || '').includes('Film')).reduce((a, b) => a + (b.totalMaterialCost || 0), 0);
+                          const inksSolventsCost = materials.filter(m => (m.filmType || '').includes('Ink') || (m.filmType || '').includes('Solvent')).reduce((a, b) => a + (b.totalMaterialCost || 0), 0);
+                          const adhesiveCost = materials.filter(m => (m.filmType || '').includes('Adhesive') || (m.filmType || '').includes('Hardener')).reduce((a, b) => a + (b.totalMaterialCost || 0), 0);
+
+                          const estFilmCost = preCosting.summary?.totalFilmGrossKg ? (preCosting.summary.totalFilmGrossKg * 130) : (filmsCost * 0.95);
+                          const estInkCost = preCosting.inkDetails?.grossKg ? (preCosting.inkDetails.grossKg * 1500) : (inksSolventsCost * 0.95);
+                          const estAdhesiveCost = preCosting.adhesiveDetails?.grossKg ? (preCosting.adhesiveDetails.grossKg * 270) : (adhesiveCost * 0.95);
+                          const estProcCost = targetOrderQtyKg * 25;
+                          const actualProcCost = selectedRecord.processingCostRs || (actualQtyKg * 25);
+
+                          const rows = [
+                            { label: "Film Substrates (PET / LDPE / BOPP)", est: Math.round(estFilmCost), act: Math.round(filmsCost) },
+                            { label: "Printing Inks & Solvents", est: Math.round(estInkCost), act: Math.round(inksSolventsCost) },
+                            { label: "Lamination Adhesives & Hardeners", est: Math.round(estAdhesiveCost), act: Math.round(adhesiveCost) },
+                            { label: "Machine Processing & Conversion Overhead", est: Math.round(estProcCost), act: Math.round(actualProcCost) }
+                          ];
+
+                          return rows.map((r, idx) => {
+                            const delta = r.act - r.est;
+                            const deltaPct = r.est > 0 ? ((delta / r.est) * 100).toFixed(1) : 0;
+                            const isOver = delta > 0;
+
+                            return (
+                              <tr key={idx}>
+                                <td style={{ fontWeight: '700' }}>{r.label}</td>
+                                <td>₹ {r.est.toLocaleString()}</td>
+                                <td style={{ fontWeight: '700' }}>₹ {r.act.toLocaleString()}</td>
+                                <td style={{ fontWeight: '800', color: isOver ? '#dc2626' : '#059669' }}>
+                                  {isOver ? `+₹ ${delta.toLocaleString()} (+${deltaPct}%)` : `${delta.toLocaleString()} (${deltaPct}%)`}
+                                </td>
+                                <td>
+                                  <span className={`badge ${isOver ? 'badge-danger' : 'badge-success'}`} style={{ fontSize: '0.72rem' }}>
+                                    {isOver ? '🔺 COST OVERRUN' : '🟢 SAVING / WITHIN BUDGET'}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          });
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
             </div>
-          </div>
+          ) : (
+            <div style={{ marginTop: '20px', padding: '14px 18px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Lock size={16} /> <span>Financial Profitability, Revenue Margins & Cost Variance reports are restricted to the <b>Admin Role</b>.</span>
+            </div>
+          )}
         </div>
       )}
 

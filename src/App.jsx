@@ -727,14 +727,6 @@ export default function App() {
           </div>
 
           <div 
-            className={`nav-item ${activeTab === 'job_datasheet' ? 'active' : ''}`}
-            onClick={() => handleTabChange('job_datasheet')}
-          >
-            <FileSpreadsheet size={18} />
-            Job Data Sheet & Profitability
-          </div>
-
-          <div 
             className={`nav-item ${activeTab === 'clients' ? 'active' : ''}`}
             onClick={() => handleTabChange('clients')}
           >
@@ -841,7 +833,6 @@ export default function App() {
               {activeTab === 'production_records' && 'Job Production Records & Approval Workflow'}
               {activeTab === 'job_punching' && 'Order Confirmation & Job Punching'}
               {activeTab === 'orders' && 'Order Management & PO Issuance'}
-              {activeTab === 'job_datasheet' && 'Job Data Sheet & Pre vs Post Costing'}
               {activeTab === 'job_masters' && 'Job Master Technical Directory & Specs'}
               {activeTab === 'clients' && 'Client Onboarding & Directory'}
               {activeTab === 'vendors' && 'Vendor Onboarding & Directory'}
@@ -1160,18 +1151,6 @@ export default function App() {
             onDeleteOrder={handleDeleteOrder}
             onNavigateToPunching={() => handleTabChange('job_punching')}
             onNavigateToProductionRecords={() => handleTabChange('production_records')}
-          />
-        )}
-
-
-        {/* TAB 4: JOB DATA SHEET & PRE VS POST PROFITABILITY */}
-        {activeTab === 'job_datasheet' && (
-          <JobDataSheet 
-            orders={orders}
-            jobDataSheets={jobDataSheets}
-            currentUser={currentUser}
-            onSaveJobDataSheet={handleAddJobDataSheet}
-            onDeleteJobDataSheet={handleDeleteJobDataSheet}
           />
         )}
 
