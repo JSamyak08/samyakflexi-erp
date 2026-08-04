@@ -292,13 +292,19 @@ export default function InventoryManagement({
   const [issueJobName, setIssueJobName] = useState(orders[0]?.jobName || '');
   const [stockSearchTerm, setStockSearchTerm] = useState('');
 
+  // Stock Register Directory Filter State
+  const [stockCategoryFilter, setStockCategoryFilter] = useState('ALL');
+
   // Inward GRN Form State
   const [grnVendor, setGrnVendor] = useState(vendors[0]?.companyName || '');
   const [grnPoNo, setGrnPoNo] = useState('PO-2026-042');
   const [grnInvoiceNo, setGrnInvoiceNo] = useState('');
+  const [grnCategory, setGrnCategory] = useState('Film Substrates');
+  const [grnItemName, setGrnItemName] = useState('');
   const [grnFilmType, setGrnFilmType] = useState('PET');
   const [grnMicron, setGrnMicron] = useState(12);
   const [grnWidthMm, setGrnWidthMm] = useState(1000);
+  const [grnUnit, setGrnUnit] = useState('Kg');
   const [grnRolls, setGrnRolls] = useState(10);
   const [grnWeightKg, setGrnWeightKg] = useState(1500);
   const [grnBatchNo, setGrnBatchNo] = useState('');
@@ -375,7 +381,7 @@ export default function InventoryManagement({
 
   const isRecDue = isReconciliationDue("2026-07-24");
 
-  // Inward GRN Submit
+  // Inward GRN Submit (Supports Films, Inks, Solvents, Adhesives, Blades, Spares, PPE)
   const handleSaveGRN = (e) => {
     e.preventDefault();
     if (!grnInvoiceNo.trim() || !grnBatchNo.trim()) {
@@ -383,19 +389,27 @@ export default function InventoryManagement({
       return;
     }
 
+    const isFilm = grnCategory === 'Film Substrates';
+    const itemName = isFilm 
+      ? `${grnFilmType} ${grnMicron}µ (${grnWidthMm}mm)` 
+      : (grnItemName.trim() || `${grnCategory} Inward Item`);
+
     const newGRN = {
       grnNo: `GRN-2026-${Math.floor(100 + Math.random() * 900)}`,
       poNumber: grnPoNo,
       vendorName: grnVendor,
       invoiceNo: grnInvoiceNo,
       receivedDate: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
-      filmType: grnFilmType,
-      micron: parseFloat(grnMicron),
-      widthMm: parseFloat(grnWidthMm),
-      rollsReceived: parseInt(grnRolls),
-      netWeightKg: parseFloat(grnWeightKg),
+      category: grnCategory,
+      itemName: itemName,
+      filmType: isFilm ? grnFilmType : grnCategory,
+      micron: isFilm ? parseFloat(grnMicron) : '-',
+      widthMm: isFilm ? parseFloat(grnWidthMm) : '-',
+      unit: isFilm ? 'Kg' : grnUnit,
+      rollsReceived: isFilm ? parseInt(grnRolls) : 1,
+      netWeightKg: parseFloat(grnWeightKg) || 0,
       batchNo: grnBatchNo,
-      status: "Pending QC", // Goes to QC
+      status: "Pending QC", // Goes to Store QC Verification
       qcNotes: "",
       inspectedBy: "",
       storeManager: "Store Mgr Dilip Joshi"
@@ -405,15 +419,16 @@ export default function InventoryManagement({
       onAddGRN(newGRN);
     }
 
-    // Generate Raw Material Barcode Roll (Scale #1 Inward Station)
+    // Generate Inward Barcode Roll / Consumable Tag
     const newRoll = {
-      barcodeId: generateBarcodeId('RM-BC'),
-      rollType: 'RAW_MATERIAL',
+      barcodeId: generateBarcodeId(isFilm ? 'RM-BC' : 'CON-BC'),
+      rollType: isFilm ? 'RAW_MATERIAL' : 'CONSUMABLE_ITEM',
       itemId: `INV-${Math.floor(100 + Math.random() * 900)}`,
-      itemName: `${grnFilmType} ${grnMicron}µ (${grnWidthMm}mm)`,
-      category: 'Film',
-      micron: parseFloat(grnMicron),
-      widthMm: parseFloat(grnWidthMm),
+      itemName: itemName,
+      category: grnCategory,
+      micron: isFilm ? parseFloat(grnMicron) : '-',
+      widthMm: isFilm ? parseFloat(grnWidthMm) : '-',
+      unit: isFilm ? 'Kg' : grnUnit,
       inwardDatetime: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
       vendorName: grnVendor,
       invoiceNo: grnInvoiceNo,
@@ -421,7 +436,7 @@ export default function InventoryManagement({
       netWeightKg: parseFloat(grnWeightKg),
       availableWeightKg: parseFloat(grnWeightKg),
       stationId: 'SCALE_1_INWARD',
-      locationBay: 'Bay A',
+      locationBay: isFilm ? 'Bay A' : 'Consumables Store',
       status: 'In Stock'
     };
 
@@ -431,17 +446,17 @@ export default function InventoryManagement({
 
     setIsNewGRNModalOpen(false);
     setSelectedRollForBarcodeModal(newRoll);
-    alert(`GRN ${newGRN.grnNo} created! Raw Material Barcode ${newRoll.barcodeId} generated. Print thermal sticker label now.`);
+    alert(`Inward GRN ${newGRN.grnNo} created for ${grnCategory}! Inward Barcode ${newRoll.barcodeId} generated.`);
   };
 
-  // QC Approval / Rejection
+  // QC Approval / Rejection (Updates Stock for Films, Inks, Solvents, Adhesives, Spares, PPE)
   const handleQCAction = (status) => {
     if (!qcInspectingGRN) return;
 
     const updatedGRN = {
       ...qcInspectingGRN,
       status,
-      qcNotes: qcNotesInput || (status === 'Approved' ? 'Inspected and passed all laboratory parameters.' : 'Rejected due to gauge variation.'),
+      qcNotes: qcNotesInput || (status === 'Approved' ? 'Inspected and passed all laboratory parameters.' : 'Rejected due to spec variation.'),
       inspectedBy: 'QC Chemist Ramesh Kumar'
     };
 
@@ -449,11 +464,16 @@ export default function InventoryManagement({
       onUpdateGRN(updatedGRN);
     }
 
-    // If Approved, automatically add stock to Inventory!
+    // If Approved, automatically add stock to central Inventory!
     if (status === 'Approved' && onUpdateInventory) {
-      const existingInvIndex = inventory.findIndex(
-        i => i.filmType === updatedGRN.filmType && i.micron === updatedGRN.micron && i.widthMm === updatedGRN.widthMm
-      );
+      const isFilm = (updatedGRN.category || 'Film Substrates') === 'Film Substrates';
+
+      const existingInvIndex = inventory.findIndex(i => {
+        if (isFilm) {
+          return i.filmType === updatedGRN.filmType && i.micron === updatedGRN.micron && i.widthMm === updatedGRN.widthMm;
+        }
+        return (i.itemName || '').toLowerCase() === (updatedGRN.itemName || '').toLowerCase() || i.id === updatedGRN.itemId;
+      });
 
       if (existingInvIndex >= 0) {
         const updatedInv = [...inventory];
@@ -464,14 +484,18 @@ export default function InventoryManagement({
       } else {
         const newInvItem = {
           id: `INV-00${inventory.length + 1}`,
-          filmType: updatedGRN.filmType,
-          micron: updatedGRN.micron,
-          widthMm: updatedGRN.widthMm,
+          itemCode: `CON-INW-00${inventory.length + 1}`,
+          itemName: updatedGRN.itemName || `${updatedGRN.filmType} Inward Stock`,
+          category: updatedGRN.category || 'Film Substrates',
+          filmType: updatedGRN.filmType || 'Generic',
+          micron: updatedGRN.micron || '-',
+          widthMm: updatedGRN.widthMm || '-',
+          unit: updatedGRN.unit || 'Kg',
           density: FILM_DENSITIES[updatedGRN.filmType] || 1.0,
           availableQtyKg: updatedGRN.netWeightKg,
           allocatedQtyKg: 0,
-          location: "Bay A - Inward Dock",
-          reorderLevelKg: 1000,
+          location: isFilm ? "Bay A - Inward Dock" : "Consumables Store",
+          reorderLevelKg: 100,
           lastVendor: updatedGRN.vendorName,
           lastBatch: updatedGRN.batchNo
         };
@@ -743,16 +767,41 @@ export default function InventoryManagement({
       {activeTab === 'stock' && (
         <div className="glass-panel" style={{ padding: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '16px' }}>
-            <div style={{ position: 'relative', width: '300px' }}>
-              <Search size={18} style={{ position: 'absolute', left: '12px', top: '12px', color: 'var(--text-secondary)' }} />
-              <input 
-                type="text"
-                className="form-control"
-                style={{ paddingLeft: '38px' }}
-                placeholder="Search film type or rack bay..."
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-              />
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <div style={{ position: 'relative', width: '280px' }}>
+                <Search size={18} style={{ position: 'absolute', left: '12px', top: '12px', color: 'var(--text-secondary)' }} />
+                <input 
+                  type="text"
+                  className="form-control"
+                  style={{ paddingLeft: '38px' }}
+                  placeholder="Search item, code, vendor, rack..."
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                />
+              </div>
+
+              {/* Category Filter Dropdown */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Filter size={16} style={{ color: 'var(--text-secondary)' }} />
+                <select
+                  className="form-control"
+                  style={{ width: '240px', fontWeight: '700' }}
+                  value={stockCategoryFilter}
+                  onChange={e => setStockCategoryFilter(e.target.value)}
+                >
+                  <option value="ALL">🌐 All Inventory Item Categories</option>
+                  <option value="Film Substrates">Film Substrates (PET, LDPE, BOPP)</option>
+                  <option value="Printing Inks & Toners">Printing Inks & Toners</option>
+                  <option value="Chemicals & Solvents">Chemicals & Solvents</option>
+                  <option value="Adhesives & Hardener">Adhesives & Hardener</option>
+                  <option value="Doctor Blades & Wipers">Doctor Blades & Wipers</option>
+                  <option value="Rollers & Sleeves">Rollers & Sleeves</option>
+                  <option value="Machine Spare Parts">Machine Spare Parts</option>
+                  <option value="Lubricants & Oils">Lubricants & Oils</option>
+                  <option value="Tapes & Consumables">Tapes & Consumables</option>
+                  <option value="Safety Gear (PPE)">Safety Gear (PPE)</option>
+                </select>
+              </div>
             </div>
 
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
@@ -778,7 +827,7 @@ export default function InventoryManagement({
               </label>
 
               <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginLeft: '12px' }}>
-                Total Stock Volume: <b>{inventory.reduce((a, b) => a + b.availableQtyKg, 0).toLocaleString()} kg</b>
+                Total Items: <b>{filteredInventory.length} Listed</b>
               </div>
             </div>
           </div>
@@ -788,12 +837,11 @@ export default function InventoryManagement({
               <thead>
                 <tr>
                   <th>Inventory ID</th>
-                  <th>Film Substrate</th>
-                  <th>Micron (µ)</th>
-                  <th>Width (mm)</th>
-                  <th>Density</th>
-                  <th>Available Stock (Kg)</th>
-                  <th>Allocated to Jobs (Kg)</th>
+                  <th>Item Name & Code</th>
+                  <th>Category</th>
+                  <th>Specs / Gauge</th>
+                  <th>Available Stock</th>
+                  <th>Allocated Qty</th>
                   <th>Location Bay</th>
                   <th>Last Supplier & Batch</th>
                   <th>Status</th>
@@ -802,7 +850,11 @@ export default function InventoryManagement({
               </thead>
               <tbody>
                 {filteredInventory.map(item => {
-                  const isLow = item.availableQtyKg <= item.reorderLevelKg;
+                  const isLow = (item.availableQtyKg ?? 0) <= (item.reorderLevelKg ?? 100);
+                  const isFilm = (item.category || 'Film Substrates') === 'Film Substrates';
+                  const title = item.itemName || `${item.filmType} Film (${item.micron}µ x ${item.widthMm}mm)`;
+                  const unitStr = item.unit || 'kg';
+
                   return (
                     <tr key={item.id}>
                       <td style={{ fontWeight: '700', color: 'var(--accent-color)' }}>{item.id}</td>
@@ -823,16 +875,24 @@ export default function InventoryManagement({
                           onClick={() => setSelectedItemForPurchaseHistory(item)}
                           title="Click to view date-wise GRN Purchase & Receipt History"
                         >
-                          {item.filmType} Film ({item.micron}µ x {item.widthMm}mm)
+                          {title}
                         </button>
+                        {item.itemCode && (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{item.itemCode}</div>
+                        )}
                       </td>
-                      <td>{item.micron} µ</td>
-                      <td>{item.widthMm} mm</td>
-                      <td>{item.density}</td>
-                      <td style={{ fontSize: '1.1rem', fontWeight: '800', color: isLow ? '#ef4444' : '#34d399' }}>
-                        {(item.availableQtyKg ?? 0).toLocaleString()} kg
+                      <td>
+                        <span className="badge badge-info" style={{ fontSize: '0.75rem', fontWeight: '700' }}>
+                          {item.category || 'Film Substrates'}
+                        </span>
                       </td>
-                      <td style={{ color: 'var(--text-secondary)' }}>{(item.allocatedQtyKg ?? 0).toLocaleString()} kg</td>
+                      <td style={{ fontSize: '0.85rem' }}>
+                        {isFilm ? `${item.micron}µ × ${item.widthMm}mm` : (item.widthMm && item.widthMm !== '-' ? `${item.widthMm}mm` : '-')}
+                      </td>
+                      <td style={{ fontSize: '1.1rem', fontWeight: '800', color: isLow ? '#ef4444' : '#047857' }}>
+                        {(item.availableQtyKg ?? 0).toLocaleString()} {unitStr}
+                      </td>
+                      <td style={{ color: 'var(--text-secondary)' }}>{(item.allocatedQtyKg ?? 0).toLocaleString()} {unitStr}</td>
                       <td>{item.location}</td>
                       <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                         <div>{item.lastVendor}</div>
@@ -1468,6 +1528,27 @@ export default function InventoryManagement({
                   </select>
                 </div>
 
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>Inward Item Category *</label>
+                  <select 
+                    className="form-control" 
+                    style={{ fontWeight: '700' }}
+                    value={grnCategory} 
+                    onChange={e => setGrnCategory(e.target.value)}
+                  >
+                    <option value="Film Substrates">Film Substrates (PET, METPET, LDPE, BOPP, CPP, Foil)</option>
+                    <option value="Printing Inks & Toners">Printing Inks & Toners</option>
+                    <option value="Chemicals & Solvents">Chemicals & Solvents (Ethyl Acetate, Anilox Cleaner)</option>
+                    <option value="Adhesives & Hardener">Adhesives & Hardener (Solventless Comp A/B)</option>
+                    <option value="Doctor Blades & Wipers">Doctor Blades & Wipers</option>
+                    <option value="Rollers & Sleeves">Rollers & Sleeves</option>
+                    <option value="Machine Spare Parts">Machine Spare Parts</option>
+                    <option value="Lubricants & Oils">Lubricants & Oils</option>
+                    <option value="Tapes & Consumables">Tapes & Consumables (PTFE, Masking)</option>
+                    <option value="Safety Gear (PPE)">Safety Gear (PPE)</option>
+                  </select>
+                </div>
+
                 <div className="form-group">
                   <label>Ref PO Number</label>
                   <input type="text" className="form-control" value={grnPoNo} onChange={e => setGrnPoNo(e.target.value)} />
@@ -1478,37 +1559,80 @@ export default function InventoryManagement({
                   <input type="text" className="form-control" required placeholder="e.g. INV-FP-9904" value={grnInvoiceNo} onChange={e => setGrnInvoiceNo(e.target.value)} />
                 </div>
 
-                <div className="form-group">
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
                   <label>Manufacturer Batch / Heat # *</label>
                   <input type="text" className="form-control" required placeholder="e.g. BATCH-PET-991" value={grnBatchNo} onChange={e => setGrnBatchNo(e.target.value)} />
                 </div>
 
-                <div className="form-group">
-                  <label>Film Substrate</label>
-                  <select className="form-control" value={grnFilmType} onChange={e => setGrnFilmType(e.target.value)}>
-                    {Object.keys(FILM_DENSITIES).map(type => <option key={type} value={type}>{type}</option>)}
-                  </select>
-                </div>
+                {grnCategory === 'Film Substrates' ? (
+                  <>
+                    <div className="form-group">
+                      <label>Film Substrate</label>
+                      <select className="form-control" value={grnFilmType} onChange={e => setGrnFilmType(e.target.value)}>
+                        {Object.keys(FILM_DENSITIES).map(type => <option key={type} value={type}>{type}</option>)}
+                      </select>
+                    </div>
 
-                <div className="form-group">
-                  <label>Micron Gauge (µ)</label>
-                  <input type="number" className="form-control" value={grnMicron} onChange={e => setGrnMicron(e.target.value)} />
-                </div>
+                    <div className="form-group">
+                      <label>Micron Gauge (µ)</label>
+                      <input type="number" className="form-control" value={grnMicron} onChange={e => setGrnMicron(e.target.value)} />
+                    </div>
 
-                <div className="form-group">
-                  <label>Slit Width (mm)</label>
-                  <input type="number" className="form-control" value={grnWidthMm} onChange={e => setGrnWidthMm(e.target.value)} />
-                </div>
+                    <div className="form-group">
+                      <label>Slit Width (mm)</label>
+                      <input type="number" className="form-control" value={grnWidthMm} onChange={e => setGrnWidthMm(e.target.value)} />
+                    </div>
 
-                <div className="form-group">
-                  <label>Rolls Received</label>
-                  <input type="number" className="form-control" value={grnRolls} onChange={e => setGrnRolls(e.target.value)} />
-                </div>
+                    <div className="form-group">
+                      <label>Rolls Received</label>
+                      <input type="number" className="form-control" value={grnRolls} onChange={e => setGrnRolls(e.target.value)} />
+                    </div>
 
-                <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                  <label>Net Weight Inward (Kg) *</label>
-                  <input type="number" className="form-control" required value={grnWeightKg} onChange={e => setGrnWeightKg(e.target.value)} />
-                </div>
+                    <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                      <label>Net Weight Inward (Kg) *</label>
+                      <input type="number" step="any" className="form-control" required value={grnWeightKg} onChange={e => setGrnWeightKg(e.target.value)} />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                      <label>Item Description / Specification *</label>
+                      <input 
+                        type="text" 
+                        className="form-control" 
+                        required 
+                        placeholder="e.g. Process Cyan Ink / Ethyl Acetate Solvent / Doctor Blades 0.15mm" 
+                        value={grnItemName} 
+                        onChange={e => setGrnItemName(e.target.value)} 
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Unit of Measure *</label>
+                      <select className="form-control" value={grnUnit} onChange={e => setGrnUnit(e.target.value)}>
+                        <option value="Kg">Kg</option>
+                        <option value="Litres">Litres</option>
+                        <option value="Meters">Meters</option>
+                        <option value="Boxes">Boxes</option>
+                        <option value="Rolls">Rolls</option>
+                        <option value="Pcs">Pcs</option>
+                        <option value="Drums">Drums</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Inward Quantity Received ({grnUnit}) *</label>
+                      <input 
+                        type="number" 
+                        step="any"
+                        className="form-control" 
+                        required 
+                        value={grnWeightKg} 
+                        onChange={e => setGrnWeightKg(e.target.value)} 
+                      />
+                    </div>
+                  </>
+                )}
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
