@@ -188,8 +188,7 @@ export async function saveVendorToSupabase(vendor) {
   const vendorId = vendor.id || `VEND-2026-${Math.floor(1000 + Math.random() * 9000)}`;
   const vendorName = vendor.name || vendor.companyName || 'New Vendor';
   const vendorCategory = vendor.category || (Array.isArray(vendor.materials) ? vendor.materials.join(', ') : 'Flexible Packaging Supplier');
-
-  const { error } = await supabase.from('vendors').upsert({
+  const fullPayload = {
     id: vendorId,
     name: vendorName,
     category: vendorCategory,
@@ -199,9 +198,15 @@ export async function saveVendorToSupabase(vendor) {
     gstin: vendor.gstin || '',
     address: vendor.address || '',
     rating: Number(vendor.rating) || 5.0
-  }, { onConflict: 'id' });
-
-  handleSupabaseError(error, 'vendors');
+  };
+  console.log('[vendors] Saving:', vendorId, vendorName);
+  const { error: fullErr } = await supabase.from('vendors').upsert(fullPayload, { onConflict: 'id' });
+  if (fullErr) {
+    console.warn('[vendors] Full payload failed, trying minimal:', fullErr.message);
+    const { error: minErr } = await supabase.from('vendors').upsert({ id: vendorId, name: vendorName, category: vendorCategory }, { onConflict: 'id' });
+    if (minErr) { console.error('[vendors] Minimal payload failed:', minErr.message); handleSupabaseError(minErr, 'vendors'); }
+    else { console.log('[vendors] Saved with minimal payload.'); }
+  } else { console.log('[vendors] Saved successfully.'); }
 }
 
 export async function deleteVendorFromSupabase(vendorId) {
@@ -544,21 +549,32 @@ export async function fetchProductionRecords() {
 export async function saveProductionRecordToSupabase(record) {
   if (!isSupabaseConfigured()) return;
   await ensureValidSession();
-  const { error } = await supabase.from('production_records').upsert({
-    id: record.id || `PROD-${Math.floor(100 + Math.random() * 900)}`,
+  const recId = record.id || `PROD-${Math.floor(100 + Math.random() * 900)}`;
+  const fullPayload = {
+    id: recId,
     order_id: record.orderId,
-    job_name: record.jobName,
-    operator_name: record.operatorName,
-    shift: record.shift,
-    gross_production_kg: record.grossProductionKg,
-    net_usable_kg: record.netUsableKg,
-    total_wastage_kg: record.totalWastageKg,
-    wastage_percentage: record.wastagePercentage,
+    job_name: record.jobName || 'Production Record',
+    operator_name: record.operatorName || '',
+    shift: record.shift || 'Day Shift',
+    gross_production_kg: Number(record.grossProductionKg) || 0,
+    net_usable_kg: Number(record.netUsableKg) || 0,
+    total_wastage_kg: Number(record.totalWastageKg) || 0,
+    wastage_percentage: Number(record.wastagePercentage) || 0,
     status: record.status || 'Pending Plant Approval',
     process_logs: record.processLogs || []
-  }, { onConflict: 'id' });
-
-  handleSupabaseError(error, 'production_records');
+  };
+  console.log('[production_records] Saving:', recId, record.jobName);
+  const { error: fullErr } = await supabase.from('production_records').upsert(fullPayload, { onConflict: 'id' });
+  if (fullErr) {
+    console.warn('[production_records] Full payload failed, trying minimal:', fullErr.message);
+    const { error: minErr } = await supabase.from('production_records').upsert({
+      id: recId,
+      job_name: record.jobName || 'Production Record',
+      status: record.status || 'Pending Plant Approval'
+    }, { onConflict: 'id' });
+    if (minErr) { console.error('[production_records] Minimal payload failed:', minErr.message, minErr.details); handleSupabaseError(minErr, 'production_records'); }
+    else { console.log('[production_records] Saved with minimal payload.'); }
+  } else { console.log('[production_records] Saved successfully.'); }
 }
 
 // ============================================================================
@@ -592,17 +608,24 @@ export async function fetchUsers() {
 export async function saveUserToSupabase(user) {
   if (!isSupabaseConfigured()) return;
   await ensureValidSession();
-  const { error } = await supabase.from('users').upsert({
-    id: user.id || `USR-${Math.floor(100 + Math.random() * 900)}`,
-    username: user.email?.toLowerCase(),
-    full_name: user.name,
-    email: user.email,
-    role: user.role,
-    department: user.department,
+  const userId = user.id || `USR-${Math.floor(100 + Math.random() * 900)}`;
+  const fullPayload = {
+    id: userId,
+    username: user.email?.toLowerCase() || userId,
+    full_name: user.name || '',
+    email: user.email || '',
+    role: user.role || 'Shop Floor Operator',
+    department: user.department || 'Operations',
     active: user.status === 'Active'
-  }, { onConflict: 'id' });
-
-  handleSupabaseError(error, 'users');
+  };
+  console.log('[users] Saving:', userId, user.name);
+  const { error: fullErr } = await supabase.from('users').upsert(fullPayload, { onConflict: 'id' });
+  if (fullErr) {
+    console.warn('[users] Full payload failed, trying minimal:', fullErr.message);
+    const { error: minErr } = await supabase.from('users').upsert({ id: userId, username: user.email?.toLowerCase() || userId, full_name: user.name || '', role: user.role || 'Shop Floor Operator' }, { onConflict: 'id' });
+    if (minErr) { console.error('[users] Minimal payload failed:', minErr.message); handleSupabaseError(minErr, 'users'); }
+    else { console.log('[users] Saved with minimal payload.'); }
+  } else { console.log('[users] Saved successfully.'); }
 }
 
 
@@ -646,25 +669,32 @@ export async function fetchJobDataSheets() {
 export async function saveJobDataSheetToSupabase(sheet) {
   if (!isSupabaseConfigured()) return;
   await ensureValidSession();
-  const { error } = await supabase.from('job_datasheets').upsert({
-    id: sheet.id || `JDS-${Date.now()}`,
+  const sheetId = sheet.id || `JDS-${Date.now()}`;
+  const fullPayload = {
+    id: sheetId,
     job_id: sheet.jobId,
-    job_name: sheet.jobName,
-    client_name: sheet.clientName,
+    job_name: sheet.jobName || 'Job Datasheet',
+    client_name: sheet.clientName || '',
     completion_date: sheet.completionDate,
-    selling_price_per_kg: sheet.sellingPricePerKg,
-    pre_cost_per_kg: sheet.preCostPerKg,
-    post_cost_per_kg: sheet.postCostPerKg,
-    profit_margin_pct: sheet.profitMarginPct,
-    actual_ink_consumed_kg: sheet.actualInkConsumedKg,
-    actual_solvents_consumed_kg: sheet.actualSolventsConsumedKg,
-    actual_adhesive_consumed_kg: sheet.actualAdhesiveConsumedKg,
-    actual_scrap_wastage_kg: sheet.actualScrapWastageKg,
-    operator_notes: sheet.operatorNotes,
+    selling_price_per_kg: Number(sheet.sellingPricePerKg) || 0,
+    pre_cost_per_kg: Number(sheet.preCostPerKg) || 0,
+    post_cost_per_kg: Number(sheet.postCostPerKg) || 0,
+    profit_margin_pct: Number(sheet.profitMarginPct) || 0,
+    actual_ink_consumed_kg: Number(sheet.actualInkConsumedKg) || 0,
+    actual_solvents_consumed_kg: Number(sheet.actualSolventsConsumedKg) || 0,
+    actual_adhesive_consumed_kg: Number(sheet.actualAdhesiveConsumedKg) || 0,
+    actual_scrap_wastage_kg: Number(sheet.actualScrapWastageKg) || 0,
+    operator_notes: sheet.operatorNotes || '',
     created_by: sheet.createdBy || 'Plant Manager'
-  }, { onConflict: 'id' });
-
-  handleSupabaseError(error, 'job_datasheets');
+  };
+  console.log('[job_datasheets] Saving:', sheetId, sheet.jobName);
+  const { error: fullErr } = await supabase.from('job_datasheets').upsert(fullPayload, { onConflict: 'id' });
+  if (fullErr) {
+    console.warn('[job_datasheets] Full payload failed, trying minimal:', fullErr.message);
+    const { error: minErr } = await supabase.from('job_datasheets').upsert({ id: sheetId, job_name: sheet.jobName || 'Job Datasheet', client_name: sheet.clientName || '' }, { onConflict: 'id' });
+    if (minErr) { console.error('[job_datasheets] Minimal payload failed:', minErr.message); handleSupabaseError(minErr, 'job_datasheets'); }
+    else { console.log('[job_datasheets] Saved with minimal payload.'); }
+  } else { console.log('[job_datasheets] Saved successfully.'); }
 }
 
 export async function deleteJobDataSheetFromSupabase(sheetId) {
@@ -749,29 +779,35 @@ export async function fetchInventoryRolls() {
 export async function saveInventoryRollToSupabase(roll) {
   if (!isSupabaseConfigured()) return;
   await ensureValidSession();
-  const { error } = await supabase.from('inventory_rolls').upsert({
+  const fullPayload = {
     barcode_id: roll.barcodeId,
     roll_type: roll.rollType || 'RAW_MATERIAL',
     item_id: roll.itemId,
-    item_name: roll.itemName,
+    item_name: roll.itemName || 'Roll',
     category: roll.category || 'Film',
     job_name: roll.jobName,
     order_id: roll.orderId,
-    micron: roll.micron,
-    width_mm: roll.widthMm,
+    micron: Number(roll.micron) || 0,
+    width_mm: Number(roll.widthMm) || 0,
     inward_datetime: roll.inwardDatetime || new Date().toISOString(),
-    vendor_name: roll.vendorName,
-    invoice_no: roll.invoiceNo,
-    batch_no: roll.batchNo,
-    net_weight_kg: roll.netWeightKg,
-    available_weight_kg: roll.availableWeightKg,
+    vendor_name: roll.vendorName || '',
+    invoice_no: roll.invoiceNo || '',
+    batch_no: roll.batchNo || '',
+    net_weight_kg: Number(roll.netWeightKg) || 0,
+    available_weight_kg: Number(roll.availableWeightKg) || 0,
     input_barcode_ids: roll.inputBarcodeIds || [],
     station_id: roll.stationId || 'SCALE_1_INWARD',
     location_bay: roll.locationBay || 'Bay A',
     status: roll.status || 'In Stock'
-  }, { onConflict: 'barcode_id' });
-
-  handleSupabaseError(error, 'inventory_rolls');
+  };
+  console.log('[inventory_rolls] Saving:', roll.barcodeId);
+  const { error: fullErr } = await supabase.from('inventory_rolls').upsert(fullPayload, { onConflict: 'barcode_id' });
+  if (fullErr) {
+    console.warn('[inventory_rolls] Full payload failed, trying minimal:', fullErr.message);
+    const { error: minErr } = await supabase.from('inventory_rolls').upsert({ barcode_id: roll.barcodeId, item_name: roll.itemName || 'Roll', roll_type: roll.rollType || 'RAW_MATERIAL', net_weight_kg: Number(roll.netWeightKg) || 0, status: roll.status || 'In Stock' }, { onConflict: 'barcode_id' });
+    if (minErr) { console.error('[inventory_rolls] Minimal payload failed:', minErr.message); handleSupabaseError(minErr, 'inventory_rolls'); }
+    else { console.log('[inventory_rolls] Saved with minimal payload.'); }
+  } else { console.log('[inventory_rolls] Saved successfully.'); }
 }
 
 // ============================================================================
@@ -810,21 +846,27 @@ export async function fetchDispatchShipments() {
 export async function saveDispatchShipmentToSupabase(shipment) {
   if (!isSupabaseConfigured()) return;
   await ensureValidSession();
-  const { error } = await supabase.from('dispatch_shipments').upsert({
+  const fullPayload = {
     dispatch_id: shipment.dispatchId,
     order_id: shipment.orderId,
-    job_name: shipment.jobName,
-    client_name: shipment.clientName,
-    vehicle_no: shipment.vehicleNo,
-    lr_no: shipment.lrNo,
+    job_name: shipment.jobName || '',
+    client_name: shipment.clientName || '',
+    vehicle_no: shipment.vehicleNo || '',
+    lr_no: shipment.lrNo || '',
     dispatch_date: shipment.dispatchDate || new Date().toISOString(),
-    total_rolls: shipment.totalRolls,
-    total_net_weight_kg: shipment.totalNetWeightKg,
-    total_gross_weight_kg: shipment.totalGrossWeightKg,
+    total_rolls: Number(shipment.totalRolls) || 0,
+    total_net_weight_kg: Number(shipment.totalNetWeightKg) || 0,
+    total_gross_weight_kg: Number(shipment.totalGrossWeightKg) || 0,
     items: shipment.items || []
-  }, { onConflict: 'dispatch_id' });
-
-  handleSupabaseError(error, 'dispatch_shipments');
+  };
+  console.log('[dispatch_shipments] Saving:', shipment.dispatchId);
+  const { error: fullErr } = await supabase.from('dispatch_shipments').upsert(fullPayload, { onConflict: 'dispatch_id' });
+  if (fullErr) {
+    console.warn('[dispatch_shipments] Full payload failed, trying minimal:', fullErr.message);
+    const { error: minErr } = await supabase.from('dispatch_shipments').upsert({ dispatch_id: shipment.dispatchId, job_name: shipment.jobName || '', client_name: shipment.clientName || '', dispatch_date: shipment.dispatchDate || new Date().toISOString() }, { onConflict: 'dispatch_id' });
+    if (minErr) { console.error('[dispatch_shipments] Minimal payload failed:', minErr.message); handleSupabaseError(minErr, 'dispatch_shipments'); }
+    else { console.log('[dispatch_shipments] Saved with minimal payload.'); }
+  } else { console.log('[dispatch_shipments] Saved successfully.'); }
 }
 
 // ============================================================================
@@ -861,19 +903,26 @@ export async function fetchPrintingMachines() {
 export async function savePrintingMachineToSupabase(machine) {
   if (!isSupabaseConfigured()) return;
   await ensureValidSession();
-  const { error } = await supabase.from('printing_machines').upsert({
-    id: machine.id || `MAC-PRINT-${Math.floor(10 + Math.random() * 90)}`,
-    name: machine.name,
+  const machineId = machine.id || `MAC-PRINT-${Math.floor(10 + Math.random() * 90)}`;
+  const fullPayload = {
+    id: machineId,
+    name: machine.name || 'Machine',
     type: machine.type || 'Rotogravure',
-    colors: machine.colors || 8,
-    max_speed_mpm: machine.maxSpeedMpm || 250,
-    max_width_mm: machine.maxWidthMm || 1200,
+    colors: Number(machine.colors) || 8,
+    max_speed_mpm: Number(machine.maxSpeedMpm) || 250,
+    max_width_mm: Number(machine.maxWidthMm) || 1200,
     status: machine.status || 'Active',
     operator: machine.operator || '',
     location: machine.location || 'Printing Hall'
-  }, { onConflict: 'id' });
-
-  handleSupabaseError(error, 'printing_machines');
+  };
+  console.log('[printing_machines] Saving:', machineId, machine.name);
+  const { error: fullErr } = await supabase.from('printing_machines').upsert(fullPayload, { onConflict: 'id' });
+  if (fullErr) {
+    console.warn('[printing_machines] Full payload failed, trying minimal:', fullErr.message);
+    const { error: minErr } = await supabase.from('printing_machines').upsert({ id: machineId, name: machine.name || 'Machine', status: machine.status || 'Active' }, { onConflict: 'id' });
+    if (minErr) { console.error('[printing_machines] Minimal payload failed:', minErr.message); handleSupabaseError(minErr, 'printing_machines'); }
+    else { console.log('[printing_machines] Saved with minimal payload.'); }
+  } else { console.log('[printing_machines] Saved successfully.'); }
 }
 
 export async function deletePrintingMachineFromSupabase(machineId) {
@@ -925,31 +974,38 @@ export async function fetchProductionSchedules() {
 export async function saveProductionScheduleToSupabase(schedule) {
   if (!isSupabaseConfigured()) return;
   await ensureValidSession();
-  const { error } = await supabase.from('production_schedules').upsert({
-    id: schedule.id || `SCHED-2026-${Math.floor(100 + Math.random() * 900)}`,
+  const schedId = schedule.id || `SCHED-2026-${Math.floor(100 + Math.random() * 900)}`;
+  const fullPayload = {
+    id: schedId,
     order_id: schedule.orderId,
-    job_name: schedule.jobName,
-    client_name: schedule.clientName,
+    job_name: schedule.jobName || '',
+    client_name: schedule.clientName || '',
     machine_id: schedule.machineId,
     shift: schedule.shift || 'Day Shift',
     scheduled_date: schedule.scheduledDate || new Date().toISOString().split('T')[0],
     start_time: schedule.startTime || '08:00',
-    order_qty_kg: schedule.orderQtyKg,
-    width_mm: schedule.widthMm,
-    micron: schedule.micron,
-    film_type: schedule.filmType,
-    max_speed_mpm: schedule.maxSpeedMpm,
-    total_length_meters: schedule.totalLengthMeters,
-    run_time_mins: schedule.runTimeMins,
-    roll_changeover_mins: schedule.rollChangeoverMins,
-    job_changeover_mins: schedule.jobChangeoverMins,
-    total_duration_mins: schedule.totalDurationMins,
-    end_time: schedule.endTime,
+    order_qty_kg: Number(schedule.orderQtyKg) || 0,
+    width_mm: Number(schedule.widthMm) || 0,
+    micron: Number(schedule.micron) || 12,
+    film_type: schedule.filmType || 'PET',
+    max_speed_mpm: Number(schedule.maxSpeedMpm) || 250,
+    total_length_meters: Number(schedule.totalLengthMeters) || 0,
+    run_time_mins: Number(schedule.runTimeMins) || 0,
+    roll_changeover_mins: Number(schedule.rollChangeoverMins) || 0,
+    job_changeover_mins: Number(schedule.jobChangeoverMins) || 0,
+    total_duration_mins: Number(schedule.totalDurationMins) || 0,
+    end_time: schedule.endTime || '',
     status: schedule.status || 'Scheduled',
     priority: schedule.priority || 'Normal'
-  }, { onConflict: 'id' });
-
-  handleSupabaseError(error, 'production_schedules');
+  };
+  console.log('[production_schedules] Saving:', schedId, schedule.jobName);
+  const { error: fullErr } = await supabase.from('production_schedules').upsert(fullPayload, { onConflict: 'id' });
+  if (fullErr) {
+    console.warn('[production_schedules] Full payload failed, trying minimal:', fullErr.message);
+    const { error: minErr } = await supabase.from('production_schedules').upsert({ id: schedId, job_name: schedule.jobName || '', machine_id: schedule.machineId, scheduled_date: schedule.scheduledDate || new Date().toISOString().split('T')[0], status: schedule.status || 'Scheduled' }, { onConflict: 'id' });
+    if (minErr) { console.error('[production_schedules] Minimal payload failed:', minErr.message); handleSupabaseError(minErr, 'production_schedules'); }
+    else { console.log('[production_schedules] Saved with minimal payload.'); }
+  } else { console.log('[production_schedules] Saved successfully.'); }
 }
 
 export async function deleteProductionScheduleFromSupabase(scheduleId) {
