@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { Printer, ArrowLeft, CheckCircle2, Building2, Phone, Mail, FileText } from 'lucide-react';
+import React from 'react';
+import { Printer, ArrowLeft } from 'lucide-react';
 import { COMPANY_DETAILS } from '../factoryStore';
-import { getAuthorisedSignature, getCompanyLogo, getDocumentTerms } from '../services/settingsService';
+import { getAuthorisedSignature, getCompanyLogo } from '../services/settingsService';
 
 export default function SalesQuotationPDF({ quotationData, onClose }) {
   if (!quotationData) return null;
@@ -35,7 +35,7 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
   const totalGrand = totalTaxable + totalGst;
 
   return (
-    <div className="modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.75)', zIndex: 1100 }}>
+    <div className="modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.8)', zIndex: 1100 }}>
       <div 
         className="modal-content glass-panel" 
         style={{ 
@@ -62,7 +62,7 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
           <div style={{ display: 'flex', gap: '12px' }}>
             <button 
               className="btn-primary" 
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 20px', background: '#0284c7', fontWeight: '800' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 20px', background: '#1e293b', borderColor: '#1e293b', fontWeight: '800' }}
               onClick={() => window.print()}
             >
               <Printer size={18} /> Print Sales Quotation PDF
@@ -74,12 +74,12 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
         <div id="printable-quotation" style={{ padding: '20px', background: '#ffffff', color: '#0f172a', fontFamily: 'Inter, system-ui, sans-serif' }}>
           
           {/* Header Company Banner */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '3px solid #0284c7', paddingBottom: '16px', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '3px solid #1e293b', paddingBottom: '16px', marginBottom: '20px' }}>
             <div>
               {logoImage ? (
                 <img src={logoImage} alt="Company Logo" style={{ height: '55px', maxWidth: '240px', objectFit: 'contain', marginBottom: '8px' }} />
               ) : (
-                <h1 style={{ fontSize: '1.8rem', fontWeight: '900', color: '#0284c7', margin: 0, letterSpacing: '-0.5px' }}>
+                <h1 style={{ fontSize: '1.8rem', fontWeight: '900', color: '#1e293b', margin: 0, letterSpacing: '-0.5px' }}>
                   {COMPANY_DETAILS.name || 'SAMYAK INTERNATIONAL LTD'}
                 </h1>
               )}
@@ -90,11 +90,11 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
             </div>
 
             <div style={{ textAlign: 'right' }}>
-              <div style={{ background: '#0284c7', color: '#ffffff', padding: '6px 16px', borderRadius: '6px', fontWeight: '900', fontSize: '1.1rem', letterSpacing: '0.5px', display: 'inline-block' }}>
-                OFFICIAL SALES QUOTATION
+              <div style={{ background: '#1e293b', color: '#ffffff', padding: '6px 16px', borderRadius: '6px', fontWeight: '900', fontSize: '1.05rem', letterSpacing: '0.5px', display: 'inline-block' }}>
+                SALES QUOTATION
               </div>
               <div style={{ marginTop: '8px', fontSize: '0.85rem', color: '#334155' }}>
-                <div>Quotation No: <b style={{ color: '#0284c7' }}>{quotationNo}</b></div>
+                <div>Quotation No: <b style={{ color: '#1e293b' }}>{quotationNo}</b></div>
                 <div>Amendment / Rev: <b style={{ color: '#047857' }}>{amendmentNo}</b></div>
                 <div>Date: <b>{enquiryDate}</b></div>
                 <div>Est. Delivery: <b>{estimatedDeliveryDate}</b></div>
@@ -103,9 +103,9 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
           </div>
 
           {/* Customer & Sales Details Box */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
             <div>
-              <div style={{ fontSize: '0.75rem', fontWeight: '800', color: '#0284c7', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: '800', color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
                 CLIENT / CUSTOMER DETAILS
               </div>
               <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#0f172a' }}>{clientName}</div>
@@ -116,26 +116,26 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
             </div>
 
             <div style={{ borderLeft: '1px solid #cbd5e1', paddingLeft: '16px' }}>
-              <div style={{ fontSize: '0.75rem', fontWeight: '800', color: '#0284c7', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: '800', color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
                 CONTACT PERSON & SALES EXECUTIVE
               </div>
               <div style={{ fontSize: '0.85rem', color: '#334155' }}>
                 <div>Contact Person: <b>{contactPerson}</b></div>
                 <div>Phone: <b>{contactPhone}</b></div>
                 <div>Email: <b>{contactEmail}</b></div>
-                <div style={{ marginTop: '6px' }}>Sales Manager: <b>{salesManager}</b></div>
+                <div style={{ marginTop: '6px' }}>Sales Representative: <b>{salesManager}</b></div>
               </div>
             </div>
           </div>
 
           {/* Product Specifications & Pricing Table */}
           <div style={{ marginBottom: '20px' }}>
-            <h4 style={{ fontSize: '0.95rem', fontWeight: '800', color: '#0f172a', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            <h4 style={{ fontSize: '0.92rem', fontWeight: '800', color: '#1e293b', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
               📦 Product Specifications & Commercial Rate Sheet
             </h4>
             <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
               <thead>
-                <tr style={{ background: '#0284c7', color: '#ffffff' }}>
+                <tr style={{ background: '#1e293b', color: '#ffffff' }}>
                   <th style={{ padding: '8px 10px', textAlign: 'left' }}>S.N</th>
                   <th style={{ padding: '8px 10px', textAlign: 'left' }}>Product / Job Description</th>
                   <th style={{ padding: '8px 10px', textAlign: 'left' }}>Substrate Structure</th>
@@ -152,7 +152,7 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
                     <td style={{ padding: '10px', fontWeight: '700', color: '#0f172a' }}>{it.jobTitle}</td>
                     <td style={{ padding: '10px', fontSize: '0.8rem', color: '#334155' }}>{it.structure}</td>
                     <td style={{ padding: '10px' }}>
-                      <span className="badge badge-info" style={{ fontSize: '0.72rem', background: '#e0f2fe', color: '#0369a1' }}>
+                      <span className="badge badge-info" style={{ fontSize: '0.72rem', background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1' }}>
                         {it.materialFormat || 'Roll Form'}
                       </span>
                     </td>
@@ -162,7 +162,7 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
                     <td style={{ padding: '10px', textAlign: 'right', fontWeight: '700' }}>
                       ₹ {(parseFloat(it.ratePerUom) || 0).toFixed(2)}
                     </td>
-                    <td style={{ padding: '10px', textAlign: 'right', fontWeight: '800', color: '#0284c7' }}>
+                    <td style={{ padding: '10px', textAlign: 'right', fontWeight: '800', color: '#1e293b' }}>
                       ₹ {((parseFloat(it.quantity) || 0) * (parseFloat(it.ratePerUom) || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                   </tr>
@@ -173,8 +173,8 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
 
           {/* Tax Breakdown & Commercial Calculation */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
-            <div style={{ width: '55%', fontSize: '0.82rem', background: '#f8fafc', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontWeight: '800', color: '#0284c7', marginBottom: '6px' }}>COMMERCIAL & LOGISTICS TERMS</div>
+            <div style={{ width: '55%', fontSize: '0.82rem', background: '#f8fafc', padding: '12px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+              <div style={{ fontWeight: '800', color: '#1e293b', marginBottom: '6px' }}>COMMERCIAL & LOGISTICS TERMS</div>
               <div style={{ marginBottom: '4px' }}><b>Payment Terms:</b> {paymentTerms}</div>
               <div style={{ marginBottom: '4px' }}><b>Cylinder Terms:</b> {cylinderTerms}</div>
               <div><b>Freight & Transport:</b> {transportTerms}</div>
@@ -189,7 +189,7 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
                 <span>GST (18% Integrated Tax):</span>
                 <b>₹ {totalGst.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '2px solid #0284c7', fontSize: '1.05rem', fontWeight: '900', color: '#0284c7' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '2px solid #1e293b', fontSize: '1.05rem', fontWeight: '900', color: '#1e293b' }}>
                 <span>Total Quotation Amount:</span>
                 <span>₹ {totalGrand.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
               </div>
@@ -197,8 +197,8 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
           </div>
 
           {/* Standard Terms & Conditions Bullet Points */}
-          <div style={{ marginBottom: '20px', fontSize: '0.8rem', background: '#fafafa', padding: '12px', borderRadius: '6px', border: '1px solid #f1f5f9' }}>
-            <div style={{ fontWeight: '800', color: '#334155', marginBottom: '6px' }}>TERMS & CONDITIONS</div>
+          <div style={{ marginBottom: '20px', fontSize: '0.8rem', background: '#fafafa', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontWeight: '800', color: '#1e293b', marginBottom: '6px' }}>TERMS & CONDITIONS</div>
             <ul style={{ margin: 0, paddingLeft: '18px', color: '#475569', lineHeight: '1.5' }}>
               {termsAndConditions.map((term, i) => (
                 <li key={i}>{term}</li>
@@ -207,29 +207,28 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
           </div>
 
           {comments && (
-            <div style={{ marginBottom: '24px', fontSize: '0.82rem', color: '#475569', fontStyle: 'italic', background: '#eff6ff', padding: '8px 12px', borderRadius: '6px' }}>
+            <div style={{ marginBottom: '24px', fontSize: '0.82rem', color: '#334155', fontStyle: 'italic', background: '#f8fafc', padding: '8px 12px', borderRadius: '6px', borderLeft: '3px solid #1e293b' }}>
               <b>Special Comments:</b> {comments}
             </div>
           )}
 
           {/* Signatures & Authorization Section */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: '30px', borderTop: '1px dashed #cbd5e1', marginTop: '30px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: '20px', borderTop: '1px dashed #cbd5e1', marginTop: '24px' }}>
             <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
-              <div>Generated by: {salesManager}</div>
-              <div>Computer Generated Official Sales Quotation</div>
-              <div>Samyak Flexi-ERP • Sales Engine</div>
+              <div><b>Prepared By:</b> {salesManager}</div>
+              <div><b>Issued On:</b> {enquiryDate}</div>
             </div>
 
             <div style={{ textAlign: 'center' }}>
               {signatureImage ? (
-                <img src={signatureImage} alt="Authorised Signature" style={{ height: '50px', maxHeight: '50px', objectFit: 'contain', marginBottom: '4px' }} />
+                <img src={signatureImage} alt="Authorised Signature" style={{ height: '55px', maxHeight: '55px', objectFit: 'contain', marginBottom: '4px' }} />
               ) : (
-                <div style={{ height: '40px' }}></div>
+                <div style={{ height: '45px' }}></div>
               )}
-              <div style={{ borderTop: '1.5 solid #0f172a', width: '200px', margin: '0 auto', paddingTop: '4px', fontWeight: '800', fontSize: '0.85rem' }}>
+              <div style={{ borderTop: '1.5px solid #0f172a', width: '200px', margin: '0 auto', paddingTop: '4px', fontWeight: '800', fontSize: '0.85rem', color: '#0f172a' }}>
                 For Samyak International Ltd
               </div>
-              <div style={{ fontSize: '0.75rem', color: '#475569', marginTop: '2px' }}>Authorized Sales Signatory</div>
+              <div style={{ fontSize: '0.75rem', color: '#475569', marginTop: '2px' }}>Authorized Signature</div>
             </div>
           </div>
 
