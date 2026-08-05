@@ -54,12 +54,23 @@ export const DEFAULT_DAILY_RATES = {
 };
 
 /**
- * Checks if a film grade is an LD Film (requires +5mm extra slit width)
+ * Checks if a film grade is an LD Film that requires +5mm extra slit width.
+ * Only the following 4 specific film types qualify for the +5mm rule:
+ * - Natural LD GP Film
+ * - Milky LD GP Film
+ * - Natural LD Metallocene Film
+ * - Milky LD Metallocene Film
  */
 export const isLDFilm = (filmType = "") => {
   if (!filmType) return false;
-  const name = filmType.toLowerCase();
-  return name.includes('ld') || name.includes('atta') || name.includes('metallocene');
+  const LD_FILMS_WITH_EXTRA_WIDTH = [
+    'natural ld gp film',
+    'milky ld gp film',
+    'natural ld metallocene film',
+    'milky ld metallocene film',
+    'milky atta (high dart) film'
+  ];
+  return LD_FILMS_WITH_EXTRA_WIDTH.includes(filmType.toLowerCase().trim());
 };
 
 /**

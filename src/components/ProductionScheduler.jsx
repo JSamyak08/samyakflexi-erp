@@ -75,11 +75,31 @@ export default function ProductionScheduler({
       const isOverdue = order.status === 'Delayed' || new Date(order.targetDeliveryDate) < new Date('2026-07-24');
       const reqs = order.materialRequirements || order.rawMaterialRequirements || [];
 
-      // Extract Print Width and Micron
-      const layers = order.jobDetails?.layers || [];
+      // Extract Print Width and Micron — check multiple field paths for
+      // compatibility with both Job Punching and Quotation-converted orders
+      const layers = order.jobDetails?.layers || order.layers || [];
       const firstLayer = layers[0] || {};
-      const widthMm = parseFloat(order.printWidthMm || order.jobDetails?.printWidthMm || order.widthMm || 1000);
-      const micron = parseFloat(order.micron || firstLayer.micron || 12);
+      const firstFilmReq = reqs.find(r => r.micron && r.micron !== '-') || {};
+      const widthMm = parseFloat(
+        order.printWidthMm ||
+        order.jobDetails?.printWidthMm ||
+        order.widthMm ||
+        firstFilmReq.widthMm ||
+        1000
+      );
+      const micron = parseFloat(
+        order.micron ||
+        firstLayer.micron ||
+        firstFilmReq.micron ||
+        12
+      );
+
+      // Derive substrate structure string from multiple possible sources
+      const structure = order.structure ||
+        order.jobDetails?.structure ||
+        (layers.length > 0 ? layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ') : null) ||
+        (reqs.filter(r => r.micron && r.micron !== '-').map(r => `${r.filmType} ${r.micron}µ`).join(' / ')) ||
+        '—';
 
       // Check stock availability for order materials
       let isMaterialReady = true;
@@ -98,6 +118,7 @@ export default function ProductionScheduler({
         ...order,
         widthMm,
         micron,
+        structure,
         isOverdue,
         isMaterialReady,
         isAlreadyScheduled,
@@ -1112,7 +1133,7 @@ export default function ProductionScheduler({
                         📐 {order.widthMm} mm • {order.micron} µ
                       </div>
                     </td>
-                    <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{order.structure}</td>
+                    <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{order.structure || '—'}</td>
                     <td className="bold-val">{(order.orderQtyKg ?? 0).toLocaleString()} kg</td>
                     <td style={{ color: order.isOverdue ? '#dc2626' : 'inherit', fontWeight: order.isOverdue ? 'bold' : 'normal' }}>
                       {order.targetDeliveryDate}

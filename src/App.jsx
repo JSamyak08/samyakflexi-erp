@@ -1214,40 +1214,62 @@ export default function App() {
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {inventory.filter(i => (i.availableQtyKg || 0) <= (i.reorderLevelKg || 500)).length === 0 ? (
+                    {inventory.filter(i => {
+                      // Only show items that have an explicit reorder level set AND are below it
+                      const avail = i.availableQtyKg || 0;
+                      const reorder = i.reorderLevelKg;
+                      return reorder != null && reorder > 0 && avail <= reorder;
+                    }).length === 0 ? (
                       <div style={{ fontSize: '0.85rem', color: '#059669', padding: '10px', background: '#ecfdf5', borderRadius: '6px', border: '1px solid #a7f3d0' }}>
                         ✓ All raw material items are above reorder threshold.
                       </div>
                     ) : (
-                      inventory.filter(i => (i.availableQtyKg || 0) <= (i.reorderLevelKg || 500)).map(i => {
-                        const displayName = i.itemName || `${i.filmType || 'Film'} ${i.micron || ''}µ`;
+                      inventory.filter(i => {
+                        const avail = i.availableQtyKg || 0;
+                        const reorder = i.reorderLevelKg;
+                        return reorder != null && reorder > 0 && avail <= reorder;
+                      }).map(i => {
+                        // Build display name from actual data only
+                        const micronStr = i.micron ? `${i.micron}µ` : '';
+                        const displayName = i.itemName ||
+                          (i.filmType ? [i.filmType, micronStr].filter(Boolean).join(' ') : '');
                         return (
                           <div key={i.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '10px 12px', background: '#fef2f2', borderRadius: '6px', border: '1px solid #fecaca' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <span style={{ fontWeight: '700', fontSize: '0.9rem', color: '#991b1b' }}>
                                 {displayName}
                               </span>
-                              <span style={{ fontSize: '0.75rem', fontWeight: '700', background: '#dc2626', color: '#ffffff', padding: '2px 6px', borderRadius: '4px' }}>
-                                {i.micron || 12} µ (Micron)
-                              </span>
+                              {/* Only show micron badge when an actual micron value exists */}
+                              {i.micron ? (
+                                <span style={{ fontSize: '0.75rem', fontWeight: '700', background: '#dc2626', color: '#ffffff', padding: '2px 6px', borderRadius: '4px' }}>
+                                  {i.micron} µ
+                                </span>
+                              ) : null}
                             </div>
 
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', marginTop: '2px' }}>
                               <span style={{ color: '#475569' }}>
-                                Grade: <strong>{i.filmType || 'PET'}</strong> {i.widthMm ? `| ${i.widthMm}mm Width` : ''}
+                                {i.filmType ? (
+                                  <>Grade: <strong>{i.filmType}</strong>{i.widthMm ? ` | ${i.widthMm}mm Width` : ''}</>
+                                ) : (
+                                  i.grade ? <>Grade: <strong>{i.grade}</strong></> : null
+                                )}
                               </span>
                               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                                 <span style={{ color: '#b91c1c', fontWeight: '800' }}>
-                                  Avail: {i.availableQtyKg?.toLocaleString() || 0} kg
+                                  Avail: {(i.availableQtyKg ?? 0).toLocaleString()} kg
                                 </span>
                                 {i.allocatedQtyKg > 0 && (
                                   <span style={{ color: '#64748b', fontSize: '0.75rem' }}>
                                     (Alloc: {i.allocatedQtyKg} kg)
                                   </span>
                                 )}
-                                <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>
-                                  [Min: {i.reorderLevelKg || 500} kg]
-                                </span>
+                                {/* Only show Min when a real reorder level exists */}
+                                {i.reorderLevelKg != null && i.reorderLevelKg > 0 && (
+                                  <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>
+                                    [Min: {i.reorderLevelKg} kg]
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </div>

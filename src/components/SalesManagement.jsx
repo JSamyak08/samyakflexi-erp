@@ -26,7 +26,13 @@ import {
   X
 } from 'lucide-react';
 import SalesQuotationPDF from './SalesQuotationPDF';
-import { initialSalesQuotations } from '../factoryStore';
+import { 
+  initialSalesQuotations,
+  calculateJobRawMaterials,
+  isLDFilm,
+  DEFAULT_DAILY_RATES,
+  DEFAULT_PROCESSING_RATES
+} from '../factoryStore';
 import { generateDocRefNumber } from '../services/settingsService';
 import { 
   fetchSalesQuotations, 
@@ -452,24 +458,95 @@ export default function SalesManagement({
     const ocnNo = `SIL/OCN/26-27/${Math.floor(100 + Math.random() * 900)}`;
     const mainItem = (qtn.items && qtn.items[0]) || {};
 
+    // Resolve layers — use item layers or fall back to parsing structure string
+    const layers = (mainItem.layers && mainItem.layers.length > 0)
+      ? mainItem.layers
+      : [
+          { id: 1, filmType: 'PET', micron: 12 },
+          { id: 2, filmType: 'Natural LD GP Film', micron: 40 }
+        ];
+
+    const printWidthMm = parseFloat(mainItem.printWidthMm) || 1000;
+    const repeatLengthMm = parseFloat(mainItem.repeatLengthMm) || 400;
+    const orderQtyKg = parseFloat(mainItem.quantity) || 2000;
+    const orderType = (mainItem.materialFormat || '').toLowerCase().includes('pouch') ? 'Pouching' : 'Reel';
+    const structure = mainItem.structure || getStructureString(mainItem) ||
+      layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
+
+    // Run the full material calculation engine for accurate gross weights per layer
+    const calcResults = calculateJobRawMaterials({
+      printWidthMm,
+      repeatLengthMm,
+      orderQtyKg,
+      orderType,
+      inkGsm: 1.5,
+      adhesiveGsm: 1.5,
+      layers,
+      filmPrices: DEFAULT_DAILY_RATES,
+      inkPrice: DEFAULT_PROCESSING_RATES.liquidInkPrice,
+      adhesivePrice: DEFAULT_PROCESSING_RATES.adhesivePrice
+    });
+
+    const orderId = `ORD-2026-${Math.floor(100 + Math.random() * 900)}`;
+
+    // Build itemized material requirements with proper IDs, widths, and quantities
+    const materialRequirements = [];
+    if (calcResults && calcResults.layerResults) {
+      calcResults.layerResults.forEach((layer, idx) => {
+        materialRequirements.push({
+          id: `REQ-${orderId}-${idx + 1}`,
+          filmType: layer.filmType,
+          micron: layer.micron,
+          // widthMm already has +5mm applied by getFilmSlitWidth inside calculateJobRawMaterials
+          // for the 4 designated LD film types only
+          widthMm: layer.widthMm,
+          qtyKg: parseFloat((layer.grossKg || 0).toFixed(2)),
+          preferredVendor: isLDFilm(layer.filmType) ? 'Malwa Extrusions Pvt Ltd' : 'FlexiPoly Films Ltd',
+          poIssued: false,
+          poNumber: ''
+        });
+      });
+
+      if (calcResults.inkDetails && calcResults.inkDetails.grossKg > 0) {
+        materialRequirements.push({
+          id: `REQ-${orderId}-INK`,
+          filmType: 'Liquid Inks',
+          micron: '-',
+          widthMm: '-',
+          qtyKg: parseFloat(calcResults.inkDetails.grossKg.toFixed(2)),
+          preferredVendor: 'Siegwerk Inks Ltd',
+          poIssued: false,
+          poNumber: ''
+        });
+      }
+
+      if (calcResults.adhesiveDetails && calcResults.adhesiveDetails.grossKg > 0) {
+        materialRequirements.push({
+          id: `REQ-${orderId}-ADH`,
+          filmType: 'Solvent-less Adhesive',
+          micron: '-',
+          widthMm: '-',
+          qtyKg: parseFloat(calcResults.adhesiveDetails.grossKg.toFixed(2)),
+          preferredVendor: 'Siegwerk Inks Ltd',
+          poIssued: false,
+          poNumber: ''
+        });
+      }
+    }
+
     // 1. Create Job Master in Job Master Technical Directory
     const newJobMaster = {
       id: `JM-2026-${Math.floor(100 + Math.random() * 900)}`,
       skuCode: `SKU-${qtn.clientName.substring(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`,
       jobName: mainItem.jobTitle || 'Custom Flexible Packaging Job',
       clientName: qtn.clientName,
-      structure: mainItem.structure || getStructureString(mainItem) || 'PET 12µ / LDPE 40µ',
-      printWidthMm: mainItem.printWidthMm || 1000,
-      repeatLengthMm: mainItem.repeatLengthMm || 400,
+      structure,
+      printWidthMm,
+      repeatLengthMm,
       pouchOpenWidth: 120,
       pouchHeight: 160,
       materialFormat: mainItem.materialFormat || 'Roll Form',
-      layers: (mainItem.layers && mainItem.layers.length > 0) 
-        ? mainItem.layers 
-        : [
-            { id: 1, filmType: 'PET', micron: 12 },
-            { id: 2, filmType: 'Natural GP LD', micron: 40 }
-          ],
+      layers,
       cylinderSku: `CYL-${qtn.clientName.substring(0, 3).toUpperCase()}-001`,
       cylinderCost: qtn.cylinderTerms || '₹ 35,000',
       colorsCount: 6,
@@ -483,30 +560,32 @@ export default function SalesManagement({
       onAddJobMaster(newJobMaster);
     }
 
-    // 2. Create Order in Order Management System
+    // 2. Create Order in Order Management System with all required fields
     const newOrder = {
-      id: `ORD-2026-${Math.floor(100 + Math.random() * 900)}`,
+      id: orderId,
       ocnNumber: ocnNo,
       jobMasterId: newJobMaster.id,
       jobName: mainItem.jobTitle || 'Custom Flexible Packaging Job',
       clientName: qtn.clientName,
-      quantityKg: parseFloat(mainItem.quantity) || 2000,
+      // Both field names kept for compatibility
+      orderQtyKg,
+      quantityKg: orderQtyKg,
+      orderType,
       sellingPricePerKg: parseFloat(mainItem.ratePerUom) || 250,
+      printWidthMm,
+      repeatLengthMm,
+      structure,
+      layers,
+      // jobDetails mirrors Job Master structure for Production Scheduler compatibility
+      jobDetails: { layers, printWidthMm, repeatLengthMm, structure },
       orderDate: new Date().toISOString().split('T')[0],
+      targetDeliveryDate: qtn.estimatedDeliveryDate,
       deliveryDate: qtn.estimatedDeliveryDate,
       poNumber: `PO-QTN-${qtn.quotationNo}`,
       status: 'Confirmed',
-      materialRequirements: (mainItem.layers && mainItem.layers.length > 0)
-        ? mainItem.layers.map((l, lIdx) => ({
-            filmType: l.filmType,
-            micron: parseFloat(l.micron) || 12,
-            widthMm: (mainItem.printWidthMm || 1000) + (lIdx === mainItem.layers.length - 1 ? 5 : 0),
-            qtyKg: ((parseFloat(mainItem.quantity) || 2000) * (1 / mainItem.layers.length))
-          }))
-        : [
-            { filmType: 'PET', micron: 12, widthMm: mainItem.printWidthMm || 1000, qtyKg: (mainItem.quantity || 2000) * 0.5 },
-            { filmType: 'Natural GP LD', micron: 40, widthMm: (mainItem.printWidthMm || 1000) + 5, qtyKg: (mainItem.quantity || 2000) * 0.5 }
-          ]
+      materialRequirements,
+      rawMaterialRequirements: materialRequirements,
+      calculationDetails: calcResults
     };
 
     if (onAddOrder) {
@@ -538,7 +617,7 @@ export default function SalesManagement({
       saveSalesQuotationToSupabase(updatedTarget);
     }
 
-    alert(`🎉 SUCCESS!\n\nSales Quotation ${qtn.quotationNo} has been CONVERTED to Order Confirmation Note (${ocnNo}).\n\n- Job Master "${newJobMaster.jobName}" (${newJobMaster.id}) created in Job Master Directory.\n- Order ${newOrder.id} is now LIVE across Production, Inventory & Cylinder scheduling!`);
+    alert(`🎉 SUCCESS!\n\nSales Quotation ${qtn.quotationNo} has been CONVERTED to Order Confirmation Note (${ocnNo}).\n\n- Job Master "${newJobMaster.jobName}" (${newJobMaster.id}) created in Job Master Directory.\n- Order ${orderId} is now LIVE across Production, Inventory & Cylinder scheduling!`);
   };
 
   // Filtered Quotations

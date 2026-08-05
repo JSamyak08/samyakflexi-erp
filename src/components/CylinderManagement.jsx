@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Layers, 
   Plus, 
@@ -25,13 +25,28 @@ export default function CylinderManagement({
   cylinders, 
   onAddCylinder, 
   onUpdateCylinder,
-  onDeleteCylinder
+  onDeleteCylinder,
+  machines = []
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCylinder, setEditingCylinder] = useState(null);
   const [selectedForPDF, setSelectedForPDF] = useState(null);
   const [activeArtworkModal, setActiveArtworkModal] = useState({ isOpen: false, url: '', title: '' });
+
+  // Live printing press list — only Rotogravure / Flexographic / Digital machines
+  const printingPresses = useMemo(() => {
+    const PRINTING_TYPES = ['Rotogravure', 'Flexographic', 'Digital'];
+    const presses = machines
+      .filter(m => PRINTING_TYPES.includes(m.type))
+      .map(m => m.name);
+    // Fallback if no machines loaded yet
+    return presses.length > 0 ? presses : [
+      'Rotogravure Press #1 (8-Color)',
+      'Rotogravure Press #2 (10-Color)',
+      'Flexographic Press #1 (6-Color)'
+    ];
+  }, [machines]);
 
   // Form State
   const [sku, setSku] = useState('');
@@ -50,6 +65,7 @@ export default function CylinderManagement({
   const [dispatchedQty, setDispatchedQty] = useState(3855);
   const [utilisationLimit, setUtilisationLimit] = useState(10000);
   const [status, setStatus] = useState('Active In-Use');
+  const [assignedPress, setAssignedPress] = useState('');
   const [artworkUrl, setArtworkUrl] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [autoCalculateCost, setAutoCalculateCost] = useState(true);
@@ -84,6 +100,7 @@ export default function CylinderManagement({
     setDispatchedQty(500);
     setUtilisationLimit(10000);
     setStatus('Active In-Use');
+    setAssignedPress(printingPresses[0] || '');
     setArtworkUrl('');
     setIsModalOpen(true);
   };
@@ -107,6 +124,7 @@ export default function CylinderManagement({
     setDispatchedQty(cyl.dispatchedQty || 0);
     setUtilisationLimit(cyl.utilisationLimit || 10000);
     setStatus(cyl.status || 'Active In-Use');
+    setAssignedPress(cyl.assignedPress || printingPresses[0] || '');
     setArtworkUrl(cyl.artworkUrl || '');
     setIsModalOpen(true);
   };
@@ -159,6 +177,7 @@ export default function CylinderManagement({
       dispatchedQty: parseFloat(dispatchedQty) || 0,
       utilisationLimit: parseInt(utilisationLimit) || 10000,
       status,
+      assignedPress: assignedPress || '',
       artworkUrl: artworkUrl || null
     };
 
@@ -243,6 +262,7 @@ export default function CylinderManagement({
                 <th>Layer 1 Print (Kg)</th>
                 <th>Wear Utilisation</th>
                 <th>Status</th>
+                <th>Assigned Press</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -336,6 +356,15 @@ export default function CylinderManagement({
                         <span className={`badge ${c.status === 'Worn Out / Retouch Needed' ? 'badge-warning' : 'badge-us'}`}>
                           {c.status || 'Active In-Use'}
                         </span>
+                      </td>
+                      <td style={{ maxWidth: '160px' }}>
+                        {c.assignedPress ? (
+                          <span style={{ fontSize: '0.78rem', fontWeight: '600', color: 'var(--primary-brand)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <Printer size={12} />{c.assignedPress}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>— Not Assigned —</span>
+                        )}
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: '6px' }}>
@@ -588,6 +617,19 @@ export default function CylinderManagement({
                     <option value="Under Engraving">Under Engraving / Chroming</option>
                     <option value="Worn Out / Retouch Needed">Worn Out / Retouch Needed</option>
                   </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Assigned Printing Press</label>
+                  <select className="form-control" value={assignedPress} onChange={e => setAssignedPress(e.target.value)}>
+                    <option value="">— Not Assigned —</option>
+                    {printingPresses.map(p => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                  <small style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '3px', display: 'block' }}>
+                    Manage presses in Settings → Plant Machine Directory
+                  </small>
                 </div>
               </div>
 
