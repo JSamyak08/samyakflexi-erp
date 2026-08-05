@@ -995,7 +995,7 @@ export default function App() {
                   value={currentUser.id}
                   onChange={e => {
                     const user = users.find(u => u.id === e.target.value);
-                    if (user) handleLogin(user);
+                    if (user) setCurrentUser(user);
                   }}
                 >
                   {users.map(u => (
