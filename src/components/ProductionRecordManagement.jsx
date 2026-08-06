@@ -21,10 +21,12 @@ import {
   Printer,
   Play,
   Scan,
-  Lock
+  Lock,
+  X
 } from 'lucide-react';
 import WeighingScaleInput from './WeighingScaleInput';
 import BarcodePrinterModal from './BarcodePrinterModal';
+import CylinderJobCardForm from '../CylinderJobCardForm';
 import { DEFAULT_DAILY_RATES, generateBarcodeId } from '../factoryStore';
 
 export default function ProductionRecordManagement({
@@ -54,11 +56,12 @@ export default function ProductionRecordManagement({
     }
     return jm?.structure || order.structure || '—';
   };
-  const isPlantManager = currentUser?.role === 'Plant Manager' || currentUser?.role === 'Admin';
+  const isPlantManager = currentUser?.role === 'Plant Manager' || currentUser?.role === 'Admin' || currentUser?.role === 'Production Manager';
   const isAdmin = currentUser?.role === 'Admin';
 
-  const [activeTab, setActiveTab] = useState('punched_jobs'); // 'punched_jobs', 'list', 'new_record'
+  const [activeTab, setActiveTab] = useState('punched_jobs'); // 'punched_jobs', 'list', 'new_record', 'job_cards'
   const [selectedRecord, setSelectedRecord] = useState(null);
+  const [activeJobCardData, setActiveJobCardData] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -273,6 +276,13 @@ export default function ProductionRecordManagement({
             📑 Submitted Records ({productionRecords.length})
           </button>
 
+          <button 
+            className={`tab-pill ${activeTab === 'job_cards' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('job_cards'); setSelectedRecord(null); }}
+          >
+            📋 Job Cards Sign-Off ({jobMasters.length})
+          </button>
+
           {isPlantManager && (
             <button 
               className="btn-primary"
@@ -287,6 +297,156 @@ export default function ProductionRecordManagement({
           )}
         </div>
       </div>
+
+      {/* Modal View for CylinderJobCardForm when reviewing a Job Card */}
+      {activeJobCardData && (
+        <div className="pdf-modal-overlay">
+          <div className="pdf-modal-toolbar no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 24px', background: '#0f172a' }}>
+            <button className="btn-secondary" style={{ background: '#ffffff', color: '#0f172a' }} onClick={() => setActiveJobCardData(null)}>
+              <X size={16} /> Close Job Card View
+            </button>
+            <div style={{ color: '#ffffff', fontWeight: '700', fontSize: '1rem' }}>
+              Production Head Review: Rotogravure Cylinder Job Card — {activeJobCardData.jobName} ({activeJobCardData.skuCode})
+            </div>
+          </div>
+          <div style={{ padding: '20px', display: 'flex', justifyContent: 'center', background: '#334155', minHeight: 'calc(100vh - 60px)', overflowY: 'auto' }}>
+            <div style={{ background: '#ffffff', width: '1000px', maxWidth: '98vw', borderRadius: '8px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)', padding: '24px' }}>
+              <CylinderJobCardForm 
+                initialData={activeJobCardData} 
+                currentUser={currentUser}
+                onSave={(updatedData) => {
+                  setActiveJobCardData(prev => ({ ...prev, ...updatedData }));
+                  alert("Job Card sign-off and parameters updated!");
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 0: JOB CARDS & SIGN-OFFS (PRODUCTION HEAD VIEW) */}
+      {activeTab === 'job_cards' && !selectedRecord && (
+        <div className="glass-panel" style={{ padding: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', gap: '16px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div className="input-with-icon" style={{ width: '300px' }}>
+                <Search size={16} className="input-icon" />
+                <input 
+                  type="text" 
+                  className="form-control"
+                  placeholder="Search Job Name, SKU or Client..."
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              Showing {jobMasters.length} Job Masters for Production Sign-Off
+            </div>
+          </div>
+
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>SKU / Job ID</th>
+                  <th>Job Name & Client</th>
+                  <th>Structure & Colors</th>
+                  <th>Pre-Press Checklist</th>
+                  <th>Production Head Sign-Off</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {jobMasters.length === 0 ? (
+                  <tr>
+                    <td colSpan="6" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+                      No Job Masters found in directory.
+                    </td>
+                  </tr>
+                ) : (
+                  jobMasters
+                    .filter(j => 
+                      (j.jobName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      (j.skuCode || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      (j.clientName || '').toLowerCase().includes(searchTerm.toLowerCase())
+                    )
+                    .map(jm => {
+                      const isChecklistVerified = jm.chkEyemark && jm.chkBarcode && jm.chkOrientation && jm.chkClientApproval;
+                      const isApproved = jm.approvedByHead || jm.productionApproved;
+
+                      return (
+                        <tr key={jm.id}>
+                          <td style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>
+                            {jm.skuCode || jm.id}
+                          </td>
+                          <td>
+                            <div style={{ fontWeight: '700', color: '#0f172a' }}>{jm.jobName}</div>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{jm.clientName}</div>
+                          </td>
+                          <td style={{ fontSize: '0.8rem', color: '#334155' }}>
+                            <div><code>{jm.structure || '—'}</code></div>
+                            <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{jm.colorsCount || 6} Colors</div>
+                          </td>
+                          <td>
+                            {isChecklistVerified ? (
+                              <span className="badge badge-us" style={{ background: '#dcfce7', color: '#15803d' }}>
+                                <CheckCircle2 size={12} /> 4/4 Verified
+                              </span>
+                            ) : (
+                              <span className="badge badge-warning" style={{ background: '#fef3c7', color: '#b45309' }}>
+                                ⚠️ Pending Checklist
+                              </span>
+                            )}
+                          </td>
+                          <td>
+                            {isApproved ? (
+                              <span className="badge badge-us" style={{ background: '#dcfce7', color: '#15803d', fontWeight: '800' }}>
+                                <ShieldCheck size={12} /> Approved by {jm.approvedHeadName || 'Production Head'}
+                              </span>
+                            ) : (
+                              <span className="badge badge-client" style={{ background: '#fff7ed', color: '#c2410c', fontWeight: '700' }}>
+                                ⏳ Pending Sign-Off
+                              </span>
+                            )}
+                          </td>
+                          <td>
+                            <button 
+                              className="btn-primary" 
+                              style={{ padding: '6px 14px', fontSize: '0.82rem', background: '#059669', borderColor: '#059669' }}
+                              onClick={() => {
+                                setActiveJobCardData({
+                                  jobMasterId: jm.id,
+                                  skuCode: jm.skuCode,
+                                  jobName: jm.jobName,
+                                  clientName: jm.clientName,
+                                  clientGroup: jm.clientName,
+                                  structure: jm.structure,
+                                  layers: jm.layers || [],
+                                  colorsCount: jm.colorsCount || 6,
+                                  chkEyemark: jm.chkEyemark,
+                                  chkBarcode: jm.chkBarcode,
+                                  chkOrientation: jm.chkOrientation,
+                                  chkClientApproval: jm.chkClientApproval,
+                                  approvedByHead: jm.approvedByHead || jm.productionApproved,
+                                  approvedHeadName: jm.approvedHeadName,
+                                  approvedHeadDate: jm.approvedHeadDate
+                                });
+                              }}
+                            >
+                              <ShieldCheck size={14} /> Review & Sign-Off Job Card
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* TAB 1: PUNCHED JOBS READY FOR PRODUCTION */}
       {activeTab === 'punched_jobs' && !selectedRecord && (

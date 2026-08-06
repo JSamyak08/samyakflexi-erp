@@ -1,18 +1,21 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useReactToPrint } from 'react-to-print';
-import { Save, Printer, UploadCloud, ArrowLeft, CheckCircle2, RefreshCw, Trash2, Check, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { Save, Printer, UploadCloud, ArrowLeft, CheckCircle2, RefreshCw, Trash2, Check, ExternalLink, Image as ImageIcon, CheckSquare, ShieldCheck } from 'lucide-react';
 import { uploadArtworkFile, openArtworkViewer } from './services/supabaseStorageService';
+import { getAuthorisedSignature } from './services/settingsService';
 import { safeLocalStorageSet } from './utils/safeStorage';
 import ArtworkModal from './components/ArtworkModal';
 
 const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
+  const managementSignature = getAuthorisedSignature();
+
   return (
     <div ref={ref} className="printable-landscape-card" style={{ background: '#ffffff', color: '#000000', fontFamily: 'Inter, Arial, sans-serif', padding: '16px 20px', boxSizing: 'border-box', width: '100%' }}>
       <style>{`
         @media print {
           @page {
             size: A4 landscape !important;
-            margin: 8mm !important;
+            margin: 0 !important;
           }
           body * {
             visibility: hidden !important;
@@ -21,27 +24,17 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
           .printable-landscape-card * {
             visibility: visible !important;
           }
-          html, body {
-            background: #ffffff !important;
-            color: #000000 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            width: 100% !important;
-            height: auto !important;
-            overflow: visible !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
           .no-print, button {
             display: none !important;
           }
           .printable-landscape-card {
-            position: absolute !important;
+            position: relative !important;
+            display: block !important;
             left: 0 !important;
             top: 0 !important;
             width: 100% !important;
-            max-width: 285mm !important;
-            padding: 2mm 0 0 0 !important;
+            max-width: 297mm !important;
+            padding: 6mm 10mm !important;
             margin: 0 auto !important;
             background: #ffffff !important;
             color: #000000 !important;
@@ -51,52 +44,49 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
         .jobcard-table {
           width: 100%;
           border-collapse: collapse;
-          font-size: 11px;
           margin-bottom: 8px;
+          font-size: 11px;
         }
-
-        .jobcard-table th, .jobcard-table td {
-          border: 1px solid #1e293b;
+        .jobcard-table th {
+          background: #0f172a;
+          color: #ffffff;
+          padding: 5px 8px;
+          text-align: left;
+          font-size: 10.5px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          border: 1px solid #0f172a;
+        }
+        .jobcard-table td {
+          border: 1px solid #cbd5e1;
           padding: 5px 8px;
           vertical-align: middle;
         }
-
-        .jobcard-table th {
-          background-color: #f1f5f9;
-          color: #0f172a;
+        .jobcard-table td.label-cell {
+          background: #f1f5f9;
           font-weight: 700;
-          text-align: left;
-          font-size: 11px;
-          text-transform: uppercase;
-          letter-spacing: 0.3px;
-        }
-
-        .jobcard-table .label-cell {
-          background-color: #f8fafc;
-          font-weight: 600;
           color: #334155;
           width: 20%;
+          font-size: 10.5px;
         }
-
-        .jobcard-table .value-cell {
+        .jobcard-table td.value-cell {
+          background: #ffffff;
           font-weight: 600;
           color: #0f172a;
           width: 30%;
         }
       `}</style>
 
-      {/* Header Bar with explicit top spacing */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #0f172a', paddingBottom: '8px', paddingTop: '6px', marginTop: '4px', marginBottom: '10px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-            <img src="/samyak-logo.png" alt="Samyak Logo" style={{ maxHeight: '42px', objectFit: 'contain', marginTop: '2px' }} />
-            <span style={{ fontSize: '8px', fontWeight: '800', color: '#374151', marginTop: '2px' }}>
-              BSE: SAMYAKINT • CIN: L67120MH1994PLC225907
-            </span>
+      {/* Header Banner */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2.5px solid #0f172a', paddingBottom: '8px', marginBottom: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ background: '#0f172a', color: '#ffffff', padding: '6px 10px', borderRadius: '4px', fontWeight: '900', fontSize: '16px', letterSpacing: '1px' }}>
+            SAMYAK
           </div>
           <div>
-            <h1 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              SAMYAK INTERNATIONAL LTD
+            <h1 style={{ margin: 0, fontSize: '17px', fontWeight: '900', color: '#0f172a', letterSpacing: '0.5px' }}>
+              SAMYAK INTERNATIONAL LTD.
             </h1>
             <p style={{ margin: '1px 0 0 0', fontSize: '10px', color: '#475569', fontWeight: '600' }}>
               FLEXIBLE PACKAGING DIVISION | ROTOGRAVURE CYLINDER SPECIFICATION SHEET
@@ -104,185 +94,134 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
           </div>
         </div>
 
-        <div style={{ textAlign: 'right', borderLeft: '1px solid #cbd5e1', paddingLeft: '16px' }}>
-          <div style={{ background: '#0f172a', color: '#ffffff', padding: '4px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: '800', letterSpacing: '0.5px' }}>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ background: '#0f172a', color: '#ffffff', padding: '4px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: '800' }}>
             CYLINDER JOB CARD
           </div>
           <div style={{ fontSize: '10px', color: '#475569', marginTop: '4px', fontWeight: '600' }}>
-            Job Master ID: <strong>{data.jobMasterId || data.id || 'JM-2026-089'}</strong> | Date: <strong>{data.creationDate || new Date().toLocaleDateString('en-GB')}</strong>
+            Job ID: <strong>{data.jobMasterId || data.id || 'JM-2026-089'}</strong> | Date: <strong>{data.creationDate || new Date().toLocaleDateString('en-GB')}</strong>
           </div>
         </div>
       </div>
 
-      {/* Main Grid: Left Side Tables (65%), Right Side Artwork KLD (35%) */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '12px' }}>
-        
-        {/* Left Column: Data Tables */}
         <div>
-          {/* Table Section 1: Job & Client Information */}
           <table className="jobcard-table">
-            <thead>
-              <tr>
-                <th colSpan="4">1. Job & Client Details</th>
-              </tr>
-            </thead>
+            <thead><tr><th colSpan="4">1. Job & Client Details</th></tr></thead>
             <tbody>
               <tr>
-                <td className="label-cell">Job Master ID</td>
-                <td className="value-cell" style={{ fontSize: '12px', color: '#0f172a', fontWeight: '800' }}>{data.jobMasterId || data.id || 'JM-2026-089'}</td>
-                <td className="label-cell">SKU Code</td>
-                <td className="value-cell">{data.skuCode || data.sku || '—'}</td>
+                <td className="label-cell">Job Master ID</td><td className="value-cell">{data.jobMasterId || data.id || '—'}</td>
+                <td className="label-cell">SKU Code</td><td className="value-cell">{data.skuCode || '—'}</td>
               </tr>
               <tr>
-                <td className="label-cell">Job Name</td>
-                <td className="value-cell" style={{ fontSize: '11px', color: '#0f172a', fontWeight: '700' }}>{data.jobName || '—'}</td>
-                <td className="label-cell">Party / Client</td>
-                <td className="value-cell">{data.partyName || '—'}</td>
+                <td className="label-cell">Job Name</td><td className="value-cell">{data.jobName || '—'}</td>
+                <td className="label-cell">Party</td><td className="value-cell">{data.partyName || '—'}</td>
               </tr>
               <tr>
-                <td className="label-cell">SKU Code</td>
-                <td className="value-cell">{data.skuCode || '—'}</td>
-                <td className="label-cell">Invoice To</td>
-                <td className="value-cell">{data.invoiceTo || 'Samyak International Ltd'}</td>
-              </tr>
-              <tr>
-                <td className="label-cell">Variant / Flavor</td>
-                <td className="value-cell">{data.variant || 'Standard'}</td>
-                <td className="label-cell">Job Structure</td>
-                <td className="value-cell">{data.jobStructure || '—'}</td>
+                <td className="label-cell">Variant</td><td className="value-cell">{data.variant || 'Standard'}</td>
+                <td className="label-cell">Structure</td><td className="value-cell">{data.jobStructure || '—'}</td>
               </tr>
             </tbody>
           </table>
 
-          {/* Table Section 2: Technical Specifications & Dimensions */}
           <table className="jobcard-table">
-            <thead>
-              <tr>
-                <th colSpan="4">2. Printing & Cylinder Technical Parameters</th>
-              </tr>
-            </thead>
+            <thead><tr><th colSpan="4">2. Printing & Cylinder Parameters</th></tr></thead>
             <tbody>
               <tr>
-                <td className="label-cell">Printing Type</td>
-                <td className="value-cell">{data.printing || 'Reverse'}</td>
-                <td className="label-cell">No. of Cylinders</td>
-                <td className="value-cell" style={{ fontWeight: '800' }}>{data.numberOfCylinders || '—'} Colors</td>
+                <td className="label-cell">Printing Type</td><td className="value-cell">{data.printing || 'Reverse'}</td>
+                <td className="label-cell">Colors</td><td className="value-cell">{data.numberOfCylinders || '—'}</td>
               </tr>
               <tr>
-                <td className="label-cell">Indiv. Pouch Size</td>
-                <td className="value-cell">
-                  {data.pouchOpenWidth ? `${data.pouchOpenWidth}` : ''} 
-                  {data.pouchOpenWidth && data.pouchHeight ? ' x ' : ''}
-                  {data.pouchHeight ? `${data.pouchHeight}` : ''}
-                  {!data.pouchOpenWidth && !data.pouchHeight ? '—' : ''}
-                </td>
-                <td className="label-cell">Shell Size</td>
-                <td className="value-cell">{data.shellSize || '—'}</td>
+                <td className="label-cell">Pouch Size</td><td className="value-cell">{data.pouchOpenWidth} x {data.pouchHeight}</td>
+                <td className="label-cell">Shell Size</td><td className="value-cell">{data.shellSize || '—'}</td>
               </tr>
               <tr>
-                <td className="label-cell">Total Width (Face)</td>
-                <td className="value-cell">{data.totalWidth || '—'}</td>
-                <td className="label-cell">Total Repeat (Circum.)</td>
-                <td className="value-cell">{data.totalHeight || '—'}</td>
-              </tr>
-              <tr>
-                <td className="label-cell">PET Substrate Size</td>
-                <td className="value-cell">{data.petSize || '—'}</td>
-                <td className="label-cell">Engraver Name</td>
-                <td className="value-cell">{data.engravure || '—'}</td>
-              </tr>
-              <tr>
-                <td className="label-cell">Cost Borne By</td>
-                <td className="value-cell">{data.costBorneBy || '—'}</td>
-                <td className="label-cell">Utilisation Limit</td>
-                <td className="value-cell">{data.utilisationLimit ? `${Number(data.utilisationLimit).toLocaleString()} Kg` : '10,000 Kg'}</td>
+                <td className="label-cell">Width</td><td className="value-cell">{data.totalWidth || '—'}</td>
+                <td className="label-cell">Repeat</td><td className="value-cell">{data.totalHeight || '—'}</td>
               </tr>
             </tbody>
           </table>
 
-          {/* Table Section 3: Press Marks & Quality Guidelines */}
           <table className="jobcard-table">
-            <thead>
-              <tr>
-                <th colSpan="4">3. Press Marks & Quality Guidelines</th>
-              </tr>
-            </thead>
+            <thead><tr><th colSpan="4">3. Press Marks & Quality Guidelines</th></tr></thead>
             <tbody>
               <tr>
-                <td className="label-cell">SIL Logo / Press Line</td>
-                <td className="value-cell">{data.silLogo || 'Yes'}</td>
-                <td className="label-cell">ARC Mark</td>
-                <td className="value-cell">{data.arcMark || 'Yes'}</td>
+                <td className="label-cell">SIL Logo</td><td className="value-cell">{data.silLogo || 'Yes'}</td>
+                <td className="label-cell">ARC Mark</td><td className="value-cell">{data.arcMark || 'Yes'}</td>
               </tr>
               <tr>
-                <td className="label-cell">Slitting Mark</td>
-                <td className="value-cell">{data.slittingMark || 'Yes'}</td>
-                <td className="label-cell">Tracker Line</td>
-                <td className="value-cell">{data.trackerLine || 'Yes'}</td>
+                <td className="label-cell">Slitting Mark</td><td className="value-cell">{data.slittingMark || 'Yes'}</td>
+                <td className="label-cell">Tracker Line</td><td className="value-cell">{data.trackerLine || 'Yes'}</td>
               </tr>
-              {data.specialInstructions && (
-                <tr>
-                  <td className="label-cell">Special Notes</td>
-                  <td colSpan="3" className="value-cell" style={{ color: '#b91c1c' }}>{data.specialInstructions}</td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>
 
-        {/* Right Column: Approved Artwork / KLD Container */}
-        <div style={{ border: '1px solid #1e293b', borderRadius: '4px', display: 'flex', flexDirection: 'column', overflow: 'hidden', height: '100%' }}>
-          <div style={{ background: '#f1f5f9', padding: '6px 10px', fontSize: '11px', fontWeight: '700', borderBottom: '1px solid #1e293b', color: '#0f172a', textAlign: 'center', textTransform: 'uppercase' }}>
-            FINAL APPROVED KLD / ARTWORK PROOF
+        <div style={{ border: '1px solid #1e293b', borderRadius: '4px', display: 'flex', flexDirection: 'column', height: '100%' }}>
+          <div style={{ background: '#f1f5f9', padding: '6px 10px', fontSize: '11px', fontWeight: '700', borderBottom: '1px solid #1e293b', textAlign: 'center' }}>
+            APPROVED KLD / ARTWORK
           </div>
-
-          <div style={{ flex: 1, padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fafafa', minHeight: '180px' }}>
+          <div style={{ flex: 1, padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fafafa' }}>
             {imagePreview ? (
-              <img src={imagePreview} alt="Final Approved KLD" style={{ maxWidth: '100%', maxHeight: '200px', objectFit: 'contain', borderRadius: '4px', border: '1px solid #e2e8f0' }} />
+              <img src={imagePreview} alt="Artwork" style={{ maxWidth: '100%', maxHeight: '180px', objectFit: 'contain' }} />
             ) : (
-              <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px' }}>
-                <div style={{ fontSize: '28px', marginBottom: '4px' }}>📐</div>
-                <div style={{ fontWeight: '700', fontSize: '12px', color: '#475569' }}>KLD PROOF ATTACHED</div>
-                <div style={{ fontSize: '9px', marginTop: '4px' }}>(Verify Keyline layout & Color Sequence)</div>
-              </div>
+              <div style={{ color: '#94a3b8', fontSize: '10px' }}>No Artwork Preview</div>
             )}
           </div>
-
           <div style={{ borderTop: '1px solid #e2e8f0', padding: '6px 8px', fontSize: '9px', color: '#64748b', background: '#ffffff' }}>
-            <strong>Checklist:</strong>
-            <ul style={{ margin: '2px 0 0 14px', padding: 0 }}>
-              <li>Eye-mark positioning verified</li>
-              <li>Bar-code & FSSAI license checked</li>
-              <li>Reverse / Surface orientation confirmed</li>
+            <strong>Verified Pre-Press Checklist:</strong>
+            <ul style={{ margin: '2px 0 0 14px', padding: 0, listStyleType: 'none' }}>
+              {data.chkEyemark && <li style={{ color: '#047857', fontWeight: '700' }}>✓ Eye-mark positioning verified</li>}
+              {data.chkBarcode && <li style={{ color: '#047857', fontWeight: '700' }}>✓ Bar-code & FSSAI license checked</li>}
+              {data.chkOrientation && <li style={{ color: '#047857', fontWeight: '700' }}>✓ Reverse / Surface orientation confirmed</li>}
+              {data.chkClientApproval && <li style={{ color: '#047857', fontWeight: '700' }}>✓ Client Approval Received</li>}
+              {(!data.chkEyemark && !data.chkBarcode && !data.chkOrientation && !data.chkClientApproval) && (
+                <li style={{ color: '#dc2626', fontStyle: 'italic' }}>⚠️ Checklist pending verification in settings</li>
+              )}
             </ul>
           </div>
         </div>
       </div>
 
-      {/* Footer Signature Block */}
-      <div style={{ marginTop: '8px' }}>
+      <div style={{ marginTop: '10px' }}>
         <table className="jobcard-table" style={{ marginBottom: 0 }}>
           <thead>
             <tr>
-              <th style={{ width: '25%', textAlign: 'center' }}>Prepared By (Pre-Press)</th>
-              <th style={{ width: '25%', textAlign: 'center' }}>Checked By (QC Manager)</th>
-              <th style={{ width: '25%', textAlign: 'center' }}>Production Head</th>
-              <th style={{ width: '25%', textAlign: 'center' }}>Approved By (Client Rep)</th>
+              <th style={{ width: '50%', textAlign: 'center' }}>Prepared By (Management)</th>
+              <th style={{ width: '50%', textAlign: 'center' }}>Checked By (Production Head)</th>
             </tr>
           </thead>
           <tbody>
-            <tr style={{ height: '38px' }}>
-              <td style={{ textAlign: 'center', verticalAlign: 'bottom', fontSize: '9px', color: '#64748b' }}>
-                Sign & Date
+            <tr style={{ height: '54px' }}>
+              <td style={{ textAlign: 'center', verticalAlign: 'middle', fontSize: '10px' }}>
+                {managementSignature ? (
+                  <img src={managementSignature} alt="Management Signature" style={{ height: '36px', maxHeight: '36px', objectFit: 'contain', display: 'block', margin: '0 auto 2px auto' }} />
+                ) : (
+                  <div style={{ fontWeight: '800', color: '#0f172a', marginBottom: '2px' }}>Samyak International Ltd</div>
+                )}
+                <div style={{ fontSize: '9px', color: '#475569', fontWeight: '700' }}>Authorized Management Signatory</div>
               </td>
-              <td style={{ textAlign: 'center', verticalAlign: 'bottom', fontSize: '9px', color: '#64748b' }}>
-                Sign & Date
-              </td>
-              <td style={{ textAlign: 'center', verticalAlign: 'bottom', fontSize: '9px', color: '#64748b' }}>
-                Sign & Date
-              </td>
-              <td style={{ textAlign: 'center', verticalAlign: 'bottom', fontSize: '10px', fontWeight: '700', color: '#0f172a' }}>
-                {data.approvedBy ? data.approvedBy : 'Authorized Signatory'}
+
+              <td style={{ textAlign: 'center', verticalAlign: 'middle', fontSize: '10px' }}>
+                {data.approvedByHead || data.productionApproved ? (
+                  <div style={{ color: '#047857', fontWeight: '800' }}>
+                    <div style={{ fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                      ✓ Verified & Approved
+                    </div>
+                    <div style={{ fontSize: '9px', color: '#334155', fontWeight: '700', marginTop: '2px' }}>
+                      {data.approvedHeadName || 'Production Head'} • {data.approvedHeadDate || data.creationDate}
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ fontSize: '10px', color: '#d97706', fontWeight: '800', marginBottom: '2px' }}>
+                      ⏳ Pending Production Head Sign-Off
+                    </div>
+                    <div style={{ fontSize: '9px', color: '#94a3b8', fontStyle: 'italic' }}>
+                      (Awaiting Review on Production Dashboard)
+                    </div>
+                  </div>
+                )}
               </td>
             </tr>
           </tbody>
@@ -292,7 +231,7 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
   );
 });
 
-export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
+export default function CylinderJobCardForm({ onSave, initialData, onClose, currentUser }) {
   const componentRef = useRef();
 
   const [formData, setFormData] = useState({
@@ -321,7 +260,14 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
     cylinderCost: '₹35,000',
     utilisationLimit: '10000',
     costBorneBy: 'Client (100%)',
-    costBorneType: 'client'
+    costBorneType: 'client',
+    chkEyemark: false,
+    chkBarcode: false,
+    chkOrientation: false,
+    chkClientApproval: false,
+    approvedByHead: false,
+    approvedHeadName: '',
+    approvedHeadDate: ''
   });
 
   useEffect(() => {
@@ -359,7 +305,14 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
         utilisationLimit: `${initialData.utilisationLimit || 10000}`,
         costBorneBy: initialData.costBorneBy || 'Client (100%)',
         costBorneType: initialData.costBorneType || 'client',
-        artworkUrl: initialData.artworkUrl || initialData.jobCardFileUrl || initialData.imageUrl || initialData.artworkImage || ''
+        artworkUrl: initialData.artworkUrl || initialData.jobCardFileUrl || initialData.imageUrl || initialData.artworkImage || '',
+        chkEyemark: initialData.chkEyemark ?? false,
+        chkBarcode: initialData.chkBarcode ?? false,
+        chkOrientation: initialData.chkOrientation ?? false,
+        chkClientApproval: initialData.chkClientApproval ?? false,
+        approvedByHead: initialData.approvedByHead ?? initialData.productionApproved ?? false,
+        approvedHeadName: initialData.approvedHeadName || '',
+        approvedHeadDate: initialData.approvedHeadDate || ''
       });
 
       const initialArtworkUrl = initialData.artworkUrl || initialData.jobCardFileUrl || initialData.imageUrl || initialData.artworkImage || '';
@@ -374,7 +327,6 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
   const [saveNotification, setSaveNotification] = useState(null);
   const [activeArtworkModal, setActiveArtworkModal] = useState({ isOpen: false, url: '', title: '' });
 
-  // Auto-Save effect: persists formData safely automatically on any change
   useEffect(() => {
     if (!formData.jobName && !formData.skuCode) return;
     try {
@@ -436,6 +388,11 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
   };
 
   const handleSaveSettings = () => {
+    if (!formData.chkEyemark || !formData.chkBarcode || !formData.chkOrientation || !formData.chkClientApproval) {
+      alert("⚠️ MANDATORY CHECKLIST UNVERIFIED:\n\nYou must verify and check all 4 Pre-Press & Quality Checklist items (Eye-mark, Barcode/FSSAI, Orientation, Client Approval) mandatorily before saving Job Card parameters!");
+      return;
+    }
+
     try {
       const storageKey = `samyak_erp_jobcard_settings_${formData.skuCode || formData.jobName}`;
       safeLocalStorageSet(storageKey, formData);
@@ -452,51 +409,37 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
     }
   };
 
-  const submitToSystem = () => {
-    if (!formData.skuCode || !formData.jobName) {
-      alert("SKU Code and Job Name are required to add to the system.");
-      return;
-    }
-    handleSaveSettings();
-  };
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {/* Save Notification Banner */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', alignItems: 'center' }}>
+      
       {saveNotification && (
-        <div className="no-print" style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '12px 16px', borderRadius: '8px', color: '#047857', fontWeight: '700', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <CheckCircle2 size={18} /> {saveNotification}
+        <div style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', padding: '12px 20px', borderRadius: '8px', fontWeight: '700', fontSize: '0.9rem', width: '100%', maxWidth: '1000px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <CheckCircle2 size={20} />
+          {saveNotification}
         </div>
       )}
 
-      {/* Action Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }} className="no-print">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      {/* Top Action Toolbar */}
+      <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', maxWidth: '1000px', background: '#f8fafc', padding: '12px 20px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           {onClose && (
-            <button className="btn-secondary" style={{ padding: '6px 12px' }} onClick={onClose}>
+            <button className="btn-secondary" style={{ padding: '8px 14px', fontSize: '0.85rem' }} onClick={onClose}>
               <ArrowLeft size={16} /> Back
             </button>
           )}
-          <div>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: '700', margin: 0 }}>
-              {initialData ? `Cylinder Job Card: ${formData.jobName}` : 'Cylinder Job Card Generator'}
-            </h3>
-            <span style={{ fontSize: '0.75rem', color: '#059669', fontWeight: '600' }}>
-              ⚡ Auto-Save Active (Changes saved automatically)
-            </span>
-          </div>
+          <span style={{ fontWeight: '800', color: '#1e293b', fontSize: '0.95rem' }}>
+            Job Card Specification & Artwork Controls
+          </span>
         </div>
+
         <div style={{ display: 'flex', gap: '12px' }}>
-          <button className="btn-primary" style={{ background: '#059669' }} onClick={handleSaveSettings}>
-            <Save size={16} /> Save Settings
-          </button>
-          <button className="btn-primary" onClick={handlePrint}>
-            <Printer size={16} /> Print Landscape PDF
+          <button className="btn-primary" style={{ background: '#1e293b', borderColor: '#1e293b' }} onClick={handlePrint}>
+            <Printer size={16} /> Print / Export Job Card PDF
           </button>
         </div>
       </div>
 
-      {/* Printable Landscape Preview */}
+      {/* A4 Landscape Job Card Component Wrapper */}
       <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '16px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
         <PrintableJobCard ref={componentRef} data={formData} imagePreview={imagePreview} />
       </div>
@@ -513,6 +456,102 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
           <button className="btn-primary" style={{ background: '#059669', padding: '8px 16px', fontSize: '0.85rem' }} onClick={handleSaveSettings}>
             <CheckCircle2 size={16} /> Save Job Card Parameters
           </button>
+        </div>
+
+        {/* Mandatory Checkbox-based Pre-Press & Quality Checklist */}
+        <div style={{ marginBottom: '20px', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+          <label style={{ fontWeight: '800', fontSize: '0.9rem', marginBottom: '8px', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <CheckSquare size={18} style={{ color: 'var(--primary-brand)' }} />
+            Pre-Press & Quality Verification Checklist <span style={{ color: '#dc2626', fontWeight: '900' }}>* (Mandatory All 4 Items)</span>
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '8px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer', background: formData.chkEyemark ? '#ecfdf5' : '#fff', padding: '8px 12px', borderRadius: '6px', border: formData.chkEyemark ? '1px solid #6ee7b7' : '1px solid #cbd5e1' }}>
+              <input 
+                type="checkbox" 
+                name="chkEyemark" 
+                checked={formData.chkEyemark} 
+                onChange={e => setFormData(prev => ({ ...prev, chkEyemark: e.target.checked }))} 
+              />
+              Eye-mark positioning verified
+            </label>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer', background: formData.chkBarcode ? '#ecfdf5' : '#fff', padding: '8px 12px', borderRadius: '6px', border: formData.chkBarcode ? '1px solid #6ee7b7' : '1px solid #cbd5e1' }}>
+              <input 
+                type="checkbox" 
+                name="chkBarcode" 
+                checked={formData.chkBarcode} 
+                onChange={e => setFormData(prev => ({ ...prev, chkBarcode: e.target.checked }))} 
+              />
+              Bar-code & FSSAI license checked
+            </label>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer', background: formData.chkOrientation ? '#ecfdf5' : '#fff', padding: '8px 12px', borderRadius: '6px', border: formData.chkOrientation ? '1px solid #6ee7b7' : '1px solid #cbd5e1' }}>
+              <input 
+                type="checkbox" 
+                name="chkOrientation" 
+                checked={formData.chkOrientation} 
+                onChange={e => setFormData(prev => ({ ...prev, chkOrientation: e.target.checked }))} 
+              />
+              Reverse / Surface orientation confirmed
+            </label>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer', background: formData.chkClientApproval ? '#ecfdf5' : '#fff', padding: '8px 12px', borderRadius: '6px', border: formData.chkClientApproval ? '1px solid #6ee7b7' : '1px solid #cbd5e1' }}>
+              <input 
+                type="checkbox" 
+                name="chkClientApproval" 
+                checked={formData.chkClientApproval} 
+                onChange={e => setFormData(prev => ({ ...prev, chkClientApproval: e.target.checked }))} 
+              />
+              Client Approval Received
+            </label>
+          </div>
+        </div>
+
+        {/* Production Head Sign-Off Section */}
+        <div style={{ marginBottom: '20px', background: formData.approvedByHead ? '#ecfdf5' : '#fff7ed', padding: '16px', borderRadius: '8px', border: formData.approvedByHead ? '1px solid #6ee7b7' : '1px solid #fed7aa', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+          <div>
+            <div style={{ fontWeight: '800', fontSize: '0.9rem', color: formData.approvedByHead ? '#047857' : '#c2410c', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <ShieldCheck size={18} />
+              Checked By (Production Head Approval Status): {formData.approvedByHead ? '✓ APPROVED' : '⏳ PENDING REVIEW'}
+            </div>
+            <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>
+              {formData.approvedByHead 
+                ? `Approved by ${formData.approvedHeadName || 'Production Head'} on ${formData.approvedHeadDate || formData.creationDate}`
+                : 'Requires Production Head or Admin sign-off to finalize Job Card specs for shop floor execution.'}
+            </div>
+          </div>
+
+          {formData.approvedByHead ? (
+            <button 
+              type="button" 
+              className="btn-secondary" 
+              style={{ color: '#dc2626', borderColor: '#fca5a5', fontSize: '0.82rem', padding: '6px 12px' }}
+              onClick={() => {
+                setFormData(prev => ({ ...prev, approvedByHead: false, approvedHeadName: '', approvedHeadDate: '' }));
+              }}
+            >
+              Revoke Sign-Off
+            </button>
+          ) : (
+            <button 
+              type="button" 
+              className="btn-primary" 
+              style={{ background: '#047857', borderColor: '#047857', fontWeight: '800', fontSize: '0.85rem', padding: '8px 16px' }}
+              onClick={() => {
+                const approverName = currentUser?.name || 'Production Head';
+                const dateStr = new Date().toLocaleDateString('en-IN');
+                setFormData(prev => ({
+                  ...prev,
+                  approvedByHead: true,
+                  approvedHeadName: approverName,
+                  approvedHeadDate: dateStr
+                }));
+                alert(`Job Card approved and signed off by ${approverName}!`);
+              }}
+            >
+              <CheckCircle2 size={16} /> Sign-Off & Approve Job Card
+            </button>
+          )}
         </div>
 
         <div className="form-grid">

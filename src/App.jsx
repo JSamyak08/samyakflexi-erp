@@ -1085,6 +1085,7 @@ export default function App() {
             productionRecords={productionRecords}
             orders={orders}
             clients={clients}
+            currentUser={currentUser}
             onAddJobMaster={handleAddJobMaster}
             onUpdateJobMaster={handleUpdateJobMaster}
             onDeleteJobMaster={handleDeleteJobMaster}

@@ -34,6 +34,7 @@ export default function JobMasterDirectory({
   productionRecords = [], 
   orders = [],
   clients = [],
+  currentUser,
   onAddJobMaster,
   onAddCylinder,
   onAddClient,
@@ -624,6 +625,7 @@ export default function JobMasterDirectory({
                 <CylinderJobCardForm 
                   initialData={activeJobCardData} 
                   onSave={handleSaveJobCardData}
+                  currentUser={currentUser}
                 />
               </div>
             </div>
