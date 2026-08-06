@@ -1139,6 +1139,9 @@ export async function fetchJobMasters() {
         engravuresName: j.engravures_name || j.engraver_name || '',
         costBorneBy: j.cost_borne_by || 'Client (100%)',
         utilisationLimit: Number(j.utilisation_limit) || 10000,
+        jobCardFileName: j.job_card_file_name || (j.job_card_file_url || j.artwork_url ? 'Artwork_KLD_Proof.pdf' : ''),
+        jobCardFileUrl: j.job_card_file_url || j.artwork_url || '',
+        artworkUrl: j.artwork_url || j.job_card_file_url || '',
         creationDate: j.creation_date || j.created_at ? String(j.created_at).split('T')[0] : new Date().toISOString().split('T')[0]
       };
     });
@@ -1168,6 +1171,8 @@ export async function saveJobMasterToSupabase(jobMaster) {
   const cylinderCost = String(jobMaster.cylinderCost || '₹ 0');
   const costBorneBy = jobMaster.costBorneBy || 'Client (100%)';
   const engraverName = jobMaster.engravuresName || '';
+  const fileUrl = jobMaster.jobCardFileUrl || jobMaster.artworkUrl || '';
+  const fileName = jobMaster.jobCardFileName || (fileUrl ? 'Artwork_KLD_Proof.pdf' : '');
 
   const legacyPayload = {
     id,
@@ -1182,6 +1187,8 @@ export async function saveJobMasterToSupabase(jobMaster) {
     cylinder_cost: cylinderCost,
     cost_borne_by: costBorneBy,
     engraver_name: engraverName,
+    job_card_file_url: fileUrl,
+    artwork_url: fileUrl,
     created_at: new Date().toISOString()
   };
 
@@ -1195,6 +1202,9 @@ export async function saveJobMasterToSupabase(jobMaster) {
     cylinder_sku: jobMaster.cylinderSku || skuCode,
     engravures_name: engraverName,
     utilisation_limit: Number(jobMaster.utilisationLimit) || 10000,
+    job_card_file_name: fileName,
+    job_card_file_url: fileUrl,
+    artwork_url: fileUrl,
     creation_date: jobMaster.creationDate || new Date().toISOString().split('T')[0]
   };
 

@@ -359,11 +359,12 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
         utilisationLimit: `${initialData.utilisationLimit || 10000}`,
         costBorneBy: initialData.costBorneBy || 'Client (100%)',
         costBorneType: initialData.costBorneType || 'client',
-        artworkUrl: initialData.artworkUrl || initialData.imageUrl || initialData.artworkImage || ''
+        artworkUrl: initialData.artworkUrl || initialData.jobCardFileUrl || initialData.imageUrl || initialData.artworkImage || ''
       });
 
-      if (initialData.artworkUrl || initialData.imageUrl || initialData.artworkImage) {
-        setImagePreview(initialData.artworkUrl || initialData.imageUrl || initialData.artworkImage);
+      const initialArtworkUrl = initialData.artworkUrl || initialData.jobCardFileUrl || initialData.imageUrl || initialData.artworkImage || '';
+      if (initialArtworkUrl) {
+        setImagePreview(initialArtworkUrl);
       }
     }
   }, [initialData]);

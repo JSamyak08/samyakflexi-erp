@@ -516,9 +516,39 @@ export default function JobMasterDirectory({
       cylinderCost: job.cylinderCost || (linkedCyl ? linkedCyl.cylinderCost : '35000'),
       engravuresName: job.engravuresName || (linkedCyl ? linkedCyl.engravuresName : 'Acme Rotogravure Engravers'),
       costBorneBy: job.costBorneBy || (linkedCyl ? linkedCyl.costBorneBy : 'Client (100%)'),
-      creationDate: job.creationDate || new Date().toLocaleDateString('en-GB')
+      creationDate: job.creationDate || new Date().toLocaleDateString('en-GB'),
+      jobCardFileUrl: job.jobCardFileUrl || job.artworkUrl || '',
+      artworkUrl: job.jobCardFileUrl || job.artworkUrl || ''
     };
     setActiveJobCardData(cardData);
+  };
+
+  const handleSaveJobCardData = (updatedData) => {
+    const targetJob = selectedJob || jobMasters.find(j => j.id === updatedData.jobMasterId || j.skuCode === updatedData.skuCode);
+    if (!targetJob) return;
+
+    const fileUrl = updatedData.artworkUrl || updatedData.jobCardFileUrl || targetJob.jobCardFileUrl || '';
+    const updatedJob = {
+      ...targetJob,
+      ...updatedData,
+      jobCardFileUrl: fileUrl,
+      artworkUrl: fileUrl,
+      jobCardFileName: fileUrl ? (targetJob.jobCardFileName || 'Artwork_KLD_Proof.pdf') : null
+    };
+
+    const updatedJobs = jobMasters.map(j => j.id === updatedJob.id ? updatedJob : j);
+    setJobMasters(updatedJobs);
+    if (selectedJob && selectedJob.id === updatedJob.id) {
+      setSelectedJob(updatedJob);
+    }
+    if (onAddJobMaster) onAddJobMaster(updatedJob);
+
+    try {
+      localStorage.setItem('samyak_erp_job_masters', JSON.stringify(updatedJobs));
+    } catch (e) {}
+
+    saveJobMasterToSupabase(updatedJob);
+    alert("Job Card Parameters & Cloud Artwork saved successfully!");
   };
 
   const handleFileUpload = (e) => {
@@ -537,11 +567,16 @@ export default function JobMasterDirectory({
         ...selectedJob,
         jobCardFileName: file.name,
         jobCardFileUrl: fileUrl,
+        artworkUrl: fileUrl,
         jobCardUploadDate: new Date().toLocaleDateString('en-IN')
       };
 
       setSelectedJob(updatedJob);
       if (onAddJobMaster) onAddJobMaster(updatedJob);
+      try {
+        localStorage.setItem('samyak_erp_job_masters', JSON.stringify(jobMasters.map(j => j.id === updatedJob.id ? updatedJob : j)));
+      } catch (err) {}
+      saveJobMasterToSupabase(updatedJob);
       alert(`File "${file.name}" linked to Job Master ${selectedJob.id} successfully!`);
     };
     reader.readAsDataURL(file);
@@ -553,11 +588,16 @@ export default function JobMasterDirectory({
       ...selectedJob,
       jobCardFileName: null,
       jobCardFileUrl: null,
+      artworkUrl: null,
       jobCardUploadDate: null
     };
 
     setSelectedJob(updatedJob);
     if (onAddJobMaster) onAddJobMaster(updatedJob);
+    try {
+      localStorage.setItem('samyak_erp_job_masters', JSON.stringify(jobMasters.map(j => j.id === updatedJob.id ? updatedJob : j)));
+    } catch (err) {}
+    saveJobMasterToSupabase(updatedJob);
   };
 
   if (selectedJob) {
@@ -583,7 +623,7 @@ export default function JobMasterDirectory({
               <div style={{ background: '#ffffff', width: '1000px', maxWidth: '98vw', borderRadius: '8px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)', padding: '24px' }}>
                 <CylinderJobCardForm 
                   initialData={activeJobCardData} 
-                  onSave={() => alert("Job Card settings saved successfully!")}
+                  onSave={handleSaveJobCardData}
                 />
               </div>
             </div>
