@@ -4,7 +4,7 @@ import { Save, Printer, UploadCloud, ArrowLeft, CheckCircle2, RefreshCw, Trash2,
 import { uploadArtworkFile, openArtworkViewer } from './services/supabaseStorageService';
 import { getAuthorisedSignature, getCompanyLogo } from './services/settingsService';
 import { safeLocalStorageSet } from './utils/safeStorage';
-import { FILM_DENSITIES } from './factoryStore';
+import { COMPANY_DETAILS, FILM_DENSITIES } from './factoryStore';
 import { saveJobMasterToSupabase } from './services/supabaseDataService';
 import ArtworkModal from './components/ArtworkModal';
 
