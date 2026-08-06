@@ -1,10 +1,24 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { useReactToPrint } from 'react-to-print';
-import { Save, Printer, UploadCloud, ArrowLeft, CheckCircle2, RefreshCw, Trash2, Check, ExternalLink, Image as ImageIcon, CheckSquare, ShieldCheck } from 'lucide-react';
+import { Save, Printer, UploadCloud, ArrowLeft, CheckCircle2, RefreshCw, Trash2, Check, ExternalLink, Image as ImageIcon, CheckSquare, ShieldCheck, FileCode, Layers, Plus } from 'lucide-react';
 import { uploadArtworkFile, openArtworkViewer } from './services/supabaseStorageService';
 import { getAuthorisedSignature } from './services/settingsService';
 import { safeLocalStorageSet } from './utils/safeStorage';
+import { FILM_DENSITIES } from './factoryStore';
+import { saveJobMasterToSupabase } from './services/supabaseDataService';
 import ArtworkModal from './components/ArtworkModal';
+
+function parseStructureToLayers(structStr) {
+  if (!structStr || structStr === '—') return [];
+  const parts = structStr.split('/');
+  return parts.map((part, idx) => {
+    const trimmed = part.trim();
+    const micronMatch = trimmed.match(/(\d+)\s*µ?/);
+    const micron = micronMatch ? parseInt(micronMatch[1], 10) : 12;
+    const filmType = trimmed.replace(/\d+\s*µ?/, '').trim() || 'PET';
+    return { id: idx + 1, filmType, micron };
+  });
+}
 
 const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
   const managementSignature = getAuthorisedSignature();
@@ -231,10 +245,24 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
   );
 });
 
-export default function CylinderJobCardForm({ onSave, initialData, onClose, currentUser }) {
+export default function CylinderJobCardForm({ onSave, initialData, onClose, currentUser, jobMasters = [] }) {
   const componentRef = useRef();
 
+  const [selectedJobMasterId, setSelectedJobMasterId] = useState(initialData?.jobMasterId || initialData?.id || '');
+  const [layers, setLayers] = useState(() => {
+    if (initialData?.layers && initialData.layers.length > 0) return initialData.layers;
+    if (initialData?.structure) return parseStructureToLayers(initialData.structure);
+    return [
+      { id: 1, filmType: 'PET', micron: 12 },
+      { id: 2, filmType: 'METPET', micron: 12 },
+      { id: 3, filmType: 'Natural GP LD', micron: 35 }
+    ];
+  });
+
+  const availableFilmTypes = useMemo(() => Object.keys(FILM_DENSITIES), []);
+
   const [formData, setFormData] = useState({
+    jobMasterId: initialData?.jobMasterId || initialData?.id || '',
     skuCode: '',
     jobName: '',
     creationDate: new Date().toLocaleDateString('en-GB'),
@@ -272,11 +300,18 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
 
   useEffect(() => {
     if (initialData) {
-      const derivedStruct = (initialData.layers && initialData.layers.length > 0)
-        ? initialData.layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
+      let initLayers = initialData.layers || [];
+      if (initLayers.length === 0 && (initialData.structure || initialData.film_structure)) {
+        initLayers = parseStructureToLayers(initialData.structure || initialData.film_structure);
+      }
+      if (initLayers.length > 0) setLayers(initLayers);
+
+      const derivedStruct = (initLayers.length > 0)
+        ? initLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
         : (initialData.structure || initialData.film_structure || initialData.jobStructure || '—');
 
       setFormData({
+        jobMasterId: initialData.jobMasterId || initialData.id || '',
         skuCode: initialData.sku || initialData.skuCode || '',
         jobName: initialData.jobName || '',
         creationDate: initialData.creationDate || new Date().toLocaleDateString('en-GB'),
@@ -284,14 +319,14 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         invoiceTo: initialData.invoiceTo || 'Samyak International Ltd',
         variant: initialData.variant || '',
         printing: initialData.printing || 'Reverse',
-        pouchOpenWidth: initialData.pouchOpenWidth || '',
-        pouchHeight: initialData.pouchHeight || '',
+        pouchOpenWidth: initialData.pouchOpenWidth ? (String(initialData.pouchOpenWidth).includes('mm') ? initialData.pouchOpenWidth : `${initialData.pouchOpenWidth} mm`) : '',
+        pouchHeight: initialData.pouchHeight ? (String(initialData.pouchHeight).includes('mm') ? initialData.pouchHeight : `${initialData.pouchHeight} mm`) : '',
         numberOfCylinders: `${initialData.colorsCount || initialData.numberOfCylinders || 6}`,
         jobStructure: derivedStruct,
-        totalWidth: initialData.faceLengthMm ? `${initialData.faceLengthMm} mm` : (initialData.totalWidth || ''),
-        totalHeight: initialData.circumferenceMm ? `${initialData.circumferenceMm} mm` : (initialData.totalHeight || ''),
-        shellSize: initialData.shellSize || (initialData.faceLengthMm ? `${initialData.faceLengthMm} mm` : ''),
-        petSize: initialData.petSize || (initialData.faceLengthMm ? `${initialData.faceLengthMm + 10} mm` : ''),
+        totalWidth: initialData.faceLengthMm ? `${initialData.faceLengthMm} mm` : (initialData.totalWidth || (initialData.printWidthMm ? `${initialData.printWidthMm} mm` : '')),
+        totalHeight: initialData.circumferenceMm ? `${initialData.circumferenceMm} mm` : (initialData.totalHeight || (initialData.repeatLengthMm ? `${initialData.repeatLengthMm} mm` : '')),
+        shellSize: initialData.shellSize || (initialData.faceLengthMm ? `${initialData.faceLengthMm} mm` : (initialData.printWidthMm ? `${initialData.printWidthMm} mm` : '')),
+        petSize: initialData.petSize || (initialData.faceLengthMm ? `${initialData.faceLengthMm + 10} mm` : (initialData.printWidthMm ? `${initialData.printWidthMm + 10} mm` : '')),
         silLogo: initialData.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
         arcMark: initialData.arcMark || 'Yes',
         slittingMark: initialData.slittingMark || 'Yes',
@@ -322,6 +357,14 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
     }
   }, [initialData]);
 
+  // Keep derived structure in sync with layers changes
+  useEffect(() => {
+    if (layers && layers.length > 0) {
+      const structStr = layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
+      setFormData(prev => ({ ...prev, jobStructure: structStr }));
+    }
+  }, [layers]);
+
   const [imagePreview, setImagePreview] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [saveNotification, setSaveNotification] = useState(null);
@@ -351,6 +394,51 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
     const { name, value } = e.target;
     if (value && /^\d+(\.\d+)?$/.test(value.trim())) {
       setFormData(prev => ({ ...prev, [name]: `${value.trim()} mm` }));
+    }
+  };
+
+  // Job Master selector handler to auto-fill all parameters
+  const handleJobMasterSelect = (e) => {
+    const selectedId = e.target.value;
+    setSelectedJobMasterId(selectedId);
+    if (!selectedId) return;
+
+    const jm = (jobMasters || []).find(j => j.id === selectedId);
+    if (jm) {
+      let jmLayers = jm.layers || [];
+      if (jmLayers.length === 0 && jm.structure) {
+        jmLayers = parseStructureToLayers(jm.structure);
+      }
+      if (jmLayers.length > 0) {
+        setLayers(jmLayers);
+      }
+
+      const derived = (jmLayers.length > 0)
+        ? jmLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
+        : (jm.structure || '—');
+
+      setFormData(prev => ({
+        ...prev,
+        jobMasterId: jm.id,
+        skuCode: jm.skuCode || jm.sku || prev.skuCode,
+        jobName: jm.jobName || prev.jobName,
+        partyName: jm.clientName || prev.partyName,
+        pouchOpenWidth: jm.pouchOpenWidth ? `${jm.pouchOpenWidth} mm` : (jm.printWidthMm ? `${jm.printWidthMm} mm` : prev.pouchOpenWidth),
+        pouchHeight: jm.pouchHeight ? `${jm.pouchHeight} mm` : prev.pouchHeight,
+        numberOfCylinders: `${jm.colorsCount || prev.numberOfCylinders || 6}`,
+        jobStructure: derived,
+        totalWidth: jm.printWidthMm ? `${jm.printWidthMm} mm` : prev.totalWidth,
+        totalHeight: jm.repeatLengthMm ? `${jm.repeatLengthMm} mm` : prev.totalHeight,
+        shellSize: jm.printWidthMm ? `${jm.printWidthMm} mm` : prev.shellSize,
+        petSize: jm.printWidthMm ? `${jm.printWidthMm + 10} mm` : prev.petSize,
+        engravure: jm.engravuresName || prev.engravure,
+        costBorneBy: jm.costBorneBy || prev.costBorneBy,
+        artworkUrl: jm.jobCardFileUrl || jm.artworkUrl || prev.artworkUrl
+      }));
+
+      if (jm.jobCardFileUrl || jm.artworkUrl) {
+        setImagePreview(jm.jobCardFileUrl || jm.artworkUrl);
+      }
     }
   };
 
@@ -394,14 +482,88 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
     }
 
     try {
-      const storageKey = `samyak_erp_jobcard_settings_${formData.skuCode || formData.jobName}`;
-      safeLocalStorageSet(storageKey, formData);
+      const derivedStruct = (layers && layers.length > 0)
+        ? layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
+        : (formData.jobStructure || '—');
 
-      if (onSave) {
-        onSave({ ...formData, artworkUrl: imagePreview || formData.artworkUrl || '' });
+      const fileUrl = imagePreview || formData.artworkUrl || '';
+
+      // 1. Check if Job Master already exists
+      const existingJM = (jobMasters || []).find(j => 
+        (j.id && j.id === formData.jobMasterId) ||
+        (j.skuCode && j.skuCode.toLowerCase() === (formData.skuCode || '').toLowerCase().trim()) ||
+        (j.jobName && j.jobName.toLowerCase() === (formData.jobName || '').toLowerCase().trim())
+      );
+
+      let targetJobMaster;
+      if (existingJM) {
+        // Update existing Job Master
+        targetJobMaster = {
+          ...existingJM,
+          skuCode: formData.skuCode || existingJM.skuCode,
+          jobName: formData.jobName || existingJM.jobName,
+          clientName: formData.partyName || existingJM.clientName,
+          structure: derivedStruct,
+          layers: layers,
+          printWidthMm: Number(String(formData.totalWidth).replace(/\D/g, '')) || Number(String(formData.pouchOpenWidth).replace(/\D/g, '')) || existingJM.printWidthMm || 1000,
+          repeatLengthMm: Number(String(formData.totalHeight).replace(/\D/g, '')) || Number(String(formData.pouchHeight).replace(/\D/g, '')) || existingJM.repeatLengthMm || 400,
+          pouchOpenWidth: Number(String(formData.pouchOpenWidth).replace(/\D/g, '')) || existingJM.pouchOpenWidth || 0,
+          pouchHeight: Number(String(formData.pouchHeight).replace(/\D/g, '')) || existingJM.pouchHeight || 0,
+          colorsCount: Number(formData.numberOfCylinders) || existingJM.colorsCount || 6,
+          engravuresName: formData.engravure || existingJM.engravuresName,
+          costBorneBy: formData.costBorneBy || existingJM.costBorneBy,
+          jobCardFileUrl: fileUrl,
+          artworkUrl: fileUrl,
+          chkEyemark: formData.chkEyemark,
+          chkBarcode: formData.chkBarcode,
+          chkOrientation: formData.chkOrientation,
+          chkClientApproval: formData.chkClientApproval,
+          approvedByHead: formData.approvedByHead,
+          approvedHeadName: formData.approvedHeadName,
+          approvedHeadDate: formData.approvedHeadDate
+        };
+      } else {
+        // Create NEW Job Master automatically
+        targetJobMaster = {
+          id: `JM-2026-${Math.floor(100 + Math.random() * 900)}`,
+          skuCode: formData.skuCode || `SKU-2026-${Math.floor(100 + Math.random() * 900)}`,
+          jobName: formData.jobName || 'New Job',
+          clientName: formData.partyName || 'General Client',
+          structure: derivedStruct,
+          layers: layers,
+          printWidthMm: Number(String(formData.totalWidth).replace(/\D/g, '')) || Number(String(formData.pouchOpenWidth).replace(/\D/g, '')) || 1000,
+          repeatLengthMm: Number(String(formData.totalHeight).replace(/\D/g, '')) || Number(String(formData.pouchHeight).replace(/\D/g, '')) || 400,
+          pouchOpenWidth: Number(String(formData.pouchOpenWidth).replace(/\D/g, '')) || 0,
+          pouchHeight: Number(String(formData.pouchHeight).replace(/\D/g, '')) || 0,
+          colorsCount: Number(formData.numberOfCylinders) || 6,
+          engravuresName: formData.engravure || 'Acme Rotogravure Engravers',
+          costBorneBy: formData.costBorneBy || 'Client (100%)',
+          cylinderCost: formData.cylinderCost || '₹35,000',
+          utilisationLimit: Number(formData.utilisationLimit) || 10000,
+          jobCardFileUrl: fileUrl,
+          artworkUrl: fileUrl,
+          chkEyemark: formData.chkEyemark,
+          chkBarcode: formData.chkBarcode,
+          chkOrientation: formData.chkOrientation,
+          chkClientApproval: formData.chkClientApproval,
+          approvedByHead: formData.approvedByHead,
+          approvedHeadName: formData.approvedHeadName,
+          approvedHeadDate: formData.approvedHeadDate,
+          creationDate: formData.creationDate || new Date().toLocaleDateString('en-GB')
+        };
       }
 
-      setSaveNotification('✅ Job Card Settings & Cloud Parameters Saved Successfully!');
+      // Sync & Persist Job Master to Supabase & localStorage
+      saveJobMasterToSupabase(targetJobMaster);
+
+      const storageKey = `samyak_erp_jobcard_settings_${formData.skuCode || formData.jobName}`;
+      safeLocalStorageSet(storageKey, { ...formData, jobStructure: derivedStruct, layers });
+
+      if (onSave) {
+        onSave({ ...formData, jobStructure: derivedStruct, layers, artworkUrl: fileUrl }, targetJobMaster);
+      }
+
+      setSaveNotification(existingJM ? '✅ Job Master & Job Card Specs Synced Successfully!' : '✅ New Job Master Created & Job Card Specs Saved!');
       setTimeout(() => setSaveNotification(null), 4000);
     } catch (e) {
       console.error("Save failed", e);
@@ -554,6 +716,134 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
           )}
         </div>
 
+        {/* Job Master Direct Link / Selector */}
+        <div style={{ marginBottom: '20px', background: '#f0fdf4', padding: '16px', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+          <label style={{ fontWeight: '800', fontSize: '0.9rem', color: '#166534', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+            <FileCode size={18} /> Select Existing Job Master to Auto-Fill Details:
+          </label>
+          <select 
+            className="form-control" 
+            style={{ fontWeight: '700', background: '#ffffff' }}
+            value={selectedJobMasterId}
+            onChange={handleJobMasterSelect}
+          >
+            <option value="">-- Create New Job Master / Manual Specs Entry --</option>
+            {(jobMasters || []).map(j => (
+              <option key={j.id} value={j.id}>
+                {j.jobName} ({j.skuCode || j.id}) — {j.clientName} [{j.structure || '—'}]
+              </option>
+            ))}
+          </select>
+          <p style={{ margin: '4px 0 0 0', fontSize: '0.75rem', color: '#15803d' }}>
+            Selecting an existing Job Master automatically fetches and populates SKU Code, Job Name, Client, Pouch Size, and Substrate Layers.
+          </p>
+        </div>
+
+        {/* Substrate Structure Multi-Layer Builder (Synced with Job Master) */}
+        <div style={{ marginBottom: '20px', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <label style={{ fontWeight: '800', fontSize: '0.9rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+              <Layers size={18} style={{ color: 'var(--primary-brand)' }} />
+              Substrate Structure Multi-Layer Breakdown (Synced with Job Master)
+            </label>
+            <button 
+              type="button" 
+              className="btn-secondary" 
+              style={{ fontSize: '0.78rem', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '4px' }}
+              onClick={() => {
+                const defaultFilm = availableFilmTypes[0] || 'PET';
+                setLayers(prev => [...prev, { id: Date.now(), filmType: defaultFilm, micron: 12 }]);
+              }}
+            >
+              <Plus size={14} /> Add Layer
+            </button>
+          </div>
+
+          <div style={{ background: '#ffffff', borderRadius: '6px', border: '1px solid #cbd5e1', overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+              <thead>
+                <tr style={{ background: '#0f172a', color: '#fff', textAlign: 'left' }}>
+                  <th style={{ padding: '8px 12px' }}>Layer Sequence</th>
+                  <th style={{ padding: '8px 12px' }}>Film Substrate Type</th>
+                  <th style={{ padding: '8px 12px' }}>Micron (µ)</th>
+                  <th style={{ padding: '8px 12px' }}>Calculated GSM</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'center' }}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {layers.map((layer, index) => {
+                  const density = FILM_DENSITIES[layer.filmType] || 1.40;
+                  const gsm = (layer.micron * density).toFixed(2);
+                  const layerDesig = index === 0 ? 'Layer 1 (Outer / Print Substrate)' : (index === layers.length - 1 ? `Layer ${index + 1} (Inner Sealant Substrate)` : `Layer ${index + 1} (Middle Barrier Substrate)`);
+
+                  return (
+                    <tr key={layer.id || index} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      <td style={{ padding: '8px 12px', fontWeight: '700', color: '#334155' }}>
+                        {layerDesig}
+                      </td>
+                      <td style={{ padding: '8px 12px' }}>
+                        <select 
+                          className="form-control" 
+                          style={{ padding: '4px 8px', fontSize: '0.82rem', fontWeight: '600' }}
+                          value={layer.filmType}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setLayers(prev => prev.map((l, i) => i === index ? { ...l, filmType: val } : l));
+                          }}
+                        >
+                          {availableFilmTypes.map(ft => (
+                            <option key={ft} value={ft}>{ft}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td style={{ padding: '8px 12px' }}>
+                        <input 
+                          type="number" 
+                          className="form-control" 
+                          style={{ padding: '4px 8px', fontSize: '0.82rem', width: '90px' }}
+                          value={layer.micron}
+                          onChange={e => {
+                            const val = parseInt(e.target.value, 10) || 0;
+                            setLayers(prev => prev.map((l, i) => i === index ? { ...l, micron: val } : l));
+                          }}
+                        />
+                      </td>
+                      <td style={{ padding: '8px 12px', fontWeight: '700', color: '#047857' }}>
+                        {gsm} g/m²
+                      </td>
+                      <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                        {layers.length > 1 && (
+                          <button 
+                            type="button" 
+                            style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: '4px' }}
+                            onClick={() => setLayers(prev => prev.filter((_, i) => i !== index))}
+                            title="Remove Layer"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem', color: '#1e293b', flexWrap: 'wrap', gap: '8px' }}>
+            <div>
+              Derived Structure: <strong style={{ color: 'var(--primary-brand)', fontFamily: 'monospace' }}>
+                {layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')}
+              </strong>
+            </div>
+            <div>
+              Total Calculated GSM: <strong>
+                {layers.reduce((sum, l) => sum + (l.micron * (FILM_DENSITIES[l.filmType] || 1.40)), 0).toFixed(2)} g/m²
+              </strong>
+            </div>
+          </div>
+        </div>
+
         <div className="form-grid">
           <div className="form-group">
             <label>SKU Code*</label>
@@ -596,8 +886,8 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
             <input className="form-control" name="numberOfCylinders" value={formData.numberOfCylinders} onChange={handleChange} />
           </div>
           <div className="form-group">
-            <label>Job Structure</label>
-            <input className="form-control" name="jobStructure" value={formData.jobStructure} onChange={handleChange} />
+            <label>Derived Job Structure</label>
+            <input className="form-control" name="jobStructure" value={formData.jobStructure} readOnly style={{ background: '#f1f5f9', fontWeight: '700' }} />
           </div>
           <div className="form-group">
             <label>Total Width (Face Length)</label>
