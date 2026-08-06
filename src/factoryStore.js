@@ -282,6 +282,24 @@ export const initialUsers = [
     role: "Shop Floor Operator",
     department: "Lamination & Printing",
     status: "Active"
+  },
+  {
+    id: "USR-007",
+    name: "Vikram Singh",
+    email: "vikram.s@samyak.com",
+    password: "password123",
+    role: "Production Manager",
+    department: "Operations & Plant",
+    status: "Active"
+  },
+  {
+    id: "USR-008",
+    name: "Anil Sharma",
+    email: "anil.s@samyak.com",
+    password: "password123",
+    role: "Sales Manager",
+    department: "Sales & Commercial",
+    status: "Active"
   }
 ];
 

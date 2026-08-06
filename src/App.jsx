@@ -127,7 +127,7 @@ export default function App() {
   const [vendors, setVendors] = useState(() => loadLocalState('vendors', []));
   const [inventory, setInventory] = useState(() => loadLocalState('inventory', []));
   const [grns, setGrns] = useState(() => loadLocalState('grns', []));
-  const [users, setUsers] = useState(() => loadLocalState('users', []));
+  const [users, setUsers] = useState(() => loadLocalState('users', initialUsers));
   const [jobDataSheets, setJobDataSheets] = useState(() => loadLocalState('job_datasheets', []));
   const [cylinders, setCylinders] = useState(() => loadLocalState('cylinders', []));
   const [productionRecords, setProductionRecords] = useState(() => loadLocalState('production_records', []));
@@ -138,6 +138,17 @@ export default function App() {
   const [clients, setClients] = useState(() => loadLocalState('clients', []));
   const [jobMasters, setJobMasters] = useState(() => loadLocalState('job_masters', []));
   const [selectedJobMasterForPunch, setSelectedJobMasterForPunch] = useState(null);
+
+  const activeUsersList = useMemo(() => {
+    const list = [...(users || []), ...initialUsers];
+    const map = new Map();
+    list.forEach(u => {
+      if (u && (u.id || u.email) && !map.has(u.id || u.email)) {
+        map.set(u.id || u.email, u);
+      }
+    });
+    return Array.from(map.values());
+  }, [users]);
 
   // Reactive listener for Supabase credential updates
   useEffect(() => {
@@ -1010,34 +1021,30 @@ export default function App() {
             </p>
           </div>
 
-          {/* Top Bar Active User & Logout Controls (ADMIN ONLY ROLE SWITCHER) */}
+          {/* Top Bar Active User & Logout Controls (ACCOUNT / ROLE SWITCHER) */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            {currentUser?.role === 'Admin' ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#ffffff', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem' }}>
-                <UserCheck size={16} style={{ color: 'var(--primary-brand)' }} />
-                <span style={{ color: 'var(--text-muted)', fontWeight: '500' }}>Active User:</span>
-                <select 
-                  style={{ border: 'none', background: 'transparent', fontWeight: '700', color: 'var(--text-primary)', cursor: 'pointer', outline: 'none' }}
-                  value={currentUser.id}
-                  onChange={e => {
-                    const user = users.find(u => u.id === e.target.value);
-                    if (user) setCurrentUser(user);
-                  }}
-                >
-                  {users.map(u => (
-                    <option key={u.id} value={u.id}>
-                      {u.name} ({u.role})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#ffffff', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem' }}>
-                <UserCheck size={16} style={{ color: 'var(--primary-brand)' }} />
-                <span style={{ color: 'var(--text-muted)', fontWeight: '500' }}>Logged In:</span>
-                <strong style={{ color: 'var(--text-primary)' }}>{currentUser?.name} ({currentUser?.role})</strong>
-              </div>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#ffffff', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem' }}>
+              <UserCheck size={16} style={{ color: 'var(--primary-brand)' }} />
+              <span style={{ color: 'var(--text-muted)', fontWeight: '500' }}>Active User:</span>
+              <select 
+                style={{ border: 'none', background: 'transparent', fontWeight: '700', color: 'var(--text-primary)', cursor: 'pointer', outline: 'none' }}
+                value={currentUser?.id || ''}
+                onChange={e => {
+                  const selectedId = e.target.value;
+                  const selectedUser = activeUsersList.find(u => String(u.id) === String(selectedId));
+                  if (selectedUser) {
+                    setCurrentUser(selectedUser);
+                    safeLocalStorageSet('samyak_erp_current_user', selectedUser);
+                  }
+                }}
+              >
+                {activeUsersList.map(u => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} ({u.role})
+                  </option>
+                ))}
+              </select>
+            </div>
 
             <button className="btn-signout" onClick={handleLogout} title="Sign Out of Session">
               <LogOut size={16} /> Sign Out
