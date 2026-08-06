@@ -62,7 +62,7 @@ import {
   fetchGRNs, saveGRNToSupabase,
   fetchCylinders, saveCylinderToSupabase, deleteCylinderFromSupabase,
   fetchProductionRecords, saveProductionRecordToSupabase,
-  fetchUsers, saveUserToSupabase,
+  fetchUsers, saveUserToSupabase, deleteUserFromSupabase,
   fetchJobDataSheets, saveJobDataSheetToSupabase, deleteJobDataSheetFromSupabase,
   fetchInventoryRolls, saveInventoryRollToSupabase,
   fetchDispatchShipments, saveDispatchShipmentToSupabase,
@@ -254,7 +254,21 @@ export default function App() {
       if (Array.isArray(supaGRNs) && supaGRNs.length > 0) setGrns(supaGRNs);
       if (Array.isArray(supaCyls) && supaCyls.length > 0) setCylinders(supaCyls);
       if (Array.isArray(supaProd) && supaProd.length > 0) setProductionRecords(supaProd);
-      if (Array.isArray(supaUsers) && supaUsers.length > 0) setUsers(supaUsers);
+      if (Array.isArray(supaUsers) && supaUsers.length > 0) {
+        setUsers(prev => {
+          const map = new Map();
+          supaUsers.forEach(u => {
+            if (u && (u.id || u.email)) map.set(u.id || u.email, u);
+          });
+          (prev || []).forEach(p => {
+            const key = p.id || p.email;
+            if (key && !map.has(key)) map.set(key, p);
+          });
+          const merged = Array.from(map.values());
+          safeLocalStorageSet('samyak_erp_users', merged);
+          return merged;
+        });
+      }
       if (Array.isArray(supaSheets) && supaSheets.length > 0) setJobDataSheets(supaSheets);
       if (Array.isArray(supaRolls) && supaRolls.length > 0) setInventoryRolls(supaRolls);
       if (Array.isArray(supaShipments) && supaShipments.length > 0) setDispatchShipments(supaShipments);
@@ -648,7 +662,11 @@ export default function App() {
   };
 
   const handleAddUser = async (newUser) => {
-    setUsers(prev => [...prev.filter(u => u.id !== newUser.id), newUser]);
+    setUsers(prev => {
+      const updated = [...prev.filter(u => u.id !== newUser.id), newUser];
+      safeLocalStorageSet('samyak_erp_users', updated);
+      return updated;
+    });
     try {
       await saveUserToSupabase(newUser);
     } catch (err) {
@@ -657,7 +675,11 @@ export default function App() {
   };
 
   const handleUpdateUser = async (updatedUser) => {
-    setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+    setUsers(prev => {
+      const updated = prev.map(u => u.id === updatedUser.id ? updatedUser : u);
+      safeLocalStorageSet('samyak_erp_users', updated);
+      return updated;
+    });
     try {
       await saveUserToSupabase(updatedUser);
     } catch (err) {
@@ -665,8 +687,17 @@ export default function App() {
     }
   };
 
-  const handleDeleteUser = (userId) => {
-    setUsers(prev => prev.filter(u => u.id !== userId));
+  const handleDeleteUser = async (userId) => {
+    setUsers(prev => {
+      const updated = prev.filter(u => u.id !== userId);
+      safeLocalStorageSet('samyak_erp_users', updated);
+      return updated;
+    });
+    try {
+      await deleteUserFromSupabase(userId);
+    } catch (err) {
+      console.warn("[Sync Notice] User deleted locally. Supabase notice:", err);
+    }
   };
 
   const handleAddJobDataSheet = async (newSheet) => {

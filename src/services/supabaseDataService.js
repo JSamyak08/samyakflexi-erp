@@ -658,11 +658,11 @@ export async function fetchUsers() {
 
     return data.map(u => ({
       id: u.id,
-      name: u.full_name,
-      email: u.email,
-      role: u.role,
-      department: u.department,
-      status: u.active ? 'Active' : 'Inactive'
+      name: u.full_name || u.name || u.username || 'User',
+      email: u.email || (u.username?.includes('@') ? u.username : `${u.id.toLowerCase()}@plant.com`),
+      role: u.role || 'Shop Floor Operator',
+      department: u.department || 'Operations',
+      status: u.status || (u.active !== false ? 'Active' : 'Inactive')
     }));
   } catch (err) {
     console.error("Error fetching users from Supabase:", err);
@@ -671,26 +671,65 @@ export async function fetchUsers() {
 }
 
 export async function saveUserToSupabase(user) {
-  if (!isSupabaseConfigured()) return;
-  await ensureValidSession();
-  const userId = user.id || `USR-${Math.floor(100 + Math.random() * 900)}`;
-  const fullPayload = {
-    id: userId,
-    username: user.email?.toLowerCase() || userId,
-    full_name: user.name || '',
-    email: user.email || '',
-    role: user.role || 'Shop Floor Operator',
-    department: user.department || 'Operations',
-    active: user.status === 'Active'
-  };
-  console.log('[users] Saving:', userId, user.name);
-  const { error: fullErr } = await supabase.from('users').upsert(fullPayload, { onConflict: 'id' });
-  if (fullErr) {
-    console.warn('[users] Full payload failed, trying minimal:', fullErr.message);
-    const { error: minErr } = await supabase.from('users').upsert({ id: userId, username: user.email?.toLowerCase() || userId, full_name: user.name || '', role: user.role || 'Shop Floor Operator' }, { onConflict: 'id' });
-    if (minErr) { console.error('[users] Minimal payload failed:', minErr.message); handleSupabaseError(minErr, 'users'); }
-    else { console.log('[users] Saved with minimal payload.'); }
-  } else { console.log('[users] Saved successfully.'); }
+  if (!isSupabaseConfigured()) return null;
+  try {
+    await ensureValidSession();
+    const userId = user.id || `USR-${Math.floor(1000 + Math.random() * 9000)}`;
+    const fullPayload = {
+      id: userId,
+      username: user.email?.toLowerCase() || userId,
+      full_name: user.name || '',
+      email: user.email || '',
+      role: user.role || 'Shop Floor Operator',
+      department: user.department || 'Operations',
+      active: user.status !== 'Inactive'
+    };
+
+    const { data, error: fullErr } = await supabase
+      .from('users')
+      .upsert([fullPayload], { onConflict: 'id' })
+      .select();
+
+    if (fullErr) {
+      console.warn('[users] Full payload failed, trying minimal:', fullErr.message);
+      const minPayload = {
+        id: userId,
+        username: user.email?.toLowerCase() || userId,
+        full_name: user.name || '',
+        role: user.role || 'Shop Floor Operator'
+      };
+      const { data: minData, error: minErr } = await supabase
+        .from('users')
+        .upsert([minPayload], { onConflict: 'id' })
+        .select();
+
+      if (minErr) {
+        handleSupabaseError(minErr, 'users');
+        return null;
+      }
+      return minData ? minData[0] : minPayload;
+    }
+    return data ? data[0] : fullPayload;
+  } catch (err) {
+    handleSupabaseError(err, 'users exception');
+    return null;
+  }
+}
+
+export async function deleteUserFromSupabase(id) {
+  if (!isSupabaseConfigured() || !id) return false;
+  try {
+    await ensureValidSession();
+    const { error } = await supabase.from('users').delete().eq('id', id);
+    if (error) {
+      handleSupabaseError(error, 'users');
+      return false;
+    }
+    return true;
+  } catch (err) {
+    handleSupabaseError(err, 'users exception');
+    return false;
+  }
 }
 
 
