@@ -322,6 +322,40 @@ export default function JobMasterDirectory({
     setIsCreateModalOpen(true);
   };
 
+  // Helper: Parse structure string into layers array if job.layers is empty
+  const parseStructureToLayers = (structureStr) => {
+    if (!structureStr || structureStr === '—') return null;
+    const parts = String(structureStr).split('/').map(p => p.trim());
+    if (parts.length === 0) return null;
+
+    return parts.map((part, idx) => {
+      const micronMatch = part.match(/(\d+(\.\d+)?)\s*µ?/i);
+      const micron = micronMatch ? parseFloat(micronMatch[1]) : 12;
+      let rawType = part.replace(/(\d+(\.\d+)?)\s*µ?/gi, '').trim().toLowerCase();
+
+      let matchedFilm = availableFilmTypes.find(f => f.toLowerCase() === rawType);
+      if (!matchedFilm) {
+        matchedFilm = availableFilmTypes.find(f => rawType.includes(f.toLowerCase()) || f.toLowerCase().includes(rawType));
+      }
+      if (!matchedFilm) {
+        if (rawType.includes('metpet')) matchedFilm = 'METPET';
+        else if (rawType.includes('pet')) matchedFilm = 'PET';
+        else if (rawType.includes('atta')) matchedFilm = 'Milky Atta (High Dart) Film';
+        else if (rawType.includes('metallocene')) matchedFilm = 'Natural LD Metallocene Film';
+        else if (rawType.includes('ld')) matchedFilm = 'Natural LD GP Film';
+        else if (rawType.includes('bopp')) matchedFilm = 'BOPP Natural';
+        else if (rawType.includes('cpp')) matchedFilm = 'CPP Natural';
+        else matchedFilm = availableFilmTypes[0] || 'PET';
+      }
+
+      return {
+        id: Date.now() + idx,
+        filmType: matchedFilm,
+        micron: micron
+      };
+    });
+  };
+
   const handleOpenEditModal = (job) => {
     setEditingJobId(job.id);
     setSkuCode(job.skuCode || '');
@@ -336,8 +370,14 @@ export default function JobMasterDirectory({
     setCostBorneBy(job.costBorneBy || 'Client (100%)');
     setEngravuresName(job.engravuresName || 'Acme Rotogravure Engravers');
     setUtilisationLimit(job.utilisationLimit || 10000);
+    
     if (job.layers && job.layers.length > 0) {
-      setLayers(job.layers.map(l => ({ ...l, id: l.id || Date.now() + Math.random() })));
+      setLayers(job.layers.map((l, idx) => ({ ...l, id: l.id || Date.now() + idx })));
+    } else if (job.structure) {
+      const parsed = parseStructureToLayers(job.structure);
+      if (parsed && parsed.length > 0) {
+        setLayers(parsed);
+      }
     }
     setIsCreateModalOpen(true);
   };
