@@ -13,9 +13,11 @@ import {
   Key,
   ShieldAlert,
   RotateCcw,
-  Sparkles
+  Sparkles,
+  Save
 } from 'lucide-react';
 import { SYSTEM_ROLES, ALL_MODULES, generateFullRolePermissions, DEFAULT_ROLE_PERMISSIONS } from '../factoryStore';
+import { saveRolePermissionsToSupabase } from '../services/supabaseDataService';
 
 export default function UserManagement({ 
   users = [], 
@@ -26,8 +28,9 @@ export default function UserManagement({
   onDeleteUser,
   onUpdateRolePermissions
 }) {
-  const isAuthorized = currentUser?.role === 'Admin' || currentUser?.role === 'Plant Manager';
+  const isAuthorized = currentUser?.role === 'Admin';
   const isAdmin = currentUser?.role === 'Admin';
+  const [saveNotification, setSaveNotification] = useState(null);
 
   const [activeSubTab, setActiveSubTab] = useState('directory'); // 'directory' | 'rbac'
   const [searchTerm, setSearchTerm] = useState('');
@@ -128,6 +131,18 @@ export default function UserManagement({
     }
   };
 
+  const triggerSaveNotification = (msg) => {
+    setSaveNotification(msg);
+    setTimeout(() => setSaveNotification(null), 4000);
+  };
+
+  const handleSavePermissionsMatrix = (permsToSave = rolePermissions) => {
+    if (!isAdmin) return;
+    if (onUpdateRolePermissions) onUpdateRolePermissions(permsToSave);
+    saveRolePermissionsToSupabase(permsToSave);
+    triggerSaveNotification("✅ RBAC Permissions Matrix Saved & Synced to Database Successfully!");
+  };
+
   const togglePermission = (roleName, moduleKey) => {
     if (!isAdmin) {
       alert("Only Admin role can configure role permissions!");
@@ -142,6 +157,7 @@ export default function UserManagement({
       }
     };
     if (onUpdateRolePermissions) onUpdateRolePermissions(updated);
+    saveRolePermissionsToSupabase(updated);
   };
 
   const handleAllowAllPermissions = () => {
@@ -149,7 +165,8 @@ export default function UserManagement({
     if (window.confirm("Grant FULL ACCESS to all modules for ALL system roles?")) {
       const fullPerms = generateFullRolePermissions(true);
       if (onUpdateRolePermissions) onUpdateRolePermissions(fullPerms);
-      alert("⚡ Full Access granted to all roles!");
+      saveRolePermissionsToSupabase(fullPerms);
+      triggerSaveNotification("⚡ Full Access granted to all roles & synced to Database!");
     }
   };
 
@@ -158,7 +175,8 @@ export default function UserManagement({
     if (window.confirm("Reset RBAC permissions to default configuration?")) {
       const defaultPerms = generateFullRolePermissions(true);
       if (onUpdateRolePermissions) onUpdateRolePermissions(defaultPerms);
-      alert("🔄 Role permissions reset to defaults.");
+      saveRolePermissionsToSupabase(defaultPerms);
+      triggerSaveNotification("🔄 Role permissions reset & synced to Database!");
     }
   };
 
@@ -171,6 +189,14 @@ export default function UserManagement({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      
+      {saveNotification && (
+        <div style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', padding: '12px 20px', borderRadius: '8px', fontWeight: '700', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <CheckCircle2 size={20} />
+          {saveNotification}
+        </div>
+      )}
+
       {/* Top Header Banner */}
       <div className="glass-panel" style={{ padding: '20px 24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
@@ -208,10 +234,10 @@ export default function UserManagement({
         <div className="glass-panel" style={{ padding: '40px', textAlign: 'center', background: '#fffbeb', border: '1px solid #fde68a' }}>
           <Lock size={48} style={{ color: '#d97706', marginBottom: '12px' }} />
           <h3 style={{ fontSize: '1.2rem', fontWeight: '700', color: '#b45309' }}>
-            User Management Access Restricted
+            User Management Access Restricted to Admin Role Only
           </h3>
-          <p style={{ color: '#92400e', fontSize: '0.85rem', marginTop: '6px', maxWidth: '420px', margin: '6px auto 16px auto' }}>
-            Only <b>Admin</b> and <b>Plant Manager</b> roles have permission to access user account administration.
+          <p style={{ color: '#92400e', fontSize: '0.85rem', marginTop: '6px', maxWidth: '440px', margin: '6px auto 16px auto' }}>
+            Only <b>Admin</b> role has authority to manage user accounts and configure RBAC module permissions matrix.
           </p>
           <span className="badge badge-warning" style={{ padding: '6px 12px' }}>
             Your Role: {currentUser?.role || 'Guest'}
@@ -232,6 +258,9 @@ export default function UserManagement({
 
             {isAdmin && (
               <div style={{ display: 'flex', gap: '10px' }}>
+                <button className="btn-primary" style={{ background: '#0284c7', borderColor: '#0284c7', fontSize: '0.82rem', padding: '6px 14px' }} onClick={() => handleSavePermissionsMatrix()}>
+                  <Save size={16} /> Save RBAC Permissions Matrix
+                </button>
                 <button className="btn-primary" style={{ background: '#047857', borderColor: '#047857', fontSize: '0.82rem', padding: '6px 14px' }} onClick={handleAllowAllPermissions}>
                   <Sparkles size={16} /> Allow All Permissions to All Roles
                 </button>

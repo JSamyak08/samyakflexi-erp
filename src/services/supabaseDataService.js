@@ -1366,6 +1366,61 @@ export async function deleteSalesQuotationFromSupabase(id) {
 }
 
 // ============================================================================
+// ROLE PERMISSIONS & RBAC MATRIX
+// ============================================================================
+
+export async function saveRolePermissionsToSupabase(rolePermissions) {
+  if (!isSupabaseConfigured() || !rolePermissions) return;
+  try {
+    await ensureValidSession();
+    const payload = {
+      setting_key: 'role_permissions',
+      setting_value: rolePermissions,
+      updated_at: new Date().toISOString()
+    };
+    const { error } = await supabase
+      .from('system_settings')
+      .upsert(payload, { onConflict: 'setting_key' });
+
+    if (error) {
+      console.warn('[role_permissions] Table system_settings not present, trying role_permissions:', error.message);
+      const { error: err2 } = await supabase
+        .from('role_permissions')
+        .upsert({ id: 'matrix', permissions: rolePermissions, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+      if (err2) {
+        console.warn('[role_permissions] Backup table write error:', err2.message);
+      }
+    }
+  } catch (err) {
+    console.warn('[role_permissions] Exception saving permissions:', err);
+  }
+}
+
+export async function fetchRolePermissionsFromSupabase() {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const { data, error } = await supabase
+      .from('system_settings')
+      .select('setting_value')
+      .eq('setting_key', 'role_permissions')
+      .maybeSingle();
+
+    if (data && data.setting_value) return data.setting_value;
+
+    const { data: data2 } = await supabase
+      .from('role_permissions')
+      .select('permissions')
+      .eq('id', 'matrix')
+      .maybeSingle();
+
+    if (data2 && data2.permissions) return data2.permissions;
+  } catch (err) {
+    console.warn('[role_permissions] Exception fetching permissions:', err);
+  }
+  return null;
+}
+
+// ============================================================================
 // SEED MIGRATION: SEED DATA PUSHES HAVE BEEN PERMANENTLY DISABLED
 // ============================================================================
 

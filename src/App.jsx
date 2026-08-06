@@ -69,7 +69,8 @@ import {
   fetchPrintingMachines, savePrintingMachineToSupabase, deletePrintingMachineFromSupabase,
   fetchProductionSchedules, saveProductionScheduleToSupabase, deleteProductionScheduleFromSupabase,
   fetchClients, saveClientToSupabase, deleteClientFromSupabase,
-  fetchJobMasters, saveJobMasterToSupabase, deleteJobMasterFromSupabase
+  fetchJobMasters, saveJobMasterToSupabase, deleteJobMasterFromSupabase,
+  fetchRolePermissionsFromSupabase, saveRolePermissionsToSupabase
 } from './services/supabaseDataService';
 import JobMasterDirectory from './components/JobMasterDirectory';
 import { initialInventoryRolls, initialDispatchShipments } from './factoryStore';
@@ -155,6 +156,7 @@ export default function App() {
   const isTabAllowed = (tabKey) => {
     if (!currentUser) return true;
     if (currentUser.role === 'Admin') return true;
+    if (tabKey === 'user_management') return false; // Strictly restricted to Admin role by default
     const rolePerm = rolePermissions[currentUser.role];
     if (!rolePerm) return true;
     return rolePerm[tabKey] !== false;
@@ -193,45 +195,39 @@ export default function App() {
     let isMounted = true;
     async function hydrateIdbAssets() {
       try {
-        const idbCylinders = await idbGet('samyak_erp_cylinders');
-        if (isMounted && Array.isArray(idbCylinders) && idbCylinders.length > 0) {
-          setCylinders(prev => {
-            // If prev contains placeholder strings, replace with full IDB values
-            const hasPlaceholders = prev.some(c => typeof c.artworkUrl === 'string' && c.artworkUrl.includes('[STORED_IN_IDB]'));
-            if (hasPlaceholders) {
-              return idbCylinders;
-            }
-            return prev;
-          });
+        const storedOrders = await idbGet('samyak_erp_orders');
+        if (isMounted && storedOrders && Array.isArray(storedOrders) && storedOrders.length > 0) {
+          setOrders(storedOrders);
         }
       } catch (err) {
-        console.warn('IDB hydration warning:', err);
+        console.warn('Idb hydration error:', err);
       }
     }
     hydrateIdbAssets();
     return () => { isMounted = false; };
   }, []);
 
-  // Load live data from Supabase PostgreSQL as AUTHORITATIVE source of truth
+  // Fetch all tables from Supabase on initial load or credential changes
   useEffect(() => {
     if (!isSupaActive || !isAuthReady || !isAuthenticated) return;
 
+    let isMounted = true;
     async function loadSupabaseData() {
-      // Helper to fetch data with individual error handling
-      const fetchSafe = async (fetcher, name) => {
+      const fetchSafe = async (fn, label) => {
         try {
-          const data = await fetcher();
-          return data;
-        } catch (err) {
-          console.warn(`[Supabase Sync Notice] Failed to load ${name}:`, err);
-          return null; // Return null so we don't accidentally overwrite state on failure
+          const res = await fn();
+          return res;
+        } catch (e) {
+          console.warn(`[Supabase Load Error] ${label}:`, e);
+          return null;
         }
       };
 
       let [
         supaOrders, supaVendors, supaInv, supaGRNs, supaCyls, 
         supaProd, supaUsers, supaSheets, supaRolls, supaShipments,
-        supaMachines, supaSchedules, supaClients, supaJobMasters
+        supaMachines, supaSchedules, supaClients, supaJobMasters,
+        supaRolePerms
       ] = await Promise.all([
         fetchSafe(fetchOrders, 'Orders'),
         fetchSafe(fetchVendors, 'Vendors'),
@@ -246,61 +242,31 @@ export default function App() {
         fetchSafe(fetchPrintingMachines, 'Printing Machines'),
         fetchSafe(fetchProductionSchedules, 'Production Schedules'),
         fetchSafe(fetchClients, 'Clients'),
-        fetchSafe(fetchJobMasters, 'Job Masters')
+        fetchSafe(fetchJobMasters, 'Job Masters'),
+        fetchSafe(fetchRolePermissionsFromSupabase, 'Role Permissions')
       ]);
 
-      // Seed pushes and auto-seeding are completely disabled.
-      // Update in-memory state with live data fetched directly from Supabase.
-      if (Array.isArray(supaOrders)) {
-        if (supaOrders.length > 0) setOrders(supaOrders);
-      }
-      if (Array.isArray(supaVendors)) {
-        if (supaVendors.length > 0) setVendors(supaVendors);
-      }
-      if (Array.isArray(supaInv)) {
-        if (supaInv.length > 0) {
-          setInventory(supaInv);
-        } else if (inventory && inventory.length > 0) {
-          // Sync existing local inventory to Supabase if remote table is empty
-          saveInventoryBatchToSupabase(inventory).catch(console.warn);
-        }
-      }
-      if (Array.isArray(supaGRNs)) {
-        if (supaGRNs.length > 0) setGrns(supaGRNs);
-      }
-      if (Array.isArray(supaCyls)) {
-        if (supaCyls.length > 0) setCylinders(supaCyls);
-      }
-      if (Array.isArray(supaProd)) {
-        if (supaProd.length > 0) setProductionRecords(supaProd);
-      }
-      if (Array.isArray(supaUsers)) {
-        if (supaUsers.length > 0) setUsers(supaUsers);
-      }
-      if (Array.isArray(supaSheets)) {
-        if (supaSheets.length > 0) setJobDataSheets(supaSheets);
-      }
-      if (Array.isArray(supaRolls)) {
-        if (supaRolls.length > 0) setInventoryRolls(supaRolls);
-      }
-      if (Array.isArray(supaShipments)) {
-        if (supaShipments.length > 0) setDispatchShipments(supaShipments);
-      }
-      if (Array.isArray(supaMachines)) {
-        if (supaMachines.length > 0) setMachines(supaMachines);
-      }
-      if (Array.isArray(supaSchedules)) {
-        if (supaSchedules.length > 0) setSchedules(supaSchedules);
-      }
-      if (Array.isArray(supaClients)) {
-        if (supaClients.length > 0) setClients(supaClients);
-      }
-      if (Array.isArray(supaJobMasters)) {
-        if (supaJobMasters.length > 0) setJobMasters(supaJobMasters);
-      }
+      if (!isMounted) return;
+
+      if (Array.isArray(supaOrders) && supaOrders.length > 0) setOrders(supaOrders);
+      if (Array.isArray(supaVendors) && supaVendors.length > 0) setVendors(supaVendors);
+      if (Array.isArray(supaInv) && supaInv.length > 0) setInventory(supaInv);
+      if (Array.isArray(supaGRNs) && supaGRNs.length > 0) setGrns(supaGRNs);
+      if (Array.isArray(supaCyls) && supaCyls.length > 0) setCylinders(supaCyls);
+      if (Array.isArray(supaProd) && supaProd.length > 0) setProductionRecords(supaProd);
+      if (Array.isArray(supaUsers) && supaUsers.length > 0) setUsers(supaUsers);
+      if (Array.isArray(supaSheets) && supaSheets.length > 0) setJobDataSheets(supaSheets);
+      if (Array.isArray(supaRolls) && supaRolls.length > 0) setInventoryRolls(supaRolls);
+      if (Array.isArray(supaShipments) && supaShipments.length > 0) setDispatchShipments(supaShipments);
+      if (Array.isArray(supaMachines) && supaMachines.length > 0) setMachines(supaMachines);
+      if (Array.isArray(supaSchedules) && supaSchedules.length > 0) setSchedules(supaSchedules);
+      if (Array.isArray(supaClients) && supaClients.length > 0) setClients(supaClients);
+      if (Array.isArray(supaJobMasters) && supaJobMasters.length > 0) setJobMasters(supaJobMasters);
+      if (supaRolePerms && typeof supaRolePerms === 'object') setRolePermissions(supaRolePerms);
     }
 
     loadSupabaseData();
+    return () => { isMounted = false; };
   }, [isSupaActive, isAuthReady, isAuthenticated]);
 
   // Realtime subscription for public.inventory to keep live stock and dashboard metrics 100% in sync
