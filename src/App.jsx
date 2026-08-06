@@ -12,7 +12,8 @@ import {
   initialProductionSchedules,
   isReconciliationDue,
   initialClients,
-  initialJobMasters
+  initialJobMasters,
+  DEFAULT_ROLE_PERMISSIONS
 } from './factoryStore';
 import { initialCylinders } from './dataStore';
 import { 
@@ -138,6 +139,7 @@ export default function App() {
   const [clients, setClients] = useState(() => loadLocalState('clients', []));
   const [jobMasters, setJobMasters] = useState(() => loadLocalState('job_masters', []));
   const [selectedJobMasterForPunch, setSelectedJobMasterForPunch] = useState(null);
+  const [rolePermissions, setRolePermissions] = useState(() => loadLocalState('role_permissions', DEFAULT_ROLE_PERMISSIONS));
 
   const activeUsersList = useMemo(() => {
     const list = [...(users || []), ...initialUsers];
@@ -149,6 +151,14 @@ export default function App() {
     });
     return Array.from(map.values());
   }, [users]);
+
+  const isTabAllowed = (tabKey) => {
+    if (!currentUser) return true;
+    if (currentUser.role === 'Admin') return true;
+    const rolePerm = rolePermissions[currentUser.role];
+    if (!rolePerm) return true;
+    return rolePerm[tabKey] !== false;
+  };
 
   // Reactive listener for Supabase credential updates
   useEffect(() => {
@@ -176,6 +186,7 @@ export default function App() {
   useEffect(() => { safeLocalStorageSet('samyak_erp_production_schedules', schedules); }, [schedules]);
   useEffect(() => { safeLocalStorageSet('samyak_erp_clients', clients); }, [clients]);
   useEffect(() => { safeLocalStorageSet('samyak_erp_job_masters', jobMasters); }, [jobMasters]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_role_permissions', rolePermissions); }, [rolePermissions]);
 
   // Asynchronously hydrate any full artwork assets from IndexedDB if needed on mount
   useEffect(() => {
@@ -845,140 +856,170 @@ export default function App() {
         </div>
 
         <div className="nav-links">
-          <div 
-            className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
-            onClick={() => handleTabChange('dashboard')}
-          >
-            <LayoutDashboard size={18} />
-            Executive Dashboard
-          </div>
+          {isTabAllowed('dashboard') && (
+            <div 
+              className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
+              onClick={() => handleTabChange('dashboard')}
+            >
+              <LayoutDashboard size={18} />
+              Executive Dashboard
+            </div>
+          )}
 
-          <div 
-            className={`nav-item ${activeTab === 'production_records' ? 'active' : ''}`}
-            onClick={() => handleTabChange('production_records')}
-          >
-            <ClipboardList size={18} />
-            Production Records
-            {pendingProductionApprovalCount > 0 && (
-              <span className="badge badge-warning" style={{ marginLeft: 'auto', padding: '2px 6px', fontSize: '0.7rem' }}>
-                {pendingProductionApprovalCount} Pending
-              </span>
-            )}
-          </div>
+          {isTabAllowed('production_records') && (
+            <div 
+              className={`nav-item ${activeTab === 'production_records' ? 'active' : ''}`}
+              onClick={() => handleTabChange('production_records')}
+            >
+              <ClipboardList size={18} />
+              Production Records
+              {pendingProductionApprovalCount > 0 && (
+                <span className="badge badge-warning" style={{ marginLeft: 'auto', padding: '2px 6px', fontSize: '0.7rem' }}>
+                  {pendingProductionApprovalCount} Pending
+                </span>
+              )}
+            </div>
+          )}
 
-          <div 
-            className={`nav-item ${activeTab === 'sales' ? 'active' : ''}`}
-            onClick={() => handleTabChange('sales')}
-          >
-            <ShoppingBag size={18} />
-            Sales & Quotations Engine
-          </div>
+          {isTabAllowed('sales') && (
+            <div 
+              className={`nav-item ${activeTab === 'sales' ? 'active' : ''}`}
+              onClick={() => handleTabChange('sales')}
+            >
+              <ShoppingBag size={18} />
+              Sales & Quotations Engine
+            </div>
+          )}
 
-          <div 
-            className={`nav-item ${activeTab === 'job_punching' ? 'active' : ''}`}
-            onClick={() => handleTabChange('job_punching')}
-          >
-            <Calculator size={18} />
-            Job Punching & Costing
-          </div>
+          {isTabAllowed('job_punching') && (
+            <div 
+              className={`nav-item ${activeTab === 'job_punching' ? 'active' : ''}`}
+              onClick={() => handleTabChange('job_punching')}
+            >
+              <Calculator size={18} />
+              Job Punching & Costing
+            </div>
+          )}
 
-          <div 
-            className={`nav-item ${activeTab === 'orders' ? 'active' : ''}`}
-            onClick={() => handleTabChange('orders')}
-          >
-            <ShoppingBag size={18} />
-            Order Management & POs
-            {delayedOrdersCount > 0 && (
-              <span className="badge-delayed-tag" style={{ marginLeft: 'auto', padding: '2px 6px', fontSize: '0.7rem' }}>
-                {delayedOrdersCount}
-              </span>
-            )}
-          </div>
+          {isTabAllowed('orders') && (
+            <div 
+              className={`nav-item ${activeTab === 'orders' ? 'active' : ''}`}
+              onClick={() => handleTabChange('orders')}
+            >
+              <ShoppingBag size={18} />
+              Order Management & POs
+              {delayedOrdersCount > 0 && (
+                <span className="badge-delayed-tag" style={{ marginLeft: 'auto', padding: '2px 6px', fontSize: '0.7rem' }}>
+                  {delayedOrdersCount}
+                </span>
+              )}
+            </div>
+          )}
 
-          <div 
-            className={`nav-item ${activeTab === 'clients' ? 'active' : ''}`}
-            onClick={() => handleTabChange('clients')}
-          >
-            <Briefcase size={18} />
-            Clients & Directory ({clients.length})
-          </div>
+          {isTabAllowed('clients') && (
+            <div 
+              className={`nav-item ${activeTab === 'clients' ? 'active' : ''}`}
+              onClick={() => handleTabChange('clients')}
+            >
+              <Briefcase size={18} />
+              Clients & Directory ({clients.length})
+            </div>
+          )}
 
-          <div 
-            className={`nav-item ${activeTab === 'job_masters' ? 'active' : ''}`}
-            onClick={() => handleTabChange('job_masters')}
-          >
-            <FileCode size={18} style={{ color: '#8b5cf6' }} />
-            Job Master Directory ({jobMasters.length})
-          </div>
+          {isTabAllowed('job_masters') && (
+            <div 
+              className={`nav-item ${activeTab === 'job_masters' ? 'active' : ''}`}
+              onClick={() => handleTabChange('job_masters')}
+            >
+              <FileCode size={18} style={{ color: '#8b5cf6' }} />
+              Job Master Directory ({jobMasters.length})
+            </div>
+          )}
 
-          <div 
-            className={`nav-item ${activeTab === 'vendors' ? 'active' : ''}`}
-            onClick={() => handleTabChange('vendors')}
-          >
-            <Building2 size={18} />
-            Vendor Onboarding ({vendors.length})
-          </div>
+          {isTabAllowed('vendors') && (
+            <div 
+              className={`nav-item ${activeTab === 'vendors' ? 'active' : ''}`}
+              onClick={() => handleTabChange('vendors')}
+            >
+              <Building2 size={18} />
+              Vendor Onboarding ({vendors.length})
+            </div>
+          )}
 
-          <div 
-            className={`nav-item ${activeTab === 'inventory' ? 'active' : ''}`}
-            onClick={() => handleTabChange('inventory')}
-          >
-            <Package size={18} />
-            Inventory, GRN & QC
-            {pendingQCGRNsCount > 0 && (
-              <span className="badge badge-warning" style={{ marginLeft: 'auto', padding: '2px 6px', fontSize: '0.7rem' }}>
-                {pendingQCGRNsCount} QC
-              </span>
-            )}
-          </div>
+          {isTabAllowed('inventory') && (
+            <div 
+              className={`nav-item ${activeTab === 'inventory' ? 'active' : ''}`}
+              onClick={() => handleTabChange('inventory')}
+            >
+              <Package size={18} />
+              Inventory, GRN & QC
+              {pendingQCGRNsCount > 0 && (
+                <span className="badge badge-warning" style={{ marginLeft: 'auto', padding: '2px 6px', fontSize: '0.7rem' }}>
+                  {pendingQCGRNsCount} QC
+                </span>
+              )}
+            </div>
+          )}
 
-          <div 
-            className={`nav-item ${activeTab === 'material_indents' ? 'active' : ''}`}
-            onClick={() => handleTabChange('material_indents')}
-          >
-            <ClipboardList size={18} />
-            Material Indents & Store
-          </div>
+          {isTabAllowed('material_indents') && (
+            <div 
+              className={`nav-item ${activeTab === 'material_indents' ? 'active' : ''}`}
+              onClick={() => handleTabChange('material_indents')}
+            >
+              <ClipboardList size={18} />
+              Material Indents & Store
+            </div>
+          )}
 
-          <div 
-            className={`nav-item ${activeTab === 'user_management' ? 'active' : ''}`}
-            onClick={() => handleTabChange('user_management')}
-          >
-            <Users size={18} />
-            User Management (RBAC)
-          </div>
+          {isTabAllowed('user_management') && (
+            <div 
+              className={`nav-item ${activeTab === 'user_management' ? 'active' : ''}`}
+              onClick={() => handleTabChange('user_management')}
+            >
+              <Users size={18} />
+              User Management (RBAC)
+            </div>
+          )}
 
-          <div 
-            className={`nav-item ${activeTab === 'cylinders' ? 'active' : ''}`}
-            onClick={() => handleTabChange('cylinders')}
-          >
-            <Layers size={18} />
-            Rotogravure Cylinders
-          </div>
+          {isTabAllowed('cylinders') && (
+            <div 
+              className={`nav-item ${activeTab === 'cylinders' ? 'active' : ''}`}
+              onClick={() => handleTabChange('cylinders')}
+            >
+              <Layers size={18} />
+              Rotogravure Cylinders
+            </div>
+          )}
 
-          <div 
-            className={`nav-item ${activeTab === 'printing_scheduler' ? 'active' : ''}`}
-            onClick={() => handleTabChange('printing_scheduler')}
-          >
-            <Printer size={18} style={{ color: '#3b82f6' }} />
-            Printing Machine Scheduler
-          </div>
+          {isTabAllowed('printing_scheduler') && (
+            <div 
+              className={`nav-item ${activeTab === 'printing_scheduler' ? 'active' : ''}`}
+              onClick={() => handleTabChange('printing_scheduler')}
+            >
+              <Printer size={18} style={{ color: '#3b82f6' }} />
+              Printing Machine Scheduler
+            </div>
+          )}
 
-          <div 
-            className={`nav-item ${activeTab === 'supabase' ? 'active' : ''}`}
-            onClick={() => handleTabChange('supabase')}
-          >
-            <Database size={18} style={{ color: '#10b981' }} />
-            Supabase Connection
-          </div>
+          {isTabAllowed('supabase') && (
+            <div 
+              className={`nav-item ${activeTab === 'supabase' ? 'active' : ''}`}
+              onClick={() => handleTabChange('supabase')}
+            >
+              <Database size={18} style={{ color: '#10b981' }} />
+              Supabase Connection
+            </div>
+          )}
 
-          <div 
-            className={`nav-item ${activeTab === 'doc_settings' ? 'active' : ''}`}
-            onClick={() => handleTabChange('doc_settings')}
-          >
-            <SettingsIcon size={18} style={{ color: '#6366f1' }} />
-            Letterhead & Signature Settings
-          </div>
+          {isTabAllowed('doc_settings') && (
+            <div 
+              className={`nav-item ${activeTab === 'doc_settings' ? 'active' : ''}`}
+              onClick={() => handleTabChange('doc_settings')}
+            >
+              <SettingsIcon size={18} style={{ color: '#6366f1' }} />
+              Letterhead & Signature Settings
+            </div>
+          )}
         </div>
 
 
@@ -1057,6 +1098,21 @@ export default function App() {
             )}
           </div>
         </div>
+
+        {!isTabAllowed(activeTab) && (
+          <div className="glass-panel" style={{ padding: '40px', textAlign: 'center', background: '#fffbeb', border: '1px solid #fde68a', margin: '20px 0' }}>
+            <Lock size={48} style={{ color: '#d97706', marginBottom: '12px' }} />
+            <h3 style={{ fontSize: '1.2rem', fontWeight: '700', color: '#b45309' }}>
+              Module Access Restricted for Role ({currentUser?.role})
+            </h3>
+            <p style={{ color: '#92400e', fontSize: '0.85rem', marginTop: '6px', maxWidth: '500px', margin: '6px auto 16px auto' }}>
+              Your active role <b>{currentUser?.role}</b> has not been granted permission to view this module in the RBAC permissions matrix.
+            </p>
+            <button className="btn-primary" onClick={() => handleTabChange('dashboard')}>
+              Return to Executive Dashboard
+            </button>
+          </div>
+        )}
 
         {/* TAB: PRODUCTION RECORDS & APPROVAL FLOW */}
         {activeTab === 'production_records' && (
@@ -1409,9 +1465,11 @@ export default function App() {
           <UserManagement 
             users={users}
             currentUser={currentUser}
+            rolePermissions={rolePermissions}
             onAddUser={handleAddUser}
             onUpdateUser={handleUpdateUser}
             onDeleteUser={handleDeleteUser}
+            onUpdateRolePermissions={setRolePermissions}
           />
         )}
 

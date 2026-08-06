@@ -1338,4 +1338,46 @@ export const initialJobMasters = [
  */
 export const initialSalesQuotations = [];
 
+export const SYSTEM_ROLES = [
+  "Admin",
+  "Plant Manager",
+  "Production Manager",
+  "Store Manager",
+  "QC Chemist",
+  "Purchase Manager",
+  "Sales Manager",
+  "Shop Floor Operator"
+];
+
+export const ALL_MODULES = [
+  { key: "dashboard", label: "Executive Dashboard", category: "Core Operations" },
+  { key: "production_records", label: "Production Records & Sign-Off", category: "Shop Floor & Quality" },
+  { key: "sales", label: "Sales & Quotations Engine", category: "Sales & Commercial" },
+  { key: "job_punching", label: "Job Punching & Costing", category: "Pre-Press & Estimation" },
+  { key: "orders", label: "Order Management & POs", category: "Core Operations" },
+  { key: "clients", label: "Clients & Directory", category: "Commercial" },
+  { key: "job_masters", label: "Job Master Directory", category: "Pre-Press & Master Specs" },
+  { key: "vendors", label: "Vendor Onboarding & POs", category: "Purchase & Commercial" },
+  { key: "inventory", label: "Inventory, GRN & QC", category: "Store & Inventory" },
+  { key: "material_indents", label: "Material Indents & Store", category: "Store & Inventory" },
+  { key: "user_management", label: "User Management & RBAC", category: "Administration" },
+  { key: "cylinders", label: "Rotogravure Cylinders", category: "Pre-Press & Tooling" },
+  { key: "printing_scheduler", label: "Printing Machine Scheduler", category: "Shop Floor & Planning" },
+  { key: "supabase", label: "Supabase DB Connection", category: "Administration" },
+  { key: "doc_settings", label: "Letterhead & Signatures", category: "Administration" }
+];
+
+export const generateFullRolePermissions = (allowAll = true) => {
+  const perm = {};
+  SYSTEM_ROLES.forEach(r => {
+    perm[r] = {};
+    ALL_MODULES.forEach(m => {
+      perm[r][m.key] = allowAll ? true : (r === "Admin" || r === "Plant Manager");
+    });
+  });
+  return perm;
+};
+
+export const DEFAULT_ROLE_PERMISSIONS = generateFullRolePermissions(true);
+
 
