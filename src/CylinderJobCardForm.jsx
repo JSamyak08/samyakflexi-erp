@@ -22,6 +22,7 @@ function parseStructureToLayers(structStr) {
 
 const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
   const managementSignature = getAuthorisedSignature();
+  const companyLogo = getCompanyLogo() || COMPANY_DETAILS.logoUrl || '/samyak-logo.png';
 
   return (
     <div ref={ref} className="printable-landscape-card" style={{ background: '#ffffff', color: '#000000', fontFamily: 'Inter, Arial, sans-serif', padding: '16px 20px', boxSizing: 'border-box', width: '100%' }}>
@@ -92,66 +93,78 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
         }
       `}</style>
 
-      {/* Header Banner */}
+      {/* Header Banner: Company Logo, Address, GSTIN, CIN */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2.5px solid #0f172a', paddingBottom: '8px', marginBottom: '8px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ background: '#0f172a', color: '#ffffff', padding: '6px 10px', borderRadius: '4px', fontWeight: '900', fontSize: '16px', letterSpacing: '1px' }}>
-            SAMYAK
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <img src={companyLogo} alt="Company Logo" style={{ maxHeight: '46px', objectFit: 'contain' }} />
           <div>
-            <h1 style={{ margin: 0, fontSize: '17px', fontWeight: '900', color: '#0f172a', letterSpacing: '0.5px' }}>
-              SAMYAK INTERNATIONAL LTD.
-            </h1>
-            <p style={{ margin: '1px 0 0 0', fontSize: '10px', color: '#475569', fontWeight: '600' }}>
-              FLEXIBLE PACKAGING DIVISION | ROTOGRAVURE CYLINDER SPECIFICATION SHEET
-            </p>
+            <div style={{ fontSize: '9.5px', color: '#1e293b', fontWeight: '700', lineHeight: '1.3', maxWidth: '580px' }}>
+              {COMPANY_DETAILS.address}
+            </div>
+            <div style={{ fontSize: '9px', color: '#475569', marginTop: '2px', fontWeight: '800' }}>
+              GSTIN: {COMPANY_DETAILS.gstin} • CIN: L67120MH1994PLC225907
+            </div>
           </div>
         </div>
 
         <div style={{ textAlign: 'right' }}>
-          <div style={{ background: '#0f172a', color: '#ffffff', padding: '4px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: '800' }}>
+          <div style={{ background: '#0f172a', color: '#ffffff', padding: '4px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: '800', letterSpacing: '0.5px' }}>
             CYLINDER JOB CARD
           </div>
           <div style={{ fontSize: '10px', color: '#475569', marginTop: '4px', fontWeight: '600' }}>
-            Job ID: <strong>{data.jobMasterId || data.id || 'JM-2026-089'}</strong> | Date: <strong>{data.creationDate || new Date().toLocaleDateString('en-GB')}</strong>
+            Job Master ID: <strong>{data.jobMasterId || data.id || 'JM-2026-089'}</strong> | Date: <strong>{data.creationDate || new Date().toLocaleDateString('en-GB')}</strong>
           </div>
         </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '12px' }}>
+        {/* Left Column: Technical Tables */}
         <div>
           <table className="jobcard-table">
             <thead><tr><th colSpan="4">1. Job & Client Details</th></tr></thead>
             <tbody>
               <tr>
-                <td className="label-cell">Job Master ID</td><td className="value-cell">{data.jobMasterId || data.id || '—'}</td>
-                <td className="label-cell">SKU Code</td><td className="value-cell">{data.skuCode || '—'}</td>
+                <td className="label-cell">Job Master ID</td><td className="value-cell" style={{ fontWeight: '800', color: '#0f172a' }}>{data.jobMasterId || data.id || '—'}</td>
+                <td className="label-cell">SKU Code</td><td className="value-cell">{data.skuCode || data.sku || '—'}</td>
               </tr>
               <tr>
-                <td className="label-cell">Job Name</td><td className="value-cell">{data.jobName || '—'}</td>
-                <td className="label-cell">Party</td><td className="value-cell">{data.partyName || '—'}</td>
+                <td className="label-cell">Job Name</td><td className="value-cell" style={{ fontWeight: '700' }}>{data.jobName || '—'}</td>
+                <td className="label-cell">Party / Client</td><td className="value-cell">{data.partyName || '—'}</td>
               </tr>
               <tr>
-                <td className="label-cell">Variant</td><td className="value-cell">{data.variant || 'Standard'}</td>
-                <td className="label-cell">Structure</td><td className="value-cell">{data.jobStructure || '—'}</td>
+                <td className="label-cell">Variant / Flavor</td><td className="value-cell">{data.variant || 'Standard'}</td>
+                <td className="label-cell">Job Structure</td><td className="value-cell" style={{ fontWeight: '700', color: '#047857' }}>{data.jobStructure || '—'}</td>
               </tr>
             </tbody>
           </table>
 
           <table className="jobcard-table">
-            <thead><tr><th colSpan="4">2. Printing & Cylinder Parameters</th></tr></thead>
+            <thead><tr><th colSpan="4">2. Printing & Cylinder Technical Parameters</th></tr></thead>
             <tbody>
               <tr>
                 <td className="label-cell">Printing Type</td><td className="value-cell">{data.printing || 'Reverse'}</td>
-                <td className="label-cell">Colors</td><td className="value-cell">{data.numberOfCylinders || '—'}</td>
+                <td className="label-cell">No. of Cylinders</td><td className="value-cell" style={{ fontWeight: '800' }}>{data.numberOfCylinders || '—'} Colors</td>
               </tr>
               <tr>
-                <td className="label-cell">Pouch Size</td><td className="value-cell">{data.pouchOpenWidth} x {data.pouchHeight}</td>
+                <td className="label-cell">Indiv. Pouch Size</td><td className="value-cell">
+                  {data.pouchOpenWidth ? `${data.pouchOpenWidth}` : ''}
+                  {data.pouchOpenWidth && data.pouchHeight ? ' x ' : ''}
+                  {data.pouchHeight ? `${data.pouchHeight}` : ''}
+                  {!data.pouchOpenWidth && !data.pouchHeight ? '—' : ''}
+                </td>
+                <td className="label-cell">PET Substrate Size</td><td className="value-cell">{data.petSize || '—'}</td>
+              </tr>
+              <tr>
+                <td className="label-cell">Total Width (Face)</td><td className="value-cell">{data.totalWidth || '—'}</td>
+                <td className="label-cell">Total Repeat (Circum.)</td><td className="value-cell">{data.totalHeight || '—'}</td>
+              </tr>
+              <tr>
                 <td className="label-cell">Shell Size</td><td className="value-cell">{data.shellSize || '—'}</td>
+                <td className="label-cell">Engraver Name</td><td className="value-cell" style={{ fontWeight: '700', color: '#1e293b' }}>{data.engravure || data.engravuresName || '—'}</td>
               </tr>
               <tr>
-                <td className="label-cell">Width</td><td className="value-cell">{data.totalWidth || '—'}</td>
-                <td className="label-cell">Repeat</td><td className="value-cell">{data.totalHeight || '—'}</td>
+                <td className="label-cell">Cost Borne By</td><td className="value-cell">{data.costBorneBy || '—'}</td>
+                <td className="label-cell">Utilisation Limit</td><td className="value-cell">{data.utilisationLimit ? `${Number(data.utilisationLimit).toLocaleString()} Kg` : '10,000 Kg'}</td>
               </tr>
             </tbody>
           </table>
@@ -160,20 +173,27 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
             <thead><tr><th colSpan="4">3. Press Marks & Quality Guidelines</th></tr></thead>
             <tbody>
               <tr>
-                <td className="label-cell">SIL Logo</td><td className="value-cell">{data.silLogo || 'Yes'}</td>
+                <td className="label-cell">SIL Logo / Press Line</td><td className="value-cell">{data.silLogo || 'Yes'}</td>
                 <td className="label-cell">ARC Mark</td><td className="value-cell">{data.arcMark || 'Yes'}</td>
               </tr>
               <tr>
                 <td className="label-cell">Slitting Mark</td><td className="value-cell">{data.slittingMark || 'Yes'}</td>
                 <td className="label-cell">Tracker Line</td><td className="value-cell">{data.trackerLine || 'Yes'}</td>
               </tr>
+              {data.specialInstructions && (
+                <tr>
+                  <td className="label-cell">Special Instructions</td>
+                  <td colSpan="3" className="value-cell" style={{ color: '#b91c1c', fontWeight: '700' }}>{data.specialInstructions}</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
 
+        {/* Right Column: Approved Artwork / KLD */}
         <div style={{ border: '1px solid #1e293b', borderRadius: '4px', display: 'flex', flexDirection: 'column', height: '100%' }}>
-          <div style={{ background: '#f1f5f9', padding: '6px 10px', fontSize: '11px', fontWeight: '700', borderBottom: '1px solid #1e293b', textAlign: 'center' }}>
-            APPROVED KLD / ARTWORK
+          <div style={{ background: '#f1f5f9', padding: '6px 10px', fontSize: '11px', fontWeight: '700', borderBottom: '1px solid #1e293b', textAlign: 'center', textTransform: 'uppercase' }}>
+            FINAL APPROVED KLD / ARTWORK PROOF
           </div>
           <div style={{ flex: 1, padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fafafa' }}>
             {imagePreview ? (
