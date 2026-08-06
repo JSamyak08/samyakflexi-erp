@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { SYSTEM_ROLES, ALL_MODULES, generateFullRolePermissions, DEFAULT_ROLE_PERMISSIONS } from '../factoryStore';
 import { saveRolePermissionsToSupabase } from '../services/supabaseDataService';
+import { notifyUserCreated } from '../services/emailService';
 
 export default function UserManagement({ 
   users = [], 
@@ -114,7 +115,8 @@ export default function UserManagement({
         status
       };
       if (onAddUser) onAddUser(newUser);
-      alert(`New user "${name}" onboarded with role "${role}" successfully!`);
+      notifyUserCreated(newUser, newUser.email).catch(err => console.error("User creation email error:", err));
+      alert(`New user "${name}" onboarded with role "${role}" successfully!\n\nCredentials email notification sent to ${newUser.email}.`);
     }
 
     setIsOnboardingModalOpen(false);

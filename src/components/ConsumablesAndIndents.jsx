@@ -35,6 +35,7 @@ import {
   Settings
 } from 'lucide-react';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
+import { notifyPurchaseIndentCreated, notifyPurchaseOrderIssued, notifyLowStockAlert } from '../services/emailService';
 import { generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import { initialVendors } from '../factoryStore';
 
@@ -508,9 +509,19 @@ export default function ConsumablesAndIndents({
       onAddPO(poPayload);
     }
 
+    notifyPurchaseOrderIssued({
+      poNumber: poNumber,
+      supplierName: selectedVendorName,
+      indentNumber: targetIndentForPO ? targetIndentForPO.indentNo : "IND-2026-001",
+      itemName: targetItemForPO ? (targetItemForPO.name || targetItemForPO.itemName) : "Material Requisition Consumable",
+      qty: qty,
+      unit: 'kg',
+      totalAmount: totalAmount
+    }, vendorObj?.email || 'purchase@samyakinternational.in').catch(err => console.error("PO email notification error:", err));
+
     setIsRaisePOModalOpen(false);
     setActivePOData(poPayload); // Open PO PDF viewer immediately!
-    alert(`Purchase Order ${poNumber} issued successfully to ${selectedVendorName}!`);
+    alert(`Purchase Order ${poNumber} issued successfully to ${selectedVendorName}!\n\nEmail notification sent to vendor (${vendorObj?.email || 'purchase@samyakinternational.in'}).`);
   };
 
   // New Issue Form Data
@@ -739,6 +750,7 @@ export default function ConsumablesAndIndents({
     };
 
     setIndents(prev => [newIndent, ...prev]);
+    notifyPurchaseIndentCreated(newIndent).catch(err => console.error("Indent email error:", err));
     setIsIndentModalOpen(false);
     alert(`Material Indent Requisition ${indentId} raised successfully! Pending Plant/Store Manager approval.`);
   };

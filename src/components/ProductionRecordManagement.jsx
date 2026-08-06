@@ -28,6 +28,7 @@ import WeighingScaleInput from './WeighingScaleInput';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import CylinderJobCardForm from '../CylinderJobCardForm';
 import { DEFAULT_DAILY_RATES, generateBarcodeId } from '../factoryStore';
+import { notifyProductionRecordSubmitted, notifyProductionRecordApproved } from '../services/emailService';
 
 export default function ProductionRecordManagement({
   productionRecords = [],
@@ -414,6 +415,7 @@ export default function ProductionRecordManagement({
     };
 
     if (onSaveProductionRecord) onSaveProductionRecord(newRecord);
+    notifyProductionRecordSubmitted(newRecord).catch(err => console.error("Production submission email error:", err));
     setIsConfirmModalOpen(false);
     alert(`🎉 Production Record for "${selectedOrder.jobName}" saved & submitted for Admin Approval!\n\nStage production, scrap generated (${totalScrapQtyKg} kg), and inventory roll returns updated successfully.`);
     setActiveTab('list');
@@ -907,12 +909,14 @@ export default function ProductionRecordManagement({
                       onClick={() => {
                         if (onApproveProductionRecord) {
                           onApproveProductionRecord(selectedRecord.id, `${currentUser.name} (Admin)`);
-                          setSelectedRecord({
+                          const updated = {
                             ...selectedRecord,
                             status: 'Approved by Admin',
                             approvedBy: `${currentUser.name} (Admin)`,
                             approvalDate: new Date().toLocaleString()
-                          });
+                          };
+                          setSelectedRecord(updated);
+                          notifyProductionRecordApproved(updated).catch(err => console.error("Production approval email error:", err));
                           alert(`Production Record for "${selectedRecord.jobName}" APPROVED successfully! Job can now be completed.`);
                         }
                       }}

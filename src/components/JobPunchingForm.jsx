@@ -16,6 +16,7 @@ import {
   DollarSign
 } from 'lucide-react';
 import OrderConfirmationPDF from './OrderConfirmationPDF';
+import { notifyOrderPunched } from '../services/emailService';
 
 export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, initialJobMasterData, clients = [], jobMasters = [] }) {
   // Form State
@@ -267,6 +268,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
 
     if (onSaveOrder) {
       onSaveOrder(newOrder);
+      notifyOrderPunched(newOrder).catch(err => console.error("Order email notification error:", err));
     }
     setShowPDFModal(true);
   };
