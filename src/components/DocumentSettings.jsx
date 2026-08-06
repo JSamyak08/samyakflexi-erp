@@ -1,4 +1,3 @@
-import React, { useState } from 'react';
 import { 
   FileText, 
   PenTool, 
@@ -14,7 +13,8 @@ import {
   ListOrdered,
   Printer,
   Cpu,
-  X
+  X,
+  Edit3
 } from 'lucide-react';
 import { 
   getCompanyLogo,
@@ -31,7 +31,7 @@ import {
   DEFAULT_DOCUMENT_TERMS
 } from '../services/settingsService';
 
-export default function DocumentSettings({ machines = [], onSaveMachine, onDeleteMachine }) {
+export default function DocumentSettings({ machines = [], onSaveMachine, onUpdateMachine, onDeleteMachine }) {
   // Logo State
   const [logoImage, setLogoImage] = useState(() => getCompanyLogo());
 
@@ -46,9 +46,54 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onDelet
 
   const [savedSuccess, setSavedSuccess] = useState(false);
 
-  // Plant Machine Quick-Add State
+  // Plant Machine Directory & Edit State
   const [newMachineName, setNewMachineName] = useState('');
   const [newMachineType, setNewMachineType] = useState('Rotogravure');
+
+  const [editingMachine, setEditingMachine] = useState(null);
+  const [editMachineName, setEditMachineName] = useState('');
+  const [editMachineType, setEditMachineType] = useState('Rotogravure');
+  const [editMachineSpeed, setEditMachineSpeed] = useState(250);
+  const [editMachineWidth, setEditMachineWidth] = useState(1200);
+  const [editMachineColors, setEditMachineColors] = useState(8);
+  const [editMachineLocation, setEditMachineLocation] = useState('');
+  const [editMachineStatus, setEditMachineStatus] = useState('Active');
+
+  const openEditMachineModal = (m) => {
+    setEditingMachine(m);
+    setEditMachineName(m.name || '');
+    setEditMachineType(m.type || 'Rotogravure');
+    setEditMachineSpeed(m.maxSpeedMpm || 250);
+    setEditMachineWidth(m.maxWidthMm || 1200);
+    setEditMachineColors(m.colors || 0);
+    setEditMachineLocation(m.location || '');
+    setEditMachineStatus(m.status || 'Active');
+  };
+
+  const handleSaveEditMachine = (e) => {
+    e.preventDefault();
+    if (!editMachineName.trim()) {
+      alert("Machine Name is required!");
+      return;
+    }
+    const updated = {
+      ...editingMachine,
+      name: editMachineName.trim(),
+      type: editMachineType,
+      maxSpeedMpm: Number(editMachineSpeed) || 0,
+      maxWidthMm: Number(editMachineWidth) || 0,
+      colors: Number(editMachineColors) || 0,
+      location: editMachineLocation.trim(),
+      status: editMachineStatus
+    };
+    if (onUpdateMachine) {
+      onUpdateMachine(updated);
+    } else if (onSaveMachine) {
+      onSaveMachine(updated);
+    }
+    setEditingMachine(null);
+    triggerSaveNotification();
+  };
 
   // Handle Company Logo Upload (PNG/JPG)
   const handleLogoUpload = (e) => {
@@ -536,87 +581,109 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onDelet
         </div>
 
         {/* Quick Add Form */}
-        {onSaveMachine ? (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px auto', gap: '10px', marginBottom: '20px', alignItems: 'end' }}>
-            <div>
-              <label className="form-label" style={{ fontSize: '0.78rem', fontWeight: '700' }}>Machine / Plant Unit Name *</label>
-              <input
-                type="text"
-                className="form-control"
-                placeholder="e.g. Rotogravure Press #3 (12-Color)"
-                value={newMachineName}
-                onChange={e => setNewMachineName(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    if (newMachineName.trim()) {
-                      onSaveMachine({ name: newMachineName.trim(), type: newMachineType, colors: 0, maxSpeedMpm: 0, maxWidthMm: 0, status: 'Active', operator: '', location: '' });
-                      setNewMachineName('');
-                      triggerSaveNotification();
-                    }
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px auto', gap: '10px', marginBottom: '20px', alignItems: 'end' }}>
+          <div>
+            <label className="form-label" style={{ fontSize: '0.78rem', fontWeight: '700' }}>Machine / Plant Unit Name *</label>
+            <input
+              type="text"
+              className="form-control"
+              placeholder="e.g. Rotogravure Press #3 (12-Color)"
+              value={newMachineName}
+              onChange={e => setNewMachineName(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  if (!newMachineName.trim()) {
+                    alert("Please enter a Machine Name!");
+                    return;
                   }
-                }}
-              />
-            </div>
-            <div>
-              <label className="form-label" style={{ fontSize: '0.78rem', fontWeight: '700' }}>Type</label>
-              <select className="form-control" value={newMachineType} onChange={e => setNewMachineType(e.target.value)}>
-                <optgroup label="Printing">
-                  <option value="Rotogravure">Rotogravure Press</option>
-                  <option value="Flexographic">Flexographic Press</option>
-                  <option value="Digital">Digital Printing</option>
-                </optgroup>
-                <optgroup label="Post-Press">
-                  <option value="Laminator">Laminator</option>
-                  <option value="Slitter">Slitter / Rewinder</option>
-                  <option value="Pouching">Pouching Machine</option>
-                  <option value="Rewinder">Doctoring Rewinder</option>
-                  <option value="Coating">UV / Coating Machine</option>
-                </optgroup>
-                <optgroup label="Support">
-                  <option value="Workshop">Workshop / Maintenance</option>
-                  <option value="Store">Factory / Store Area</option>
-                  <option value="Lab">QC / Inspection Lab</option>
-                </optgroup>
-              </select>
-            </div>
-            <button
-              type="button"
-              className="btn-primary"
-              style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px' }}
-              onClick={() => {
-                if (!newMachineName.trim()) return;
-                onSaveMachine({ name: newMachineName.trim(), type: newMachineType, colors: 0, maxSpeedMpm: 0, maxWidthMm: 0, status: 'Active', operator: '', location: '' });
+                  if (onSaveMachine) {
+                    onSaveMachine({ name: newMachineName.trim(), type: newMachineType, colors: 8, maxSpeedMpm: 250, maxWidthMm: 1200, status: 'Active', operator: '', location: 'Main Factory Floor' });
+                    setNewMachineName('');
+                    triggerSaveNotification();
+                  }
+                }
+              }}
+            />
+          </div>
+          <div>
+            <label className="form-label" style={{ fontSize: '0.78rem', fontWeight: '700' }}>Type</label>
+            <select className="form-control" value={newMachineType} onChange={e => setNewMachineType(e.target.value)}>
+              <optgroup label="Printing">
+                <option value="Rotogravure">Rotogravure Press</option>
+                <option value="Flexographic">Flexographic Press</option>
+                <option value="Digital">Digital Printing</option>
+              </optgroup>
+              <optgroup label="Post-Press">
+                <option value="Laminator">Laminator</option>
+                <option value="Slitter">Slitter / Rewinder</option>
+                <option value="Pouching">Pouching Machine</option>
+                <option value="Rewinder">Doctoring Rewinder</option>
+                <option value="Coating">UV / Coating Machine</option>
+              </optgroup>
+              <optgroup label="Support">
+                <option value="Workshop">Workshop / Maintenance</option>
+                <option value="Store">Factory / Store Area</option>
+                <option value="Lab">QC / Inspection Lab</option>
+              </optgroup>
+            </select>
+          </div>
+          <button
+            type="button"
+            className="btn-primary"
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px' }}
+            onClick={() => {
+              if (!newMachineName.trim()) {
+                alert("Please enter a Machine / Plant Unit Name!");
+                return;
+              }
+              if (onSaveMachine) {
+                onSaveMachine({ name: newMachineName.trim(), type: newMachineType, colors: 8, maxSpeedMpm: 250, maxWidthMm: 1200, status: 'Active', operator: '', location: 'Main Factory Floor' });
                 setNewMachineName('');
                 triggerSaveNotification();
-              }}
-            >
-              <Plus size={15} /> Add
-            </button>
-          </div>
-        ) : (
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Settings size={14} /> Connect Supabase to manage machines. For now, manage from <strong>Printing Machine Scheduler → Machine Settings</strong>.
-          </div>
-        )}
+              }
+            }}
+          >
+            <Plus size={15} /> Add Machine
+          </button>
+        </div>
 
         {/* Machine List */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '340px', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '380px', overflowY: 'auto' }}>
           {machines.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
               <Cpu size={28} style={{ opacity: 0.3, display: 'block', margin: '0 auto 8px' }} />
-              No machines found. Add one above or go to Printing Machine Scheduler.
+              No machines found. Add one above to populate the plant directory.
             </div>
           ) : (
             machines.map(m => (
-              <div key={m.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: '8px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ fontSize: '0.68rem', fontWeight: '700', background: 'var(--primary-brand)', color: '#fff', padding: '2px 7px', borderRadius: '10px', whiteSpace: 'nowrap' }}>{m.type}</span>
-                  <span style={{ fontSize: '0.88rem', fontWeight: '600' }}>{m.name}</span>
-                  {m.location && <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>· {m.location}</span>}
+              <div key={m.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: '8px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '0.7rem', fontWeight: '800', background: 'var(--primary-brand)', color: '#fff', padding: '3px 8px', borderRadius: '10px', whiteSpace: 'nowrap' }}>{m.type}</span>
+                  <div>
+                    <span style={{ fontSize: '0.9rem', fontWeight: '700', color: '#0f172a' }}>{m.name}</span>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '1px' }}>
+                      {m.location && <span>Location: <strong>{m.location}</strong></span>}
+                      {m.maxSpeedMpm > 0 && <span style={{ marginLeft: '10px' }}>Speed: <strong>{m.maxSpeedMpm} m/min</strong></span>}
+                      {m.maxWidthMm > 0 && <span style={{ marginLeft: '10px' }}>Width: <strong>{m.maxWidthMm} mm</strong></span>}
+                    </div>
+                  </div>
                 </div>
+
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '0.72rem', padding: '2px 8px', borderRadius: '8px', fontWeight: '600', background: m.status === 'Active' ? '#ecfdf5' : '#fef3c7', color: m.status === 'Active' ? '#065f46' : '#92400e' }}>{m.status}</span>
+                  <span style={{ fontSize: '0.72rem', padding: '3px 9px', borderRadius: '8px', fontWeight: '700', background: m.status === 'Active' ? '#ecfdf5' : '#fef3c7', color: m.status === 'Active' ? '#065f46' : '#92400e' }}>
+                    {m.status || 'Active'}
+                  </span>
+                  
+                  <button
+                    type="button"
+                    title="Edit machine details"
+                    onClick={() => openEditMachineModal(m)}
+                    style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#334155', cursor: 'pointer', padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    <Edit3 size={14} /> Edit
+                  </button>
+
                   {onDeleteMachine && (
                     <button
                       type="button"
@@ -627,9 +694,9 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onDelet
                           triggerSaveNotification();
                         }
                       }}
-                      style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: '2px 4px', borderRadius: '4px' }}
+                      style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', cursor: 'pointer', padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}
                     >
-                      <Trash2 size={14} />
+                      <Trash2 size={14} /> Delete
                     </button>
                   )}
                 </div>
@@ -638,6 +705,107 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onDelet
           )}
         </div>
       </div>
+
+      {/* Edit Machine Modal */}
+      {editingMachine && (
+        <div className="modal-overlay" onClick={() => setEditingMachine(null)}>
+          <div className="glass-card modal-content" style={{ width: '500px' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Edit3 size={20} style={{ color: 'var(--primary-brand)' }} /> Edit Machine Specs & Settings
+            </h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', marginBottom: '16px' }}>
+              Update equipment parameters for <strong>{editingMachine.id}</strong>.
+            </p>
+
+            <form onSubmit={handleSaveEditMachine}>
+              <div className="form-group">
+                <label>Machine / Unit Name *</label>
+                <input 
+                  type="text" 
+                  className="form-control" 
+                  required 
+                  value={editMachineName} 
+                  onChange={e => setEditMachineName(e.target.value)} 
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Machine Type</label>
+                <select className="form-control" value={editMachineType} onChange={e => setEditMachineType(e.target.value)}>
+                  <optgroup label="Printing">
+                    <option value="Rotogravure">Rotogravure Press</option>
+                    <option value="Flexographic">Flexographic Press</option>
+                    <option value="Digital">Digital Printing</option>
+                  </optgroup>
+                  <optgroup label="Post-Press">
+                    <option value="Laminator">Laminator</option>
+                    <option value="Slitter">Slitter / Rewinder</option>
+                    <option value="Pouching">Pouching Machine</option>
+                    <option value="Rewinder">Doctoring Rewinder</option>
+                    <option value="Coating">UV / Coating Machine</option>
+                  </optgroup>
+                  <optgroup label="Support">
+                    <option value="Workshop">Workshop / Maintenance</option>
+                    <option value="Store">Factory / Store Area</option>
+                    <option value="Lab">QC / Inspection Lab</option>
+                  </optgroup>
+                </select>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="form-group">
+                  <label>Max Speed (m/min)</label>
+                  <input 
+                    type="number" 
+                    className="form-control" 
+                    value={editMachineSpeed} 
+                    onChange={e => setEditMachineSpeed(e.target.value)} 
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Max Web Width (mm)</label>
+                  <input 
+                    type="number" 
+                    className="form-control" 
+                    value={editMachineWidth} 
+                    onChange={e => setEditMachineWidth(e.target.value)} 
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="form-group">
+                  <label>Plant Location / Bay</label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    placeholder="e.g. Bay 1 - Rotogravure Hall"
+                    value={editMachineLocation} 
+                    onChange={e => setEditMachineLocation(e.target.value)} 
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Operational Status</label>
+                  <select className="form-control" value={editMachineStatus} onChange={e => setEditMachineStatus(e.target.value)}>
+                    <option value="Active">Active</option>
+                    <option value="Maintenance">Maintenance</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px' }}>
+                <button type="button" className="btn-secondary" onClick={() => setEditingMachine(null)}>Cancel</button>
+                <button type="submit" className="btn-primary">
+                  <Check size={16} /> Save Machine Specs
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );
