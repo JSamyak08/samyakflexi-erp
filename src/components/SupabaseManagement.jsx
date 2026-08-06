@@ -509,17 +509,6 @@ END $$;`;
             </button>
 
             <button
-              onClick={handleSeedData}
-              disabled={seeding || !isSupabaseConfigured()}
-              className="btn-primary"
-              style={{ background: '#4f46e5', borderColor: '#4f46e5', opacity: (!isSupabaseConfigured() || seeding) ? 0.6 : 1 }}
-              title="Upload initial factory data to Supabase database"
-            >
-              <Zap size={16} />
-              {seeding ? 'Syncing...' : 'Push Seed Data'}
-            </button>
-
-            <button
               onClick={handlePurgeSupabaseData}
               disabled={seeding || !isSupabaseConfigured()}
               className="btn-secondary"

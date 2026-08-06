@@ -372,7 +372,31 @@ export default function InventoryManagement({
   const [editLastVendor, setEditLastVendor] = useState('');
   const [editLastBatch, setEditLastBatch] = useState('');
 
+  const openAddStockModal = () => {
+    const newId = `INV-${Math.floor(100 + Math.random() * 900)}`;
+    setEditingStockItem({ id: newId, isNew: true });
+    setEditCategory('Film Substrates');
+    setEditItemName('');
+    setEditItemCode(newId);
+    setEditUnit('Kg');
+    setEditFilmType('PET');
+    setEditMicron(12);
+    setEditWidthMm(1000);
+    setEditSubType('');
+    setEditDimensions('');
+    setEditAvailableQty(100);
+    setEditAllocatedQty(0);
+    setEditLocation('Bay A');
+    setEditReorderLevel(100);
+    setEditLastVendor('');
+    setEditLastBatch('');
+  };
+
   const openEditStockModal = (item) => {
+    if (!item) {
+      openAddStockModal();
+      return;
+    }
     setEditingStockItem(item);
     
     const isFilm = (item.category === 'Film Substrates') || 
@@ -444,35 +468,61 @@ export default function InventoryManagement({
       ? `${editFilmType} ${editMicron}µ (${editWidthMm}mm Width)`
       : (editItemName.trim() || `${editCategory} Stock Item`);
 
-    const updatedInv = inventory.map(item => {
-      if (item.id === editingStockItem.id) {
-        return {
-          ...item,
-          category: editCategory,
-          itemName: finalItemName,
-          itemCode: editItemCode.trim() || item.itemCode || item.id,
-          unit: editUnit,
-          filmType: isFilm ? editFilmType : (editSubType.trim() || editFilmType || editCategory),
-          micron: isFilm ? (parseFloat(editMicron) || 12) : (editMicron && editMicron !== '-' ? editMicron : '-'),
-          widthMm: isFilm ? (parseFloat(editWidthMm) || 1000) : (editDimensions.trim() ? editDimensions.replace(/[^\d.]/g, '') || '-' : (item.widthMm || '-')),
-          density: isFilm ? (FILM_DENSITIES[editFilmType] || 1.0) : 1.0,
-          availableQtyKg: parseFloat(editAvailableQty) || 0,
-          allocatedQtyKg: parseFloat(editAllocatedQty) || 0,
-          location: editLocation.trim() || 'Bay A',
-          reorderLevelKg: parseFloat(editReorderLevel) || 0,
-          lastVendor: editLastVendor.trim() || item.lastVendor,
-          lastBatch: editLastBatch.trim() || item.lastBatch
-        };
-      }
-      return item;
-    });
+    let updatedInv;
+    if (editingStockItem.isNew) {
+      const newItem = {
+        id: editingStockItem.id,
+        category: editCategory,
+        itemName: finalItemName,
+        itemCode: editItemCode.trim() || editingStockItem.id,
+        unit: editUnit,
+        filmType: isFilm ? editFilmType : (editSubType.trim() || editFilmType || editCategory),
+        micron: isFilm ? (parseFloat(editMicron) || 12) : (editMicron && editMicron !== '-' ? editMicron : '-'),
+        widthMm: isFilm ? (parseFloat(editWidthMm) || 1000) : (editDimensions.trim() ? editDimensions.replace(/[^\d.]/g, '') || '-' : '-'),
+        density: isFilm ? (FILM_DENSITIES[editFilmType] || 1.0) : 1.0,
+        availableQtyKg: parseFloat(editAvailableQty) || 0,
+        allocatedQtyKg: parseFloat(editAllocatedQty) || 0,
+        location: editLocation.trim() || 'Bay A',
+        reorderLevelKg: parseFloat(editReorderLevel) || 0,
+        lastVendor: editLastVendor.trim() || '',
+        lastBatch: editLastBatch.trim() || '',
+        lastUpdated: new Date().toISOString()
+      };
+      updatedInv = [newItem, ...inventory];
+    } else {
+      updatedInv = inventory.map(item => {
+        if (item.id === editingStockItem.id) {
+          return {
+            ...item,
+            category: editCategory,
+            itemName: finalItemName,
+            itemCode: editItemCode.trim() || item.itemCode || item.id,
+            unit: editUnit,
+            filmType: isFilm ? editFilmType : (editSubType.trim() || editFilmType || editCategory),
+            micron: isFilm ? (parseFloat(editMicron) || 12) : (editMicron && editMicron !== '-' ? editMicron : '-'),
+            widthMm: isFilm ? (parseFloat(editWidthMm) || 1000) : (editDimensions.trim() ? editDimensions.replace(/[^\d.]/g, '') || '-' : (item.widthMm || '-')),
+            density: isFilm ? (FILM_DENSITIES[editFilmType] || 1.0) : 1.0,
+            availableQtyKg: parseFloat(editAvailableQty) || 0,
+            allocatedQtyKg: parseFloat(editAllocatedQty) || 0,
+            location: editLocation.trim() || 'Bay A',
+            reorderLevelKg: parseFloat(editReorderLevel) || 0,
+            lastVendor: editLastVendor.trim() || item.lastVendor,
+            lastBatch: editLastBatch.trim() || item.lastBatch,
+            lastUpdated: new Date().toISOString()
+          };
+        }
+        return item;
+      });
+    }
 
     if (onUpdateInventory) {
       onUpdateInventory(updatedInv);
     }
 
+    const actionText = editingStockItem.isNew ? 'created' : 'updated';
+    const itemId = editingStockItem.id;
     setEditingStockItem(null);
-    alert(`Stock item ${editingStockItem.id} (${finalItemName}) updated successfully!`);
+    alert(`Stock item ${itemId} (${finalItemName}) ${actionText} successfully!`);
   };
 
   const handleDeleteStockItem = (item) => {
@@ -960,6 +1010,9 @@ export default function InventoryManagement({
           <div style={{ display: 'flex', gap: '12px' }}>
             <button className="btn-secondary" onClick={() => setIsIssueModalOpen(true)}>
               <ArrowUpRight size={18} /> Issue / Return to Store
+            </button>
+            <button className="btn-primary" style={{ background: '#2563eb', borderColor: '#2563eb' }} onClick={() => openAddStockModal()}>
+              <Plus size={18} /> Add Stock Item
             </button>
             <button className="btn-primary" onClick={() => setIsNewGRNModalOpen(true)}>
               <Plus size={18} /> Inward GRN (New Stock)
@@ -1962,7 +2015,9 @@ export default function InventoryManagement({
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                   <Edit3 size={20} style={{ color: 'var(--primary-brand)' }} />
-                  <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 600 }}>Edit Stock Item</h3>
+                  <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 600 }}>
+                    {editingStockItem.isNew ? '✨ Add New Stock Item' : '✏️ Edit Stock Item'}
+                  </h3>
                   <span className="badge" style={{ background: 'rgba(59, 130, 246, 0.12)', color: '#3b82f6', border: '1px solid rgba(59, 130, 246, 0.3)', fontWeight: 600 }}>
                     {editingStockItem.id}
                   </span>
@@ -1971,7 +2026,10 @@ export default function InventoryManagement({
                   </span>
                 </div>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.84rem', margin: 0 }}>
-                  Pre-filled with existing item parameters. All specifications adapt dynamically to the chosen item category.
+                  {editingStockItem.isNew 
+                    ? 'Enter new inventory item details and initial stock levels.'
+                    : 'Pre-filled with existing item parameters. All specifications adapt dynamically to the chosen item category.'
+                  }
                 </p>
               </div>
               <button 

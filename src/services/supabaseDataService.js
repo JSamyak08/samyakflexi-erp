@@ -81,7 +81,7 @@ export async function fetchOrders() {
       deliveryDate: o.target_delivery_date,
       targetDeliveryDate: o.target_delivery_date,
       status: o.status || 'Scheduled',
-      structure: o.job_details?.structure || 'PET / PE',
+      structure: o.job_details?.structure || o.structure || '—',
       printWidthMm: o.job_details?.printWidthMm,
       repeatLengthMm: o.job_details?.repeatLengthMm,
       jobDetails: o.job_details,
@@ -1094,25 +1094,32 @@ export async function fetchJobMasters() {
     }
     if (!data) return [];
 
-    return data.map(j => ({
-      id: j.id,
-      skuCode: j.sku_code || j.sku || '',
-      jobName: j.job_name || '',
-      clientName: j.client_name || '',
-      structure: j.structure || j.film_structure || 'PET / PE',
-      printWidthMm: Number(j.print_width_mm || j.print_width || j.pouch_width_mm || j.width_mm || j.pouch_open_width) || 1000,
-      repeatLengthMm: Number(j.repeat_length_mm || j.repeat_length || j.circumference_mm) || 400,
-      pouchOpenWidth: Number(j.pouch_open_width) || 0,
-      pouchHeight: Number(j.pouch_height || j.pouch_height_mm) || 0,
-      layers: Array.isArray(j.layers) ? j.layers : [],
-      cylinderSku: j.cylinder_sku || j.sku_code || '',
-      cylinderCost: j.cylinder_cost || '₹ 0',
-      colorsCount: Number(j.colors_count) || 6,
-      engravuresName: j.engravures_name || j.engraver_name || '',
-      costBorneBy: j.cost_borne_by || 'Client (100%)',
-      utilisationLimit: Number(j.utilisation_limit) || 10000,
-      creationDate: j.creation_date || j.created_at ? String(j.created_at).split('T')[0] : new Date().toISOString().split('T')[0]
-    }));
+    return data.map(j => {
+      const layers = Array.isArray(j.layers) ? j.layers : [];
+      const derivedStructure = (layers.length > 0)
+        ? layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
+        : (j.structure || j.film_structure || '—');
+
+      return {
+        id: j.id,
+        skuCode: j.sku_code || j.sku || '',
+        jobName: j.job_name || '',
+        clientName: j.client_name || '',
+        structure: derivedStructure,
+        printWidthMm: Number(j.print_width_mm || j.print_width || j.pouch_width_mm || j.width_mm || j.pouch_open_width) || 1000,
+        repeatLengthMm: Number(j.repeat_length_mm || j.repeat_length || j.circumference_mm) || 400,
+        pouchOpenWidth: Number(j.pouch_open_width) || 0,
+        pouchHeight: Number(j.pouch_height || j.pouch_height_mm) || 0,
+        layers: layers,
+        cylinderSku: j.cylinder_sku || j.sku_code || '',
+        cylinderCost: j.cylinder_cost || '₹ 0',
+        colorsCount: Number(j.colors_count) || 6,
+        engravuresName: j.engravures_name || j.engraver_name || '',
+        costBorneBy: j.cost_borne_by || 'Client (100%)',
+        utilisationLimit: Number(j.utilisation_limit) || 10000,
+        creationDate: j.creation_date || j.created_at ? String(j.created_at).split('T')[0] : new Date().toISOString().split('T')[0]
+      };
+    });
   } catch (err) {
     console.error("Error fetching job masters from Supabase:", err);
     return [];
@@ -1127,7 +1134,10 @@ export async function saveJobMasterToSupabase(jobMaster) {
   const skuCode = jobMaster.skuCode || jobMaster.sku || '';
   const jobName = jobMaster.jobName || '';
   const clientName = jobMaster.clientName || '';
-  const structure = jobMaster.structure || 'PET / PE';
+  const layers = Array.isArray(jobMaster.layers) ? jobMaster.layers : [];
+  const structure = (layers.length > 0)
+    ? layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
+    : (jobMaster.structure || '—');
   const printWidthMm = Number(jobMaster.printWidthMm || jobMaster.pouchWidthMm || jobMaster.pouch_width_mm) || 1000;
   const repeatLengthMm = Number(jobMaster.repeatLengthMm || jobMaster.repeat_length_mm) || 400;
   const pouchWidthMm = Number(jobMaster.pouchOpenWidth) || printWidthMm;
@@ -1324,94 +1334,15 @@ export async function deleteSalesQuotationFromSupabase(id) {
 }
 
 // ============================================================================
-// ONE-CLICK SEED MIGRATION: SEED ALL INITIAL FACTORY DATA TO SUPABASE
+// SEED MIGRATION: SEED DATA PUSHES HAVE BEEN PERMANENTLY DISABLED
 // ============================================================================
 
 export async function seedAllDataToSupabase() {
-  if (!isSupabaseConfigured()) {
-    return { success: false, message: 'Supabase credentials are not configured.' };
-  }
-
-  const results = [];
-
-  // 1. Seed Vendors
-  try {
-    for (const v of initialVendors) await saveVendorToSupabase(v);
-    results.push('Vendors');
-  } catch (e) {
-    console.warn("Seeding Vendors notice:", e.message);
-  }
-
-  // 1b. Seed Clients
-  try {
-    for (const c of initialClients) await saveClientToSupabase(c);
-    results.push('Clients');
-  } catch (e) {
-    console.warn("Seeding Clients notice:", e.message);
-  }
-
-  // 2. Seed Orders
-  try {
-    for (const o of initialOrders) await saveOrderToSupabase(o);
-    results.push('Orders');
-  } catch (e) {
-    console.warn("Seeding Orders notice:", e.message);
-  }
-
-  // 3. Seed Inventory
-  try {
-    for (const i of initialInventory) await saveInventoryItemToSupabase(i);
-    results.push('Inventory');
-  } catch (e) {
-    console.warn("Seeding Inventory notice:", e.message);
-  }
-
-  // 4. Seed GRNs
-  try {
-    for (const g of initialGRNs) await saveGRNToSupabase(g);
-    results.push('GRNs');
-  } catch (e) {
-    console.warn("Seeding GRNs notice:", e.message);
-  }
-
-  // 5. Seed Cylinders
-  try {
-    for (const c of initialCylinders) await saveCylinderToSupabase(c);
-    results.push('Cylinders');
-  } catch (e) {
-    console.warn("Seeding Cylinders notice:", e.message);
-  }
-
-  // 6. Seed Production Records
-  try {
-    for (const r of initialProductionRecords) await saveProductionRecordToSupabase(r);
-    results.push('Production Records');
-  } catch (e) {
-    console.warn("Seeding Production Records notice:", e.message);
-  }
-
-  // 7. Seed Users
-  try {
-    for (const u of initialUsers) await saveUserToSupabase(u);
-    results.push('Users');
-  } catch (e) {
-    console.warn("Seeding Users notice:", e.message);
-  }
-
-  // 8. Seed Job Masters
-  try {
-    for (const j of initialJobMasters) await saveJobMasterToSupabase(j);
-    results.push('Job Masters');
-  } catch (e) {
-    console.warn("Seeding Job Masters notice:", e.message);
-  }
-
   return {
-    success: true,
-    message: results.length > 0 
-      ? `Successfully populated factory tables (${results.join(', ')}) in Supabase PostgreSQL!` 
-      : 'Factory seed data loaded locally. Run supabase_schema.sql to create missing tables.'
+    success: false,
+    message: 'Seed data pushes and auto-seeding are permanently disabled in production.'
   };
 }
 
 export const seedInitialDataToSupabase = seedAllDataToSupabase;
+

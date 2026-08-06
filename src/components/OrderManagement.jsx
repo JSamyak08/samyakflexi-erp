@@ -15,11 +15,13 @@ import {
   Trash2
 } from 'lucide-react';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
+import { calculateJobRawMaterials } from '../factoryStore';
 
 export default function OrderManagement({ 
   orders, 
   vendors, 
   inventory = [],
+  jobMasters = [],
   currentUser,
   productionRecords = [],
   onUpdateOrder, 
@@ -27,6 +29,110 @@ export default function OrderManagement({
   onNavigateToPunching,
   onNavigateToProductionRecords
 }) {
+  // Helper: derive substrate structure from Job Master layers (authoritative source)
+  const getSubstrateStructure = (order) => {
+    const jm = jobMasters.find(j =>
+      (j.jobName || '').toLowerCase().trim() === (order?.jobName || '').toLowerCase().trim()
+    );
+    if (jm && jm.layers && jm.layers.length > 0) {
+      return jm.layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
+    }
+    if (jm && jm.structure && jm.structure !== 'PET / PE' && jm.structure !== '—') {
+      return jm.structure;
+    }
+    if (order?.structure && order.structure !== 'PET / PE' && order.structure !== '—') {
+      return order.structure;
+    }
+    return jm?.structure || order?.structure || '—';
+  };
+
+  // Helper: ensure Itemized Raw Material Requirements are always calculated and loaded up
+  const getOrderMaterialRequirements = (order) => {
+    const existing = order.materialRequirements || order.rawMaterialRequirements;
+    if (Array.isArray(existing) && existing.length > 0) {
+      return existing;
+    }
+
+    const jm = jobMasters.find(j =>
+      (j.jobName || '').toLowerCase().trim() === (order?.jobName || '').toLowerCase().trim()
+    );
+
+    let layers = jm?.layers || order?.jobDetails?.layers;
+
+    if (!layers || layers.length === 0) {
+      const structStr = (jm?.structure || order?.structure || '');
+      if (structStr && structStr !== 'PET / PE' && structStr !== '—') {
+        const parts = structStr.split('/').map(p => p.trim());
+        layers = parts.map(part => {
+          const micronMatch = part.match(/(\d+(\.\d+)?)\s*µ?/i);
+          const micron = micronMatch ? parseFloat(micronMatch[1]) : 12;
+          let filmType = part.replace(/(\d+(\.\d+)?)\s*µ?/gi, '').trim();
+          if (!filmType) filmType = 'PET';
+          return { filmType, micron };
+        });
+      }
+    }
+
+    if (!layers || layers.length === 0) {
+      layers = [
+        { filmType: 'PET', micron: 12 },
+        { filmType: 'Natural GP LD', micron: 35 }
+      ];
+    }
+
+    const calc = calculateJobRawMaterials({
+      jobName: order?.jobName || 'Job',
+      printWidthMm: parseFloat(order?.printWidthMm || jm?.printWidthMm) || 1000,
+      repeatLengthMm: parseFloat(order?.repeatLengthMm || jm?.repeatLengthMm) || 400,
+      orderQtyKg: parseFloat(order?.orderQtyKg) || 1000,
+      orderType: order?.orderType || 'Reel',
+      layers
+    });
+
+    const reqs = [];
+    if (calc && calc.layerResults) {
+      calc.layerResults.forEach((layer, idx) => {
+        reqs.push({
+          id: `REQ-${order?.id || 'ORD'}-${idx + 1}`,
+          filmType: layer.filmType,
+          micron: layer.micron,
+          widthMm: layer.widthMm || parseFloat(order?.printWidthMm || jm?.printWidthMm) || 1000,
+          qtyKg: layer.grossKg || 0,
+          preferredVendor: (layer.filmType || '').toLowerCase().includes('ld') ? 'Malwa Extrusions Pvt Ltd' : 'FlexiPoly Films Ltd',
+          poIssued: false,
+          poNumber: ""
+        });
+      });
+
+      if (calc.inkDetails && calc.inkDetails.grossKg > 0) {
+        reqs.push({
+          id: `REQ-${order?.id || 'ORD'}-${reqs.length + 1}`,
+          filmType: 'Liquid Inks',
+          micron: '-',
+          widthMm: '-',
+          qtyKg: calc.inkDetails.grossKg,
+          preferredVendor: 'Siegwerk Inks Ltd',
+          poIssued: false,
+          poNumber: ""
+        });
+      }
+
+      if (calc.adhesiveDetails && calc.adhesiveDetails.grossKg > 0) {
+        reqs.push({
+          id: `REQ-${order?.id || 'ORD'}-${reqs.length + 1}`,
+          filmType: 'Solvent-less Adhesive',
+          micron: '-',
+          widthMm: '-',
+          qtyKg: calc.adhesiveDetails.grossKg,
+          preferredVendor: 'Siegwerk Inks Ltd',
+          poIssued: false,
+          poNumber: ""
+        });
+      }
+    }
+
+    return reqs;
+  };
   const isAdmin = currentUser?.role === 'Admin';
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -147,8 +253,8 @@ export default function OrderManagement({
   };
 
   const toggleSelectAllForOrder = (order) => {
-    const reqs = order.materialRequirements || [];
-    const allSelected = reqs.every(r => selectedReqIds[r.id]);
+    const reqs = getOrderMaterialRequirements(order);
+    const allSelected = reqs.length > 0 && reqs.every(r => selectedReqIds[r.id]);
 
     const newMap = { ...selectedReqIds };
     reqs.forEach(r => {
@@ -162,7 +268,7 @@ export default function OrderManagement({
   const getSelectedRequirementsList = () => {
     const list = [];
     orders.forEach(order => {
-      (order.materialRequirements || []).forEach(req => {
+      getOrderMaterialRequirements(order).forEach(req => {
         if (selectedReqIds[req.id]) {
           list.push({
             orderId: order.id,
@@ -382,7 +488,7 @@ export default function OrderManagement({
       o.jobName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       o.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       o.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      o.structure.toLowerCase().includes(searchTerm.toLowerCase());
+      getSubstrateStructure(o).toLowerCase().includes(searchTerm.toLowerCase());
     
     const isOverdue = (o.status === 'Delayed' || new Date(o.targetDeliveryDate) < new Date('2026-07-24')) && o.status !== 'On Hold';
     
@@ -490,7 +596,7 @@ export default function OrderManagement({
         {filteredOrders.map(order => {
           const isOverdue = order.status === 'Delayed' || new Date(order.targetDeliveryDate) < new Date('2026-07-24');
           const isExpanded = expandedOrders[order.id];
-          const reqs = order.materialRequirements || order.rawMaterialRequirements || [];
+          const reqs = getOrderMaterialRequirements(order);
           const allReqsSelected = reqs.length > 0 && reqs.every(r => selectedReqIds[r.id]);
 
           return (
@@ -520,7 +626,7 @@ export default function OrderManagement({
                     
                     <div style={{ display: 'flex', gap: '16px', fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
                       <span>Client: <b>{order.clientName}</b></span>
-                      <span>Structure: <b>{order.structure}</b></span>
+                      <span>Structure: <b>{getSubstrateStructure(order)}</b></span>
                       <span>Order Qty: <b>{(order.orderQtyKg ?? 0).toLocaleString()} kg</b> ({order.orderType})</span>
                     </div>
                   </div>

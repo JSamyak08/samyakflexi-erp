@@ -31,11 +31,29 @@ export default function ProductionRecordManagement({
   productionRecords = [],
   orders = [],
   inventory = [],
+  jobMasters = [],
   currentUser,
   onSaveProductionRecord,
   onApproveProductionRecord,
   onAddRoll
 }) {
+  // Helper: derive substrate structure from Job Master layers (authoritative source)
+  const getSubstrateStructure = (order) => {
+    if (!order) return '—';
+    const jm = jobMasters.find(j =>
+      (j.jobName || '').toLowerCase().trim() === (order.jobName || '').toLowerCase().trim()
+    );
+    if (jm && jm.layers && jm.layers.length > 0) {
+      return jm.layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
+    }
+    if (jm && jm.structure && jm.structure !== 'PET / PE' && jm.structure !== '—') {
+      return jm.structure;
+    }
+    if (order.structure && order.structure !== 'PET / PE' && order.structure !== '—') {
+      return order.structure;
+    }
+    return jm?.structure || order.structure || '—';
+  };
   const isPlantManager = currentUser?.role === 'Plant Manager' || currentUser?.role === 'Admin';
   const isAdmin = currentUser?.role === 'Admin';
 
@@ -323,7 +341,7 @@ export default function ProductionRecordManagement({
                           <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{ord.clientName}</div>
                         </td>
                         <td style={{ fontSize: '0.8rem', color: '#334155' }}>
-                          <code>{ord.structure || 'PET / METPET / LDPE'}</code>
+                          <code>{getSubstrateStructure(ord)}</code>
                         </td>
                         <td style={{ fontWeight: '700' }}>
                           {ord.orderQtyKg ? ord.orderQtyKg.toLocaleString() : '1,500'} kg

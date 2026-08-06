@@ -349,6 +349,11 @@ export default function JobMasterDirectory({
       return;
     }
 
+    if (!layers || layers.length === 0 || layers.some(l => !l.filmType || !l.micron || parseFloat(l.micron) <= 0)) {
+      alert("Substrate Structure / Layers (Film Type & Micron Gauge) is a mandatory entry in Job Master! Please specify valid film type and micron for all layers.");
+      return;
+    }
+
     if (!editingJobId && isSkuDuplicate) {
       alert(`SKU Code "${skuCode.trim()}" is already in use! Please enter or generate a unique SKU Code.`);
       return;
@@ -1120,7 +1125,9 @@ export default function JobMasterDirectory({
 
               <div style={{ marginTop: '16px', background: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                  <strong style={{ fontSize: '0.9rem' }}>Laminate Layers Structure</strong>
+                  <strong style={{ fontSize: '0.9rem', color: '#1e293b' }}>
+                    Laminate Layers Structure <span style={{ color: '#dc2626' }}>* (Mandatory Entry)</span>
+                  </strong>
                   <button type="button" className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.75rem' }} onClick={addLayer}><Plus size={14} /> Add Layer</button>
                 </div>
                 {layers.map((l, idx) => (

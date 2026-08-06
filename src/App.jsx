@@ -68,8 +68,7 @@ import {
   fetchPrintingMachines, savePrintingMachineToSupabase, deletePrintingMachineFromSupabase,
   fetchProductionSchedules, saveProductionScheduleToSupabase, deleteProductionScheduleFromSupabase,
   fetchClients, saveClientToSupabase, deleteClientFromSupabase,
-  fetchJobMasters, saveJobMasterToSupabase, deleteJobMasterFromSupabase,
-  seedInitialDataToSupabase
+  fetchJobMasters, saveJobMasterToSupabase, deleteJobMasterFromSupabase
 } from './services/supabaseDataService';
 import JobMasterDirectory from './components/JobMasterDirectory';
 import { initialInventoryRolls, initialDispatchShipments } from './factoryStore';
@@ -123,23 +122,21 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(!isSupaConfigured);
 
-
-  // When Supabase is configured, initialize state to empty arrays [] and let Supabase fetch populate state authoritatively.
-  // Fall back to local storage seeds ONLY if Supabase is unconfigured / offline.
-  const [orders, setOrders] = useState(() => isSupaConfigured ? [] : loadLocalState('orders', initialOrders));
-  const [vendors, setVendors] = useState(() => isSupaConfigured ? [] : loadLocalState('vendors', initialVendors));
-  const [inventory, setInventory] = useState(() => isSupaConfigured ? [] : loadLocalState('inventory', initialInventory));
-  const [grns, setGrns] = useState(() => isSupaConfigured ? [] : loadLocalState('grns', initialGRNs));
-  const [users, setUsers] = useState(() => isSupaConfigured ? [] : loadLocalState('users', initialUsers));
-  const [jobDataSheets, setJobDataSheets] = useState(() => isSupaConfigured ? [] : loadLocalState('job_datasheets', initialJobDataSheets || []));
-  const [cylinders, setCylinders] = useState(() => isSupaConfigured ? [] : loadLocalState('cylinders', initialCylinders));
-  const [productionRecords, setProductionRecords] = useState(() => isSupaConfigured ? [] : loadLocalState('production_records', initialProductionRecords));
-  const [inventoryRolls, setInventoryRolls] = useState(() => isSupaConfigured ? [] : loadLocalState('inventory_rolls', initialInventoryRolls));
-  const [dispatchShipments, setDispatchShipments] = useState(() => isSupaConfigured ? [] : loadLocalState('dispatch_shipments', initialDispatchShipments));
-  const [machines, setMachines] = useState(() => isSupaConfigured ? [] : loadLocalState('printing_machines', initialMachines));
-  const [schedules, setSchedules] = useState(() => isSupaConfigured ? [] : loadLocalState('production_schedules', initialProductionSchedules));
-  const [clients, setClients] = useState(() => isSupaConfigured ? [] : loadLocalState('clients', initialClients));
-  const [jobMasters, setJobMasters] = useState(() => isSupaConfigured ? [] : loadLocalState('job_masters', initialJobMasters));
+  // Hydrate initial state safely from localStorage (if present), or empty array default.
+  const [orders, setOrders] = useState(() => loadLocalState('orders', []));
+  const [vendors, setVendors] = useState(() => loadLocalState('vendors', []));
+  const [inventory, setInventory] = useState(() => loadLocalState('inventory', []));
+  const [grns, setGrns] = useState(() => loadLocalState('grns', []));
+  const [users, setUsers] = useState(() => loadLocalState('users', []));
+  const [jobDataSheets, setJobDataSheets] = useState(() => loadLocalState('job_datasheets', []));
+  const [cylinders, setCylinders] = useState(() => loadLocalState('cylinders', []));
+  const [productionRecords, setProductionRecords] = useState(() => loadLocalState('production_records', []));
+  const [inventoryRolls, setInventoryRolls] = useState(() => loadLocalState('inventory_rolls', []));
+  const [dispatchShipments, setDispatchShipments] = useState(() => loadLocalState('dispatch_shipments', []));
+  const [machines, setMachines] = useState(() => loadLocalState('printing_machines', []));
+  const [schedules, setSchedules] = useState(() => loadLocalState('production_schedules', []));
+  const [clients, setClients] = useState(() => loadLocalState('clients', []));
+  const [jobMasters, setJobMasters] = useState(() => loadLocalState('job_masters', []));
   const [selectedJobMasterForPunch, setSelectedJobMasterForPunch] = useState(null);
 
   // Reactive listener for Supabase credential updates
@@ -230,26 +227,55 @@ export default function App() {
         fetchSafe(fetchJobMasters, 'Job Masters')
       ]);
 
-      // Auto-seeding has been disabled for production environment to prevent dummy data generation.
-
-      // Auto-healing for Job Masters, Clients, and Vendors has been disabled in production.
-
-      // Supabase DB is the AUTHORITATIVE Source of Truth.
-      // Overwrite in-memory state with live data fetched directly from Supabase!
-      if (Array.isArray(supaOrders)) setOrders(supaOrders);
-      if (Array.isArray(supaVendors)) setVendors(supaVendors);
-      if (Array.isArray(supaInv)) setInventory(supaInv);
-      if (Array.isArray(supaGRNs)) setGrns(supaGRNs);
-      if (Array.isArray(supaCyls)) setCylinders(supaCyls);
-      if (Array.isArray(supaProd)) setProductionRecords(supaProd);
-      if (Array.isArray(supaUsers)) setUsers(supaUsers);
-      if (Array.isArray(supaSheets)) setJobDataSheets(supaSheets);
-      if (Array.isArray(supaRolls)) setInventoryRolls(supaRolls);
-      if (Array.isArray(supaShipments)) setDispatchShipments(supaShipments);
-      if (Array.isArray(supaMachines)) setMachines(supaMachines);
-      if (Array.isArray(supaSchedules)) setSchedules(supaSchedules);
-      if (Array.isArray(supaClients)) setClients(supaClients);
-      if (Array.isArray(supaJobMasters)) setJobMasters(supaJobMasters);
+      // Seed pushes and auto-seeding are completely disabled.
+      // Update in-memory state with live data fetched directly from Supabase.
+      if (Array.isArray(supaOrders)) {
+        if (supaOrders.length > 0) setOrders(supaOrders);
+      }
+      if (Array.isArray(supaVendors)) {
+        if (supaVendors.length > 0) setVendors(supaVendors);
+      }
+      if (Array.isArray(supaInv)) {
+        if (supaInv.length > 0) {
+          setInventory(supaInv);
+        } else if (inventory && inventory.length > 0) {
+          // Sync existing local inventory to Supabase if remote table is empty
+          saveInventoryBatchToSupabase(inventory).catch(console.warn);
+        }
+      }
+      if (Array.isArray(supaGRNs)) {
+        if (supaGRNs.length > 0) setGrns(supaGRNs);
+      }
+      if (Array.isArray(supaCyls)) {
+        if (supaCyls.length > 0) setCylinders(supaCyls);
+      }
+      if (Array.isArray(supaProd)) {
+        if (supaProd.length > 0) setProductionRecords(supaProd);
+      }
+      if (Array.isArray(supaUsers)) {
+        if (supaUsers.length > 0) setUsers(supaUsers);
+      }
+      if (Array.isArray(supaSheets)) {
+        if (supaSheets.length > 0) setJobDataSheets(supaSheets);
+      }
+      if (Array.isArray(supaRolls)) {
+        if (supaRolls.length > 0) setInventoryRolls(supaRolls);
+      }
+      if (Array.isArray(supaShipments)) {
+        if (supaShipments.length > 0) setDispatchShipments(supaShipments);
+      }
+      if (Array.isArray(supaMachines)) {
+        if (supaMachines.length > 0) setMachines(supaMachines);
+      }
+      if (Array.isArray(supaSchedules)) {
+        if (supaSchedules.length > 0) setSchedules(supaSchedules);
+      }
+      if (Array.isArray(supaClients)) {
+        if (supaClients.length > 0) setClients(supaClients);
+      }
+      if (Array.isArray(supaJobMasters)) {
+        if (supaJobMasters.length > 0) setJobMasters(supaJobMasters);
+      }
     }
 
     loadSupabaseData();
@@ -1031,6 +1057,7 @@ export default function App() {
             productionRecords={productionRecords}
             orders={orders}
             inventory={inventory}
+            jobMasters={jobMasters}
             currentUser={currentUser}
             onSaveProductionRecord={handleSaveProductionRecord}
             onApproveProductionRecord={handleApproveProductionRecord}
@@ -1156,11 +1183,18 @@ export default function App() {
                     <tbody>
                       {orders.map(o => {
                         const isOverdue = o.status === 'Delayed' || new Date(o.targetDeliveryDate) < new Date('2026-07-24');
+                        // Derive substrate structure from the matching Job Master's layers, fallback to order.structure
+                        const matchedJM = jobMasters.find(j =>
+                          (j.jobName || '').toLowerCase().trim() === (o.jobName || '').toLowerCase().trim()
+                        );
+                        const substrateDisplay = matchedJM && matchedJM.layers && matchedJM.layers.length > 0
+                          ? matchedJM.layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
+                          : (o.structure || '—');
                         return (
                           <tr key={o.id} className={isOverdue ? 'row-delayed-highlight' : ''}>
                             <td style={{ fontWeight: '700', color: isOverdue ? '#dc2626' : 'var(--primary-brand)' }}>{o.id}</td>
                             <td style={{ fontWeight: '600' }}>{o.jobName}</td>
-                            <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{o.structure}</td>
+                            <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{substrateDisplay}</td>
                             <td style={{ color: isOverdue ? '#dc2626' : 'inherit', fontWeight: isOverdue ? '700' : 'normal' }}>
                               {o.targetDeliveryDate}
                             </td>
@@ -1314,6 +1348,7 @@ export default function App() {
             orders={orders} 
             vendors={vendors} 
             inventory={inventory}
+            jobMasters={jobMasters}
             currentUser={currentUser}
             productionRecords={productionRecords}
             onUpdateOrder={handleUpdateOrder} 
@@ -1389,6 +1424,7 @@ export default function App() {
             inventory={inventory}
             machines={machines}
             schedules={schedules}
+            jobMasters={jobMasters}
             onSaveMachine={handleSaveMachine}
             onUpdateMachine={handleUpdateMachine}
             onDeleteMachine={handleDeleteMachine}

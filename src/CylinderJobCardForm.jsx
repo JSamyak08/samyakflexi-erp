@@ -134,7 +134,7 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
                 <td className="label-cell">Variant / Flavor</td>
                 <td className="value-cell">{data.variant || 'Standard'}</td>
                 <td className="label-cell">Job Structure</td>
-                <td className="value-cell">{data.jobStructure || 'PET / PE'}</td>
+                <td className="value-cell">{data.jobStructure || '—'}</td>
               </tr>
             </tbody>
           </table>
@@ -291,7 +291,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
     pouchOpenWidth: '',
     pouchHeight: '',
     numberOfCylinders: '6',
-    jobStructure: 'PET / PE',
+    jobStructure: '—',
     totalWidth: '',
     totalHeight: '',
     shellSize: '',
@@ -311,18 +311,22 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose }) {
 
   useEffect(() => {
     if (initialData) {
+      const derivedStruct = (initialData.layers && initialData.layers.length > 0)
+        ? initialData.layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
+        : (initialData.structure || initialData.film_structure || initialData.jobStructure || '—');
+
       setFormData({
         skuCode: initialData.sku || initialData.skuCode || '',
         jobName: initialData.jobName || '',
         creationDate: initialData.creationDate || new Date().toLocaleDateString('en-GB'),
-        partyName: initialData.clientGroup || initialData.partyName || '',
+        partyName: initialData.clientGroup || initialData.partyName || initialData.clientName || '',
         invoiceTo: initialData.invoiceTo || 'Samyak International Ltd',
         variant: initialData.variant || '',
         printing: initialData.printing || 'Reverse',
         pouchOpenWidth: initialData.pouchOpenWidth || '',
         pouchHeight: initialData.pouchHeight || '',
         numberOfCylinders: `${initialData.colorsCount || initialData.numberOfCylinders || 6}`,
-        jobStructure: initialData.jobStructure || 'PET / PE',
+        jobStructure: derivedStruct,
         totalWidth: initialData.faceLengthMm ? `${initialData.faceLengthMm} mm` : (initialData.totalWidth || ''),
         totalHeight: initialData.circumferenceMm ? `${initialData.circumferenceMm} mm` : (initialData.totalHeight || ''),
         shellSize: initialData.shellSize || (initialData.faceLengthMm ? `${initialData.faceLengthMm} mm` : ''),

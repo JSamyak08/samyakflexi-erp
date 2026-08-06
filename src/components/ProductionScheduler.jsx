@@ -32,6 +32,7 @@ export default function ProductionScheduler({
   inventory = [],
   machines = initialMachines,
   schedules = initialProductionSchedules,
+  jobMasters = [],
   onSaveMachine,
   onUpdateMachine,
   onDeleteMachine,
@@ -44,29 +45,28 @@ export default function ProductionScheduler({
   
   // Machine Management Modal State
   const [isMachineModalOpen, setIsMachineModalOpen] = useState(false);
-  const [editingMachineId, setEditingMachineId] = useState(null);
+  const [editingMachine, setEditingMachine] = useState(null);
   const [machineName, setMachineName] = useState('');
-  const [machineType, setMachineType] = useState('Rotogravure');
-  const [machineColors, setMachineColors] = useState(8);
-  const [machineMaxSpeed, setMachineMaxSpeed] = useState(250);
-  const [machineMaxWidth, setMachineMaxWidth] = useState(1200);
-  const [machineOperator, setMachineOperator] = useState('Plant Operator');
-  const [machineLocation, setMachineLocation] = useState('Bay 1 - Rotogravure Hall');
+  const [machineType, setMachineType] = useState('8-Color Rotogravure Press');
+  const [maxPrintWidthMm, setMaxPrintWidthMm] = useState(1200);
+  const [speedMpm, setSpeedMpm] = useState(250);
+  const [setupTimeMins, setSetupTimeMins] = useState(60);
+  const [hourlyOperatorCost, setHourlyOperatorCost] = useState(1200);
   const [machineStatus, setMachineStatus] = useState('Active');
 
-  // Job Scheduling & Editing Modal State
+  // Schedule Event Modal State
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
-  const [editingScheduleId, setEditingScheduleId] = useState(null);
+  const [editingSchedule, setEditingSchedule] = useState(null);
   const [schedulingOrder, setSchedulingOrder] = useState(null);
-  const [targetMachineId, setTargetMachineId] = useState(machines[0]?.id || 'MAC-PRINT-01');
-  const [targetShift, setTargetShift] = useState('Day Shift');
-  const [scheduledDateInput, setScheduledDateInput] = useState('2026-08-02');
-  const [startTimeInput, setStartTimeInput] = useState('08:00');
-  const [customSpeedInput, setCustomSpeedInput] = useState(250);
-  const [customJobChangeoverInput, setCustomJobChangeoverInput] = useState(120);
-  const [customRollChangeoverRateInput, setCustomRollChangeoverRateInput] = useState(20);
+  const [selectedMachineId, setSelectedMachineId] = useState('');
+  const [scheduleDate, setScheduleDate] = useState('2026-08-02');
+  const [scheduleShift, setScheduleShift] = useState('Day Shift');
+  const [plannedMeters, setPlannedMeters] = useState(10000);
+  const [scheduledStatus, setScheduledStatus] = useState('Scheduled');
+  const [scheduleNotes, setScheduleNotes] = useState('');
 
-  // Drag-and-Drop Active Hover State
+  // Drag and drop state
+  const [draggedOrder, setDraggedOrder] = useState(null);
   const [dragOverZone, setDragOverZone] = useState(null);
 
   // Auto-detect Ready for Production Scheduling Queue (Orders where raw materials are available)
@@ -94,9 +94,12 @@ export default function ProductionScheduler({
         12
       );
 
-      // Derive substrate structure string from multiple possible sources
-      const structure = order.structure ||
-        order.jobDetails?.structure ||
+      // Derive substrate structure string from matching Job Master or order sources
+      const matchedJM = (jobMasters || []).find(j => (j.jobName || '').toLowerCase().trim() === (order.jobName || '').toLowerCase().trim());
+      const jmLayers = matchedJM?.layers || [];
+      const structure = (jmLayers.length > 0 ? jmLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ') : null) ||
+        (matchedJM?.structure && matchedJM.structure !== 'PET / PE' && matchedJM.structure !== '—' ? matchedJM.structure : null) ||
+        (order.structure && order.structure !== 'PET / PE' && order.structure !== '—' ? order.structure : null) ||
         (layers.length > 0 ? layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ') : null) ||
         (reqs.filter(r => r.micron && r.micron !== '-').map(r => `${r.filmType} ${r.micron}µ`).join(' / ')) ||
         '—';
