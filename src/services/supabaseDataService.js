@@ -72,22 +72,28 @@ export async function fetchOrders() {
     if (error) throw error;
     if (!data) return [];
 
-    return data.map(o => ({
-      id: o.id,
-      jobName: o.job_name,
-      clientName: o.client_name,
-      orderType: o.order_type || 'Reel',
-      orderQtyKg: Number(o.order_qty_kg) || 0,
-      deliveryDate: o.target_delivery_date,
-      targetDeliveryDate: o.target_delivery_date,
-      status: o.status || 'Scheduled',
-      structure: o.job_details?.structure || o.structure || '—',
-      printWidthMm: o.job_details?.printWidthMm,
-      repeatLengthMm: o.job_details?.repeatLengthMm,
-      jobDetails: o.job_details,
-      materialRequirements: o.raw_material_requirements || [],
-      rawMaterialRequirements: o.raw_material_requirements || []
-    }));
+    return data.map(o => {
+      const jd = o.job_details || {};
+      const matReqs = o.raw_material_requirements || [];
+      return {
+        id: o.id,
+        jobName: o.job_name,
+        clientName: o.client_name,
+        orderType: o.order_type || 'Reel',
+        orderQtyKg: Number(o.order_qty_kg) || 0,
+        deliveryDate: o.target_delivery_date,
+        targetDeliveryDate: o.target_delivery_date,
+        status: o.status || 'Scheduled',
+        structure: jd.structure || '—',
+        printWidthMm: jd.printWidthMm,
+        repeatLengthMm: jd.repeatLengthMm,
+        poIssued: jd.poIssued || false,
+        poNumber: jd.poNumber || '',
+        jobDetails: jd,
+        materialRequirements: matReqs,
+        rawMaterialRequirements: matReqs
+      };
+    });
   } catch (err) {
     console.error("Error fetching orders from Supabase:", err);
     return [];
@@ -102,6 +108,21 @@ export async function saveOrderToSupabase(order) {
   await ensureValidSession();
   const targetDateVal = order.targetDeliveryDate || order.deliveryDate || new Date().toISOString().split('T')[0];
 
+  // Consolidate ALL order metadata into job_details JSONB so nothing is lost
+  const jobDetails = {
+    ...(order.jobDetails || {}),
+    structure: order.structure || order.jobDetails?.structure || '—',
+    printWidthMm: order.printWidthMm || order.jobDetails?.printWidthMm || null,
+    repeatLengthMm: order.repeatLengthMm || order.jobDetails?.repeatLengthMm || null,
+    calculationDetails: order.calculationDetails || order.jobDetails?.calculationDetails || null,
+    poIssued: order.poIssued || false,
+    poNumber: order.poNumber || '',
+    layers: order.jobDetails?.layers || order.layers || null
+  };
+
+  // Use whichever material requirements array is populated
+  const matReqs = order.materialRequirements || order.rawMaterialRequirements || [];
+
   // Full payload with JSONB fields
   const fullPayload = {
     id: order.id,
@@ -111,11 +132,11 @@ export async function saveOrderToSupabase(order) {
     order_qty_kg: Number(order.orderQtyKg) || 0,
     target_delivery_date: targetDateVal,
     status: order.status || 'Scheduled',
-    job_details: order.jobDetails || { structure: order.structure || 'PET / PE', calculationDetails: order.calculationDetails || null },
-    raw_material_requirements: order.rawMaterialRequirements || order.materialRequirements || []
+    job_details: jobDetails,
+    raw_material_requirements: matReqs
   };
 
-  console.log('[Orders] Saving order to Supabase:', order.id, order.jobName);
+  console.log('[Orders] Saving order to Supabase:', order.id, order.jobName, 'status:', order.status);
   const { error: fullError } = await supabase.from('orders').upsert(fullPayload, { onConflict: 'id' });
 
   if (fullError) {

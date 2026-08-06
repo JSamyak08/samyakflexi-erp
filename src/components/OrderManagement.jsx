@@ -166,13 +166,6 @@ export default function OrderManagement({
 
     let totalInStock = match ? (parseFloat(match.availableQtyKg) || 0) : 0;
 
-    // Demo stock matching check fallback (e.g. 150kg stock available for 350kg PET requirement)
-    if (!match && reqFilm.includes('pet') && reqQty === 350) {
-      totalInStock = 150; // Demo stock: 150kg in stock for 350kg requirement
-    } else if (!match && reqFilm.includes('metpet') && reqQty === 350) {
-      totalInStock = 200; // Demo stock: 200kg in stock for 350kg requirement
-    }
-
     const reservedKg = Math.min(reqQty, totalInStock);
     const balanceKg = Math.max(0, reqQty - reservedKg);
 
@@ -207,10 +200,7 @@ export default function OrderManagement({
   };
 
   // Track expanded order IDs
-  const [expandedOrders, setExpandedOrders] = useState({
-    'ORD-2026-089': true,
-    'ORD-2026-091': true
-  });
+  const [expandedOrders, setExpandedOrders] = useState({});
 
   // Track selected material requirement IDs: { "REQ-089-1": true, "REQ-091-1": true }
   const [selectedReqIds, setSelectedReqIds] = useState({});
@@ -218,7 +208,10 @@ export default function OrderManagement({
   // Consolidated PO Generation Modal State
   const [isPoModalOpen, setIsPoModalOpen] = useState(false);
   const [selectedVendorId, setSelectedVendorId] = useState(vendors[0]?.id || '');
-  const [deliveryDate, setDeliveryDate] = useState('2026-07-29');
+  const [deliveryDate, setDeliveryDate] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() + 14);
+    return d.toISOString().split('T')[0];
+  });
   const [paymentTerms, setPaymentTerms] = useState('30 Days Net');
   const [poRemarks, setPoRemarks] = useState('Raw material must strictly conform to specified micron gauge and slit width. COA required upon delivery.');
   const [editablePoItems, setEditablePoItems] = useState([]);
@@ -372,16 +365,8 @@ export default function OrderManagement({
       poNumber: poNo,
       date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
       vendor: vendorObj,
-      items: matchedItems.length > 0 ? matchedItems : [{
-        id: '1',
-        orderId: 'ORD-2026-089',
-        itemDesc: 'PET 12µ',
-        spec: 'PET 12µ | Width: 1000mm',
-        qtyKg: 385.5,
-        rate: 165,
-        amount: 63607.5
-      }],
-      deliveryDate: '2026-07-29',
+      items: matchedItems,
+      deliveryDate: new Date().toISOString().split('T')[0],
       terms: '30 Days Net',
       remarks: 'Raw material must strictly conform to specified micron gauge and slit width. COA required upon delivery.'
     };
@@ -490,7 +475,7 @@ export default function OrderManagement({
       o.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       getSubstrateStructure(o).toLowerCase().includes(searchTerm.toLowerCase());
     
-    const isOverdue = (o.status === 'Delayed' || new Date(o.targetDeliveryDate) < new Date('2026-07-24')) && o.status !== 'On Hold';
+    const isOverdue = (o.status === 'Delayed' || new Date(o.targetDeliveryDate) < new Date()) && o.status !== 'On Hold' && o.status !== 'Completed';
     
     if (statusFilter === 'DELAYED' && !isOverdue) return false;
     if (statusFilter === 'ON_HOLD' && o.status !== 'On Hold') return false;
@@ -499,7 +484,7 @@ export default function OrderManagement({
     return matchesSearch;
   });
 
-  const delayedOrdersCount = orders.filter(o => o.status === 'Delayed' || new Date(o.targetDeliveryDate) < new Date('2026-07-24')).length;
+  const delayedOrdersCount = orders.filter(o => (o.status === 'Delayed' || new Date(o.targetDeliveryDate) < new Date()) && o.status !== 'Completed' && o.status !== 'On Hold').length;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
