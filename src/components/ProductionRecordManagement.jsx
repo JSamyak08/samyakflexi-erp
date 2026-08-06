@@ -1445,110 +1445,313 @@ export default function ProductionRecordManagement({
             </tbody>
           </table>
 
-          {/* STAGE-WISE PRODUCTION QUANTITIES & SCRAP WASTAGE BREAKDOWN */}
-          <div style={{ marginBottom: '24px' }}>
-            <h4 style={{ fontSize: '1rem', fontWeight: '800', color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              ⚙️ Stage-wise Production Quantities & Process Scrap Inputs
-            </h4>
+          {/* STAGE-WISE PRODUCTION QUANTITIES & PROCESS SCRAP INPUTS */}
+          <div style={{ marginBottom: '28px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div>
+                <h4 style={{ fontSize: '1.1rem', fontWeight: '800', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  ⚙️ Stage-wise Production Quantities & Scrap Wastage Inputs
+                </h4>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  Enter net usable roll output and stage-wise scrap generated at each manufacturing step.
+                </p>
+              </div>
+              <div style={{ fontSize: '0.8rem', background: '#f1f5f9', padding: '6px 12px', borderRadius: '20px', fontWeight: '700', color: '#475569' }}>
+                Total Scrap Logged: <span style={{ color: '#b45309', fontWeight: '800' }}>{totalScrapQtyKg.toFixed(1)} kg</span>
+              </div>
+            </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               
               {/* STAGE 1: FIRST PASS L1 */}
-              <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', padding: '16px 20px', borderRadius: '10px' }}>
-                <div style={{ fontWeight: '800', color: '#0369a1', fontSize: '0.9rem', marginBottom: '10px' }}>
-                  🔹 STAGE 1: FIRST PASS L1 (Single / Surface & 2-Layer Jobs)
+              <div style={{ background: '#ffffff', border: '1px solid #bae6fd', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(2, 132, 199, 0.05)' }}>
+                <div style={{ background: '#f0f9ff', padding: '12px 20px', borderBottom: '1px solid #e0f2fe', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontWeight: '800', color: '#0369a1', fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ background: '#0284c7', color: '#ffffff', width: '24px', height: '24px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: '900' }}>1</span>
+                    STAGE 1: FIRST PASS L1 (Printing & Surface Pass)
+                  </div>
+                  <span className="badge badge-info" style={{ fontSize: '0.72rem', background: '#e0f2fe', color: '#0369a1' }}>
+                    Single / Surface & 2-Layer Jobs
+                  </span>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '16px' }}>
-                  <div>
-                    <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#0369a1' }}>First Pass L1 Output (kg) *</label>
-                    <input type="number" step="0.1" className="form-control" style={{ fontWeight: '700', background: '#ffffff' }} value={qtyFirstPassL1} onChange={e => setQtyFirstPassL1(e.target.value)} required />
+
+                <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1.1fr 1.9fr', gap: '24px' }}>
+                  {/* Left Column: Stage Output */}
+                  <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <label style={{ fontSize: '0.78rem', fontWeight: '800', color: '#0369a1', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
+                      🟢 First Pass L1 Output (kg) *
+                    </label>
+                    <input 
+                      type="number" 
+                      step="0.1" 
+                      className="form-control" 
+                      style={{ fontWeight: '800', fontSize: '1.1rem', background: '#ffffff', color: '#0369a1', border: '1.5px solid #38bdf8' }} 
+                      value={qtyFirstPassL1} 
+                      onChange={e => setQtyFirstPassL1(e.target.value)} 
+                      required 
+                    />
+                    <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '6px' }}>
+                      Net usable roll weight after 1st printing pass
+                    </div>
                   </div>
-                  <div>
-                    <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#b45309' }}>Printing Plain Setting Scrap (kg)</label>
-                    <input type="number" step="0.1" className="form-control" style={{ background: '#ffffff' }} value={printingPlainSettingWastageKg} onChange={e => setPrintingPlainSettingWastageKg(e.target.value)} />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#b45309' }}>Printing Wastage Scrap (kg)</label>
-                    <input type="number" step="0.1" className="form-control" style={{ background: '#ffffff' }} value={printingWastageKg} onChange={e => setPrintingWastageKg(e.target.value)} />
+
+                  {/* Right Column: Process Scrap */}
+                  <div style={{ background: '#fffbeb', padding: '14px 16px', borderRadius: '8px', border: '1px solid #fde68a' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: '800', color: '#b45309', textTransform: 'uppercase', marginBottom: '10px' }}>
+                      🟠 Printing Stage Scrap & Wastage (kg)
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                      <div>
+                        <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#78350f', display: 'block', marginBottom: '4px' }}>
+                          Printing Plain Setting (kg)
+                        </label>
+                        <input 
+                          type="number" 
+                          step="0.1" 
+                          className="form-control" 
+                          style={{ background: '#ffffff', fontWeight: '700' }} 
+                          value={printingPlainSettingWastageKg} 
+                          onChange={e => setPrintingPlainSettingWastageKg(e.target.value)} 
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#78350f', display: 'block', marginBottom: '4px' }}>
+                          Printing Wastage (kg)
+                        </label>
+                        <input 
+                          type="number" 
+                          step="0.1" 
+                          className="form-control" 
+                          style={{ background: '#ffffff', fontWeight: '700' }} 
+                          value={printingWastageKg} 
+                          onChange={e => setPrintingWastageKg(e.target.value)} 
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* STAGE 2: SECOND PASS L2 */}
-              <div style={{ background: '#fdf4ff', border: '1px solid #f5d0fe', padding: '16px 20px', borderRadius: '10px' }}>
-                <div style={{ fontWeight: '800', color: '#86198f', fontSize: '0.9rem', marginBottom: '10px' }}>
-                  🔹 STAGE 2: SECOND PASS L2 (For 3-Layer Jobs)
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '16px' }}>
-                  <div>
-                    <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#86198f' }}>Second Pass L2 Output (kg)</label>
-                    <input type="number" step="0.1" className="form-control" style={{ fontWeight: '700', background: '#ffffff' }} value={qtySecondPassL2} onChange={e => setQtySecondPassL2(e.target.value)} />
+              <div style={{ background: '#ffffff', border: '1px solid #f5d0fe', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(192, 38, 211, 0.04)' }}>
+                <div style={{ background: '#fdf4ff', padding: '12px 20px', borderBottom: '1px solid #fae8ff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontWeight: '800', color: '#86198f', fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ background: '#a21caf', color: '#ffffff', width: '24px', height: '24px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: '900' }}>2</span>
+                    STAGE 2: SECOND PASS L2 (Lamination Pass)
                   </div>
-                  <div>
-                    <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#b45309' }}>Lamination Plain Substrate Scrap (kg)</label>
-                    <input type="number" step="0.1" className="form-control" style={{ background: '#ffffff' }} value={laminationPlainSubstrateWastageKg} onChange={e => setLaminationPlainSubstrateWastageKg(e.target.value)} />
+                  <span className="badge badge-warning" style={{ fontSize: '0.72rem', background: '#fae8ff', color: '#86198f', border: '1px solid #f5d0fe' }}>
+                    For 3-Layer Laminate Jobs Only
+                  </span>
+                </div>
+
+                <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1.1fr 1.9fr', gap: '24px' }}>
+                  <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <label style={{ fontSize: '0.78rem', fontWeight: '800', color: '#86198f', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
+                      🟢 Second Pass L2 Output (kg)
+                    </label>
+                    <input 
+                      type="number" 
+                      step="0.1" 
+                      className="form-control" 
+                      style={{ fontWeight: '800', fontSize: '1.1rem', background: '#ffffff', color: '#86198f', border: '1.5px solid #e879f9' }} 
+                      value={qtySecondPassL2} 
+                      onChange={e => setQtySecondPassL2(e.target.value)} 
+                    />
+                    <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '6px' }}>
+                      Lamination roll output weight for 3rd layer
+                    </div>
+                  </div>
+
+                  <div style={{ background: '#fffbeb', padding: '14px 16px', borderRadius: '8px', border: '1px solid #fde68a' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: '800', color: '#b45309', textTransform: 'uppercase', marginBottom: '10px' }}>
+                      🟠 Lamination Stage Scrap (kg)
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#78350f', display: 'block', marginBottom: '4px' }}>
+                        Lamination Plain Substrate Scrap (kg)
+                      </label>
+                      <input 
+                        type="number" 
+                        step="0.1" 
+                        className="form-control" 
+                        style={{ background: '#ffffff', fontWeight: '700', width: '60%' }} 
+                        value={laminationPlainSubstrateWastageKg} 
+                        onChange={e => setLaminationPlainSubstrateWastageKg(e.target.value)} 
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* STAGE 3: INSPECTION */}
-              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', padding: '16px 20px', borderRadius: '10px' }}>
-                <div style={{ fontWeight: '800', color: '#b45309', fontSize: '0.9rem', marginBottom: '10px' }}>
-                  🔹 STAGE 3: INSPECTION (Optional QC Pass)
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '16px' }}>
-                  <div>
-                    <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#b45309' }}>Inspected Qty (kg)</label>
-                    <input type="number" step="0.1" className="form-control" style={{ fontWeight: '700', background: '#ffffff' }} value={qtyInspection} onChange={e => setQtyInspection(e.target.value)} />
+              <div style={{ background: '#ffffff', border: '1px solid #fde68a', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(217, 119, 6, 0.04)' }}>
+                <div style={{ background: '#fffbeb', padding: '12px 20px', borderBottom: '1px solid #fef3c7', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontWeight: '800', color: '#b45309', fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ background: '#d97706', color: '#ffffff', width: '24px', height: '24px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: '900' }}>3</span>
+                    STAGE 3: INSPECTION (Quality Check Pass)
                   </div>
-                  <div>
-                    <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#b45309' }}>Printed Wastage Scrap (kg)</label>
-                    <input type="number" step="0.1" className="form-control" style={{ background: '#ffffff' }} value={printedWastageKg} onChange={e => setPrintedWastageKg(e.target.value)} />
+                  <span className="badge badge-us" style={{ fontSize: '0.72rem', background: '#fef3c7', color: '#b45309' }}>
+                    Optional Quality Check Pass
+                  </span>
+                </div>
+
+                <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1.1fr 1.9fr', gap: '24px' }}>
+                  <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <label style={{ fontSize: '0.78rem', fontWeight: '800', color: '#b45309', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
+                      🟢 Inspected Roll Qty (kg)
+                    </label>
+                    <input 
+                      type="number" 
+                      step="0.1" 
+                      className="form-control" 
+                      style={{ fontWeight: '800', fontSize: '1.1rem', background: '#ffffff', color: '#b45309', border: '1.5px solid #f59e0b' }} 
+                      value={qtyInspection} 
+                      onChange={e => setQtyInspection(e.target.value)} 
+                    />
+                    <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '6px' }}>
+                      Passed quantity after doctoring / inspection
+                    </div>
+                  </div>
+
+                  <div style={{ background: '#fffbeb', padding: '14px 16px', borderRadius: '8px', border: '1px solid #fde68a' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: '800', color: '#b45309', textTransform: 'uppercase', marginBottom: '10px' }}>
+                      🟠 Inspection Defect Scrap (kg)
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#78350f', display: 'block', marginBottom: '4px' }}>
+                        Printed Defect Wastage Scrap (kg)
+                      </label>
+                      <input 
+                        type="number" 
+                        step="0.1" 
+                        className="form-control" 
+                        style={{ background: '#ffffff', fontWeight: '700', width: '60%' }} 
+                        value={printedWastageKg} 
+                        onChange={e => setPrintedWastageKg(e.target.value)} 
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* STAGE 4: SLITTING */}
-              <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '16px 20px', borderRadius: '10px' }}>
-                <div style={{ fontWeight: '800', color: '#047857', fontSize: '0.9rem', marginBottom: '10px' }}>
-                  🔹 STAGE 4: SLITTING
+              <div style={{ background: '#ffffff', border: '1px solid #a7f3d0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(5, 150, 105, 0.05)' }}>
+                <div style={{ background: '#ecfdf5', padding: '12px 20px', borderBottom: '1px solid #d1fae5', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontWeight: '800', color: '#047857', fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ background: '#059669', color: '#ffffff', width: '24px', height: '24px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: '900' }}>4</span>
+                    STAGE 4: SLITTING & REWINDING
+                  </div>
+                  <span className="badge badge-success" style={{ fontSize: '0.72rem', background: '#d1fae5', color: '#047857' }}>
+                    Reel Conversion Pass
+                  </span>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '16px' }}>
-                  <div>
-                    <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#047857' }}>Slitting Output (kg)</label>
-                    <input type="number" step="0.1" className="form-control" style={{ fontWeight: '700', background: '#ffffff' }} value={qtySlitting} onChange={e => setQtySlitting(e.target.value)} />
+
+                <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1.1fr 1.9fr', gap: '24px' }}>
+                  <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <label style={{ fontSize: '0.78rem', fontWeight: '800', color: '#047857', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
+                      🟢 Slitting Finished Output (kg)
+                    </label>
+                    <input 
+                      type="number" 
+                      step="0.1" 
+                      className="form-control" 
+                      style={{ fontWeight: '800', fontSize: '1.1rem', background: '#ffffff', color: '#047857', border: '1.5px solid #10b981' }} 
+                      value={qtySlitting} 
+                      onChange={e => setQtySlitting(e.target.value)} 
+                    />
+                    <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '6px' }}>
+                      Total slit reels weight ready for packing
+                    </div>
                   </div>
-                  <div>
-                    <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#b45309' }}>Laminate Wastage Scrap (kg)</label>
-                    <input type="number" step="0.1" className="form-control" style={{ background: '#ffffff' }} value={laminateWastageKg} onChange={e => setLaminateWastageKg(e.target.value)} />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#b45309' }}>Trim Wastage Scrap (kg)</label>
-                    <input type="number" step="0.1" className="form-control" style={{ background: '#ffffff' }} value={trimWastageKg} onChange={e => setTrimWastageKg(e.target.value)} />
+
+                  <div style={{ background: '#fffbeb', padding: '14px 16px', borderRadius: '8px', border: '1px solid #fde68a' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: '800', color: '#b45309', textTransform: 'uppercase', marginBottom: '10px' }}>
+                      🟠 Slitting Stage Scrap (kg)
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                      <div>
+                        <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#78350f', display: 'block', marginBottom: '4px' }}>
+                          Laminate Wastage (kg)
+                        </label>
+                        <input 
+                          type="number" 
+                          step="0.1" 
+                          className="form-control" 
+                          style={{ background: '#ffffff', fontWeight: '700' }} 
+                          value={laminateWastageKg} 
+                          onChange={e => setLaminateWastageKg(e.target.value)} 
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#78350f', display: 'block', marginBottom: '4px' }}>
+                          Side Trim Wastage (kg)
+                        </label>
+                        <input 
+                          type="number" 
+                          step="0.1" 
+                          className="form-control" 
+                          style={{ background: '#ffffff', fontWeight: '700' }} 
+                          value={trimWastageKg} 
+                          onChange={e => setTrimWastageKg(e.target.value)} 
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* STAGE 5: DISPATCH READY */}
-              <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '16px 20px', borderRadius: '10px' }}>
-                <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '0.9rem', marginBottom: '10px' }}>
-                  🔹 STAGE 5: DISPATCH READY
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '16px' }}>
-                  <div>
-                    <label style={{ fontSize: '0.78rem', fontWeight: '800', color: '#0f172a' }}>Dispatch Ready Qty (kg) *</label>
-                    <input type="number" step="0.1" className="form-control" style={{ fontWeight: '800', fontSize: '1.05rem', background: '#ffffff', color: '#047857', border: '2px solid #059669' }} value={qtyDispatch} onChange={e => setQtyDispatch(e.target.value)} required />
+              <div style={{ background: '#ffffff', border: '2px solid #059669', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(5, 150, 105, 0.1)' }}>
+                <div style={{ background: '#ecfdf5', padding: '14px 20px', borderBottom: '1.5px solid #a7f3d0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontWeight: '900', color: '#047857', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ background: '#059669', color: '#ffffff', width: '26px', height: '26px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', fontWeight: '900' }}>5</span>
+                    STAGE 5: FINAL DISPATCH READY QUANTITY
                   </div>
-                  <div>
-                    <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#64748b' }}>Total Scrap Generated (kg)</label>
-                    <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#b45309', marginTop: '6px' }}>
-                      {totalScrapQtyKg.toFixed(1)} kg ({overallScrapPctOfDispatch}% of dispatch)
+                  <span className="badge badge-success" style={{ fontSize: '0.75rem', background: '#059669', color: '#ffffff', padding: '3px 10px' }}>
+                    Benchmark Output Weight
+                  </span>
+                </div>
+
+                <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '20px', alignItems: 'center' }}>
+                  <div style={{ background: '#f0fdf4', padding: '16px', borderRadius: '8px', border: '1.5px solid #86efac' }}>
+                    <label style={{ fontSize: '0.8rem', fontWeight: '900', color: '#166534', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
+                      🎯 Dispatch Ready Quantity (kg) *
+                    </label>
+                    <input 
+                      type="number" 
+                      step="0.1" 
+                      className="form-control" 
+                      style={{ fontWeight: '900', fontSize: '1.2rem', background: '#ffffff', color: '#047857', border: '2px solid #059669' }} 
+                      value={qtyDispatch} 
+                      onChange={e => setQtyDispatch(e.target.value)} 
+                      required 
+                    />
+                    <div style={{ fontSize: '0.72rem', color: '#15803d', marginTop: '6px', fontWeight: '600' }}>
+                      Final billable packed quantity ready for customer dispatch
                     </div>
                   </div>
-                  <div>
-                    <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#64748b' }}>Overall Scrap Share %</label>
-                    <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#0369a1', marginTop: '6px' }}>
-                      {overallScrapPctOfOutput}% of total material output
+
+                  <div style={{ background: '#fffbeb', padding: '16px', borderRadius: '8px', border: '1px solid #fde68a' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: '800', color: '#78350f', textTransform: 'uppercase' }}>
+                      Total Scrap Logged
+                    </div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: '900', color: '#b45309', marginTop: '4px' }}>
+                      {totalScrapQtyKg.toFixed(1)} kg
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: '#92400e', marginTop: '2px', fontWeight: '700' }}>
+                      {overallScrapPctOfDispatch}% of dispatch ready weight
+                    </div>
+                  </div>
+
+                  <div style={{ background: '#f0f9ff', padding: '16px', borderRadius: '8px', border: '1px solid #bae6fd' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: '800', color: '#0369a1', textTransform: 'uppercase' }}>
+                      Overall Factory Scrap Share
+                    </div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: '900', color: '#0284c7', marginTop: '4px' }}>
+                      {overallScrapPctOfOutput}%
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: '#0369a1', marginTop: '2px', fontWeight: '600' }}>
+                      Of total gross material output ({totalJobMaterialOutputKg.toFixed(1)} kg)
                     </div>
                   </div>
                 </div>
@@ -1575,6 +1778,9 @@ export default function ProductionRecordManagement({
                 <span className="stats-title">Total Ingredients Cost</span>
                 <div style={{ fontSize: '1.3rem', fontWeight: '800', marginTop: '4px' }}>
                   ₹ {totalMaterialCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  (Sum of ingredients used in table above)
                 </div>
               </div>
 
@@ -1689,7 +1895,7 @@ export default function ProductionRecordManagement({
             <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '16px 20px', borderRadius: '10px', marginBottom: '24px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', fontSize: '0.85rem', marginBottom: '12px' }}>
                 <div>Dispatch Ready Produced Qty: <strong>{(totalNetQtyKg ?? 0).toLocaleString()} kg</strong></div>
-                <div>Total Ingredients Cost: <strong>₹ {totalMaterialCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
+                <div>Total Ingredients Cost (Sum from table above): <strong>₹ {totalMaterialCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
                 <div>Processing Cost (₹ {processingCostPerKg}/kg): <strong>₹ {totalProcessingCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
                 <div>Total Scrap Generated: <strong style={{ color: '#b45309' }}>{totalScrapQtyKg.toFixed(1)} kg ({overallScrapPctOfDispatch}% of dispatch)</strong></div>
               </div>
