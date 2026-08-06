@@ -77,41 +77,114 @@ export default function ProductionRecordManagement({
     { id: '6', filmType: 'MIBK (Solvent)', micron: '-', widthMm: '-', barcode: '', issueQtyKg: 25, returnQtyKg: 0, unitPricePerKg: 260 }
   ];
 
-  const [materialsList, setMaterialsList] = useState(DEFAULT_6_INGREDIENTS);
+  const [materialsList, setMaterialsList] = useState([]);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
 
   // Processing Cost Per Kg (Default from Settings: ₹ 25/kg)
   const [processingCostPerKg, setProcessingCostPerKg] = useState(25);
 
-  // Scrap / Wastage breakdown fields (in kg)
+  // Stage-wise Production Quantities (in kg)
+  const [qtyFirstPassL1, setQtyFirstPassL1] = useState(1040);
+  const [qtySecondPassL2, setQtySecondPassL2] = useState(0);
+  const [qtyInspection, setQtyInspection] = useState(1010);
+  const [qtySlitting, setQtySlitting] = useState(1005);
+  const [qtyDispatch, setQtyDispatch] = useState(1000);
+
+  // Stage-wise Scrap & Wastage Breakdown fields (in kg)
   const [printingPlainSettingWastageKg, setPrintingPlainSettingWastageKg] = useState(15.0);
   const [printingWastageKg, setPrintingWastageKg] = useState(12.5);
   const [laminationPlainSubstrateWastageKg, setLaminationPlainSubstrateWastageKg] = useState(10.0);
-  const [laminateWastageKg, setLaminateWastageKg] = useState(8.0);
+  const [printedWastageKg, setPrintedWastageKg] = useState(8.0);
+  const [laminateWastageKg, setLaminateWastageKg] = useState(7.0);
   const [trimWastageKg, setTrimWastageKg] = useState(14.0);
-  const [scrapRatePerKg, setScrapRatePerKg] = useState(20); // ₹ 20/kg scrap value
+
+  // Scrap Disposal Transactions State
+  const [scrapDisposals, setScrapDisposals] = useState(() => {
+    try {
+      const saved = localStorage.getItem('samyak_erp_scrap_disposals');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const [isDisposeModalOpen, setIsDisposeModalOpen] = useState(false);
+  const [disposeCategory, setDisposeCategory] = useState('Printing Plain Setting (kg)');
+  const [disposeQtyKg, setDisposeQtyKg] = useState('');
+  const [disposeVendor, setDisposeVendor] = useState('');
+  const [disposeRefNo, setDisposeRefNo] = useState('');
+  const [disposeNotes, setDisposeNotes] = useState('');
 
   const [recordNotes, setRecordNotes] = useState('');
 
-  // Helper to open 'Start Production' for a specific punched job/order
+  // Helper to open 'Start Production' for a specific punched job/order — pulls strictly from Job Master
   const handleStartProductionForOrder = (ord) => {
     setSelectedOrder(ord);
     setSelectedRecord(null);
-    if (ord.materialRequirements && ord.materialRequirements.length > 0) {
-      const mappedList = ord.materialRequirements.map((req, idx) => ({
+
+    // Match Job Master (authoritative specification benchmark)
+    const matchedJM = jobMasters.find(j => 
+      (j.jobName || '').toLowerCase().trim() === (ord.jobName || '').toLowerCase().trim() ||
+      (j.skuCode || '').toLowerCase().trim() === (ord.id || '').toLowerCase().trim()
+    );
+
+    let initialMaterials = [];
+
+    // Pre-populate raw materials directly from Job Master layers
+    if (matchedJM && matchedJM.layers && matchedJM.layers.length > 0) {
+      const targetWidth = matchedJM.printWidthMm ? String(matchedJM.printWidthMm) : (ord.printWidthMm ? String(ord.printWidthMm) : '1000');
+      initialMaterials = matchedJM.layers.map((l, idx) => ({
+        id: String(idx + 1),
+        filmType: l.filmType || 'PET Film',
+        micron: l.micron ? String(l.micron) : '12',
+        widthMm: targetWidth,
+        barcode: '',
+        issueQtyKg: Math.round(((ord.orderQtyKg || 1000) * 0.45) * 1.05),
+        returnQtyKg: 0,
+        unitPricePerKg: DEFAULT_DAILY_RATES[l.filmType] || 125,
+        // Benchmark Job Master Specs for Spec Variation Calculation
+        jobMasterFilmType: l.filmType || 'PET Film',
+        jobMasterMicron: l.micron ? Number(l.micron) : 12,
+        jobMasterWidthMm: Number(targetWidth) || 1000
+      }));
+    } else if (ord.materialRequirements && ord.materialRequirements.length > 0) {
+      initialMaterials = ord.materialRequirements.map((req, idx) => ({
         id: String(idx + 1),
         filmType: req.filmType,
-        micron: req.micron,
-        widthMm: req.widthMm,
-        barcode: '', // Empty by default
-        issueQtyKg: Math.round(req.qtyKg * 1.05),
-        returnQtyKg: 0, // Default Unused Return is 0
-        unitPricePerKg: DEFAULT_DAILY_RATES[req.filmType] || 120
+        micron: req.micron ? String(req.micron) : '12',
+        widthMm: req.widthMm ? String(req.widthMm) : '1000',
+        barcode: '',
+        issueQtyKg: Math.round((req.qtyKg || 500) * 1.05),
+        returnQtyKg: 0,
+        unitPricePerKg: DEFAULT_DAILY_RATES[req.filmType] || 120,
+        jobMasterFilmType: req.filmType,
+        jobMasterMicron: req.micron ? Number(req.micron) : 12,
+        jobMasterWidthMm: req.widthMm ? Number(req.widthMm) : 1000
       }));
-      setMaterialsList(mappedList);
     } else {
-      setMaterialsList(DEFAULT_6_INGREDIENTS);
+      // Benchmark Fallback: 2 Substrate Layers
+      initialMaterials = [
+        { id: '1', filmType: 'PET Film', micron: '12', widthMm: '1000', barcode: '', issueQtyKg: 400, returnQtyKg: 0, unitPricePerKg: 125, jobMasterFilmType: 'PET Film', jobMasterMicron: 12, jobMasterWidthMm: 1000 },
+        { id: '2', filmType: 'METPET Film', micron: '12', widthMm: '1000', barcode: '', issueQtyKg: 400, returnQtyKg: 0, unitPricePerKg: 140, jobMasterFilmType: 'METPET Film', jobMasterMicron: 12, jobMasterWidthMm: 1000 }
+      ];
     }
+
+    // Always include standard process solvents/adhesives relevant for lamination & printing
+    const processIngredients = [
+      { id: `proc-1`, filmType: 'Ethyl Acetate (Solvent)', micron: '-', widthMm: '-', barcode: '', issueQtyKg: 45, returnQtyKg: 0, unitPricePerKg: 210, jobMasterFilmType: 'Ethyl Acetate (Solvent)', jobMasterMicron: 0, jobMasterWidthMm: 0 },
+      { id: `proc-2`, filmType: 'Liquid Inks & Solvents', micron: '-', widthMm: '-', barcode: '', issueQtyKg: 35, returnQtyKg: 0, unitPricePerKg: 185, jobMasterFilmType: 'Liquid Inks & Solvents', jobMasterMicron: 0, jobMasterWidthMm: 0 }
+    ];
+
+    setMaterialsList([...initialMaterials, ...processIngredients]);
+
+    // Stage Production Qty Pre-fills
+    const ordQty = Number(ord.orderQtyKg) || 1000;
+    setQtyFirstPassL1(Math.round(ordQty * 1.04));
+    setQtySecondPassL2(matchedJM?.layers?.length >= 3 ? Math.round(ordQty * 1.02) : 0);
+    setQtyInspection(Math.round(ordQty * 1.01));
+    setQtySlitting(Math.round(ordQty * 1.005));
+    setQtyDispatch(ordQty);
+
     setActiveTab('new_record');
   };
 
@@ -131,10 +204,13 @@ export default function ProductionRecordManagement({
         filmType: 'PET Film',
         micron: '12',
         widthMm: '1000',
-        barcode: '', // Empty by default
+        barcode: '',
         issueQtyKg: 100,
-        returnQtyKg: 0, // Default Unused Return is 0
-        unitPricePerKg: 125
+        returnQtyKg: 0,
+        unitPricePerKg: 125,
+        jobMasterFilmType: 'PET Film',
+        jobMasterMicron: 12,
+        jobMasterWidthMm: 1000
       }
     ]);
   };
@@ -152,36 +228,131 @@ export default function ProductionRecordManagement({
     }));
   };
 
-  // Calculations
+  // Calculations with Spec Variation detection against Job Master
   const calculatedMaterials = materialsList.map(m => {
     const issued = parseFloat(m.issueQtyKg) || 0;
     const returned = parseFloat(m.returnQtyKg) || 0;
     const netConsumed = Math.max(0, issued - returned);
     const rate = parseFloat(m.unitPricePerKg) || 0;
     const cost = netConsumed * rate;
+
+    // Spec Variation Calculations
+    const actualMicron = parseFloat(m.micron) || 0;
+    const jmMicron = parseFloat(m.jobMasterMicron) || 0;
+    const micronVarPct = (jmMicron > 0 && actualMicron > 0 && Math.abs(actualMicron - jmMicron) > 0.01)
+      ? Number((((actualMicron - jmMicron) / jmMicron) * 100).toFixed(1))
+      : null;
+
+    const actualWidth = parseFloat(m.widthMm) || 0;
+    const jmWidth = parseFloat(m.jobMasterWidthMm) || 0;
+    const widthVarPct = (jmWidth > 0 && actualWidth > 0 && Math.abs(actualWidth - jmWidth) > 0.5)
+      ? Number((((actualWidth - jmWidth) / jmWidth) * 100).toFixed(1))
+      : null;
+
+    const hasFilmTypeVar = Boolean(m.jobMasterFilmType && m.filmType && m.jobMasterFilmType !== m.filmType);
+
     return {
       ...m,
       netConsumedQtyKg: netConsumed,
-      totalMaterialCost: cost
+      totalMaterialCost: cost,
+      micronVarPct,
+      widthVarPct,
+      hasFilmTypeVar,
+      hasVariation: !!(micronVarPct !== null || widthVarPct !== null || hasFilmTypeVar)
     };
   });
 
-  const totalNetQtyKg = calculatedMaterials.reduce((sum, m) => sum + m.netConsumedQtyKg, 0);
+  // Net Produced Quantity = Dispatch Ready Quantity (or Slitting / First Pass if dispatch unpopulated)
+  const totalNetQtyKg = parseFloat(qtyDispatch) || parseFloat(qtySlitting) || parseFloat(qtyFirstPassL1) || 0;
   const totalMaterialCostRs = calculatedMaterials.reduce((sum, m) => sum + m.totalMaterialCost, 0);
   
   // Total Processing Cost = Total Qty Produced x Processing Cost Per Kg
   const totalProcessingCostRs = totalNetQtyKg * (parseFloat(processingCostPerKg) || 0);
 
-  // Total Scrap Weight = Printing Plain Setting + Printing Wastage + Lamination Plain Substrate + Laminate Wastage + Trim Wastage
+  // Total Scrap Weight across 6 process wastage categories
   const totalScrapQtyKg = (parseFloat(printingPlainSettingWastageKg) || 0) +
                          (parseFloat(printingWastageKg) || 0) +
                          (parseFloat(laminationPlainSubstrateWastageKg) || 0) +
+                         (parseFloat(printedWastageKg) || 0) +
                          (parseFloat(laminateWastageKg) || 0) +
                          (parseFloat(trimWastageKg) || 0);
-  const totalScrapCostRs = totalScrapQtyKg * (parseFloat(scrapRatePerKg) || 0);
 
-  // Formula: (Total Qty produced x Default Processing Cost) + (Total Cost of Ingredients) + Scrap = Total Cost of Production
-  const finalProductionCostRs = totalProcessingCostRs + totalMaterialCostRs + totalScrapCostRs;
+  // Cost Formula: (Total Qty Produced x Processing Cost Rate) + (Ingredients Cost)
+  // Scrap Rate removed as per directive
+  const finalProductionCostRs = totalProcessingCostRs + totalMaterialCostRs;
+
+  // Scrap Metrics & Percentages
+  const totalJobMaterialOutputKg = totalNetQtyKg + totalScrapQtyKg;
+  const overallScrapPctOfOutput = totalJobMaterialOutputKg > 0 ? Number(((totalScrapQtyKg / totalJobMaterialOutputKg) * 100).toFixed(1)) : 0;
+  const overallScrapPctOfDispatch = totalNetQtyKg > 0 ? Number(((totalScrapQtyKg / totalNetQtyKg) * 100).toFixed(1)) : 0;
+
+  // Handle Scrap Disposal Submission
+  const handleAddScrapDisposal = (e) => {
+    e.preventDefault();
+    if (!disposeQtyKg || parseFloat(disposeQtyKg) <= 0) {
+      alert("Please enter a valid disposal quantity in kg.");
+      return;
+    }
+    const newDisposal = {
+      id: `DISP-${Date.now()}`,
+      category: disposeCategory,
+      qtyKg: parseFloat(disposeQtyKg),
+      vendor: disposeVendor.trim() || 'Scrap Buyer / Recycler',
+      refNo: disposeRefNo.trim() || `GP-${Math.floor(1000 + Math.random() * 9000)}`,
+      date: new Date().toISOString().split('T')[0],
+      disposedBy: `${currentUser.name} (${currentUser.role})`,
+      notes: disposeNotes
+    };
+
+    const updated = [newDisposal, ...scrapDisposals];
+    setScrapDisposals(updated);
+    try {
+      localStorage.setItem('samyak_erp_scrap_disposals', JSON.stringify(updated));
+    } catch (err) {
+      console.warn("Disposal storage warning:", err);
+    }
+
+    setDisposeQtyKg('');
+    setDisposeVendor('');
+    setDisposeRefNo('');
+    setDisposeNotes('');
+    setIsDisposeModalOpen(false);
+    alert(`✅ Scrap disposal of ${newDisposal.qtyKg} kg recorded! Stock deducted successfully.`);
+  };
+
+  // Calculate Cumulative Scrap Stock across all submitted records minus disposals
+  const calculateScrapStock = () => {
+    const rawCategories = {
+      'Printing Plain Setting (kg)': 0,
+      'Printing Wastage (kg)': 0,
+      'Lamination Plain Substrate (kg)': 0,
+      'Printed Wastage (kg)': 0,
+      'Laminate Wastage (kg)': 0,
+      'Trim Wastage (kg)': 0
+    };
+
+    // Accumulate from all submitted records
+    productionRecords.forEach(r => {
+      rawCategories['Printing Plain Setting (kg)'] += Number(r.printingPlainSettingWastageKg || 0);
+      rawCategories['Printing Wastage (kg)'] += Number(r.printingWastageKg || 0);
+      rawCategories['Lamination Plain Substrate (kg)'] += Number(r.laminationPlainSubstrateWastageKg || 0);
+      rawCategories['Printed Wastage (kg)'] += Number(r.printedWastageKg || 0);
+      rawCategories['Laminate Wastage (kg)'] += Number(r.laminateWastageKg || 0);
+      rawCategories['Trim Wastage (kg)'] += Number(r.trimWastageKg || 0);
+    });
+
+    // Deduct disposals
+    scrapDisposals.forEach(d => {
+      if (rawCategories[d.category] !== undefined) {
+        rawCategories[d.category] = Math.max(0, rawCategories[d.category] - (Number(d.qtyKg) || 0));
+      }
+    });
+
+    return rawCategories;
+  };
+
+  const scrapStockData = calculateScrapStock();
+  const totalScrapStockInPlantKg = Object.values(scrapStockData).reduce((sum, v) => sum + v, 0);
 
   // Step 1: Open Detailed Confirmation Popup
   const handleOpenConfirmModal = (e) => {
@@ -209,19 +380,32 @@ export default function ProductionRecordManagement({
       clientName: selectedOrder.clientName,
       dateFilled: new Date().toISOString().split('T')[0],
       materialsList: calculatedMaterials,
+      
+      // Stage-wise Quantities
+      qtyFirstPassL1: parseFloat(qtyFirstPassL1) || 0,
+      qtySecondPassL2: parseFloat(qtySecondPassL2) || 0,
+      qtyInspection: parseFloat(qtyInspection) || 0,
+      qtySlitting: parseFloat(qtySlitting) || 0,
+      qtyDispatch: parseFloat(qtyDispatch) || 0,
       totalProductionQtyKg: totalNetQtyKg,
+
       totalMaterialCostRs: totalMaterialCostRs,
       processingCostPerKg: parseFloat(processingCostPerKg) || 25,
       totalProcessingCostRs: totalProcessingCostRs,
+
+      // Stage-wise Scrap Breakdown (in kg)
       printingPlainSettingWastageKg: parseFloat(printingPlainSettingWastageKg) || 0,
       printingWastageKg: parseFloat(printingWastageKg) || 0,
       laminationPlainSubstrateWastageKg: parseFloat(laminationPlainSubstrateWastageKg) || 0,
+      printedWastageKg: parseFloat(printedWastageKg) || 0,
       laminateWastageKg: parseFloat(laminateWastageKg) || 0,
       trimWastageKg: parseFloat(trimWastageKg) || 0,
+      
       totalScrapQtyKg: totalScrapQtyKg,
-      scrapRatePerKg: parseFloat(scrapRatePerKg) || 0,
-      totalScrapCostRs: totalScrapCostRs,
+      overallScrapPctOfOutput: overallScrapPctOfOutput,
+      overallScrapPctOfDispatch: overallScrapPctOfDispatch,
       finalProductionCostRs: finalProductionCostRs,
+
       status: "Filled by Plant Manager",
       filledBy: `${currentUser.name} (${currentUser.role})`,
       approvedBy: "",
@@ -231,7 +415,7 @@ export default function ProductionRecordManagement({
 
     if (onSaveProductionRecord) onSaveProductionRecord(newRecord);
     setIsConfirmModalOpen(false);
-    alert(`🎉 Production Record for "${selectedOrder.jobName}" saved & submitted for Admin Approval!\n\nAvailable stock and roll balance for scanned barcodes updated successfully.`);
+    alert(`🎉 Production Record for "${selectedOrder.jobName}" saved & submitted for Admin Approval!\n\nStage production, scrap generated (${totalScrapQtyKg} kg), and inventory roll returns updated successfully.`);
     setActiveTab('list');
   };
   const filteredRecords = productionRecords.filter(r => {
@@ -281,6 +465,13 @@ export default function ProductionRecordManagement({
             onClick={() => { setActiveTab('job_cards'); setSelectedRecord(null); }}
           >
             📋 Job Cards Sign-Off ({jobMasters.length})
+          </button>
+
+          <button 
+            className={`tab-pill ${activeTab === 'scrap_inventory' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('scrap_inventory'); setSelectedRecord(null); }}
+          >
+            ♻️ Scrap Inventory ({totalScrapStockInPlantKg.toFixed(0)} kg)
           </button>
 
           {isPlantManager && (
@@ -920,10 +1111,9 @@ export default function ProductionRecordManagement({
                       </tbody>
                     </table>
                   </div>
-                );
-              })()}
-            </div>
-          ) : (
+                )})()}
+              </div>
+            ) : (
             <div style={{ marginTop: '20px', padding: '14px 18px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Lock size={16} /> <span>Financial Profitability, Revenue Margins & Cost Variance reports are restricted to the <b>Admin Role</b>.</span>
             </div>
@@ -931,7 +1121,90 @@ export default function ProductionRecordManagement({
         </div>
       )}
 
-      {/* VIEW 3: FILL NEW PRODUCTION RECORD (PLANT MANAGER) */}
+
+
+      {/* SCRAP INVENTORY & DISPOSAL TAB VIEW */}
+      {activeTab === 'scrap_inventory' && (
+        <div className="glass-panel" style={{ padding: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                ♻️ Plant Scrap Inventory & Disposal Stock Register
+              </h3>
+              <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>
+                Track accumulated process wastage across 6 standard categories and log disposal sales to remove scrap from factory stock.
+              </p>
+            </div>
+
+            <button className="btn-primary" style={{ background: '#b45309', borderColor: '#b45309' }} onClick={() => setIsDisposeModalOpen(true)}>
+              <Plus size={16} /> Dispose Scrap / Log Clearance
+            </button>
+          </div>
+
+          {/* 6 Category Stock Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
+            {Object.entries(scrapStockData).map(([cat, qty]) => (
+              <div key={cat} style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '10px', padding: '16px' }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: '700', color: '#92400e', textTransform: 'uppercase' }}>{cat}</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: '900', color: '#78350f', marginTop: '6px' }}>
+                  {qty.toFixed(1)} <span style={{ fontSize: '0.85rem' }}>kg</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Total In-Stock Banner */}
+          <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', padding: '14px 20px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+            <div style={{ fontWeight: '800', color: '#78350f', fontSize: '0.95rem' }}>
+              Total Net Scrap Stock Available in Factory:
+            </div>
+            <div style={{ fontSize: '1.6rem', fontWeight: '900', color: '#92400e' }}>
+              {totalScrapStockInPlantKg.toFixed(1)} kg
+            </div>
+          </div>
+
+          {/* Scrap Disposal Transactions History Table */}
+          <h4 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '12px' }}>📋 Scrap Disposal Clearance History ({scrapDisposals.length})</h4>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Ref / Gate Pass #</th>
+                  <th>Disposal Date</th>
+                  <th>Scrap Category</th>
+                  <th>Disposed Qty (kg)</th>
+                  <th>Vendor / Buyer</th>
+                  <th>Disposed By</th>
+                  <th>Remarks</th>
+                </tr>
+              </thead>
+              <tbody>
+                {scrapDisposals.length === 0 ? (
+                  <tr>
+                    <td colSpan="7" style={{ textAlign: 'center', padding: '24px', color: '#94a3b8' }}>
+                      No scrap disposals recorded yet. Click "Dispose Scrap / Log Clearance" to register a clearance sale.
+                    </td>
+                  </tr>
+                ) : (
+                  scrapDisposals.map(d => (
+                    <tr key={d.id}>
+                      <td style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>{d.refNo}</td>
+                      <td>{d.date}</td>
+                      <td style={{ fontWeight: '600' }}>{d.category}</td>
+                      <td style={{ fontWeight: '800', color: '#dc2626' }}>-{d.qtyKg} kg</td>
+                      <td>{d.vendor}</td>
+                      <td style={{ fontSize: '0.78rem' }}>{d.disposedBy}</td>
+                      <td style={{ fontSize: '0.78rem', color: '#64748b' }}>{d.notes || '—'}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* VIEW 3: FILL NEW PRODUCTION RECORD */}
       {activeTab === 'new_record' && (
         <form onSubmit={handleOpenConfirmModal} className="glass-panel" style={{ padding: '28px' }}>
           <h3 style={{ fontSize: '1.3rem', fontWeight: '800', marginBottom: '20px', color: 'var(--text-primary)' }}>
@@ -970,10 +1243,10 @@ export default function ProductionRecordManagement({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <div>
               <h4 style={{ fontSize: '1rem', fontWeight: '700', color: 'var(--text-primary)' }}>
-                📦 Ingredient Materials Issued & Returned List
+                📦 Ingredient Materials Issued & Returned List (Pre-selected from Job Master)
               </h4>
               <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                Select raw material from inventory dropdown or scan roll barcode to auto-populate rate, width, micron, and roll quantity.
+                Substrate layers pre-filled as per Job Master. Any variation in Micron, Width, or Substrate type will be calculated and highlighted automatically.
               </p>
             </div>
             <button type="button" className="btn-secondary" style={{ padding: '6px 14px', fontSize: '0.8rem' }} onClick={addMaterialRow}>
@@ -984,11 +1257,11 @@ export default function ProductionRecordManagement({
           <table className="data-table" style={{ marginBottom: '24px' }}>
             <thead>
               <tr style={{ background: '#f8fafc' }}>
-                <th style={{ minWidth: '200px' }}>Raw Material / Ingredient</th>
-                <th style={{ minWidth: '180px' }}>Barcode / Roll ID (Scan 📷)</th>
-                <th style={{ width: '75px' }}>Micron</th>
-                <th style={{ width: '85px' }}>Width (mm)</th>
-                <th style={{ width: '110px' }}>Issued Roll Qty (kg)</th>
+                <th style={{ minWidth: '220px' }}>Raw Material / Ingredient</th>
+                <th style={{ minWidth: '170px' }}>Barcode / Roll ID (Scan 📷)</th>
+                <th style={{ width: '85px' }}>Micron</th>
+                <th style={{ width: '95px' }}>Width (mm)</th>
+                <th style={{ width: '110px' }}>Issued Qty (kg)</th>
                 <th style={{ width: '110px' }}>Unused Return (kg)</th>
                 <th style={{ color: '#047857' }}>Net Consumed (kg)</th>
                 <th style={{ width: '110px' }}>Unit Rate (₹/kg)</th>
@@ -1022,7 +1295,6 @@ export default function ProductionRecordManagement({
 
                 return (
                   <tr key={m.id}>
-                    {/* Searchable / Select Dropdown for Raw Material */}
                     <td>
                       <select 
                         className="form-control"
@@ -1040,9 +1312,13 @@ export default function ProductionRecordManagement({
                           <option key={opt} value={opt}>{opt}</option>
                         ))}
                       </select>
+                      {m.hasFilmTypeVar && (
+                        <span className="badge badge-warning" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontSize: '0.68rem', marginTop: '3px', display: 'block' }}>
+                          ⚠️ Substrate Mismatch vs JM ({m.jobMasterFilmType})
+                        </span>
+                      )}
                     </td>
 
-                    {/* Barcode Scanner / Picker (Auto-populates Rate, Width, Micron, Issued Qty, Sets Unused Return to 0) */}
                     <td>
                       <div style={{ position: 'relative' }}>
                         <input 
@@ -1062,7 +1338,7 @@ export default function ProductionRecordManagement({
                               );
                               if (match) {
                                 updateMaterialRow(m.id, 'issueQtyKg', match.availableQtyKg || 400);
-                                updateMaterialRow(m.id, 'returnQtyKg', 0); // Default Unused Return is 0
+                                updateMaterialRow(m.id, 'returnQtyKg', 0);
                                 if (match.filmType) updateMaterialRow(m.id, 'filmType', match.filmType);
                                 if (match.micron) updateMaterialRow(m.id, 'micron', match.micron);
                                 if (match.widthMm) updateMaterialRow(m.id, 'widthMm', match.widthMm);
@@ -1077,25 +1353,35 @@ export default function ProductionRecordManagement({
                       </div>
                     </td>
 
-                    <td style={{ width: '75px' }}>
+                    <td>
                       <input 
                         type="text" 
                         className="form-control"
                         value={m.micron}
                         onChange={e => updateMaterialRow(m.id, 'micron', e.target.value)}
                       />
+                      {m.micronVarPct !== null && (
+                        <span className="badge badge-warning" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontSize: '0.68rem', marginTop: '2px', display: 'block' }}>
+                          ⚠️ {m.micronVarPct > 0 ? `+${m.micronVarPct}%` : `${m.micronVarPct}%`}
+                        </span>
+                      )}
                     </td>
 
-                    <td style={{ width: '85px' }}>
+                    <td>
                       <input 
                         type="text" 
                         className="form-control"
                         value={m.widthMm}
                         onChange={e => updateMaterialRow(m.id, 'widthMm', e.target.value)}
                       />
+                      {m.widthVarPct !== null && (
+                        <span className="badge badge-warning" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontSize: '0.68rem', marginTop: '2px', display: 'block' }}>
+                          ⚠️ {m.widthVarPct > 0 ? `+${m.widthVarPct}%` : `${m.widthVarPct}%`}
+                        </span>
+                      )}
                     </td>
 
-                    <td style={{ width: '110px' }}>
+                    <td>
                       <input 
                         type="number" 
                         step="0.1"
@@ -1107,7 +1393,7 @@ export default function ProductionRecordManagement({
                       />
                     </td>
 
-                    <td style={{ width: '110px' }}>
+                    <td>
                       <input 
                         type="number" 
                         step="0.1"
@@ -1118,23 +1404,22 @@ export default function ProductionRecordManagement({
                       />
                     </td>
 
-                    {/* Net Consumed & Roll Return Status Badge */}
                     <td>
                       <div style={{ fontWeight: '800', color: '#047857', fontSize: '0.9rem' }}>
                         {m.netConsumedQtyKg} kg
                       </div>
                       {isPartialReturn ? (
                         <span className="badge badge-warning" style={{ fontSize: '0.68rem', padding: '1px 5px', marginTop: '3px', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' }}>
-                          📦 {m.returnQtyKg} kg returned to store
+                          📦 {m.returnQtyKg} kg returned
                         </span>
                       ) : (
                         <span className="badge badge-us" style={{ fontSize: '0.68rem', padding: '1px 5px', marginTop: '3px' }}>
-                          Default Return: 0 kg
+                          Return: 0 kg
                         </span>
                       )}
                     </td>
 
-                    <td style={{ width: '110px' }}>
+                    <td>
                       <input 
                         type="number" 
                         step="0.1"
@@ -1160,108 +1445,122 @@ export default function ProductionRecordManagement({
             </tbody>
           </table>
 
-          {/* SCRAP & WASTAGE BREAKDOWN SECTION */}
-          <div className="glass-card" style={{ background: '#fffbeb', border: '1px solid #fde68a', padding: '20px', marginBottom: '24px' }}>
-            <h4 style={{ fontSize: '0.95rem', fontWeight: '800', color: '#b45309', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              ♻️ Production Scrap & Wastage Breakdown (in Kg)
+          {/* STAGE-WISE PRODUCTION QUANTITIES & SCRAP WASTAGE BREAKDOWN */}
+          <div style={{ marginBottom: '24px' }}>
+            <h4 style={{ fontSize: '1rem', fontWeight: '800', color: 'var(--text-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              ⚙️ Stage-wise Production Quantities & Process Scrap Inputs
             </h4>
-            
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '14px' }}>
-              <div>
-                <label style={{ fontSize: '0.72rem', fontWeight: '700', color: '#78350f' }}>
-                  Printing Plain Setting (kg)
-                </label>
-                <input 
-                  type="number" 
-                  step="0.1"
-                  className="form-control"
-                  style={{ marginTop: '4px', background: '#ffffff' }}
-                  value={printingPlainSettingWastageKg}
-                  onChange={e => setPrintingPlainSettingWastageKg(e.target.value)}
-                />
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              
+              {/* STAGE 1: FIRST PASS L1 */}
+              <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', padding: '16px 20px', borderRadius: '10px' }}>
+                <div style={{ fontWeight: '800', color: '#0369a1', fontSize: '0.9rem', marginBottom: '10px' }}>
+                  🔹 STAGE 1: FIRST PASS L1 (Single / Surface & 2-Layer Jobs)
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#0369a1' }}>First Pass L1 Output (kg) *</label>
+                    <input type="number" step="0.1" className="form-control" style={{ fontWeight: '700', background: '#ffffff' }} value={qtyFirstPassL1} onChange={e => setQtyFirstPassL1(e.target.value)} required />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#b45309' }}>Printing Plain Setting Scrap (kg)</label>
+                    <input type="number" step="0.1" className="form-control" style={{ background: '#ffffff' }} value={printingPlainSettingWastageKg} onChange={e => setPrintingPlainSettingWastageKg(e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#b45309' }}>Printing Wastage Scrap (kg)</label>
+                    <input type="number" step="0.1" className="form-control" style={{ background: '#ffffff' }} value={printingWastageKg} onChange={e => setPrintingWastageKg(e.target.value)} />
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label style={{ fontSize: '0.72rem', fontWeight: '700', color: '#78350f' }}>
-                  Printing Wastage (kg)
-                </label>
-                <input 
-                  type="number" 
-                  step="0.1"
-                  className="form-control"
-                  style={{ marginTop: '4px', background: '#ffffff' }}
-                  value={printingWastageKg}
-                  onChange={e => setPrintingWastageKg(e.target.value)}
-                />
+              {/* STAGE 2: SECOND PASS L2 */}
+              <div style={{ background: '#fdf4ff', border: '1px solid #f5d0fe', padding: '16px 20px', borderRadius: '10px' }}>
+                <div style={{ fontWeight: '800', color: '#86198f', fontSize: '0.9rem', marginBottom: '10px' }}>
+                  🔹 STAGE 2: SECOND PASS L2 (For 3-Layer Jobs)
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#86198f' }}>Second Pass L2 Output (kg)</label>
+                    <input type="number" step="0.1" className="form-control" style={{ fontWeight: '700', background: '#ffffff' }} value={qtySecondPassL2} onChange={e => setQtySecondPassL2(e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#b45309' }}>Lamination Plain Substrate Scrap (kg)</label>
+                    <input type="number" step="0.1" className="form-control" style={{ background: '#ffffff' }} value={laminationPlainSubstrateWastageKg} onChange={e => setLaminationPlainSubstrateWastageKg(e.target.value)} />
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label style={{ fontSize: '0.72rem', fontWeight: '700', color: '#78350f' }}>
-                  Lamination Plain Substrate (kg)
-                </label>
-                <input 
-                  type="number" 
-                  step="0.1"
-                  className="form-control"
-                  style={{ marginTop: '4px', background: '#ffffff' }}
-                  value={laminationPlainSubstrateWastageKg}
-                  onChange={e => setLaminationPlainSubstrateWastageKg(e.target.value)}
-                />
+              {/* STAGE 3: INSPECTION */}
+              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', padding: '16px 20px', borderRadius: '10px' }}>
+                <div style={{ fontWeight: '800', color: '#b45309', fontSize: '0.9rem', marginBottom: '10px' }}>
+                  🔹 STAGE 3: INSPECTION (Optional QC Pass)
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#b45309' }}>Inspected Qty (kg)</label>
+                    <input type="number" step="0.1" className="form-control" style={{ fontWeight: '700', background: '#ffffff' }} value={qtyInspection} onChange={e => setQtyInspection(e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#b45309' }}>Printed Wastage Scrap (kg)</label>
+                    <input type="number" step="0.1" className="form-control" style={{ background: '#ffffff' }} value={printedWastageKg} onChange={e => setPrintedWastageKg(e.target.value)} />
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label style={{ fontSize: '0.72rem', fontWeight: '700', color: '#78350f' }}>
-                  Laminate Wastage (kg)
-                </label>
-                <input 
-                  type="number" 
-                  step="0.1"
-                  className="form-control"
-                  style={{ marginTop: '4px', background: '#ffffff' }}
-                  value={laminateWastageKg}
-                  onChange={e => setLaminateWastageKg(e.target.value)}
-                />
+              {/* STAGE 4: SLITTING */}
+              <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '16px 20px', borderRadius: '10px' }}>
+                <div style={{ fontWeight: '800', color: '#047857', fontSize: '0.9rem', marginBottom: '10px' }}>
+                  🔹 STAGE 4: SLITTING
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#047857' }}>Slitting Output (kg)</label>
+                    <input type="number" step="0.1" className="form-control" style={{ fontWeight: '700', background: '#ffffff' }} value={qtySlitting} onChange={e => setQtySlitting(e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#b45309' }}>Laminate Wastage Scrap (kg)</label>
+                    <input type="number" step="0.1" className="form-control" style={{ background: '#ffffff' }} value={laminateWastageKg} onChange={e => setLaminateWastageKg(e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#b45309' }}>Trim Wastage Scrap (kg)</label>
+                    <input type="number" step="0.1" className="form-control" style={{ background: '#ffffff' }} value={trimWastageKg} onChange={e => setTrimWastageKg(e.target.value)} />
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label style={{ fontSize: '0.72rem', fontWeight: '700', color: '#78350f' }}>
-                  Trim Wastage (kg)
-                </label>
-                <input 
-                  type="number" 
-                  step="0.1"
-                  className="form-control"
-                  style={{ marginTop: '4px', background: '#ffffff' }}
-                  value={trimWastageKg}
-                  onChange={e => setTrimWastageKg(e.target.value)}
-                />
+              {/* STAGE 5: DISPATCH READY */}
+              <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '16px 20px', borderRadius: '10px' }}>
+                <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '0.9rem', marginBottom: '10px' }}>
+                  🔹 STAGE 5: DISPATCH READY
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={{ fontSize: '0.78rem', fontWeight: '800', color: '#0f172a' }}>Dispatch Ready Qty (kg) *</label>
+                    <input type="number" step="0.1" className="form-control" style={{ fontWeight: '800', fontSize: '1.05rem', background: '#ffffff', color: '#047857', border: '2px solid #059669' }} value={qtyDispatch} onChange={e => setQtyDispatch(e.target.value)} required />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#64748b' }}>Total Scrap Generated (kg)</label>
+                    <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#b45309', marginTop: '6px' }}>
+                      {totalScrapQtyKg.toFixed(1)} kg ({overallScrapPctOfDispatch}% of dispatch)
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#64748b' }}>Overall Scrap Share %</label>
+                    <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#0369a1', marginTop: '6px' }}>
+                      {overallScrapPctOfOutput}% of total material output
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label style={{ fontSize: '0.72rem', fontWeight: '700', color: '#78350f' }}>
-                  Scrap Rate (₹ / kg)
-                </label>
-                <input 
-                  type="number" 
-                  step="0.1"
-                  className="form-control"
-                  style={{ marginTop: '4px', background: '#ffffff', fontWeight: '700' }}
-                  value={scrapRatePerKg}
-                  onChange={e => setScrapRatePerKg(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px dashed #fcd34d', display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#92400e' }}>
-              <div>Total Scrap Qty: <strong>{totalScrapQtyKg.toFixed(1)} kg</strong></div>
-              <div>Total Scrap Cost: <strong>₹ {totalScrapCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
             </div>
           </div>
 
           {/* Cost Summary Box with Formula */}
           <div className="glass-card" style={{ background: '#f8fafc', padding: '24px', marginBottom: '24px' }}>
-            <div style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--primary-brand)', marginBottom: '16px' }}>
-              📐 COST OF PRODUCTION FORMULA: (Total Qty Produced × Processing Cost Rate) + (Ingredients Cost) + (Scrap Cost)
+            <div style={{ fontSize: '0.82rem', fontWeight: '800', color: 'var(--primary-brand)', marginBottom: '16px' }}>
+              📐 COST OF PRODUCTION FORMULA: (Total Qty Produced × Processing Cost Rate) + (Ingredients Cost)
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px' }}>
@@ -1291,7 +1590,7 @@ export default function ProductionRecordManagement({
                   onChange={e => setProcessingCostPerKg(e.target.value)}
                 />
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  Cost: ₹ {totalProcessingCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  Processing Cost: ₹ {totalProcessingCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </div>
               </div>
 
@@ -1323,12 +1622,12 @@ export default function ProductionRecordManagement({
       {/* DETAILED CONFIRMATION POPUP MODAL */}
       {isConfirmModalOpen && (
         <div className="modal-overlay" onClick={() => setIsConfirmModalOpen(false)}>
-          <div className="glass-card modal-content" style={{ width: '680px', maxWidth: '95vw', padding: '28px' }} onClick={e => e.stopPropagation()}>
+          <div className="glass-card modal-content" style={{ width: '750px', maxWidth: '95vw', padding: '28px' }} onClick={e => e.stopPropagation()}>
             <h3 style={{ fontSize: '1.3rem', fontWeight: '800', marginBottom: '8px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '10px' }}>
               <FileSpreadsheet style={{ color: 'var(--primary-brand)' }} /> Confirm Job Production Record Submission
             </h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '20px' }}>
-              Please review the final costing, material consumption, and inventory roll returns before submitting for Admin approval.
+              Please review stage production quantities, specification variations, material consumption, and process scrap generation before submitting for Admin approval.
             </p>
 
             {/* Job & Client Meta Header */}
@@ -1339,17 +1638,17 @@ export default function ProductionRecordManagement({
               <div><span style={{ color: 'var(--text-muted)' }}>Recorded By:</span> <strong>{currentUser.name} ({currentUser.role})</strong></div>
             </div>
 
-            {/* Itemized Material Usage Preview */}
+            {/* Itemized Material Usage & Spec Variation Preview */}
             <div style={{ marginBottom: '20px' }}>
               <h4 style={{ fontSize: '0.85rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                📦 Consumed Materials & Roll Return Summary ({calculatedMaterials.length} Lines)
+                📦 Consumed Materials & Spec Variations ({calculatedMaterials.length} Lines)
               </h4>
-              <div style={{ maxHeight: '160px', overflowY: 'auto', border: '1px solid #cbd5e1', borderRadius: '8px' }}>
+              <div style={{ maxHeight: '170px', overflowY: 'auto', border: '1px solid #cbd5e1', borderRadius: '8px' }}>
                 <table className="data-table" style={{ fontSize: '0.78rem' }}>
                   <thead>
                     <tr style={{ background: '#f1f5f9' }}>
                       <th>Material</th>
-                      <th>Barcode Tag</th>
+                      <th>Spec Variation vs Job Master</th>
                       <th>Issued</th>
                       <th>Returned</th>
                       <th>Net Consumed</th>
@@ -1360,7 +1659,19 @@ export default function ProductionRecordManagement({
                     {calculatedMaterials.map((m, idx) => (
                       <tr key={idx}>
                         <td style={{ fontWeight: '600' }}>{m.filmType}</td>
-                        <td><code>{m.barcode || 'Standard Stock'}</code></td>
+                        <td>
+                          {m.hasVariation ? (
+                            <span className="badge badge-warning" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontSize: '0.68rem' }}>
+                              ⚠️ {m.micronVarPct !== null && `Micron: ${m.micronVarPct > 0 ? `+${m.micronVarPct}%` : `${m.micronVarPct}%`} `}
+                              {m.widthVarPct !== null && `Width: ${m.widthVarPct > 0 ? `+${m.widthVarPct}%` : `${m.widthVarPct}%`} `}
+                              {m.hasFilmTypeVar && `Type Mismatch `}
+                            </span>
+                          ) : (
+                            <span className="badge badge-us" style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontSize: '0.68rem' }}>
+                              Exact Match
+                            </span>
+                          )}
+                        </td>
                         <td>{m.issueQtyKg} kg</td>
                         <td style={{ color: (parseFloat(m.returnQtyKg) || 0) > 0 ? '#047857' : 'inherit', fontWeight: '600' }}>
                           {m.returnQtyKg || 0} kg
@@ -1374,13 +1685,13 @@ export default function ProductionRecordManagement({
               </div>
             </div>
 
-            {/* Costing Summary Box */}
+            {/* Costing & Scrap Summary Box */}
             <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '16px 20px', borderRadius: '10px', marginBottom: '24px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', fontSize: '0.85rem', marginBottom: '12px' }}>
-                <div>Net Produced Qty: <strong>{(totalNetQtyKg ?? 0).toLocaleString()} kg</strong></div>
+                <div>Dispatch Ready Produced Qty: <strong>{(totalNetQtyKg ?? 0).toLocaleString()} kg</strong></div>
                 <div>Total Ingredients Cost: <strong>₹ {totalMaterialCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
                 <div>Processing Cost (₹ {processingCostPerKg}/kg): <strong>₹ {totalProcessingCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
-                <div>Scrap & Wastage ({totalScrapQtyKg.toFixed(1)} kg): <strong>₹ {totalScrapCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
+                <div>Total Scrap Generated: <strong style={{ color: '#b45309' }}>{totalScrapQtyKg.toFixed(1)} kg ({overallScrapPctOfDispatch}% of dispatch)</strong></div>
               </div>
 
               <div style={{ borderTop: '1px solid #6ee7b7', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1405,6 +1716,63 @@ export default function ProductionRecordManagement({
                 <CheckCircle2 size={16} /> Confirm & Submit to Admin
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* DISPOSE SCRAP MODAL */}
+      {isDisposeModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsDisposeModalOpen(false)}>
+          <div className="glass-card modal-content" style={{ width: '520px' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              ♻️ Log Scrap Disposal & Remove Stock
+            </h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', marginBottom: '16px' }}>
+              Record scrap sale / clearance to deduct weight from plant scrap inventory.
+            </p>
+
+            <form onSubmit={handleAddScrapDisposal}>
+              <div className="form-group">
+                <label>Scrap Category *</label>
+                <select className="form-control" value={disposeCategory} onChange={e => setDisposeCategory(e.target.value)}>
+                  <option value="Printing Plain Setting (kg)">Printing Plain Setting (kg)</option>
+                  <option value="Printing Wastage (kg)">Printing Wastage (kg)</option>
+                  <option value="Lamination Plain Substrate (kg)">Lamination Plain Substrate (kg)</option>
+                  <option value="Printed Wastage (kg)">Printed Wastage (kg)</option>
+                  <option value="Laminate Wastage (kg)">Laminate Wastage (kg)</option>
+                  <option value="Trim Wastage (kg)">Trim Wastage (kg)</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="form-group">
+                  <label>Disposal Qty (kg) *</label>
+                  <input type="number" step="0.1" className="form-control" required value={disposeQtyKg} onChange={e => setDisposeQtyKg(e.target.value)} />
+                </div>
+
+                <div className="form-group">
+                  <label>Gate Pass / Invoice #</label>
+                  <input type="text" className="form-control" placeholder="e.g. GP-9821" value={disposeRefNo} onChange={e => setDisposeRefNo(e.target.value)} />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>Scrap Buyer / Recycler Vendor Name</label>
+                <input type="text" className="form-control" placeholder="e.g. Universal Traders & Recyclers" value={disposeVendor} onChange={e => setDisposeVendor(e.target.value)} />
+              </div>
+
+              <div className="form-group">
+                <label>Remarks / Notes</label>
+                <input type="text" className="form-control" placeholder="Optional notes..." value={disposeNotes} onChange={e => setDisposeNotes(e.target.value)} />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px' }}>
+                <button type="button" className="btn-secondary" onClick={() => setIsDisposeModalOpen(false)}>Cancel</button>
+                <button type="submit" className="btn-primary" style={{ background: '#b45309', borderColor: '#b45309' }}>
+                  <CheckCircle2 size={16} /> Confirm Scrap Disposal
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
