@@ -105,7 +105,7 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
       </div>
 
       <div className="pdf-paper-container">
-        <div className="printable-document">
+        <div className="printable-document" id="printable-ocn">
           {/* Header */}
           <div className="letterhead-header">
             <div className="letterhead-brand">

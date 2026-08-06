@@ -32,6 +32,7 @@ export default function DispatchPackingListPDF({ shipment, onClose }) {
         {/* Printable A4 PDF Container */}
         <div 
           id="printable-packing-list"
+          className="printable-document"
           style={{
             background: '#ffffff',
             padding: '36px 40px',

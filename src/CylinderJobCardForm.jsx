@@ -12,24 +12,39 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
         @media print {
           @page {
             size: A4 landscape !important;
-            margin: 12mm 8mm 6mm 8mm !important;
+            margin: 8mm !important;
+          }
+          body * {
+            visibility: hidden !important;
+          }
+          .printable-landscape-card,
+          .printable-landscape-card * {
+            visibility: visible !important;
           }
           html, body {
             background: #ffffff !important;
             color: #000000 !important;
             margin: 0 !important;
             padding: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            overflow: visible !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
-          .no-print {
+          .no-print, button {
             display: none !important;
           }
           .printable-landscape-card {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
             width: 100% !important;
             max-width: 285mm !important;
-            padding: 4mm 0 0 0 !important;
+            padding: 2mm 0 0 0 !important;
             margin: 0 auto !important;
+            background: #ffffff !important;
+            color: #000000 !important;
           }
         }
 

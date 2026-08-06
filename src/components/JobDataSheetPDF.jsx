@@ -44,7 +44,7 @@ export default function JobDataSheetPDF({ sheetData, onClose }) {
       </div>
 
       <div className="pdf-paper-container">
-        <div className="printable-document">
+        <div className="printable-document" id="printable-jds">
 
           
           {/* Header */}

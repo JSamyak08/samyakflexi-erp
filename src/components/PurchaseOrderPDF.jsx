@@ -104,7 +104,7 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
       </div>
 
       <div className="pdf-paper-container">
-        <div className="printable-document">
+        <div className="printable-document" id="printable-po">
           <div className="letterhead-header">
             <div className="letterhead-brand">
               <img src={logoImage} alt="Samyak International Ltd Logo" className="samyak-logo-img" style={{ height: '46px', objectFit: 'contain' }} />

@@ -72,7 +72,7 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
         </div>
 
         {/* PRINTABLE LETTERHEAD AREA */}
-        <div id="printable-quotation" style={{ padding: '20px', background: '#ffffff', color: '#0f172a', fontFamily: 'Inter, system-ui, sans-serif' }}>
+        <div id="printable-quotation" className="printable-document" style={{ padding: '20px', background: '#ffffff', color: '#0f172a', fontFamily: 'Inter, system-ui, sans-serif' }}>
           
           {/* Header Company Banner */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '3px solid #1e293b', paddingBottom: '16px', marginBottom: '20px' }}>
