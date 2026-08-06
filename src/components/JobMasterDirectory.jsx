@@ -658,7 +658,22 @@ export default function JobMasterDirectory({
               <table className="data-table" style={{ fontSize: '0.85rem' }}>
                 <thead><tr><th>Layer #</th><th>Substrate Film Grade</th><th>Micron (µ)</th><th>Calculated GSM</th></tr></thead>
                 <tbody>
-                  {selectedJob.layers && selectedJob.layers.map((l, idx) => {
+                  {(() => {
+                    const displayLayers = (selectedJob.layers && selectedJob.layers.length > 0)
+                      ? selectedJob.layers
+                      : (parseStructureToLayers(selectedJob.structure) || []);
+
+                    if (displayLayers.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan="4" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '12px' }}>
+                            No layers defined for this structure.
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    return displayLayers.map((l, idx) => {
                     const density = FILM_DENSITIES[l.filmType] || 1.0;
                     const gsm = (l.micron * density).toFixed(1);
                     return (
@@ -669,7 +684,8 @@ export default function JobMasterDirectory({
                         <td>{gsm} g/m²</td>
                       </tr>
                     );
-                  })}
+                  });
+                })()}
                 </tbody>
               </table>
             </div>

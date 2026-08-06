@@ -1084,6 +1084,24 @@ export async function deleteProductionScheduleFromSupabase(scheduleId) {
 // 12. JOB MASTERS DIRECTORY
 // ============================================================================
 
+export function parseStructureStringToLayers(structureStr) {
+  if (!structureStr || structureStr === '—') return [];
+  const parts = String(structureStr).split('/').map(p => p.trim());
+  if (parts.length === 0) return [];
+
+  return parts.map((part, idx) => {
+    const micronMatch = part.match(/(\d+(\.\d+)?)\s*µ?/i);
+    const micron = micronMatch ? parseFloat(micronMatch[1]) : 12;
+    let rawType = part.replace(/(\d+(\.\d+)?)\s*µ?/gi, '').trim();
+
+    return {
+      id: Date.now() + idx,
+      filmType: rawType || 'PET',
+      micron: micron
+    };
+  });
+}
+
 export async function fetchJobMasters() {
   if (!isSupabaseConfigured()) return [];
   try {
@@ -1095,10 +1113,14 @@ export async function fetchJobMasters() {
     if (!data) return [];
 
     return data.map(j => {
-      const layers = Array.isArray(j.layers) ? j.layers : [];
+      let layers = Array.isArray(j.layers) ? j.layers : [];
       const derivedStructure = (layers.length > 0)
         ? layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
         : (j.structure || j.film_structure || '—');
+
+      if (layers.length === 0 && derivedStructure && derivedStructure !== '—') {
+        layers = parseStructureStringToLayers(derivedStructure);
+      }
 
       return {
         id: j.id,
