@@ -57,7 +57,15 @@ export default function ProductionScheduler({
   // Schedule Event Modal State
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState(null);
+  const [editingScheduleId, setEditingScheduleId] = useState(null);
   const [schedulingOrder, setSchedulingOrder] = useState(null);
+  const [targetMachineId, setTargetMachineId] = useState('');
+  const [targetShift, setTargetShift] = useState('Day Shift');
+  const [scheduledDateInput, setScheduledDateInput] = useState('2026-08-02');
+  const [startTimeInput, setStartTimeInput] = useState('08:00');
+  const [customSpeedInput, setCustomSpeedInput] = useState(250);
+  const [customJobChangeoverInput, setCustomJobChangeoverInput] = useState(120);
+  const [customRollChangeoverRateInput, setCustomRollChangeoverRateInput] = useState(20);
   const [selectedMachineId, setSelectedMachineId] = useState('');
   const [scheduleDate, setScheduleDate] = useState('2026-08-02');
   const [scheduleShift, setScheduleShift] = useState('Day Shift');
