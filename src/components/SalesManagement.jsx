@@ -51,13 +51,66 @@ export const MATERIAL_FORMATS = [
 ];
 
 // Standard Terms & Conditions Bullet Templates
-export const DEFAULT_QUOTATION_TERMS = [
-  "1. Material specifications as per sample approved by QA laboratory.",
-  "2. Tax Invoice with GSTIN & HSN codes mandatory along with delivery challan.",
-  "3. Price valid for 30 days from quotation date.",
-  "4. Quantity variance tolerance +/- 10% allowed as per standard flexible packaging norms.",
-  "5. Payment terms strict as per agreed credit terms."
-];
+export const QUOTATION_TERMS_TEMPLATES = {
+  STANDARD: {
+    key: "STANDARD",
+    name: "Standard Commercial Credit Terms (30 Days Net)",
+    defaultPaymentTerms: "30 Days Net from date of Tax Invoice",
+    defaultCylinderTerms: "Cylinder Development Cost borne by Buyer @ ₹6,500 / cylinder",
+    defaultTransportTerms: "Freight Included (FOR Pithampur Factory / Destination)",
+    terms: [
+      "1. Material specifications as per sample approved by QA laboratory.",
+      "2. Tax Invoice with GSTIN & HSN codes mandatory along with delivery challan.",
+      "3. Price valid for 30 days from quotation date.",
+      "4. Quantity variance tolerance +/- 10% allowed as per standard flexible packaging norms.",
+      "5. Payment terms strict as per agreed credit terms (30 Days Net)."
+    ]
+  },
+  ADVANCE_100: {
+    key: "ADVANCE_100",
+    name: "100% Advance Payment Terms (New / Non-Credit Clients)",
+    defaultPaymentTerms: "100% Advance Payment prior to production start / dispatch",
+    defaultCylinderTerms: "Cylinder charges 100% Advance along with Purchase Order",
+    defaultTransportTerms: "Freight Charges Ex-Factory Pithampur / Freight Extra at Actuals",
+    terms: [
+      "1. 100% Advance payment required prior to manufacturing / dispatch.",
+      "2. Cylinder development cost to be paid 100% in advance with purchase order.",
+      "3. Price valid for 15 days from quotation date due to raw material rate fluctuations.",
+      "4. Material specifications as per approved artwork proof & QA signed sample.",
+      "5. Quantity tolerance +/- 10% applicable on final produced quantity."
+    ]
+  },
+  PARTIAL_ADVANCE: {
+    key: "PARTIAL_ADVANCE",
+    name: "50% Advance & 50% Against Delivery Challan",
+    defaultPaymentTerms: "50% Advance with PO, balance 50% against Delivery Challan before unloading",
+    defaultCylinderTerms: "Cylinder charges 100% Advance with PO",
+    defaultTransportTerms: "Freight Included (FOR Destination / Client Works)",
+    terms: [
+      "1. 50% Advance payment along with Purchase Order, balance 50% against Delivery Challan.",
+      "2. Cylinder development charges borne 100% by buyer prior to cylinder engraving.",
+      "3. Material specifications as per QA lab approval.",
+      "4. Quantity tolerance +/- 10% applicable on actual reel / pouch production.",
+      "5. Offer valid for 30 days from date of issue."
+    ]
+  },
+  EXPRESS_JOB: {
+    key: "EXPRESS_JOB",
+    name: "Urgent Production / Express Delivery Terms",
+    defaultPaymentTerms: "50% Advance with PO, balance within 7 days of delivery",
+    defaultCylinderTerms: "Cylinder development cost borne by Buyer (Fast-track engraving)",
+    defaultTransportTerms: "Express Freight Extra at Actuals",
+    terms: [
+      "1. Fast-track production schedule subject to immediate artwork approval & cylinder release.",
+      "2. 50% Advance payment required; balance within 7 days of delivery.",
+      "3. Price valid for 7 days from quotation date.",
+      "4. Quantity tolerance +/- 10% as per flexible packaging standards.",
+      "5. Express Freight & logistics charges extra at actuals."
+    ]
+  }
+};
+
+export const DEFAULT_QUOTATION_TERMS = QUOTATION_TERMS_TEMPLATES.STANDARD.terms;
 
 // Standard Film Types for Flexible Packaging Layers
 export const STANDARD_FILM_TYPES = [
@@ -215,7 +268,35 @@ export default function SalesManagement({
     quantity: '', uom: 'Kg', ratePerUom: '', printWidthMm: '', repeatLengthMm: '', gstPct: 18
   }]);
 
-  const [termsList, setTermsList] = useState(DEFAULT_QUOTATION_TERMS);
+  const [selectedTermsTemplateKey, setSelectedTermsTemplateKey] = useState('STANDARD');
+  const [termsList, setTermsList] = useState(QUOTATION_TERMS_TEMPLATES.STANDARD.terms);
+  const [customTermInput, setCustomTermInput] = useState('');
+
+  const handleApplyTermsTemplate = (templateKey) => {
+    setSelectedTermsTemplateKey(templateKey);
+    const tmpl = QUOTATION_TERMS_TEMPLATES[templateKey];
+    if (tmpl) {
+      setTermsList([...tmpl.terms]);
+      if (tmpl.defaultPaymentTerms) setPaymentTerms(tmpl.defaultPaymentTerms);
+      if (tmpl.defaultCylinderTerms) setCylinderTerms(tmpl.defaultCylinderTerms);
+      if (tmpl.defaultTransportTerms) setTransportTerms(tmpl.defaultTransportTerms);
+    }
+  };
+
+  const handleAddCustomTerm = () => {
+    if (!customTermInput.trim()) return;
+    const bulletNo = termsList.length + 1;
+    const formattedTerm = `${bulletNo}. ${customTermInput.trim().replace(/^\d+\.\s*/, '')}`;
+    setTermsList(prev => [...prev, formattedTerm]);
+    setCustomTermInput('');
+  };
+
+  const handleRemoveTerm = (index) => {
+    const updated = termsList.filter((_, i) => i !== index).map((t, idx) => {
+      return `${idx + 1}. ${t.replace(/^\d+\.\s*/, '')}`;
+    });
+    setTermsList(updated);
+  };
 
   // Filtered client suggestions based on search query
   const clientSuggestions = useMemo(() => {
@@ -306,11 +387,12 @@ export default function SalesManagement({
         { id: 2, filmType: 'Natural GP LD', micron: 40 }
       ]
     }]);
-    setPaymentTerms('');
-    setCylinderTerms('');
-    setTransportTerms('');
+    setPaymentTerms(QUOTATION_TERMS_TEMPLATES.STANDARD.defaultPaymentTerms);
+    setCylinderTerms(QUOTATION_TERMS_TEMPLATES.STANDARD.defaultCylinderTerms);
+    setTransportTerms(QUOTATION_TERMS_TEMPLATES.STANDARD.defaultTransportTerms);
     setComments('');
-    setTermsList(DEFAULT_QUOTATION_TERMS);
+    setSelectedTermsTemplateKey('STANDARD');
+    setTermsList([...QUOTATION_TERMS_TEMPLATES.STANDARD.terms]);
     setShowNewClientForm(false);
     setActiveSubTab('create');
   };
@@ -359,7 +441,8 @@ export default function SalesManagement({
         { id: 2, filmType: 'Natural GP LD', micron: 40 }
       ]
     }]);
-    setTermsList(qtn.termsAndConditions || DEFAULT_QUOTATION_TERMS);
+    setTermsList(qtn.termsAndConditions || [...QUOTATION_TERMS_TEMPLATES.STANDARD.terms]);
+    setSelectedTermsTemplateKey(qtn.termsTemplateKey || 'CUSTOM');
     setComments(`Amended Revision ${nextRev} based on client specification updates.`);
 
     setActiveSubTab('create');
@@ -370,6 +453,11 @@ export default function SalesManagement({
     e.preventDefault();
     if (!selectedClientName || items.length === 0) {
       alert("Client Name and at least 1 Product Item are required!");
+      return;
+    }
+
+    if (!termsList || termsList.length === 0) {
+      alert("⚠️ MANDATORY ENTRY REQUIRED:\n\nYou must select a Terms & Conditions template mandatorily before saving the Sales Quotation!");
       return;
     }
 
@@ -409,6 +497,7 @@ export default function SalesManagement({
       ocnRefNo: "",
       convertedDate: "",
       items: calculatedItems,
+      termsTemplateKey: selectedTermsTemplateKey,
       termsAndConditions: termsList,
       comments
     };
@@ -1450,6 +1539,89 @@ export default function SalesManagement({
                 })}
               </tbody>
             </table>
+          </div>
+
+          {/* Terms & Conditions Template Selection Section (MANDATORY) */}
+          <div style={{ background: '#f8fafc', padding: '18px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+              <div>
+                <h4 style={{ fontSize: '0.95rem', fontWeight: '800', color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  📜 Terms & Conditions Template <span style={{ color: '#dc2626', fontWeight: '900' }}>* (Mandatory Selection)</span>
+                </h4>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '2px 0 0 0' }}>
+                  Select a pre-approved commercial terms template or customize clauses for this quotation before saving.
+                </p>
+              </div>
+              <span className="badge" style={{ background: termsList.length > 0 ? '#dcfce7' : '#fee2e2', color: termsList.length > 0 ? '#15803d' : '#dc2626', fontWeight: '700', border: termsList.length > 0 ? '1px solid #86efac' : '1px solid #fca5a5' }}>
+                {termsList.length > 0 ? `✓ ${termsList.length} Clauses Active` : '⚠️ Mandatory Selection Required'}
+              </span>
+            </div>
+
+            <div className="form-group" style={{ marginBottom: '14px' }}>
+              <label className="form-label" style={{ fontWeight: '700' }}>Choose Terms Template *</label>
+              <select 
+                className="form-control" 
+                style={{ fontWeight: '700', color: '#1e293b', background: '#ffffff', border: '1px solid #94a3b8' }}
+                value={selectedTermsTemplateKey}
+                onChange={e => handleApplyTermsTemplate(e.target.value)}
+                required
+              >
+                {Object.values(QUOTATION_TERMS_TEMPLATES).map(tmpl => (
+                  <option key={tmpl.key} value={tmpl.key}>{tmpl.name}</option>
+                ))}
+                <option value="CUSTOM">Custom Selected Terms & Conditions</option>
+              </select>
+            </div>
+
+            {/* Selected Terms Bullet List Preview & Management */}
+            <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '14px' }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: '700', color: '#475569', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Active Terms Bullets ({termsList.length}):
+              </div>
+
+              {termsList.length === 0 ? (
+                <div style={{ padding: '12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', color: '#dc2626', fontSize: '0.82rem', fontWeight: '700', textAlign: 'center' }}>
+                  ⚠️ No Terms & Conditions selected! Please choose a template above or add custom clauses.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {termsList.map((term, idx) => (
+                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '8px 12px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '0.82rem' }}>
+                      <span style={{ fontWeight: '600', color: '#1e293b' }}>{term}</span>
+                      <button 
+                        type="button"
+                        style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '2px 6px', fontSize: '0.8rem', fontWeight: '700' }}
+                        onClick={() => handleRemoveTerm(idx)}
+                        title="Remove this clause"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Add Custom Clause Bullet */}
+              <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                <input 
+                  type="text" 
+                  className="form-control"
+                  style={{ fontSize: '0.82rem' }}
+                  placeholder="Type additional custom term/clause bullet here..."
+                  value={customTermInput}
+                  onChange={e => setCustomTermInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddCustomTerm(); } }}
+                />
+                <button 
+                  type="button"
+                  className="btn-secondary"
+                  style={{ whiteSpace: 'nowrap', fontSize: '0.78rem', padding: '6px 12px', fontWeight: '700' }}
+                  onClick={handleAddCustomTerm}
+                >
+                  <Plus size={14} /> Add Bullet
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Commercial Terms & Conditions Input Section */}
