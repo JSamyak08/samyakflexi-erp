@@ -817,7 +817,7 @@ body {
 @media print {
   @page {
     size: A4 portrait;
-    margin: 8mm 10mm;
+    margin: 0; /* Clear page margin so internal document padding handles margins strictly and consistently regardless of browser settings */
   }
 
   /* 1. Hide ALL elements on the page by default */
@@ -872,6 +872,7 @@ body {
   .pdf-paper-container,
   .glass-panel {
     position: static !important;
+    display: block !important;
     background: transparent !important;
     box-shadow: none !important;
     border: none !important;
@@ -903,21 +904,22 @@ body {
     visibility: hidden !important;
   }
 
-  /* 4. Position printable document target cleanly at top-left 0,0 */
+  /* 4. Position printable document target cleanly as single block with professional margins */
   .printable-document,
   #printable-quotation,
   #printable-po,
   #printable-ocn,
   #printable-jds,
   #printable-packing-list {
-    position: absolute !important;
+    position: relative !important;
+    display: block !important;
     left: 0 !important;
     top: 0 !important;
     width: 100% !important;
-    max-width: 100% !important;
+    max-width: 210mm !important;
     box-sizing: border-box !important;
-    margin: 0 !important;
-    padding: 0 !important;
+    margin: 0 auto !important;
+    padding: 8mm 12mm !important; /* Professional internal margin for physical print */
     background: #ffffff !important;
     color: #000000 !important;
     border: none !important;
@@ -926,6 +928,17 @@ body {
     height: auto !important;
     min-height: 0 !important;
     max-height: none !important;
+  }
+
+  /* Prevent last-child margin spillover causing extra blank page */
+  .printable-document > *:last-child,
+  #printable-quotation > *:last-child,
+  #printable-po > *:last-child,
+  #printable-ocn > *:last-child,
+  #printable-jds > *:last-child,
+  #printable-packing-list > *:last-child {
+    margin-bottom: 0 !important;
+    padding-bottom: 0 !important;
   }
 
   /* Keep table rows and sections unbroken across pages */
@@ -941,14 +954,15 @@ body {
 
   /* Landscape print target override */
   .printable-landscape-card {
-    position: absolute !important;
+    position: relative !important;
+    display: block !important;
     left: 0 !important;
     top: 0 !important;
     width: 100% !important;
-    max-width: 100% !important;
+    max-width: 297mm !important;
     box-sizing: border-box !important;
-    margin: 0 !important;
-    padding: 0 !important;
+    margin: 0 auto !important;
+    padding: 6mm 10mm !important;
     background: #ffffff !important;
     color: #000000 !important;
     border: none !important;
