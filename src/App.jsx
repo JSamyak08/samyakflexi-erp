@@ -108,7 +108,15 @@ export default function App() {
   const loadLocalState = (key, fallbackDefault) => {
     try {
       const parsed = safeLocalStorageGet(`samyak_erp_${key}`, null);
-      if (parsed && Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (parsed !== null && parsed !== undefined) {
+        if (Array.isArray(fallbackDefault)) {
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        } else if (typeof fallbackDefault === 'object' && fallbackDefault !== null) {
+          if (typeof parsed === 'object' && parsed !== null && Object.keys(parsed).length > 0) return parsed;
+        } else {
+          return parsed;
+        }
+      }
     } catch (e) {
       console.warn(`Failed to parse localStorage key samyak_erp_${key}`, e);
     }
@@ -276,7 +284,10 @@ export default function App() {
       if (Array.isArray(supaSchedules) && supaSchedules.length > 0) setSchedules(supaSchedules);
       if (Array.isArray(supaClients) && supaClients.length > 0) setClients(supaClients);
       if (Array.isArray(supaJobMasters) && supaJobMasters.length > 0) setJobMasters(supaJobMasters);
-      if (supaRolePerms && typeof supaRolePerms === 'object') setRolePermissions(supaRolePerms);
+      if (supaRolePerms && typeof supaRolePerms === 'object' && Object.keys(supaRolePerms).length > 0) {
+        setRolePermissions(supaRolePerms);
+        safeLocalStorageSet('samyak_erp_role_permissions', supaRolePerms);
+      }
     }
 
     loadSupabaseData();
