@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { useReactToPrint } from 'react-to-print';
 import { Save, Printer, UploadCloud, ArrowLeft, CheckCircle2, RefreshCw, Trash2, Check, ExternalLink, Image as ImageIcon, CheckSquare, ShieldCheck, FileCode, Layers, Plus } from 'lucide-react';
 import { uploadArtworkFile, openArtworkViewer } from './services/supabaseStorageService';
-import { getAuthorisedSignature } from './services/settingsService';
+import { getAuthorisedSignature, getCompanyLogo } from './services/settingsService';
 import { safeLocalStorageSet } from './utils/safeStorage';
 import { FILM_DENSITIES } from './factoryStore';
 import { saveJobMasterToSupabase } from './services/supabaseDataService';
