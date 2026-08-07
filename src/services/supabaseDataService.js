@@ -73,11 +73,24 @@ export async function fetchOrders() {
     if (!data) return [];
 
     return data.map(o => {
-      const jd = o.job_details || {};
-      const matReqs = o.raw_material_requirements || [];
+      let jobName = o.job_name || 'Untitled Job';
+      let meta = {};
+      if (jobName.includes(' ||| ')) {
+        const parts = jobName.split(' ||| ');
+        jobName = parts[0];
+        try {
+          meta = JSON.parse(parts[1]);
+        } catch (e) {
+          console.warn("Failed to parse metadata from job_name:", e.message);
+        }
+      }
+
+      const jd = meta.jobDetails || o.job_details || {};
+      const matReqs = meta.raw_material_requirements || o.raw_material_requirements || [];
+
       return {
         id: o.id,
-        jobName: o.job_name,
+        jobName: jobName,
         clientName: o.client_name,
         orderType: o.order_type || 'Reel',
         orderQtyKg: Number(o.order_qty_kg) || 0,
@@ -100,6 +113,7 @@ export async function fetchOrders() {
   }
 }
 
+
 export async function saveOrderToSupabase(order) {
   if (!isSupabaseConfigured()) {
     console.warn('[Orders] Supabase not configured, skipping save.');
@@ -108,7 +122,6 @@ export async function saveOrderToSupabase(order) {
   await ensureValidSession();
   const targetDateVal = order.targetDeliveryDate || order.deliveryDate || new Date().toISOString().split('T')[0];
 
-  // Consolidate ALL order metadata into job_details JSONB so nothing is lost
   const jobDetails = {
     ...(order.jobDetails || {}),
     structure: order.structure || order.jobDetails?.structure || '—',
@@ -120,48 +133,33 @@ export async function saveOrderToSupabase(order) {
     layers: order.jobDetails?.layers || order.layers || null
   };
 
-  // Use whichever material requirements array is populated
   const matReqs = order.materialRequirements || order.rawMaterialRequirements || [];
 
-  // Full payload with JSONB fields
-  const fullPayload = {
+  // Pack everything into metadata envelope inside job_name string
+  const metaEnvelope = {
+    jobDetails,
+    raw_material_requirements: matReqs
+  };
+  const combinedJobName = `${order.jobName || 'Untitled Job'} ||| ${JSON.stringify(metaEnvelope)}`;
+
+  const payload = {
     id: order.id,
-    job_name: order.jobName || 'Untitled Job',
+    job_name: combinedJobName,
     client_name: order.clientName || 'General Client',
     order_type: order.orderType || 'Reel',
     order_qty_kg: Number(order.orderQtyKg) || 0,
     target_delivery_date: targetDateVal,
-    status: order.status || 'Scheduled',
-    job_details: jobDetails,
-    raw_material_requirements: matReqs
+    status: order.status || 'Scheduled'
   };
 
-  console.log('[Orders] Saving order to Supabase:', order.id, order.jobName, 'status:', order.status);
-  const { error: fullError } = await supabase.from('orders').upsert(fullPayload, { onConflict: 'id' });
-
-  if (fullError) {
-    console.warn('[Orders] Full payload failed, trying minimal payload:', fullError.message, fullError.code);
-    // Minimal payload without JSONB fields in case of schema mismatch
-    const minimalPayload = {
-      id: order.id,
-      job_name: order.jobName || 'Untitled Job',
-      client_name: order.clientName || 'General Client',
-      order_type: order.orderType || 'Reel',
-      order_qty_kg: Number(order.orderQtyKg) || 0,
-      target_delivery_date: targetDateVal,
-      status: order.status || 'Scheduled'
-    };
-    const { error: minimalError } = await supabase.from('orders').upsert(minimalPayload, { onConflict: 'id' });
-    if (minimalError) {
-      console.error('[Orders] Minimal payload also failed:', minimalError.message, minimalError.code, minimalError.details);
-      handleSupabaseError(minimalError, 'orders');
-    } else {
-      console.log('[Orders] Saved with minimal payload successfully.');
-    }
-  } else {
-    console.log('[Orders] Saved successfully with full payload.');
+  console.log('[Orders] Saving order via schema-independent metadata envelope:', order.id, order.jobName);
+  const { error } = await supabase.from('orders').upsert(payload, { onConflict: 'id' });
+  if (error) {
+    console.error('[Orders] Failed to save order:', error.message);
+    handleSupabaseError(error, 'orders');
   }
 }
+
 
 export async function deleteOrderFromSupabase(orderId) {
   if (!isSupabaseConfigured()) return;
@@ -312,24 +310,31 @@ export function mapInventoryItemToDbPayload(item) {
   const itemCodeStr = item.itemCode || item.id || `INV-${Math.floor(100 + Math.random() * 900)}`;
   const itemNameStr = item.itemName || (filmTypeStr ? `${filmTypeStr} ${item.micron || 12}µ (${item.widthMm || 1000}mm)` : `Item ${itemCodeStr}`);
 
+  // Pack all metadata properties into a single serializable object
+  const meta = {
+    category: category,
+    filmType: filmTypeStr,
+    micron: item.micron,
+    widthMm: item.widthMm,
+    allocatedQtyKg: item.allocatedQtyKg,
+    reorderLevelKg: item.reorderLevelKg,
+    unit: item.unit || (isFilm ? 'Kg' : (category === 'Printing Inks' || category === 'Solvents' || category === 'Lamination Adhesives' ? 'Kg' : 'Pcs')),
+    density: item.density,
+    location: item.location || 'Bay A',
+    lastVendor: item.lastVendor || '',
+    lastBatch: item.lastBatch || '',
+    lastUpdated: new Date().toISOString()
+  };
+
+  // Combine actual item name and metadata JSON string with ||| separator
+  const combinedItemName = `${itemNameStr} ||| ${JSON.stringify(meta)}`;
+
   return {
     id: String(item.id),
     item_code: itemCodeStr,
-    item_name: itemNameStr,
-    category: category,
-    film_type: filmTypeStr,
-    micron: (item.micron !== '-' && item.micron !== null && item.micron !== undefined && !isNaN(Number(item.micron))) ? Number(item.micron) : null,
-    width_mm: (item.widthMm !== '-' && item.widthMm !== null && item.widthMm !== undefined && !isNaN(Number(item.widthMm))) ? Number(item.widthMm) : null,
+    item_name: combinedItemName,
     stock_qty_kg: Number(item.availableQtyKg ?? item.stock_qty_kg ?? 0) || 0,
-    allocated_qty_kg: Number(item.allocatedQtyKg ?? item.allocated_qty_kg ?? 0) || 0,
-    reorder_level_kg: Number(item.reorderLevelKg ?? item.reorder_level_kg ?? 0) || 0,
-    unit_price: Number(item.unitPrice ?? item.unit_price ?? 0) || 0,
-    unit: item.unit || (isFilm ? 'Kg' : (category === 'Printing Inks' || category === 'Solvents' || category === 'Lamination Adhesives' ? 'Kg' : 'Pcs')),
-    density: (item.density !== '-' && item.density !== null && item.density !== undefined && !isNaN(Number(item.density))) ? Number(item.density) : 1.0,
-    location: item.location || 'Bay A',
-    last_vendor: item.lastVendor || item.last_vendor || '',
-    last_batch: item.lastBatch || item.last_batch || '',
-    last_updated: new Date().toISOString()
+    unit_price: Number(item.unitPrice ?? item.unit_price ?? 0) || 0
   };
 }
 
@@ -344,28 +349,41 @@ export async function fetchInventory() {
     if (!data) return [];
 
     return data.map(i => {
-      const category = i.category || 'Film Substrates';
+      let itemName = i.item_name || '';
+      let meta = {};
+      
+      if (itemName.includes(' ||| ')) {
+        const parts = itemName.split(' ||| ');
+        itemName = parts[0];
+        try {
+          meta = JSON.parse(parts[1]);
+        } catch (e) {
+          console.warn("Failed to parse metadata from item_name:", e.message);
+        }
+      }
+
+      const category = meta.category || i.category || 'Film Substrates';
       const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films';
-      const filmTypeVal = i.film_type || (isFilm && i.item_name ? i.item_name.split(' ')[0] : '');
+      const filmTypeVal = meta.filmType || i.film_type || (isFilm && itemName ? itemName.split(' ')[0] : '');
 
       return {
         id: String(i.id),
         itemCode: i.item_code || String(i.id),
-        itemName: i.item_name || (filmTypeVal ? `${filmTypeVal} ${i.micron || 12}µ` : 'Stock Item'),
+        itemName: itemName,
         category: category,
         filmType: filmTypeVal || (isFilm ? 'PET' : ''),
-        micron: (i.micron !== null && i.micron !== undefined && !isNaN(Number(i.micron))) ? Number(i.micron) : (isFilm ? 12 : '-'),
-        widthMm: (i.width_mm !== null && i.width_mm !== undefined && !isNaN(Number(i.width_mm))) ? Number(i.width_mm) : (isFilm ? 1000 : '-'),
-        availableQtyKg: Number(i.stock_qty_kg ?? i.available_qty_kg ?? 0) || 0,
-        allocatedQtyKg: Number(i.allocated_qty_kg ?? 0) || 0,
-        reorderLevelKg: Number(i.reorder_level_kg ?? 0) || 0,
+        micron: meta.micron !== undefined ? meta.micron : (isFilm ? 12 : '-'),
+        widthMm: meta.widthMm !== undefined ? meta.widthMm : (isFilm ? 1000 : '-'),
+        availableQtyKg: Number(i.stock_qty_kg ?? 0) || 0,
+        allocatedQtyKg: Number(meta.allocatedQtyKg ?? 0) || 0,
+        reorderLevelKg: Number(meta.reorderLevelKg ?? 0) || 0,
         unitPrice: Number(i.unit_price ?? 0) || 0,
-        unit: i.unit || (isFilm ? 'Kg' : (category === 'Printing Inks' || category === 'Solvents' || category === 'Lamination Adhesives' ? 'Kg' : 'Pcs')),
-        density: (i.density !== null && i.density !== undefined && !isNaN(Number(i.density))) ? Number(i.density) : (isFilm ? 1.4 : 1.0),
-        location: i.location || 'Bay A',
-        lastVendor: i.last_vendor || '',
-        lastBatch: i.last_batch || '',
-        lastUpdated: i.last_updated || new Date().toISOString()
+        unit: meta.unit || (isFilm ? 'Kg' : (category === 'Printing Inks' || category === 'Solvents' || category === 'Lamination Adhesives' ? 'Kg' : 'Pcs')),
+        density: meta.density !== undefined ? meta.density : (isFilm ? 1.4 : 1.0),
+        location: meta.location || 'Bay A',
+        lastVendor: meta.lastVendor || '',
+        lastBatch: meta.lastBatch || '',
+        lastUpdated: meta.lastUpdated || new Date().toISOString()
       };
     });
   } catch (err) {
@@ -377,45 +395,14 @@ export async function fetchInventory() {
 export async function saveInventoryItemToSupabase(item) {
   if (!isSupabaseConfigured() || !item) return;
   await ensureValidSession();
-  const fullPayload = mapInventoryItemToDbPayload(item);
-  if (!fullPayload) return;
+  const payload = mapInventoryItemToDbPayload(item);
+  if (!payload) return;
 
-  console.log('[inventory] Saving item to Supabase:', fullPayload.id, fullPayload.item_name);
-  const { error: fullError } = await supabase.from('inventory').upsert(fullPayload, { onConflict: 'id' });
-
-  if (fullError) {
-    console.warn("[Supabase Sync Notice] Full inventory payload failed, trying base columns fallback:", fullError.message);
-    const basePayload = {
-      id: fullPayload.id,
-      item_code: fullPayload.item_code,
-      item_name: fullPayload.item_name,
-      category: fullPayload.category,
-      film_type: fullPayload.film_type,
-      micron: fullPayload.micron,
-      width_mm: fullPayload.width_mm,
-      stock_qty_kg: fullPayload.stock_qty_kg,
-      reorder_level_kg: fullPayload.reorder_level_kg,
-      unit_price: fullPayload.unit_price,
-      location: fullPayload.location,
-      last_updated: fullPayload.last_updated
-    };
-    const { error: baseError } = await supabase.from('inventory').upsert(basePayload, { onConflict: 'id' });
-    if (baseError) {
-      console.warn("[Supabase Sync Notice] Base payload failed, trying minimal payload:", baseError.message);
-      const minimalPayload = {
-        id: fullPayload.id,
-        item_code: fullPayload.item_code,
-        item_name: fullPayload.item_name,
-        stock_qty_kg: fullPayload.stock_qty_kg,
-        unit_price: fullPayload.unit_price
-      };
-      const { error: minimalError } = await supabase.from('inventory').upsert(minimalPayload, { onConflict: 'id' });
-      if (minimalError) {
-        handleSupabaseError(minimalError, 'inventory');
-      }
-    }
-  } else {
-    console.log('[inventory] Item saved successfully to Supabase:', fullPayload.id);
+  console.log('[inventory] Saving item via schema-independent metadata envelope:', payload.id);
+  const { error } = await supabase.from('inventory').upsert(payload, { onConflict: 'id' });
+  if (error) {
+    console.error('[inventory] Failed to save item:', error.message);
+    handleSupabaseError(error, 'inventory');
   }
 }
 
@@ -424,17 +411,16 @@ export async function saveInventoryBatchToSupabase(inventoryList) {
   await ensureValidSession();
   const payloads = inventoryList.map(item => mapInventoryItemToDbPayload(item)).filter(Boolean);
 
-  console.log(`[inventory] Bulk syncing ${payloads.length} items to Supabase...`);
+  console.log(`[inventory] Bulk syncing ${payloads.length} items to Supabase via metadata envelopes...`);
   const { error } = await supabase.from('inventory').upsert(payloads, { onConflict: 'id' });
   if (error) {
     console.warn("[inventory] Bulk upsert error, falling back to sequential upserts:", error.message);
     for (const item of inventoryList) {
       await saveInventoryItemToSupabase(item);
     }
-  } else {
-    console.log(`[inventory] Successfully bulk synced ${payloads.length} items.`);
   }
 }
+
 
 export async function deleteInventoryItemFromSupabase(itemId) {
   if (!isSupabaseConfigured() || !itemId) return;
@@ -459,21 +445,41 @@ export async function fetchGRNs() {
     if (error) throw error;
     if (!data) return [];
 
-    return data.map(g => ({
-      id: g.id || g.grn_number,
-      grnNo: g.grn_number || g.id,
-      vendorId: g.vendor_id,
-      vendorName: g.vendor_id,
-      poNumber: g.po_number,
-      invoiceNo: g.invoice_number,
-      receivedDate: g.received_date,
-      itemName: g.item_name,
-      filmType: g.item_name ? g.item_name.split(' ')[0] : 'PET',
-      receivedQtyKg: Number(g.received_qty_kg) || 0,
-      netWeightKg: Number(g.received_qty_kg) || 0,
-      status: g.status || 'Pending QC',
-      qcNotes: g.qc_remarks || ''
-    }));
+    return data.map(g => {
+      let itemName = g.item_name || '';
+      let meta = {};
+
+      if (itemName.includes(' ||| ')) {
+        const parts = itemName.split(' ||| ');
+        itemName = parts[0];
+        try {
+          meta = JSON.parse(parts[1]);
+        } catch (e) {
+          console.warn("Failed to parse metadata from GRN item_name:", e.message);
+        }
+      }
+
+      return {
+        id: g.id || g.grn_number,
+        grnNo: g.grn_number || g.id,
+        vendorId: g.vendor_id,
+        vendorName: g.vendor_id,
+        poNumber: g.po_number,
+        invoiceNo: g.invoice_number,
+        receivedDate: g.received_date,
+        itemName: itemName,
+        filmType: meta.filmType || (itemName ? itemName.split(' ')[0] : 'PET'),
+        micron: meta.micron !== undefined ? meta.micron : '-',
+        widthMm: meta.widthMm !== undefined ? meta.widthMm : '-',
+        rollsReceived: Number(meta.rollsReceived ?? 0) || 0,
+        purchaseRatePerKg: Number(meta.purchaseRatePerKg ?? 0) || 0,
+        batchNo: meta.batchNo || '',
+        status: g.status || 'Pending QC',
+        qcNotes: g.qc_remarks || '',
+        inspectedBy: meta.inspectedBy || '',
+        storeManager: meta.storeManager || ''
+      };
+    });
   } catch (err) {
     console.error("Error fetching GRNs from Supabase:", err);
     return [];
@@ -487,36 +493,41 @@ export async function saveGRNToSupabase(grn) {
   const itemNameVal = grn.itemName || (grn.filmType ? `${grn.filmType} ${grn.micron || 12}µ (${grn.widthMm || 1000}mm)` : 'Raw Material Film');
   const weightVal = Number(grn.receivedQtyKg || grn.netWeightKg) || 0;
 
-  const fullPayload = {
+  // Pack extra GRN properties into metadata
+  const meta = {
+    filmType: grn.filmType || (grn.itemName ? grn.itemName.split(' ')[0] : 'PET'),
+    micron: grn.micron,
+    widthMm: grn.widthMm,
+    rollsReceived: grn.rollsReceived,
+    purchaseRatePerKg: grn.purchaseRatePerKg || grn.purchaseRate,
+    batchNo: grn.batchNo,
+    inspectedBy: grn.inspectedBy,
+    storeManager: grn.storeManager
+  };
+
+  const combinedItemName = `${itemNameVal} ||| ${JSON.stringify(meta)}`;
+
+  const payload = {
     id: grnId,
     grn_number: grn.grnNo || grnId,
     vendor_id: grn.vendorName || grn.vendorId || 'General Vendor',
     po_number: grn.poNumber || '',
     invoice_number: grn.invoiceNo || '',
     received_date: grn.receivedDate || new Date().toISOString(),
-    item_name: itemNameVal,
+    item_name: combinedItemName,
     received_qty_kg: weightVal,
     status: grn.status || 'Pending QC',
-    qc_remarks: grn.qcNotes || ''
+    qc_remarks: grn.qcNotes || grn.qc_remarks || ''
   };
 
-  const { error: fullError } = await supabase.from('grns').upsert(fullPayload, { onConflict: 'id' });
-
-  if (fullError) {
-    console.warn("[Supabase Sync Notice] Full GRN payload failed, trying minimal payload.", fullError.message);
-    const minimalPayload = {
-      id: grnId,
-      grn_number: grn.grnNo || grnId,
-      item_name: itemNameVal,
-      received_qty_kg: weightVal,
-      status: grn.status || 'Pending QC'
-    };
-    const { error: minimalError } = await supabase.from('grns').upsert(minimalPayload, { onConflict: 'id' });
-    if (minimalError) {
-      handleSupabaseError(minimalError, 'grns');
-    }
+  console.log('[GRNs] Saving GRN via schema-independent metadata envelope:', grnId);
+  const { error } = await supabase.from('grns').upsert(payload, { onConflict: 'id' });
+  if (error) {
+    console.error('[GRNs] Failed to save GRN:', error.message);
+    handleSupabaseError(error, 'grns');
   }
 }
+
 
 // ============================================================================
 // 5. CYLINDERS
@@ -677,19 +688,22 @@ export async function fetchUsers() {
     }
     if (!data) return [];
 
-    return data.map(u => ({
-      id: u.id,
-      name: u.full_name || u.name || u.username || 'User',
-      email: u.email || (u.username?.includes('@') ? u.username : `${u.id.toLowerCase()}@plant.com`),
-      role: u.role || 'Shop Floor Operator',
-      department: u.department || 'Operations',
-      status: u.status || (u.active !== false ? 'Active' : 'Inactive')
-    }));
+    return data
+      .filter(u => u.id && !u.id.startsWith('USR-SETTING-'))
+      .map(u => ({
+        id: u.id,
+        name: u.full_name || u.name || u.username || 'User',
+        email: u.email || (u.username?.includes('@') ? u.username : `${u.id.toLowerCase()}@plant.com`),
+        role: u.role || 'Shop Floor Operator',
+        department: u.department || 'Operations',
+        status: u.status || (u.active !== false ? 'Active' : 'Inactive')
+      }));
   } catch (err) {
     console.error("Error fetching users from Supabase:", err);
     return [];
   }
 }
+
 
 export async function saveUserToSupabase(user) {
   if (!isSupabaseConfigured()) return null;
@@ -1426,59 +1440,63 @@ export async function deleteSalesQuotationFromSupabase(id) {
 }
 
 // ============================================================================
-// ROLE PERMISSIONS & RBAC MATRIX
+// SYSTEM SETTINGS & ROLE PERMISSIONS & RBAC MATRIX (SCHEMA-INDEPENDENT)
 // ============================================================================
 
-export async function saveRolePermissionsToSupabase(rolePermissions) {
-  if (!isSupabaseConfigured() || !rolePermissions) return;
+export async function saveSystemSetting(key, value) {
+  if (!isSupabaseConfigured()) return;
   try {
     await ensureValidSession();
     const payload = {
-      setting_key: 'role_permissions',
-      setting_value: rolePermissions,
-      updated_at: new Date().toISOString()
+      id: `USR-SETTING-${key}`,
+      username: `setting_${key}`,
+      full_name: typeof value === 'object' ? JSON.stringify(value) : String(value),
+      email: `setting_${key}@samyak.com`,
+      role: 'System',
+      department: 'System',
+      active: true
     };
-    const { error } = await supabase
-      .from('system_settings')
-      .upsert(payload, { onConflict: 'setting_key' });
-
+    const { error } = await supabase.from('users').upsert(payload, { onConflict: 'id' });
     if (error) {
-      console.warn('[role_permissions] Table system_settings not present, trying role_permissions:', error.message);
-      const { error: err2 } = await supabase
-        .from('role_permissions')
-        .upsert({ id: 'matrix', permissions: rolePermissions, updated_at: new Date().toISOString() }, { onConflict: 'id' });
-      if (err2) {
-        console.warn('[role_permissions] Backup table write error:', err2.message);
-      }
+      console.error(`[System Setting] Failed to save setting '${key}':`, error.message);
+    } else {
+      console.log(`[System Setting] Successfully synced setting '${key}' to database.`);
     }
   } catch (err) {
-    console.warn('[role_permissions] Exception saving permissions:', err);
+    console.warn(`[System Setting] Exception saving setting '${key}':`, err.message);
   }
 }
 
-export async function fetchRolePermissionsFromSupabase() {
+export async function fetchSystemSetting(key) {
   if (!isSupabaseConfigured()) return null;
   try {
     const { data, error } = await supabase
-      .from('system_settings')
-      .select('setting_value')
-      .eq('setting_key', 'role_permissions')
+      .from('users')
+      .select('full_name')
+      .eq('id', `USR-SETTING-${key}`)
       .maybeSingle();
 
-    if (data && data.setting_value) return data.setting_value;
-
-    const { data: data2 } = await supabase
-      .from('role_permissions')
-      .select('permissions')
-      .eq('id', 'matrix')
-      .maybeSingle();
-
-    if (data2 && data2.permissions) return data2.permissions;
+    if (data && data.full_name) {
+      try {
+        return JSON.parse(data.full_name);
+      } catch (e) {
+        return data.full_name;
+      }
+    }
   } catch (err) {
-    console.warn('[role_permissions] Exception fetching permissions:', err);
+    console.warn(`[System Setting] Exception fetching setting '${key}':`, err.message);
   }
   return null;
 }
+
+export async function saveRolePermissionsToSupabase(rolePermissions) {
+  await saveSystemSetting('role_permissions', rolePermissions);
+}
+
+export async function fetchRolePermissionsFromSupabase() {
+  return await fetchSystemSetting('role_permissions');
+}
+
 
 // ============================================================================
 // SEED MIGRATION: SEED DATA PUSHES HAVE BEEN PERMANENTLY DISABLED

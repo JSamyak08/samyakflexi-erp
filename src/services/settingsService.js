@@ -9,6 +9,8 @@ const PREFIX_STORAGE_KEY = 'samyak_doc_prefixes';
 const TERMS_STORAGE_KEY = 'samyak_doc_terms';
 
 import { compressImageDataUrl, safeLocalStorageSet } from '../utils/safeStorage';
+import { saveSystemSetting } from './supabaseDataService';
+
 
 /**
  * Get saved company logo (base64 or default path /samyak-logo.png)
@@ -29,8 +31,10 @@ export async function saveCompanyLogo(base64String) {
     if (base64String) {
       const compressed = await compressImageDataUrl(base64String, 600, 0.7);
       safeLocalStorageSet(LOGO_STORAGE_KEY, compressed);
+      await saveSystemSetting('company_logo', compressed);
     } else {
       localStorage.removeItem(LOGO_STORAGE_KEY);
+      await saveSystemSetting('company_logo', '');
     }
   } catch (e) {
     console.error("Failed to save logo", e);
@@ -43,10 +47,12 @@ export async function saveCompanyLogo(base64String) {
 export function clearCompanyLogo() {
   try {
     localStorage.removeItem(LOGO_STORAGE_KEY);
+    saveSystemSetting('company_logo', '').catch(() => {});
   } catch (e) {
     console.error("Failed to clear logo", e);
   }
 }
+
 
 
 export const DEFAULT_PREFIXES = {
@@ -97,8 +103,10 @@ export async function saveAuthorisedSignature(base64String) {
     if (base64String) {
       const compressed = await compressImageDataUrl(base64String, 500, 0.7);
       safeLocalStorageSet(SIGNATURE_STORAGE_KEY, compressed);
+      await saveSystemSetting('auth_signature', compressed);
     } else {
       localStorage.removeItem(SIGNATURE_STORAGE_KEY);
+      await saveSystemSetting('auth_signature', '');
     }
   } catch (e) {
     console.error("Failed to save signature", e);
@@ -111,10 +119,12 @@ export async function saveAuthorisedSignature(base64String) {
 export function clearAuthorisedSignature() {
   try {
     localStorage.removeItem(SIGNATURE_STORAGE_KEY);
+    saveSystemSetting('auth_signature', '').catch(() => {});
   } catch (e) {
     console.error("Failed to clear signature", e);
   }
 }
+
 
 /**
  * Get document prefix configuration
@@ -134,10 +144,12 @@ export function getDocumentPrefixes() {
 export function saveDocumentPrefixes(prefixConfig) {
   try {
     localStorage.setItem(PREFIX_STORAGE_KEY, JSON.stringify(prefixConfig));
+    saveSystemSetting('doc_prefixes', prefixConfig).catch(() => {});
   } catch (e) {
     console.error("Failed to save document prefixes", e);
   }
 }
+
 
 /**
  * Get document terms & conditions configuration
@@ -166,10 +178,12 @@ export function getDocumentTerms() {
 export function saveDocumentTerms(termsConfig) {
   try {
     localStorage.setItem(TERMS_STORAGE_KEY, JSON.stringify(termsConfig));
+    saveSystemSetting('doc_terms', termsConfig).catch(() => {});
   } catch (e) {
     console.error("Failed to save document terms", e);
   }
 }
+
 
 /**
  * Generate formatted document reference number

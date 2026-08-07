@@ -70,7 +70,8 @@ import {
   fetchProductionSchedules, saveProductionScheduleToSupabase, deleteProductionScheduleFromSupabase,
   fetchClients, saveClientToSupabase, deleteClientFromSupabase,
   fetchJobMasters, saveJobMasterToSupabase, deleteJobMasterFromSupabase,
-  fetchRolePermissionsFromSupabase, saveRolePermissionsToSupabase
+  fetchRolePermissionsFromSupabase, saveRolePermissionsToSupabase,
+  fetchSystemSetting, saveSystemSetting
 } from './services/supabaseDataService';
 import JobMasterDirectory from './components/JobMasterDirectory';
 import { initialInventoryRolls, initialDispatchShipments } from './factoryStore';
@@ -239,10 +240,13 @@ export default function App() {
   const [jobMasters, setJobMasters] = useState(() => stripDummyRecords(loadLocalState('job_masters', [])));
   const [selectedJobMasterForPunch, setSelectedJobMasterForPunch] = useState(null);
   const [rolePermissions, setRolePermissions] = useState(() => loadLocalState('role_permissions', DEFAULT_ROLE_PERMISSIONS));
+  const [indents, setIndents] = useState(() => stripDummyRecords(loadLocalState('material_indents', [])));
+  const [machineIssues, setMachineIssues] = useState(() => stripDummyRecords(loadLocalState('machine_issues', [])));
+  const [consumables, setConsumables] = useState(() => stripDummyRecords(loadLocalState('consumables', [])));
 
 
   const activeUsersList = useMemo(() => {
-    const list = [...(users || []), ...initialUsers];
+    const list = [...(users || []).filter(u => u.id && !u.id.startsWith('USR-SETTING-')), ...initialUsers];
     const map = new Map();
     list.forEach(u => {
       if (u && (u.id || u.email) && !map.has(u.id || u.email)) {
@@ -288,6 +292,10 @@ export default function App() {
   useEffect(() => { safeLocalStorageSet('samyak_erp_clients', clients); }, [clients]);
   useEffect(() => { safeLocalStorageSet('samyak_erp_job_masters', jobMasters); }, [jobMasters]);
   useEffect(() => { safeLocalStorageSet('samyak_erp_role_permissions', rolePermissions); }, [rolePermissions]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_material_indents', indents); }, [indents]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_machine_issues', machineIssues); }, [machineIssues]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_consumables', consumables); }, [consumables]);
+
 
   // Asynchronously hydrate any full artwork assets from IndexedDB if needed on mount
   useEffect(() => {
@@ -365,7 +373,29 @@ export default function App() {
         fetchSafe(fetchRolePermissionsFromSupabase, 'Role Permissions')
       ]);
 
+      // Fetch schema-independent system settings & lifted store states
+      const [
+        dbPrefixes, dbTerms, dbLogo, dbSignature,
+        dbIndents, dbIssues, dbConsumables
+      ] = await Promise.all([
+        fetchSafe(() => fetchSystemSetting('doc_prefixes'), 'Prefixes'),
+        fetchSafe(() => fetchSystemSetting('doc_terms'), 'Terms'),
+        fetchSafe(() => fetchSystemSetting('company_logo'), 'Logo'),
+        fetchSafe(() => fetchSystemSetting('auth_signature'), 'Signature'),
+        fetchSafe(() => fetchSystemSetting('material_indents'), 'Indents'),
+        fetchSafe(() => fetchSystemSetting('machine_issues'), 'Machine Issues'),
+        fetchSafe(() => fetchSystemSetting('consumables'), 'Consumables')
+      ]);
+
       if (!isMounted) return;
+
+      if (dbPrefixes) safeLocalStorageSet('samyak_doc_prefixes', dbPrefixes);
+      if (dbTerms) safeLocalStorageSet('samyak_doc_terms', dbTerms);
+      if (dbLogo) safeLocalStorageSet('samyak_company_logo', dbLogo);
+      if (dbSignature) safeLocalStorageSet('samyak_authorised_signature', dbSignature);
+      if (dbIndents && Array.isArray(dbIndents)) setIndents(dbIndents);
+      if (dbIssues && Array.isArray(dbIssues)) setMachineIssues(dbIssues);
+      if (dbConsumables && Array.isArray(dbConsumables)) setConsumables(dbConsumables);
 
       if (Array.isArray(supaOrders) && supaOrders.length > 0) setOrders(supaOrders);
       if (Array.isArray(supaVendors) && supaVendors.length > 0) setVendors(supaVendors);
@@ -404,6 +434,7 @@ export default function App() {
     loadSupabaseData();
     return () => { isMounted = false; };
   }, [isSupaActive, isAuthReady, isAuthenticated]);
+
 
   // Realtime subscription for public.inventory to keep live stock and dashboard metrics 100% in sync
   useEffect(() => {
@@ -691,12 +722,40 @@ export default function App() {
     }));
   };
 
+  const handleUpdateConsumables = async (newConsumables) => {
+    setConsumables(newConsumables);
+    try {
+      await saveSystemSetting('consumables', newConsumables);
+    } catch (err) {
+      console.warn("[Sync Notice] Consumables updated locally. Supabase notice:", err);
+    }
+  };
+
+  const handleUpdateIndents = async (newIndents) => {
+    setIndents(newIndents);
+    try {
+      await saveSystemSetting('material_indents', newIndents);
+    } catch (err) {
+      console.warn("[Sync Notice] Indents updated locally. Supabase notice:", err);
+    }
+  };
+
+  const handleUpdateMachineIssues = async (newIssues) => {
+    setMachineIssues(newIssues);
+    try {
+      await saveSystemSetting('machine_issues', newIssues);
+    } catch (err) {
+      console.warn("[Sync Notice] Machine issues updated locally. Supabase notice:", err);
+    }
+  };
+
   // Handlers for state updates (Preserves local state + async Supabase sync)
   const handleAddOrder = async (newOrder) => {
     setOrders(prev => [newOrder, ...prev.filter(o => o.id !== newOrder.id)]);
     try {
       await saveOrderToSupabase(newOrder);
     } catch (err) {
+
       console.warn("[Sync Notice] Order saved locally. Supabase notice:", err);
     }
   };
@@ -1576,6 +1635,12 @@ export default function App() {
             vendors={vendors}
             orders={orders}
             machines={machines}
+            consumables={consumables}
+            onUpdateConsumables={handleUpdateConsumables}
+            indents={indents}
+            onUpdateIndents={handleUpdateIndents}
+            machineIssues={machineIssues}
+            onUpdateMachineIssues={handleUpdateMachineIssues}
           />
         )}
 

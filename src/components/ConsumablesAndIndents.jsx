@@ -55,246 +55,10 @@ export const PLANT_MACHINES = [
 ];
 
 // Initial Consumables & Spare Parts Store Items
-export const initialConsumablesStore = [
-  {
-    id: "CS-101",
-    itemCode: "CON-BLD-001",
-    name: "Doctor Blades (0.15mm x 30mm MDC Steel)",
-    category: "Doctor Blades & Wipers",
-    unit: "Meters",
-    currentStock: 20,
-    minReserve: 50,
-    unitCost: 450,
-    assignedMachine: "Printing Press 1 (8-Color Rotogravure)",
-    location: "Bin A-04",
-    lastRestocked: "2026-07-20"
-  },
-  {
-    id: "CS-102",
-    itemCode: "CON-CHM-012",
-    name: "Ethyl Acetate Solvent (99.8% Purity)",
-    category: "Chemicals & Solvents",
-    unit: "Litres",
-    currentStock: 150,
-    minReserve: 500,
-    unitCost: 85,
-    assignedMachine: "All Printing Presses",
-    location: "Chemical Store Drum Rack 2",
-    lastRestocked: "2026-07-15"
-  },
-  {
-    id: "CS-103",
-    itemCode: "CON-INK-005",
-    name: "Siegwerk NC Rotogravure Cyan Ink",
-    category: "Inks & Toners",
-    unit: "Kg",
-    currentStock: 40,
-    minReserve: 100,
-    unitCost: 420,
-    assignedMachine: "Printing Press 1 (8-Color Rotogravure)",
-    location: "Ink Room Rack 1",
-    lastRestocked: "2026-07-18"
-  },
-  {
-    id: "CS-104",
-    itemCode: "CON-INK-001",
-    name: "Siegwerk NC White Backing Ink",
-    category: "Inks & Toners",
-    unit: "Kg",
-    currentStock: 520,
-    minReserve: 300,
-    unitCost: 280,
-    assignedMachine: "Printing Press 2 (6-Color Rotogravure)",
-    location: "Ink Room Rack 1",
-    lastRestocked: "2026-07-25"
-  },
-  {
-    id: "CS-105",
-    itemCode: "CON-ADH-001",
-    name: "Henkel Solventless Adhesive Hardener (Comp A)",
-    category: "Adhesives & Hardener",
-    unit: "Kg",
-    currentStock: 80,
-    minReserve: 200,
-    unitCost: 310,
-    assignedMachine: "Solventless Laminator (Nordmeccanica)",
-    location: "Lamination Store Rack 3",
-    lastRestocked: "2026-07-10"
-  },
-  {
-    id: "CS-106",
-    itemCode: "CON-ADH-002",
-    name: "Henkel Solventless Adhesive Resin (Comp B)",
-    category: "Adhesives & Hardener",
-    unit: "Kg",
-    currentStock: 350,
-    minReserve: 200,
-    unitCost: 270,
-    assignedMachine: "Solventless Laminator (Nordmeccanica)",
-    location: "Lamination Store Rack 3",
-    lastRestocked: "2026-07-28"
-  },
-  {
-    id: "CS-107",
-    itemCode: "CON-ROL-003",
-    name: "PU Impression Rubber Roller (75 Shore A)",
-    category: "Rollers & Sleeves",
-    unit: "Pcs",
-    currentStock: 2,
-    minReserve: 4,
-    unitCost: 4500,
-    assignedMachine: "Printing Press 1 (8-Color Rotogravure)",
-    location: "Roller Storage Cabinet",
-    lastRestocked: "2026-06-15"
-  },
-  {
-    id: "CS-108",
-    itemCode: "CON-CHM-008",
-    name: "Ceramic Anilox Deep Gel Cleaner",
-    category: "Chemicals & Solvents",
-    unit: "Litres",
-    currentStock: 8,
-    minReserve: 25,
-    unitCost: 650,
-    assignedMachine: "Printing Press 1 (8-Color Rotogravure)",
-    location: "Chemical Store Shelf 1",
-    lastRestocked: "2026-07-02"
-  },
-  {
-    id: "CS-109",
-    itemCode: "CON-SLV-004",
-    name: "Corona Treater Dielectric Silicon Sleeve",
-    category: "Rollers & Sleeves",
-    unit: "Pcs",
-    currentStock: 8,
-    minReserve: 6,
-    unitCost: 3200,
-    assignedMachine: "Combi Laminator (Solvent-based / Solventless)",
-    location: "Electrical Spares Rack",
-    lastRestocked: "2026-07-22"
-  },
-  {
-    id: "CS-110",
-    itemCode: "CON-TAP-002",
-    name: "Teflon Heat Sealing Tape (0.13mm x 50mm)",
-    category: "Tapes & Consumables",
-    unit: "Rolls",
-    currentStock: 12,
-    minReserve: 30,
-    unitCost: 180,
-    assignedMachine: "Center-Seal Pouch Machine 1",
-    location: "Pouching Spare Bin C-2",
-    lastRestocked: "2026-07-12"
-  },
-  {
-    id: "CS-111",
-    itemCode: "CON-LUB-001",
-    name: "Kluber High-Temp Bearing Grease (1kg)",
-    category: "Lubricants & Oils",
-    unit: "Kg",
-    currentStock: 3,
-    minReserve: 10,
-    unitCost: 1400,
-    assignedMachine: "High-Speed Slitting Machine 1",
-    location: "Maintenance Workshop Cabinet",
-    lastRestocked: "2026-06-30"
-  },
-  {
-    id: "CS-112",
-    itemCode: "CON-PPE-001",
-    name: "Nitrile Chemical Safety Gloves (Box of 50)",
-    category: "Safety Gear (PPE)",
-    unit: "Boxes",
-    currentStock: 120,
-    minReserve: 100,
-    unitCost: 350,
-    assignedMachine: "General Factory & Store",
-    location: "Safety Equipment Locker",
-    lastRestocked: "2026-07-26"
-  }
-];
-
-// Initial Material Indents Requisitions
-export const initialMaterialIndents = [
-  {
-    id: "IND-2026-001",
-    indentNo: "IND-2026-001",
-    date: "2026-08-02",
-    priority: "Urgent",
-    department: "Printing Department",
-    raisedBy: "Rajesh Sharma (Plant Manager)",
-    userRole: "Plant Manager",
-    status: "Pending Approval",
-    remarks: "Critical shortage of Ethyl Acetate & Doctor Blades for upcoming Britannia Bourbon 250g production batch.",
-    items: [
-      { id: 1, name: "Ethyl Acetate Solvent (99.8% Purity)", category: "Chemicals & Solvents", unit: "Litres", reqQty: 400, targetMachine: "Printing Press 1 (8-Color Rotogravure)", currentStock: 150, minReserve: 500 },
-      { id: 2, name: "Doctor Blades (0.15mm x 30mm MDC Steel)", category: "Doctor Blades & Wipers", unit: "Meters", reqQty: 60, targetMachine: "Printing Press 1 (8-Color Rotogravure)", currentStock: 20, minReserve: 50 }
-    ]
-  },
-  {
-    id: "IND-2026-002",
-    indentNo: "IND-2026-002",
-    date: "2026-07-30",
-    priority: "High",
-    department: "Lamination & Store",
-    raisedBy: "Virendra Singh (Store Manager)",
-    userRole: "Store Manager",
-    status: "Approved",
-    remarks: "Restock Henkel Solventless Hardener Component A for P&G Ariel 1kg pouch laminate production.",
-    items: [
-      { id: 3, name: "Henkel Solventless Adhesive Hardener (Comp A)", category: "Adhesives & Hardener", unit: "Kg", reqQty: 250, targetMachine: "Solventless Laminator (Nordmeccanica)", currentStock: 80, minReserve: 200 }
-    ]
-  },
-  {
-    id: "IND-2026-003",
-    indentNo: "IND-2026-003",
-    date: "2026-07-28",
-    priority: "Normal",
-    department: "Maintenance Workshop",
-    raisedBy: "Sunil Verma (Maintenance Head)",
-    userRole: "Plant Manager",
-    status: "Issued to Machine",
-    remarks: "High temp grease and Teflon tape requisition for quarterly slitting line preventive maintenance.",
-    items: [
-      { id: 4, name: "Kluber High-Temp Bearing Grease (1kg)", category: "Lubricants & Oils", unit: "Kg", reqQty: 10, targetMachine: "High-Speed Slitting Machine 1", currentStock: 3, minReserve: 10 },
-      { id: 5, name: "Teflon Heat Sealing Tape (0.13mm x 50mm)", category: "Tapes & Consumables", unit: "Rolls", reqQty: 20, targetMachine: "Center-Seal Pouch Machine 1", currentStock: 12, minReserve: 30 }
-    ]
-  }
-];
-
-// Initial Machine Issue Audit Trail Records
-export const initialMachineIssues = [
-  {
-    id: "ISS-2026-081",
-    issueNo: "ISS-2026-081",
-    date: "2026-08-03",
-    indentNo: "IND-2026-003",
-    itemName: "Teflon Heat Sealing Tape (0.13mm x 50mm)",
-    category: "Tapes & Consumables",
-    qtyIssued: 10,
-    unit: "Rolls",
-    targetMachine: "Center-Seal Pouch Machine 1",
-    issuedBy: "Virendra Singh (Store Manager)",
-    machineOperator: "Ramesh Kumar (Pouching Operator)",
-    shift: "Morning Shift (A)",
-    remarks: "Issued for routine jaw PTFE tape replacement"
-  },
-  {
-    id: "ISS-2026-080",
-    issueNo: "ISS-2026-080",
-    date: "2026-08-01",
-    indentNo: "IND-2026-002",
-    itemName: "Henkel Solventless Adhesive Hardener (Comp A)",
-    category: "Adhesives & Hardener",
-    qtyIssued: 40,
-    unit: "Kg",
-    targetMachine: "Solventless Laminator (Nordmeccanica)",
-    issuedBy: "Virendra Singh (Store Manager)",
-    machineOperator: "Anil Sahu (Laminator Operator)",
-    shift: "Night Shift (C)",
-    remarks: "Issued 1 drum for Ariel Matic pouch laminating run"
-  }
-];
+// PRODUCTION: No seed data. All consumable, indent, and issue records come from Supabase.
+export const initialConsumablesStore = [];
+export const initialMaterialIndents = [];
+export const initialMachineIssues = [];
 
 export default function ConsumablesAndIndents({ 
   userRole = "Admin",
@@ -302,7 +66,13 @@ export default function ConsumablesAndIndents({
   vendors = [],
   orders = [],
   onAddPO,
-  machines = []     // Live printing machines from Printing Presses & Machine Settings
+  machines = [],     // Live printing machines from Printing Presses & Machine Settings
+  consumables = [],
+  onUpdateConsumables,
+  indents = [],
+  onUpdateIndents,
+  machineIssues = [],
+  onUpdateMachineIssues
 }) {
   // Navigation Sub-Tabs: "store" (Consumables Store) | "indents" (Material Indents & Requisitions) | "issues" (Machine Issue Audit Log)
   const [activeSubTab, setActiveSubTab] = useState("store");
@@ -344,10 +114,37 @@ export default function ConsumablesAndIndents({
     ];
   }, [machines]);
 
-  // ─── State Datasets ──────────────────────────────────────────────────────────
-  const [consumables, setConsumables] = useState(initialConsumablesStore);
-  const [indents, setIndents] = useState(initialMaterialIndents);
-  const [machineIssues, setMachineIssues] = useState(initialMachineIssues);
+  // ─── Lifted State Setters (Write-through to DB) ───────────────────────────────
+  const setConsumables = (val) => {
+    if (onUpdateConsumables) {
+      if (typeof val === 'function') {
+        onUpdateConsumables(val(consumables));
+      } else {
+        onUpdateConsumables(val);
+      }
+    }
+  };
+
+  const setIndents = (val) => {
+    if (onUpdateIndents) {
+      if (typeof val === 'function') {
+        onUpdateIndents(val(indents));
+      } else {
+        onUpdateIndents(val);
+      }
+    }
+  };
+
+  const setMachineIssues = (val) => {
+    if (onUpdateMachineIssues) {
+      if (typeof val === 'function') {
+        onUpdateMachineIssues(val(machineIssues));
+      } else {
+        onUpdateMachineIssues(val);
+      }
+    }
+  };
+
 
   // Filters State for Consumables Store
   const [searchTerm, setSearchTerm] = useState("");
