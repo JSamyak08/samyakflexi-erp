@@ -77,8 +77,62 @@ import { initialInventoryRolls, initialDispatchShipments } from './factoryStore'
 import { safeLocalStorageSet, safeLocalStorageGet, initSafeStorage, idbGet } from './utils/safeStorage';
 import './index.css';
 
+// ============================================================================
+// PERMANENT BOOT-TIME PURGE: Strip all legacy seed/dummy data from storage.
+// These IDs were seeded during development and must NEVER appear in production.
+// ============================================================================
+const DUMMY_ORDER_IDS = new Set([
+  'ORD-2026-089', 'ORD-2026-090', 'ORD-2026-091', 'ORD-2026-092',
+  'ORD-2026-648'
+]);
+const DUMMY_PROD_IDS = new Set([
+  'PROD-REC-089', 'PROD-REC-090', 'PROD-REC-091', 'PROD-REC-092'
+]);
+
+/**
+ * Strips dummy seed records from a data array by matching known IDs.
+ */
+function stripDummyRecords(arr, idFields = ['id', 'orderId', 'jobId']) {
+  if (!Array.isArray(arr)) return arr;
+  return arr.filter(item => {
+    if (!item || typeof item !== 'object') return true;
+    for (const field of idFields) {
+      const val = item[field];
+      if (val && (DUMMY_ORDER_IDS.has(val) || DUMMY_PROD_IDS.has(val))) return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * One-time boot cleanup: purges dummy IDs from localStorage and flags IDB keys for cleaning.
+ * Runs synchronously before any React state initializes.
+ */
+(function purgeDummyDataFromStorage() {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  const keysToClean = [
+    'samyak_erp_orders',
+    'samyak_erp_production_records',
+    'samyak_erp_production_schedules'
+  ];
+  for (const key of keysToClean) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) continue;
+      const cleaned = stripDummyRecords(parsed);
+      if (cleaned.length !== parsed.length) {
+        localStorage.setItem(key, JSON.stringify(cleaned));
+        console.log(`[Boot Purge] Removed ${parsed.length - cleaned.length} dummy record(s) from ${key}`);
+      }
+    } catch (e) { /* ignore */ }
+  }
+})();
+
 // Immediately sanitize localStorage on boot
 initSafeStorage();
+
 
 export default function App() {
   const [activeTab, setActiveTab] = useState(() => getTabFromUrl());
@@ -133,18 +187,19 @@ export default function App() {
   const [isAuthReady, setIsAuthReady] = useState(!isSupaConfigured);
 
   // Hydrate initial state safely from localStorage (if present), or empty array default.
-  const [orders, setOrders] = useState(() => loadLocalState('orders', []));
+  // stripDummyRecords ensures no legacy seed data from development ever enters production state.
+  const [orders, setOrders] = useState(() => stripDummyRecords(loadLocalState('orders', [])));
   const [vendors, setVendors] = useState(() => loadLocalState('vendors', []));
   const [inventory, setInventory] = useState(() => loadLocalState('inventory', []));
   const [grns, setGrns] = useState(() => loadLocalState('grns', []));
   const [users, setUsers] = useState(() => loadLocalState('users', initialUsers));
   const [jobDataSheets, setJobDataSheets] = useState(() => loadLocalState('job_datasheets', []));
   const [cylinders, setCylinders] = useState(() => loadLocalState('cylinders', []));
-  const [productionRecords, setProductionRecords] = useState(() => loadLocalState('production_records', []));
+  const [productionRecords, setProductionRecords] = useState(() => stripDummyRecords(loadLocalState('production_records', []), ['id', 'orderId']));
   const [inventoryRolls, setInventoryRolls] = useState(() => loadLocalState('inventory_rolls', []));
   const [dispatchShipments, setDispatchShipments] = useState(() => loadLocalState('dispatch_shipments', []));
   const [machines, setMachines] = useState(() => loadLocalState('printing_machines', []));
-  const [schedules, setSchedules] = useState(() => loadLocalState('production_schedules', []));
+  const [schedules, setSchedules] = useState(() => stripDummyRecords(loadLocalState('production_schedules', []), ['id', 'orderId']));
   const [clients, setClients] = useState(() => loadLocalState('clients', []));
   const [jobMasters, setJobMasters] = useState(() => loadLocalState('job_masters', []));
   const [selectedJobMasterForPunch, setSelectedJobMasterForPunch] = useState(null);
@@ -205,7 +260,8 @@ export default function App() {
       try {
         const storedOrders = await idbGet('samyak_erp_orders');
         if (isMounted && storedOrders && Array.isArray(storedOrders) && storedOrders.length > 0) {
-          setOrders(storedOrders);
+          const clean = stripDummyRecords(storedOrders);
+          if (clean.length > 0) setOrders(clean);
         }
       } catch (err) {
         console.warn('Idb hydration error:', err);

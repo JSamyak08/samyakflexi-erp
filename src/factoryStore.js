@@ -466,97 +466,9 @@ export const initialVendors = [
 ];
 
 /**
- * Seed Orders Data (including Delay Tracking)
+ * PRODUCTION: No seed orders. All orders come from Supabase or are created via Job Punching.
  */
-export const initialOrders = [
-  {
-    id: "ORD-2026-089",
-    jobName: "Britannia Bourbon 250g Packaging",
-    clientName: "Britannia Industries Ltd",
-    printWidthMm: 1000,
-    repeatLengthMm: 400,
-    orderDate: "2026-07-10",
-    targetDeliveryDate: "2026-07-22", // Past target date -> DELAYED!
-    orderQtyKg: 2500,
-    orderType: "Pouching",
-    status: "Delayed",
-    delayReason: "Raw material METPET 12mic delivery delayed by vendor",
-    structure: "12 PET / 12 METPET / 35 Natural LD GP Film",
-    poIssued: true,
-    poNumber: "PO-2026-042",
-    materialRequirements: [
-      { id: "REQ-089-1", filmType: "PET", micron: 12, widthMm: 1000, qtyKg: 385.5, preferredVendor: "FlexiPoly Films Ltd", poIssued: true, poNumber: "PO-2026-042" },
-      { id: "REQ-089-2", filmType: "METPET", micron: 12, widthMm: 1000, qtyKg: 388.0, preferredVendor: "FlexiPoly Films Ltd", poIssued: false, poNumber: "" },
-      { id: "REQ-089-3", filmType: "Natural LD GP Film", micron: 35, widthMm: 1005, qtyKg: 810.0, preferredVendor: "Malwa Extrusions Pvt Ltd", poIssued: true, poNumber: "PO-2026-042" },
-      { id: "REQ-089-4", filmType: "Liquid Inks", micron: "-", widthMm: "-", qtyKg: 52.0, preferredVendor: "Siegwerk Inks Ltd", poIssued: true, poNumber: "PO-2026-042" },
-      { id: "REQ-089-5", filmType: "Solvent-less Adhesive", micron: "-", widthMm: "-", qtyKg: 46.5, preferredVendor: "Siegwerk Inks Ltd", poIssued: true, poNumber: "PO-2026-042" }
-    ]
-  },
-  {
-    id: "ORD-2026-090",
-    jobName: "P&G Ariel Matic 1kg Pouch",
-    clientName: "Procter & Gamble",
-    printWidthMm: 1050,
-    repeatLengthMm: 420,
-    orderDate: "2026-07-18",
-    targetDeliveryDate: "2026-07-28",
-    orderQtyKg: 1500,
-    orderType: "Pouching",
-    status: "In Production",
-    delayReason: "",
-    structure: "12 PET / 12 METPET / 40 Milky LD GP Film",
-    poIssued: true,
-    poNumber: "PO-2026-045",
-    materialRequirements: [
-      { id: "REQ-090-1", filmType: "PET", micron: 12, widthMm: 1000, qtyKg: 230.0, preferredVendor: "FlexiPoly Films Ltd", poIssued: true, poNumber: "PO-2026-045" },
-      { id: "REQ-090-2", filmType: "METPET", micron: 12, widthMm: 1000, qtyKg: 232.0, preferredVendor: "FlexiPoly Films Ltd", poIssued: true, poNumber: "PO-2026-045" },
-      { id: "REQ-090-3", filmType: "Milky LD GP Film", micron: 40, widthMm: 1005, qtyKg: 560.0, preferredVendor: "Malwa Extrusions Pvt Ltd", poIssued: true, poNumber: "PO-2026-045" },
-      { id: "REQ-090-4", filmType: "Liquid Inks", micron: "-", widthMm: "-", qtyKg: 31.0, preferredVendor: "Siegwerk Inks Ltd", poIssued: true, poNumber: "PO-2026-045" }
-    ]
-  },
-  {
-    id: "ORD-2026-091",
-    jobName: "Surf Excel 500ml Refill Pack",
-    clientName: "Hindustan Unilever",
-    printWidthMm: 920,
-    repeatLengthMm: 450,
-    orderDate: "2026-07-12",
-    targetDeliveryDate: "2026-07-20", // Past target date -> DELAYED!
-    orderQtyKg: 450,
-    orderType: "Pouching",
-    status: "Delayed",
-    delayReason: "QC Rejected LDPE film batch due to gauge variation",
-    structure: "12 PET / 50 Natural LD Metallocene Film",
-    poIssued: false,
-    poNumber: "",
-    materialRequirements: [
-      { id: "REQ-091-1", filmType: "PET", micron: 12, widthMm: 900, qtyKg: 95.0, preferredVendor: "FlexiPoly Films Ltd", poIssued: false, poNumber: "" },
-      { id: "REQ-091-2", filmType: "Natural LD Metallocene Film", micron: 50, widthMm: 905, qtyKg: 310.0, preferredVendor: "Malwa Extrusions Pvt Ltd", poIssued: false, poNumber: "" },
-      { id: "REQ-091-3", filmType: "Liquid Inks", micron: "-", widthMm: "-", qtyKg: 12.0, preferredVendor: "Siegwerk Inks Ltd", poIssued: false, poNumber: "" }
-    ]
-  },
-  {
-    id: "ORD-2026-092",
-    jobName: "Sanchi Milk 500ml Film",
-    clientName: "MP State Cooperative Dairy",
-    printWidthMm: 985,
-    repeatLengthMm: 380,
-    orderDate: "2026-07-22",
-    targetDeliveryDate: "2026-07-30",
-    orderQtyKg: 3000,
-    orderType: "Reel",
-    status: "Material Required",
-    delayReason: "",
-    structure: "50 Milky Atta (High Dart) Film / 50 Natural LD GP Film",
-    poIssued: false,
-    poNumber: "",
-    materialRequirements: [
-      { id: "REQ-092-1", filmType: "Milky Atta (High Dart) Film", micron: 50, widthMm: 985, qtyKg: 1450.0, preferredVendor: "Malwa Extrusions Pvt Ltd", poIssued: false, poNumber: "" },
-      { id: "REQ-092-2", filmType: "Natural LD GP Film", micron: 50, widthMm: 985, qtyKg: 1450.0, preferredVendor: "Malwa Extrusions Pvt Ltd", poIssued: false, poNumber: "" },
-      { id: "REQ-092-3", filmType: "Liquid Inks", micron: "-", widthMm: "-", qtyKg: 55.0, preferredVendor: "Siegwerk Inks Ltd", poIssued: false, poNumber: "" }
-    ]
-  }
-];
+export const initialOrders = [];
 
 /**
  * Seed Inventory Stock Data
@@ -848,55 +760,10 @@ export const initialGRNs = [
 ];
 
 /**
- * Seed Job Production Records & Material Consumption Trackers
+ * PRODUCTION: No seed production records. All records are entered by Plant Manager via the UI.
  */
-export const initialProductionRecords = [
-  {
-    id: "REC-2026-089",
-    orderId: "ORD-2026-089",
-    jobName: "Britannia Bourbon 250g Packaging",
-    clientName: "Britannia Industries Ltd",
-    dateFilled: "2026-07-24",
-    materialsList: [
-      { id: "MAT-1", filmType: "PET", micron: 12, widthMm: 1000, issueQtyKg: 400.0, returnQtyKg: 14.5, netConsumedQtyKg: 385.5, unitPricePerKg: 125.00, totalMaterialCost: 48187.50 },
-      { id: "MAT-2", filmType: "METPET", micron: 12, widthMm: 1000, issueQtyKg: 400.0, returnQtyKg: 12.0, netConsumedQtyKg: 388.0, unitPricePerKg: 140.00, totalMaterialCost: 54320.00 },
-      { id: "MAT-3", filmType: "Natural LD GP Film", micron: 35, widthMm: 1005, issueQtyKg: 850.0, returnQtyKg: 40.0, netConsumedQtyKg: 810.0, unitPricePerKg: 115.00, totalMaterialCost: 93150.00 },
-      { id: "MAT-4", filmType: "Liquid Inks & Solvents", micron: "-", widthMm: "-", issueQtyKg: 55.0, returnQtyKg: 3.0, netConsumedQtyKg: 52.0, unitPricePerKg: 1500.00, totalMaterialCost: 78000.00 },
-      { id: "MAT-5", filmType: "Solvent-less Adhesive", micron: "-", widthMm: "-", issueQtyKg: 48.0, returnQtyKg: 1.5, netConsumedQtyKg: 46.5, unitPricePerKg: 270.00, totalMaterialCost: 12555.00 }
-    ],
-    totalProductionQtyKg: 1635.5,
-    totalMaterialCostRs: 286212.50,
-    processingCostRs: 45000.00,
-    finalProductionCostRs: 331212.50,
-    status: "Filled by Plant Manager", // Options: 'Draft', 'Filled by Plant Manager', 'Approved by Admin'
-    filledBy: "Rajiv Malhotra (Plant Manager)",
-    approvedBy: "",
-    approvalDate: "",
-    notes: "Lamination trial completed cleanly. 67.5 kg net trimming waste within tolerance."
-  },
-  {
-    id: "REC-2026-090",
-    orderId: "ORD-2026-090",
-    jobName: "P&G Ariel Matic 1kg Pouch",
-    clientName: "Procter & Gamble",
-    dateFilled: "2026-07-22",
-    materialsList: [
-      { id: "MAT-1", filmType: "PET", micron: 12, widthMm: 1000, issueQtyKg: 240.0, returnQtyKg: 10.0, netConsumedQtyKg: 230.0, unitPricePerKg: 125.00, totalMaterialCost: 28750.00 },
-      { id: "MAT-2", filmType: "METPET", micron: 12, widthMm: 1000, issueQtyKg: 245.0, returnQtyKg: 13.0, netConsumedQtyKg: 232.0, unitPricePerKg: 140.00, totalMaterialCost: 32480.00 },
-      { id: "MAT-3", filmType: "Milky LD GP Film", micron: 40, widthMm: 1005, issueQtyKg: 580.0, returnQtyKg: 20.0, netConsumedQtyKg: 560.0, unitPricePerKg: 120.00, totalMaterialCost: 67200.00 },
-      { id: "MAT-4", filmType: "Liquid Inks & Solvents", micron: "-", widthMm: "-", issueQtyKg: 33.0, returnQtyKg: 2.0, netConsumedQtyKg: 31.0, unitPricePerKg: 1500.00, totalMaterialCost: 46500.00 }
-    ],
-    totalProductionQtyKg: 1053.0,
-    totalMaterialCostRs: 174930.00,
-    processingCostRs: 28000.00,
-    finalProductionCostRs: 202930.00,
-    status: "Approved by Admin", // Fully Approved!
-    filledBy: "Rajiv Malhotra (Plant Manager)",
-    approvedBy: "Samyak Jain (Admin)",
-    approvalDate: "2026-07-23 04:15 PM",
-    notes: "QC approved and ready for dispatch."
-  }
-];
+export const initialProductionRecords = [];
+
 
 /**
  * Seed Stock Ledger Physical Reconciliation Adjustments
