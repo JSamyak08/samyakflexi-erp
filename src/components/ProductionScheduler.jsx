@@ -417,7 +417,7 @@ export default function ProductionScheduler({
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div className="scrollable-tabs-container">
           <button 
             className={`btn-secondary ${activeTab === 'gantt' ? 'active' : ''}`}
             onClick={() => setActiveTab('gantt')}

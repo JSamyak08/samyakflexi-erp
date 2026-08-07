@@ -172,11 +172,14 @@ initSafeStorage();
 
 export default function App() {
   const [activeTab, setActiveTab] = useState(() => getTabFromUrl());
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleTabChange = (tabKey) => {
     setActiveTab(tabKey);
     pushSlugState(tabKey);
+    setIsMobileMenuOpen(false);
   };
+
 
   // Sync state when user uses browser Back / Forward buttons
   useEffect(() => {
@@ -1022,8 +1025,28 @@ export default function App() {
 
   return (
     <div className="app-container">
+      {/* Mobile Top Header Bar */}
+      <div className="mobile-header-bar">
+        <button className="hamburger-btn" onClick={() => setIsMobileMenuOpen(true)}>
+          <svg style={{ width: '24px', height: '24px', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }} viewBox="0 0 24 24">
+            <line x1="4" y1="12" x2="20" y2="12"></line>
+            <line x1="4" y1="6" x2="20" y2="6"></line>
+            <line x1="4" y1="18" x2="20" y2="18"></line>
+          </svg>
+        </button>
+        <div className="mobile-header-title">
+          <img src="/samyak-logo.png" alt="Samyak Logo" style={{ height: '24px', objectFit: 'contain' }} />
+          <span style={{ fontSize: '0.9rem', letterSpacing: '0.05em' }}>Samyak Flexi-ERP</span>
+        </div>
+        <div style={{ width: '38px' }} />
+      </div>
+
+      {isMobileMenuOpen && (
+        <div className="sidebar-backdrop" onClick={() => setIsMobileMenuOpen(false)} />
+      )}
+
       {/* Sidebar Navigation */}
-      <div className="sidebar glass-panel">
+      <div className={`sidebar glass-panel ${isMobileMenuOpen ? 'open' : ''}`}>
         <div>
           <div style={{ marginBottom: '12px' }}>
             <img src="/samyak-logo.png" alt="Samyak International Ltd" style={{ height: '40px', objectFit: 'contain' }} />

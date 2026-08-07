@@ -548,7 +548,7 @@ END $$;`;
       )}
 
       {/* Subtab Navigation Pills */}
-      <div style={{ display: 'flex', gap: '10px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+      <div className="scrollable-tabs-container" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
         <button
           onClick={() => setActiveSubTab('status')}
           className={`tab-pill ${activeSubTab === 'status' ? 'active' : ''}`}

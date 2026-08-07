@@ -643,7 +643,7 @@ export default function ConsumablesAndIndents({
       </div>
 
       {/* Main Tab Navigation Buttons */}
-      <div style={{ display: 'flex', gap: '12px', borderBottom: '2px solid var(--border-color)', paddingBottom: '4px' }}>
+      <div className="scrollable-tabs-container">
         <button 
           className={`btn-secondary ${activeSubTab === 'store' ? 'active' : ''}`}
           style={{ 
@@ -848,7 +848,8 @@ export default function ConsumablesAndIndents({
                 <button className="btn-secondary" onClick={resetStoreFilters}>Reset All Filters</button>
               </div>
             ) : (
-              <table className="data-table">
+              <div className="table-responsive">
+                <table className="data-table">
                 <thead>
                   <tr>
                     <th>Item Code</th>
@@ -940,7 +941,8 @@ export default function ConsumablesAndIndents({
                   })}
                 </tbody>
               </table>
-            )}
+            </div>
+          )}
           </div>
         </div>
       )}
@@ -981,7 +983,8 @@ export default function ConsumablesAndIndents({
                 <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>Click below to raise a new requisition indent.</p>
               </div>
             ) : (
-              <table className="data-table">
+              <div className="table-responsive">
+                <table className="data-table">
                 <thead>
                   <tr>
                     <th>Indent No</th>
@@ -1111,7 +1114,8 @@ export default function ConsumablesAndIndents({
                   })}
                 </tbody>
               </table>
-            )}
+            </div>
+          )}
           </div>
         </div>
       )}
@@ -1129,7 +1133,8 @@ export default function ConsumablesAndIndents({
           </div>
 
           <div className="glass-panel" style={{ padding: '20px' }}>
-            <table className="data-table">
+            <div className="table-responsive">
+              <table className="data-table">
               <thead>
                 <tr>
                   <th>Issue No</th>
@@ -1165,6 +1170,7 @@ export default function ConsumablesAndIndents({
               </tbody>
             </table>
           </div>
+        </div>
         </div>
       )}
 

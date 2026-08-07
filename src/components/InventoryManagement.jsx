@@ -989,7 +989,7 @@ export default function InventoryManagement({
       <div className="glass-panel" style={{ padding: '24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
           {/* Sub Tab Pills */}
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <div className="scrollable-tabs-container" style={{ flex: 1 }}>
             <button className={`tab-pill ${activeTab === 'stock' ? 'active' : ''}`} onClick={() => setActiveTab('stock')}>
               <Package size={16} /> Stock Register ({inventory.length})
             </button>
