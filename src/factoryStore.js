@@ -306,25 +306,8 @@ export const initialUsers = [
 /**
  * Seed Shop Floor Actual Job Data Sheets
  */
-export const initialJobDataSheets = [
-  {
-    jobId: "ORD-2026-089",
-    jobName: "Britannia Bourbon 250g Packaging",
-    clientName: "Britannia Industries Ltd",
-    sellingPricePerKg: 245, // ₹ 245 / kg
-    completionDate: "2026-07-22",
-    actualFilmConsumedKg: {
-      "Layer 1 (PET 12µ)": 385.5,
-      "Layer 2 (METPET 12µ)": 388.0,
-      "Layer 3 (Natural GP LD 35µ)": 810.0
-    },
-    actualInkConsumedKg: 52.0,      // Liquid ink
-    actualSolventsConsumedKg: 18.5, // Ethyl Acetate / IPA
-    actualAdhesiveConsumedKg: 46.5, // Solventless adhesive
-    actualScrapWastageKg: 125.0,    // Shop floor trim wastage
-    operatorNotes: "Smooth run on Rotogravure Line 2. Corona level maintained at 44 dynes."
-  }
-];
+// PRODUCTION: No seed job datasheets.
+export const initialJobDataSheets = [];
 
 /**
  * Pre-Costing vs Post-Costing Variance & Profitability Calculator
@@ -410,60 +393,8 @@ export const calculatePreVsPostCosting = (preCosting = {}, actualData = {}) => {
 /**
  * Seed Vendors Data
  */
-export const initialVendors = [
-  {
-    id: "VEND-001",
-    companyName: "FlexiPoly Films Ltd",
-    gstin: "23AABCF1234H1Z5",
-    address: "Plot 42, Sector 3, Pithampur Industrial Area, Indore, MP 454775",
-    contactPerson: "Rajesh Sharma",
-    phone: "+91 98260 11223",
-    email: "orders@flexipoly.com",
-    bankDetails: "HDFC Bank | A/C: 502000123456 | IFSC: HDFC0000123",
-    materials: ["PET", "METPET"],
-    paymentTerms: "30 Days Net",
-    rating: 4.8
-  },
-  {
-    id: "VEND-002",
-    companyName: "Malwa Extrusions Pvt Ltd",
-    gstin: "23AAACM5678J1Z9",
-    address: "Sanwer Road Industrial Area, Sector E, Indore, MP 452015",
-    contactPerson: "Vikram Patel",
-    phone: "+91 94250 99887",
-    email: "sales@malwapoly.com",
-    bankDetails: "ICICI Bank | A/C: 004205009988 | IFSC: ICIC0000042",
-    materials: ["LDPE", "Natural GP LD", "White LD"],
-    paymentTerms: "15 Days Net",
-    rating: 4.6
-  },
-  {
-    id: "VEND-003",
-    companyName: "Cosmo Films India",
-    gstin: "27AAACC1122K1Z2",
-    address: "MIDC Waluj, Aurangabad, MH 431136",
-    contactPerson: "Ankit Verma",
-    phone: "+91 99231 44556",
-    email: "support@cosmofilms.com",
-    bankDetails: "State Bank of India | A/C: 3109887711 | IFSC: SBIN0001234",
-    materials: ["BOPP Natural", "Metalised BOPP", "Pearlised BOPP"],
-    paymentTerms: "45 Days Net",
-    rating: 4.9
-  },
-  {
-    id: "VEND-004",
-    companyName: "Siegwerk Inks Ltd",
-    gstin: "27AABCS9988F1Z1",
-    address: "Bhiwadi Industrial Estate, Rajasthan 301019",
-    contactPerson: "Sanjay Gupta",
-    phone: "+91 98112 33445",
-    email: "orders.india@siegwerk.com",
-    bankDetails: "Axis Bank | A/C: 9180200554433 | IFSC: UTIB0000189",
-    materials: ["Liquid Inks", "Solvents"],
-    paymentTerms: "30 Days Net",
-    rating: 4.9
-  }
-];
+// PRODUCTION: No seed vendors. All vendors come from Supabase.
+export const initialVendors = [];
 
 /**
  * PRODUCTION: No seed orders. All orders come from Supabase or are created via Job Punching.
@@ -473,291 +404,14 @@ export const initialOrders = [];
 /**
  * Seed Inventory Stock Data
  */
-export const initialInventory = [
-  {
-    id: "INV-001",
-    itemCode: "RAW-FLM-001",
-    itemName: "PET 12µ (1000mm Width)",
-    category: "Film Substrates",
-    filmType: "PET",
-    micron: 12,
-    widthMm: 1000,
-    unit: "Kg",
-    density: 1.40,
-    availableQtyKg: 3200,
-    allocatedQtyKg: 1500,
-    location: "Bay A - Rack 04",
-    reorderLevelKg: 1000,
-    lastVendor: "FlexiPoly Films Ltd",
-    lastBatch: "BATCH-PET-884"
-  },
-  {
-    id: "INV-002",
-    itemCode: "RAW-FLM-002",
-    itemName: "METPET 12µ (1000mm Width)",
-    category: "Film Substrates",
-    filmType: "METPET",
-    micron: 12,
-    widthMm: 1000,
-    unit: "Kg",
-    density: 1.40,
-    availableQtyKg: 450, // Low stock!
-    allocatedQtyKg: 400,
-    location: "Bay A - Rack 08",
-    reorderLevelKg: 1000,
-    lastVendor: "FlexiPoly Films Ltd",
-    lastBatch: "BATCH-MPET-312"
-  },
-  {
-    id: "INV-003",
-    itemCode: "RAW-FLM-003",
-    itemName: "Natural GP LD 35µ (1050mm Width)",
-    category: "Film Substrates",
-    filmType: "Natural GP LD",
-    micron: 35,
-    widthMm: 1050,
-    unit: "Kg",
-    density: 0.93,
-    availableQtyKg: 4200,
-    allocatedQtyKg: 2000,
-    location: "Bay B - Rack 01",
-    reorderLevelKg: 1500,
-    lastVendor: "Malwa Extrusions Pvt Ltd",
-    lastBatch: "BATCH-LD-9021"
-  },
-  {
-    id: "INV-004",
-    itemCode: "RAW-FLM-004",
-    itemName: "White LD 40µ (980mm Width)",
-    category: "Film Substrates",
-    filmType: "White LD",
-    micron: 40,
-    widthMm: 980,
-    unit: "Kg",
-    density: 0.93,
-    availableQtyKg: 2800,
-    allocatedQtyKg: 1200,
-    location: "Bay B - Rack 03",
-    reorderLevelKg: 1000,
-    lastVendor: "Malwa Extrusions Pvt Ltd",
-    lastBatch: "BATCH-WLD-441"
-  },
-  {
-    id: "INV-005",
-    itemCode: "RAW-FLM-005",
-    itemName: "Pearlised BOPP 20µ (800mm Width)",
-    category: "Film Substrates",
-    filmType: "Pearlised BOPP",
-    micron: 20,
-    widthMm: 800,
-    unit: "Kg",
-    density: 0.70,
-    availableQtyKg: 1800,
-    allocatedQtyKg: 500,
-    location: "Bay C - Rack 02",
-    reorderLevelKg: 800,
-    lastVendor: "Cosmo Films India",
-    lastBatch: "BATCH-PBOPP-71"
-  },
-  {
-    id: "INV-006",
-    itemCode: "CON-INK-001",
-    itemName: "Process Cyan Rotogravure Ink (Reverse)",
-    category: "Printing Inks & Toners",
-    filmType: "Liquid Inks",
-    micron: "-",
-    widthMm: "-",
-    unit: "Kg",
-    density: 1.0,
-    availableQtyKg: 450,
-    allocatedQtyKg: 100,
-    location: "Ink Kitchen Rack 02",
-    reorderLevelKg: 200,
-    lastVendor: "Siegwerk Inks Ltd",
-    lastBatch: "BATCH-INK-CY88"
-  },
-  {
-    id: "INV-007",
-    itemCode: "CON-CHM-012",
-    itemName: "Ethyl Acetate Solvent (99.8% Purity)",
-    category: "Chemicals & Solvents",
-    filmType: "Ethyl Acetate",
-    micron: "-",
-    widthMm: "-",
-    unit: "Litres",
-    density: 0.90,
-    availableQtyKg: 150, // Low stock!
-    allocatedQtyKg: 50,
-    location: "Solvent Storage Tank 01",
-    reorderLevelKg: 500,
-    lastVendor: "Siegwerk Inks Ltd",
-    lastBatch: "BATCH-SOLV-EA41"
-  },
-  {
-    id: "INV-008",
-    itemCode: "CON-ADH-003",
-    itemName: "Henkel Solventless Adhesive Hardener (Comp A)",
-    category: "Adhesives & Hardener",
-    filmType: "Solventless Adhesive",
-    micron: "-",
-    widthMm: "-",
-    unit: "Kg",
-    density: 1.1,
-    availableQtyKg: 80, // Low stock!
-    allocatedQtyKg: 30,
-    location: "Lamination Store Rack B",
-    reorderLevelKg: 200,
-    lastVendor: "Henkel Adhesives India",
-    lastBatch: "BATCH-ADH-HA90"
-  },
-  {
-    id: "INV-009",
-    itemCode: "CON-BLD-004",
-    itemName: "Doctor Blades (0.15mm x 30mm MDC Steel)",
-    category: "Doctor Blades & Wipers",
-    filmType: "MDC Steel Blade",
-    micron: "-",
-    widthMm: "30",
-    unit: "Meters",
-    density: 1.0,
-    availableQtyKg: 20, // Low stock!
-    allocatedQtyKg: 10,
-    location: "Printing Tooling Cabinet",
-    reorderLevelKg: 50,
-    lastVendor: "MDC Doctor Blades Ltd",
-    lastBatch: "BATCH-BLD-772"
-  },
-  {
-    id: "INV-010",
-    itemCode: "CON-SPR-088",
-    itemName: "Teflon Heat Seal Tape (25mm x 10m Roll)",
-    category: "Tapes & Consumables",
-    filmType: "PTFE Tape",
-    micron: "-",
-    widthMm: "25",
-    unit: "Rolls",
-    density: 1.0,
-    availableQtyKg: 8, // Low stock!
-    allocatedQtyKg: 2,
-    location: "Maintenance Spare Locker 03",
-    reorderLevelKg: 25,
-    lastVendor: "3M India Ltd",
-    lastBatch: "BATCH-TP-3M09"
-  },
-  {
-    id: "INV-011",
-    itemCode: "CON-PPE-001",
-    itemName: "Nitrile Chemical Safety Gloves (Box of 50)",
-    category: "Safety Gear (PPE)",
-    filmType: "Nitrile Gloves",
-    micron: "-",
-    widthMm: "-",
-    unit: "Boxes",
-    density: 1.0,
-    availableQtyKg: 120,
-    allocatedQtyKg: 20,
-    location: "Safety Locker 01",
-    reorderLevelKg: 100,
-    lastVendor: "Safety Shield India",
-    lastBatch: "BATCH-PPE-N99"
-  }
-];
+// PRODUCTION: No seed inventory. All stock comes from Supabase.
+export const initialInventory = [];
 
 /**
  * Seed GRN Data (Goods Receipt Notes)
  */
-export const initialGRNs = [
-  {
-    grnNo: "GRN-2026-104",
-    poNumber: "PO-2026-042",
-    vendorName: "FlexiPoly Films Ltd",
-    invoiceNo: "INV-FP-9904",
-    receivedDate: "2026-07-23 10:30 AM",
-    filmType: "PET",
-    micron: 12,
-    widthMm: 1000,
-    rollsReceived: 12,
-    netWeightKg: 1850,
-    purchaseRatePerKg: 125.00,
-    batchNo: "BATCH-PET-991",
-    status: "Approved", // Approved by QC
-    qcNotes: "Average gauge 12.1 mic. Dyne level 44 dynes/cm. Approved for production.",
-    inspectedBy: "Quality Inspector Ramesh Kumar",
-    storeManager: "Store Mgr Dilip Joshi"
-  },
-  {
-    grnNo: "GRN-2026-105",
-    poNumber: "PO-2026-045",
-    vendorName: "Malwa Extrusions Pvt Ltd",
-    invoiceNo: "INV-ME-3312",
-    receivedDate: "2026-07-24 09:15 AM",
-    filmType: "Natural GP LD",
-    micron: 35,
-    widthMm: 1050,
-    rollsReceived: 16,
-    netWeightKg: 2400,
-    purchaseRatePerKg: 115.00,
-    batchNo: "BATCH-LD-9982",
-    status: "Pending QC", // Awaiting QC
-    qcNotes: "",
-    inspectedBy: "",
-    storeManager: "Store Mgr Dilip Joshi"
-  },
-  {
-    grnNo: "GRN-2026-098",
-    poNumber: "PO-2026-035",
-    vendorName: "FlexiPoly Films Ltd",
-    invoiceNo: "INV-FP-9812",
-    receivedDate: "2026-07-15 02:45 PM",
-    filmType: "METPET",
-    micron: 12,
-    widthMm: 1000,
-    rollsReceived: 8,
-    netWeightKg: 1200,
-    purchaseRatePerKg: 140.00,
-    batchNo: "BATCH-MPET-312",
-    status: "Approved",
-    qcNotes: "Good metallisation optical density 2.4. Approved.",
-    inspectedBy: "Quality Inspector Ramesh Kumar",
-    storeManager: "Store Mgr Dilip Joshi"
-  },
-  {
-    grnNo: "GRN-2026-089",
-    poNumber: "PO-2026-028",
-    vendorName: "Malwa Extrusions Pvt Ltd",
-    invoiceNo: "INV-ME-3190",
-    receivedDate: "2026-07-08 11:00 AM",
-    filmType: "White LD",
-    micron: 40,
-    widthMm: 980,
-    rollsReceived: 20,
-    netWeightKg: 3000,
-    purchaseRatePerKg: 120.00,
-    batchNo: "BATCH-WLD-441",
-    status: "Approved",
-    qcNotes: "Opacity 85%, seal strength excellent.",
-    inspectedBy: "Quality Inspector Ramesh Kumar",
-    storeManager: "Store Mgr Dilip Joshi"
-  },
-  {
-    grnNo: "GRN-2026-072",
-    poNumber: "PO-2026-019",
-    vendorName: "Cosmo Films India",
-    invoiceNo: "INV-CF-7714",
-    receivedDate: "2026-06-28 04:20 PM",
-    filmType: "Pearlised BOPP",
-    micron: 20,
-    widthMm: 800,
-    rollsReceived: 14,
-    netWeightKg: 2100,
-    purchaseRatePerKg: 160.00,
-    batchNo: "BATCH-PBOPP-71",
-    status: "Approved",
-    qcNotes: "Density 0.70 g/cc verified. Corona treatment 40 dynes.",
-    inspectedBy: "Quality Inspector Ramesh Kumar",
-    storeManager: "Store Mgr Dilip Joshi"
-  }
-];
+// PRODUCTION: No seed GRNs. All GRNs come from Supabase.
+export const initialGRNs = [];
 
 /**
  * PRODUCTION: No seed production records. All records are entered by Plant Manager via the UI.
@@ -805,96 +459,14 @@ export const RAW_MATERIAL_CATEGORIES = {
 /**
  * Seed Barcoded Inventory Rolls & SFGs
  */
-export const initialInventoryRolls = [
-  {
-    barcodeId: "BC-20260724-001",
-    rollType: "RAW_MATERIAL",
-    itemId: "INV-001",
-    itemName: "PET Film 12µ (1000mm)",
-    category: "Film",
-    jobName: "",
-    orderId: "",
-    micron: 12,
-    widthMm: 1000,
-    inwardDatetime: "2026-07-24 10:30 AM",
-    vendorName: "SRF Limited",
-    invoiceNo: "INV-SRF-9912",
-    batchNo: "BATCH-PET-881A",
-    netWeightKg: 1450.0,
-    availableWeightKg: 1450.0,
-    inputBarcodeIds: [],
-    stationId: "SCALE_1_INWARD",
-    locationBay: "Bay A - Rack 1",
-    status: "In Stock"
-  },
-  {
-    barcodeId: "BC-20260724-002",
-    rollType: "RAW_MATERIAL",
-    itemId: "INV-002",
-    itemName: "METPET Film 12µ (1000mm)",
-    category: "Film",
-    jobName: "",
-    orderId: "",
-    micron: 12,
-    widthMm: 1000,
-    inwardDatetime: "2026-07-24 11:15 AM",
-    vendorName: "Jindal Poly Films",
-    invoiceNo: "INV-JPF-4410",
-    batchNo: "BATCH-METPET-902",
-    netWeightKg: 1200.0,
-    availableWeightKg: 1200.0,
-    inputBarcodeIds: [],
-    stationId: "SCALE_1_INWARD",
-    locationBay: "Bay A - Rack 2",
-    status: "In Stock"
-  },
-  {
-    barcodeId: "SFG-PRINT-20260724-001",
-    rollType: "SFG_PRINTED",
-    itemId: "SFG-001",
-    itemName: "Britannia Bourbon 250g Printed Reel",
-    category: "SFG",
-    jobName: "Britannia Bourbon 250g Packaging",
-    orderId: "ORD-2026-089",
-    micron: 12,
-    widthMm: 1000,
-    inwardDatetime: "2026-07-24 02:45 PM",
-    vendorName: "In-House Printing Press",
-    invoiceNo: "INT-JOB-89",
-    batchNo: "PRINT-LINE2-01",
-    netWeightKg: 385.5,
-    availableWeightKg: 385.5,
-    inputBarcodeIds: ["BC-20260724-001"],
-    stationId: "SCALE_2_PRINTING",
-    locationBay: "WIP Printing Bay B",
-    status: "In Stock"
-  }
-];
+// PRODUCTION: No seed inventory rolls.
+export const initialInventoryRolls = [];
 
 /**
  * Seed Dispatch Shipments & Packing Lists
  */
-export const initialDispatchShipments = [
-  {
-    dispatchId: "DSP-2026-012",
-    orderId: "ORD-2026-090",
-    jobName: "P&G Ariel Matic 1kg Pouch",
-    clientName: "Procter & Gamble India Ltd",
-    vehicleNo: "MP-09-HH-4491",
-    lrNo: "LR-99821-IND",
-    dispatchDate: "2026-07-24 05:30 PM",
-    totalRolls: 5,
-    totalNetWeightKg: 1050.0,
-    totalGrossWeightKg: 1072.5,
-    items: [
-      { rollNo: 1, barcodeId: "FG-DISP-20260724-01", substrateSpec: "PET 12µ / METPET 12µ / Milky LD 40µ", netWeightKg: 210.0, grossWeightKg: 214.5, coreSize: "3 inch" },
-      { rollNo: 2, barcodeId: "FG-DISP-20260724-02", substrateSpec: "PET 12µ / METPET 12µ / Milky LD 40µ", netWeightKg: 210.0, grossWeightKg: 214.5, coreSize: "3 inch" },
-      { rollNo: 3, barcodeId: "FG-DISP-20260724-03", substrateSpec: "PET 12µ / METPET 12µ / Milky LD 40µ", netWeightKg: 210.0, grossWeightKg: 214.5, coreSize: "3 inch" },
-      { rollNo: 4, barcodeId: "FG-DISP-20260724-04", substrateSpec: "PET 12µ / METPET 12µ / Milky LD 40µ", netWeightKg: 210.0, grossWeightKg: 214.5, coreSize: "3 inch" },
-      { rollNo: 5, barcodeId: "FG-DISP-20260724-05", substrateSpec: "PET 12µ / METPET 12µ / Milky LD 40µ", netWeightKg: 210.0, grossWeightKg: 214.5, coreSize: "3 inch" }
-    ]
-  }
-];
+// PRODUCTION: No seed dispatch shipments.
+export const initialDispatchShipments = [];
 
 /**
  * Generate Barcode ID string helper
@@ -913,20 +485,8 @@ export const generateVendorId = () => {
 /**
  * Initial Printing Machines Dataset
  */
-export const initialMachines = [
-  { id: "MAC-PRINT-01", name: "Rotogravure Press #1 (8-Color)", type: "Rotogravure", colors: 8, maxSpeedMpm: 250, maxWidthMm: 1200, status: "Active", operator: "Rajesh Sharma", location: "Bay 1 - Rotogravure Hall" },
-  { id: "MAC-PRINT-02", name: "Rotogravure Press #2 (10-Color)", type: "Rotogravure", colors: 10, maxSpeedMpm: 300, maxWidthMm: 1300, status: "Active", operator: "Virendra Singh", location: "Bay 2 - Rotogravure Hall" },
-  { id: "MAC-PRINT-03", name: "Flexographic Press #1 (6-Color)", type: "Flexographic", colors: 6, maxSpeedMpm: 200, maxWidthMm: 1000, status: "Active", operator: "Amit Patel", location: "Bay 3 - Flexo Hall" },
-  { id: "MAC-LAM-01", name: "Solventless Laminator (Nordmeccanica)", type: "Laminator", colors: 0, maxSpeedMpm: 250, maxWidthMm: 1300, status: "Active", operator: "Lamination Operator", location: "Bay 4 - Lamination Hall" },
-  { id: "MAC-LAM-02", name: "Combi Laminator (Solvent-based / Solventless)", type: "Laminator", colors: 0, maxSpeedMpm: 180, maxWidthMm: 1200, status: "Active", operator: "Lamination Operator", location: "Bay 5 - Lamination Hall" },
-  { id: "MAC-SLT-01", name: "High-Speed Slitting Machine 1", type: "Slitter", colors: 0, maxSpeedMpm: 400, maxWidthMm: 1300, status: "Active", operator: "Slitting Operator", location: "Bay 6 - Slitting Hall" },
-  { id: "MAC-SLT-02", name: "High-Speed Slitting Machine 2", type: "Slitter", colors: 0, maxSpeedMpm: 400, maxWidthMm: 1300, status: "Active", operator: "Slitting Operator", location: "Bay 6 - Slitting Hall" },
-  { id: "MAC-PCH-01", name: "Center-Seal Pouch Machine 1", type: "Pouching", colors: 0, maxSpeedMpm: 120, maxWidthMm: 600, status: "Active", operator: "Pouching Operator", location: "Bay 7 - Pouching Hall" },
-  { id: "MAC-PCH-02", name: "Three-Side Seal Pouch Machine 2", type: "Pouching", colors: 0, maxSpeedMpm: 100, maxWidthMm: 600, status: "Active", operator: "Pouching Operator", location: "Bay 7 - Pouching Hall" },
-  { id: "MAC-RWD-01", name: "Doctoring & Inspection Rewinder", type: "Rewinder", colors: 0, maxSpeedMpm: 300, maxWidthMm: 1300, status: "Active", operator: "QC Operator", location: "Bay 8 - QC & Inspection" },
-  { id: "MAC-WRK-01", name: "Maintenance & Utility Workshop", type: "Workshop", colors: 0, maxSpeedMpm: 0, maxWidthMm: 0, status: "Active", operator: "Maintenance Team", location: "Workshop Bay" },
-  { id: "MAC-STR-01", name: "General Factory & Store", type: "Store", colors: 0, maxSpeedMpm: 0, maxWidthMm: 0, status: "Active", operator: "Store Manager", location: "Main Store Room" }
-];
+// PRODUCTION: No seed machines. All machines come from Supabase.
+export const initialMachines = [];
 
 /**
  * Production Metrics & Time Accounting Engine for Printing Machines
@@ -998,207 +558,20 @@ export const calculatePrintingScheduleMetrics = ({
 /**
  * Initial Production Schedules Dataset for Printing Machines
  */
-export const initialProductionSchedules = [
-  {
-    id: "SCHED-2026-001",
-    orderId: "ORD-2026-089",
-    jobName: "Fortune Sunlite Oil 1L Pouch",
-    clientName: "Adani Wilmar",
-    machineId: "MAC-PRINT-01",
-    shift: "Day Shift", // "Day Shift" (08:00 - 20:00) or "Night Shift" (20:00 - 08:00)
-    scheduledDate: "2026-08-02",
-    startTime: "08:00",
-    orderQtyKg: 1000,
-    widthMm: 1000,
-    micron: 12,
-    filmType: "PET",
-    maxSpeedMpm: 250,
-    totalLengthMeters: 59523,
-    runTimeMins: 238,
-    rollChangeoverMins: 80,
-    jobChangeoverMins: 120,
-    totalDurationMins: 438,
-    endTime: "15:18",
-    status: "Scheduled",
-    priority: "Normal"
-  },
-  {
-    id: "SCHED-2026-002",
-    orderId: "ORD-2026-091",
-    jobName: "Surf Excel 500ml Refill Pack",
-    clientName: "Hindustan Unilever",
-    machineId: "MAC-PRINT-01",
-    shift: "Day Shift",
-    scheduledDate: "2026-08-02",
-    startTime: "15:30",
-    orderQtyKg: 450,
-    widthMm: 900,
-    micron: 12,
-    filmType: "PET",
-    maxSpeedMpm: 250,
-    totalLengthMeters: 29761,
-    runTimeMins: 119,
-    rollChangeoverMins: 40,
-    jobChangeoverMins: 60,
-    totalDurationMins: 219,
-    endTime: "19:09",
-    status: "In Progress",
-    priority: "HIGH PRIORITY - OVERDUE"
-  }
-];
+// PRODUCTION: No seed production schedules.
+export const initialProductionSchedules = [];
 
 /**
  * Initial Clients Dataset
  */
-export const initialClients = [
-  {
-    id: "CLI-2026-2710",
-    name: "Nyra Chocolates Pvt Ltd",
-    gstin: "23AAAFCN6172L1Z8",
-    address: "Plot No. 18, 19, Vikram Udyog Nagar, Palda, Indore MP",
-    paymentTerms: "15 Days Net",
-    contactPerson: "Management Office",
-    phone: "+91 98260 55443",
-    email: "info@nyrachocolates.com"
-  },
-  {
-    id: "CLI-101",
-    name: "Britannia Industries Ltd",
-    gstin: "23AAACB1234F1Z5",
-    address: "Plot 12, Pithampur Industrial Estate, Dhar, M.P. - 454775",
-    paymentTerms: "30 Days Credit",
-    contactPerson: "Rajesh Sharma",
-    phone: "+91 9826012345",
-    email: "procurement@britannia.co.in"
-  },
-  {
-    id: "CLI-102",
-    name: "Hindustan Unilever Ltd",
-    gstin: "27AAACH1111H1Z2",
-    address: "Unilever House, B. D. Sawant Marg, Chakala, Andheri (E), Mumbai",
-    paymentTerms: "45 Days Credit",
-    contactPerson: "Anish Gupta",
-    phone: "+91 9821098765",
-    email: "contact@unilever.com"
-  },
-  {
-    id: "CLI-103",
-    name: "Adani Wilmar Ltd",
-    gstin: "24AAACA0000A1Z1",
-    address: "Fortune House, Near Navrangpura Railway Crossing, Ahmedabad",
-    paymentTerms: "15 Days Credit",
-    contactPerson: "Vikram Patel",
-    phone: "+91 9898011223",
-    email: "supply@adaniwilmar.com"
-  },
-  {
-    id: "CLI-104",
-    name: "Procter & Gamble",
-    gstin: "27AAACP9999P1Z3",
-    address: "P&G Plaza, Cardinal Gracias Road, Chakala, Andheri East, Mumbai, Maharashtra 400099",
-    paymentTerms: "30 Days Credit",
-    contactPerson: "Rajesh Kulkarni",
-    phone: "+91 9820123456",
-    email: "kulkarni.r@pg.com"
-  }
-];
+// PRODUCTION: No seed clients. All clients come from Supabase.
+export const initialClients = [];
 
 /**
  * Initial Job Masters Dataset
  */
-export const initialJobMasters = [
-  {
-    id: "JM-2026-089",
-    skuCode: "SKU-BR-001",
-    jobName: "Britannia Bourbon 250g Packaging",
-    clientName: "Britannia Industries Ltd",
-    structure: "PET 12µ / METPET 12µ / Natural GP LD 35µ",
-    printWidthMm: 1000,
-    repeatLengthMm: 400,
-    pouchOpenWidth: 120,
-    pouchHeight: 150,
-    layers: [
-      { id: 1, filmType: "PET", micron: 12 },
-      { id: 2, filmType: "METPET", micron: 12 },
-      { id: 3, filmType: "Natural GP LD", micron: 35 }
-    ],
-    cylinderSku: "SKU-BR-001",
-    cylinderCost: "₹ 35,000",
-    colorsCount: 6,
-    engravuresName: "Acme Rotogravure Engravers",
-    costBorneBy: "Client (100%)",
-    utilisationLimit: 10000,
-    creationDate: "2026-07-01"
-  },
-  {
-    id: "JM-2026-090",
-    skuCode: "SKU-BR-002",
-    jobName: "Britannia Marie Gold 150g",
-    clientName: "Britannia Industries Ltd",
-    structure: "PET 12µ / Natural GP LD 50µ",
-    printWidthMm: 980,
-    repeatLengthMm: 380,
-    pouchOpenWidth: 115,
-    pouchHeight: 145,
-    layers: [
-      { id: 1, filmType: "PET", micron: 12 },
-      { id: 2, filmType: "Natural GP LD", micron: 50 }
-    ],
-    cylinderSku: "SKU-BR-002",
-    cylinderCost: "₹ 30,000",
-    colorsCount: 5,
-    engravuresName: "Acme Rotogravure Engravers",
-    costBorneBy: "Us (100%)",
-    utilisationLimit: 10000,
-    creationDate: "2026-07-05"
-  },
-  {
-    id: "JM-2026-091",
-    skuCode: "SKU-PG-101",
-    jobName: "P&G Ariel Matic 1kg",
-    clientName: "Procter & Gamble",
-    structure: "PET 12µ / METPET 12µ / Natural LD Metallocene 40µ",
-    printWidthMm: 1050,
-    repeatLengthMm: 420,
-    pouchOpenWidth: 150,
-    pouchHeight: 220,
-    layers: [
-      { id: 1, filmType: "PET", micron: 12 },
-      { id: 2, filmType: "METPET", micron: 12 },
-      { id: 3, filmType: "Natural LD Metallocene Film", micron: 40 }
-    ],
-    cylinderSku: "SKU-PG-101",
-    cylinderCost: "₹ 45,000",
-    colorsCount: 7,
-    engravuresName: "Precision Rotogravure Dies",
-    costBorneBy: "Both (50/50)",
-    utilisationLimit: 10000,
-    creationDate: "2026-07-10"
-  },
-  {
-    id: "JM-2026-092",
-    skuCode: "SKU-UL-205",
-    jobName: "Surf Excel Liquid 500ml",
-    clientName: "Hindustan Unilever Ltd",
-    structure: "PET 12µ / METPET 12µ / Milky Atta (High Dart) 60µ",
-    printWidthMm: 920,
-    repeatLengthMm: 450,
-    pouchOpenWidth: 140,
-    pouchHeight: 200,
-    layers: [
-      { id: 1, filmType: "PET", micron: 12 },
-      { id: 2, filmType: "METPET", micron: 12 },
-      { id: 3, filmType: "Milky Atta (High Dart) Film", micron: 60 }
-    ],
-    cylinderSku: "SKU-UL-205",
-    cylinderCost: "₹ 52,000",
-    colorsCount: 8,
-    engravuresName: "Precision Rotogravure Dies",
-    costBorneBy: "Client (100%)",
-    utilisationLimit: 10000,
-    creationDate: "2026-07-15"
-  }
-];
+// PRODUCTION: No seed job masters. All job masters come from Supabase.
+export const initialJobMasters = [];
 
 /**
  * Initial Sales Quotations Dataset (Clean Production Mode)

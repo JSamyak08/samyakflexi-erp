@@ -86,26 +86,50 @@ const DUMMY_ORDER_IDS = new Set([
   'ORD-2026-648'
 ]);
 const DUMMY_PROD_IDS = new Set([
-  'PROD-REC-089', 'PROD-REC-090', 'PROD-REC-091', 'PROD-REC-092'
+  'PROD-REC-089', 'PROD-REC-090', 'PROD-REC-091', 'PROD-REC-092',
+  'REC-2026-089', 'REC-2026-090', 'REC-2026-091', 'REC-2026-092'
 ]);
+// Known seed inventory IDs (INV-001 to INV-011, etc.)
+const DUMMY_INV_IDS = new Set([
+  'INV-001','INV-002','INV-003','INV-004','INV-005','INV-006',
+  'INV-007','INV-008','INV-009','INV-010','INV-011'
+]);
+// Known seed GRN numbers
+const DUMMY_GRN_IDS = new Set([
+  'GRN-2026-104','GRN-2026-105','GRN-2026-098','GRN-2026-089','GRN-2026-072'
+]);
+// Known seed vendor IDs
+const DUMMY_VENDOR_IDS = new Set([
+  'VND-001','VND-002','VND-003','VND-004','VND-005','VND-006','VND-007','VND-008'
+]);
+
+/**
+ * Returns true if any id field of the item matches a known dummy seed ID.
+ */
+function isDummyRecord(item) {
+  if (!item || typeof item !== 'object') return false;
+  const id = String(item.id || item.grnNo || item.itemCode || '');
+  if (DUMMY_ORDER_IDS.has(id)) return true;
+  if (DUMMY_PROD_IDS.has(id)) return true;
+  if (DUMMY_INV_IDS.has(id)) return true;
+  if (DUMMY_GRN_IDS.has(item.grnNo || '')) return true;
+  if (DUMMY_VENDOR_IDS.has(id)) return true;
+  // Also check orderId / jobId references
+  if (item.orderId && DUMMY_ORDER_IDS.has(item.orderId)) return true;
+  if (item.jobId && DUMMY_ORDER_IDS.has(item.jobId)) return true;
+  return false;
+}
 
 /**
  * Strips dummy seed records from a data array by matching known IDs.
  */
 function stripDummyRecords(arr, idFields = ['id', 'orderId', 'jobId']) {
   if (!Array.isArray(arr)) return arr;
-  return arr.filter(item => {
-    if (!item || typeof item !== 'object') return true;
-    for (const field of idFields) {
-      const val = item[field];
-      if (val && (DUMMY_ORDER_IDS.has(val) || DUMMY_PROD_IDS.has(val))) return false;
-    }
-    return true;
-  });
+  return arr.filter(item => !isDummyRecord(item));
 }
 
 /**
- * One-time boot cleanup: purges dummy IDs from localStorage and flags IDB keys for cleaning.
+ * One-time boot cleanup: purges dummy IDs from ALL localStorage keys.
  * Runs synchronously before any React state initializes.
  */
 (function purgeDummyDataFromStorage() {
@@ -113,7 +137,17 @@ function stripDummyRecords(arr, idFields = ['id', 'orderId', 'jobId']) {
   const keysToClean = [
     'samyak_erp_orders',
     'samyak_erp_production_records',
-    'samyak_erp_production_schedules'
+    'samyak_erp_production_schedules',
+    'samyak_erp_inventory',
+    'samyak_erp_grns',
+    'samyak_erp_vendors',
+    'samyak_erp_clients',
+    'samyak_erp_job_masters',
+    'samyak_erp_printing_machines',
+    'samyak_erp_cylinders',
+    'samyak_erp_inventory_rolls',
+    'samyak_erp_dispatch_shipments',
+    'samyak_erp_job_datasheets'
   ];
   for (const key of keysToClean) {
     try {
@@ -121,7 +155,7 @@ function stripDummyRecords(arr, idFields = ['id', 'orderId', 'jobId']) {
       if (!raw) continue;
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) continue;
-      const cleaned = stripDummyRecords(parsed);
+      const cleaned = parsed.filter(item => !isDummyRecord(item));
       if (cleaned.length !== parsed.length) {
         localStorage.setItem(key, JSON.stringify(cleaned));
         console.log(`[Boot Purge] Removed ${parsed.length - cleaned.length} dummy record(s) from ${key}`);
@@ -129,6 +163,7 @@ function stripDummyRecords(arr, idFields = ['id', 'orderId', 'jobId']) {
     } catch (e) { /* ignore */ }
   }
 })();
+
 
 // Immediately sanitize localStorage on boot
 initSafeStorage();
@@ -189,21 +224,22 @@ export default function App() {
   // Hydrate initial state safely from localStorage (if present), or empty array default.
   // stripDummyRecords ensures no legacy seed data from development ever enters production state.
   const [orders, setOrders] = useState(() => stripDummyRecords(loadLocalState('orders', [])));
-  const [vendors, setVendors] = useState(() => loadLocalState('vendors', []));
-  const [inventory, setInventory] = useState(() => loadLocalState('inventory', []));
-  const [grns, setGrns] = useState(() => loadLocalState('grns', []));
+  const [vendors, setVendors] = useState(() => stripDummyRecords(loadLocalState('vendors', [])));
+  const [inventory, setInventory] = useState(() => stripDummyRecords(loadLocalState('inventory', [])));
+  const [grns, setGrns] = useState(() => stripDummyRecords(loadLocalState('grns', [])));
   const [users, setUsers] = useState(() => loadLocalState('users', initialUsers));
-  const [jobDataSheets, setJobDataSheets] = useState(() => loadLocalState('job_datasheets', []));
-  const [cylinders, setCylinders] = useState(() => loadLocalState('cylinders', []));
-  const [productionRecords, setProductionRecords] = useState(() => stripDummyRecords(loadLocalState('production_records', []), ['id', 'orderId']));
-  const [inventoryRolls, setInventoryRolls] = useState(() => loadLocalState('inventory_rolls', []));
-  const [dispatchShipments, setDispatchShipments] = useState(() => loadLocalState('dispatch_shipments', []));
-  const [machines, setMachines] = useState(() => loadLocalState('printing_machines', []));
-  const [schedules, setSchedules] = useState(() => stripDummyRecords(loadLocalState('production_schedules', []), ['id', 'orderId']));
-  const [clients, setClients] = useState(() => loadLocalState('clients', []));
-  const [jobMasters, setJobMasters] = useState(() => loadLocalState('job_masters', []));
+  const [jobDataSheets, setJobDataSheets] = useState(() => stripDummyRecords(loadLocalState('job_datasheets', [])));
+  const [cylinders, setCylinders] = useState(() => stripDummyRecords(loadLocalState('cylinders', [])));
+  const [productionRecords, setProductionRecords] = useState(() => stripDummyRecords(loadLocalState('production_records', [])));
+  const [inventoryRolls, setInventoryRolls] = useState(() => stripDummyRecords(loadLocalState('inventory_rolls', [])));
+  const [dispatchShipments, setDispatchShipments] = useState(() => stripDummyRecords(loadLocalState('dispatch_shipments', [])));
+  const [machines, setMachines] = useState(() => stripDummyRecords(loadLocalState('printing_machines', [])));
+  const [schedules, setSchedules] = useState(() => stripDummyRecords(loadLocalState('production_schedules', [])));
+  const [clients, setClients] = useState(() => stripDummyRecords(loadLocalState('clients', [])));
+  const [jobMasters, setJobMasters] = useState(() => stripDummyRecords(loadLocalState('job_masters', [])));
   const [selectedJobMasterForPunch, setSelectedJobMasterForPunch] = useState(null);
   const [rolePermissions, setRolePermissions] = useState(() => loadLocalState('role_permissions', DEFAULT_ROLE_PERMISSIONS));
+
 
   const activeUsersList = useMemo(() => {
     const list = [...(users || []), ...initialUsers];
@@ -270,6 +306,25 @@ export default function App() {
     hydrateIdbAssets();
     return () => { isMounted = false; };
   }, []);
+
+  // ============================================================================
+  // WRITE-THROUGH CACHE: Persist all key state to localStorage on every change.
+  // This guarantees data is available on refresh before Supabase finishes loading.
+  // ============================================================================
+  useEffect(() => { safeLocalStorageSet('samyak_erp_orders', orders); }, [orders]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_vendors', vendors); }, [vendors]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_inventory', inventory); }, [inventory]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_grns', grns); }, [grns]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_cylinders', cylinders); }, [cylinders]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_production_records', productionRecords); }, [productionRecords]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_job_datasheets', jobDataSheets); }, [jobDataSheets]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_inventory_rolls', inventoryRolls); }, [inventoryRolls]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_dispatch_shipments', dispatchShipments); }, [dispatchShipments]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_printing_machines', machines); }, [machines]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_production_schedules', schedules); }, [schedules]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_clients', clients); }, [clients]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_job_masters', jobMasters); }, [jobMasters]);
+
 
   // Fetch all tables from Supabase on initial load or credential changes
   useEffect(() => {
