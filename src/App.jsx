@@ -222,6 +222,7 @@ export default function App() {
 
   // Authentication & Active User Session State
   const [currentUser, setCurrentUser] = useState(null);
+  const [sessionProfile, setSessionProfile] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(!isSupaConfigured);
 
@@ -569,7 +570,13 @@ export default function App() {
     deleteProductionScheduleFromSupabase(scheduleId);
   };
 
-
+  const findUserProfile = (email) => {
+    if (!email) return null;
+    const cleanEmail = email.toLowerCase().trim();
+    let matched = (users || []).find(u => u.email && u.email.toLowerCase().trim() === cleanEmail);
+    if (matched) return matched;
+    return initialUsers.find(u => u.email && u.email.toLowerCase().trim() === cleanEmail);
+  };
 
   // Initialize Supabase Auth state
   useEffect(() => {
@@ -582,7 +589,8 @@ export default function App() {
         const { data: { session } } = await supabase.auth.getSession();
         if (mounted) {
           if (session?.user) {
-            const user = {
+            const matched = findUserProfile(session.user.email);
+            const profile = matched || {
               id: session.user.id,
               name: session.user.user_metadata?.full_name || session.user.email.split('@')[0],
               email: session.user.email,
@@ -590,9 +598,18 @@ export default function App() {
               department: 'Executive Management',
               status: 'Active'
             };
-            setCurrentUser(user);
+            setSessionProfile(profile);
+
+            // Admin is allowed to load a switched user from local storage
+            const savedSwitchedUser = loadLocalState('samyak_erp_current_user', null);
+            if (savedSwitchedUser && profile.role === 'Admin') {
+              setCurrentUser(savedSwitchedUser);
+            } else {
+              setCurrentUser(profile);
+            }
             setIsAuthenticated(true);
           } else {
+            setSessionProfile(null);
             setCurrentUser(null);
             setIsAuthenticated(false);
           }
@@ -609,7 +626,8 @@ export default function App() {
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
       if (session?.user) {
-        const user = {
+        const matched = findUserProfile(session.user.email);
+        const profile = matched || {
           id: session.user.id,
           name: session.user.user_metadata?.full_name || session.user.email.split('@')[0],
           email: session.user.email,
@@ -617,9 +635,17 @@ export default function App() {
           department: 'Executive Management',
           status: 'Active'
         };
-        setCurrentUser(user);
+        setSessionProfile(profile);
+
+        const savedSwitchedUser = loadLocalState('samyak_erp_current_user', null);
+        if (savedSwitchedUser && profile.role === 'Admin') {
+          setCurrentUser(savedSwitchedUser);
+        } else {
+          setCurrentUser(profile);
+        }
         setIsAuthenticated(true);
       } else {
+        setSessionProfile(null);
         setCurrentUser(null);
         setIsAuthenticated(false);
       }
@@ -631,11 +657,12 @@ export default function App() {
         authListener.subscription.unsubscribe();
       }
     };
-  }, [isSupaActive]);
+  }, [isSupaActive, users]);
 
   // Login Handler (for UI updates, authService handles Supabase login)
   const handleLogin = (user) => {
     if (!isSupaActive) {
+      setSessionProfile(user);
       setCurrentUser(user);
       setIsAuthenticated(true);
     }
@@ -643,11 +670,12 @@ export default function App() {
 
   // Logout Handler (for UI updates, authService handles Supabase logout)
   const handleLogout = () => {
+    localStorage.removeItem('samyak_erp_current_user');
     if (!isSupaActive) {
+      setSessionProfile(null);
       setCurrentUser(null);
       setIsAuthenticated(false);
     } else {
-      // With Supabase, we call the sign out method
       supabase.auth.signOut().catch(console.warn);
     }
   };
@@ -1269,7 +1297,19 @@ export default function App() {
               <UserCheck size={16} style={{ color: 'var(--primary-brand)' }} />
               <span style={{ color: 'var(--text-muted)', fontWeight: '500' }}>Active User:</span>
               <select 
-                style={{ border: 'none', background: 'transparent', fontWeight: '700', color: 'var(--text-primary)', cursor: 'pointer', outline: 'none' }}
+                style={{ 
+                  border: 'none', 
+                  background: 'transparent', 
+                  fontWeight: '700', 
+                  color: 'var(--text-primary)', 
+                  cursor: (sessionProfile ? sessionProfile.role === 'Admin' : currentUser?.role === 'Admin') ? 'pointer' : 'default', 
+                  outline: 'none',
+                  opacity: (sessionProfile ? sessionProfile.role === 'Admin' : currentUser?.role === 'Admin') ? 1 : 0.9,
+                  WebkitAppearance: (sessionProfile ? sessionProfile.role === 'Admin' : currentUser?.role === 'Admin') ? 'menulist' : 'none',
+                  MozAppearance: (sessionProfile ? sessionProfile.role === 'Admin' : currentUser?.role === 'Admin') ? 'menulist' : 'none',
+                  appearance: (sessionProfile ? sessionProfile.role === 'Admin' : currentUser?.role === 'Admin') ? 'menulist' : 'none'
+                }}
+                disabled={!(sessionProfile ? sessionProfile.role === 'Admin' : currentUser?.role === 'Admin')}
                 value={currentUser?.id || ''}
                 onChange={e => {
                   const selectedId = e.target.value;
