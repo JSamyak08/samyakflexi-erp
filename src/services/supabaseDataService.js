@@ -87,6 +87,7 @@ export async function fetchOrders() {
 
       const jd = meta.jobDetails || o.job_details || {};
       const matReqs = meta.raw_material_requirements || o.raw_material_requirements || [];
+      const layerList = jd.layers || jd.calculationDetails?.layerResults || o.layers || [];
 
       return {
         id: o.id,
@@ -96,12 +97,16 @@ export async function fetchOrders() {
         orderQtyKg: Number(o.order_qty_kg) || 0,
         deliveryDate: o.target_delivery_date,
         targetDeliveryDate: o.target_delivery_date,
+        orderDate: jd.orderDate || (o.created_at ? new Date(o.created_at).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB')),
         status: o.status || 'Scheduled',
-        structure: jd.structure || '—',
-        printWidthMm: jd.printWidthMm,
-        repeatLengthMm: jd.repeatLengthMm,
+        structure: jd.structure || (layerList.length > 0 ? layerList.map(l => `${l.filmType} ${l.micron}µ`).join(' / ') : '—'),
+        printWidthMm: jd.printWidthMm || null,
+        repeatLengthMm: jd.repeatLengthMm || null,
+        colorsCount: jd.colorsCount || o.colors_count || 6,
         poIssued: jd.poIssued || false,
         poNumber: jd.poNumber || '',
+        layers: layerList,
+        calculationDetails: jd.calculationDetails || null,
         jobDetails: jd,
         materialRequirements: matReqs,
         rawMaterialRequirements: matReqs
@@ -127,10 +132,12 @@ export async function saveOrderToSupabase(order) {
     structure: order.structure || order.jobDetails?.structure || '—',
     printWidthMm: order.printWidthMm || order.jobDetails?.printWidthMm || null,
     repeatLengthMm: order.repeatLengthMm || order.jobDetails?.repeatLengthMm || null,
+    colorsCount: order.colorsCount || order.jobDetails?.colorsCount || 6,
+    orderDate: order.orderDate || order.jobDetails?.orderDate || new Date().toLocaleDateString('en-GB'),
     calculationDetails: order.calculationDetails || order.jobDetails?.calculationDetails || null,
     poIssued: order.poIssued || false,
     poNumber: order.poNumber || '',
-    layers: order.jobDetails?.layers || order.layers || null
+    layers: order.layers || order.jobDetails?.layers || null
   };
 
   const matReqs = order.materialRequirements || order.rawMaterialRequirements || [];

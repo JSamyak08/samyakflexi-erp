@@ -403,29 +403,99 @@ export default function App() {
       if (dbConsumables && Array.isArray(dbConsumables)) setConsumables(dbConsumables);
 
       if (Array.isArray(supaOrders)) {
-        setOrders(stripDummyRecords(supaOrders));
+        const cleanSupa = stripDummyRecords(supaOrders);
+        setOrders(prev => {
+          const map = new Map();
+          cleanSupa.forEach(o => { if (o && o.id) map.set(o.id, o); });
+          (prev || []).forEach(p => {
+            if (p && p.id && !isDummyRecord(p)) {
+              if (!map.has(p.id)) {
+                map.set(p.id, p);
+                saveOrderToSupabase(p).catch(console.warn);
+              } else {
+                const existing = map.get(p.id);
+                map.set(p.id, {
+                  ...p,
+                  ...existing,
+                  layers: (existing.layers && existing.layers.length > 0) ? existing.layers : (p.layers || []),
+                  calculationDetails: existing.calculationDetails || p.calculationDetails || null,
+                  materialRequirements: (existing.materialRequirements && existing.materialRequirements.length > 0) ? existing.materialRequirements : (p.materialRequirements || [])
+                });
+              }
+            }
+          });
+          const merged = Array.from(map.values());
+          safeLocalStorageSet('samyak_erp_orders', merged);
+          return merged;
+        });
         supaOrders.filter(isDummyRecord).forEach(d => deleteOrderFromSupabase(d.id).catch(console.warn));
       }
+
       if (Array.isArray(supaVendors)) {
-        setVendors(stripDummyRecords(supaVendors));
+        const cleanSupa = stripDummyRecords(supaVendors);
+        setVendors(prev => {
+          const map = new Map();
+          cleanSupa.forEach(v => { if (v && v.id) map.set(v.id, v); });
+          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
+          const merged = Array.from(map.values());
+          safeLocalStorageSet('samyak_erp_vendors', merged);
+          return merged;
+        });
         supaVendors.filter(isDummyRecord).forEach(d => deleteVendorFromSupabase(d.id).catch(console.warn));
       }
+
       if (Array.isArray(supaInv)) {
-        setInventory(stripDummyRecords(supaInv));
+        const cleanSupa = stripDummyRecords(supaInv);
+        setInventory(prev => {
+          const map = new Map();
+          cleanSupa.forEach(i => { if (i && i.id) map.set(String(i.id), i); });
+          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(String(p.id))) map.set(String(p.id), p); });
+          const merged = Array.from(map.values());
+          safeLocalStorageSet('samyak_erp_inventory', merged);
+          return merged;
+        });
         supaInv.filter(isDummyRecord).forEach(d => deleteInventoryItemFromSupabase(d.id).catch(console.warn));
       }
+
       if (Array.isArray(supaGRNs)) {
-        setGrns(stripDummyRecords(supaGRNs));
+        const cleanSupa = stripDummyRecords(supaGRNs);
+        setGrns(prev => {
+          const map = new Map();
+          cleanSupa.forEach(g => { const k = g.id || g.grnNo; if (k) map.set(k, g); });
+          (prev || []).forEach(p => { const k = p.id || p.grnNo; if (k && !isDummyRecord(p) && !map.has(k)) map.set(k, p); });
+          const merged = Array.from(map.values());
+          safeLocalStorageSet('samyak_erp_grns', merged);
+          return merged;
+        });
         supaGRNs.filter(isDummyRecord).forEach(d => deleteGRNFromSupabase(d.id || d.grnNo).catch(console.warn));
       }
+
       if (Array.isArray(supaCyls)) {
-        setCylinders(stripDummyRecords(supaCyls));
+        const cleanSupa = stripDummyRecords(supaCyls);
+        setCylinders(prev => {
+          const map = new Map();
+          cleanSupa.forEach(c => { if (c && c.id) map.set(c.id, c); });
+          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
+          const merged = Array.from(map.values());
+          safeLocalStorageSet('samyak_erp_cylinders', merged);
+          return merged;
+        });
         supaCyls.filter(isDummyRecord).forEach(d => deleteCylinderFromSupabase(d.id).catch(console.warn));
       }
+
       if (Array.isArray(supaProd)) {
-        setProductionRecords(stripDummyRecords(supaProd));
+        const cleanSupa = stripDummyRecords(supaProd);
+        setProductionRecords(prev => {
+          const map = new Map();
+          cleanSupa.forEach(pr => { if (pr && pr.id) map.set(pr.id, pr); });
+          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
+          const merged = Array.from(map.values());
+          safeLocalStorageSet('samyak_erp_production_records', merged);
+          return merged;
+        });
         supaProd.filter(isDummyRecord).forEach(d => deleteProductionRecordFromSupabase(d.id).catch(console.warn));
       }
+
       if (Array.isArray(supaUsers) && supaUsers.length > 0) {
         setUsers(prev => {
           const map = new Map();
@@ -441,25 +511,63 @@ export default function App() {
           return merged;
         });
       }
+
       if (Array.isArray(supaSheets)) {
-        setJobDataSheets(stripDummyRecords(supaSheets));
+        const cleanSupa = stripDummyRecords(supaSheets);
+        setJobDataSheets(prev => {
+          const map = new Map();
+          cleanSupa.forEach(s => { if (s && s.id) map.set(s.id, s); });
+          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
+          const merged = Array.from(map.values());
+          safeLocalStorageSet('samyak_erp_job_datasheets', merged);
+          return merged;
+        });
         supaSheets.filter(isDummyRecord).forEach(d => deleteJobDataSheetFromSupabase(d.id).catch(console.warn));
       }
+
       if (Array.isArray(supaRolls)) setInventoryRolls(stripDummyRecords(supaRolls));
       if (Array.isArray(supaShipments)) setDispatchShipments(stripDummyRecords(supaShipments));
       if (Array.isArray(supaMachines)) setMachines(stripDummyRecords(supaMachines));
+
       if (Array.isArray(supaSchedules)) {
-        setSchedules(stripDummyRecords(supaSchedules));
+        const cleanSupa = stripDummyRecords(supaSchedules);
+        setSchedules(prev => {
+          const map = new Map();
+          cleanSupa.forEach(s => { if (s && s.id) map.set(s.id, s); });
+          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
+          const merged = Array.from(map.values());
+          safeLocalStorageSet('samyak_erp_production_schedules', merged);
+          return merged;
+        });
         supaSchedules.filter(isDummyRecord).forEach(d => deleteProductionScheduleFromSupabase(d.id).catch(console.warn));
       }
+
       if (Array.isArray(supaClients)) {
-        setClients(stripDummyRecords(supaClients));
+        const cleanSupa = stripDummyRecords(supaClients);
+        setClients(prev => {
+          const map = new Map();
+          cleanSupa.forEach(c => { if (c && c.id) map.set(c.id, c); });
+          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
+          const merged = Array.from(map.values());
+          safeLocalStorageSet('samyak_erp_clients', merged);
+          return merged;
+        });
         supaClients.filter(isDummyRecord).forEach(d => deleteClientFromSupabase(d.id).catch(console.warn));
       }
+
       if (Array.isArray(supaJobMasters)) {
-        setJobMasters(stripDummyRecords(supaJobMasters));
+        const cleanSupa = stripDummyRecords(supaJobMasters);
+        setJobMasters(prev => {
+          const map = new Map();
+          cleanSupa.forEach(j => { if (j && j.id) map.set(j.id, j); });
+          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
+          const merged = Array.from(map.values());
+          safeLocalStorageSet('samyak_erp_job_masters', merged);
+          return merged;
+        });
         supaJobMasters.filter(isDummyRecord).forEach(d => deleteJobMasterFromSupabase(d.id).catch(console.warn));
       }
+
       if (supaRolePerms && typeof supaRolePerms === 'object' && Object.keys(supaRolePerms).length > 0) {
         setRolePermissions(supaRolePerms);
         safeLocalStorageSet('samyak_erp_role_permissions', supaRolePerms);
