@@ -34,17 +34,33 @@ export const getSupabaseCredentials = () => {
   let url = '';
   let key = '';
 
-  try { url = localStorage.getItem('samyak_supabase_url'); } catch (e) {}
-  if (!url) try { url = sessionStorage.getItem('samyak_supabase_url'); } catch (e) {}
-  if (!url) url = getCookie('samyak_supabase_url');
-  if (!url) url = import.meta.env.VITE_SUPABASE_URL || '';
+  const cleanVal = (val) => {
+    if (!val) return '';
+    const s = String(val).trim();
+    if (
+      s === 'null' || 
+      s === 'undefined' || 
+      s === '[object Object]' || 
+      s === 'placeholder' ||
+      s.includes('your-supabase-project') ||
+      s.includes('your-supabase-anon-key')
+    ) {
+      return '';
+    }
+    return s;
+  };
 
-  try { key = localStorage.getItem('samyak_supabase_key'); } catch (e) {}
-  if (!key) try { key = sessionStorage.getItem('samyak_supabase_key'); } catch (e) {}
-  if (!key) key = getCookie('samyak_supabase_key');
-  if (!key) key = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+  try { url = cleanVal(localStorage.getItem('samyak_supabase_url')); } catch (e) {}
+  if (!url) try { url = cleanVal(sessionStorage.getItem('samyak_supabase_url')); } catch (e) {}
+  if (!url) url = cleanVal(getCookie('samyak_supabase_url'));
+  if (!url) url = cleanVal(import.meta.env.VITE_SUPABASE_URL || '');
 
-  return { url: (url || '').trim(), key: (key || '').trim() };
+  try { key = cleanVal(localStorage.getItem('samyak_supabase_key')); } catch (e) {}
+  if (!key) try { key = cleanVal(sessionStorage.getItem('samyak_supabase_key')); } catch (e) {}
+  if (!key) key = cleanVal(getCookie('samyak_supabase_key'));
+  if (!key) key = cleanVal(import.meta.env.VITE_SUPABASE_ANON_KEY || '');
+
+  return { url, key };
 };
 
 /**
