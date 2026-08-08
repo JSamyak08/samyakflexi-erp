@@ -33,6 +33,7 @@ import GRNPDF from './GRNPDF';
 import WeighingScaleInput from './WeighingScaleInput';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import DispatchPackingListPDF from './DispatchPackingListPDF';
+import TablePagination, { usePagination } from './TablePagination';
 import { 
   isReconciliationDue, 
   FILM_DENSITIES, 
@@ -76,6 +77,7 @@ export const INVENTORY_UOMS = [
 ];
 
 export default function InventoryManagement({ 
+  urlParams = {},
   inventory = [], 
   grns = [], 
   vendors = [], 
@@ -92,6 +94,26 @@ export default function InventoryManagement({
 }) {
   const [activeTab, setActiveTab] = useState('stock'); // stock, grn_inward, qc_approval, issue_return, reconciliation
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Auto-set tab and select item if urlParams is provided
+  useEffect(() => {
+    if (urlParams) {
+      if (urlParams.tab) {
+        setActiveTab(urlParams.tab);
+      }
+      if (urlParams.id && inventory && inventory.length > 0) {
+        const match = inventory.find(i => i.id === urlParams.id || i.itemCode === urlParams.id);
+        if (match) {
+          setSelectedItemForPurchaseHistory(match);
+        }
+      }
+    }
+  }, [urlParams?.tab, urlParams?.id, inventory]);
+
+  const handleTabClick = (tabKey) => {
+    setActiveTab(tabKey);
+    pushSlugState('inventory', { tab: tabKey });
+  };
 
   // Modals state
   const [isNewGRNModalOpen, setIsNewGRNModalOpen] = useState(false);
@@ -1072,6 +1094,10 @@ export default function InventoryManagement({
       widthStr.includes(term);
   });
 
+  const stockPagination = usePagination(filteredInventory, 50);
+  const grnPagination = usePagination(grns, 50);
+  const dispatchPagination = usePagination(dispatchShipments || initialDispatchShipments, 50);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* PDF View Modal */}
@@ -1104,7 +1130,7 @@ export default function InventoryManagement({
               </p>
             </div>
           </div>
-          <button className="btn-primary" style={{ background: '#f59e0b', color: 'black' }} onClick={() => setActiveTab('reconciliation')}>
+          <button className="btn-primary" style={{ background: '#f59e0b', color: 'black' }} onClick={() => handleTabClick('reconciliation')}>
             Start Stock Reconciliation
           </button>
         </div>
@@ -1115,19 +1141,19 @@ export default function InventoryManagement({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
           {/* Sub Tab Pills */}
           <div className="scrollable-tabs-container" style={{ flex: 1 }}>
-            <button className={`tab-pill ${activeTab === 'stock' ? 'active' : ''}`} onClick={() => setActiveTab('stock')}>
+            <button className={`tab-pill ${activeTab === 'stock' ? 'active' : ''}`} onClick={() => handleTabClick('stock')}>
               <Package size={16} /> Stock Register ({inventory.length})
             </button>
-            <button className={`tab-pill ${activeTab === 'grn_inward' ? 'active' : ''}`} onClick={() => setActiveTab('grn_inward')}>
+            <button className={`tab-pill ${activeTab === 'grn_inward' ? 'active' : ''}`} onClick={() => handleTabClick('grn_inward')}>
               <FileCheck size={16} /> Inward GRNs ({grns.length})
             </button>
-            <button className={`tab-pill ${pendingQCGRNs.length > 0 ? 'red-tab' : ''} ${activeTab === 'qc_approval' ? 'active' : ''}`} onClick={() => setActiveTab('qc_approval')}>
+            <button className={`tab-pill ${pendingQCGRNs.length > 0 ? 'red-tab' : ''} ${activeTab === 'qc_approval' ? 'active' : ''}`} onClick={() => handleTabClick('qc_approval')}>
               🧪 QC Approval Lab ({pendingQCGRNs.length} Pending)
             </button>
-            <button className={`tab-pill ${activeTab === 'dispatch' ? 'active' : ''}`} onClick={() => setActiveTab('dispatch')}>
+            <button className={`tab-pill ${activeTab === 'dispatch' ? 'active' : ''}`} onClick={() => handleTabClick('dispatch')}>
               <Truck size={16} style={{ color: '#059669' }} /> Scale #4 Dispatch & Packing List
             </button>
-            <button className={`tab-pill ${activeTab === 'reconciliation' ? 'active' : ''}`} onClick={() => setActiveTab('reconciliation')}>
+            <button className={`tab-pill ${activeTab === 'reconciliation' ? 'active' : ''}`} onClick={() => handleTabClick('reconciliation')}>
               <FileSpreadsheet size={16} /> Barcode Stock Reconciliation
             </button>
           </div>
@@ -1237,7 +1263,7 @@ export default function InventoryManagement({
                 </tr>
               </thead>
               <tbody>
-                {filteredInventory.map(item => {
+                {stockPagination.paginatedItems.map(item => {
                   const isLow = (item.availableQtyKg ?? 0) <= (item.reorderLevelKg ?? 100);
                   const isFilm = (item.category || 'Film Substrates') === 'Film Substrates';
                   const title = item.itemName || `${item.filmType} Film (${item.micron}µ x ${item.widthMm}mm)`;
@@ -1349,6 +1375,13 @@ export default function InventoryManagement({
               </tbody>
             </table>
           </div>
+          <TablePagination
+            currentPage={stockPagination.currentPage}
+            totalItems={stockPagination.totalItems}
+            pageSize={stockPagination.pageSize}
+            onPageChange={stockPagination.setCurrentPage}
+            onPageSizeChange={stockPagination.setPageSize}
+          />
         </div>
       )}
 
@@ -1372,7 +1405,7 @@ export default function InventoryManagement({
                 </tr>
               </thead>
               <tbody>
-                {grns.map(g => (
+                {grnPagination.paginatedItems.map(g => (
                   <tr key={g.grnNo}>
                     <td style={{ fontWeight: '700', color: 'var(--accent-color)' }}>{g.grnNo}</td>
                     <td>{g.poNumber}</td>
@@ -1442,6 +1475,13 @@ export default function InventoryManagement({
               </tbody>
             </table>
           </div>
+          <TablePagination
+            currentPage={grnPagination.currentPage}
+            totalItems={grnPagination.totalItems}
+            pageSize={grnPagination.pageSize}
+            onPageChange={grnPagination.setCurrentPage}
+            onPageSizeChange={grnPagination.setPageSize}
+          />
         </div>
       )}
 
@@ -1533,7 +1573,7 @@ export default function InventoryManagement({
                 </tr>
               </thead>
               <tbody>
-                {(dispatchShipments || initialDispatchShipments).map(ds => (
+                {dispatchPagination.paginatedItems.map(ds => (
                   <tr key={ds.dispatchId}>
                     <td style={{ fontWeight: '700', color: '#2563eb' }}>{ds.dispatchId}</td>
                     <td style={{ fontSize: '0.85rem' }}>{ds.dispatchDate}</td>
@@ -1560,6 +1600,13 @@ export default function InventoryManagement({
               </tbody>
             </table>
           </div>
+          <TablePagination
+            currentPage={dispatchPagination.currentPage}
+            totalItems={dispatchPagination.totalItems}
+            pageSize={dispatchPagination.pageSize}
+            onPageChange={dispatchPagination.setCurrentPage}
+            onPageSizeChange={dispatchPagination.setPageSize}
+          />
         </div>
       )}
 
@@ -1853,7 +1900,7 @@ export default function InventoryManagement({
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRecItems.length === 0 ? (
+                  {recPagination.paginatedItems.length === 0 ? (
                     <tr>
                       <td colSpan="7" style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
                         <div>No physical stock reconciliation items match your search & filter parameters.</div>
@@ -1871,7 +1918,7 @@ export default function InventoryManagement({
                       </td>
                     </tr>
                   ) : (
-                    filteredRecItems.map(item => {
+                    recPagination.paginatedItems.map(item => {
                       const physicalVal = physicalCounts[item.id] !== undefined ? physicalCounts[item.id] : item.availableQtyKg;
                       const diff = physicalVal - item.availableQtyKg;
 
@@ -3132,14 +3179,14 @@ export default function InventoryManagement({
                     </tr>
                   </thead>
                   <tbody>
-                    {displayLines.length === 0 ? (
+                    {ledgerPagination.paginatedItems.length === 0 ? (
                       <tr>
                         <td colSpan="10" style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
                           No transaction records found matching the filter criteria.
                         </td>
                       </tr>
                     ) : (
-                      displayLines.map((tx, idx) => {
+                      ledgerPagination.paginatedItems.map((tx, idx) => {
                         const isEditingThisBarcode = editingTxId === tx.txId;
                         return (
                           <tr key={tx.txId || idx} style={{ background: tx.category === 'reconciliation' ? '#f0f9ff' : (tx.category === 'usage' ? '#fff5f5' : 'transparent') }}>
@@ -3287,7 +3334,13 @@ export default function InventoryManagement({
                   </tbody>
                 </table>
               </div>
-
+              <TablePagination
+                currentPage={ledgerPagination.currentPage}
+                totalItems={ledgerPagination.totalItems}
+                pageSize={ledgerPagination.pageSize}
+                onPageChange={ledgerPagination.setCurrentPage}
+                onPageSizeChange={ledgerPagination.setPageSize}
+              />
             </div>
           </div>
         );

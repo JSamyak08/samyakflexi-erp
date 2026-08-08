@@ -175,12 +175,14 @@ initSafeStorage();
 
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState(() => getTabFromUrl());
+  const [routeInfo, setRouteInfo] = useState(() => getRouteFromUrl());
+  const activeTab = routeInfo.tab;
+  const urlParams = routeInfo.params || {};
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  const handleTabChange = (tabKey) => {
-    setActiveTab(tabKey);
-    pushSlugState(tabKey);
+  const handleTabChange = (tabKey, params = {}) => {
+    setRouteInfo({ tab: tabKey, params });
+    pushSlugState(tabKey, params);
     setIsMobileMenuOpen(false);
   };
 
@@ -188,8 +190,7 @@ export default function App() {
   // Sync state when user uses browser Back / Forward buttons
   useEffect(() => {
     const handlePopState = () => {
-      const currentTab = getTabFromUrl();
-      setActiveTab(currentTab);
+      setRouteInfo(getRouteFromUrl());
     };
 
     window.addEventListener('popstate', handlePopState);
@@ -198,7 +199,7 @@ export default function App() {
 
   // Sync initial URL path if opened directly at root or deep link
   useEffect(() => {
-    pushSlugState(activeTab);
+    pushSlugState(activeTab, urlParams);
   }, []);
 
   // Helper to load state safely from localStorage or fallback
@@ -1633,6 +1634,7 @@ export default function App() {
         {/* TAB: PRODUCTION RECORDS & APPROVAL FLOW */}
         {activeTab === 'production_records' && (
           <ProductionRecordManagement 
+            urlParams={urlParams}
             productionRecords={productionRecords}
             orders={orders}
             inventory={inventory}
@@ -1648,6 +1650,7 @@ export default function App() {
         {/* TAB: CLIENTS */}
         {activeTab === 'clients' && (
           <ClientManagement 
+            urlParams={urlParams}
             clients={clients}
             orders={orders}
             cylinders={cylinders}
@@ -1660,6 +1663,7 @@ export default function App() {
         {/* TAB: JOB MASTER DIRECTORY */}
         {activeTab === 'job_masters' && (
           <JobMasterDirectory 
+            urlParams={urlParams}
             jobMasters={jobMasters}
             cylinders={cylinders}
             productionRecords={productionRecords}
@@ -1933,6 +1937,7 @@ export default function App() {
         {/* TAB: SALES MANAGEMENT & QUOTATION ENGINE */}
         {activeTab === 'sales' && (
           <SalesManagement 
+            urlParams={urlParams}
             orders={orders}
             clients={clients}
             jobMasters={jobMasters}
@@ -1958,6 +1963,7 @@ export default function App() {
         {/* TAB 3: ORDER MANAGEMENT & POS */}
         {activeTab === 'orders' && (
           <OrderManagement 
+            urlParams={urlParams}
             orders={orders} 
             vendors={vendors} 
             inventory={inventory}
@@ -1974,12 +1980,13 @@ export default function App() {
 
         {/* TAB 5: VENDOR MANAGEMENT */}
         {activeTab === 'vendors' && (
-          <VendorManagement vendors={vendors} orders={orders} onAddVendor={handleAddVendor} />
+          <VendorManagement urlParams={urlParams} vendors={vendors} orders={orders} onAddVendor={handleAddVendor} />
         )}
 
         {/* TAB 6: INVENTORY, GRN & QC */}
         {activeTab === 'inventory' && (
           <InventoryManagement 
+            urlParams={urlParams}
             inventory={inventory}
             grns={grns}
             vendors={vendors}
@@ -2001,6 +2008,7 @@ export default function App() {
         {/* TAB: MATERIAL INDENTS & CONSUMABLE STORE */}
         {activeTab === 'material_indents' && (
           <ConsumablesAndIndents 
+            urlParams={urlParams}
             userRole={currentUser?.role || "Admin"}
             userName={currentUser?.name || "Samyak Jain"}
             vendors={vendors}
@@ -2031,6 +2039,7 @@ export default function App() {
         {/* TAB 8: CYLINDER DATABASE & UTILISATION */}
         {activeTab === 'cylinders' && (
           <CylinderManagement 
+            urlParams={urlParams}
             cylinders={cylinders}
             onAddCylinder={handleAddCylinder}
             onUpdateCylinder={handleUpdateCylinder}

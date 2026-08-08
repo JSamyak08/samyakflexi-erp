@@ -16,6 +16,7 @@ import {
   Sparkles,
   Save
 } from 'lucide-react';
+import TablePagination, { usePagination } from './TablePagination';
 import { SYSTEM_ROLES, ALL_MODULES, generateFullRolePermissions, DEFAULT_ROLE_PERMISSIONS } from '../factoryStore';
 import { saveRolePermissionsToSupabase } from '../services/supabaseDataService';
 import { notifyUserCreated } from '../services/emailService';
@@ -188,6 +189,8 @@ export default function UserManagement({
     (u.role || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (u.department || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const usersPagination = usePagination(filteredUsers, 50);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -365,7 +368,7 @@ export default function UserManagement({
                 </tr>
               </thead>
               <tbody>
-                {filteredUsers.map(u => (
+                {usersPagination.paginatedItems.map(u => (
                   <tr key={u.id}>
                     <td style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>{u.id}</td>
                     <td style={{ fontWeight: '600' }}>{u.name}</td>
@@ -409,6 +412,13 @@ export default function UserManagement({
               </tbody>
             </table>
           </div>
+          <TablePagination
+            currentPage={usersPagination.currentPage}
+            totalItems={usersPagination.totalItems}
+            pageSize={usersPagination.pageSize}
+            onPageChange={usersPagination.setCurrentPage}
+            onPageSizeChange={usersPagination.setPageSize}
+          />
         </div>
       )}
 

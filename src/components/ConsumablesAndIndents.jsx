@@ -37,7 +37,7 @@ import {
 import PurchaseOrderPDF from './PurchaseOrderPDF';
 import { notifyPurchaseIndentCreated, notifyPurchaseOrderIssued, notifyLowStockAlert } from '../services/emailService';
 import { generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
-import { initialVendors } from '../factoryStore';
+import TablePagination, { usePagination } from './TablePagination';
 
 // Default Plant Machine List for flexible packaging operations
 export const PLANT_MACHINES = [
@@ -399,6 +399,9 @@ export default function ConsumablesAndIndents({
       return aRatio - bRatio;
     });
   }, [consumables, searchTerm, machineFilter, categoryFilter, lowStockOnly]);
+
+  const consumablesPagination = usePagination(sortedAndFilteredConsumables, 50);
+  const indentsPagination = usePagination(indents, 50);
 
   // Reset Filters
   const resetStoreFilters = () => {
@@ -864,7 +867,7 @@ export default function ConsumablesAndIndents({
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedAndFilteredConsumables.map(item => {
+                  {consumablesPagination.paginatedItems.map(item => {
                     const isBelowReserve = item.currentStock <= item.minReserve;
                     const stockRatio = (item.currentStock / (item.minReserve || 1)) * 100;
 
@@ -941,6 +944,13 @@ export default function ConsumablesAndIndents({
                   })}
                 </tbody>
               </table>
+              <TablePagination
+                currentPage={consumablesPagination.currentPage}
+                totalItems={consumablesPagination.totalItems}
+                pageSize={consumablesPagination.pageSize}
+                onPageChange={consumablesPagination.setCurrentPage}
+                onPageSizeChange={consumablesPagination.setPageSize}
+              />
             </div>
           )}
           </div>
@@ -998,7 +1008,7 @@ export default function ConsumablesAndIndents({
                   </tr>
                 </thead>
                 <tbody>
-                  {indents.map(indent => {
+                  {indentsPagination.paginatedItems.map(indent => {
                     const isPending = indent.status === 'Pending Approval';
                     const isApproved = indent.status === 'Approved';
                     const isIssued = indent.status === 'Issued to Machine';
@@ -1114,6 +1124,13 @@ export default function ConsumablesAndIndents({
                   })}
                 </tbody>
               </table>
+              <TablePagination
+                currentPage={indentsPagination.currentPage}
+                totalItems={indentsPagination.totalItems}
+                pageSize={indentsPagination.pageSize}
+                onPageChange={indentsPagination.setCurrentPage}
+                onPageSizeChange={indentsPagination.setPageSize}
+              />
             </div>
           )}
           </div>

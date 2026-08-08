@@ -31,6 +31,7 @@ import { DEFAULT_DAILY_RATES, generateBarcodeId } from '../factoryStore';
 import { notifyProductionRecordSubmitted, notifyProductionRecordApproved } from '../services/emailService';
 
 export default function ProductionRecordManagement({
+  urlParams = {},
   productionRecords = [],
   orders = [],
   inventory = [],
@@ -41,6 +42,13 @@ export default function ProductionRecordManagement({
   onApproveProductionRecord,
   onAddRoll
 }) {
+  const [searchTerm, setSearchTerm] = useState('');
+
+  React.useEffect(() => {
+    if (urlParams && urlParams.id) {
+      setSearchTerm(urlParams.id);
+    }
+  }, [urlParams?.id]);
   // Helper: derive substrate structure from Job Master layers (authoritative source)
   const getSubstrateStructure = (order) => {
     if (!order) return '—';
@@ -65,7 +73,6 @@ export default function ProductionRecordManagement({
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [activeJobCardData, setActiveJobCardData] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
-  const [searchTerm, setSearchTerm] = useState('');
 
   // Form State for creating/editing a Production Record
   const [selectedOrder, setSelectedOrder] = useState(orders[0] || null);

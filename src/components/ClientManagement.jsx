@@ -3,13 +3,23 @@ import { Plus, Search, Building2, Phone, MapPin, Briefcase, ChevronRight, Packag
 import { openArtworkViewer } from '../services/supabaseStorageService';
 import ArtworkModal from './ArtworkModal';
 
-export default function ClientManagement({ clients = [], orders = [], cylinders = [], onAddClient, onUpdateClient, onDeleteClient }) {
+export default function ClientManagement({ urlParams = {}, clients = [], orders = [], cylinders = [], onAddClient, onUpdateClient, onDeleteClient }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedClient, setSelectedClient] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, client: null });
   const [activeArtworkModal, setActiveArtworkModal] = useState({ isOpen: false, url: '', title: '' });
+
+  React.useEffect(() => {
+    if (urlParams && urlParams.id) {
+      setSearchTerm(urlParams.id);
+      if (clients && clients.length > 0) {
+        const match = clients.find(c => c.id === urlParams.id || c.name.toLowerCase().includes(urlParams.id.toLowerCase()));
+        if (match) setSelectedClient(match);
+      }
+    }
+  }, [urlParams?.id, clients]);
 
   // Form State
   const [name, setName] = useState('');

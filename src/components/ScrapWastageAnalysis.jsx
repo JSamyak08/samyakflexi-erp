@@ -14,6 +14,7 @@ import {
   Sparkles,
   Inbox
 } from 'lucide-react';
+import TablePagination, { usePagination } from './TablePagination';
 
 const MONTHS = [
   'All Months',
@@ -128,6 +129,8 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
       return true;
     });
   }, [productionRecords, startDate, endDate, searchTerm, filterType]);
+
+  const recordsPagination = usePagination(filteredRecords, 50);
 
   // Aggregate statistics for the filtered records
   const stats = useMemo(() => {
@@ -342,7 +345,7 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
                   </td>
                 </tr>
               ) : (
-                filteredRecords.map(r => {
+                recordsPagination.paginatedItems.map(r => {
                   const isHigh = (r.wastagePercentage || 0) >= 5;
                   const dateStr = r.recordedAt || r.dateFilled || '';
                   const displayDate = dateStr ? new Date(dateStr).toLocaleDateString('en-GB') : '—';
@@ -407,6 +410,15 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
             </tbody>
           </table>
         </div>
+        {filteredRecords.length > 0 && (
+          <TablePagination
+            currentPage={recordsPagination.currentPage}
+            totalItems={recordsPagination.totalItems}
+            pageSize={recordsPagination.pageSize}
+            onPageChange={recordsPagination.setCurrentPage}
+            onPageSizeChange={recordsPagination.setPageSize}
+          />
+        )}
       </div>
     </div>
   );

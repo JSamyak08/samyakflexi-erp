@@ -18,6 +18,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { pruneOldAuditLogs } from '../services/auditLogger';
+import TablePagination, { usePagination } from './TablePagination';
 
 export default function AuditLogsManagement({ 
   auditLogs = [], 
@@ -87,6 +88,8 @@ export default function AuditLogsManagement({
       return true;
     });
   }, [auditLogs, selectedModule, selectedAction, selectedDateRange, searchTerm]);
+
+  const logsPagination = usePagination(filteredLogs, 50);
 
   // Statistics
   const stats = useMemo(() => {
@@ -326,7 +329,7 @@ export default function AuditLogsManagement({
               </tr>
             </thead>
             <tbody>
-              {filteredLogs.map(log => {
+              {logsPagination.paginatedItems.map(log => {
                 const badgeStyle = getActionBadgeStyle(log.actionType);
                 return (
                   <tr key={log.id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.15s' }}>
@@ -381,6 +384,15 @@ export default function AuditLogsManagement({
               })}
             </tbody>
           </table>
+        )}
+        {filteredLogs.length > 0 && (
+          <TablePagination
+            currentPage={logsPagination.currentPage}
+            totalItems={logsPagination.totalItems}
+            pageSize={logsPagination.pageSize}
+            onPageChange={logsPagination.setCurrentPage}
+            onPageSizeChange={logsPagination.setPageSize}
+          />
         )}
       </div>
     </div>

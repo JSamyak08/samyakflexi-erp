@@ -1,6 +1,6 @@
 /**
  * Slug Router Utility for Samyak Flexi-ERP
- * Manages clean URL slug paths throughout the app with zero-404 fallback support
+ * Manages clean URL slug paths, unique record/item IDs, sub-tabs, and shareable deep links.
  */
 
 export const TAB_SLUG_MAP = {
@@ -17,6 +17,7 @@ export const TAB_SLUG_MAP = {
   user_management: '/user-management',
   cylinders: '/rotogravure-cylinders',
   printing_scheduler: '/printing-scheduler',
+  scrap_wastage: '/scrap-wastage',
   supabase: '/supabase-integration',
   doc_settings: '/letterhead-settings',
   audit_logs: '/audit-logs'
@@ -69,6 +70,9 @@ export const SLUG_TAB_MAP = {
   '/printing-scheduler': 'printing_scheduler',
   'printing-scheduler': 'printing_scheduler',
 
+  '/scrap-wastage': 'scrap_wastage',
+  'scrap-wastage': 'scrap_wastage',
+
   '/supabase-integration': 'supabase',
   'supabase-integration': 'supabase',
 
@@ -80,54 +84,87 @@ export const SLUG_TAB_MAP = {
 };
 
 /**
- * Get active tab key from current URL path, hash or query string
+ * Get active tab key and query parameters from current URL (path, hash, search)
  */
-export function getTabFromUrl() {
+export function getRouteFromUrl() {
   try {
-    // 1. Check Query Params e.g. ?tab=orders or ?page=orders
-    const searchParams = new URLSearchParams(window.location.search);
-    const paramTab = searchParams.get('tab') || searchParams.get('page') || searchParams.get('p');
-    if (paramTab && SLUG_TAB_MAP[paramTab]) {
-      return SLUG_TAB_MAP[paramTab];
+    let tab = 'dashboard';
+    const params = {};
+
+    // Parse search params from window.location.search
+    if (typeof window !== 'undefined' && window.location) {
+      const searchParams = new URLSearchParams(window.location.search);
+      searchParams.forEach((val, key) => {
+        params[key] = val;
+      });
+
+      // Parse hash params if hash exists e.g. #/job-masters?id=JOB-001 or #job-masters?id=JOB-001
+      const rawHash = window.location.hash ? window.location.hash.replace(/^#\/?/, '') : '';
+      if (rawHash) {
+        const hashParts = rawHash.split('?');
+        const hashSlug = hashParts[0].replace(/\/$/, '');
+        if (SLUG_TAB_MAP[hashSlug] || SLUG_TAB_MAP['/' + hashSlug]) {
+          tab = SLUG_TAB_MAP[hashSlug] || SLUG_TAB_MAP['/' + hashSlug];
+        }
+        if (hashParts[1]) {
+          const hashSearchParams = new URLSearchParams(hashParts[1]);
+          hashSearchParams.forEach((val, key) => {
+            params[key] = val;
+          });
+        }
+      }
+
+      // Check query params for tab= or page=
+      if (params.tab && SLUG_TAB_MAP[params.tab]) {
+        tab = SLUG_TAB_MAP[params.tab];
+      } else if (params.page && SLUG_TAB_MAP[params.page]) {
+        tab = SLUG_TAB_MAP[params.page];
+      } else if (!window.location.hash) {
+        // Check pathname e.g. /job-masters or /orders
+        const rawPath = window.location.pathname ? window.location.pathname.toLowerCase() : '/';
+        const path = rawPath.length > 1 ? rawPath.replace(/\/$/, '') : rawPath;
+        if (SLUG_TAB_MAP[path]) {
+          tab = SLUG_TAB_MAP[path];
+        }
+      }
     }
 
-    // 2. Check Hash e.g. #/orders or #orders
-    const rawHash = window.location.hash ? window.location.hash.replace(/^#\/?/, '') : '';
-    if (rawHash && SLUG_TAB_MAP[rawHash]) {
-      return SLUG_TAB_MAP[rawHash];
-    }
-
-    // 3. Check Pathname e.g. /orders or /job-punching
-    const rawPath = window.location.pathname ? window.location.pathname.toLowerCase() : '/';
-    const path = rawPath.length > 1 ? rawPath.replace(/\/$/, '') : rawPath;
-    if (SLUG_TAB_MAP[path]) {
-      return SLUG_TAB_MAP[path];
-    }
-
-    return 'dashboard';
+    return { tab, params };
   } catch (e) {
-    console.error("Error reading URL slug", e);
-    return 'dashboard';
+    console.error("Error reading URL route", e);
+    return { tab: 'dashboard', params: {} };
   }
 }
 
-/**
- * Get clean URL slug for a given tab key
- */
+export function getTabFromUrl() {
+  return getRouteFromUrl().tab;
+}
+
 export function getSlugForTab(tabKey) {
   return TAB_SLUG_MAP[tabKey] || '/dashboard';
 }
 
 /**
- * Update browser URL path with history pushState
+ * Update browser URL path & query string with history.pushState
+ * @param {string} tabKey - Page tab key e.g. 'job_masters'
+ * @param {Object} queryParams - Optional query params e.g. { id: 'JOB-001', tab: 'grn_inward' }
  */
-export function pushSlugState(tabKey) {
+export function pushSlugState(tabKey, queryParams = {}) {
   try {
     const targetSlug = getSlugForTab(tabKey);
-    const currentPath = window.location.pathname;
+    const searchParams = new URLSearchParams();
+    
+    Object.entries(queryParams).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') {
+        searchParams.set(k, v);
+      }
+    });
 
-    if (currentPath !== targetSlug && window.history && window.history.pushState) {
-      window.history.pushState({ tab: tabKey }, '', targetSlug);
+    const searchStr = searchParams.toString();
+    const finalUrl = targetSlug + (searchStr ? `?${searchStr}` : '');
+
+    if (typeof window !== 'undefined' && window.history && window.history.pushState) {
+      window.history.pushState({ tab: tabKey, params: queryParams }, '', finalUrl);
     }
   } catch (e) {
     console.warn("Failed to push state to history", e);

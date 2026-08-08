@@ -15,9 +15,12 @@ import {
   Trash2
 } from 'lucide-react';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
+import TablePagination, { usePagination } from './TablePagination';
+import { pushSlugState } from '../utils/slugRouter';
 import { calculateJobRawMaterials } from '../factoryStore';
 
 export default function OrderManagement({ 
+  urlParams = {},
   orders = [], 
   vendors = [], 
   inventory = [],
@@ -202,6 +205,31 @@ export default function OrderManagement({
   // Track expanded order IDs
   const [expandedOrders, setExpandedOrders] = useState({});
 
+  // Auto-expand order if unique id is present in URL params
+  useEffect(() => {
+    if (urlParams && urlParams.id && orders && orders.length > 0) {
+      const match = orders.find(o => 
+        o.id === urlParams.id || 
+        (o.jobName && o.jobName.toLowerCase().includes(urlParams.id.toLowerCase()))
+      );
+      if (match) {
+        setExpandedOrders(prev => ({ ...prev, [match.id]: true }));
+      }
+    }
+  }, [urlParams?.id, orders]);
+
+  const toggleExpandOrder = (orderId) => {
+    setExpandedOrders(prev => {
+      const nextState = !prev[orderId];
+      if (nextState) {
+        pushSlugState('orders', { id: orderId });
+      } else {
+        pushSlugState('orders');
+      }
+      return { ...prev, [orderId]: nextState };
+    });
+  };
+
   // Track selected material requirement IDs: { "REQ-089-1": true, "REQ-091-1": true }
   const [selectedReqIds, setSelectedReqIds] = useState({});
 
@@ -236,10 +264,6 @@ export default function OrderManagement({
 
   // Generated PO PDF preview state
   const [activePoPdfData, setActivePoPdfData] = useState(null);
-
-  const toggleExpandOrder = (orderId) => {
-    setExpandedOrders(prev => ({ ...prev, [orderId]: !prev[orderId] }));
-  };
 
   const toggleSelectReq = (reqId) => {
     setSelectedReqIds(prev => ({ ...prev, [reqId]: !prev[reqId] }));
@@ -484,6 +508,8 @@ export default function OrderManagement({
     return matchesSearch;
   });
 
+  const ordersPagination = usePagination(filteredOrders, 50);
+
   const delayedOrdersCount = orders.filter(o => (o.status === 'Delayed' || new Date(o.targetDeliveryDate) < new Date()) && o.status !== 'Completed' && o.status !== 'On Hold').length;
 
   return (
@@ -578,7 +604,7 @@ export default function OrderManagement({
 
       {/* Orders List with Itemized Raw Material Requirements Drawer */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        {filteredOrders.map(order => {
+        {ordersPagination.paginatedItems.map(order => {
           const isOverdue = order.status === 'Delayed' || new Date(order.targetDeliveryDate) < new Date('2026-07-24');
           const isExpanded = expandedOrders[order.id];
           const reqs = getOrderMaterialRequirements(order);
@@ -821,6 +847,13 @@ export default function OrderManagement({
           );
         })}
       </div>
+      <TablePagination
+        currentPage={ordersPagination.currentPage}
+        totalItems={ordersPagination.totalItems}
+        pageSize={ordersPagination.pageSize}
+        onPageChange={ordersPagination.setCurrentPage}
+        onPageSizeChange={ordersPagination.setPageSize}
+      />
 
       {/* Modal: Consolidated Vendor Purchase Order Generation */}
       {isPoModalOpen && (

@@ -22,6 +22,7 @@ import { uploadArtworkFile, openArtworkViewer } from '../services/supabaseStorag
 import ArtworkModal from './ArtworkModal';
 
 export default function CylinderManagement({ 
+  urlParams = {},
   cylinders = [], 
   onAddCylinder, 
   onUpdateCylinder,
@@ -29,6 +30,12 @@ export default function CylinderManagement({
   machines = []
 }) {
   const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    if (urlParams && urlParams.id) {
+      setSearchTerm(urlParams.id);
+    }
+  }, [urlParams?.id]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCylinder, setEditingCylinder] = useState(null);
   const [selectedForPDF, setSelectedForPDF] = useState(null);

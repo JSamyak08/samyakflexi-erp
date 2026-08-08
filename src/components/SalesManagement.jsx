@@ -175,6 +175,7 @@ export function getStructureString(item) {
 }
 
 export default function SalesManagement({
+  urlParams = {},
   orders = [],
   clients = [],
   jobMasters = [],
@@ -218,6 +219,12 @@ export default function SalesManagement({
   const [activeSubTab, setActiveSubTab] = useState('list'); // 'list', 'create'
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+
+  useEffect(() => {
+    if (urlParams && urlParams.id) {
+      setSearchTerm(urlParams.id);
+    }
+  }, [urlParams?.id]);
 
   // PDF Preview State
   const [activeQuotationForPDF, setActiveQuotationForPDF] = useState(null);

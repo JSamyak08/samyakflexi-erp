@@ -16,11 +16,17 @@ import {
 import { generateVendorId } from '../factoryStore';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
 
-export default function VendorManagement({ vendors = [], orders = [], onAddVendor }) {
+export default function VendorManagement({ urlParams = {}, vendors = [], orders = [], onAddVendor }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [isOnboardingModalOpen, setIsOnboardingModalOpen] = useState(false);
   const [selectedVendorForPoHistory, setSelectedVendorForPoHistory] = useState(null);
   const [activePoPdfData, setActivePoPdfData] = useState(null);
+
+  React.useEffect(() => {
+    if (urlParams && urlParams.id) {
+      setSearchTerm(urlParams.id);
+    }
+  }, [urlParams?.id]);
 
   // New Vendor Form State
   const [companyName, setCompanyName] = useState('');

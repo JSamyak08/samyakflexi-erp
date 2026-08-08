@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import TablePagination, { usePagination } from './TablePagination';
 import { 
   FileCode, 
   Search, 
@@ -29,6 +30,7 @@ import { FILM_DENSITIES } from '../factoryStore';
 import CylinderJobCardForm from '../CylinderJobCardForm';
 
 export default function JobMasterDirectory({ 
+  urlParams = {},
   jobMasters = [], 
   cylinders = [], 
   productionRecords = [], 
@@ -47,6 +49,30 @@ export default function JobMasterDirectory({
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingJobId, setEditingJobId] = useState(null);
   const [activeJobCardData, setActiveJobCardData] = useState(null);
+
+  // Auto-select job master if unique id is present in URL params
+  React.useEffect(() => {
+    if (urlParams && urlParams.id && jobMasters && jobMasters.length > 0) {
+      const match = jobMasters.find(j => 
+        j.id === urlParams.id || 
+        j.skuCode === urlParams.id || 
+        (j.jobName && j.jobName.toLowerCase().includes(urlParams.id.toLowerCase()))
+      );
+      if (match) {
+        setSelectedJob(match);
+      }
+    }
+  }, [urlParams?.id, jobMasters]);
+
+  // Sync browser URL whenever selectedJob changes
+  const handleSelectJob = (job) => {
+    setSelectedJob(job);
+    if (job) {
+      pushSlugState('job_masters', { id: job.id });
+    } else {
+      pushSlugState('job_masters');
+    }
+  };
 
   // Filter States for Job Masters Technical Directory
   const [clientFilter, setClientFilter] = useState('ALL');
@@ -214,6 +240,8 @@ export default function JobMasterDirectory({
       return true;
     });
   }, [jobMasters, searchTerm, clientFilter, substrateFilter, layerCountFilter, colorsFilter, costBorneFilter]);
+
+  const jobsPagination = usePagination(filteredJobMasters, 50);
 
   const activeFiltersCount = useMemo(() => {
     let count = 0;
@@ -1048,39 +1076,48 @@ export default function JobMasterDirectory({
             </button>
           </div>
         ) : (
-          <table className="data-table">
-            <thead>
-              <tr><th>Job Master ID</th><th>SKU Code</th><th>Job Name</th><th>Client Name</th><th>Laminate Structure</th><th>Print Width x Repeat</th><th>Colors & Engraver</th><th>Actions</th></tr>
-            </thead>
-            <tbody>
-              {filteredJobMasters.map(job => (
-                <tr key={job.id}>
-                  <td style={{ fontWeight: '800', color: 'var(--primary-brand)' }}>{job.id}</td>
-                  <td><span className="badge badge-both">{job.skuCode}</span></td>
-                  <td style={{ fontWeight: '700' }}>{job.jobName}</td>
-                  <td style={{ color: 'var(--text-secondary)' }}>{job.clientName}</td>
-                  <td style={{ fontSize: '0.8rem', fontWeight: '600' }}>{job.structure}</td>
-                  <td>{job.printWidthMm}mm x {job.repeatLengthMm}mm</td>
-                  <td>
-                    <div style={{ fontSize: '0.8rem' }}>
-                      🎨 <b>{job.colorsCount || 6} Colors</b>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{job.engravuresName}</div>
-                    </div>
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                      <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => setSelectedJob(job)}>View Profile</button>
-                      <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => handleOpenEditModal(job)}>Edit</button>
-                      <button className="btn-primary" style={{ padding: '4px 10px', fontSize: '0.75rem', background: '#047857' }} onClick={() => onPunchOrderFromJobMaster && onPunchOrderFromJobMaster(job)}>Punch Order</button>
-                      <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.75rem', color: '#dc2626', borderColor: '#fca5a5' }} onClick={() => handleConfirmDeleteJobMaster(job)} title="Delete Job Master">
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <>
+            <table className="data-table">
+              <thead>
+                <tr><th>Job Master ID</th><th>SKU Code</th><th>Job Name</th><th>Client Name</th><th>Laminate Structure</th><th>Print Width x Repeat</th><th>Colors & Engraver</th><th>Actions</th></tr>
+              </thead>
+              <tbody>
+                {jobsPagination.paginatedItems.map(job => (
+                  <tr key={job.id}>
+                    <td style={{ fontWeight: '800', color: 'var(--primary-brand)' }}>{job.id}</td>
+                    <td><span className="badge badge-both">{job.skuCode}</span></td>
+                    <td style={{ fontWeight: '700' }}>{job.jobName}</td>
+                    <td style={{ color: 'var(--text-secondary)' }}>{job.clientName}</td>
+                    <td style={{ fontSize: '0.8rem', fontWeight: '600' }}>{job.structure}</td>
+                    <td>{job.printWidthMm}mm x {job.repeatLengthMm}mm</td>
+                    <td>
+                      <div style={{ fontSize: '0.8rem' }}>
+                        🎨 <b>{job.colorsCount || 6} Colors</b>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{job.engravuresName}</div>
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => handleSelectJob(job)}>View Profile</button>
+                        <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => handleOpenEditModal(job)}>Edit</button>
+                        <button className="btn-primary" style={{ padding: '4px 10px', fontSize: '0.75rem', background: '#047857' }} onClick={() => onPunchOrderFromJobMaster && onPunchOrderFromJobMaster(job)}>Punch Order</button>
+                        <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.75rem', color: '#dc2626', borderColor: '#fca5a5' }} onClick={() => handleConfirmDeleteJobMaster(job)} title="Delete Job Master">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <TablePagination
+              currentPage={jobsPagination.currentPage}
+              totalItems={jobsPagination.totalItems}
+              pageSize={jobsPagination.pageSize}
+              onPageChange={jobsPagination.setCurrentPage}
+              onPageSizeChange={jobsPagination.setPageSize}
+            />
+          </>
         )}
       </div>
 
