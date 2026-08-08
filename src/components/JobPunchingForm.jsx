@@ -91,6 +91,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
 
   // Price Modal / Section toggle
   const [showPDFModal, setShowPDFModal] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   // Preset structures selector for convenience
   const applyPresetStructure = (presetName) => {
@@ -187,13 +188,24 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
     adhesivePrice
   ]);
 
-  const handleSaveToOrderList = () => {
+  const handleInitiatePunchJob = () => {
     if (isSubmitted) return;
     if (!jobName.trim() || !clientName.trim()) {
       alert("Please enter Job Name and Client Name.");
       return;
     }
 
+    const unratedLayer = layers.find(l => (!l.rate && l.rate !== 0) && (l.rate === '' || l.rate === undefined));
+    if (unratedLayer) {
+      alert(`Please enter the Market Rate (₹/kg) for Layer (${unratedLayer.filmType}) before proceeding.`);
+      return;
+    }
+
+    setShowConfirmModal(true);
+  };
+
+  const handleFinalConfirmAndPunch = () => {
+    setShowConfirmModal(false);
     setIsSubmitted(true);
 
     const targetDate = new Date();
@@ -231,7 +243,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
 
     notifyOrderPunched(newOrder).catch(err => console.error("Order punched email error:", err));
 
-    alert(`Job "${jobName}" punched successfully! Order ID ${newOrder.id} generated.`);
+    setShowPDFModal(true);
   };
 
   return (
@@ -426,7 +438,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
             <button 
               className="btn-primary" 
               style={{ padding: '12px 24px', fontSize: '1rem', opacity: isSubmitted ? 0.6 : 1 }} 
-              onClick={handleSaveToOrderList}
+              onClick={handleInitiatePunchJob}
               disabled={isSubmitted}
             >
               <CheckCircle2 size={20} /> {isSubmitted ? 'Job Punched Successfully!' : 'Punch Job & Generate OCN Note'}
@@ -558,9 +570,97 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
         </div>
       </div>
 
+      {/* Job Punching Final Confirmation Modal */}
+      {showConfirmModal && (
+        <div className="modal-overlay" onClick={() => setShowConfirmModal(false)}>
+          <div className="glass-card modal-content" style={{ width: '700px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+              <CheckCircle2 size={24} style={{ color: 'var(--primary-brand)' }} />
+              <h3 style={{ fontSize: '1.2rem', fontWeight: '700', margin: 0 }}>Review Job Specifications & Final OCN Summary</h3>
+            </div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '20px' }}>
+              Please double-check all details below. After confirmation, the job order will be saved and an Order Confirmation Note (OCN) will be generated.
+            </p>
+
+            {/* Grid of Job Specifications */}
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
+              <h4 style={{ fontSize: '0.85rem', color: 'var(--primary-brand)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }}>
+                Job & Client Information
+              </h4>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '0.88rem' }}>
+                <div><span style={{ color: 'var(--text-secondary)' }}>Job Name:</span> <b>{jobName}</b></div>
+                <div><span style={{ color: 'var(--text-secondary)' }}>Client Name:</span> <b>{clientName}</b></div>
+                <div><span style={{ color: 'var(--text-secondary)' }}>Print Width × Repeat:</span> <b>{printWidthMm}mm × {repeatLengthMm}mm</b></div>
+                <div><span style={{ color: 'var(--text-secondary)' }}>Order Quantity:</span> <b>{orderQtyKg} Kg ({orderType})</b></div>
+                <div><span style={{ color: 'var(--text-secondary)' }}>Printing Colors:</span> <b>{colorsCount} Colors</b></div>
+                <div><span style={{ color: 'var(--text-secondary)' }}>Ink / Adhesive GSM:</span> <b>{inkGsm} / {adhesiveGsm} g/m²</b></div>
+                <div><span style={{ color: 'var(--text-secondary)' }}>Target Delivery:</span> <b>{targetDeliveryDays} Days from today</b></div>
+              </div>
+            </div>
+
+            {/* Substrate Layers Breakdown */}
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
+              <h4 style={{ fontSize: '0.85rem', color: 'var(--primary-brand)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }}>
+                Substrate Layers & Market Rates
+              </h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {layers.map((l, i) => {
+                  const density = FILM_DENSITIES[l.filmType] || 1.0;
+                  const gsm = ((parseFloat(l.micron) || 0) * density).toFixed(2);
+                  const rateVal = (l.rate !== undefined && l.rate !== '' && l.rate !== null) ? l.rate : (DEFAULT_DAILY_RATES[l.filmType] || 130);
+                  return (
+                    <div key={l.id || i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#ffffff', border: '1px solid #cbd5e1', padding: '10px 14px', borderRadius: '6px', fontSize: '0.88rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span className="layer-badge">L{i + 1}</span>
+                        <span><b>{l.filmType}</b> ({l.micron}µ) — {gsm} GSM</span>
+                      </div>
+                      <div style={{ fontWeight: '700', color: '#047857' }}>
+                        Rate: ₹{rateVal}/kg
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Material & Cost Summary */}
+            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '16px', marginBottom: '24px' }}>
+              <h4 style={{ fontSize: '0.85rem', color: '#1e40af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }}>
+                Raw Material & Financial Estimation
+              </h4>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.88rem', marginBottom: '12px' }}>
+                <div><span style={{ color: 'var(--text-secondary)' }}>Total Surface Area:</span> <b>{calculationResults.totalAreaSqm?.toLocaleString()} m²</b></div>
+                <div><span style={{ color: 'var(--text-secondary)' }}>Applied Wastage %:</span> <b>{calculationResults.wastagePct}%</b></div>
+                <div><span style={{ color: 'var(--text-secondary)' }}>Gross RM Required:</span> <b>{(calculationResults.summary.totalFilmGrossKg + (calculationResults.inkDetails.grossKg || 0) + (calculationResults.adhesiveDetails.grossKg || 0)).toFixed(2)} Kg</b></div>
+                <div><span style={{ color: 'var(--text-secondary)' }}>Cost Per Finished Kg:</span> <b style={{ color: 'var(--success)' }}>₹{calculationResults.summary.costPerKg}/kg</b></div>
+              </div>
+              <div style={{ borderTop: '1px solid #dbeafe', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.95rem', fontWeight: '600', color: '#1e3a8a' }}>Total Estimated Raw Material Cost:</span>
+                <span style={{ fontSize: '1.3rem', fontWeight: '800', color: '#1e40af' }}>₹{calculationResults.summary.totalRawMaterialCost?.toLocaleString()}</span>
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+              <button className="btn-secondary" onClick={() => setShowConfirmModal(false)}>
+                Back to Edit
+              </button>
+              <button className="btn-primary" onClick={handleFinalConfirmAndPunch} style={{ background: 'var(--primary-brand)', color: '#ffffff' }}>
+                <CheckCircle2 size={18} /> Confirm & Generate OCN
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* PDF View Modal */}
       {showPDFModal && (
-        <OrderConfirmationPDF orderData={calculationResults} onClose={() => setShowPDFModal(false)} />
+        <OrderConfirmationPDF 
+          calculationData={calculationResults} 
+          clientDetails={matchedClient}
+          clients={clients}
+          onClose={() => setShowPDFModal(false)} 
+        />
       )}
     </div>
   );
