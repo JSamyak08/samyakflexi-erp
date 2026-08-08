@@ -40,6 +40,7 @@ import {
   generateBarcodeId, 
   generateVendorId,
   generateInventoryId,
+  PACKAGING_MATERIAL_TYPES,
   initialInventoryRolls, 
   initialDispatchShipments,
   initialStockAdjustments
@@ -352,6 +353,7 @@ export default function InventoryManagement({
   const [grnMicron, setGrnMicron] = useState(12);
   const [grnWidthMm, setGrnWidthMm] = useState(1000);
   const [grnUnit, setGrnUnit] = useState('Kg');
+  const [grnPackagingType, setGrnPackagingType] = useState('Roll');
   const [grnRolls, setGrnRolls] = useState(10);
   const [grnWeightKg, setGrnWeightKg] = useState(1500);
   const [grnPurchaseRate, setGrnPurchaseRate] = useState(120);
@@ -655,6 +657,7 @@ export default function InventoryManagement({
       micron: isFilm ? parseFloat(grnMicron) : '-',
       widthMm: isFilm ? parseFloat(grnWidthMm) : '-',
       unit: isFilm ? 'Kg' : grnUnit,
+      packagingType: grnPackagingType,
       rollsReceived: unitCount,
       netWeightKg: totalQty,
       purchaseRatePerKg: rateVal,
@@ -692,6 +695,7 @@ export default function InventoryManagement({
         micron: isFilm ? (parseFloat(grnMicron) || 0) : 0,
         widthMm: isFilm ? (parseFloat(grnWidthMm) || 0) : 0,
         unit: isFilm ? 'Kg' : grnUnit,
+        packagingType: grnPackagingType,
         inwardDatetime: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
         vendorName: grnVendor,
         invoiceNo: grnInvoiceNo,
@@ -2138,6 +2142,20 @@ export default function InventoryManagement({
                   <input type="text" className="form-control" required placeholder="e.g. BATCH-PET-991" value={grnBatchNo} onChange={e => setGrnBatchNo(e.target.value)} />
                 </div>
 
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label style={{ fontWeight: '700', color: '#1e40af' }}>Material / Container Packaging Type *</label>
+                  <select 
+                    className="form-control" 
+                    style={{ fontWeight: '700' }}
+                    value={grnPackagingType} 
+                    onChange={e => setGrnPackagingType(e.target.value)}
+                  >
+                    {PACKAGING_MATERIAL_TYPES.map(type => (
+                      <option key={type} value={type}>{type} ({type}s)</option>
+                    ))}
+                  </select>
+                </div>
+
                 {grnCategory === 'Film Substrates' ? (
                   <>
                     <div className="form-group">
@@ -2158,12 +2176,12 @@ export default function InventoryManagement({
                     </div>
 
                     <div className="form-group">
-                      <label>Rolls Received</label>
-                      <input type="number" className="form-control" value={grnRolls} onChange={e => setGrnRolls(e.target.value)} />
+                      <label>Number of {grnPackagingType}s Received *</label>
+                      <input type="number" min="1" className="form-control" value={grnRolls} onChange={e => setGrnRolls(e.target.value)} />
                     </div>
 
                     <div className="form-group">
-                      <label>Net Weight Inward (Kg) *</label>
+                      <label>Total Net Weight Inward (Kg) *</label>
                       <input type="number" step="any" className="form-control" required value={grnWeightKg} onChange={e => setGrnWeightKg(e.target.value)} />
                     </div>
 
@@ -2204,22 +2222,25 @@ export default function InventoryManagement({
                         <option value="Rolls">Rolls</option>
                         <option value="Pcs">Pcs</option>
                         <option value="Drums">Drums</option>
+                        <option value="Bags">Bags</option>
+                        <option value="Cans">Cans</option>
                       </select>
                     </div>
 
                     <div className="form-group">
-                      <label>Packages / Units Received (for barcodes)</label>
+                      <label>Number of {grnPackagingType}s Received (for Barcodes) *</label>
                       <input 
                         type="number" 
+                        min="1"
                         className="form-control" 
-                        placeholder="e.g. 5 Boxes / 10 Drums (Default: 1)" 
+                        placeholder={`e.g. 5 ${grnPackagingType}s (Default: 1)`} 
                         value={grnRolls} 
                         onChange={e => setGrnRolls(e.target.value)} 
                       />
                     </div>
 
                     <div className="form-group">
-                      <label>Total Quantity Received ({grnUnit}) *</label>
+                      <label>Total Inward Qty ({grnUnit}) *</label>
                       <input 
                         type="number" 
                         step="any"
@@ -2244,6 +2265,10 @@ export default function InventoryManagement({
                     </div>
                   </>
                 )}
+
+                <div style={{ gridColumn: 'span 2', fontSize: '0.78rem', color: '#047857', fontWeight: '600', background: '#ecfdf5', padding: '8px 12px', borderRadius: '6px', border: '1px solid #a7f3d0' }}>
+                  📦 Inward Package Breakdown: <strong>{grnWeightKg || 0} {grnCategory === 'Film Substrates' ? 'Kg' : grnUnit}</strong> total across <strong>{grnRolls || 1} {grnPackagingType}(s)</strong> = <strong>{( (parseFloat(grnWeightKg) || 0) / Math.max(1, parseInt(grnRolls) || 1) ).toFixed(2)} {grnCategory === 'Film Substrates' ? 'Kg' : grnUnit}</strong> per {grnPackagingType}. (1 barcode sticker generated per {grnPackagingType}).
+                </div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>

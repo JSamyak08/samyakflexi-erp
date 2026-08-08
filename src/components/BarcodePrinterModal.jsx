@@ -155,11 +155,11 @@ export default function BarcodePrinterModal({ roll, rolls, onClose }) {
             {isFilmItem ? (
               <div style={{ fontSize: '0.7rem', color: '#334155', marginTop: '1px' }}>
                 Gauge: <strong>{r.micron}µ</strong> | Width: <strong>{r.widthMm}mm</strong>
-                {r.totalUnits > 1 ? ` | Roll ${r.unitNo || 1} of ${r.totalUnits}` : ''}
+                {r.totalUnits > 1 ? ` | ${r.packagingType || 'Roll'} ${r.unitNo || 1} of ${r.totalUnits}` : ''}
               </div>
             ) : (
               <div style={{ fontSize: '0.7rem', color: '#334155', marginTop: '1px' }}>
-                Category: <strong>{r.category || 'Stock Item'}</strong> {r.totalUnits > 1 ? ` | Unit ${r.unitNo || 1} of ${r.totalUnits}` : ''}
+                Category: <strong>{r.category || 'Stock Item'}</strong> {r.totalUnits > 1 ? ` | ${r.packagingType || 'Unit'} ${r.unitNo || 1} of ${r.totalUnits}` : ''}
               </div>
             )}
           </div>

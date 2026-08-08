@@ -500,6 +500,21 @@ export const generateInventoryId = (inventory = []) => {
   return `INVT-${String(nextNum).padStart(4, '0')}`;
 };
 
+export const PACKAGING_MATERIAL_TYPES = [
+  "Roll",
+  "Drum",
+  "Box",
+  "Pcs",
+  "Bag",
+  "Can",
+  "Pallet",
+  "Carboy",
+  "Carton",
+  "Barrel",
+  "Bucket",
+  "Container"
+];
+
 export const generateVendorId = () => {
   return `VEND-2026-${Math.floor(1000 + Math.random() * 9000)}`;
 };
