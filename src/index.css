@@ -1551,5 +1551,69 @@ body {
   }
 }
 
+/* Sidebar Group Headers */
+.sidebar-section-header {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 14px;
+  margin-bottom: 6px;
+  padding-left: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0.85;
+}
+
+/* Order card grid layout for precise alignment */
+.order-card-header-grid {
+  display: grid;
+  grid-template-columns: 24px 2.2fr 1fr 0.9fr auto;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+}
+
+/* Order ID monospace badge */
+.order-id-badge {
+  font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
+  font-weight: 800;
+  font-size: 0.82rem;
+  padding: 3px 8px;
+  border-radius: 4px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  display: inline-block;
+}
+
+/* Responsive adjustments for the new grid layout */
+@media (max-width: 1024px) {
+  .order-card-header-grid {
+    grid-template-columns: 24px 1.8fr 1fr auto;
+    gap: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  .order-card-header-grid {
+    grid-template-columns: 24px 1fr !important;
+    gap: 12px !important;
+  }
+  
+  /* Push target date, status, actions into a clean flex column/row */
+  .order-card-right-section {
+    grid-column: 2;
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 12px !important;
+    width: 100%;
+    margin-top: 8px;
+    border-top: 1px dashed var(--border-color);
+    padding-top: 12px;
+  }
+}
+
 
 

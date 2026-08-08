@@ -211,7 +211,7 @@ export default function InventoryManagement({
       date: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
       type: adjType,
       qtyKg: qty,
-      barcode: adjBarcode.trim() || `BAR-${(item.filmType || 'ADJ').toUpperCase().replace(/\s+/g, '')}-ADJ-${Math.floor(100 + Math.random() * 900)}`,
+      barcode: adjBarcode.trim() || generateBarcodeId('ADJ'),
       reason: adjReason.trim() || 'Physical Stock Audit Correction',
       adjustedBy: 'Store Mgr Dilip Joshi'
     };
@@ -1239,9 +1239,36 @@ export default function InventoryManagement({
                       {g.status === 'Rejected' && <span className="badge badge-warning" style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444' }}>REJECTED</span>}
                     </td>
                     <td>
-                      <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={() => setSelectedGRNForPDF(g)}>
-                        <Printer size={14} /> Print GRN PDF
-                      </button>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={() => setSelectedGRNForPDF(g)}>
+                          <Printer size={14} /> Print GRN
+                        </button>
+                        <button 
+                          className="btn-secondary" 
+                          style={{ padding: '6px 12px', fontSize: '0.8rem', color: '#059669', borderColor: '#a7f3d0' }}
+                          onClick={() => {
+                            const matchedRoll = (inventoryRolls || []).find(r => 
+                              r.invoiceNo === g.invoiceNo && 
+                              r.batchNo === g.batchNo
+                            );
+                            const rollObj = matchedRoll || {
+                              barcodeId: `RM-BC-${g.grnNo.replace('GRN-', '')}`,
+                              rollType: 'RAW_MATERIAL',
+                              itemName: g.itemName,
+                              micron: g.micron !== '-' ? parseFloat(g.micron) : 0,
+                              widthMm: g.widthMm !== '-' ? parseFloat(g.widthMm) : 0,
+                              netWeightKg: g.netWeightKg,
+                              vendorName: g.vendorName,
+                              invoiceNo: g.invoiceNo,
+                              batchNo: g.batchNo,
+                              stationId: 'SCALE_1_INWARD'
+                            };
+                            setSelectedRollForBarcodeModal(rollObj);
+                          }}
+                        >
+                          <Printer size={14} /> Barcode
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -2837,6 +2864,25 @@ export default function InventoryManagement({
                                   >
                                     <Edit3 size={13} />
                                   </button>
+                                  {tx.barcode && (
+                                    <button 
+                                      type="button" 
+                                      style={{ background: 'none', border: 'none', color: '#059669', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+                                      onClick={() => setSelectedRollForBarcodeModal({
+                                        barcodeId: tx.barcode,
+                                        rollType: tx.category === 'inward' ? 'RAW_MATERIAL' : 'CONSUMABLE_ITEM',
+                                        itemName: item.itemName || `${item.filmType} Film (${item.micron}µ x ${item.widthMm}mm)`,
+                                        micron: item.micron || 0,
+                                        widthMm: item.widthMm || 0,
+                                        netWeightKg: tx.inwardQtyKg || tx.outwardQtyKg || 0,
+                                        vendorName: tx.partyName,
+                                        stationId: 'SCALE_1_INWARD'
+                                      })}
+                                      title="Print Barcode Sticker"
+                                    >
+                                      <Printer size={13} />
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </td>
@@ -3130,7 +3176,27 @@ export default function InventoryManagement({
                     {dispatchRollsList.map((r, i) => (
                       <tr key={i}>
                         <td style={{ fontWeight: '700' }}>{r.rollNo}</td>
-                        <td style={{ fontFamily: 'monospace', color: '#2563eb' }}>{r.barcodeId}</td>
+                        <td style={{ fontFamily: 'monospace', color: '#2563eb' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span>{r.barcodeId}</span>
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              style={{ padding: '2px 6px', fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: '2px' }}
+                              onClick={() => setSelectedRollForBarcodeModal({
+                                barcodeId: r.barcodeId,
+                                rollType: 'FG_DISPATCH',
+                                itemName: r.substrateSpec || 'Laminated Printed Reel',
+                                netWeightKg: r.netWeightKg,
+                                jobName: dispatchJobName,
+                                clientName: dispatchClientName,
+                                stationId: 'SCALE_4_DISPATCH'
+                              })}
+                            >
+                              <Printer size={12} /> Print
+                            </button>
+                          </div>
+                        </td>
                         <td style={{ fontWeight: '700', color: '#047857' }}>{r.netWeightKg} kg</td>
                         <td>{r.grossWeightKg} kg</td>
                         <td>

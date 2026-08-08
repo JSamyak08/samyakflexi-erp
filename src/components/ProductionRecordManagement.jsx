@@ -80,6 +80,7 @@ export default function ProductionRecordManagement({
 
   const [materialsList, setMaterialsList] = useState([]);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [selectedRollForBarcodeModal, setSelectedRollForBarcodeModal] = useState(null);
 
   // Processing Cost Per Kg (Default from Settings: ₹ 25/kg)
   const [processingCostPerKg, setProcessingCostPerKg] = useState(25);
@@ -1354,6 +1355,39 @@ export default function ProductionRecordManagement({
                           }}
                         />
                         <Scan size={14} style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', color: m.barcode ? '#0284c7' : '#94a3b8' }} />
+                        {m.barcode && (
+                          <button
+                            type="button"
+                            style={{
+                              position: 'absolute',
+                              right: '8px',
+                              top: '50%',
+                              transform: 'translateY(-50%)',
+                              background: 'none',
+                              border: 'none',
+                              color: '#059669',
+                              cursor: 'pointer',
+                              padding: '2px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              zIndex: 10
+                            }}
+                            onClick={() => {
+                              setSelectedRollForBarcodeModal({
+                                barcodeId: m.barcode,
+                                rollType: 'RAW_MATERIAL',
+                                itemName: m.filmType || 'Film Substrate',
+                                micron: parseFloat(m.micron) || 0,
+                                widthMm: parseFloat(m.widthMm) || 0,
+                                netWeightKg: parseFloat(m.issueQtyKg) || 0,
+                                stationId: 'SCALE_2_PRINTING'
+                              });
+                            }}
+                            title="Print Barcode Tag"
+                          >
+                            <Printer size={14} />
+                          </button>
+                        )}
                       </div>
                     </td>
 
@@ -1985,6 +2019,13 @@ export default function ProductionRecordManagement({
             </form>
           </div>
         </div>
+      )}
+
+      {selectedRollForBarcodeModal && (
+        <BarcodePrinterModal 
+          roll={selectedRollForBarcodeModal} 
+          onClose={() => setSelectedRollForBarcodeModal(null)} 
+        />
       )}
     </div>
   );

@@ -592,76 +592,106 @@ export default function OrderManagement({
             >
               {/* Order Header Row */}
               <div 
-                style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', background: isOverdue ? '#fef2f2' : 'transparent' }}
+                className="order-header-row"
+                style={{ 
+                  padding: '16px 20px', 
+                  display: 'flex',
+                  alignItems: 'center',
+                  background: isOverdue ? '#fef2f2' : 'transparent',
+                  transition: 'background 0.2s ease',
+                  cursor: 'pointer'
+                }}
                 onClick={() => toggleExpandOrder(order.id)}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{ color: 'var(--text-muted)' }}>
+                <div className="order-card-header-grid">
+                  {/* Chevron Toggle */}
+                  <div style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
                     {isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
                   </div>
 
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{ fontWeight: '800', fontSize: '1rem', color: isOverdue ? '#dc2626' : 'var(--primary-brand)' }}>
+                  {/* Left Column: Job Details */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                      <span className="order-id-badge" style={{ 
+                        background: isOverdue ? 'rgba(239, 68, 68, 0.15)' : 'var(--accent-light)',
+                        color: isOverdue ? '#dc2626' : 'var(--primary-brand)',
+                        border: isOverdue ? '1px solid rgba(239, 68, 68, 0.25)' : '1px solid var(--border-color)'
+                      }}>
                         {order.id}
                       </span>
-                      <h3 style={{ fontSize: '1.05rem', fontWeight: '700' }}>{order.jobName}</h3>
-                      {isOverdue && <span className="badge-delayed-tag">OVERDUE / DELAYED</span>}
+                      <h3 style={{ fontSize: '1.05rem', fontWeight: '800', margin: '0', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '380px' }} title={order.jobName}>
+                        {order.jobName}
+                      </h3>
+                      {isOverdue && <span className="badge-delayed-tag">OVERDUE</span>}
                     </div>
                     
-                    <div style={{ display: 'flex', gap: '16px', fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                      <span>Client: <b>{order.clientName}</b></span>
-                      <span>Structure: <b>{getSubstrateStructure(order)}</b></span>
-                      <span>Order Qty: <b>{(order.orderQtyKg ?? 0).toLocaleString()} kg</b> ({order.orderType})</span>
+                    <div style={{ display: 'flex', gap: '14px', fontSize: '0.8rem', color: 'var(--text-secondary)', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span>Client: <strong style={{ color: 'var(--text-primary)' }}>{order.clientName}</strong></span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                        Structure: <span style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: '4px', fontWeight: '600', color: '#1e293b' }}>{getSubstrateStructure(order)}</span>
+                      </span>
+                      <span>Qty: <strong style={{ color: 'var(--text-primary)' }}>{(order.orderQtyKg ?? 0).toLocaleString()} kg</strong> ({order.orderType})</span>
                     </div>
                   </div>
-                </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Target Delivery Date</div>
-                    <div style={{ fontWeight: '700', color: isOverdue ? '#dc2626' : 'var(--text-primary)' }}>
+                  {/* Middle Column: Target Date */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: '600' }}>Target Delivery</span>
+                    <span style={{ fontWeight: '800', fontSize: '0.92rem', color: isOverdue ? '#dc2626' : 'var(--text-primary)' }}>
                       {order.targetDeliveryDate}
-                    </div>
+                    </span>
                   </div>
 
-                  <span className={`badge ${order.status === 'On Hold' ? 'badge-warning' : isOverdue ? 'badge-warning' : 'badge-us'}`}>
-                    {order.status === 'On Hold' ? '⏸️ ON HOLD' : order.status}
-                  </span>
-
-                  {order.status !== 'Completed' && (
-                    <button 
-                      className="btn-secondary" 
-                      style={{ padding: '4px 10px', fontSize: '0.75rem', color: '#047857', borderColor: '#a7f3d0', background: '#ecfdf5', marginLeft: '8px' }}
-                      onClick={(e) => handleMarkJobCompleted(order, e)}
-                      title="Mark Job Completed (Requires Approved Production Record)"
+                  {/* Middle-Right Column: Status */}
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <span 
+                      className={`badge ${order.status === 'On Hold' ? 'badge-warning' : isOverdue ? 'badge-warning' : 'badge-us'}`}
+                      style={{ fontSize: '0.75rem', padding: '4px 10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: '95px', textAlign: 'center' }}
                     >
-                      <CheckCircle2 size={14} /> Complete Job
-                    </button>
-                  )}
+                      {order.status === 'On Hold' ? '⏸️ ON HOLD' : (isOverdue ? '⚠️ OVERDUE' : order.status)}
+                    </span>
+                  </div>
 
-                  {isAdmin && (
-                    <div style={{ display: 'flex', gap: '6px', marginLeft: '6px' }}>
+                  {/* Right Column: Actions */}
+                  <div 
+                    className="order-card-right-section"
+                    style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}
+                    onClick={e => e.stopPropagation()}
+                  >
+                    {order.status !== 'Completed' && (
                       <button 
                         className="btn-secondary" 
-                        style={{ padding: '4px 8px', fontSize: '0.75rem' }}
-                        onClick={(e) => handleToggleHoldOrder(order, e)}
-                        title={order.status === 'On Hold' ? 'Resume Order' : 'Put Order On Hold'}
+                        style={{ padding: '6px 12px', fontSize: '0.78rem', color: '#047857', borderColor: '#a7f3d0', background: '#ecfdf5', borderRadius: '6px', fontWeight: '600' }}
+                        onClick={(e) => handleMarkJobCompleted(order, e)}
+                        title="Mark Job Completed (Requires Approved Production Record)"
                       >
-                        {order.status === 'On Hold' ? <PlayCircle size={14} /> : <PauseCircle size={14} />}
-                        {order.status === 'On Hold' ? ' Resume' : ' Hold'}
+                        <CheckCircle2 size={13} /> Complete
                       </button>
+                    )}
 
-                      <button 
-                        className="btn-secondary" 
-                        style={{ padding: '4px 8px', fontSize: '0.75rem', color: '#dc2626', borderColor: '#fecaca' }}
-                        onClick={(e) => handleDeleteOrderClick(order, e)}
-                        title="Delete Order"
-                      >
-                        <Trash2 size={14} /> Delete
-                      </button>
-                    </div>
-                  )}
+                    {isAdmin && (
+                      <>
+                        <button 
+                          className="btn-secondary" 
+                          style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '6px', fontWeight: '600' }}
+                          onClick={(e) => handleToggleHoldOrder(order, e)}
+                          title={order.status === 'On Hold' ? 'Resume Order' : 'Put Order On Hold'}
+                        >
+                          {order.status === 'On Hold' ? <PlayCircle size={13} /> : <PauseCircle size={13} />}
+                          {order.status === 'On Hold' ? 'Resume' : 'Hold'}
+                        </button>
+
+                        <button 
+                          className="btn-secondary" 
+                          style={{ padding: '6px 12px', fontSize: '0.78rem', color: '#dc2626', borderColor: '#fecaca', borderRadius: '6px', fontWeight: '600' }}
+                          onClick={(e) => handleDeleteOrderClick(order, e)}
+                          title="Delete Order"
+                        >
+                          <Trash2 size={13} /> Delete
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
 

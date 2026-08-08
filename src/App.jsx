@@ -1115,169 +1115,189 @@ export default function App() {
         </div>
 
         <div className="nav-links">
-          {isTabAllowed('dashboard') && (
-            <div 
-              className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
-              onClick={() => handleTabChange('dashboard')}
-            >
-              <LayoutDashboard size={18} />
-              Executive Dashboard
-            </div>
-          )}
-
-          {isTabAllowed('production_records') && (
-            <div 
-              className={`nav-item ${activeTab === 'production_records' ? 'active' : ''}`}
-              onClick={() => handleTabChange('production_records')}
-            >
-              <ClipboardList size={18} />
-              Production Records
-              {pendingProductionApprovalCount > 0 && (
-                <span className="badge badge-warning" style={{ marginLeft: 'auto', padding: '2px 6px', fontSize: '0.7rem' }}>
-                  {pendingProductionApprovalCount} Pending
-                </span>
+          {/* Group 1: Analytics & Sales */}
+          {(isTabAllowed('dashboard') || isTabAllowed('sales')) && (
+            <>
+              <div className="sidebar-section-header">📊 Analytics & Sales</div>
+              {isTabAllowed('dashboard') && (
+                <div 
+                  className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('dashboard')}
+                >
+                  <LayoutDashboard size={18} />
+                  Executive Dashboard
+                </div>
               )}
-            </div>
-          )}
-
-          {isTabAllowed('sales') && (
-            <div 
-              className={`nav-item ${activeTab === 'sales' ? 'active' : ''}`}
-              onClick={() => handleTabChange('sales')}
-            >
-              <ShoppingBag size={18} />
-              Sales & Quotations Engine
-            </div>
-          )}
-
-          {isTabAllowed('job_punching') && (
-            <div 
-              className={`nav-item ${activeTab === 'job_punching' ? 'active' : ''}`}
-              onClick={() => handleTabChange('job_punching')}
-            >
-              <Calculator size={18} />
-              Job Punching & Costing
-            </div>
-          )}
-
-          {isTabAllowed('orders') && (
-            <div 
-              className={`nav-item ${activeTab === 'orders' ? 'active' : ''}`}
-              onClick={() => handleTabChange('orders')}
-            >
-              <ShoppingBag size={18} />
-              Order Management & POs
-              {delayedOrdersCount > 0 && (
-                <span className="badge-delayed-tag" style={{ marginLeft: 'auto', padding: '2px 6px', fontSize: '0.7rem' }}>
-                  {delayedOrdersCount}
-                </span>
+              {isTabAllowed('sales') && (
+                <div 
+                  className={`nav-item ${activeTab === 'sales' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('sales')}
+                >
+                  <ShoppingBag size={18} />
+                  Sales & Quotations Engine
+                </div>
               )}
-            </div>
+            </>
           )}
 
-          {isTabAllowed('clients') && (
-            <div 
-              className={`nav-item ${activeTab === 'clients' ? 'active' : ''}`}
-              onClick={() => handleTabChange('clients')}
-            >
-              <Briefcase size={18} />
-              Clients & Directory ({clients.length})
-            </div>
-          )}
-
-          {isTabAllowed('job_masters') && (
-            <div 
-              className={`nav-item ${activeTab === 'job_masters' ? 'active' : ''}`}
-              onClick={() => handleTabChange('job_masters')}
-            >
-              <FileCode size={18} style={{ color: '#8b5cf6' }} />
-              Job Master Directory ({jobMasters.length})
-            </div>
-          )}
-
-          {isTabAllowed('vendors') && (
-            <div 
-              className={`nav-item ${activeTab === 'vendors' ? 'active' : ''}`}
-              onClick={() => handleTabChange('vendors')}
-            >
-              <Building2 size={18} />
-              Vendor Onboarding ({vendors.length})
-            </div>
-          )}
-
-          {isTabAllowed('inventory') && (
-            <div 
-              className={`nav-item ${activeTab === 'inventory' ? 'active' : ''}`}
-              onClick={() => handleTabChange('inventory')}
-            >
-              <Package size={18} />
-              Inventory, GRN & QC
-              {pendingQCGRNsCount > 0 && (
-                <span className="badge badge-warning" style={{ marginLeft: 'auto', padding: '2px 6px', fontSize: '0.7rem' }}>
-                  {pendingQCGRNsCount} QC
-                </span>
+          {/* Group 2: Production & Operations */}
+          {(isTabAllowed('production_records') || isTabAllowed('printing_scheduler') || isTabAllowed('cylinders')) && (
+            <>
+              <div className="sidebar-section-header">⚙️ Production & Ops</div>
+              {isTabAllowed('production_records') && (
+                <div 
+                  className={`nav-item ${activeTab === 'production_records' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('production_records')}
+                >
+                  <ClipboardList size={18} />
+                  Production Records
+                  {pendingProductionApprovalCount > 0 && (
+                    <span className="badge badge-warning" style={{ marginLeft: 'auto', padding: '2px 6px', fontSize: '0.7rem' }}>
+                      {pendingProductionApprovalCount} Pending
+                    </span>
+                  )}
+                </div>
               )}
-            </div>
+              {isTabAllowed('printing_scheduler') && (
+                <div 
+                  className={`nav-item ${activeTab === 'printing_scheduler' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('printing_scheduler')}
+                >
+                  <Printer size={18} style={{ color: '#3b82f6' }} />
+                  Printing Machine Scheduler
+                </div>
+              )}
+              {isTabAllowed('cylinders') && (
+                <div 
+                  className={`nav-item ${activeTab === 'cylinders' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('cylinders')}
+                >
+                  <Layers size={18} />
+                  Rotogravure Cylinders
+                </div>
+              )}
+            </>
           )}
 
-          {isTabAllowed('material_indents') && (
-            <div 
-              className={`nav-item ${activeTab === 'material_indents' ? 'active' : ''}`}
-              onClick={() => handleTabChange('material_indents')}
-            >
-              <ClipboardList size={18} />
-              Material Indents & Store
-            </div>
+          {/* Group 3: Inventory & Warehouse */}
+          {(isTabAllowed('inventory') || isTabAllowed('material_indents')) && (
+            <>
+              <div className="sidebar-section-header">📦 Inventory & Store</div>
+              {isTabAllowed('inventory') && (
+                <div 
+                  className={`nav-item ${activeTab === 'inventory' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('inventory')}
+                >
+                  <Package size={18} />
+                  Inventory, GRN & QC
+                  {pendingQCGRNsCount > 0 && (
+                    <span className="badge badge-warning" style={{ marginLeft: 'auto', padding: '2px 6px', fontSize: '0.7rem' }}>
+                      {pendingQCGRNsCount} QC
+                    </span>
+                  )}
+                </div>
+              )}
+              {isTabAllowed('material_indents') && (
+                <div 
+                  className={`nav-item ${activeTab === 'material_indents' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('material_indents')}
+                >
+                  <ClipboardList size={18} />
+                  Material Indents & Store
+                </div>
+              )}
+            </>
           )}
 
-          {isTabAllowed('user_management') && (
-            <div 
-              className={`nav-item ${activeTab === 'user_management' ? 'active' : ''}`}
-              onClick={() => handleTabChange('user_management')}
-            >
-              <Users size={18} />
-              User Management (RBAC)
-            </div>
+          {/* Group 4: Orders & Specs */}
+          {(isTabAllowed('job_punching') || isTabAllowed('orders') || isTabAllowed('job_masters') || isTabAllowed('clients') || isTabAllowed('vendors')) && (
+            <>
+              <div className="sidebar-section-header">💼 Orders, Specs & CRM</div>
+              {isTabAllowed('job_punching') && (
+                <div 
+                  className={`nav-item ${activeTab === 'job_punching' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('job_punching')}
+                >
+                  <Calculator size={18} />
+                  Job Punching & Costing
+                </div>
+              )}
+              {isTabAllowed('orders') && (
+                <div 
+                  className={`nav-item ${activeTab === 'orders' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('orders')}
+                >
+                  <ShoppingBag size={18} />
+                  Order Management & POs
+                  {delayedOrdersCount > 0 && (
+                    <span className="badge-delayed-tag" style={{ marginLeft: 'auto', padding: '2px 6px', fontSize: '0.7rem' }}>
+                      {delayedOrdersCount}
+                    </span>
+                  )}
+                </div>
+              )}
+              {isTabAllowed('job_masters') && (
+                <div 
+                  className={`nav-item ${activeTab === 'job_masters' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('job_masters')}
+                >
+                  <FileCode size={18} style={{ color: '#8b5cf6' }} />
+                  Job Master Directory ({jobMasters.length})
+                </div>
+              )}
+              {isTabAllowed('clients') && (
+                <div 
+                  className={`nav-item ${activeTab === 'clients' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('clients')}
+                >
+                  <Briefcase size={18} />
+                  Clients & Directory ({clients.length})
+                </div>
+              )}
+              {isTabAllowed('vendors') && (
+                <div 
+                  className={`nav-item ${activeTab === 'vendors' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('vendors')}
+                >
+                  <Building2 size={18} />
+                  Vendor Onboarding ({vendors.length})
+                </div>
+              )}
+            </>
           )}
 
-          {isTabAllowed('cylinders') && (
-            <div 
-              className={`nav-item ${activeTab === 'cylinders' ? 'active' : ''}`}
-              onClick={() => handleTabChange('cylinders')}
-            >
-              <Layers size={18} />
-              Rotogravure Cylinders
-            </div>
-          )}
-
-          {isTabAllowed('printing_scheduler') && (
-            <div 
-              className={`nav-item ${activeTab === 'printing_scheduler' ? 'active' : ''}`}
-              onClick={() => handleTabChange('printing_scheduler')}
-            >
-              <Printer size={18} style={{ color: '#3b82f6' }} />
-              Printing Machine Scheduler
-            </div>
-          )}
-
-          {isTabAllowed('supabase') && (
-            <div 
-              className={`nav-item ${activeTab === 'supabase' ? 'active' : ''}`}
-              onClick={() => handleTabChange('supabase')}
-            >
-              <Database size={18} style={{ color: '#10b981' }} />
-              Supabase Connection
-            </div>
-          )}
-
-          {isTabAllowed('doc_settings') && (
-            <div 
-              className={`nav-item ${activeTab === 'doc_settings' ? 'active' : ''}`}
-              onClick={() => handleTabChange('doc_settings')}
-            >
-              <SettingsIcon size={18} style={{ color: '#6366f1' }} />
-              Letterhead & Signature Settings
-            </div>
+          {/* Group 5: Admin & Config */}
+          {(isTabAllowed('user_management') || isTabAllowed('supabase') || isTabAllowed('doc_settings')) && (
+            <>
+              <div className="sidebar-section-header">🛠️ Admin & Settings</div>
+              {isTabAllowed('user_management') && (
+                <div 
+                  className={`nav-item ${activeTab === 'user_management' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('user_management')}
+                >
+                  <Users size={18} />
+                  User Management (RBAC)
+                </div>
+              )}
+              {isTabAllowed('supabase') && (
+                <div 
+                  className={`nav-item ${activeTab === 'supabase' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('supabase')}
+                >
+                  <Database size={18} style={{ color: '#10b981' }} />
+                  Supabase Connection
+                </div>
+              )}
+              {isTabAllowed('doc_settings') && (
+                <div 
+                  className={`nav-item ${activeTab === 'doc_settings' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('doc_settings')}
+                >
+                  <SettingsIcon size={18} style={{ color: '#6366f1' }} />
+                  Letterhead Settings
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -1362,11 +1382,7 @@ export default function App() {
               <LogOut size={16} /> Sign Out
             </button>
 
-            {activeTab !== 'job_punching' && (
-              <button className="btn-primary" onClick={() => handleTabChange('job_punching')}>
-                <Calculator size={18} /> Punch New Order
-              </button>
-            )}
+
           </div>
         </div>
 
