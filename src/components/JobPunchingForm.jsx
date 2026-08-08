@@ -352,6 +352,50 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
               <label>Number of Printing Colors *</label>
               <input type="number" className="form-control" min="1" max="12" value={colorsCount} onChange={e => setColorsCount(e.target.value)} />
             </div>
+
+            <div className="form-group">
+              <label>Order Type</label>
+              <select 
+                className="form-control"
+                value={orderType}
+                onChange={e => setOrderType(e.target.value)}
+              >
+                <option value="Reel">Reel Form</option>
+                <option value="Pouching">Pouching Form</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label>Estimated Ink GSM (g/m²)</label>
+              <input 
+                type="number" 
+                step="0.1"
+                className="form-control"
+                value={inkGsm}
+                onChange={e => setInkGsm(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Estimated Adhesive GSM (g/m²)</label>
+              <input 
+                type="number" 
+                step="0.1"
+                className="form-control"
+                value={adhesiveGsm}
+                onChange={e => setAdhesiveGsm(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Target Delivery (Days from today)</label>
+              <input 
+                type="number" 
+                className="form-control"
+                value={targetDeliveryDays}
+                onChange={e => setTargetDeliveryDays(e.target.value)}
+              />
+            </div>
           </div>
 
           <hr style={{ border: 'none', borderTop: '1px solid var(--glass-border)', margin: '24px 0' }} />
