@@ -21,10 +21,10 @@ export default function BarcodePrinterModal({ roll, rolls, onClose }) {
   const renderBarcodeSVG = (text) => {
     const str = text || 'BC-2026-0000';
     const bars = [];
-    let x = 12;
-    const barHeight = 44;
-    const barStartY = 4;
-    const barEndY = barStartY + barHeight; // 48
+    let x = 10;
+    const barHeight = 36;
+    const barStartY = 3;
+    const barEndY = barStartY + barHeight; // 39
 
     // Start Pattern
     bars.push(<rect key="start-1" x={x} y={barStartY} width="3" height={barHeight} fill="#000" />); x += 5;
@@ -33,9 +33,9 @@ export default function BarcodePrinterModal({ roll, rolls, onClose }) {
 
     for (let i = 0; i < str.length; i++) {
       const charCode = str.charCodeAt(i);
-      const width1 = ((charCode % 3) + 1) * 1.5;
-      const width2 = (((charCode * 2) % 3) + 1) * 1.5;
-      const gap = ((charCode % 2) + 1) * 1.5;
+      const width1 = ((charCode % 3) + 1) * 1.4;
+      const width2 = (((charCode * 2) % 3) + 1) * 1.4;
+      const gap = ((charCode % 2) + 1) * 1.4;
 
       bars.push(<rect key={`bar-${i}-1`} x={x} y={barStartY} width={width1} height={barHeight} fill="#000" />);
       x += width1 + gap;
@@ -48,21 +48,21 @@ export default function BarcodePrinterModal({ roll, rolls, onClose }) {
     bars.push(<rect key="stop-2" x={x} y={barStartY} width="1.5" height={barHeight} fill="#000" />); x += 3.5;
     bars.push(<rect key="stop-3" x={x} y={barStartY} width="3" height={barHeight} fill="#000" />); x += 5;
 
-    const totalWidth = Math.ceil(x + 12);
-    const textY = barEndY + 18; // 66
-    const totalViewHeight = textY + 8; // 74
+    const totalWidth = Math.ceil(x + 10);
+    const textY = barEndY + 15; // 54
+    const totalViewHeight = textY + 6; // 60
 
     return (
-      <svg width="100%" height="64" viewBox={`0 0 ${totalWidth} ${totalViewHeight}`} style={{ overflow: 'visible' }}>
+      <svg width="100%" height="52" viewBox={`0 0 ${totalWidth} ${totalViewHeight}`} style={{ overflow: 'visible' }}>
         {bars}
         <text 
           x="50%" 
           y={textY} 
           textAnchor="middle" 
-          fontSize="13" 
+          fontSize="12" 
           fontFamily="Consolas, Monaco, 'Courier New', monospace" 
           fontWeight="800" 
-          letterSpacing="1.5px"
+          letterSpacing="1.2px"
           fill="#000"
         >
           {str}
@@ -93,7 +93,9 @@ export default function BarcodePrinterModal({ roll, rolls, onClose }) {
 
     const displayUnit = r.unit || r.uom || (isFilmItem ? 'kg' : 'Pcs');
     const displayQty = r.netWeightKg ?? r.availableWeightKg ?? r.qty ?? 0;
-    const rateVal = r.purchaseRatePerKg || r.unitPrice || r.purchaseRate || 0;
+    const rateVal = r.purchaseRatePerKg || r.unitPrice || r.purchaseRate || r.rate || 0;
+    const vendorStr = r.vendorName || r.supplier || '-';
+    const batchStr = r.batchNo || r.heatNo || r.batch || '-';
 
     return (
       <div 
@@ -103,105 +105,103 @@ export default function BarcodePrinterModal({ roll, rolls, onClose }) {
           background: '#ffffff',
           border: '2px solid #0f172a',
           borderRadius: '8px',
-          padding: '12px 14px',
+          padding: '10px 12px',
           boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between',
-          gap: '8px',
+          gap: '6px',
           fontFamily: 'Inter, sans-serif',
           color: '#0f172a',
-          minHeight: '340px'
+          minHeight: '320px'
         } : {
           fontFamily: 'Inter, sans-serif',
           color: '#0f172a'
         }}
       >
         {/* Label Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #0f172a', paddingBottom: '5px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1.5px solid #0f172a', paddingBottom: '4px' }}>
           <div>
-            <div style={{ fontWeight: '900', fontSize: '0.92rem', letterSpacing: '-0.02em', lineHeight: '1.1' }}>
+            <div style={{ fontWeight: '900', fontSize: '0.88rem', letterSpacing: '-0.02em', lineHeight: '1.1' }}>
               {COMPANY_DETAILS.name}
             </div>
-            <div style={{ fontSize: '0.68rem', color: '#475569', fontWeight: '600', marginTop: '1px' }}>
+            <div style={{ fontSize: '0.65rem', color: '#475569', fontWeight: '600', marginTop: '1px' }}>
               Indore Plant • GSTIN: {COMPANY_DETAILS.gstin}
             </div>
           </div>
           <span style={{ 
-            fontSize: '0.68rem', 
+            fontSize: '0.65rem', 
             fontWeight: '800', 
             background: isSFG ? '#e0e7ff' : isFG ? '#fef3c7' : (isFilmItem ? '#dcfce7' : '#f0f9ff'),
             color: isSFG ? '#3730a3' : isFG ? '#92400e' : (isFilmItem ? '#166534' : '#1e40af'),
-            padding: '2px 8px', 
+            padding: '2px 6px', 
             borderRadius: '4px',
-            border: '1.5px solid currentColor'
+            border: '1px solid currentColor'
           }}>
             {isSFG ? 'SEMI-FINISHED (SFG)' : isFG ? 'FINISHED GOODS (FG)' : (isFilmItem ? 'RAW MATERIAL (RM)' : 'STORE CONSUMABLE')}
           </span>
         </div>
 
         {/* Barcode SVG Visual */}
-        <div style={{ textAlign: 'center', background: '#f8fafc', padding: '4px 6px', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
+        <div style={{ textAlign: 'center', background: '#f8fafc', padding: '3px 5px', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
           {renderBarcodeSVG(r.barcodeId)}
         </div>
 
         {/* Core Specs Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px', fontSize: '0.82rem', background: '#f8fafc', padding: '8px 10px', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '6px', fontSize: '0.8rem', background: '#f8fafc', padding: '6px 8px', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
           <div>
-            <span style={{ fontSize: '0.64rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Item / Substrate</span>
-            <div style={{ fontWeight: '800', fontSize: '0.88rem', color: '#0f172a', lineHeight: '1.2' }}>{r.itemName}</div>
+            <span style={{ fontSize: '0.62rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Item / Substrate</span>
+            <div style={{ fontWeight: '800', fontSize: '0.85rem', color: '#0f172a', lineHeight: '1.2' }}>{r.itemName}</div>
             {isFilmItem ? (
-              <div style={{ fontSize: '0.73rem', color: '#334155', marginTop: '2px' }}>
+              <div style={{ fontSize: '0.7rem', color: '#334155', marginTop: '1px' }}>
                 Gauge: <strong>{r.micron}µ</strong> | Width: <strong>{r.widthMm}mm</strong>
                 {r.totalUnits > 1 ? ` | Roll ${r.unitNo || 1} of ${r.totalUnits}` : ''}
               </div>
             ) : (
-              <div style={{ fontSize: '0.73rem', color: '#334155', marginTop: '2px' }}>
+              <div style={{ fontSize: '0.7rem', color: '#334155', marginTop: '1px' }}>
                 Category: <strong>{r.category || 'Stock Item'}</strong> {r.totalUnits > 1 ? ` | Unit ${r.unitNo || 1} of ${r.totalUnits}` : ''}
               </div>
             )}
           </div>
 
-          <div style={{ textAlign: 'right', borderLeft: '1.5px solid #cbd5e1', paddingLeft: '8px' }}>
-            <span style={{ fontSize: '0.64rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          <div style={{ textAlign: 'right', borderLeft: '1.5px solid #cbd5e1', paddingLeft: '6px' }}>
+            <span style={{ fontSize: '0.62rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
               {isFilmItem || isFG || isSFG ? 'Net Scale Weight' : 'Net Scale Weight / Qty'}
             </span>
-            <div style={{ fontWeight: '900', fontSize: '1.2rem', color: '#047857', lineHeight: '1.1', marginTop: '2px' }}>
-              {displayQty} <span style={{ fontSize: '0.75rem' }}>{displayUnit}</span>
+            <div style={{ fontWeight: '900', fontSize: '1.15rem', color: '#047857', lineHeight: '1.1', marginTop: '1px' }}>
+              {displayQty} <span style={{ fontSize: '0.72rem' }}>{displayUnit}</span>
             </div>
             {r.grossWeightKg && (
-              <div style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '600', marginTop: '1px' }}>
+              <div style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: '600', marginTop: '1px' }}>
                 Gross: {r.grossWeightKg} kg
               </div>
             )}
           </div>
         </div>
 
-        {/* Traceability Metadata */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.73rem', color: '#1e293b', background: '#ffffff', padding: '6px 8px', borderRadius: '4px', border: '1px dashed #cbd5e1' }}>
+        {/* Traceability & Costing Metadata Box */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '0.72rem', color: '#1e293b', background: '#ffffff', padding: '5px 8px', borderRadius: '4px', border: '1px dashed #94a3b8' }}>
           {r.jobName && (
             <div>Job Name: <strong>{r.jobName}</strong></div>
           )}
           {r.clientName && (
             <div>Client: <strong>{r.clientName}</strong></div>
           )}
-          {r.vendorName && (
-            <div>Vendor: <strong>{r.vendorName}</strong> {r.invoiceNo ? `| Inv: ${r.invoiceNo}` : ''}</div>
-          )}
-          {r.batchNo && (
-            <div>Batch / Heat #: <strong>{r.batchNo}</strong></div>
-          )}
-          {rateVal > 0 && (
-            <div style={{ color: '#047857', fontWeight: '700' }}>
-              Purchase Rate: <strong>₹{rateVal} / {displayUnit}</strong>
-            </div>
-          )}
+          <div>
+            Vendor: <strong>{vendorStr}</strong> {r.invoiceNo ? `| Inv: ${r.invoiceNo}` : ''}
+          </div>
+          <div>
+            Batch / Heat #: <strong>{batchStr}</strong>
+          </div>
+          <div style={{ color: '#047857', fontWeight: '700' }}>
+            Purchase Rate: <strong>{rateVal > 0 ? `₹${rateVal} / ${displayUnit}` : '₹-'}</strong>
+          </div>
           {r.inputBarcodeIds && r.inputBarcodeIds.length > 0 && (
-            <div style={{ fontSize: '0.68rem', color: '#4f46e5', fontWeight: '600' }}>
+            <div style={{ fontSize: '0.66rem', color: '#4f46e5', fontWeight: '600' }}>
               Input Roll Ref: {r.inputBarcodeIds.join(', ')}
             </div>
           )}
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px', fontSize: '0.68rem', color: '#64748b', borderTop: '1px solid #e2e8f0', paddingTop: '3px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px', fontSize: '0.65rem', color: '#64748b', borderTop: '1px solid #e2e8f0', paddingTop: '2px' }}>
             <span>Station: <strong>{r.stationId || 'SCALE_1_INWARD'}</strong></span>
             <span>Date: <strong>{r.inwardDatetime || r.date || new Date().toLocaleString()}</strong></span>
           </div>
@@ -222,7 +222,9 @@ export default function BarcodePrinterModal({ roll, rolls, onClose }) {
             margin: 0 !important;
             padding: 0 !important;
             background: #ffffff !important;
-            height: 100% !important;
+            width: 4in !important;
+            height: 4in !important;
+            overflow: hidden !important;
           }
           body * {
             visibility: hidden !important;
@@ -239,13 +241,13 @@ export default function BarcodePrinterModal({ roll, rolls, onClose }) {
             padding: 0 !important;
           }
           .printable-barcode-single-label {
-            width: 4in !important;
-            height: 4in !important;
-            max-width: 4in !important;
-            max-height: 4in !important;
+            width: 3.9in !important;
+            height: 3.9in !important;
+            max-width: 3.9in !important;
+            max-height: 3.9in !important;
             box-sizing: border-box !important;
-            padding: 10px 12px !important;
-            margin: 0 !important;
+            padding: 8px 10px !important;
+            margin: 0.05in !important;
             page-break-after: always !important;
             break-after: page !important;
             page-break-inside: avoid !important;
@@ -256,6 +258,10 @@ export default function BarcodePrinterModal({ roll, rolls, onClose }) {
             flex-direction: column !important;
             justify-content: space-between !important;
             overflow: hidden !important;
+          }
+          .printable-barcode-single-label:last-child {
+            page-break-after: avoid !important;
+            break-after: avoid !important;
           }
         }
       `}</style>
