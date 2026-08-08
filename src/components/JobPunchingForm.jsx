@@ -33,10 +33,10 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
   const [isSubmitted, setIsSubmitted] = useState(false);
 
   // Dynamic Layers State
-  const [layers, setLayers] = useState(() => initialJobMasterData?.layers || [
-    { id: 1, filmType: 'PET', micron: 12 },
-    { id: 2, filmType: 'METPET', micron: 12 },
-    { id: 3, filmType: 'Natural GP LD', micron: 35 }
+  const [layers, setLayers] = useState(() => initialJobMasterData?.layers ? initialJobMasterData.layers.map(l => ({ ...l, rate: l.rate ?? l.ratePerKg ?? '' })) : [
+    { id: 1, filmType: 'PET', micron: 12, rate: '' },
+    { id: 2, filmType: 'METPET', micron: 12, rate: '' },
+    { id: 3, filmType: 'Natural GP LD', micron: 35, rate: '' }
   ]);
 
   React.useEffect(() => {
@@ -46,14 +46,16 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       if (initialJobMasterData.printWidthMm) setPrintWidthMm(initialJobMasterData.printWidthMm);
       if (initialJobMasterData.repeatLengthMm) setRepeatLengthMm(initialJobMasterData.repeatLengthMm);
       if (initialJobMasterData.colorsCount) setColorsCount(initialJobMasterData.colorsCount);
-      if (initialJobMasterData.layers && initialJobMasterData.layers.length > 0) setLayers(initialJobMasterData.layers);
+      if (initialJobMasterData.layers && initialJobMasterData.layers.length > 0) {
+        setLayers(initialJobMasterData.layers.map(l => ({ ...l, rate: l.rate ?? l.ratePerKg ?? '' })));
+      }
     }
   }, [initialJobMasterData]);
 
   // Auto-sync Print Width, Repeat Length, Client, Colors & Layers whenever jobName matches a Job Master
   React.useEffect(() => {
     if (!jobName) return;
-    const allJM = (jobMasters && jobMasters.length > 0) ? jobMasters : initialJobMasters;
+    const allJM = (jobMasters && jobMasters.length > 0) ? jobMasters : [];
     const search = jobName.toLowerCase().trim();
     const matchedJM = allJM.find(j => (j.jobName || '').toLowerCase().trim() === search) ||
                       allJM.find(j => (j.jobName || '').toLowerCase().includes(search));
@@ -62,7 +64,9 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       if (matchedJM.repeatLengthMm) setRepeatLengthMm(matchedJM.repeatLengthMm);
       if (matchedJM.clientName && (!clientName || clientName === 'Britannia Industries Ltd')) setClientName(matchedJM.clientName);
       if (matchedJM.colorsCount) setColorsCount(matchedJM.colorsCount);
-      if (matchedJM.layers && matchedJM.layers.length > 0) setLayers(matchedJM.layers);
+      if (matchedJM.layers && matchedJM.layers.length > 0) {
+        setLayers(matchedJM.layers.map(l => ({ ...l, rate: l.rate ?? l.ratePerKg ?? '' })));
+      }
     }
   }, [jobName, jobMasters]);
 
@@ -81,57 +85,55 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
            }) || null;
   }, [clientName, clients]);
 
-  // Editable Daily Prices State
-  const [filmPrices, setFilmPrices] = useState({ ...DEFAULT_DAILY_RATES });
+  // Editable Processing Prices State
   const [inkPrice, setInkPrice] = useState(DEFAULT_PROCESSING_RATES.liquidInkPrice);
   const [adhesivePrice, setAdhesivePrice] = useState(DEFAULT_PROCESSING_RATES.adhesivePrice);
 
   // Price Modal / Section toggle
-  const [showPriceModal, setShowPriceModal] = useState(false);
   const [showPDFModal, setShowPDFModal] = useState(false);
 
   // Preset structures selector for convenience
   const applyPresetStructure = (presetName) => {
     if (presetName === '3layer_pet_metpet_ld') {
       setLayers([
-        { id: 1, filmType: 'PET', micron: 12 },
-        { id: 2, filmType: 'METPET', micron: 12 },
-        { id: 3, filmType: 'Natural GP LD', micron: 35 }
+        { id: 1, filmType: 'PET', micron: 12, rate: '' },
+        { id: 2, filmType: 'METPET', micron: 12, rate: '' },
+        { id: 3, filmType: 'Natural GP LD', micron: 35, rate: '' }
       ]);
     } else if (presetName === '2layer_pet_ld') {
       setLayers([
-        { id: 1, filmType: 'PET', micron: 12 },
-        { id: 2, filmType: 'Natural GP LD', micron: 50 }
+        { id: 1, filmType: 'PET', micron: 12, rate: '' },
+        { id: 2, filmType: 'Natural GP LD', micron: 50, rate: '' }
       ]);
     } else if (presetName === '3layer_bopp_metbopp_ld') {
       setLayers([
-        { id: 1, filmType: 'BOPP Natural', micron: 15 },
-        { id: 2, filmType: 'Metalised BOPP', micron: 12 },
-        { id: 3, filmType: 'White LD', micron: 40 }
+        { id: 1, filmType: 'BOPP Natural', micron: 15, rate: '' },
+        { id: 2, filmType: 'Metalised BOPP', micron: 12, rate: '' },
+        { id: 3, filmType: 'White LD', micron: 40, rate: '' }
       ]);
     } else if (presetName === '2layer_pearlised_ld') {
       setLayers([
-        { id: 1, filmType: 'Pearlised BOPP', micron: 20 },
-        { id: 2, filmType: 'Natural LD GP Film', micron: 30 }
+        { id: 1, filmType: 'Pearlised BOPP', micron: 20, rate: '' },
+        { id: 2, filmType: 'Natural LD GP Film', micron: 30, rate: '' }
       ]);
     } else if (presetName === '3layer_metallocene') {
       setLayers([
-        { id: 1, filmType: 'PET', micron: 12 },
-        { id: 2, filmType: 'METPET', micron: 12 },
-        { id: 3, filmType: 'Natural LD Metallocene Film', micron: 40 }
+        { id: 1, filmType: 'PET', micron: 12, rate: '' },
+        { id: 2, filmType: 'METPET', micron: 12, rate: '' },
+        { id: 3, filmType: 'Natural LD Metallocene Film', micron: 40, rate: '' }
       ]);
     } else if (presetName === '3layer_atta_high_dart') {
       setLayers([
-        { id: 1, filmType: 'PET', micron: 12 },
-        { id: 2, filmType: 'METPET', micron: 12 },
-        { id: 3, filmType: 'Milky Atta (High Dart) Film', micron: 60 }
+        { id: 1, filmType: 'PET', micron: 12, rate: '' },
+        { id: 2, filmType: 'METPET', micron: 12, rate: '' },
+        { id: 3, filmType: 'Milky Atta (High Dart) Film', micron: 60, rate: '' }
       ]);
     }
   };
 
   // Add/Remove Layers
   const addLayer = () => {
-    setLayers(prev => [...prev, { id: Date.now(), filmType: 'Natural GP LD', micron: 35 }]);
+    setLayers(prev => [...prev, { id: Date.now(), filmType: 'Natural GP LD', micron: 35, rate: '' }]);
   };
 
   const removeLayer = (id) => {
@@ -157,7 +159,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       inkGsm: parseFloat(inkGsm) || 0,
       adhesiveGsm: parseFloat(adhesiveGsm) || 0,
       layers,
-      filmPrices,
+      filmPrices: {},
       inkPrice: parseFloat(inkPrice) || 1500,
       adhesivePrice: parseFloat(adhesivePrice) || 270
     });
@@ -181,7 +183,6 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
     inkGsm,
     adhesiveGsm,
     layers,
-    filmPrices,
     inkPrice,
     adhesivePrice
   ]);
@@ -198,105 +199,46 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
     const targetDate = new Date();
     targetDate.setDate(targetDate.getDate() + parseInt(targetDeliveryDays || 10));
 
-    const structureString = layers.map(l => `${l.micron} ${l.filmType}`).join(' / ');
-
-    const orderId = `ORD-2026-${Math.floor(100 + Math.random() * 900)}`;
-
-    // Generate Itemized Raw Material Requirements list from live calculation results
-    const materialRequirements = [];
-    if (calculationResults && calculationResults.layerResults) {
-      calculationResults.layerResults.forEach((layer, idx) => {
-        materialRequirements.push({
-          id: `REQ-${orderId}-${idx + 1}`,
-          filmType: layer.filmType,
-          micron: layer.micron,
-          widthMm: layer.widthMm || parseFloat(printWidthMm) || 1000,
-          qtyKg: layer.grossKg || 0,
-          preferredVendor: layer.filmType.includes('LD') ? 'Malwa Extrusions Pvt Ltd' : 'FlexiPoly Films Ltd',
-          poIssued: false,
-          poNumber: ""
-        });
-      });
-
-      if (calculationResults.inkDetails && calculationResults.inkDetails.grossKg > 0) {
-        materialRequirements.push({
-          id: `REQ-${orderId}-${materialRequirements.length + 1}`,
-          filmType: 'Liquid Inks',
-          micron: '-',
-          widthMm: '-',
-          qtyKg: calculationResults.inkDetails.grossKg,
-          preferredVendor: 'Siegwerk Inks Ltd',
-          poIssued: false,
-          poNumber: ""
-        });
-      }
-
-      if (calculationResults.adhesiveDetails && calculationResults.adhesiveDetails.grossKg > 0) {
-        materialRequirements.push({
-          id: `REQ-${orderId}-${materialRequirements.length + 1}`,
-          filmType: 'Solvent-less Adhesive',
-          micron: '-',
-          widthMm: '-',
-          qtyKg: calculationResults.adhesiveDetails.grossKg,
-          preferredVendor: 'Siegwerk Inks Ltd',
-          poIssued: false,
-          poNumber: ""
-        });
-      }
-    }
-
     const newOrder = {
-      id: orderId,
+      id: `ORD-2026-${Math.floor(1000 + Math.random() * 9000)}`,
       jobName,
       clientName,
-      clientDetails: matchedClient,
-      printWidthMm: parseFloat(printWidthMm) || 1000,
-      repeatLengthMm: parseFloat(repeatLengthMm) || 400,
-      orderDate: new Date().toISOString().split('T')[0],
-      targetDeliveryDate: targetDate.toISOString().split('T')[0],
+      orderDate: new Date().toLocaleDateString('en-GB'),
+      targetDeliveryDate: targetDate.toLocaleDateString('en-GB'),
       orderQtyKg: parseFloat(orderQtyKg),
-      orderType,
-      status: "Material Required",
-      delayReason: "",
-      structure: structureString,
-      poIssued: false,
-      poNumber: "",
-      materialRequirements,
-      rawMaterialRequirements: materialRequirements,
-      calculationDetails: calculationResults
+      printWidthMm: parseFloat(printWidthMm),
+      repeatLengthMm: parseFloat(repeatLengthMm),
+      colorsCount: parseInt(colorsCount),
+      status: 'In Progress',
+      layers,
+      structure: layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / '),
+      calculationDetails: calculationResults,
+      materialRequirements: calculationResults.layerResults.map(l => ({
+        id: `REQ-${Math.floor(100 + Math.random() * 900)}`,
+        filmType: l.filmType,
+        micron: l.micron,
+        widthMm: l.widthMm,
+        qtyKg: l.grossKg,
+        ratePerKg: l.pricePerKg,
+        status: 'Required',
+        assignedVendor: ''
+      }))
     };
 
     if (onSaveOrder) {
       onSaveOrder(newOrder);
-      notifyOrderPunched(newOrder).catch(err => console.error("Order email notification error:", err));
     }
-    setShowPDFModal(true);
-  };
 
-  const handleClosePDFAndNavigate = () => {
-    setShowPDFModal(false);
-    setIsSubmitted(false);
-    if (onNavigateToDashboard) {
-      onNavigateToDashboard();
-    }
+    notifyOrderPunched(newOrder).catch(err => console.error("Order punched email error:", err));
+
+    alert(`Job "${jobName}" punched successfully! Order ID ${newOrder.id} generated.`);
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {/* PDF View Modal */}
-      {showPDFModal && (
-        <OrderConfirmationPDF 
-          calculationData={calculationResults} 
-          clientDetails={matchedClient}
-          clients={clients}
-          onClose={handleClosePDFAndNavigate} 
-        />
-      )}
-
-      <div className="hide-on-print" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {/* Top Banner */}
-      <div className="glass-panel" style={{ padding: '20px 24px', background: '#ffffff' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+      {/* Header Controls */}
+      <div className="glass-panel" style={{ padding: '20px 24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <h2 style={{ fontSize: '1.25rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-primary)' }}>
               <Calculator size={22} style={{ color: 'var(--primary-brand)' }} /> Order Confirmation & Job Punching Area
@@ -306,10 +248,6 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
             </p>
           </div>
           <div style={{ display: 'flex', gap: '12px' }}>
-            <button className="btn-secondary" onClick={() => setShowPriceModal(true)}>
-              <DollarSign size={18} /> Edit Today's Market Rates
-            </button>
-
             <button className="btn-primary" onClick={() => setShowPDFModal(true)}>
               <FileText size={18} /> View Order Confirmation Note (PDF)
             </button>
@@ -324,24 +262,14 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
             <Sparkles size={18} style={{ color: 'var(--accent-color)' }} /> Job & Layer Specifications
           </h3>
 
-          {/* Quick Presets */}
           <div style={{ marginBottom: '20px' }}>
             <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px', display: 'block' }}>
               QUICK STRUCTURE PRESETS:
             </label>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              <button className="preset-chip" onClick={() => applyPresetStructure('3layer_pet_metpet_ld')}>
-                12 PET / 12 METPET / 35 LD
-              </button>
-              <button className="preset-chip" onClick={() => applyPresetStructure('2layer_pet_ld')}>
-                12 PET / 50 LD
-              </button>
-              <button className="preset-chip" onClick={() => applyPresetStructure('3layer_bopp_metbopp_ld')}>
-                15 BOPP / 12 MET BOPP / 40 LD
-              </button>
-              <button className="preset-chip" onClick={() => applyPresetStructure('2layer_pearlised_ld')}>
-                20 Pearlised BOPP / 30 LD
-              </button>
+              <button className="preset-chip" onClick={() => applyPresetStructure('3layer_pet_metpet_ld')}>12 PET / 12 METPET / 35 LD</button>
+              <button className="preset-chip" onClick={() => applyPresetStructure('2layer_pet_ld')}>12 PET / 50 LD</button>
+              <button className="preset-chip" onClick={() => applyPresetStructure('3layer_bopp_metbopp_ld')}>15 BOPP / 12 MET BOPP / 40 LD</button>
             </div>
           </div>
 
@@ -362,7 +290,9 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
                     if (selectedJM.printWidthMm) setPrintWidthMm(selectedJM.printWidthMm);
                     if (selectedJM.repeatLengthMm) setRepeatLengthMm(selectedJM.repeatLengthMm);
                     if (selectedJM.colorsCount) setColorsCount(selectedJM.colorsCount);
-                    if (selectedJM.layers && selectedJM.layers.length > 0) setLayers(selectedJM.layers);
+                    if (selectedJM.layers && selectedJM.layers.length > 0) {
+                      setLayers(selectedJM.layers.map(l => ({ ...l, rate: l.rate ?? l.ratePerKg ?? '' })));
+                    }
                   }
                 }}
                 placeholder="e.g. Britannia Bourbon 250g"
@@ -393,88 +323,22 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
 
             <div className="form-group">
               <label>Print Width (mm)</label>
-              <input 
-                type="number" 
-                className="form-control"
-                value={printWidthMm}
-                onChange={e => setPrintWidthMm(e.target.value)}
-              />
+              <input type="number" className="form-control" value={printWidthMm} onChange={e => setPrintWidthMm(e.target.value)} />
             </div>
 
             <div className="form-group">
               <label>Repeat Length (mm)</label>
-              <input 
-                type="number" 
-                className="form-control"
-                value={repeatLengthMm}
-                onChange={e => setRepeatLengthMm(e.target.value)}
-              />
+              <input type="number" className="form-control" value={repeatLengthMm} onChange={e => setRepeatLengthMm(e.target.value)} />
             </div>
 
             <div className="form-group">
               <label>Order Quantity (Kg) *</label>
-              <input 
-                type="number" 
-                className="form-control"
-                value={orderQtyKg}
-                onChange={e => setOrderQtyKg(e.target.value)}
-              />
+              <input type="number" className="form-control" value={orderQtyKg} onChange={e => setOrderQtyKg(e.target.value)} />
             </div>
 
             <div className="form-group">
               <label>Number of Printing Colors *</label>
-              <input 
-                type="number" 
-                className="form-control"
-                min="1"
-                max="12"
-                value={colorsCount}
-                onChange={e => setColorsCount(e.target.value)}
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Order Type</label>
-              <select 
-                className="form-control"
-                value={orderType}
-                onChange={e => setOrderType(e.target.value)}
-              >
-                <option value="Reel">Reel Form</option>
-                <option value="Pouching">Pouching Form</option>
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label>Estimated Ink GSM (g/m²)</label>
-              <input 
-                type="number" 
-                step="0.1"
-                className="form-control"
-                value={inkGsm}
-                onChange={e => setInkGsm(e.target.value)}
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Estimated Adhesive GSM (g/m²)</label>
-              <input 
-                type="number" 
-                step="0.1"
-                className="form-control"
-                value={adhesiveGsm}
-                onChange={e => setAdhesiveGsm(e.target.value)}
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Target Delivery (Days from today)</label>
-              <input 
-                type="number" 
-                className="form-control"
-                value={targetDeliveryDays}
-                onChange={e => setTargetDeliveryDays(e.target.value)}
-              />
+              <input type="number" className="form-control" min="1" max="12" value={colorsCount} onChange={e => setColorsCount(e.target.value)} />
             </div>
           </div>
 
@@ -492,11 +356,13 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
             {layers.map((layer, index) => {
               const density = FILM_DENSITIES[layer.filmType] || 1.0;
               const gsm = ((parseFloat(layer.micron) || 0) * density).toFixed(2);
-              const price = filmPrices[layer.filmType] || DEFAULT_DAILY_RATES[layer.filmType] || 130;
+              const price = (layer.rate !== undefined && layer.rate !== '' && layer.rate !== null && !isNaN(layer.rate)) 
+                ? layer.rate 
+                : (DEFAULT_DAILY_RATES[layer.filmType] || 130);
 
               return (
-                <div key={layer.id} className="layer-row-card">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '80px', fontWeight: '600' }}>
+                <div key={layer.id} className="layer-row-card" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '40px', fontWeight: '600' }}>
                     <span className="layer-badge">L{index + 1}</span>
                   </div>
 
@@ -515,20 +381,37 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
                   </div>
 
                   <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Micron (µ)</label>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Micron (µ) *</label>
                     <input 
                       type="number" 
                       className="form-control" 
                       style={{ padding: '8px' }}
                       value={layer.micron}
                       onChange={e => updateLayer(layer.id, 'micron', e.target.value)}
+                      required
                     />
                   </div>
 
-                  <div style={{ minWidth: '110px', fontSize: '0.8rem', textAlign: 'right' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Rate (₹/kg) *</label>
+                    <input 
+                      type="number" 
+                      step="any"
+                      className="form-control" 
+                      style={{ padding: '8px', fontWeight: '700', color: '#047857' }}
+                      placeholder={`e.g. ${DEFAULT_DAILY_RATES[layer.filmType] || 125}`}
+                      value={layer.rate ?? ''}
+                      onChange={e => updateLayer(layer.id, 'rate', e.target.value)}
+                      required
+                    />
+                  </div>
+
+                  <div style={{ minWidth: '100px', fontSize: '0.8rem', textAlign: 'right' }}>
                     <span style={{ display: 'block', color: 'var(--text-secondary)' }}>Density: <b>{density}</b></span>
                     <span style={{ display: 'block', color: 'var(--accent-color)', fontWeight: '600' }}>{gsm} GSM</span>
-                    <span style={{ display: 'block', color: 'var(--success)' }}>₹{price}/kg</span>
+                    <span style={{ display: 'block', color: 'var(--success)', fontWeight: '700' }}>
+                      ₹{price}/kg
+                    </span>
                   </div>
 
                   <button className="icon-btn-danger" onClick={() => removeLayer(layer.id)}>
@@ -569,9 +452,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
               </div>
               <div className="calc-summary-row">
                 <span>Applied Wastage %:</span>
-                <span className="badge badge-warning" style={{ fontSize: '0.85rem' }}>
-                  {calculationResults.wastagePct}% Wastage
-                </span>
+                <span className="badge badge-warning" style={{ fontSize: '0.85rem' }}>{calculationResults.wastagePct}%</span>
               </div>
             </div>
 
@@ -677,58 +558,10 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
         </div>
       </div>
 
-      {/* Edit Market Rates Modal */}
-      {showPriceModal && (
-        <div className="modal-overlay" onClick={() => setShowPriceModal(false)}>
-          <div className="glass-card modal-content" style={{ width: '650px' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <DollarSign size={20} style={{ color: 'var(--success)' }} /> Daily Raw Material Market Rates (₹ / Kg)
-            </h3>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '20px' }}>
-              Film prices change daily. Update today's vendor prices per kg here to apply across job calculations.
-            </p>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-              {Object.keys(filmPrices).map(type => (
-                <div key={type} className="form-group" style={{ marginBottom: '8px' }}>
-                  <label>{type} Rate (₹/kg)</label>
-                  <input 
-                    type="number"
-                    className="form-control"
-                    value={filmPrices[type]}
-                    onChange={e => setFilmPrices({ ...filmPrices, [type]: parseFloat(e.target.value) || 0 })}
-                  />
-                </div>
-              ))}
-              <div className="form-group" style={{ marginBottom: '8px' }}>
-                <label>Liquid Ink Rate (₹/kg incl. solvents)</label>
-                <input 
-                  type="number"
-                  className="form-control"
-                  value={inkPrice}
-                  onChange={e => setInkPrice(parseFloat(e.target.value) || 0)}
-                />
-              </div>
-              <div className="form-group" style={{ marginBottom: '8px' }}>
-                <label>Solvent-less Adhesive Rate (₹/kg)</label>
-                <input 
-                  type="number"
-                  className="form-control"
-                  value={adhesivePrice}
-                  onChange={e => setAdhesivePrice(parseFloat(e.target.value) || 0)}
-                />
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
-              <button className="btn-primary" onClick={() => setShowPriceModal(false)}>
-                Save Market Rates
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* PDF View Modal */}
+      {showPDFModal && (
+        <OrderConfirmationPDF orderData={calculationResults} onClose={() => setShowPDFModal(false)} />
       )}
-      </div>
     </div>
   );
 }

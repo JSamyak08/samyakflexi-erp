@@ -126,7 +126,13 @@ export const calculateJobRawMaterials = ({
     const density = FILM_DENSITIES[layer.filmType] || layer.density || 1.0;
     const micron = parseFloat(layer.micron) || 0;
     const gsm = micron * density; // g/m²
-    const pricePerKg = parseFloat(filmPrices[layer.filmType]) || DEFAULT_DAILY_RATES[layer.filmType] || 130;
+    const pricePerKg = (layer.rate !== undefined && layer.rate !== '' && layer.rate !== null && !isNaN(parseFloat(layer.rate)))
+      ? parseFloat(layer.rate)
+      : ((layer.ratePerKg !== undefined && layer.ratePerKg !== '' && layer.ratePerKg !== null && !isNaN(parseFloat(layer.ratePerKg)))
+        ? parseFloat(layer.ratePerKg)
+        : ((layer.pricePerKg !== undefined && layer.pricePerKg !== '' && layer.pricePerKg !== null && !isNaN(parseFloat(layer.pricePerKg)))
+          ? parseFloat(layer.pricePerKg)
+          : (parseFloat(filmPrices[layer.filmType]) || DEFAULT_DAILY_RATES[layer.filmType] || 130)));
 
     return {
       ...layer,
