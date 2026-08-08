@@ -1497,6 +1497,24 @@ export async function fetchRolePermissionsFromSupabase() {
   return await fetchSystemSetting('role_permissions');
 }
 
+export async function deleteGRNFromSupabase(grnId) {
+  if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
+  const { error } = await supabase.from('grns').delete().eq('id', grnId);
+  if (error) {
+    console.error('[GRNs] Failed to delete GRN:', error.message);
+  }
+}
+
+export async function deleteProductionRecordFromSupabase(recId) {
+  if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
+  const { error } = await supabase.from('production_records').delete().eq('id', recId);
+  if (error) {
+    console.error('[production_records] Failed to delete production record:', error.message);
+  }
+}
+
 
 // ============================================================================
 // SEED MIGRATION: SEED DATA PUSHES HAVE BEEN PERMANENTLY DISABLED

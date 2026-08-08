@@ -59,9 +59,9 @@ import {
   fetchOrders, saveOrderToSupabase, deleteOrderFromSupabase,
   fetchVendors, saveVendorToSupabase, deleteVendorFromSupabase,
   fetchInventory, saveInventoryItemToSupabase, saveInventoryBatchToSupabase, deleteInventoryItemFromSupabase,
-  fetchGRNs, saveGRNToSupabase,
+  fetchGRNs, saveGRNToSupabase, deleteGRNFromSupabase,
   fetchCylinders, saveCylinderToSupabase, deleteCylinderFromSupabase,
-  fetchProductionRecords, saveProductionRecordToSupabase,
+  fetchProductionRecords, saveProductionRecordToSupabase, deleteProductionRecordFromSupabase,
   fetchUsers, saveUserToSupabase, deleteUserFromSupabase,
   fetchJobDataSheets, saveJobDataSheetToSupabase, deleteJobDataSheetFromSupabase,
   fetchInventoryRolls, saveInventoryRollToSupabase,
@@ -401,12 +401,30 @@ export default function App() {
       if (dbIssues && Array.isArray(dbIssues)) setMachineIssues(dbIssues);
       if (dbConsumables && Array.isArray(dbConsumables)) setConsumables(dbConsumables);
 
-      if (Array.isArray(supaOrders) && supaOrders.length > 0) setOrders(supaOrders);
-      if (Array.isArray(supaVendors) && supaVendors.length > 0) setVendors(supaVendors);
-      if (Array.isArray(supaInv) && supaInv.length > 0) setInventory(supaInv);
-      if (Array.isArray(supaGRNs) && supaGRNs.length > 0) setGrns(supaGRNs);
-      if (Array.isArray(supaCyls) && supaCyls.length > 0) setCylinders(supaCyls);
-      if (Array.isArray(supaProd) && supaProd.length > 0) setProductionRecords(supaProd);
+      if (Array.isArray(supaOrders)) {
+        setOrders(stripDummyRecords(supaOrders));
+        supaOrders.filter(isDummyRecord).forEach(d => deleteOrderFromSupabase(d.id).catch(console.warn));
+      }
+      if (Array.isArray(supaVendors)) {
+        setVendors(stripDummyRecords(supaVendors));
+        supaVendors.filter(isDummyRecord).forEach(d => deleteVendorFromSupabase(d.id).catch(console.warn));
+      }
+      if (Array.isArray(supaInv)) {
+        setInventory(stripDummyRecords(supaInv));
+        supaInv.filter(isDummyRecord).forEach(d => deleteInventoryItemFromSupabase(d.id).catch(console.warn));
+      }
+      if (Array.isArray(supaGRNs)) {
+        setGrns(stripDummyRecords(supaGRNs));
+        supaGRNs.filter(isDummyRecord).forEach(d => deleteGRNFromSupabase(d.id || d.grnNo).catch(console.warn));
+      }
+      if (Array.isArray(supaCyls)) {
+        setCylinders(stripDummyRecords(supaCyls));
+        supaCyls.filter(isDummyRecord).forEach(d => deleteCylinderFromSupabase(d.id).catch(console.warn));
+      }
+      if (Array.isArray(supaProd)) {
+        setProductionRecords(stripDummyRecords(supaProd));
+        supaProd.filter(isDummyRecord).forEach(d => deleteProductionRecordFromSupabase(d.id).catch(console.warn));
+      }
       if (Array.isArray(supaUsers) && supaUsers.length > 0) {
         setUsers(prev => {
           const map = new Map();
@@ -422,13 +440,25 @@ export default function App() {
           return merged;
         });
       }
-      if (Array.isArray(supaSheets) && supaSheets.length > 0) setJobDataSheets(supaSheets);
-      if (Array.isArray(supaRolls) && supaRolls.length > 0) setInventoryRolls(supaRolls);
-      if (Array.isArray(supaShipments) && supaShipments.length > 0) setDispatchShipments(supaShipments);
-      if (Array.isArray(supaMachines) && supaMachines.length > 0) setMachines(supaMachines);
-      if (Array.isArray(supaSchedules) && supaSchedules.length > 0) setSchedules(supaSchedules);
-      if (Array.isArray(supaClients) && supaClients.length > 0) setClients(supaClients);
-      if (Array.isArray(supaJobMasters) && supaJobMasters.length > 0) setJobMasters(supaJobMasters);
+      if (Array.isArray(supaSheets)) {
+        setJobDataSheets(stripDummyRecords(supaSheets));
+        supaSheets.filter(isDummyRecord).forEach(d => deleteJobDataSheetFromSupabase(d.id).catch(console.warn));
+      }
+      if (Array.isArray(supaRolls)) setInventoryRolls(stripDummyRecords(supaRolls));
+      if (Array.isArray(supaShipments)) setDispatchShipments(stripDummyRecords(supaShipments));
+      if (Array.isArray(supaMachines)) setMachines(stripDummyRecords(supaMachines));
+      if (Array.isArray(supaSchedules)) {
+        setSchedules(stripDummyRecords(supaSchedules));
+        supaSchedules.filter(isDummyRecord).forEach(d => deleteProductionScheduleFromSupabase(d.id).catch(console.warn));
+      }
+      if (Array.isArray(supaClients)) {
+        setClients(stripDummyRecords(supaClients));
+        supaClients.filter(isDummyRecord).forEach(d => deleteClientFromSupabase(d.id).catch(console.warn));
+      }
+      if (Array.isArray(supaJobMasters)) {
+        setJobMasters(stripDummyRecords(supaJobMasters));
+        supaJobMasters.filter(isDummyRecord).forEach(d => deleteJobMasterFromSupabase(d.id).catch(console.warn));
+      }
       if (supaRolePerms && typeof supaRolePerms === 'object' && Object.keys(supaRolePerms).length > 0) {
         setRolePermissions(supaRolePerms);
         safeLocalStorageSet('samyak_erp_role_permissions', supaRolePerms);
