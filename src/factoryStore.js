@@ -604,7 +604,8 @@ export const ALL_MODULES = [
   { key: "cylinders", label: "Rotogravure Cylinders", category: "Pre-Press & Tooling" },
   { key: "printing_scheduler", label: "Printing Machine Scheduler", category: "Shop Floor & Planning" },
   { key: "supabase", label: "Supabase DB Connection", category: "Administration" },
-  { key: "doc_settings", label: "Letterhead & Signatures", category: "Administration" }
+  { key: "doc_settings", label: "Letterhead & Signatures", category: "Administration" },
+  { key: "scrap_analytics", label: "Scrap & Wastage Analysis", category: "Core Operations" }
 ];
 
 export const generateFullRolePermissions = (allowAll = true) => {

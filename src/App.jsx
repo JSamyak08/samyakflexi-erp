@@ -53,6 +53,7 @@ import SupabaseManagement from './components/SupabaseManagement';
 import DocumentSettings from './components/DocumentSettings';
 import ConsumablesAndIndents from './components/ConsumablesAndIndents';
 import SalesManagement from './components/SalesManagement';
+import ScrapWastageAnalysis from './components/ScrapWastageAnalysis';
 import { getTabFromUrl, pushSlugState } from './utils/slugRouter';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import { 
@@ -715,6 +716,64 @@ export default function App() {
   const pendingQCGRNsCount = grns.filter(g => g.status === 'Pending QC').length;
   const pendingProductionApprovalCount = productionRecords.filter(r => r.status === 'Filled by Plant Manager').length;
 
+  // Calculate average scrap % running throughout the jobs for dashboard
+  const calculateScrapMetrics = (records) => {
+    if (!records || records.length === 0) {
+      return { currentMonthAvg: 0, prevMonthAvg: 0, momChange: 0, momDirection: 'neutral' };
+    }
+
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+
+    const curMonthRecords = [];
+    const prevMonthRecords = [];
+
+    let prevYear = currentYear;
+    let prevMonth = currentMonth - 1;
+    if (prevMonth < 0) {
+      prevMonth = 11;
+      prevYear = currentYear - 1;
+    }
+
+    records.forEach(r => {
+      const dateStr = r.recordedAt || r.dateFilled;
+      if (!dateStr) return;
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return;
+
+      const y = date.getFullYear();
+      const m = date.getMonth();
+
+      if (y === currentYear && m === currentMonth) {
+        curMonthRecords.push(r);
+      } else if (y === prevYear && m === prevMonth) {
+        prevMonthRecords.push(r);
+      }
+    });
+
+    const getAvgScrap = (recList) => {
+      if (recList.length === 0) return 0;
+      const sum = recList.reduce((acc, r) => acc + (r.wastagePercentage || 0), 0);
+      return sum / recList.length;
+    };
+
+    const currentMonthAvg = getAvgScrap(curMonthRecords);
+    const prevMonthAvg = getAvgScrap(prevMonthRecords);
+
+    const momChange = currentMonthAvg - prevMonthAvg;
+    const momDirection = momChange > 0 ? 'up' : (momChange < 0 ? 'down' : 'neutral');
+
+    return {
+      currentMonthAvg: parseFloat(currentMonthAvg.toFixed(2)),
+      prevMonthAvg: parseFloat(prevMonthAvg.toFixed(2)),
+      momChange: parseFloat(Math.abs(momChange).toFixed(2)),
+      momDirection
+    };
+  };
+
+  const scrapMetrics = calculateScrapMetrics(productionRecords);
+
   // Handlers for Production Records
   const handleSaveProductionRecord = (newRecord) => {
     setProductionRecords(prev => [newRecord, ...prev.filter(r => r.orderId !== newRecord.orderId)]);
@@ -1116,7 +1175,7 @@ export default function App() {
 
         <div className="nav-links">
           {/* Group 1: Analytics & Sales */}
-          {(isTabAllowed('dashboard') || isTabAllowed('sales')) && (
+          {(isTabAllowed('dashboard') || isTabAllowed('sales') || isTabAllowed('scrap_analytics')) && (
             <>
               <div className="sidebar-section-header">📊 Analytics & Sales</div>
               {isTabAllowed('dashboard') && (
@@ -1135,6 +1194,15 @@ export default function App() {
                 >
                   <ShoppingBag size={18} />
                   Sales & Quotations Engine
+                </div>
+              )}
+              {isTabAllowed('scrap_analytics') && (
+                <div 
+                  className={`nav-item ${activeTab === 'scrap_analytics' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('scrap_analytics')}
+                >
+                  <AlertTriangle size={18} style={{ color: '#ef4444' }} />
+                  Scrap & Wastage Analysis
                 </div>
               )}
             </>
@@ -1507,6 +1575,25 @@ export default function App() {
                 <span className="stats-value">{clients.length}</span>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Registered Buyers</span>
               </div>
+
+              <div className="glass-card stats-card" style={{ cursor: 'pointer' }} onClick={() => handleTabChange('scrap_analytics')}>
+                <span className="stats-title">Average Scrap %</span>
+                <span className="stats-value">
+                  {scrapMetrics.currentMonthAvg}%
+                </span>
+                <span style={{ 
+                  fontSize: '0.8rem', 
+                  fontWeight: '700', 
+                  color: scrapMetrics.momDirection === 'up' ? '#dc2626' : (scrapMetrics.momDirection === 'down' ? '#059669' : 'var(--text-secondary)'),
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                  {scrapMetrics.momDirection === 'up' && `▲ +${scrapMetrics.momChange}% MoM (Increase)`}
+                  {scrapMetrics.momDirection === 'down' && `▼ -${scrapMetrics.momChange}% MoM (Decrease)`}
+                  {scrapMetrics.momDirection === 'neutral' && `• 0.0% MoM (No Change)`}
+                </span>
+              </div>
             </div>
 
             {/* Quick Actions & Recent Orders Split */}
@@ -1803,6 +1890,14 @@ export default function App() {
             machines={machines}
             onSaveMachine={handleSaveMachine}
             onDeleteMachine={handleDeleteMachine}
+          />
+        )}
+
+        {/* TAB: SCRAP & WASTAGE ANALYSIS */}
+        {activeTab === 'scrap_analytics' && (
+          <ScrapWastageAnalysis 
+            productionRecords={productionRecords}
+            orders={orders}
           />
         )}
       </div>
