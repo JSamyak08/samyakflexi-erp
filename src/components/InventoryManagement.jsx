@@ -26,7 +26,8 @@ import {
   Scan,
   FileText,
   Check,
-  History
+  History,
+  ChevronDown
 } from 'lucide-react';
 import GRNPDF from './GRNPDF';
 import WeighingScaleInput from './WeighingScaleInput';
@@ -353,6 +354,64 @@ export default function InventoryManagement({
   const [grnRolls, setGrnRolls] = useState(10);
   const [grnWeightKg, setGrnWeightKg] = useState(1500);
   const [grnBatchNo, setGrnBatchNo] = useState('');
+  const [grnSelectedStockItemId, setGrnSelectedStockItemId] = useState('');
+  const [grnItemSearchTerm, setGrnItemSearchTerm] = useState('');
+  const [isGrnItemDropdownOpen, setIsGrnItemDropdownOpen] = useState(false);
+
+  const handleSelectStockItemForGrn = (item) => {
+    if (!item) return;
+    const title = item.itemName || `${item.filmType || ''} ${item.micron && item.micron !== '-' ? item.micron + 'µ' : ''} ${item.widthMm && item.widthMm !== '-' ? '(' + item.widthMm + 'mm)' : ''}`.trim();
+    
+    setGrnSelectedStockItemId(item.id);
+    setGrnItemName(title);
+    setGrnItemSearchTerm(title);
+    
+    if (item.category) {
+      setGrnCategory(item.category);
+    }
+    if (item.unit) {
+      setGrnUnit(item.unit);
+    }
+    if (item.filmType) {
+      setGrnFilmType(item.filmType);
+    }
+    if (item.micron && item.micron !== '-') {
+      setGrnMicron(item.micron);
+    }
+    if (item.widthMm && item.widthMm !== '-') {
+      setGrnWidthMm(item.widthMm);
+    }
+    
+    setIsGrnItemDropdownOpen(false);
+  };
+
+  const openNewGRNModal = (preselectedItem = null) => {
+    setIsNewGRNModalOpen(true);
+    if (preselectedItem) {
+      handleSelectStockItemForGrn(preselectedItem);
+    } else {
+      setGrnItemName('');
+      setGrnItemSearchTerm('');
+      setGrnSelectedStockItemId('');
+      setIsGrnItemDropdownOpen(false);
+    }
+  };
+
+  const filteredStockItemsForGrn = (inventory || []).filter(item => {
+    const term = (grnItemSearchTerm || '').toLowerCase().trim();
+    const title = (item.itemName || `${item.filmType || ''} ${item.micron || ''} ${item.widthMm || ''}`).toLowerCase();
+    const code = (item.itemCode || item.id || '').toLowerCase();
+    const cat = (item.category || '').toLowerCase();
+    
+    if (!term) return true;
+    return title.includes(term) || code.includes(term) || cat.includes(term);
+  }).sort((a, b) => {
+    const aMatchCat = (a.category || '').toLowerCase() === (grnCategory || '').toLowerCase();
+    const bMatchCat = (b.category || '').toLowerCase() === (grnCategory || '').toLowerCase();
+    if (aMatchCat && !bMatchCat) return -1;
+    if (!aMatchCat && bMatchCat) return 1;
+    return 0;
+  });
 
   // Universal Edit Stock Item State
   const [editingStockItem, setEditingStockItem] = useState(null);
@@ -557,9 +616,9 @@ export default function InventoryManagement({
     }
 
     const isFilm = grnCategory === 'Film Substrates';
-    const itemName = isFilm 
+    const itemName = grnItemName.trim() || (isFilm 
       ? `${grnFilmType} ${grnMicron}µ (${grnWidthMm}mm)` 
-      : (grnItemName.trim() || `${grnCategory} Inward Item`);
+      : `${grnCategory} Inward Item`);
 
     const newGRN = {
       grnNo: `GRN-2026-${Math.floor(100 + Math.random() * 900)}`,
@@ -569,6 +628,7 @@ export default function InventoryManagement({
       receivedDate: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
       category: grnCategory,
       itemName: itemName,
+      stockItemId: grnSelectedStockItemId || null,
       filmType: isFilm ? grnFilmType : grnCategory,
       micron: isFilm ? parseFloat(grnMicron) : '-',
       widthMm: isFilm ? parseFloat(grnWidthMm) : '-',
@@ -590,7 +650,7 @@ export default function InventoryManagement({
     const newRoll = {
       barcodeId: generateBarcodeId(isFilm ? 'RM-BC' : 'CON-BC'),
       rollType: isFilm ? 'RAW_MATERIAL' : 'CONSUMABLE_ITEM',
-      itemId: `INV-${Math.floor(100 + Math.random() * 900)}`,
+      itemId: grnSelectedStockItemId || `INV-${Math.floor(100 + Math.random() * 900)}`,
       itemName: itemName,
       category: grnCategory,
       micron: isFilm ? parseFloat(grnMicron) : '-',
@@ -636,10 +696,12 @@ export default function InventoryManagement({
       const isFilm = (updatedGRN.category || 'Film Substrates') === 'Film Substrates';
 
       const existingInvIndex = inventory.findIndex(i => {
+        if (updatedGRN.stockItemId && String(i.id) === String(updatedGRN.stockItemId)) return true;
+        if (updatedGRN.itemId && String(i.id) === String(updatedGRN.itemId)) return true;
         if (isFilm) {
           return i.filmType === updatedGRN.filmType && i.micron === updatedGRN.micron && i.widthMm === updatedGRN.widthMm;
         }
-        return (i.itemName || '').toLowerCase() === (updatedGRN.itemName || '').toLowerCase() || i.id === updatedGRN.itemId;
+        return (i.itemName || '').toLowerCase() === (updatedGRN.itemName || '').toLowerCase();
       });
 
       if (existingInvIndex >= 0) {
@@ -1014,7 +1076,7 @@ export default function InventoryManagement({
             <button className="btn-primary" style={{ background: '#2563eb', borderColor: '#2563eb' }} onClick={() => openAddStockModal()}>
               <Plus size={18} /> Add Stock Item
             </button>
-            <button className="btn-primary" onClick={() => setIsNewGRNModalOpen(true)}>
+            <button className="btn-primary" onClick={() => openNewGRNModal()}>
               <Plus size={18} /> Inward GRN (New Stock)
             </button>
           </div>
@@ -1167,6 +1229,15 @@ export default function InventoryManagement({
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: '6px' }}>
+                          <button 
+                            className="btn-primary" 
+                            style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#059669', borderColor: '#059669' }}
+                            onClick={() => openNewGRNModal(item)}
+                            title="Create Inward GRN for this item"
+                          >
+                            <Plus size={14} /> Inward
+                          </button>
+                          
                           <button 
                             className="btn-secondary" 
                             style={{ padding: '4px 8px', fontSize: '0.75rem' }}
@@ -1832,6 +1903,132 @@ export default function InventoryManagement({
                     <option value="Tapes & Consumables">Tapes & Consumables (PTFE, Masking)</option>
                     <option value="Safety Gear (PPE)">Safety Gear (PPE)</option>
                   </select>
+                </div>
+
+                {/* Searchable Item Name connected to Existing Stock Items */}
+                <div className="form-group" style={{ gridColumn: 'span 2', position: 'relative' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label style={{ margin: 0, fontWeight: '700', color: '#0f172a' }}>
+                      Select Existing Stock Item (Searchable List) *
+                    </label>
+                    {grnSelectedStockItemId && (
+                      <span style={{ fontSize: '0.75rem', color: '#047857', background: '#ecfdf5', padding: '2px 8px', borderRadius: '4px', border: '1px solid #a7f3d0', fontWeight: '600' }}>
+                        ✓ Linked SKU #{inventory.find(i => String(i.id) === String(grnSelectedStockItemId))?.itemCode || grnSelectedStockItemId}
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ position: 'relative' }}>
+                    <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', zIndex: 2 }} />
+                    <input
+                      type="text"
+                      className="form-control"
+                      style={{ paddingLeft: '36px', paddingRight: '32px', fontWeight: grnSelectedStockItemId ? '700' : 'normal' }}
+                      placeholder="Search existing stock items (e.g. Doctor Blade, Cyan Ink, PET 12µ)..."
+                      value={grnItemSearchTerm}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setGrnItemSearchTerm(val);
+                        setGrnItemName(val);
+                        setGrnSelectedStockItemId('');
+                        setIsGrnItemDropdownOpen(true);
+                      }}
+                      onFocus={() => setIsGrnItemDropdownOpen(true)}
+                    />
+                    <ChevronDown 
+                      size={16} 
+                      style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', cursor: 'pointer', zIndex: 2 }}
+                      onClick={() => setIsGrnItemDropdownOpen(!isGrnItemDropdownOpen)}
+                    />
+                  </div>
+
+                  {/* Dropdown Options List */}
+                  {isGrnItemDropdownOpen && (
+                    <div 
+                      style={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: 0,
+                        right: 0,
+                        zIndex: 150,
+                        background: '#ffffff',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '8px',
+                        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15)',
+                        maxHeight: '220px',
+                        overflowY: 'auto',
+                        marginTop: '4px'
+                      }}
+                    >
+                      <div 
+                        style={{
+                          padding: '10px 14px',
+                          fontSize: '0.82rem',
+                          fontWeight: '700',
+                          color: '#2563eb',
+                          background: '#eff6ff',
+                          cursor: 'pointer',
+                          borderBottom: '1px solid #dbeafe',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setGrnSelectedStockItemId('');
+                          setIsGrnItemDropdownOpen(false);
+                        }}
+                      >
+                        <Plus size={14} /> + Inward New Custom Item (Not in Stock List)
+                      </div>
+
+                      {filteredStockItemsForGrn.length === 0 ? (
+                        <div style={{ padding: '12px', fontSize: '0.85rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+                          No matching stock items found. You can enter a custom item name above.
+                        </div>
+                      ) : (
+                        filteredStockItemsForGrn.map(item => {
+                          const title = item.itemName || `${item.filmType || 'Film'} ${item.micron && item.micron !== '-' ? item.micron + 'µ' : ''} ${item.widthMm && item.widthMm !== '-' ? '(' + item.widthMm + 'mm)' : ''}`.trim();
+                          const isSelected = String(grnSelectedStockItemId) === String(item.id);
+                          
+                          return (
+                            <div
+                              key={item.id}
+                              style={{
+                                padding: '10px 14px',
+                                cursor: 'pointer',
+                                borderBottom: '1px solid #f1f5f9',
+                                background: isSelected ? '#f0f9ff' : 'transparent',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                gap: '8px'
+                              }}
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                handleSelectStockItemForGrn(item);
+                              }}
+                            >
+                              <div>
+                                <div style={{ fontWeight: '700', fontSize: '0.88rem', color: '#0f172a' }}>
+                                  {title}
+                                </div>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', gap: '8px', marginTop: '2px' }}>
+                                  <span>Code: <strong>{item.itemCode || item.id}</strong></span>
+                                  <span>Category: <strong style={{ color: '#475569' }}>{item.category || 'Film Substrates'}</strong></span>
+                                </div>
+                              </div>
+                              <div style={{ textAlign: 'right' }}>
+                                <span className="badge badge-success" style={{ fontSize: '0.75rem', padding: '3px 8px' }}>
+                                  {item.availableQtyKg || 0} {item.unit || 'Kg'} in Stock
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="form-group">
