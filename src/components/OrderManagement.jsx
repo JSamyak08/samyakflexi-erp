@@ -18,8 +18,8 @@ import PurchaseOrderPDF from './PurchaseOrderPDF';
 import { calculateJobRawMaterials } from '../factoryStore';
 
 export default function OrderManagement({ 
-  orders, 
-  vendors, 
+  orders = [], 
+  vendors = [], 
   inventory = [],
   jobMasters = [],
   currentUser,
@@ -569,7 +569,7 @@ export default function OrderManagement({
           <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: '500' }}>Vendor:</span>
           <select className="form-control" style={{ width: '180px' }} value={vendorFilter} onChange={e => setVendorFilter(e.target.value)}>
             <option value="ALL">All Preferred Vendors</option>
-            {vendors.map(v => (
+            {(vendors || []).map(v => (
               <option key={v.id} value={v.companyName}>{v.companyName}</option>
             ))}
           </select>
@@ -841,7 +841,7 @@ export default function OrderManagement({
                   value={selectedVendorId}
                   onChange={e => setSelectedVendorId(e.target.value)}
                 >
-                  {vendors.map(v => (
+                  {(vendors || []).map(v => (
                     <option key={v.id} value={v.id}>
                       {v.companyName} (GSTIN: {v.gstin}) | Supplies: {v.materials.join(', ')}
                     </option>

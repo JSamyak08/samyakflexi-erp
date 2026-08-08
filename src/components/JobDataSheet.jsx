@@ -35,7 +35,7 @@ export default function JobDataSheet({
   const isAuthorizedToViewProfit = isAdmin || currentUser?.role === 'Plant Manager';
 
   const [activeTab, setActiveTab] = useState('records'); // 'records', 'form'
-  const [selectedJobId, setSelectedJobId] = useState(orders[0]?.id || '');
+  const [selectedJobId, setSelectedJobId] = useState((orders || [])[0]?.id || '');
   const [sellingPricePerKg, setSellingPricePerKg] = useState(245);
   
   // Form state

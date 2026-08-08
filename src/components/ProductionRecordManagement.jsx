@@ -948,7 +948,7 @@ export default function ProductionRecordManagement({
               </tr>
             </thead>
             <tbody>
-              {selectedRecord.materialsList.map((m, idx) => (
+              {(selectedRecord.materialsList || []).map((m, idx) => (
                 <tr key={idx}>
                   <td style={{ fontWeight: '600' }}>{m.filmType}</td>
                   <td>{m.micron}</td>

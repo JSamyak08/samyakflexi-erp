@@ -3,7 +3,7 @@ import { Plus, Search, Building2, Phone, MapPin, Briefcase, ChevronRight, Packag
 import { openArtworkViewer } from '../services/supabaseStorageService';
 import ArtworkModal from './ArtworkModal';
 
-export default function ClientManagement({ clients, orders, cylinders, onAddClient, onUpdateClient, onDeleteClient }) {
+export default function ClientManagement({ clients = [], orders = [], cylinders = [], onAddClient, onUpdateClient, onDeleteClient }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedClient, setSelectedClient] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);

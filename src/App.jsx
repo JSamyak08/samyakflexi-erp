@@ -712,9 +712,9 @@ export default function App() {
   };
 
   const isRecDue = isReconciliationDue("2026-07-24");
-  const delayedOrdersCount = orders.filter(o => o.status === 'Delayed' || new Date(o.targetDeliveryDate) < new Date('2026-07-24')).length;
-  const pendingQCGRNsCount = grns.filter(g => g.status === 'Pending QC').length;
-  const pendingProductionApprovalCount = productionRecords.filter(r => r.status === 'Filled by Plant Manager').length;
+  const delayedOrdersCount = (orders || []).filter(o => o.status === 'Delayed' || new Date(o.targetDeliveryDate) < new Date('2026-07-24')).length;
+  const pendingQCGRNsCount = (grns || []).filter(g => g.status === 'Pending QC').length;
+  const pendingProductionApprovalCount = (productionRecords || []).filter(r => r.status === 'Filled by Plant Manager').length;
 
   // Calculate average scrap % running throughout the jobs for dashboard
   const calculateScrapMetrics = (records) => {
@@ -1619,10 +1619,10 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {orders.map(o => {
+                      {(orders || []).map(o => {
                         const isOverdue = o.status === 'Delayed' || new Date(o.targetDeliveryDate) < new Date('2026-07-24');
                         // Derive substrate structure from the matching Job Master's layers, fallback to order.structure
-                        const matchedJM = jobMasters.find(j =>
+                        const matchedJM = (jobMasters || []).find(j =>
                           (j.jobName || '').toLowerCase().trim() === (o.jobName || '').toLowerCase().trim()
                         );
                         const substrateDisplay = matchedJM && matchedJM.layers && matchedJM.layers.length > 0
@@ -1686,7 +1686,7 @@ export default function App() {
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {inventory.filter(i => {
+                    {(inventory || []).filter(i => {
                       // Only show items that have an explicit reorder level set AND are below it
                       const avail = i.availableQtyKg || 0;
                       const reorder = i.reorderLevelKg;
@@ -1696,7 +1696,7 @@ export default function App() {
                         ✓ All raw material items are above reorder threshold.
                       </div>
                     ) : (
-                      inventory.filter(i => {
+                      (inventory || []).filter(i => {
                         const avail = i.availableQtyKg || 0;
                         const reorder = i.reorderLevelKg;
                         return reorder != null && reorder > 0 && avail <= reorder;

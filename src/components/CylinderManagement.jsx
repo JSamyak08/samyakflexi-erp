@@ -22,7 +22,7 @@ import { uploadArtworkFile, openArtworkViewer } from '../services/supabaseStorag
 import ArtworkModal from './ArtworkModal';
 
 export default function CylinderManagement({ 
-  cylinders, 
+  cylinders = [], 
   onAddCylinder, 
   onUpdateCylinder,
   onDeleteCylinder,

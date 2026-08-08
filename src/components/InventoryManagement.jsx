@@ -74,10 +74,10 @@ export const INVENTORY_UOMS = [
 ];
 
 export default function InventoryManagement({ 
-  inventory, 
-  grns, 
-  vendors, 
-  orders, 
+  inventory = [], 
+  grns = [], 
+  vendors = [], 
+  orders = [], 
   productionRecords = [],
   onAddGRN, 
   onUpdateGRN, 
@@ -301,7 +301,7 @@ export default function InventoryManagement({
       return;
     }
 
-    const matchedOrder = orders.find(o => o.jobName === dispatchJobName);
+    const matchedOrder = (orders || []).find(o => o.jobName === dispatchJobName);
     const orderId = matchedOrder ? matchedOrder.id : `ORD-2026-${Math.floor(100 + Math.random() * 900)}`;
 
     const totalNetWeight = dispatchRollsList.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
@@ -974,9 +974,9 @@ export default function InventoryManagement({
     reader.readAsText(file);
   };
 
-  const pendingQCGRNs = grns.filter(g => g.status === 'Pending QC');
+  const pendingQCGRNs = (grns || []).filter(g => g.status === 'Pending QC');
 
-  const filteredInventory = inventory.filter(i => {
+  const filteredInventory = (inventory || []).filter(i => {
     // 1. Category Filter
     if (stockCategoryFilter && stockCategoryFilter !== 'ALL') {
       const itemCat = i.category || 'Film Substrates';
@@ -1875,7 +1875,7 @@ export default function InventoryManagement({
                     }}
                   >
                     <option value="" disabled>-- Select Vendor --</option>
-                    {vendors.map(v => (
+                    {(vendors || []).map(v => (
                       <option key={v.id} value={v.companyName}>{v.companyName} ({v.gstin || 'GSTIN N/A'})</option>
                     ))}
                     <option value="__CREATE_NEW__" style={{ fontWeight: '700', color: '#047857' }}>
@@ -2210,7 +2210,7 @@ export default function InventoryManagement({
               <div className="form-group">
                 <label>Production Job Name *</label>
                 <select className="form-control" value={issueJobName} onChange={e => setIssueJobName(e.target.value)}>
-                  {orders.map(o => <option key={o.id} value={o.jobName}>{o.jobName} ({o.id})</option>)}
+                  {(orders || []).map(o => <option key={o.id} value={o.jobName}>{o.jobName} ({o.id})</option>)}
                 </select>
               </div>
             )}
@@ -3297,11 +3297,11 @@ export default function InventoryManagement({
                     value={dispatchJobName}
                     onChange={e => {
                       setDispatchJobName(e.target.value);
-                      const matchedOrder = orders.find(o => o.jobName === e.target.value);
+                      const matchedOrder = (orders || []).find(o => o.jobName === e.target.value);
                       if (matchedOrder) setDispatchClientName(matchedOrder.clientName);
                     }}
                   >
-                    {orders.map(o => (
+                    {(orders || []).map(o => (
                       <option key={o.id} value={o.jobName}>{o.jobName} ({o.clientName})</option>
                     ))}
                   </select>
