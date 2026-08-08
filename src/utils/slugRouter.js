@@ -18,7 +18,8 @@ export const TAB_SLUG_MAP = {
   cylinders: '/rotogravure-cylinders',
   printing_scheduler: '/printing-scheduler',
   supabase: '/supabase-integration',
-  doc_settings: '/letterhead-settings'
+  doc_settings: '/letterhead-settings',
+  audit_logs: '/audit-logs'
 };
 
 export const SLUG_TAB_MAP = {
@@ -72,7 +73,10 @@ export const SLUG_TAB_MAP = {
   'supabase-integration': 'supabase',
 
   '/letterhead-settings': 'doc_settings',
-  'letterhead-settings': 'doc_settings'
+  'letterhead-settings': 'doc_settings',
+
+  '/audit-logs': 'audit_logs',
+  'audit-logs': 'audit_logs'
 };
 
 /**

@@ -11,7 +11,7 @@ export { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl
  * Ensures a valid Supabase Auth session exists.
  * Throws an error if unauthenticated, preventing 401s on database writes.
  */
-async function ensureValidSession() {
+export async function ensureValidSession() {
   if (!isSupabaseConfigured()) return; // Local fallback mode ignores auth
   try {
     const { data: { session }, error } = await supabase.auth.getSession();
@@ -43,7 +43,7 @@ import { initialCylinders } from '../dataStore';
  * Suppresses blocking UI exceptions if a table is not created in Supabase yet,
  * allowing local ERP in-memory state to operate smoothly.
  */
-function handleSupabaseError(error, contextName) {
+export function handleSupabaseError(error, contextName) {
   if (!error) return;
 
   const isMissingTable = 

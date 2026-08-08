@@ -35,7 +35,8 @@ import {
   UserCheck,
   Printer,
   FileCode,
-  Settings as SettingsIcon
+  Settings as SettingsIcon,
+  ShieldAlert
 } from 'lucide-react';
 
 import AuthScreen from './components/AuthScreen';
@@ -54,6 +55,8 @@ import DocumentSettings from './components/DocumentSettings';
 import ConsumablesAndIndents from './components/ConsumablesAndIndents';
 import SalesManagement from './components/SalesManagement';
 import ScrapWastageAnalysis from './components/ScrapWastageAnalysis';
+import AuditLogsManagement from './components/AuditLogsManagement';
+import { fetchAuditLogsFromSupabase, saveAuditLogToSupabase, createAuditEntry, pruneOldAuditLogs } from './services/auditLogger';
 import { getTabFromUrl, pushSlugState } from './utils/slugRouter';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import { 
@@ -248,7 +251,17 @@ export default function App() {
   const [indents, setIndents] = useState(() => stripDummyRecords(loadLocalState('material_indents', [])));
   const [machineIssues, setMachineIssues] = useState(() => stripDummyRecords(loadLocalState('machine_issues', [])));
   const [consumables, setConsumables] = useState(() => stripDummyRecords(loadLocalState('consumables', [])));
+  const [auditLogs, setAuditLogs] = useState(() => pruneOldAuditLogs(loadLocalState('audit_logs', [])));
 
+  const logAudit = async (actionType, moduleName, details, targetId = null) => {
+    const entry = createAuditEntry(currentUser, actionType, moduleName, details, targetId);
+    setAuditLogs(prev => pruneOldAuditLogs([entry, ...prev]));
+    try {
+      await saveAuditLogToSupabase(entry);
+    } catch (e) {
+      console.warn("Audit log save notice:", e);
+    }
+  };
 
   const activeUsersList = useMemo(() => {
     const list = [...(users || []).filter(u => u.id && !u.id.startsWith('USR-SETTING-')), ...initialUsers];
@@ -264,7 +277,7 @@ export default function App() {
   const isTabAllowed = (tabKey) => {
     if (!currentUser) return true;
     if (currentUser.role === 'Admin') return true;
-    if (tabKey === 'user_management') return false; // Strictly restricted to Admin role by default
+    if (tabKey === 'user_management' || tabKey === 'audit_logs') return false; // Strictly restricted to Admin role
     const rolePerm = rolePermissions[currentUser.role];
     if (!rolePerm) return true;
     return rolePerm[tabKey] !== false;
@@ -359,7 +372,7 @@ export default function App() {
         supaOrders, supaVendors, supaInv, supaGRNs, supaCyls, 
         supaProd, supaUsers, supaSheets, supaRolls, supaShipments,
         supaMachines, supaSchedules, supaClients, supaJobMasters,
-        supaRolePerms
+        supaRolePerms, supaAuditLogs
       ] = await Promise.all([
         fetchSafe(fetchOrders, 'Orders'),
         fetchSafe(fetchVendors, 'Vendors'),
@@ -375,7 +388,8 @@ export default function App() {
         fetchSafe(fetchProductionSchedules, 'Production Schedules'),
         fetchSafe(fetchClients, 'Clients'),
         fetchSafe(fetchJobMasters, 'Job Masters'),
-        fetchSafe(fetchRolePermissionsFromSupabase, 'Role Permissions')
+        fetchSafe(fetchRolePermissionsFromSupabase, 'Role Permissions'),
+        fetchSafe(fetchAuditLogsFromSupabase, 'Audit Logs')
       ]);
 
       // Fetch schema-independent system settings & lifted store states
@@ -394,6 +408,7 @@ export default function App() {
 
       if (!isMounted) return;
 
+      if (Array.isArray(supaAuditLogs)) setAuditLogs(pruneOldAuditLogs(supaAuditLogs));
       if (dbPrefixes) safeLocalStorageSet('samyak_doc_prefixes', dbPrefixes);
       if (dbTerms) safeLocalStorageSet('samyak_doc_terms', dbTerms);
       if (dbLogo) safeLocalStorageSet('samyak_company_logo', dbLogo);
@@ -800,6 +815,7 @@ export default function App() {
 
   // Login Handler (for UI updates, authService handles Supabase login)
   const handleLogin = (user) => {
+    logAudit('AUTH', 'User Management', `User ${user?.name || user?.email || 'User'} signed in to the system`, user?.id);
     if (!isSupaActive) {
       setSessionProfile(user);
       setCurrentUser(user);
@@ -809,6 +825,7 @@ export default function App() {
 
   // Logout Handler (for UI updates, authService handles Supabase logout)
   const handleLogout = () => {
+    logAudit('AUTH', 'User Management', `User ${currentUser?.name || currentUser?.email || 'User'} signed out of the system`, currentUser?.id);
     localStorage.removeItem('samyak_erp_current_user');
     if (!isSupaActive) {
       setSessionProfile(null);
@@ -886,6 +903,7 @@ export default function App() {
   const handleSaveProductionRecord = (newRecord) => {
     setProductionRecords(prev => [newRecord, ...prev.filter(r => r.orderId !== newRecord.orderId)]);
     saveProductionRecordToSupabase(newRecord);
+    logAudit('CREATE', 'Production Records', `Logged production record ${newRecord.id} for "${newRecord.jobName}" (Usable: ${newRecord.netUsableKg} kg, Wastage: ${newRecord.totalWastageKg} kg)`, newRecord.id);
 
     // Update Inventory available stock for materials consumed
     if (newRecord.materialsList && newRecord.materialsList.length > 0) {
@@ -944,6 +962,7 @@ export default function App() {
           approvalDate: new Date().toLocaleString()
         };
         saveProductionRecordToSupabase(updated);
+        logAudit('UPDATE', 'Production Records', `Plant manager approval granted for production record ${recordId} by ${adminName}`, recordId);
         return updated;
       }
       return r;
@@ -952,6 +971,7 @@ export default function App() {
 
   const handleUpdateConsumables = async (newConsumables) => {
     setConsumables(newConsumables);
+    logAudit('UPDATE', 'Consumable Store', `Updated consumable store inventory levels`, 'CONSUMABLES');
     try {
       await saveSystemSetting('consumables', newConsumables);
     } catch (err) {
@@ -961,6 +981,7 @@ export default function App() {
 
   const handleUpdateIndents = async (newIndents) => {
     setIndents(newIndents);
+    logAudit('UPDATE', 'Material Indents', `Updated plant material indents / purchase requisitions`, 'INDENTS');
     try {
       await saveSystemSetting('material_indents', newIndents);
     } catch (err) {
@@ -970,6 +991,7 @@ export default function App() {
 
   const handleUpdateMachineIssues = async (newIssues) => {
     setMachineIssues(newIssues);
+    logAudit('UPDATE', 'Machine Stock Issue', `Recorded stock item issue to machine`, 'ISSUES');
     try {
       await saveSystemSetting('machine_issues', newIssues);
     } catch (err) {
@@ -980,16 +1002,17 @@ export default function App() {
   // Handlers for state updates (Preserves local state + async Supabase sync)
   const handleAddOrder = async (newOrder) => {
     setOrders(prev => [newOrder, ...prev.filter(o => o.id !== newOrder.id)]);
+    logAudit('CREATE', 'Orders', `Punched job order ${newOrder.id} - "${newOrder.jobName}" for client "${newOrder.clientName}" (${newOrder.orderQtyKg} kg)`, newOrder.id);
     try {
       await saveOrderToSupabase(newOrder);
     } catch (err) {
-
       console.warn("[Sync Notice] Order saved locally. Supabase notice:", err);
     }
   };
 
   const handleUpdateOrder = async (updatedOrder) => {
     setOrders(prev => prev.map(o => o.id === updatedOrder.id ? updatedOrder : o));
+    logAudit('UPDATE', 'Orders', `Updated order details/status for ${updatedOrder.id} - "${updatedOrder.jobName}" (${updatedOrder.status})`, updatedOrder.id);
     try {
       await saveOrderToSupabase(updatedOrder);
     } catch (err) {
@@ -999,6 +1022,7 @@ export default function App() {
 
   const handleDeleteOrder = async (orderId) => {
     setOrders(prev => prev.filter(o => o.id !== orderId));
+    logAudit('DELETE', 'Orders', `Deleted job order record ${orderId}`, orderId);
     try {
       await deleteOrderFromSupabase(orderId);
     } catch (err) {
@@ -1008,6 +1032,7 @@ export default function App() {
 
   const handleAddVendor = async (newVendor) => {
     setVendors(prev => [...prev.filter(v => v.id !== newVendor.id), newVendor]);
+    logAudit('CREATE', 'Vendors', `Saved vendor record "${newVendor.name || newVendor.companyName}" (${newVendor.id})`, newVendor.id);
     try {
       await saveVendorToSupabase(newVendor);
     } catch (err) {
@@ -1017,6 +1042,7 @@ export default function App() {
 
   const handleAddGRN = async (newGRN) => {
     setGrns(prev => [newGRN, ...prev.filter(g => g.grnNo !== newGRN.grnNo)]);
+    logAudit('CREATE', 'GRN Inward', `Issued GRN ${newGRN.grnNo} for "${newGRN.itemName}" (${newGRN.receivedQtyKg} kg) from ${newGRN.vendorName}`, newGRN.grnNo);
     try {
       await saveGRNToSupabase(newGRN);
     } catch (err) {
@@ -1026,6 +1052,7 @@ export default function App() {
 
   const handleUpdateGRN = async (updatedGRN) => {
     setGrns(prev => prev.map(g => g.grnNo === updatedGRN.grnNo ? updatedGRN : g));
+    logAudit('UPDATE', 'GRN Inward', `Updated GRN ${updatedGRN.grnNo} status to "${updatedGRN.status}"`, updatedGRN.grnNo);
     try {
       await saveGRNToSupabase(updatedGRN);
     } catch (err) {
@@ -1053,6 +1080,7 @@ export default function App() {
       }
       return [item, ...prev];
     });
+    logAudit('UPDATE', 'Inventory', `Saved stock item ${item.itemCode || item.id} - "${item.itemName}" (${item.availableQtyKg} ${item.unit || 'Kg'})`, item.id);
     try {
       await saveInventoryItemToSupabase(item);
     } catch (err) {
@@ -1063,6 +1091,7 @@ export default function App() {
   const handleDeleteInventoryItem = async (itemId) => {
     if (!itemId) return;
     setInventory(prev => prev.filter(i => String(i.id) !== String(itemId)));
+    logAudit('DELETE', 'Inventory', `Deleted inventory item ${itemId}`, itemId);
     try {
       await deleteInventoryItemFromSupabase(itemId);
     } catch (err) {
@@ -1076,6 +1105,7 @@ export default function App() {
       safeLocalStorageSet('samyak_erp_users', updated);
       return updated;
     });
+    logAudit('CREATE', 'User Management', `Created user account for ${newUser.name} (${newUser.email}) - Role: ${newUser.role}`, newUser.id);
     try {
       await saveUserToSupabase(newUser);
     } catch (err) {
@@ -1089,6 +1119,7 @@ export default function App() {
       safeLocalStorageSet('samyak_erp_users', updated);
       return updated;
     });
+    logAudit('UPDATE', 'User Management', `Updated user account/permissions for ${updatedUser.name} (${updatedUser.email}) - Role: ${updatedUser.role}`, updatedUser.id);
     try {
       await saveUserToSupabase(updatedUser);
     } catch (err) {
@@ -1102,6 +1133,7 @@ export default function App() {
       safeLocalStorageSet('samyak_erp_users', updated);
       return updated;
     });
+    logAudit('DELETE', 'User Management', `Deleted user account ${userId}`, userId);
     try {
       await deleteUserFromSupabase(userId);
     } catch (err) {
@@ -1111,6 +1143,7 @@ export default function App() {
 
   const handleAddJobDataSheet = async (newSheet) => {
     setJobDataSheets(prev => [newSheet, ...prev.filter(s => s.id !== newSheet.id)]);
+    logAudit('CREATE', 'Job Data Sheets', `Created job datasheet ${newSheet.id} for "${newSheet.jobName}"`, newSheet.id);
     try {
       await saveJobDataSheetToSupabase(newSheet);
     } catch (err) {
@@ -1120,6 +1153,7 @@ export default function App() {
 
   const handleDeleteJobDataSheet = async (sheetId) => {
     setJobDataSheets(prev => prev.filter(s => s.id !== sheetId));
+    logAudit('DELETE', 'Job Data Sheets', `Deleted job datasheet ${sheetId}`, sheetId);
     try {
       await deleteJobDataSheetFromSupabase(sheetId);
     } catch (err) {
@@ -1129,6 +1163,7 @@ export default function App() {
 
   const handleAddCylinder = async (newCyl) => {
     setCylinders(prev => [newCyl, ...prev.filter(c => c.id !== newCyl.id)]);
+    logAudit('CREATE', 'Cylinders', `Added rotogravure cylinder ${newCyl.sku} for "${newCyl.jobName}"`, newCyl.id);
     try {
       await saveCylinderToSupabase(newCyl);
     } catch (err) {
@@ -1138,6 +1173,7 @@ export default function App() {
 
   const handleUpdateCylinder = async (updatedCyl) => {
     setCylinders(prev => prev.map(c => c.id === updatedCyl.id ? updatedCyl : c));
+    logAudit('UPDATE', 'Cylinders', `Updated rotogravure cylinder ${updatedCyl.sku} for "${updatedCyl.jobName}"`, updatedCyl.id);
     try {
       await saveCylinderToSupabase(updatedCyl);
     } catch (err) {
@@ -1147,6 +1183,7 @@ export default function App() {
 
   const handleDeleteCylinder = async (cylId) => {
     setCylinders(prev => prev.filter(c => c.id !== cylId));
+    logAudit('DELETE', 'Cylinders', `Deleted rotogravure cylinder ${cylId}`, cylId);
     try {
       await deleteCylinderFromSupabase(cylId);
     } catch (err) {
@@ -1156,6 +1193,7 @@ export default function App() {
 
   const handleAddRoll = async (newRoll) => {
     setInventoryRolls(prev => [newRoll, ...prev.filter(r => r.id !== newRoll.id)]);
+    logAudit('CREATE', 'Inventory Rolls', `Generated child roll barcode ${newRoll.barcodeId || newRoll.id} (${newRoll.netWeightKg} kg)`, newRoll.id);
     try {
       await saveInventoryRollToSupabase(newRoll);
     } catch (err) {
@@ -1165,6 +1203,7 @@ export default function App() {
 
   const handleAddDispatchShipment = async (newShipment) => {
     setDispatchShipments(prev => [newShipment, ...prev.filter(s => s.id !== newShipment.id)]);
+    logAudit('CREATE', 'Dispatch', `Created client dispatch shipment ${newShipment.id} for "${newShipment.clientName}"`, newShipment.id);
     try {
       await saveDispatchShipmentToSupabase(newShipment);
     } catch (err) {
@@ -1174,6 +1213,7 @@ export default function App() {
 
   const handleAddClient = async (newClient) => {
     setClients(prev => [...prev.filter(c => c.id !== newClient.id), newClient]);
+    logAudit('CREATE', 'Clients', `Saved client directory entry "${newClient.name}" (${newClient.id})`, newClient.id);
     try {
       await saveClientToSupabase(newClient);
     } catch (err) {
@@ -1183,6 +1223,7 @@ export default function App() {
 
   const handleUpdateClient = async (updatedClient) => {
     setClients(prev => prev.map(c => c.id === updatedClient.id ? updatedClient : c));
+    logAudit('UPDATE', 'Clients', `Updated client directory entry "${updatedClient.name}" (${updatedClient.id})`, updatedClient.id);
     try {
       await saveClientToSupabase(updatedClient);
     } catch (err) {
@@ -1192,6 +1233,7 @@ export default function App() {
 
   const handleDeleteClient = async (clientId) => {
     setClients(prev => prev.filter(c => c.id !== clientId));
+    logAudit('DELETE', 'Clients', `Deleted client directory entry ${clientId}`, clientId);
     try {
       await deleteClientFromSupabase(clientId);
     } catch (err) {
@@ -1201,6 +1243,7 @@ export default function App() {
 
   const handleAddJobMaster = async (newJobMaster) => {
     setJobMasters(prev => [...prev.filter(j => j.id !== newJobMaster.id), newJobMaster]);
+    logAudit('CREATE', 'Job Masters', `Created job master template "${newJobMaster.jobName}" (${newJobMaster.id})`, newJobMaster.id);
     try {
       await saveJobMasterToSupabase(newJobMaster);
     } catch (err) {
@@ -1210,6 +1253,7 @@ export default function App() {
 
   const handleUpdateJobMaster = async (updatedJobMaster) => {
     setJobMasters(prev => prev.map(j => j.id === updatedJobMaster.id ? updatedJobMaster : j));
+    logAudit('UPDATE', 'Job Masters', `Updated job master template "${updatedJobMaster.jobName}" (${updatedJobMaster.id})`, updatedJobMaster.id);
     try {
       await saveJobMasterToSupabase(updatedJobMaster);
     } catch (err) {
@@ -1471,6 +1515,15 @@ export default function App() {
                 >
                   <SettingsIcon size={18} style={{ color: '#6366f1' }} />
                   Letterhead Settings
+                </div>
+              )}
+              {currentUser?.role === 'Admin' && (
+                <div 
+                  className={`nav-item ${activeTab === 'audit_logs' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('audit_logs')}
+                >
+                  <ShieldAlert size={18} style={{ color: '#ef4444' }} />
+                  System Audit Logs (Admin)
                 </div>
               )}
             </>
@@ -2006,6 +2059,22 @@ export default function App() {
           <ScrapWastageAnalysis 
             productionRecords={productionRecords}
             orders={orders}
+          />
+        )}
+
+        {/* TAB: SYSTEM AUDIT LOGS (ADMIN ONLY) */}
+        {activeTab === 'audit_logs' && (
+          <AuditLogsManagement 
+            auditLogs={auditLogs}
+            currentUser={currentUser}
+            onRefreshLogs={() => fetchAuditLogsFromSupabase().then(logs => setAuditLogs(pruneOldAuditLogs(logs)))}
+            onPurgeOldLogs={() => {
+              if (window.confirm("Are you sure you want to manually purge audit log entries older than 6 months (180 days)?")) {
+                const pruned = pruneOldAuditLogs(auditLogs);
+                setAuditLogs(pruned);
+                safeLocalStorageSet('samyak_erp_audit_logs', pruned);
+              }
+            }}
           />
         )}
       </div>
