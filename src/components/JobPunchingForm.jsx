@@ -417,16 +417,16 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
                 : (DEFAULT_DAILY_RATES[layer.filmType] || 130);
 
               return (
-                <div key={layer.id} className="layer-row-card" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '40px', fontWeight: '600' }}>
+                <div key={layer.id} className="layer-row-card" style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '32px', flexShrink: 0 }}>
                     <span className="layer-badge">L{index + 1}</span>
                   </div>
 
-                  <div style={{ flex: 2 }}>
-                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Film Substrate</label>
+                  <div style={{ flex: '2 1 120px', minWidth: 0 }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', whiteSpace: 'nowrap' }}>Film Substrate</label>
                     <select 
                       className="form-control" 
-                      style={{ padding: '8px' }}
+                      style={{ padding: '6px 8px', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box' }}
                       value={layer.filmType}
                       onChange={e => updateLayer(layer.id, 'filmType', e.target.value)}
                     >
@@ -436,43 +436,42 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
                     </select>
                   </div>
 
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Micron (µ) *</label>
+                  <div style={{ flex: '1 1 70px', minWidth: 0 }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', whiteSpace: 'nowrap' }}>Micron (µ) *</label>
                     <input 
                       type="number" 
                       className="form-control" 
-                      style={{ padding: '8px' }}
+                      style={{ padding: '6px 8px', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box' }}
                       value={layer.micron}
                       onChange={e => updateLayer(layer.id, 'micron', e.target.value)}
                       required
                     />
                   </div>
 
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Rate (₹/kg) *</label>
+                  <div style={{ flex: '1.2 1 85px', minWidth: 0 }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', whiteSpace: 'nowrap' }}>Rate (₹/kg) *</label>
                     <input 
                       type="number" 
                       step="any"
                       className="form-control" 
-                      style={{ padding: '8px', fontWeight: '700', color: '#047857' }}
-                      placeholder={`e.g. ${DEFAULT_DAILY_RATES[layer.filmType] || 125}`}
+                      style={{ padding: '6px 8px', fontSize: '0.85rem', fontWeight: '700', color: '#047857', width: '100%', boxSizing: 'border-box' }}
+                      placeholder={`${DEFAULT_DAILY_RATES[layer.filmType] || 125}`}
                       value={layer.rate ?? ''}
                       onChange={e => updateLayer(layer.id, 'rate', e.target.value)}
                       required
                     />
                   </div>
 
-                  <div style={{ minWidth: '100px', fontSize: '0.8rem', textAlign: 'right' }}>
+                  <div style={{ flexShrink: 0, width: '85px', fontSize: '0.75rem', textAlign: 'right', lineHeight: '1.3' }}>
                     <span style={{ display: 'block', color: 'var(--text-secondary)' }}>Density: <b>{density}</b></span>
                     <span style={{ display: 'block', color: 'var(--accent-color)', fontWeight: '600' }}>{gsm} GSM</span>
-                    <span style={{ display: 'block', color: 'var(--success)', fontWeight: '700' }}>
-                      ₹{price}/kg
-                    </span>
                   </div>
 
-                  <button className="icon-btn-danger" onClick={() => removeLayer(layer.id)}>
-                    <Trash2 size={16} />
-                  </button>
+                  <div style={{ flexShrink: 0 }}>
+                    <button className="icon-btn-danger" style={{ padding: '6px' }} onClick={() => removeLayer(layer.id)}>
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
                 </div>
               );
             })}

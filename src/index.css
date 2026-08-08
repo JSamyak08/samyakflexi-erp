@@ -405,10 +405,15 @@ body {
   background: #f8fafc;
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  padding: 12px;
+  padding: 10px 12px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.layer-row-card > div {
+  min-width: 0;
 }
 .layer-badge {
   background: var(--primary-brand);
