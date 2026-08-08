@@ -353,6 +353,7 @@ export default function InventoryManagement({
   const [grnUnit, setGrnUnit] = useState('Kg');
   const [grnRolls, setGrnRolls] = useState(10);
   const [grnWeightKg, setGrnWeightKg] = useState(1500);
+  const [grnPurchaseRate, setGrnPurchaseRate] = useState(120);
   const [grnBatchNo, setGrnBatchNo] = useState('');
   const [grnSelectedStockItemId, setGrnSelectedStockItemId] = useState('');
   const [grnItemSearchTerm, setGrnItemSearchTerm] = useState('');
@@ -380,6 +381,9 @@ export default function InventoryManagement({
     }
     if (item.widthMm && item.widthMm !== '-') {
       setGrnWidthMm(item.widthMm);
+    }
+    if (item.unitPrice || item.purchaseRatePerKg) {
+      setGrnPurchaseRate(item.unitPrice || item.purchaseRatePerKg);
     }
     
     setIsGrnItemDropdownOpen(false);
@@ -426,6 +430,7 @@ export default function InventoryManagement({
   const [editDimensions, setEditDimensions] = useState('');
   const [editAvailableQty, setEditAvailableQty] = useState(0);
   const [editAllocatedQty, setEditAllocatedQty] = useState(0);
+  const [editUnitPrice, setEditUnitPrice] = useState(120);
   const [editLocation, setEditLocation] = useState('Bay A');
   const [editReorderLevel, setEditReorderLevel] = useState(100);
   const [editLastVendor, setEditLastVendor] = useState('');
@@ -445,6 +450,7 @@ export default function InventoryManagement({
     setEditDimensions('');
     setEditAvailableQty(100);
     setEditAllocatedQty(0);
+    setEditUnitPrice(120);
     setEditLocation('Bay A');
     setEditReorderLevel(100);
     setEditLastVendor('');
@@ -494,6 +500,7 @@ export default function InventoryManagement({
     // Pre-fill Quantities & Thresholds (Accurate numbers from item)
     setEditAvailableQty(item.availableQtyKg ?? item.availableWeightKg ?? 0);
     setEditAllocatedQty(item.allocatedQtyKg ?? 0);
+    setEditUnitPrice(item.unitPrice ?? item.purchaseRatePerKg ?? 0);
     setEditReorderLevel(item.reorderLevelKg ?? 100);
     
     // Pre-fill Location & Vendor Logistics
@@ -526,6 +533,9 @@ export default function InventoryManagement({
     const finalItemName = isFilm
       ? `${editFilmType} ${editMicron}µ (${editWidthMm}mm Width)`
       : (editItemName.trim() || `${editCategory} Stock Item`);
+    const rateVal = parseFloat(editUnitPrice) || 0;
+    const availQty = parseFloat(editAvailableQty) || 0;
+    const valuation = Number((availQty * rateVal).toFixed(2));
 
     let updatedInv;
     if (editingStockItem.isNew) {
@@ -539,8 +549,11 @@ export default function InventoryManagement({
         micron: isFilm ? (parseFloat(editMicron) || 12) : (editMicron && editMicron !== '-' ? editMicron : '-'),
         widthMm: isFilm ? (parseFloat(editWidthMm) || 1000) : (editDimensions.trim() ? editDimensions.replace(/[^\d.]/g, '') || '-' : '-'),
         density: isFilm ? (FILM_DENSITIES[editFilmType] || 1.0) : 1.0,
-        availableQtyKg: parseFloat(editAvailableQty) || 0,
+        availableQtyKg: availQty,
         allocatedQtyKg: parseFloat(editAllocatedQty) || 0,
+        unitPrice: rateVal,
+        purchaseRatePerKg: rateVal,
+        purchaseValuation: valuation,
         location: editLocation.trim() || 'Bay A',
         reorderLevelKg: parseFloat(editReorderLevel) || 0,
         lastVendor: editLastVendor.trim() || '',
@@ -561,8 +574,11 @@ export default function InventoryManagement({
             micron: isFilm ? (parseFloat(editMicron) || 12) : (editMicron && editMicron !== '-' ? editMicron : '-'),
             widthMm: isFilm ? (parseFloat(editWidthMm) || 1000) : (editDimensions.trim() ? editDimensions.replace(/[^\d.]/g, '') || '-' : (item.widthMm || '-')),
             density: isFilm ? (FILM_DENSITIES[editFilmType] || 1.0) : 1.0,
-            availableQtyKg: parseFloat(editAvailableQty) || 0,
+            availableQtyKg: availQty,
             allocatedQtyKg: parseFloat(editAllocatedQty) || 0,
+            unitPrice: rateVal,
+            purchaseRatePerKg: rateVal,
+            purchaseValuation: valuation,
             location: editLocation.trim() || 'Bay A',
             reorderLevelKg: parseFloat(editReorderLevel) || 0,
             lastVendor: editLastVendor.trim() || item.lastVendor,
@@ -623,6 +639,7 @@ export default function InventoryManagement({
     const unitCount = Math.max(1, parseInt(grnRolls) || 1);
     const totalQty = parseFloat(grnWeightKg) || 0;
     const unitQty = Number((totalQty / unitCount).toFixed(2));
+    const rateVal = parseFloat(grnPurchaseRate) || 0;
 
     const newGRN = {
       grnNo: `GRN-2026-${Math.floor(100 + Math.random() * 900)}`,
@@ -639,6 +656,9 @@ export default function InventoryManagement({
       unit: isFilm ? 'Kg' : grnUnit,
       rollsReceived: unitCount,
       netWeightKg: totalQty,
+      purchaseRatePerKg: rateVal,
+      purchaseRate: rateVal,
+      unitPrice: rateVal,
       batchNo: grnBatchNo,
       status: "Pending QC", // Goes to Store QC Verification
       qcNotes: "",
@@ -677,6 +697,9 @@ export default function InventoryManagement({
         batchNo: grnBatchNo,
         netWeightKg: unitQty,
         availableWeightKg: unitQty,
+        purchaseRatePerKg: rateVal,
+        purchaseRate: rateVal,
+        unitPrice: rateVal,
         stationId: 'SCALE_1_INWARD',
         locationBay: isFilm ? 'Bay A' : 'Consumables Store',
         status: 'In Stock'
@@ -711,23 +734,35 @@ export default function InventoryManagement({
     // If Approved, automatically add stock to central Inventory!
     if (status === 'Approved' && onUpdateInventory) {
       const isFilm = (updatedGRN.category || 'Film Substrates') === 'Film Substrates';
+      const grnRate = parseFloat(updatedGRN.purchaseRatePerKg || updatedGRN.purchaseRate || updatedGRN.unitPrice) || 0;
 
       const existingInvIndex = inventory.findIndex(i => {
         if (updatedGRN.stockItemId && String(i.id) === String(updatedGRN.stockItemId)) return true;
         if (updatedGRN.itemId && String(i.id) === String(updatedGRN.itemId)) return true;
         if (isFilm) {
-          return i.filmType === updatedGRN.filmType && i.micron === updatedGRN.micron && i.widthMm === updatedGRN.widthMm;
+          return i.filmType === updatedGRN.filmType && Number(i.micron) === Number(updatedGRN.micron) && Number(i.widthMm) === Number(updatedGRN.widthMm);
         }
         return (i.itemName || '').toLowerCase() === (updatedGRN.itemName || '').toLowerCase();
       });
 
       if (existingInvIndex >= 0) {
+        const itemToUpdate = inventory[existingInvIndex];
         const updatedInv = [...inventory];
-        updatedInv[existingInvIndex].availableQtyKg += updatedGRN.netWeightKg;
-        updatedInv[existingInvIndex].lastVendor = updatedGRN.vendorName;
-        updatedInv[existingInvIndex].lastBatch = updatedGRN.batchNo;
+        const newAvailable = Number((itemToUpdate.availableQtyKg + updatedGRN.netWeightKg).toFixed(2));
+        const finalPrice = grnRate > 0 ? grnRate : (itemToUpdate.unitPrice || 0);
+
+        updatedInv[existingInvIndex] = {
+          ...itemToUpdate,
+          availableQtyKg: newAvailable,
+          unitPrice: finalPrice,
+          purchaseRatePerKg: finalPrice,
+          purchaseValuation: Number((newAvailable * finalPrice).toFixed(2)),
+          lastVendor: updatedGRN.vendorName,
+          lastBatch: updatedGRN.batchNo
+        };
         onUpdateInventory(updatedInv);
       } else {
+        const newAvailable = updatedGRN.netWeightKg;
         const newInvItem = {
           id: `INV-00${inventory.length + 1}`,
           itemCode: `CON-INW-00${inventory.length + 1}`,
@@ -738,8 +773,11 @@ export default function InventoryManagement({
           widthMm: updatedGRN.widthMm || '-',
           unit: updatedGRN.unit || 'Kg',
           density: FILM_DENSITIES[updatedGRN.filmType] || 1.0,
-          availableQtyKg: updatedGRN.netWeightKg,
+          availableQtyKg: newAvailable,
           allocatedQtyKg: 0,
+          unitPrice: grnRate,
+          purchaseRatePerKg: grnRate,
+          purchaseValuation: Number((newAvailable * grnRate).toFixed(2)),
           location: isFilm ? "Bay A - Inward Dock" : "Consumables Store",
           reorderLevelKg: 100,
           lastVendor: updatedGRN.vendorName,
@@ -1163,8 +1201,11 @@ export default function InventoryManagement({
                 />
               </label>
 
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginLeft: '12px' }}>
-                Total Items: <b>{filteredInventory.length} Listed</b>
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginLeft: '12px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span>Total Items: <b>{filteredInventory.length} Listed</b></span>
+                <span style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', padding: '4px 10px', borderRadius: '6px', fontWeight: '700', fontSize: '0.82rem' }}>
+                  💰 Total Stock Valuation: ₹ {inventory.reduce((sum, i) => sum + ((parseFloat(i.availableQtyKg) || 0) * (parseFloat(i.unitPrice || i.purchaseRatePerKg) || 0)), 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                </span>
               </div>
             </div>
           </div>
@@ -1178,6 +1219,8 @@ export default function InventoryManagement({
                   <th>Category</th>
                   <th>Specs / Gauge</th>
                   <th>Available Stock</th>
+                  <th>Purchase Rate (₹)</th>
+                  <th>Purchase Valuation (₹)</th>
                   <th>Allocated Qty</th>
                   <th>Location Bay</th>
                   <th>Last Supplier & Batch</th>
@@ -1191,6 +1234,9 @@ export default function InventoryManagement({
                   const isFilm = (item.category || 'Film Substrates') === 'Film Substrates';
                   const title = item.itemName || `${item.filmType} Film (${item.micron}µ x ${item.widthMm}mm)`;
                   const unitStr = item.unit || 'kg';
+                  const rate = parseFloat(item.unitPrice || item.purchaseRatePerKg) || 0;
+                  const availQty = parseFloat(item.availableQtyKg) || 0;
+                  const itemValuation = availQty * rate;
 
                   return (
                     <tr key={item.id}>
@@ -1228,6 +1274,12 @@ export default function InventoryManagement({
                       </td>
                       <td style={{ fontSize: '1.1rem', fontWeight: '800', color: isLow ? '#ef4444' : '#047857' }}>
                         {(item.availableQtyKg ?? 0).toLocaleString()} {unitStr}
+                      </td>
+                      <td style={{ fontWeight: '700', color: '#1e293b' }}>
+                        ₹{rate > 0 ? rate.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '-'} / {unitStr}
+                      </td>
+                      <td style={{ fontWeight: '800', color: '#047857' }}>
+                        ₹{itemValuation > 0 ? itemValuation.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '0.00'}
                       </td>
                       <td style={{ color: 'var(--text-secondary)' }}>{(item.allocatedQtyKg ?? 0).toLocaleString()} {unitStr}</td>
                       <td>{item.location}</td>
@@ -2090,9 +2142,22 @@ export default function InventoryManagement({
                       <input type="number" className="form-control" value={grnRolls} onChange={e => setGrnRolls(e.target.value)} />
                     </div>
 
-                    <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                    <div className="form-group">
                       <label>Net Weight Inward (Kg) *</label>
                       <input type="number" step="any" className="form-control" required value={grnWeightKg} onChange={e => setGrnWeightKg(e.target.value)} />
+                    </div>
+
+                    <div className="form-group">
+                      <label style={{ fontWeight: '700', color: '#047857' }}>Purchase Rate (₹ / Kg) *</label>
+                      <input 
+                        type="number" 
+                        step="any" 
+                        className="form-control" 
+                        required 
+                        placeholder="e.g. 145.50" 
+                        value={grnPurchaseRate} 
+                        onChange={e => setGrnPurchaseRate(e.target.value)} 
+                      />
                     </div>
                   </>
                 ) : (
@@ -2110,7 +2175,7 @@ export default function InventoryManagement({
                     </div>
 
                     <div className="form-group">
-                      <label>Unit of Measure *</label>
+                      <label>Unit of Measure (UOM) *</label>
                       <select className="form-control" value={grnUnit} onChange={e => setGrnUnit(e.target.value)}>
                         <option value="Kg">Kg</option>
                         <option value="Litres">Litres</option>
@@ -2123,7 +2188,7 @@ export default function InventoryManagement({
                     </div>
 
                     <div className="form-group">
-                      <label>Packages / Units Received (for barcode stickers)</label>
+                      <label>Packages / Units Received (for barcodes)</label>
                       <input 
                         type="number" 
                         className="form-control" 
@@ -2134,7 +2199,7 @@ export default function InventoryManagement({
                     </div>
 
                     <div className="form-group">
-                      <label>Total Inward Quantity Received ({grnUnit}) *</label>
+                      <label>Total Quantity Received ({grnUnit}) *</label>
                       <input 
                         type="number" 
                         step="any"
@@ -2142,6 +2207,19 @@ export default function InventoryManagement({
                         required 
                         value={grnWeightKg} 
                         onChange={e => setGrnWeightKg(e.target.value)} 
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label style={{ fontWeight: '700', color: '#047857' }}>Purchase Rate (₹ / {grnUnit}) *</label>
+                      <input 
+                        type="number" 
+                        step="any" 
+                        className="form-control" 
+                        required 
+                        placeholder="e.g. 280.00" 
+                        value={grnPurchaseRate} 
+                        onChange={e => setGrnPurchaseRate(e.target.value)} 
                       />
                     </div>
                   </>
@@ -2463,6 +2541,18 @@ export default function InventoryManagement({
                       className="form-control"
                       value={editAllocatedQty}
                       onChange={e => setEditAllocatedQty(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ fontWeight: '700', color: '#047857' }}>Purchase Rate (₹ / {editUnit}) *</label>
+                    <input 
+                      type="number" 
+                      step="any"
+                      className="form-control"
+                      placeholder="e.g. 145.50"
+                      value={editUnitPrice}
+                      onChange={e => setEditUnitPrice(e.target.value)}
                     />
                   </div>
 

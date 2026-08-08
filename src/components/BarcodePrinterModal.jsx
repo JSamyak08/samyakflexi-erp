@@ -221,6 +221,11 @@ export default function BarcodePrinterModal({ roll, onClose }) {
             {roll.batchNo && (
               <div>Batch / Heat #: <strong>{roll.batchNo}</strong></div>
             )}
+            {(roll.purchaseRatePerKg > 0 || roll.unitPrice > 0 || roll.purchaseRate > 0) && (
+              <div style={{ color: '#047857', fontWeight: '700' }}>
+                Purchase Rate: <strong>₹{roll.purchaseRatePerKg || roll.unitPrice || roll.purchaseRate} / {displayUnit}</strong>
+              </div>
+            )}
             {roll.inputBarcodeIds && roll.inputBarcodeIds.length > 0 && (
               <div style={{ fontSize: '0.72rem', color: '#4f46e5', fontWeight: '600' }}>
                 Input Roll Ref: {roll.inputBarcodeIds.join(', ')}

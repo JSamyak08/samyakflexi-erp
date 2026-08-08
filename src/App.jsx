@@ -1636,6 +1636,7 @@ export default function App() {
             productionRecords={productionRecords}
             orders={orders}
             inventory={inventory}
+            inventoryRolls={inventoryRolls}
             jobMasters={jobMasters}
             currentUser={currentUser}
             onSaveProductionRecord={handleSaveProductionRecord}
@@ -1720,10 +1721,23 @@ export default function App() {
               <div className="glass-card stats-card" style={{ cursor: 'pointer' }} onClick={() => handleTabChange('inventory')}>
                 <span className="stats-title">Available Film Stock</span>
                 <span className="stats-value">
-                  {inventory.reduce((a, b) => a + b.availableQtyKg, 0).toLocaleString()} <span style={{ fontSize: '1rem' }}>kg</span>
+                  {inventory.reduce((a, b) => a + (parseFloat(b.availableQtyKg) || 0), 0).toLocaleString()} <span style={{ fontSize: '1rem' }}>kg</span>
                 </span>
                 <span style={{ fontSize: '0.8rem', color: 'var(--success)' }}>Across {inventory.length} film grades</span>
               </div>
+
+              {/* RBAC Protected Total Stock Purchase Valuation Card */}
+              {(isTabAllowed('inventory') || currentUser?.role === 'Admin' || currentUser?.role === 'Plant Manager') && (
+                <div className="glass-card stats-card" style={{ cursor: 'pointer', borderLeft: '4px solid #047857' }} onClick={() => handleTabChange('inventory')}>
+                  <span className="stats-title" style={{ color: '#047857', fontWeight: '700' }}>Total Stock Purchase Valuation</span>
+                  <span className="stats-value" style={{ color: '#047857', fontSize: '1.5rem', fontWeight: '800' }}>
+                    ₹ {inventory.reduce((sum, item) => sum + ((parseFloat(item.availableQtyKg) || 0) * (parseFloat(item.unitPrice || item.purchaseRatePerKg) || 0)), 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                  </span>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    Valuation across {inventory.length} active inventory items
+                  </span>
+                </div>
+              )}
 
               <div className="glass-card stats-card" style={{ cursor: 'pointer' }} onClick={() => handleTabChange('vendors')}>
                 <span className="stats-title">Onboarded Vendors</span>

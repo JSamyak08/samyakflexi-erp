@@ -34,6 +34,7 @@ export default function ProductionRecordManagement({
   productionRecords = [],
   orders = [],
   inventory = [],
+  inventoryRolls = [],
   jobMasters = [],
   currentUser,
   onSaveProductionRecord,
@@ -1430,19 +1431,38 @@ export default function ProductionRecordManagement({
                             const val = e.target.value;
                             updateMaterialRow(m.id, 'barcode', val);
                             if (val.trim()) {
-                              const match = inventory.find(inv => 
-                                (inv.lastBatch || '').toLowerCase() === val.trim().toLowerCase() || 
-                                (inv.id || '').toLowerCase() === val.trim().toLowerCase() ||
-                                (inv.filmType || '').toLowerCase() === val.trim().toLowerCase()
+                              // 1. Primary lookup in individual barcode rolls
+                              const rollMatch = (inventoryRolls || []).find(r => 
+                                (r.barcodeId || '').toLowerCase() === val.trim().toLowerCase() ||
+                                (r.batchNo || '').toLowerCase() === val.trim().toLowerCase()
                               );
-                              if (match) {
-                                updateMaterialRow(m.id, 'issueQtyKg', match.availableQtyKg || 400);
+
+                              if (rollMatch) {
+                                updateMaterialRow(m.id, 'issueQtyKg', rollMatch.availableWeightKg || rollMatch.netWeightKg || 400);
                                 updateMaterialRow(m.id, 'returnQtyKg', 0);
-                                if (match.filmType) updateMaterialRow(m.id, 'filmType', match.filmType);
-                                if (match.micron) updateMaterialRow(m.id, 'micron', match.micron);
-                                if (match.widthMm) updateMaterialRow(m.id, 'widthMm', match.widthMm);
-                                if (match.unitPricePerKg || DEFAULT_DAILY_RATES[match.filmType]) {
-                                  updateMaterialRow(m.id, 'unitPricePerKg', match.unitPricePerKg || DEFAULT_DAILY_RATES[match.filmType] || 120);
+                                if (rollMatch.filmType && rollMatch.filmType !== '-') updateMaterialRow(m.id, 'filmType', rollMatch.filmType);
+                                if (rollMatch.micron) updateMaterialRow(m.id, 'micron', rollMatch.micron);
+                                if (rollMatch.widthMm) updateMaterialRow(m.id, 'widthMm', rollMatch.widthMm);
+                                const rate = rollMatch.purchaseRatePerKg || rollMatch.unitPrice || rollMatch.purchaseRate || 0;
+                                if (rate > 0) updateMaterialRow(m.id, 'unitPricePerKg', rate);
+                                if (rollMatch.unit) updateMaterialRow(m.id, 'unit', rollMatch.unit);
+                              } else {
+                                // 2. Fallback lookup in central inventory
+                                const match = (inventory || []).find(inv => 
+                                  (inv.itemCode || '').toLowerCase() === val.trim().toLowerCase() ||
+                                  (inv.lastBatch || '').toLowerCase() === val.trim().toLowerCase() || 
+                                  (inv.id || '').toLowerCase() === val.trim().toLowerCase() ||
+                                  (inv.filmType || '').toLowerCase() === val.trim().toLowerCase()
+                                );
+                                if (match) {
+                                  updateMaterialRow(m.id, 'issueQtyKg', match.availableQtyKg || 400);
+                                  updateMaterialRow(m.id, 'returnQtyKg', 0);
+                                  if (match.filmType) updateMaterialRow(m.id, 'filmType', match.filmType);
+                                  if (match.micron) updateMaterialRow(m.id, 'micron', match.micron);
+                                  if (match.widthMm) updateMaterialRow(m.id, 'widthMm', match.widthMm);
+                                  const rate = match.unitPrice || match.purchaseRatePerKg || DEFAULT_DAILY_RATES[match.filmType] || 120;
+                                  updateMaterialRow(m.id, 'unitPricePerKg', rate);
+                                  if (match.unit) updateMaterialRow(m.id, 'unit', match.unit);
                                 }
                               }
                             }
