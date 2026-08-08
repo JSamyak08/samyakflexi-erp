@@ -713,7 +713,7 @@ export default function InventoryManagement({
     }
 
     setIsNewGRNModalOpen(false);
-    setSelectedRollForBarcodeModal(newRolls[0]);
+    setSelectedRollForBarcodeModal(newRolls);
     alert(`Inward GRN ${newGRN.grnNo} created for ${grnCategory}! ${unitCount} individual barcode sticker(s) generated.`);
   };
 
@@ -1077,7 +1077,7 @@ export default function InventoryManagement({
 
       {/* Barcode Thermal Label Printer Modal */}
       {selectedRollForBarcodeModal && (
-        <BarcodePrinterModal roll={selectedRollForBarcodeModal} onClose={() => setSelectedRollForBarcodeModal(null)} />
+        <BarcodePrinterModal rolls={selectedRollForBarcodeModal} roll={selectedRollForBarcodeModal} onClose={() => setSelectedRollForBarcodeModal(null)} />
       )}
 
       {/* Dispatch Packing List PDF Modal */}
@@ -1391,26 +1391,42 @@ export default function InventoryManagement({
                           className="btn-secondary" 
                           style={{ padding: '6px 12px', fontSize: '0.8rem', color: '#059669', borderColor: '#a7f3d0' }}
                           onClick={() => {
-                            const matchedRoll = (inventoryRolls || []).find(r => 
-                              r.invoiceNo === g.invoiceNo && 
-                              r.batchNo === g.batchNo
+                            const matchedRolls = (inventoryRolls || []).filter(r => 
+                              r.grnNo === g.grnNo || 
+                              (r.invoiceNo === g.invoiceNo && r.batchNo === g.batchNo && r.vendorName === g.vendorName)
                             );
-                            const isFilm = g.category === 'Film Substrates' || g.filmType?.toLowerCase().includes('pet') || g.filmType?.toLowerCase().includes('bopp') || g.filmType?.toLowerCase().includes('ldpe') || g.filmType?.toLowerCase().includes('cpp');
-                            const rollObj = matchedRoll || {
-                              barcodeId: `RM-BC-${g.grnNo.replace('GRN-', '')}`,
-                              rollType: isFilm ? 'RAW_MATERIAL' : 'CONSUMABLE_ITEM',
-                              itemName: g.itemName || (isFilm ? `${g.filmType} (${g.micron}µ / ${g.widthMm}mm)` : `${g.category} Item`),
-                              category: g.category || (isFilm ? 'Film Substrates' : 'General Store'),
-                              unit: g.unit || (isFilm ? 'Kg' : 'Boxes'),
-                              micron: isFilm && g.micron !== '-' ? parseFloat(g.micron) : 0,
-                              widthMm: isFilm && g.widthMm !== '-' ? parseFloat(g.widthMm) : 0,
-                              netWeightKg: g.netWeightKg,
-                              vendorName: g.vendorName,
-                              invoiceNo: g.invoiceNo,
-                              batchNo: g.batchNo,
-                              stationId: 'SCALE_1_INWARD'
-                            };
-                            setSelectedRollForBarcodeModal(rollObj);
+                            const isFilm = g.category === 'Film Substrates';
+                            
+                            if (matchedRolls.length > 0) {
+                              setSelectedRollForBarcodeModal(matchedRolls);
+                            } else {
+                              const unitCount = Math.max(1, parseInt(g.rollsReceived) || 1);
+                              const unitQty = Number(((g.netWeightKg || 0) / unitCount).toFixed(2));
+                              const grnCode = (g.grnNo || 'GRN-000').replace('GRN-', '');
+                              const fallbackRolls = [];
+                              for (let i = 1; i <= unitCount; i++) {
+                                fallbackRolls.push({
+                                  barcodeId: unitCount > 1 ? `${isFilm ? 'RM-BC' : 'CON-BC'}-${grnCode}-${i}` : `${isFilm ? 'RM-BC' : 'CON-BC'}-${grnCode}`,
+                                  grnNo: g.grnNo,
+                                  unitNo: i,
+                                  totalUnits: unitCount,
+                                  rollType: isFilm ? 'RAW_MATERIAL' : 'CONSUMABLE_ITEM',
+                                  itemName: g.itemName || (isFilm ? `${g.filmType} (${g.micron}µ / ${g.widthMm}mm)` : `${g.category} Item`),
+                                  category: g.category || (isFilm ? 'Film Substrates' : 'General Store'),
+                                  unit: g.unit || (isFilm ? 'Kg' : 'Pcs'),
+                                  micron: isFilm && g.micron !== '-' ? parseFloat(g.micron) : 0,
+                                  widthMm: isFilm && g.widthMm !== '-' ? parseFloat(g.widthMm) : 0,
+                                  netWeightKg: unitQty,
+                                  availableWeightKg: unitQty,
+                                  purchaseRatePerKg: g.purchaseRatePerKg || g.purchaseRate || g.unitPrice || 0,
+                                  vendorName: g.vendorName,
+                                  invoiceNo: g.invoiceNo,
+                                  batchNo: g.batchNo,
+                                  stationId: 'SCALE_1_INWARD'
+                                });
+                              }
+                              setSelectedRollForBarcodeModal(fallbackRolls);
+                            }
                           }}
                         >
                           <Printer size={14} /> Barcode
