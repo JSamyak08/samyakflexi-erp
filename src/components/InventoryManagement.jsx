@@ -39,6 +39,7 @@ import {
   DEFAULT_DAILY_RATES,
   generateBarcodeId, 
   generateVendorId,
+  generateInventoryId,
   initialInventoryRolls, 
   initialDispatchShipments,
   initialStockAdjustments
@@ -437,7 +438,7 @@ export default function InventoryManagement({
   const [editLastBatch, setEditLastBatch] = useState('');
 
   const openAddStockModal = () => {
-    const newId = `INV-${Math.floor(100 + Math.random() * 900)}`;
+    const newId = generateInventoryId(inventory);
     setEditingStockItem({ id: newId, isNew: true });
     setEditCategory('Film Substrates');
     setEditItemName('');
@@ -684,7 +685,7 @@ export default function InventoryManagement({
         unitNo: i,
         totalUnits: unitCount,
         rollType: isFilm ? 'RAW_MATERIAL' : 'CONSUMABLE_ITEM',
-        itemId: grnSelectedStockItemId || `INV-${Math.floor(100 + Math.random() * 900)}`,
+        itemId: grnSelectedStockItemId || generateInventoryId(inventory),
         itemName: itemName,
         category: grnCategory,
         filmType: isFilm ? grnFilmType : '-',
@@ -763,9 +764,10 @@ export default function InventoryManagement({
         onUpdateInventory(updatedInv);
       } else {
         const newAvailable = updatedGRN.netWeightKg;
+        const newInvId = generateInventoryId(inventory);
         const newInvItem = {
-          id: `INV-00${inventory.length + 1}`,
-          itemCode: `CON-INW-00${inventory.length + 1}`,
+          id: newInvId,
+          itemCode: newInvId,
           itemName: updatedGRN.itemName || `${updatedGRN.filmType} Inward Stock`,
           category: updatedGRN.category || 'Film Substrates',
           filmType: updatedGRN.filmType || 'Generic',
@@ -999,8 +1001,10 @@ export default function InventoryManagement({
           const lastBatch = parts[7] || "BULK-BATCH";
 
           if (filmType && availableQtyKg >= 0) {
+            const autoId = generateInventoryId([...inventory, ...newItems]);
             newItems.push({
-              id: `INV-${100 + inventory.length + newItems.length + 1}`,
+              id: autoId,
+              itemCode: autoId,
               filmType,
               micron,
               widthMm,

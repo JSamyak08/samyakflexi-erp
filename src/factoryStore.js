@@ -484,6 +484,22 @@ export const generateBarcodeId = (prefix = 'BC') => {
   return `${prefix}-${dateStr}-${randomSuffix}`;
 };
 
+export const generateInventoryId = (inventory = []) => {
+  let maxNum = 0;
+  (inventory || []).forEach(item => {
+    const id = String(item?.id || item?.itemCode || '');
+    const match = id.match(/(?:INVT|INV)[-_\s]*(\d+)/i) || id.match(/(\d+)/);
+    if (match && match[1]) {
+      const num = parseInt(match[1], 10);
+      if (!isNaN(num) && num > maxNum && num < 1000000) {
+        maxNum = num;
+      }
+    }
+  });
+  const nextNum = maxNum + 1;
+  return `INVT-${String(nextNum).padStart(4, '0')}`;
+};
+
 export const generateVendorId = () => {
   return `VEND-2026-${Math.floor(1000 + Math.random() * 9000)}`;
 };

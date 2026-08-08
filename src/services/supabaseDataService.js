@@ -314,7 +314,7 @@ export function mapInventoryItemToDbPayload(item) {
   const category = item.category || 'Film Substrates';
   const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films';
   const filmTypeStr = item.filmType || (isFilm ? (item.itemName ? item.itemName.split(' ')[0] : 'PET') : '');
-  const itemCodeStr = item.itemCode || item.id || `INV-${Math.floor(100 + Math.random() * 900)}`;
+  const itemCodeStr = item.itemCode || item.id || 'INVT-0001';
   const itemNameStr = item.itemName || (filmTypeStr ? `${filmTypeStr} ${item.micron || 12}µ (${item.widthMm || 1000}mm)` : `Item ${itemCodeStr}`);
 
   // Pack all metadata properties into a single serializable object
