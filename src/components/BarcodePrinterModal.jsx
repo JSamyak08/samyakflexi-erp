@@ -21,34 +21,50 @@ export default function BarcodePrinterModal({ roll, rolls, onClose }) {
   const renderBarcodeSVG = (text) => {
     const str = text || 'BC-2026-0000';
     const bars = [];
-    let x = 10;
-    
+    let x = 12;
+    const barHeight = 44;
+    const barStartY = 4;
+    const barEndY = barStartY + barHeight; // 48
+
     // Start Pattern
-    bars.push(<rect key="start-1" x={x} y="3" width="2" height="36" fill="#000" />); x += 3;
-    bars.push(<rect key="start-2" x={x} y="3" width="1" height="36" fill="#000" />); x += 2;
-    bars.push(<rect key="start-3" x={x} y="3" width="3" height="36" fill="#000" />); x += 4;
+    bars.push(<rect key="start-1" x={x} y={barStartY} width="3" height={barHeight} fill="#000" />); x += 5;
+    bars.push(<rect key="start-2" x={x} y={barStartY} width="1.5" height={barHeight} fill="#000" />); x += 3.5;
+    bars.push(<rect key="start-3" x={x} y={barStartY} width="4.5" height={barHeight} fill="#000" />); x += 6.5;
 
     for (let i = 0; i < str.length; i++) {
       const charCode = str.charCodeAt(i);
-      const width1 = (charCode % 3) + 1;
-      const width2 = ((charCode * 2) % 3) + 1;
-      const gap = (charCode % 2) + 1;
+      const width1 = ((charCode % 3) + 1) * 1.5;
+      const width2 = (((charCode * 2) % 3) + 1) * 1.5;
+      const gap = ((charCode % 2) + 1) * 1.5;
 
-      bars.push(<rect key={`bar-${i}-1`} x={x} y="3" width={width1} height="36" fill="#000" />);
+      bars.push(<rect key={`bar-${i}-1`} x={x} y={barStartY} width={width1} height={barHeight} fill="#000" />);
       x += width1 + gap;
-      bars.push(<rect key={`bar-${i}-2`} x={x} y="3" width={width2} height="36" fill="#000" />);
+      bars.push(<rect key={`bar-${i}-2`} x={x} y={barStartY} width={width2} height={barHeight} fill="#000" />);
       x += width2 + gap;
     }
 
     // Stop Pattern
-    bars.push(<rect key="stop-1" x={x} y="3" width="3" height="36" fill="#000" />); x += 4;
-    bars.push(<rect key="stop-2" x={x} y="3" width="1" height="36" fill="#000" />); x += 2;
-    bars.push(<rect key="stop-3" x={x} y="3" width="2" height="36" fill="#000" />); x += 3;
+    bars.push(<rect key="stop-1" x={x} y={barStartY} width="4.5" height={barHeight} fill="#000" />); x += 6.5;
+    bars.push(<rect key="stop-2" x={x} y={barStartY} width="1.5" height={barHeight} fill="#000" />); x += 3.5;
+    bars.push(<rect key="stop-3" x={x} y={barStartY} width="3" height={barHeight} fill="#000" />); x += 5;
+
+    const totalWidth = Math.ceil(x + 12);
+    const textY = barEndY + 18; // 66
+    const totalViewHeight = textY + 8; // 74
 
     return (
-      <svg width="100%" height="48" viewBox={`0 0 ${Math.max(x + 10, 260)} 50`}>
+      <svg width="100%" height="64" viewBox={`0 0 ${totalWidth} ${totalViewHeight}`} style={{ overflow: 'visible' }}>
         {bars}
-        <text x="50%" y="46" textAnchor="middle" fontSize="11" fontFamily="monospace" fontWeight="bold" fill="#000">
+        <text 
+          x="50%" 
+          y={textY} 
+          textAnchor="middle" 
+          fontSize="13" 
+          fontFamily="Consolas, Monaco, 'Courier New', monospace" 
+          fontWeight="800" 
+          letterSpacing="1.5px"
+          fill="#000"
+        >
           {str}
         </text>
       </svg>
