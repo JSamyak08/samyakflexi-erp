@@ -57,7 +57,7 @@ import SalesManagement from './components/SalesManagement';
 import ScrapWastageAnalysis from './components/ScrapWastageAnalysis';
 import AuditLogsManagement from './components/AuditLogsManagement';
 import { fetchAuditLogsFromSupabase, saveAuditLogToSupabase, createAuditEntry, pruneOldAuditLogs } from './services/auditLogger';
-import { getTabFromUrl, pushSlugState } from './utils/slugRouter';
+import { getRouteFromUrl, getTabFromUrl, pushSlugState } from './utils/slugRouter';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import { 
   fetchOrders, saveOrderToSupabase, deleteOrderFromSupabase,
