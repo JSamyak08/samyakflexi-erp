@@ -950,7 +950,34 @@ export default function ProductionRecordManagement({
             <tbody>
               {(selectedRecord.materialsList || []).map((m, idx) => (
                 <tr key={idx}>
-                  <td style={{ fontWeight: '600' }}>{m.filmType}</td>
+                  <td style={{ fontWeight: '600' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span>{m.filmType}</span>
+                      {m.barcode && (
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          style={{ padding: '2px 6px', fontSize: '0.7rem', display: 'inline-flex', alignItems: 'center', gap: '2px', color: '#059669', borderColor: '#a7f3d0' }}
+                          onClick={() => setSelectedRollForBarcodeModal({
+                            barcodeId: m.barcode,
+                            rollType: 'RAW_MATERIAL',
+                            itemName: m.filmType,
+                            category: m.filmType?.includes('Film') ? 'Film Substrates' : 'General Store',
+                            unit: m.unit || 'Kg',
+                            micron: parseFloat(m.micron) || 0,
+                            widthMm: parseFloat(m.widthMm) || 0,
+                            netWeightKg: parseFloat(m.netConsumedQtyKg || m.issueQtyKg) || 0,
+                            jobName: selectedRecord.jobName,
+                            clientName: selectedRecord.clientName,
+                            stationId: 'SCALE_2_PRINTING'
+                          })}
+                          title="Print Input Barcode Tag"
+                        >
+                          <Printer size={12} /> {m.barcode}
+                        </button>
+                      )}
+                    </div>
+                  </td>
                   <td>{m.micron}</td>
                   <td>{m.widthMm}</td>
                   <td>{m.issueQtyKg} kg</td>
@@ -964,6 +991,73 @@ export default function ProductionRecordManagement({
               ))}
             </tbody>
           </table>
+
+          {/* SFG / FG Output Production Barcode Tags & Traceability */}
+          {(() => {
+            const inputBarcodes = (selectedRecord.materialsList || []).map(m => m.barcode).filter(Boolean);
+            return (
+              <div style={{ marginTop: '20px', padding: '16px 20px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', marginBottom: '24px' }}>
+                <h4 style={{ fontSize: '0.95rem', fontWeight: '800', color: '#0f172a', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Barcode size={18} style={{ color: '#4f46e5' }} /> SFG / FG Production Output Barcodes & Traceability
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
+                  <div style={{ padding: '12px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#475569' }}>SEMI-FINISHED (SFG - PRINTED REEL)</div>
+                    <div style={{ fontWeight: '800', fontFamily: 'monospace', color: '#3730a3', marginTop: '2px' }}>
+                      SFG-PRINT-{(selectedRecord.id || 'REC').replace('REC-', '')}
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '4px' }}>
+                      Input RM Ref: {inputBarcodes.length > 0 ? inputBarcodes.join(', ') : 'Direct Issue'}
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ marginTop: '8px', padding: '4px 10px', fontSize: '0.78rem', color: '#4338ca', borderColor: '#c7d2fe' }}
+                      onClick={() => setSelectedRollForBarcodeModal({
+                        barcodeId: `SFG-PRINT-${(selectedRecord.id || 'REC').replace('REC-', '')}`,
+                        rollType: 'SFG_PRINTED',
+                        itemName: `${selectedRecord.jobName} (Printed Reel SFG)`,
+                        netWeightKg: selectedRecord.qtyFirstPassL1 || selectedRecord.totalProductionQtyKg || 0,
+                        jobName: selectedRecord.jobName,
+                        clientName: selectedRecord.clientName,
+                        inputBarcodeIds: inputBarcodes,
+                        stationId: 'SCALE_2_PRINTING'
+                      })}
+                    >
+                      <Printer size={13} /> Print SFG Barcode
+                    </button>
+                  </div>
+
+                  <div style={{ padding: '12px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#475569' }}>FINISHED GOODS (FG - DISPATCH REEL / CARTON)</div>
+                    <div style={{ fontWeight: '800', fontFamily: 'monospace', color: '#047857', marginTop: '2px' }}>
+                      FG-PROD-{(selectedRecord.id || 'REC').replace('REC-', '')}
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '4px' }}>
+                      Traceability: Linked to {inputBarcodes.length} Input Barcode(s)
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ marginTop: '8px', padding: '4px 10px', fontSize: '0.78rem', color: '#047857', borderColor: '#a7f3d0' }}
+                      onClick={() => setSelectedRollForBarcodeModal({
+                        barcodeId: `FG-PROD-${(selectedRecord.id || 'REC').replace('REC-', '')}`,
+                        rollType: 'FG_DISPATCH',
+                        itemName: selectedRecord.jobName,
+                        netWeightKg: selectedRecord.totalProductionQtyKg || selectedRecord.qtyDispatch || 0,
+                        jobName: selectedRecord.jobName,
+                        clientName: selectedRecord.clientName,
+                        inputBarcodeIds: inputBarcodes,
+                        stationId: 'SCALE_4_DISPATCH'
+                      })}
+                    >
+                      <Printer size={13} /> Print FG Barcode
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* ========================================================================= */}
           {/* ADMIN ROLE ONLY: FINANCIAL PROFITABILITY & COST VARIANCE ANALYSIS */}

@@ -48,8 +48,36 @@ export default function BarcodePrinterModal({ roll, onClose }) {
     );
   };
 
-  const isSFG = roll.rollType === 'SFG_PRINTED' || roll.rollType === 'SFG_LAMINATED';
-  const isFG = roll.rollType === 'FG_DISPATCH';
+  const isSFG = roll.rollType === 'SFG_PRINTED' || roll.rollType === 'SFG_LAMINATED' || roll.rollType === 'SFG';
+  const isFG = roll.rollType === 'FG_DISPATCH' || roll.rollType === 'FG';
+
+  const nonFilmCategories = [
+    'Doctor Blades',
+    'Doctor Blades & Wipers',
+    'Inks & Solvents',
+    'Printing Inks & Toners',
+    'Chemicals & Solvents',
+    'Adhesives & Hardener',
+    'Rollers & Sleeves',
+    'Machine Spare Parts',
+    'Lubricants & Oils',
+    'Tapes & Consumables',
+    'Safety Gear (PPE)',
+    'General Store',
+    'CONSUMABLE_ITEM'
+  ];
+
+  const isExplicitNonFilm = nonFilmCategories.includes(roll.category) || 
+    (roll.unit && !['kg', 'Kg', 'KG'].includes(String(roll.unit).trim())) ||
+    roll.rollType === 'CONSUMABLE_ITEM';
+
+  const isFilmItem = !isExplicitNonFilm && 
+    (roll.rollType === 'RAW_MATERIAL' || roll.category === 'Film Substrates') && 
+    roll.micron > 0 && 
+    roll.widthMm > 0;
+
+  const displayUnit = roll.unit || roll.uom || (isFilmItem ? 'kg' : 'Pcs');
+  const displayQty = roll.netWeightKg ?? roll.availableWeightKg ?? roll.qty ?? 0;
 
   return (
     <div className="modal-overlay" style={{ zIndex: 120 }} onClick={onClose}>
@@ -96,7 +124,7 @@ export default function BarcodePrinterModal({ roll, onClose }) {
               <Tag style={{ color: '#059669' }} /> Barcode Sticker Preview & Printer
             </h3>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-              4×4 Inch Thermal Sticker Format • Scale Net Weight Captured
+              4×4 Inch Thermal Sticker Format • Scale & Batch Data Captured
             </p>
           </div>
           <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.8rem' }} onClick={onClose}>
@@ -133,13 +161,13 @@ export default function BarcodePrinterModal({ roll, onClose }) {
             <span style={{ 
               fontSize: '0.72rem', 
               fontWeight: '800', 
-              background: isSFG ? '#e0e7ff' : isFG ? '#fef3c7' : '#dcfce7',
-              color: isSFG ? '#3730a3' : isFG ? '#92400e' : '#166534',
+              background: isSFG ? '#e0e7ff' : isFG ? '#fef3c7' : (isFilmItem ? '#dcfce7' : '#f0f9ff'),
+              color: isSFG ? '#3730a3' : isFG ? '#92400e' : (isFilmItem ? '#166534' : '#1e40af'),
               padding: '3px 10px', 
               borderRadius: '4px',
               border: '1.5px solid currentColor'
             }}>
-              {isSFG ? 'SEMI-FINISHED (SFG)' : isFG ? 'FINISHED GOODS (FG)' : 'RAW MATERIAL (RM)'}
+              {isSFG ? 'SEMI-FINISHED (SFG)' : isFG ? 'FINISHED GOODS (FG)' : (isFilmItem ? 'RAW MATERIAL (RM)' : 'STORE CONSUMABLE')}
             </span>
           </div>
 
@@ -153,18 +181,29 @@ export default function BarcodePrinterModal({ roll, onClose }) {
             <div>
               <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Item / Substrate</span>
               <div style={{ fontWeight: '800', fontSize: '0.95rem', color: '#0f172a', lineHeight: '1.2' }}>{roll.itemName}</div>
-              {roll.micron > 0 && (
+              {isFilmItem ? (
                 <div style={{ fontSize: '0.78rem', color: '#334155', marginTop: '3px' }}>
                   Gauge: <strong>{roll.micron}µ</strong> | Width: <strong>{roll.widthMm}mm</strong>
+                </div>
+              ) : (
+                <div style={{ fontSize: '0.78rem', color: '#334155', marginTop: '3px' }}>
+                  Category: <strong>{roll.category || 'Stock Item'}</strong> {roll.totalUnits > 1 ? `| Unit ${roll.unitNo || 1} of ${roll.totalUnits}` : ''}
                 </div>
               )}
             </div>
 
             <div style={{ textAlign: 'right', borderLeft: '1.5px solid #cbd5e1', paddingLeft: '10px' }}>
-              <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Net Scale Weight</span>
+              <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                {isFilmItem || isFG || isSFG ? 'Net Scale Weight' : 'Net Scale Weight / Qty'}
+              </span>
               <div style={{ fontWeight: '900', fontSize: '1.35rem', color: '#047857', lineHeight: '1.1', marginTop: '2px' }}>
-                {roll.netWeightKg} <span style={{ fontSize: '0.8rem' }}>kg</span>
+                {displayQty} <span style={{ fontSize: '0.8rem' }}>{displayUnit}</span>
               </div>
+              {roll.grossWeightKg && (
+                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '600', marginTop: '2px' }}>
+                  Gross: {roll.grossWeightKg} kg
+                </div>
+              )}
             </div>
           </div>
 
@@ -189,7 +228,7 @@ export default function BarcodePrinterModal({ roll, onClose }) {
             )}
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', fontSize: '0.7rem', color: '#64748b', borderTop: '1px solid #e2e8f0', paddingTop: '4px' }}>
               <span>Station: <strong>{roll.stationId || 'SCALE_1_INWARD'}</strong></span>
-              <span>Date: <strong>{roll.inwardDatetime || new Date().toLocaleString()}</strong></span>
+              <span>Date: <strong>{roll.inwardDatetime || roll.date || new Date().toLocaleString()}</strong></span>
             </div>
           </div>
         </div>

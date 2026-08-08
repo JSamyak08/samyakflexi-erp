@@ -620,6 +620,10 @@ export default function InventoryManagement({
       ? `${grnFilmType} ${grnMicron}µ (${grnWidthMm}mm)` 
       : `${grnCategory} Inward Item`);
 
+    const unitCount = Math.max(1, parseInt(grnRolls) || 1);
+    const totalQty = parseFloat(grnWeightKg) || 0;
+    const unitQty = Number((totalQty / unitCount).toFixed(2));
+
     const newGRN = {
       grnNo: `GRN-2026-${Math.floor(100 + Math.random() * 900)}`,
       poNumber: grnPoNo,
@@ -633,8 +637,8 @@ export default function InventoryManagement({
       micron: isFilm ? parseFloat(grnMicron) : '-',
       widthMm: isFilm ? parseFloat(grnWidthMm) : '-',
       unit: isFilm ? 'Kg' : grnUnit,
-      rollsReceived: isFilm ? parseInt(grnRolls) : 1,
-      netWeightKg: parseFloat(grnWeightKg) || 0,
+      rollsReceived: unitCount,
+      netWeightKg: totalQty,
       batchNo: grnBatchNo,
       status: "Pending QC", // Goes to Store QC Verification
       qcNotes: "",
@@ -646,34 +650,47 @@ export default function InventoryManagement({
       onAddGRN(newGRN);
     }
 
-    // Generate Inward Barcode Roll / Consumable Tag
-    const newRoll = {
-      barcodeId: generateBarcodeId(isFilm ? 'RM-BC' : 'CON-BC'),
-      rollType: isFilm ? 'RAW_MATERIAL' : 'CONSUMABLE_ITEM',
-      itemId: grnSelectedStockItemId || `INV-${Math.floor(100 + Math.random() * 900)}`,
-      itemName: itemName,
-      category: grnCategory,
-      micron: isFilm ? parseFloat(grnMicron) : '-',
-      widthMm: isFilm ? parseFloat(grnWidthMm) : '-',
-      unit: isFilm ? 'Kg' : grnUnit,
-      inwardDatetime: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
-      vendorName: grnVendor,
-      invoiceNo: grnInvoiceNo,
-      batchNo: grnBatchNo,
-      netWeightKg: parseFloat(grnWeightKg),
-      availableWeightKg: parseFloat(grnWeightKg),
-      stationId: 'SCALE_1_INWARD',
-      locationBay: isFilm ? 'Bay A' : 'Consumables Store',
-      status: 'In Stock'
-    };
+    // Generate individual barcode stickers for each box / roll / unit received
+    const newRolls = [];
+    const grnCode = newGRN.grnNo.replace('GRN-', '');
+    for (let i = 1; i <= unitCount; i++) {
+      const barcodeId = unitCount > 1 
+        ? `${isFilm ? 'RM-BC' : 'CON-BC'}-${grnCode}-${i}` 
+        : generateBarcodeId(isFilm ? 'RM-BC' : 'CON-BC');
 
-    if (onAddRoll) {
-      onAddRoll(newRoll);
+      const rollObj = {
+        barcodeId,
+        grnNo: newGRN.grnNo,
+        unitNo: i,
+        totalUnits: unitCount,
+        rollType: isFilm ? 'RAW_MATERIAL' : 'CONSUMABLE_ITEM',
+        itemId: grnSelectedStockItemId || `INV-${Math.floor(100 + Math.random() * 900)}`,
+        itemName: itemName,
+        category: grnCategory,
+        filmType: isFilm ? grnFilmType : '-',
+        micron: isFilm ? (parseFloat(grnMicron) || 0) : 0,
+        widthMm: isFilm ? (parseFloat(grnWidthMm) || 0) : 0,
+        unit: isFilm ? 'Kg' : grnUnit,
+        inwardDatetime: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
+        vendorName: grnVendor,
+        invoiceNo: grnInvoiceNo,
+        batchNo: grnBatchNo,
+        netWeightKg: unitQty,
+        availableWeightKg: unitQty,
+        stationId: 'SCALE_1_INWARD',
+        locationBay: isFilm ? 'Bay A' : 'Consumables Store',
+        status: 'In Stock'
+      };
+      newRolls.push(rollObj);
+
+      if (onAddRoll) {
+        onAddRoll(rollObj);
+      }
     }
 
     setIsNewGRNModalOpen(false);
-    setSelectedRollForBarcodeModal(newRoll);
-    alert(`Inward GRN ${newGRN.grnNo} created for ${grnCategory}! Inward Barcode ${newRoll.barcodeId} generated.`);
+    setSelectedRollForBarcodeModal(newRolls[0]);
+    alert(`Inward GRN ${newGRN.grnNo} created for ${grnCategory}! ${unitCount} individual barcode sticker(s) generated.`);
   };
 
   // QC Approval / Rejection (Updates Stock for Films, Inks, Solvents, Adhesives, Spares, PPE)
@@ -1322,12 +1339,15 @@ export default function InventoryManagement({
                               r.invoiceNo === g.invoiceNo && 
                               r.batchNo === g.batchNo
                             );
+                            const isFilm = g.category === 'Film Substrates' || g.filmType?.toLowerCase().includes('pet') || g.filmType?.toLowerCase().includes('bopp') || g.filmType?.toLowerCase().includes('ldpe') || g.filmType?.toLowerCase().includes('cpp');
                             const rollObj = matchedRoll || {
                               barcodeId: `RM-BC-${g.grnNo.replace('GRN-', '')}`,
-                              rollType: 'RAW_MATERIAL',
-                              itemName: g.itemName,
-                              micron: g.micron !== '-' ? parseFloat(g.micron) : 0,
-                              widthMm: g.widthMm !== '-' ? parseFloat(g.widthMm) : 0,
+                              rollType: isFilm ? 'RAW_MATERIAL' : 'CONSUMABLE_ITEM',
+                              itemName: g.itemName || (isFilm ? `${g.filmType} (${g.micron}µ / ${g.widthMm}mm)` : `${g.category} Item`),
+                              category: g.category || (isFilm ? 'Film Substrates' : 'General Store'),
+                              unit: g.unit || (isFilm ? 'Kg' : 'Boxes'),
+                              micron: isFilm && g.micron !== '-' ? parseFloat(g.micron) : 0,
+                              widthMm: isFilm && g.widthMm !== '-' ? parseFloat(g.widthMm) : 0,
                               netWeightKg: g.netWeightKg,
                               vendorName: g.vendorName,
                               invoiceNo: g.invoiceNo,
@@ -2103,7 +2123,18 @@ export default function InventoryManagement({
                     </div>
 
                     <div className="form-group">
-                      <label>Inward Quantity Received ({grnUnit}) *</label>
+                      <label>Packages / Units Received (for barcode stickers)</label>
+                      <input 
+                        type="number" 
+                        className="form-control" 
+                        placeholder="e.g. 5 Boxes / 10 Drums (Default: 1)" 
+                        value={grnRolls} 
+                        onChange={e => setGrnRolls(e.target.value)} 
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Total Inward Quantity Received ({grnUnit}) *</label>
                       <input 
                         type="number" 
                         step="any"
@@ -3065,16 +3096,21 @@ export default function InventoryManagement({
                                     <button 
                                       type="button" 
                                       style={{ background: 'none', border: 'none', color: '#059669', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
-                                      onClick={() => setSelectedRollForBarcodeModal({
-                                        barcodeId: tx.barcode,
-                                        rollType: tx.category === 'inward' ? 'RAW_MATERIAL' : 'CONSUMABLE_ITEM',
-                                        itemName: item.itemName || `${item.filmType} Film (${item.micron}µ x ${item.widthMm}mm)`,
-                                        micron: item.micron || 0,
-                                        widthMm: item.widthMm || 0,
-                                        netWeightKg: tx.inwardQtyKg || tx.outwardQtyKg || 0,
-                                        vendorName: tx.partyName,
-                                        stationId: 'SCALE_1_INWARD'
-                                      })}
+                                      onClick={() => {
+                                        const isFilm = item.category === 'Film Substrates' || item.filmType?.toLowerCase().includes('pet') || item.filmType?.toLowerCase().includes('bopp') || item.filmType?.toLowerCase().includes('ldpe') || item.filmType?.toLowerCase().includes('cpp');
+                                        setSelectedRollForBarcodeModal({
+                                          barcodeId: tx.barcode,
+                                          rollType: isFilm ? 'RAW_MATERIAL' : 'CONSUMABLE_ITEM',
+                                          itemName: item.itemName || (isFilm ? `${item.filmType} Film (${item.micron}µ x ${item.widthMm}mm)` : `${item.category || 'Stock Item'}`),
+                                          category: item.category || (isFilm ? 'Film Substrates' : 'General Store'),
+                                          unit: item.unit || (isFilm ? 'Kg' : 'Boxes'),
+                                          micron: isFilm ? (parseFloat(item.micron) || 0) : 0,
+                                          widthMm: isFilm ? (parseFloat(item.widthMm) || 0) : 0,
+                                          netWeightKg: tx.inwardQtyKg || tx.outwardQtyKg || 0,
+                                          vendorName: tx.partyName,
+                                          stationId: 'SCALE_1_INWARD'
+                                        });
+                                      }}
                                       title="Print Barcode Sticker"
                                     >
                                       <Printer size={13} />
