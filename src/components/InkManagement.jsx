@@ -24,7 +24,9 @@ import {
   Check,
   X,
   Tag,
-  FileCheck
+  FileCheck,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import TablePagination, { usePagination } from './TablePagination';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
@@ -72,12 +74,13 @@ export default function InkManagement({
     new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
   );
   const [poModalVendorId, setPoModalVendorId] = useState('');
-  const [poModalQtyKg, setPoModalQtyKg] = useState(100);
-  const [poModalRatePerKg, setPoModalRatePerKg] = useState(300);
-  const [poModalHsnCode, setPoModalHsnCode] = useState('3215');
   const [poModalFreightTerms, setPoModalFreightTerms] = useState('Freight Included within Indore');
   const [poModalPaymentTerms, setPoModalPaymentTerms] = useState('60 Days Net');
   const [poModalNotes, setPoModalNotes] = useState('');
+  const [poModalItems, setPoModalItems] = useState([]);
+
+  // Multi-Select Inks State
+  const [selectedInkIds, setSelectedInkIds] = useState([]);
 
   // Form State for Add / Edit Ink Product Code
   const [productCode, setProductCode] = useState('');
@@ -256,13 +259,31 @@ export default function InkManagement({
     alert(`Stock updated for ${stockAdjustInk.productCode}. New Stock: ${newStock} kg`);
   };
 
-  // Issue Purchase Order to Supplier (Opens Confirmation & Edit Pop-up)
-  const handleIssuePoForInk = (ink) => {
-    if (!ink) return;
-    const matchedVendor = (vendors || []).find(v => String(v.id) === String(ink.supplierId) || String(v.companyName || v.name) === String(ink.supplierName)) || (vendors || [])[0] || {
+  // Toggle Selection of Ink Item
+  const handleToggleInkSelect = (id) => {
+    setSelectedInkIds(prev => 
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  // Select / Deselect All Inks in current filtered directory
+  const handleSelectAllInks = (e) => {
+    if (e.target.checked) {
+      setSelectedInkIds(filteredInks.map(i => i.id));
+    } else {
+      setSelectedInkIds([]);
+    }
+  };
+
+  // Open Multi-Item or Single-Item PO Modal
+  const handleOpenPoModal = (targetInks) => {
+    if (!targetInks || targetInks.length === 0) return;
+
+    const firstInk = targetInks[0];
+    const matchedVendor = (vendors || []).find(v => String(v.id) === String(firstInk.supplierId) || String(v.companyName || v.name) === String(firstInk.supplierName)) || (vendors || [])[0] || {
       id: 'VEN-01',
-      companyName: ink.supplierName || 'DIC India Ltd',
-      name: ink.supplierName || 'DIC India Ltd',
+      companyName: firstInk.supplierName || 'DIC India Ltd',
+      name: firstInk.supplierName || 'DIC India Ltd',
       address: 'Industrial Area, Sector 3, Pithampur / Indore (M.P.)',
       gstin: '23AAACD1020K1Z5',
       contactPerson: 'Sales Executive',
@@ -270,29 +291,93 @@ export default function InkManagement({
       email: 'sales@inksupplier.com'
     };
 
-    const suggestedQty = Math.max(100, Math.ceil(((parseFloat(ink.reorderLevelKg) || 50) * 2) - (parseFloat(ink.stockQtyKg) || 0)));
+    const modalItems = targetInks.map(ink => {
+      const suggestedQty = Math.max(100, Math.ceil(((parseFloat(ink.reorderLevelKg) || 50) * 2) - (parseFloat(ink.stockQtyKg) || 0)));
+      return {
+        id: ink.id,
+        productCode: ink.productCode,
+        shade: ink.shade,
+        inkType: ink.inkType,
+        solidContentPct: ink.solidContentPct || 40,
+        solidVariationPct: ink.solidVariationPct || 2,
+        manufacturer: ink.manufacturer || 'DIC Inks',
+        hsnCode: '3215',
+        qtyKg: suggestedQty,
+        rate: parseFloat(ink.pricePerKg) || 300
+      };
+    });
 
-    setPoConfirmInk(ink);
     setPoModalVendorId(matchedVendor.id || '');
     setPoModalPoNumber(`SIL/PO/26-27/${Math.floor(1000 + Math.random() * 9000)}`);
     setPoModalPoDate(new Date().toISOString().split('T')[0]);
     setPoModalDeliveryDate(new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]);
-    setPoModalQtyKg(suggestedQty);
-    setPoModalRatePerKg(ink.pricePerKg || 300);
-    setPoModalHsnCode('3215');
     setPoModalFreightTerms('Freight Included within Indore');
     setPoModalPaymentTerms(matchedVendor.paymentTerms || '60 Days Net');
-    setPoModalNotes(`Manufacturer Code: ${ink.productCode}. Deliver in 20kg sealed drums. Batch CoA required.`);
+    setPoModalNotes(targetInks.length > 1 
+      ? `Consolidated PO for ${targetInks.length} Ink Product Code(s). Deliver in 20kg sealed drums with Batch CoA.`
+      : `Manufacturer Code: ${firstInk.productCode}. Deliver in 20kg sealed drums. Batch CoA required.`
+    );
+    setPoModalItems(modalItems);
+    setPoConfirmInk(targetInks.length === 1 ? targetInks[0] : { isMulti: true, count: targetInks.length });
+  };
+
+  const handleIssuePoForInk = (ink) => {
+    handleOpenPoModal([ink]);
+  };
+
+  const handleIssueMultiItemPOFromSelection = () => {
+    const selectedInks = inks.filter(i => selectedInkIds.includes(i.id));
+    if (selectedInks.length === 0) {
+      alert("Please select at least one ink product code using checkboxes!");
+      return;
+    }
+    handleOpenPoModal(selectedInks);
+  };
+
+  const handleUpdatePoItemField = (id, field, val) => {
+    setPoModalItems(prev => prev.map(item => item.id === id ? { ...item, [field]: val } : item));
+  };
+
+  const handleRemovePoItem = (id) => {
+    setPoModalItems(prev => {
+      const updated = prev.filter(item => item.id !== id);
+      if (updated.length === 0) {
+        setPoConfirmInk(null);
+      }
+      return updated;
+    });
+  };
+
+  const handleAddInkToPoModal = (inkId) => {
+    const ink = inks.find(i => String(i.id) === String(inkId));
+    if (!ink || poModalItems.some(i => i.id === ink.id)) return;
+    const suggestedQty = Math.max(100, Math.ceil(((parseFloat(ink.reorderLevelKg) || 50) * 2) - (parseFloat(ink.stockQtyKg) || 0)));
+    const newItem = {
+      id: ink.id,
+      productCode: ink.productCode,
+      shade: ink.shade,
+      inkType: ink.inkType,
+      solidContentPct: ink.solidContentPct || 40,
+      solidVariationPct: ink.solidVariationPct || 2,
+      manufacturer: ink.manufacturer || 'DIC Inks',
+      hsnCode: '3215',
+      qtyKg: suggestedQty,
+      rate: parseFloat(ink.pricePerKg) || 300
+    };
+    setPoModalItems(prev => [...prev, newItem]);
   };
 
   // Confirm and Finalize PO Issuance after User Edit
   const handleConfirmIssuePo = (e) => {
     if (e) e.preventDefault();
-    if (!poConfirmInk) return;
+    if (!poConfirmInk || poModalItems.length === 0) {
+      alert("Please add at least one ink item to the PO!");
+      return;
+    }
 
     const matchedVendor = (vendors || []).find(v => String(v.id) === String(poModalVendorId)) || {
-      companyName: poConfirmInk.supplierName || 'DIC India Ltd',
-      name: poConfirmInk.supplierName || 'DIC India Ltd',
+      companyName: 'DIC India Ltd',
+      name: 'DIC India Ltd',
       address: 'Industrial Area, Sector 3, Pithampur / Indore (M.P.)',
       gstin: '23AAACD1020K1Z5',
       contactPerson: 'Sales Executive',
@@ -303,8 +388,23 @@ export default function InkManagement({
     const poDateStr = poModalPoDate ? new Date(poModalPoDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
     const deliveryDateStr = poModalDeliveryDate ? new Date(poModalDeliveryDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : new Date(Date.now() + 7 * 86400000).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
-    const qtyVal = parseFloat(poModalQtyKg) || 100;
-    const rateVal = parseFloat(poModalRatePerKg) || (poConfirmInk.pricePerKg || 0);
+    const items = poModalItems.map((item, idx) => {
+      const qtyVal = parseFloat(item.qtyKg) || 100;
+      const rateVal = parseFloat(item.rate) || 0;
+      return {
+        id: idx + 1,
+        itemId: item.productCode, // MANUFACTURER PRODUCT CODE RELAYED IN PO
+        description: `${item.shade} (${item.inkType}) - Solid Content: ${item.solidContentPct}% (±${item.solidVariationPct}%)`,
+        make: item.manufacturer || 'DIC Inks',
+        hsnCode: item.hsnCode || '3215',
+        qtyKg: qtyVal,
+        rate: rateVal,
+        amount: Number((qtyVal * rateVal).toFixed(2))
+      };
+    });
+
+    const totalQty = items.reduce((sum, i) => sum + i.qtyKg, 0);
+    const totalTaxable = items.reduce((sum, i) => sum + i.amount, 0);
 
     const poData = {
       poNumber: poModalPoNumber.trim() || `SIL/PO/26-27/${Math.floor(1000 + Math.random() * 9000)}`,
@@ -313,22 +413,11 @@ export default function InkManagement({
       promisedDeliveryDate: deliveryDateStr,
       vendor: matchedVendor,
       category: 'Printing Inks & Toners',
-      source: `Ink Management (${poConfirmInk.productCode})`,
+      source: `Ink Management (${items.length} Product Codes)`,
       paymentTerms: poModalPaymentTerms,
       logisticDetails: poModalFreightTerms,
       notes: poModalNotes,
-      items: [
-        {
-          id: 1,
-          itemId: poConfirmInk.productCode, // MANUFACTURER PRODUCT CODE RELAYED IN PO
-          description: `${poConfirmInk.shade} (${poConfirmInk.inkType}) - Solid Content: ${poConfirmInk.solidContentPct}% (±${poConfirmInk.solidVariationPct}%)`,
-          make: poConfirmInk.manufacturer || 'DIC Inks',
-          hsnCode: poModalHsnCode || '3215',
-          qtyKg: qtyVal,
-          rate: rateVal,
-          amount: Number((qtyVal * rateVal).toFixed(2))
-        }
-      ]
+      items: items
     };
 
     // Save to central samyak_erp_issued_pos store for instant platform reflection
@@ -343,13 +432,14 @@ export default function InkManagement({
     notifyPurchaseOrderIssued({
       poNumber: poData.poNumber,
       supplierName: matchedVendor.companyName || matchedVendor.name,
-      itemName: `${poConfirmInk.productCode} - ${poConfirmInk.shade}`,
-      qty: qtyVal,
+      itemName: `${items.length} Ink Product Code(s) (${items.map(i => i.itemId).join(', ')})`,
+      qty: totalQty,
       unit: 'kg',
-      totalAmount: qtyVal * rateVal * 1.18
+      totalAmount: totalTaxable * 1.18
     }).catch(e => console.warn('Email notify notice:', e));
 
     setPoConfirmInk(null);
+    setSelectedInkIds([]);
     setActivePoPdfData(poData);
   };
 
@@ -668,10 +758,38 @@ export default function InkManagement({
           </div>
 
           {/* Directory Table */}
+          {selectedInkIds.length > 0 && (
+            <div style={{ background: 'linear-gradient(135deg, #e0e7ff 0%, #e0e7ff 100%)', padding: '12px 18px', borderRadius: '10px', border: '1px solid #c7d2fe', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <CheckSquare size={20} style={{ color: '#4338ca' }} />
+                <span style={{ fontWeight: '800', color: '#3730a3', fontSize: '0.92rem' }}>
+                  {selectedInkIds.length} Ink Product Code(s) Selected for PO
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <button type="button" className="btn-secondary" style={{ padding: '6px 14px', fontSize: '0.8rem', background: '#ffffff' }} onClick={() => setSelectedInkIds([])}>
+                  Clear Selection
+                </button>
+                <button type="button" className="btn-primary" style={{ padding: '8px 18px', fontSize: '0.84rem', background: '#4f46e5', borderColor: '#4f46e5', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }} onClick={handleIssueMultiItemPOFromSelection}>
+                  <ShoppingBag size={16} /> Issue Multi-Item PO ({selectedInkIds.length})
+                </button>
+              </div>
+            </div>
+          )}
+
           <div style={{ overflowX: 'auto' }}>
             <table className="data-table">
               <thead>
                 <tr>
+                  <th style={{ width: '40px', textAlign: 'center' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={filteredInks.length > 0 && selectedInkIds.length === filteredInks.length} 
+                      onChange={handleSelectAllInks}
+                      title="Select All Inks"
+                    />
+                  </th>
                   <th>Manufacturer Product Code</th>
                   <th>Ink Shade Name</th>
                   <th>Printing Application</th>
@@ -690,9 +808,18 @@ export default function InkManagement({
                     const mult = 100 / solidPct;
                     const solidCost100 = (parseFloat(ink.pricePerKg) || 0) * mult;
                     const isLow = (parseFloat(ink.stockQtyKg) || 0) < (parseFloat(ink.reorderLevelKg) || 0);
+                    const isSelected = selectedInkIds.includes(ink.id);
 
                     return (
-                      <tr key={ink.id} className={isLow ? 'row-alert-highlight' : ''}>
+                      <tr key={ink.id} className={isSelected ? 'row-selected-highlight' : (isLow ? 'row-alert-highlight' : '')} style={{ background: isSelected ? '#f0f4ff' : undefined }}>
+                        <td style={{ textAlign: 'center' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={isSelected} 
+                            onChange={() => handleToggleInkSelect(ink.id)}
+                          />
+                        </td>
+
                         <td>
                           <div style={{ fontWeight: '800', color: 'var(--primary-brand)', fontFamily: 'monospace', fontSize: '0.92rem' }}>
                             {ink.productCode}
@@ -1555,14 +1682,14 @@ export default function InkManagement({
       )}
 
       {/* =================================================================== */}
-      {/* MODAL: CONFIRM & EDIT INK PURCHASE ORDER (PO) */}
+      {/* MODAL: CONFIRM & EDIT INK PURCHASE ORDER (PO) - MULTI-ITEM */}
       {/* =================================================================== */}
       {poConfirmInk && (
         <div className="pdf-modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', zIndex: 1100 }} onClick={() => setPoConfirmInk(null)}>
-          <div className="glass-panel" style={{ width: '740px', maxWidth: '95vw', borderRadius: '16px', background: '#ffffff', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', border: '1px solid #cbd5e1', padding: '0', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+          <div className="glass-panel" style={{ width: '840px', maxWidth: '95vw', maxHeight: '92vh', overflowY: 'auto', borderRadius: '16px', background: '#ffffff', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', border: '1px solid #cbd5e1', padding: '0' }} onClick={e => e.stopPropagation()}>
             
             {/* Dark Executive Header */}
-            <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '18px 24px', color: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '18px 24px', color: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <div style={{ background: 'rgba(99, 102, 241, 0.2)', padding: '10px', borderRadius: '10px', color: '#818cf8', border: '1px solid rgba(129, 140, 248, 0.3)' }}>
                   <ShoppingBag size={22} />
@@ -1572,7 +1699,10 @@ export default function InkManagement({
                     Issue Official Purchase Order (PO)
                   </h3>
                   <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '2px 0 0 0' }}>
-                    Relaying Manufacturer Code: <strong style={{ color: '#60a5fa', fontFamily: 'monospace' }}>{poConfirmInk.productCode}</strong> ({poConfirmInk.shade})
+                    {poModalItems.length > 1 
+                      ? `Consolidated Multi-Item PO (${poModalItems.length} Ink Product Codes)`
+                      : `Relaying Code: ${poModalItems[0]?.productCode || ''} (${poModalItems[0]?.shade || ''})`
+                    }
                   </p>
                 </div>
               </div>
@@ -1616,53 +1746,117 @@ export default function InkManagement({
                 </select>
               </div>
 
-              {/* Section 3: Ink Item & Quantity Details */}
-              <div style={{ background: '#ffffff', padding: '16px', borderRadius: '10px', border: '1px solid #cbd5e1', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
-                  <div>
-                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Manufacturer Code</span>
-                    <div style={{ fontSize: '1rem', fontWeight: '900', color: '#1e293b', fontFamily: 'monospace' }}>{poConfirmInk.productCode}</div>
-                  </div>
-
-                  <div>
-                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Ink Shade & Type</span>
-                    <div style={{ fontSize: '0.92rem', fontWeight: '700', color: '#0f172a' }}>{poConfirmInk.shade} ({poConfirmInk.inkType})</div>
-                  </div>
-
-                  <div>
-                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Solid Content</span>
-                    <div style={{ fontSize: '0.88rem', fontWeight: '700', color: '#2563eb' }}>{poConfirmInk.solidContentPct}% (±{poConfirmInk.solidVariationPct}%)</div>
-                  </div>
+              {/* Section 3: Multi-Item Inks Table */}
+              <div style={{ background: '#ffffff', padding: '16px', borderRadius: '10px', border: '1px solid #cbd5e1', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>
+                  <h4 style={{ fontSize: '0.95rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                    🛒 Line Items in Purchase Order ({poModalItems.length})
+                  </h4>
+                  
+                  {/* Add Ink Dropdown inside modal */}
+                  <select 
+                    className="form-control" 
+                    style={{ width: '260px', fontSize: '0.78rem', fontWeight: '600' }}
+                    value=""
+                    onChange={e => {
+                      if (e.target.value) {
+                        handleAddInkToPoModal(e.target.value);
+                      }
+                    }}
+                  >
+                    <option value="">+ Add Another Ink to PO...</option>
+                    {(inks || []).filter(i => !poModalItems.some(mi => mi.id === i.id)).map(i => (
+                      <option key={i.id} value={i.id}>+ {i.productCode} - {i.shade}</option>
+                    ))}
+                  </select>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px' }}>
-                  <div>
-                    <label className="form-label" style={{ fontWeight: '700', color: '#047857', marginBottom: '4px', display: 'block' }}>Order Quantity (kg) *</label>
-                    <input type="number" step="any" min="1" className="form-control" required style={{ fontWeight: '800', fontSize: '1.05rem' }} value={poModalQtyKg} onChange={e => setPoModalQtyKg(e.target.value)} />
-                  </div>
-
-                  <div>
-                    <label className="form-label" style={{ fontWeight: '700', color: '#047857', marginBottom: '4px', display: 'block' }}>Price per kg (₹) *</label>
-                    <input type="number" step="any" min="0" className="form-control" required style={{ fontWeight: '800', fontSize: '1.05rem' }} value={poModalRatePerKg} onChange={e => setPoModalRatePerKg(e.target.value)} />
-                  </div>
-
-                  <div>
-                    <label className="form-label" style={{ fontWeight: '700', color: '#475569', marginBottom: '4px', display: 'block' }}>HSN Code</label>
-                    <input type="text" className="form-control" value={poModalHsnCode} onChange={e => setPoModalHsnCode(e.target.value)} />
-                  </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="data-table" style={{ fontSize: '0.82rem' }}>
+                    <thead>
+                      <tr style={{ background: '#f8fafc' }}>
+                        <th style={{ width: '30px' }}>#</th>
+                        <th>Product Code & Shade</th>
+                        <th style={{ width: '130px' }}>Qty (kg)</th>
+                        <th style={{ width: '130px' }}>Rate (₹/kg)</th>
+                        <th style={{ width: '140px', textAlign: 'right' }}>Taxable Amt</th>
+                        <th style={{ width: '40px', textAlign: 'center' }}>Remove</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {poModalItems.map((item, idx) => {
+                        const qty = parseFloat(item.qtyKg) || 0;
+                        const rate = parseFloat(item.rate) || 0;
+                        const lineTotal = qty * rate;
+                        return (
+                          <tr key={item.id}>
+                            <td style={{ fontWeight: '700', color: '#64748b' }}>{idx + 1}</td>
+                            <td>
+                              <div style={{ fontWeight: '800', color: '#1e293b', fontFamily: 'monospace' }}>{item.productCode}</div>
+                              <div style={{ fontSize: '0.75rem', color: '#475569' }}>{item.shade} ({item.inkType}) • Solid: {item.solidContentPct}%</div>
+                            </td>
+                            <td>
+                              <input 
+                                type="number" 
+                                step="any" 
+                                min="1" 
+                                className="form-control" 
+                                style={{ padding: '4px 8px', fontSize: '0.85rem', fontWeight: '700', color: '#047857' }} 
+                                value={item.qtyKg} 
+                                onChange={e => handleUpdatePoItemField(item.id, 'qtyKg', e.target.value)} 
+                              />
+                            </td>
+                            <td>
+                              <input 
+                                type="number" 
+                                step="any" 
+                                min="0" 
+                                className="form-control" 
+                                style={{ padding: '4px 8px', fontSize: '0.85rem', fontWeight: '700', color: '#047857' }} 
+                                value={item.rate} 
+                                onChange={e => handleUpdatePoItemField(item.id, 'rate', e.target.value)} 
+                              />
+                            </td>
+                            <td style={{ textAlign: 'right', fontWeight: '800', color: '#0f172a' }}>
+                              ₹ {lineTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <button 
+                                type="button" 
+                                style={{ background: 'transparent', border: 'none', color: '#dc2626', cursor: 'pointer', padding: '4px' }} 
+                                onClick={() => handleRemovePoItem(item.id)}
+                                title="Remove line item"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
 
                 {/* Subtotal & Estimated GST Calculation */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#ecfdf5', padding: '10px 14px', borderRadius: '8px', border: '1px solid #a7f3d0' }}>
-                  <div>
-                    <span style={{ fontSize: '0.8rem', color: '#065f46', fontWeight: '600' }}>Taxable Amount: </span>
-                    <strong style={{ fontSize: '0.95rem', color: '#047857' }}>₹ {((parseFloat(poModalQtyKg) || 0) * (parseFloat(poModalRatePerKg) || 0)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
-                  </div>
-                  <div>
-                    <span style={{ fontSize: '0.8rem', color: '#065f46', fontWeight: '600' }}>Est. Total (Inc. 18% GST): </span>
-                    <strong style={{ fontSize: '1.1rem', color: '#047857', fontWeight: '900' }}>₹ {(((parseFloat(poModalQtyKg) || 0) * (parseFloat(poModalRatePerKg) || 0)) * 1.18).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
-                  </div>
-                </div>
+                {(() => {
+                  const subtotal = poModalItems.reduce((sum, item) => sum + ((parseFloat(item.qtyKg) || 0) * (parseFloat(item.rate) || 0)), 0);
+                  const gstVal = subtotal * 0.18;
+                  const grandTotal = subtotal + gstVal;
+                  return (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#ecfdf5', padding: '12px 16px', borderRadius: '8px', border: '1px solid #a7f3d0' }}>
+                      <div>
+                        <span style={{ fontSize: '0.82rem', color: '#065f46', fontWeight: '600' }}>Subtotal (Taxable): </span>
+                        <strong style={{ fontSize: '0.98rem', color: '#047857' }}>₹ {subtotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
+                        <span style={{ fontSize: '0.82rem', color: '#065f46', marginLeft: '16px', fontWeight: '600' }}>GST (18%): </span>
+                        <strong style={{ fontSize: '0.98rem', color: '#047857' }}>₹ {gstVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '0.82rem', color: '#065f46', fontWeight: '600' }}>Grand Total: </span>
+                        <strong style={{ fontSize: '1.15rem', color: '#047857', fontWeight: '900' }}>₹ {grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Section 4: Freight & Payment Terms */}
@@ -1690,7 +1884,7 @@ export default function InkManagement({
                   Cancel
                 </button>
                 <button type="submit" className="btn-primary" style={{ background: '#4f46e5', borderColor: '#4f46e5', padding: '10px 22px', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <FileCheck size={18} /> Confirm & Issue Official PO
+                  <FileCheck size={18} /> Confirm & Issue Official PO ({poModalItems.length} Items)
                 </button>
               </div>
             </form>
