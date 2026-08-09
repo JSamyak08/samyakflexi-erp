@@ -285,6 +285,29 @@ ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS last_vendor TEXT;
 ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS last_batch TEXT;
 ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS last_updated TIMESTAMPTZ DEFAULT NOW();
 
+-- 16. INKS MASTER & SOLID COSTING TABLE
+CREATE TABLE IF NOT EXISTS public.inks (
+    id TEXT PRIMARY KEY,
+    product_code TEXT NOT NULL,
+    shade TEXT NOT NULL,
+    ink_type TEXT NOT NULL DEFAULT 'Reverse Ink',
+    manufacturer TEXT,
+    supplier_id TEXT REFERENCES public.vendors(id),
+    supplier_name TEXT,
+    solid_content_pct NUMERIC NOT NULL DEFAULT 40,
+    solid_variation_pct NUMERIC DEFAULT 2,
+    price_per_kg NUMERIC NOT NULL DEFAULT 0,
+    stock_qty_kg NUMERIC DEFAULT 0,
+    reorder_level_kg NUMERIC DEFAULT 0,
+    unit TEXT DEFAULT 'Kg',
+    solvent_type TEXT,
+    notes TEXT,
+    price_history JSONB DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    last_updated TIMESTAMPTZ DEFAULT NOW()
+);
+
+
 -- Enable Row Level Security (RLS) & Grant Permissive Access to Anon & Authenticated Roles for Internal ERP
 DO $$ 
 DECLARE

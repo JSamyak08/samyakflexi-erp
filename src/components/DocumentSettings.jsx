@@ -29,7 +29,10 @@ import {
   DEFAULT_PREFIXES,
   getDocumentTerms,
   saveDocumentTerms,
-  DEFAULT_DOCUMENT_TERMS
+  DEFAULT_DOCUMENT_TERMS,
+  getProcessingRates,
+  saveProcessingRates,
+  DEFAULT_RATES
 } from '../services/settingsService';
 
 export default function DocumentSettings({ machines = [], onSaveMachine, onUpdateMachine, onDeleteMachine }) {
@@ -45,7 +48,11 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
   // Terms & Conditions State
   const [termsState, setTermsState] = useState(() => getDocumentTerms());
 
+  // Default Processing Rates State (Liquid Ink & Solvent-less Adhesive)
+  const [ratesState, setRatesState] = useState(() => getProcessingRates());
+
   const [savedSuccess, setSavedSuccess] = useState(false);
+
 
   // Plant Machine Directory & Edit State
   const [newMachineName, setNewMachineName] = useState('');
@@ -571,6 +578,75 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
 
         </form>
       </div>
+
+      {/* SECTION 5: DEFAULT PROCESSING & RAW MATERIAL BASELINE RATES */}
+      <div className="glass-panel" style={{ padding: '24px', marginBottom: '24px' }}>
+        <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ fontSize: '1.05rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Settings size={20} style={{ color: 'var(--primary-brand)' }} /> Default Processing & Raw Material Baseline Rates
+          </h3>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Configures baseline costs for Pre-Costing & Job Punching</span>
+        </div>
+
+        <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '16px', lineHeight: '1.5' }}>
+          Set the default baseline purchase rates used across <strong>Job Punching & Pre-Costing</strong>. Estimators can still edit or override these rates directly within the job estimation forms.
+        </p>
+
+        <form onSubmit={(e) => {
+          e.preventDefault();
+          saveProcessingRates(ratesState);
+          triggerSaveNotification();
+        }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginBottom: '20px' }}>
+            <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+              <label className="form-label" style={{ fontWeight: '700', fontSize: '0.85rem', color: 'var(--text-primary)' }}>
+                Default Liquid Ink Price (₹/kg)
+              </label>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '10px' }}>
+                Baseline liquid ink cost per kg (including solvents). Default: ₹1,500/kg.
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontWeight: '700', color: 'var(--text-secondary)' }}>₹</span>
+                <input
+                  type="number"
+                  className="form-control"
+                  style={{ fontWeight: '700', fontSize: '1.05rem', color: 'var(--primary-brand)' }}
+                  value={ratesState.liquidInkPrice}
+                  onChange={e => setRatesState(prev => ({ ...prev, liquidInkPrice: parseFloat(e.target.value) || 0 }))}
+                />
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>/kg</span>
+              </div>
+            </div>
+
+            <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+              <label className="form-label" style={{ fontWeight: '700', fontSize: '0.85rem', color: 'var(--text-primary)' }}>
+                Default Solvent-less Adhesive Price (₹/kg)
+              </label>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '10px' }}>
+                Baseline lamination adhesive cost per kg (100% solid equivalent). Default: ₹270/kg.
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontWeight: '700', color: 'var(--text-secondary)' }}>₹</span>
+                <input
+                  type="number"
+                  className="form-control"
+                  style={{ fontWeight: '700', fontSize: '1.05rem', color: 'var(--primary-brand)' }}
+                  value={ratesState.adhesivePrice}
+                  onChange={e => setRatesState(prev => ({ ...prev, adhesivePrice: parseFloat(e.target.value) || 0 }))}
+                />
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>/kg</span>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button type="submit" className="btn-primary" style={{ padding: '10px 28px' }}>
+              <Check size={18} /> Save Baseline Processing Rates
+            </button>
+          </div>
+        </form>
+      </div>
+
 
       {/* PLANT MACHINE DIRECTORY */}
       <div className="glass-panel" style={{ padding: '24px' }}>

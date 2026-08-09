@@ -204,3 +204,40 @@ export function generateDocRefNumber(type, customNumber) {
   
   return `SIL/DOC/${customNumber || 100}`;
 }
+
+const RATES_STORAGE_KEY = 'samyak_processing_rates';
+
+export const DEFAULT_RATES = {
+  liquidInkPrice: 1500,
+  adhesivePrice: 270
+};
+
+/**
+ * Get processing rates (Liquid Ink default price & Adhesive price)
+ */
+export function getProcessingRates() {
+  try {
+    const saved = localStorage.getItem(RATES_STORAGE_KEY);
+    if (!saved) return { ...DEFAULT_RATES };
+    const parsed = JSON.parse(saved);
+    return {
+      liquidInkPrice: Number(parsed.liquidInkPrice) || DEFAULT_RATES.liquidInkPrice,
+      adhesivePrice: Number(parsed.adhesivePrice) || DEFAULT_RATES.adhesivePrice
+    };
+  } catch (e) {
+    return { ...DEFAULT_RATES };
+  }
+}
+
+/**
+ * Save processing rates configuration
+ */
+export function saveProcessingRates(rates) {
+  try {
+    localStorage.setItem(RATES_STORAGE_KEY, JSON.stringify(rates));
+    saveSystemSetting('processing_rates', rates).catch(() => {});
+  } catch (e) {
+    console.error("Failed to save processing rates", e);
+  }
+}
+

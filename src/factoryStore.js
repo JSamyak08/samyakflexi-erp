@@ -626,6 +626,149 @@ export const SYSTEM_ROLES = [
   "Shop Floor Operator"
 ];
 
+export const initialInks = [
+  {
+    id: "INK-001",
+    productCode: "DIC-WHT-808",
+    shade: "Super White (Reverse)",
+    inkType: "Reverse Ink",
+    manufacturer: "DIC Inks",
+    supplierId: "VND-001",
+    supplierName: "DIC India Ltd",
+    solidContentPct: 45,
+    solidVariationPct: 2,
+    pricePerKg: 285,
+    stockQtyKg: 450,
+    reorderLevelKg: 150,
+    unit: "Kg",
+    solventType: "Ethyl Acetate + IPA",
+    notes: "High opacity reverse printing white ink for PET/BOPP laminates",
+    priceHistory: [
+      { price: 285, date: "2026-08-01", reason: "Standard contract rate" }
+    ]
+  },
+  {
+    id: "INK-002",
+    productCode: "FLINT-MAG-302",
+    shade: "Process Magenta (Reverse)",
+    inkType: "Reverse Ink",
+    manufacturer: "Flint Group",
+    supplierId: "VND-002",
+    supplierName: "Flint Group India Pvt Ltd",
+    solidContentPct: 38,
+    solidVariationPct: 2,
+    pricePerKg: 320,
+    stockQtyKg: 85,
+    reorderLevelKg: 100,
+    unit: "Kg",
+    solventType: "Ethyl Acetate",
+    notes: "High gloss process magenta ink for rotogravure reverse printing",
+    priceHistory: [
+      { price: 320, date: "2026-08-01", reason: "Initial rate" }
+    ]
+  },
+  {
+    id: "INK-003",
+    productCode: "HUB-YEL-502",
+    shade: "Process Yellow (Reverse)",
+    inkType: "Reverse Ink",
+    manufacturer: "Hubergroup",
+    supplierId: "VND-003",
+    supplierName: "Hubergroup India Ltd",
+    solidContentPct: 40,
+    solidVariationPct: 2.5,
+    pricePerKg: 295,
+    stockQtyKg: 320,
+    reorderLevelKg: 120,
+    unit: "Kg",
+    solventType: "Ethyl Acetate + IPA",
+    notes: "Transparent process yellow with fast drying properties",
+    priceHistory: [
+      { price: 295, date: "2026-08-01", reason: "Initial rate" }
+    ]
+  },
+  {
+    id: "INK-004",
+    productCode: "SIEG-CYA-101",
+    shade: "Process Cyan (Reverse)",
+    inkType: "Reverse Ink",
+    manufacturer: "Siegwerk India",
+    supplierId: "VND-004",
+    supplierName: "Siegwerk India Pvt Ltd",
+    solidContentPct: 42,
+    solidVariationPct: 2,
+    pricePerKg: 310,
+    stockQtyKg: 280,
+    reorderLevelKg: 100,
+    unit: "Kg",
+    solventType: "Ethyl Acetate",
+    notes: "High strength process cyan for rotogravure flexible packaging",
+    priceHistory: [
+      { price: 310, date: "2026-08-01", reason: "Initial rate" }
+    ]
+  },
+  {
+    id: "INK-005",
+    productCode: "DIC-BLK-707",
+    shade: "Process Black (Reverse)",
+    inkType: "Reverse Ink",
+    manufacturer: "DIC Inks",
+    supplierId: "VND-001",
+    supplierName: "DIC India Ltd",
+    solidContentPct: 36,
+    solidVariationPct: 2,
+    pricePerKg: 260,
+    stockQtyKg: 50,
+    reorderLevelKg: 80,
+    unit: "Kg",
+    solventType: "Ethyl Acetate",
+    notes: "Deep black ink for high density text and reverse backgrounds",
+    priceHistory: [
+      { price: 260, date: "2026-08-01", reason: "Initial rate" }
+    ]
+  },
+  {
+    id: "INK-006",
+    productCode: "SIEG-SRF-WHT",
+    shade: "Surface Gloss White",
+    inkType: "Surface Ink",
+    manufacturer: "Siegwerk India",
+    supplierId: "VND-004",
+    supplierName: "Siegwerk India Pvt Ltd",
+    solidContentPct: 50,
+    solidVariationPct: 3,
+    pricePerKg: 340,
+    stockQtyKg: 180,
+    reorderLevelKg: 100,
+    unit: "Kg",
+    solventType: "Ethyl Acetate + Toluene-Free",
+    notes: "High slip surface printing white ink for paper & poly pouches",
+    priceHistory: [
+      { price: 340, date: "2026-08-01", reason: "Initial rate" }
+    ]
+  },
+  {
+    id: "INK-007",
+    productCode: "HUB-SRF-RED",
+    shade: "Surface Crimson Red",
+    inkType: "Surface Ink",
+    manufacturer: "Hubergroup",
+    supplierId: "VND-003",
+    supplierName: "Hubergroup India Ltd",
+    solidContentPct: 44,
+    solidVariationPct: 2,
+    pricePerKg: 365,
+    stockQtyKg: 40,
+    reorderLevelKg: 75,
+    unit: "Kg",
+    solventType: "Ethyl Acetate",
+    notes: "Scratch resistant surface red ink for milk & oil film pouches",
+    priceHistory: [
+      { price: 365, date: "2026-08-01", reason: "Initial rate" }
+    ]
+  }
+];
+
 export const ALL_MODULES = [
   { key: "dashboard", label: "Executive Dashboard", category: "Core Operations" },
   { key: "production_records", label: "Production Records & Sign-Off", category: "Shop Floor & Quality" },
@@ -636,6 +779,7 @@ export const ALL_MODULES = [
   { key: "job_masters", label: "Job Master Directory", category: "Pre-Press & Master Specs" },
   { key: "vendors", label: "Vendor Onboarding & POs", category: "Purchase & Commercial" },
   { key: "inventory", label: "Inventory, GRN & QC", category: "Store & Inventory" },
+  { key: "ink_management", label: "Ink Management & Solid Costing", category: "Store & Inventory" },
   { key: "material_indents", label: "Material Indents & Store", category: "Store & Inventory" },
   { key: "user_management", label: "User Management & RBAC", category: "Administration" },
   { key: "cylinders", label: "Rotogravure Cylinders", category: "Pre-Press & Tooling" },
@@ -650,12 +794,13 @@ export const generateFullRolePermissions = (allowAll = true) => {
   SYSTEM_ROLES.forEach(r => {
     perm[r] = {};
     ALL_MODULES.forEach(m => {
-      perm[r][m.key] = allowAll ? true : (r === "Admin" || r === "Plant Manager");
+      perm[r][m.key] = allowAll ? true : (r === "Admin" || r === "Plant Manager" || r === "Store Manager" || r === "Purchase Manager" || r === "QC Chemist");
     });
   });
   return perm;
 };
 
 export const DEFAULT_ROLE_PERMISSIONS = generateFullRolePermissions(true);
+
 
 

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import OrderConfirmationPDF from './OrderConfirmationPDF';
 import { notifyOrderPunched } from '../services/emailService';
+import { getProcessingRates } from '../services/settingsService';
 
 export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, initialJobMasterData, clients = [], jobMasters = [] }) {
   // Form State
@@ -28,6 +29,10 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
   const [orderType, setOrderType] = useState('Pouching'); // Reel or Pouching
   const [inkGsm, setInkGsm] = useState(1.5);
   const [adhesiveGsm, setAdhesiveGsm] = useState(1.5);
+
+  // Editable Processing Prices State (loaded from System Settings baseline, editable inline)
+  const [inkPrice, setInkPrice] = useState(() => getProcessingRates().liquidInkPrice || DEFAULT_PROCESSING_RATES.liquidInkPrice);
+  const [adhesivePrice, setAdhesivePrice] = useState(() => getProcessingRates().adhesivePrice || DEFAULT_PROCESSING_RATES.adhesivePrice);
   const [colorsCount, setColorsCount] = useState(() => initialJobMasterData?.colorsCount || 6);
   const [targetDeliveryDays, setTargetDeliveryDays] = useState(10);
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -84,10 +89,6 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
              return firstWord && firstWord.length > 3 && (c.name || c.companyName || '').toLowerCase().includes(firstWord);
            }) || null;
   }, [clientName, clients]);
-
-  // Editable Processing Prices State
-  const [inkPrice, setInkPrice] = useState(DEFAULT_PROCESSING_RATES.liquidInkPrice);
-  const [adhesivePrice, setAdhesivePrice] = useState(DEFAULT_PROCESSING_RATES.adhesivePrice);
 
   // Price Modal / Section toggle
   const [showPDFModal, setShowPDFModal] = useState(false);

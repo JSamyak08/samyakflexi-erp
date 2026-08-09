@@ -1456,6 +1456,105 @@ export async function deleteSalesQuotationFromSupabase(id) {
   }
 }
 
+/**
+ * -----------------------------------------------------------------------------
+ * 13. INKS MASTER SUPABASE OPERATIONS
+ * -----------------------------------------------------------------------------
+ */
+
+export async function fetchInks() {
+  if (!isSupabaseConfigured()) return null;
+
+  try {
+    const { data, error } = await supabase
+      .from('inks')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      handleSupabaseError(error, 'inks');
+      return null;
+    }
+
+    if (data && data.length > 0) {
+      return data.map(i => ({
+        id: i.id,
+        productCode: i.product_code,
+        shade: i.shade,
+        inkType: i.ink_type || 'Reverse Ink',
+        manufacturer: i.manufacturer,
+        supplierId: i.supplier_id,
+        supplierName: i.supplier_name,
+        solidContentPct: parseFloat(i.solid_content_pct) || 40,
+        solidVariationPct: parseFloat(i.solid_variation_pct) || 2,
+        pricePerKg: parseFloat(i.price_per_kg) || 0,
+        stockQtyKg: parseFloat(i.stock_qty_kg) || 0,
+        reorderLevelKg: parseFloat(i.reorder_level_kg) || 0,
+        unit: i.unit || 'Kg',
+        solventType: i.solvent_type || '',
+        notes: i.notes || '',
+        priceHistory: i.price_history || [],
+        createdAt: i.created_at,
+        lastUpdated: i.last_updated
+      }));
+    }
+  } catch (err) {
+    handleSupabaseError(err, 'inks exception');
+  }
+
+  return null;
+}
+
+export async function saveInkToSupabase(ink) {
+  if (!isSupabaseConfigured() || !ink) return null;
+
+  try {
+    await ensureValidSession();
+
+    const payload = {
+      id: ink.id,
+      product_code: ink.productCode,
+      shade: ink.shade,
+      ink_type: ink.inkType || 'Reverse Ink',
+      manufacturer: ink.manufacturer || '',
+      supplier_id: ink.supplierId || null,
+      supplier_name: ink.supplierName || '',
+      solid_content_pct: parseFloat(ink.solidContentPct) || 40,
+      solid_variation_pct: parseFloat(ink.solidVariationPct) || 2,
+      price_per_kg: parseFloat(ink.pricePerKg) || 0,
+      stock_qty_kg: parseFloat(ink.stockQtyKg) || 0,
+      reorder_level_kg: parseFloat(ink.reorderLevelKg) || 0,
+      unit: ink.unit || 'Kg',
+      solvent_type: ink.solventType || '',
+      notes: ink.notes || '',
+      price_history: ink.priceHistory || [],
+      last_updated: new Date().toISOString()
+    };
+
+    const { error } = await supabase.from('inks').upsert(payload, { onConflict: 'id' });
+    if (error) {
+      handleSupabaseError(error, 'inks');
+      return false;
+    }
+    return true;
+  } catch (err) {
+    handleSupabaseError(err, 'inks exception');
+    return false;
+  }
+}
+
+export async function deleteInkFromSupabase(inkId) {
+  if (!isSupabaseConfigured() || !inkId) return;
+  try {
+    await ensureValidSession();
+    const { error } = await supabase.from('inks').delete().eq('id', inkId);
+    if (error) handleSupabaseError(error, 'inks');
+  } catch (err) {
+    handleSupabaseError(err, 'inks delete exception');
+  }
+}
+
+
 // ============================================================================
 // SYSTEM SETTINGS & ROLE PERMISSIONS & RBAC MATRIX (SCHEMA-INDEPENDENT)
 // ============================================================================

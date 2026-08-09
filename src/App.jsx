@@ -13,6 +13,7 @@ import {
   isReconciliationDue,
   initialClients,
   initialJobMasters,
+  initialInks,
   DEFAULT_ROLE_PERMISSIONS
 } from './factoryStore';
 import { initialCylinders } from './dataStore';
@@ -36,7 +37,8 @@ import {
   Printer,
   FileCode,
   Settings as SettingsIcon,
-  ShieldAlert
+  ShieldAlert,
+  Droplet
 } from 'lucide-react';
 
 import AuthScreen from './components/AuthScreen';
@@ -56,6 +58,7 @@ import ConsumablesAndIndents from './components/ConsumablesAndIndents';
 import SalesManagement from './components/SalesManagement';
 import ScrapWastageAnalysis from './components/ScrapWastageAnalysis';
 import AuditLogsManagement from './components/AuditLogsManagement';
+import InkManagement from './components/InkManagement';
 import { fetchAuditLogsFromSupabase, saveAuditLogToSupabase, createAuditEntry, pruneOldAuditLogs } from './services/auditLogger';
 import { getRouteFromUrl, getTabFromUrl, pushSlugState } from './utils/slugRouter';
 import { isSupabaseConfigured } from './services/supabaseClient';
@@ -74,6 +77,7 @@ import {
   fetchProductionSchedules, saveProductionScheduleToSupabase, deleteProductionScheduleFromSupabase,
   fetchClients, saveClientToSupabase, deleteClientFromSupabase,
   fetchJobMasters, saveJobMasterToSupabase, deleteJobMasterFromSupabase,
+  fetchInks, saveInkToSupabase, deleteInkFromSupabase,
   fetchRolePermissionsFromSupabase, saveRolePermissionsToSupabase,
   fetchSystemSetting, saveSystemSetting
 } from './services/supabaseDataService';
@@ -247,12 +251,14 @@ export default function App() {
   const [schedules, setSchedules] = useState(() => stripDummyRecords(loadLocalState('production_schedules', [])));
   const [clients, setClients] = useState(() => stripDummyRecords(loadLocalState('clients', [])));
   const [jobMasters, setJobMasters] = useState(() => stripDummyRecords(loadLocalState('job_masters', [])));
+  const [inks, setInks] = useState(() => loadLocalState('inks', initialInks));
   const [selectedJobMasterForPunch, setSelectedJobMasterForPunch] = useState(null);
   const [rolePermissions, setRolePermissions] = useState(() => loadLocalState('role_permissions', DEFAULT_ROLE_PERMISSIONS));
   const [indents, setIndents] = useState(() => stripDummyRecords(loadLocalState('material_indents', [])));
   const [machineIssues, setMachineIssues] = useState(() => stripDummyRecords(loadLocalState('machine_issues', [])));
   const [consumables, setConsumables] = useState(() => stripDummyRecords(loadLocalState('consumables', [])));
   const [auditLogs, setAuditLogs] = useState(() => pruneOldAuditLogs(loadLocalState('audit_logs', [])));
+
 
   const logAudit = async (actionType, moduleName, details, targetId = null) => {
     const entry = createAuditEntry(currentUser, actionType, moduleName, details, targetId);
@@ -310,7 +316,9 @@ export default function App() {
   useEffect(() => { safeLocalStorageSet('samyak_erp_production_schedules', schedules); }, [schedules]);
   useEffect(() => { safeLocalStorageSet('samyak_erp_clients', clients); }, [clients]);
   useEffect(() => { safeLocalStorageSet('samyak_erp_job_masters', jobMasters); }, [jobMasters]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_inks', inks); }, [inks]);
   useEffect(() => { safeLocalStorageSet('samyak_erp_role_permissions', rolePermissions); }, [rolePermissions]);
+
   useEffect(() => { safeLocalStorageSet('samyak_erp_material_indents', indents); }, [indents]);
   useEffect(() => { safeLocalStorageSet('samyak_erp_machine_issues', machineIssues); }, [machineIssues]);
   useEffect(() => { safeLocalStorageSet('samyak_erp_consumables', consumables); }, [consumables]);
@@ -373,7 +381,7 @@ export default function App() {
         supaOrders, supaVendors, supaInv, supaGRNs, supaCyls, 
         supaProd, supaUsers, supaSheets, supaRolls, supaShipments,
         supaMachines, supaSchedules, supaClients, supaJobMasters,
-        supaRolePerms, supaAuditLogs
+        supaInks, supaRolePerms, supaAuditLogs
       ] = await Promise.all([
         fetchSafe(fetchOrders, 'Orders'),
         fetchSafe(fetchVendors, 'Vendors'),
@@ -389,9 +397,11 @@ export default function App() {
         fetchSafe(fetchProductionSchedules, 'Production Schedules'),
         fetchSafe(fetchClients, 'Clients'),
         fetchSafe(fetchJobMasters, 'Job Masters'),
+        fetchSafe(fetchInks, 'Inks'),
         fetchSafe(fetchRolePermissionsFromSupabase, 'Role Permissions'),
         fetchSafe(fetchAuditLogsFromSupabase, 'Audit Logs')
       ]);
+
 
       // Fetch schema-independent system settings & lifted store states
       const [
@@ -584,7 +594,24 @@ export default function App() {
         supaJobMasters.filter(isDummyRecord).forEach(d => deleteJobMasterFromSupabase(d.id).catch(console.warn));
       }
 
+      if (Array.isArray(supaInks) && supaInks.length > 0) {
+        setInks(prev => {
+          const map = new Map();
+          supaInks.forEach(i => { if (i && i.id) map.set(i.id, i); });
+          (prev || []).forEach(p => {
+            if (p && p.id && !map.has(p.id)) {
+              map.set(p.id, p);
+              saveInkToSupabase(p).catch(console.warn);
+            }
+          });
+          const merged = Array.from(map.values());
+          safeLocalStorageSet('samyak_erp_inks', merged);
+          return merged;
+        });
+      }
+
       if (supaRolePerms && typeof supaRolePerms === 'object' && Object.keys(supaRolePerms).length > 0) {
+
         setRolePermissions(supaRolePerms);
         safeLocalStorageSet('samyak_erp_role_permissions', supaRolePerms);
       }
@@ -899,6 +926,22 @@ export default function App() {
   };
 
   const scrapMetrics = calculateScrapMetrics(productionRecords);
+
+  const lowStockInks = useMemo(() => {
+    return (inks || []).filter(i => (parseFloat(i.stockQtyKg) || 0) < (parseFloat(i.reorderLevelKg) || 0));
+  }, [inks]);
+
+  const avgSolidEqInkCost = useMemo(() => {
+    if (!inks || inks.length === 0) return 0;
+    const valid = inks.filter(i => (parseFloat(i.solidContentPct) || 0) > 0);
+    if (valid.length === 0) return 0;
+    const sum = valid.reduce((acc, i) => {
+      const solidPct = parseFloat(i.solidContentPct) || 40;
+      return acc + ((parseFloat(i.pricePerKg) || 0) * (100 / solidPct));
+    }, 0);
+    return sum / valid.length;
+  }, [inks]);
+
 
   // Handlers for Production Records
   const handleSaveProductionRecord = (newRecord) => {
@@ -1264,12 +1307,55 @@ export default function App() {
 
   const handleDeleteJobMaster = async (jobMasterId) => {
     setJobMasters(prev => prev.filter(j => j.id !== jobMasterId));
+    logAudit('DELETE', 'Job Masters', `Deleted job master record ${jobMasterId}`, jobMasterId);
     try {
       await deleteJobMasterFromSupabase(jobMasterId);
     } catch (err) {
       console.warn("[Sync Notice] Job Master deleted locally. Supabase notice:", err);
     }
   };
+
+  // Ink Management Handlers
+  const handleAddInk = async (newInk) => {
+    setInks(prev => [newInk, ...prev.filter(i => i.id !== newInk.id)]);
+    logAudit('CREATE', 'Ink Management', `Added ink product code "${newInk.productCode}" - ${newInk.shade} (${newInk.inkType}, ${newInk.solidContentPct}% solid)`, newInk.id);
+    try {
+      await saveInkToSupabase(newInk);
+    } catch (err) {
+      console.warn("[Sync Notice] Ink saved locally. Supabase notice:", err);
+    }
+  };
+
+  const handleUpdateInk = async (updatedInk) => {
+    setInks(prev => prev.map(i => i.id === updatedInk.id ? updatedInk : i));
+    logAudit('UPDATE', 'Ink Management', `Updated ink product code "${updatedInk.productCode}" - ${updatedInk.shade}`, updatedInk.id);
+    try {
+      await saveInkToSupabase(updatedInk);
+    } catch (err) {
+      console.warn("[Sync Notice] Ink updated locally. Supabase notice:", err);
+    }
+  };
+
+  const handleUpdateInkPrice = async (updatedInk, newPrice, reason) => {
+    setInks(prev => prev.map(i => i.id === updatedInk.id ? updatedInk : i));
+    logAudit('UPDATE', 'Ink Management', `Updated rate for ink "${updatedInk.productCode}" (${updatedInk.shade}) to ₹${newPrice}/kg. Reason: ${reason}`, updatedInk.id);
+    try {
+      await saveInkToSupabase(updatedInk);
+    } catch (err) {
+      console.warn("[Sync Notice] Ink rate updated locally. Supabase notice:", err);
+    }
+  };
+
+  const handleDeleteInk = async (inkId) => {
+    setInks(prev => prev.filter(i => i.id !== inkId));
+    logAudit('DELETE', 'Ink Management', `Deleted ink product code ${inkId}`, inkId);
+    try {
+      await deleteInkFromSupabase(inkId);
+    } catch (err) {
+      console.warn("[Sync Notice] Ink deleted locally. Supabase notice:", err);
+    }
+  };
+
 
   const handlePunchOrderFromJobMaster = (jobMaster) => {
     setSelectedJobMasterForPunch(jobMaster);
@@ -1401,7 +1487,7 @@ export default function App() {
           )}
 
           {/* Group 3: Inventory & Warehouse */}
-          {(isTabAllowed('inventory') || isTabAllowed('material_indents')) && (
+          {(isTabAllowed('inventory') || isTabAllowed('ink_management') || isTabAllowed('material_indents')) && (
             <>
               <div className="sidebar-section-header">📦 Inventory & Store</div>
               {isTabAllowed('inventory') && (
@@ -1418,6 +1504,20 @@ export default function App() {
                   )}
                 </div>
               )}
+              {isTabAllowed('ink_management') && (
+                <div 
+                  className={`nav-item ${activeTab === 'ink_management' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('ink_management')}
+                >
+                  <Droplet size={18} style={{ color: '#6366f1' }} />
+                  Ink Master & Solid Costing
+                  {(inks.filter(i => (parseFloat(i.stockQtyKg) || 0) < (parseFloat(i.reorderLevelKg) || 0)).length) > 0 && (
+                    <span className="badge badge-danger" style={{ marginLeft: 'auto', padding: '2px 6px', fontSize: '0.7rem' }}>
+                      {inks.filter(i => (parseFloat(i.stockQtyKg) || 0) < (parseFloat(i.reorderLevelKg) || 0)).length} Alert
+                    </span>
+                  )}
+                </div>
+              )}
               {isTabAllowed('material_indents') && (
                 <div 
                   className={`nav-item ${activeTab === 'material_indents' ? 'active' : ''}`}
@@ -1429,6 +1529,7 @@ export default function App() {
               )}
             </>
           )}
+
 
           {/* Group 4: Orders & Specs */}
           {(isTabAllowed('job_punching') || isTabAllowed('orders') || isTabAllowed('job_masters') || isTabAllowed('clients') || isTabAllowed('vendors')) && (
@@ -1557,6 +1658,7 @@ export default function App() {
               {activeTab === 'clients' && 'Client Onboarding & Directory'}
               {activeTab === 'vendors' && 'Vendor Onboarding & Directory'}
               {activeTab === 'inventory' && 'Raw Material Inventory, GRN & Quality Control'}
+              {activeTab === 'ink_management' && 'Ink Master Directory, Solid Costing & Stock Management'}
               {activeTab === 'material_indents' && 'Material Indents Requisitions & Consumable Store'}
               {activeTab === 'user_management' && 'Departmental User Management (RBAC)'}
               {activeTab === 'cylinders' && 'Rotogravure Cylinder Database'}
@@ -1564,6 +1666,7 @@ export default function App() {
               {activeTab === 'supabase' && 'Supabase Cloud Database & API Service'}
               {activeTab === 'doc_settings' && 'Letterhead Signature & Series Settings'}
             </h1>
+
 
 
             <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
@@ -1679,6 +1782,21 @@ export default function App() {
           />
         )}
 
+        {/* TAB: INK MANAGEMENT SYSTEM */}
+        {activeTab === 'ink_management' && (
+          <InkManagement 
+            inks={inks}
+            vendors={vendors}
+            currentUser={currentUser}
+            onAddInk={handleAddInk}
+            onUpdateInk={handleUpdateInk}
+            onDeleteInk={handleDeleteInk}
+            onUpdateInkPrice={handleUpdateInkPrice}
+            onSaveOrder={handleAddOrder}
+          />
+        )}
+
+
         {/* TAB 1: EXECUTIVE DASHBOARD */}
         {activeTab === 'dashboard' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
@@ -1698,6 +1816,26 @@ export default function App() {
                 </div>
                 <button className="btn-danger-action" onClick={() => handleTabChange('orders')}>
                   Manage Delayed Orders
+                </button>
+              </div>
+            )}
+
+            {/* Urgent Low Stock Ink Alert Banner */}
+            {lowStockInks.length > 0 && (
+              <div className="delayed-alert-banner" style={{ background: '#fff1f2', border: '1px solid #fecdd3' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                  <Droplet size={32} style={{ color: '#e11d48' }} />
+                  <div>
+                    <h3 style={{ fontSize: '1.15rem', fontWeight: '700', color: '#e11d48' }}>
+                      CRITICAL INK ALERT: {lowStockInks.length} INK PRODUCT CODE(S) BELOW RESERVE LEVEL
+                    </h3>
+                    <p style={{ fontSize: '0.85rem', color: '#9f1239', marginTop: '2px' }}>
+                      Manufacturer Codes: {lowStockInks.map(i => `${i.productCode} (${i.shade})`).join(', ')}. Immediate supplier PO reorder required.
+                    </p>
+                  </div>
+                </div>
+                <button className="btn-danger-action" onClick={() => handleTabChange('ink_management')}>
+                  Reorder Inks Now
                 </button>
               </div>
             )}
@@ -1728,6 +1866,17 @@ export default function App() {
                   {inventory.reduce((a, b) => a + (parseFloat(b.availableQtyKg) || 0), 0).toLocaleString()} <span style={{ fontSize: '1rem' }}>kg</span>
                 </span>
                 <span style={{ fontSize: '0.8rem', color: 'var(--success)' }}>Across {inventory.length} film grades</span>
+              </div>
+
+              {/* Average Ink Cost (100% Solid Equivalent) Card */}
+              <div className="glass-card stats-card" style={{ cursor: 'pointer', borderLeft: '4px solid #6366f1' }} onClick={() => handleTabChange('ink_management')}>
+                <span className="stats-title" style={{ color: '#4f46e5', fontWeight: '700' }}>Avg Ink Cost (100% Solid Eq.)</span>
+                <span className="stats-value" style={{ color: '#4f46e5', fontSize: '1.5rem', fontWeight: '800' }}>
+                  ₹ {avgSolidEqInkCost.toFixed(2)} <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>/ kg</span>
+                </span>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                  Based on solid content % across {inks.length} active inks
+                </span>
               </div>
 
               {/* RBAC Protected Total Stock Purchase Valuation Card */}
@@ -1774,6 +1923,7 @@ export default function App() {
                 </span>
               </div>
             </div>
+
 
             {/* Quick Actions & Recent Orders Split */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '24px' }}>
