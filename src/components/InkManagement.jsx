@@ -22,7 +22,8 @@ import {
   Printer,
   Calendar,
   Check,
-  X
+  X,
+  Tag
 } from 'lucide-react';
 import TablePagination, { usePagination } from './TablePagination';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
@@ -1113,161 +1114,211 @@ export default function InkManagement({
       {/* MODAL: ADD / EDIT INK PRODUCT CODE */}
       {/* =================================================================== */}
       {isAddModalOpen && (
-        <div className="pdf-modal-overlay">
-          <div className="glass-panel" style={{ width: '600px', maxWidth: '95vw', padding: '28px', background: '#ffffff' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
-              <h3 style={{ fontSize: '1.2rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Droplet size={20} style={{ color: 'var(--primary-brand)' }} />
-                {editingInk ? 'Edit Ink Product Code' : 'Add New Ink Product Code'}
-              </h3>
-              <button style={{ background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => setIsAddModalOpen(false)}>
-                <X size={20} />
+        <div className="pdf-modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', zIndex: 1100 }}>
+          <div className="glass-panel" style={{ width: '720px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', borderRadius: '16px', background: '#ffffff', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', border: '1px solid #cbd5e1', padding: '0' }}>
+            
+            {/* Modal Header */}
+            <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '20px 24px', borderRadius: '16px 16px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#ffffff' }}>
+              <div>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '10px', color: '#ffffff', margin: 0 }}>
+                  <Droplet size={22} style={{ color: '#818cf8' }} />
+                  {editingInk ? 'Edit Ink Product Code' : 'Add New Ink Product Code'}
+                </h3>
+                <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '4px', margin: 0 }}>
+                  Define manufacturer product codes, solid content %, prices & stock reserves for supplier PO issuance.
+                </p>
+              </div>
+              <button 
+                type="button"
+                style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff', cursor: 'pointer', transition: 'all 0.2s' }} 
+                onClick={() => setIsAddModalOpen(false)}
+              >
+                <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveInkForm} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <form onSubmit={handleSaveInkForm} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
               
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-                <div>
-                  <label className="form-label" style={{ fontWeight: '700' }}>Manufacturer Product Code *</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    placeholder="e.g. DIC-WHT-808"
-                    value={productCode}
-                    onChange={e => setProductCode(e.target.value)}
-                    required
-                  />
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Relayed in supplier POs</span>
+              {/* Section 1: Product & Application Identification */}
+              <div>
+                <div style={{ fontSize: '0.82rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#475569', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Tag size={15} style={{ color: '#4f46e5' }} /> 1. Product Identification & Application
+                </div>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                  <div>
+                    <label className="form-label" style={{ fontWeight: '700', color: '#1e293b', marginBottom: '6px', display: 'block' }}>Manufacturer Product Code *</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. DIC-WHT-808"
+                      value={productCode}
+                      onChange={e => setProductCode(e.target.value)}
+                      required
+                      style={{ fontWeight: '700', color: '#4f46e5', fontFamily: 'monospace', fontSize: '0.95rem' }}
+                    />
+                    <span style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '4px', display: 'block' }}>📌 Code relayed directly in Supplier POs</span>
+                  </div>
+
+                  <div>
+                    <label className="form-label" style={{ fontWeight: '700', color: '#1e293b', marginBottom: '6px', display: 'block' }}>Ink Shade Name *</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. Process Magenta / White"
+                      value={shade}
+                      onChange={e => setShade(e.target.value)}
+                      required
+                      style={{ fontSize: '0.95rem' }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                  <div>
+                    <label className="form-label" style={{ fontWeight: '700', color: '#1e293b', marginBottom: '6px', display: 'block' }}>Printing Application Type *</label>
+                    <select className="form-control" value={inkType} onChange={e => setInkType(e.target.value)} style={{ fontWeight: '600', fontSize: '0.9rem' }}>
+                      <option value="Reverse Ink">🔄 Reverse Ink (Only for Reverse jobs)</option>
+                      <option value="Surface Ink">🖼️ Surface Ink (Only for Surface jobs)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="form-label" style={{ fontWeight: '700', color: '#1e293b', marginBottom: '6px', display: 'block' }}>Manufacturer Name *</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. DIC Inks, Flint, Hubergroup"
+                      value={manufacturer}
+                      onChange={e => setManufacturer(e.target.value)}
+                      style={{ fontSize: '0.9rem' }}
+                    />
+                  </div>
                 </div>
 
                 <div>
-                  <label className="form-label" style={{ fontWeight: '700' }}>Ink Shade Name *</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    placeholder="e.g. Process Magenta"
-                    value={shade}
-                    onChange={e => setShade(e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-                <div>
-                  <label className="form-label" style={{ fontWeight: '700' }}>Printing Application Type *</label>
-                  <select className="form-control" value={inkType} onChange={e => setInkType(e.target.value)}>
-                    <option value="Reverse Ink">🔄 Reverse Ink (Only for Reverse jobs)</option>
-                    <option value="Surface Ink">🖼️ Surface Ink (Only for Surface jobs)</option>
+                  <label className="form-label" style={{ fontWeight: '700', color: '#1e293b', marginBottom: '6px', display: 'block' }}>Preferred Vendor / Supplier *</label>
+                  <select className="form-control" value={supplierId} onChange={e => setSupplierId(e.target.value)} style={{ fontWeight: '600', fontSize: '0.9rem' }}>
+                    <option value="">-- Select Preferred Supplier --</option>
+                    {(vendors || []).map(v => (
+                      <option key={v.id} value={v.id}>{v.companyName || v.name} ({v.gstin || 'No GSTIN'})</option>
+                    ))}
                   </select>
                 </div>
-
-                <div>
-                  <label className="form-label" style={{ fontWeight: '700' }}>Manufacturer Name *</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    placeholder="e.g. DIC Inks, Flint, Hubergroup"
-                    value={manufacturer}
-                    onChange={e => setManufacturer(e.target.value)}
-                  />
-                </div>
               </div>
 
+              <hr style={{ border: 'none', borderTop: '1px solid #e2e8f0', margin: '4px 0' }} />
+
+              {/* Section 2: Technical & Solid Content Specifications */}
               <div>
-                <label className="form-label" style={{ fontWeight: '700' }}>Preferred Vendor / Supplier *</label>
-                <select className="form-control" value={supplierId} onChange={e => setSupplierId(e.target.value)}>
-                  <option value="">-- Select Supplier --</option>
-                  {vendors.map(v => (
-                    <option key={v.id} value={v.id}>{v.companyName || v.name} ({v.gstin})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
-                <div>
-                  <label className="form-label">Solid Content %</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    className="form-control"
-                    value={solidContentPct}
-                    onChange={e => setSolidContentPct(parseFloat(e.target.value) || 0)}
-                  />
+                <div style={{ fontSize: '0.82rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#475569', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Layers size={15} style={{ color: '#0284c7' }} /> 2. Technical & Solid Content Specs
                 </div>
 
-                <div>
-                  <label className="form-label">Solid Var. Acceptance %</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    className="form-control"
-                    value={solidVariationPct}
-                    onChange={e => setSolidVariationPct(parseFloat(e.target.value) || 0)}
-                  />
-                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
+                  <div>
+                    <label className="form-label" style={{ fontWeight: '600', fontSize: '0.82rem', marginBottom: '4px', display: 'block' }}>Solid Content %</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      className="form-control"
+                      placeholder="40"
+                      value={solidContentPct}
+                      onChange={e => setSolidContentPct(parseFloat(e.target.value) || 0)}
+                    />
+                    <span style={{ fontSize: '0.7rem', color: '#0369a1', marginTop: '4px', display: 'block', fontWeight: '600' }}>
+                      Multiplier: {solidContentPct > 0 ? (100 / solidContentPct).toFixed(2) : 0}x
+                    </span>
+                  </div>
 
-                <div>
-                  <label className="form-label">Purchase Price (₹/kg)</label>
-                  <input
-                    type="number"
-                    className="form-control"
-                    value={pricePerKg}
-                    onChange={e => setPricePerKg(parseFloat(e.target.value) || 0)}
-                  />
-                </div>
-              </div>
+                  <div>
+                    <label className="form-label" style={{ fontWeight: '600', fontSize: '0.82rem', marginBottom: '4px', display: 'block' }}>Var. Acceptance %</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      className="form-control"
+                      placeholder="2"
+                      value={solidVariationPct}
+                      onChange={e => setSolidVariationPct(parseFloat(e.target.value) || 0)}
+                    />
+                    <span style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '4px', display: 'block' }}>Acceptable tolerance</span>
+                  </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-                <div>
-                  <label className="form-label">Initial Stock Qty (kg)</label>
-                  <input
-                    type="number"
-                    className="form-control"
-                    value={stockQtyKg}
-                    onChange={e => setStockQtyKg(parseFloat(e.target.value) || 0)}
-                  />
-                </div>
-
-                <div>
-                  <label className="form-label">Reorder Reserve Level (kg)</label>
-                  <input
-                    type="number"
-                    className="form-control"
-                    value={reorderLevelKg}
-                    onChange={e => setReorderLevelKg(parseFloat(e.target.value) || 0)}
-                  />
+                  <div>
+                    <label className="form-label" style={{ fontWeight: '600', fontSize: '0.82rem', marginBottom: '4px', display: 'block' }}>Solvent System</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. Ethyl Acetate + IPA"
+                      value={solventType}
+                      onChange={e => setSolventType(e.target.value)}
+                    />
+                  </div>
                 </div>
               </div>
 
+              <hr style={{ border: 'none', borderTop: '1px solid #e2e8f0', margin: '4px 0' }} />
+
+              {/* Section 3: Pricing & Inventory Thresholds */}
               <div>
-                <label className="form-label">Solvent System & Compatibility</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  placeholder="e.g. Ethyl Acetate + IPA (Nitrocellulose base)"
-                  value={solventType}
-                  onChange={e => setSolventType(e.target.value)}
-                />
+                <div style={{ fontSize: '0.82rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#475569', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <DollarSign size={15} style={{ color: '#059669' }} /> 3. Commercial Pricing & Inventory Reserve
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
+                  <div>
+                    <label className="form-label" style={{ fontWeight: '700', color: '#047857', marginBottom: '4px', display: 'block' }}>Purchase Price (₹/kg) *</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      style={{ fontWeight: '800', color: '#047857' }}
+                      value={pricePerKg}
+                      onChange={e => setPricePerKg(parseFloat(e.target.value) || 0)}
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="form-label" style={{ fontWeight: '600', marginBottom: '4px', display: 'block' }}>Initial Stock Qty (kg)</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      value={stockQtyKg}
+                      onChange={e => setStockQtyKg(parseFloat(e.target.value) || 0)}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="form-label" style={{ fontWeight: '600', marginBottom: '4px', display: 'block' }}>Reorder Reserve (kg)</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      value={reorderLevelKg}
+                      onChange={e => setReorderLevelKg(parseFloat(e.target.value) || 0)}
+                    />
+                  </div>
+                </div>
               </div>
 
+              {/* Section 4: Notes & TDS */}
               <div>
-                <label className="form-label">Notes & TDS Specs</label>
+                <label className="form-label" style={{ fontWeight: '600', marginBottom: '6px', display: 'block' }}>Notes & Technical Data Sheet (TDS) Specs</label>
                 <textarea
                   className="form-control"
                   rows="2"
                   placeholder="Viscosity specs, pigment strength, storage recommendations..."
                   value={notes}
                   onChange={e => setNotes(e.target.value)}
+                  style={{ resize: 'vertical', width: '100%' }}
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
-                <button type="button" className="btn-secondary" onClick={() => setIsAddModalOpen(false)}>
+              {/* Modal Footer */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #e2e8f0', paddingTop: '16px', marginTop: '8px' }}>
+                <button type="button" className="btn-secondary" style={{ padding: '8px 18px' }} onClick={() => setIsAddModalOpen(false)}>
                   Cancel
                 </button>
-                <button type="submit" className="btn-primary">
+                <button type="submit" className="btn-primary" style={{ padding: '8px 22px', fontWeight: '700' }}>
                   <Check size={16} /> Save Ink Product Code
                 </button>
               </div>
@@ -1281,61 +1332,73 @@ export default function InkManagement({
       {/* MODAL: UPDATE INK PRICE */}
       {/* =================================================================== */}
       {priceUpdateInk && (
-        <div className="pdf-modal-overlay">
-          <div className="glass-panel" style={{ width: '450px', maxWidth: '90vw', padding: '24px', background: '#ffffff' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: 'var(--primary-brand)' }}>
-                Update Supplier Rate — {priceUpdateInk.productCode}
-              </h3>
-              <button style={{ background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => setPriceUpdateInk(null)}>
-                <X size={18} />
+        <div className="pdf-modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', zIndex: 1100 }}>
+          <div className="glass-panel" style={{ width: '480px', maxWidth: '92vw', borderRadius: '16px', background: '#ffffff', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', border: '1px solid #cbd5e1', padding: '0' }}>
+            <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '18px 22px', borderRadius: '16px 16px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#ffffff' }}>
+              <div>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#ffffff', margin: 0 }}>
+                  Update Rate — {priceUpdateInk.productCode}
+                </h3>
+                <p style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '2px', margin: 0 }}>
+                  Supplier price revision tracking & audit history log
+                </p>
+              </div>
+              <button 
+                type="button" 
+                style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff', cursor: 'pointer' }} 
+                onClick={() => setPriceUpdateInk(null)}
+              >
+                <X size={16} />
               </button>
             </div>
 
-            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '14px' }}>
-              Current Price: <strong>₹{priceUpdateInk.pricePerKg} / kg</strong> ({priceUpdateInk.shade})
-            </p>
-
-            <form onSubmit={handleSavePriceUpdate} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div>
-                <label className="form-label">New Rate per Kg (₹) *</label>
-                <input 
-                  type="number" 
-                  className="form-control" 
-                  style={{ fontWeight: '800', fontSize: '1.1rem', color: 'var(--primary-brand)' }}
-                  value={newPrice}
-                  onChange={e => setNewPrice(e.target.value)}
-                  required
-                />
+            <div style={{ padding: '22px' }}>
+              <div style={{ background: '#f8fafc', padding: '12px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.82rem', color: '#64748b' }}>Current Purchase Rate:</span>
+                <span style={{ fontSize: '1.1rem', fontWeight: '800', color: '#0f172a' }}>₹{priceUpdateInk.pricePerKg} / kg</span>
               </div>
 
-              <div>
-                <label className="form-label">Effective Date *</label>
-                <input 
-                  type="date" 
-                  className="form-control" 
-                  value={priceEffectiveDate}
-                  onChange={e => setPriceEffectiveDate(e.target.value)}
-                  required
-                />
-              </div>
+              <form onSubmit={handleSavePriceUpdate} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div>
+                  <label className="form-label" style={{ fontWeight: '700', color: '#1e293b', marginBottom: '6px', display: 'block' }}>New Rate per Kg (₹) *</label>
+                  <input 
+                    type="number" 
+                    className="form-control" 
+                    style={{ fontWeight: '800', fontSize: '1.15rem', color: '#047857' }}
+                    value={newPrice}
+                    onChange={e => setNewPrice(e.target.value)}
+                    required
+                  />
+                </div>
 
-              <div>
-                <label className="form-label">Reason for Rate Change</label>
-                <input 
-                  type="text" 
-                  className="form-control" 
-                  placeholder="e.g. Raw material price hike by supplier"
-                  value={priceReason}
-                  onChange={e => setPriceReason(e.target.value)}
-                />
-              </div>
+                <div>
+                  <label className="form-label" style={{ fontWeight: '700', color: '#1e293b', marginBottom: '6px', display: 'block' }}>Effective Date *</label>
+                  <input 
+                    type="date" 
+                    className="form-control" 
+                    value={priceEffectiveDate}
+                    onChange={e => setPriceEffectiveDate(e.target.value)}
+                    required
+                  />
+                </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
-                <button type="button" className="btn-secondary" onClick={() => setPriceUpdateInk(null)}>Cancel</button>
-                <button type="submit" className="btn-primary">Update Rate</button>
-              </div>
-            </form>
+                <div>
+                  <label className="form-label" style={{ fontWeight: '600', color: '#1e293b', marginBottom: '6px', display: 'block' }}>Reason for Rate Change</label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    placeholder="e.g. Supplier price revision Q3"
+                    value={priceReason}
+                    onChange={e => setPriceReason(e.target.value)}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px', borderTop: '1px solid #e2e8f0', paddingTop: '14px' }}>
+                  <button type="button" className="btn-secondary" style={{ padding: '8px 16px' }} onClick={() => setPriceUpdateInk(null)}>Cancel</button>
+                  <button type="submit" className="btn-primary" style={{ padding: '8px 20px', fontWeight: '700' }}>Update Rate</button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}
@@ -1344,70 +1407,86 @@ export default function InkManagement({
       {/* MODAL: STOCK ADJUSTMENT */}
       {/* =================================================================== */}
       {stockAdjustInk && (
-        <div className="pdf-modal-overlay">
-          <div className="glass-panel" style={{ width: '450px', maxWidth: '90vw', padding: '24px', background: '#ffffff' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: '800' }}>
-                Stock Adjustment — {stockAdjustInk.productCode}
-              </h3>
-              <button style={{ background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => setStockAdjustInk(null)}>
-                <X size={18} />
+        <div className="pdf-modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', zIndex: 1100 }}>
+          <div className="glass-panel" style={{ width: '480px', maxWidth: '92vw', borderRadius: '16px', background: '#ffffff', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', border: '1px solid #cbd5e1', padding: '0' }}>
+            <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '18px 22px', borderRadius: '16px 16px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#ffffff' }}>
+              <div>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#ffffff', margin: 0 }}>
+                  Stock Adjustment — {stockAdjustInk.productCode}
+                </h3>
+                <p style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '2px', margin: 0 }}>
+                  Record press issue or inward GRN receipt
+                </p>
+              </div>
+              <button 
+                type="button" 
+                style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff', cursor: 'pointer' }} 
+                onClick={() => setStockAdjustInk(null)}
+              >
+                <X size={16} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveStockAdjust} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div>
-                <label className="form-label">Adjustment Type</label>
-                <select className="form-control" value={adjustType} onChange={e => setAdjustType(e.target.value)}>
-                  <option value="Inward">➕ Inward / Purchase Receipt</option>
-                  <option value="Consumption">➖ Press Issue / Consumption</option>
-                </select>
+            <div style={{ padding: '22px' }}>
+              <div style={{ background: '#f8fafc', padding: '12px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.82rem', color: '#64748b' }}>Current Stock Qty:</span>
+                <span style={{ fontSize: '1.1rem', fontWeight: '800', color: '#0284c7' }}>{stockAdjustInk.stockQtyKg} kg</span>
               </div>
 
-              <div>
-                <label className="form-label">Quantity (kg) *</label>
-                <input 
-                  type="number" 
-                  className="form-control" 
-                  placeholder="e.g. 50"
-                  value={adjustQtyKg}
-                  onChange={e => setAdjustQtyKg(e.target.value)}
-                  required
-                />
-              </div>
+              <form onSubmit={handleSaveStockAdjust} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div>
+                  <label className="form-label" style={{ fontWeight: '700', color: '#1e293b', marginBottom: '6px', display: 'block' }}>Adjustment Type *</label>
+                  <select className="form-control" value={adjustType} onChange={e => setAdjustType(e.target.value)} style={{ fontWeight: '600' }}>
+                    <option value="Inward">➕ Inward / Purchase Receipt</option>
+                    <option value="Consumption">➖ Press Issue / Consumption</option>
+                  </select>
+                </div>
 
-              <div>
-                <label className="form-label">Remarks / Batch Reference</label>
-                <input 
-                  type="text" 
-                  className="form-control" 
-                  placeholder="e.g. GRN receipt or shift press issue"
-                  value={adjustRemarks}
-                  onChange={e => setAdjustRemarks(e.target.value)}
-                />
-              </div>
+                <div>
+                  <label className="form-label" style={{ fontWeight: '700', color: '#1e293b', marginBottom: '6px', display: 'block' }}>Quantity (kg) *</label>
+                  <input 
+                    type="number" 
+                    className="form-control" 
+                    placeholder="e.g. 50"
+                    value={adjustQtyKg}
+                    onChange={e => setAdjustQtyKg(e.target.value)}
+                    required
+                  />
+                </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
-                <button type="button" className="btn-secondary" onClick={() => setStockAdjustInk(null)}>Cancel</button>
-                <button type="submit" className="btn-primary">Update Stock</button>
-              </div>
-            </form>
+                <div>
+                  <label className="form-label" style={{ fontWeight: '600', color: '#1e293b', marginBottom: '6px', display: 'block' }}>Remarks / Batch Reference</label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    placeholder="e.g. GRN receipt or shift press issue"
+                    value={adjustRemarks}
+                    onChange={e => setAdjustRemarks(e.target.value)}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px', borderTop: '1px solid #e2e8f0', paddingTop: '14px' }}>
+                  <button type="button" className="btn-secondary" style={{ padding: '8px 16px' }} onClick={() => setStockAdjustInk(null)}>Cancel</button>
+                  <button type="submit" className="btn-primary" style={{ padding: '8px 20px', fontWeight: '700' }}>Update Stock</button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}
 
       {/* DELETE CONFIRMATION MODAL */}
       {deleteConfirmInk && (
-        <div className="pdf-modal-overlay">
-          <div className="glass-panel" style={{ width: '400px', padding: '24px', background: '#ffffff', textAlign: 'center' }}>
-            <AlertTriangle size={40} style={{ color: '#dc2626', marginBottom: '12px' }} />
-            <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#991b1b' }}>Delete Ink Product Code?</h3>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '8px 0 20px 0' }}>
-              Are you sure you want to delete <strong>{deleteConfirmInk.productCode}</strong> ({deleteConfirmInk.shade})? This action cannot be undone.
+        <div className="pdf-modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', zIndex: 1100 }}>
+          <div className="glass-panel" style={{ width: '420px', padding: '24px', background: '#ffffff', borderRadius: '16px', textAlign: 'center', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}>
+            <AlertTriangle size={44} style={{ color: '#dc2626', marginBottom: '12px' }} />
+            <h3 style={{ fontSize: '1.2rem', fontWeight: '800', color: '#991b1b', margin: 0 }}>Delete Ink Product Code?</h3>
+            <p style={{ fontSize: '0.85rem', color: '#475569', margin: '10px 0 20px 0', lineHeight: '1.5' }}>
+              Are you sure you want to permanently delete <strong>{deleteConfirmInk.productCode}</strong> ({deleteConfirmInk.shade})? This action cannot be undone.
             </p>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '12px' }}>
-              <button className="btn-secondary" onClick={() => setDeleteConfirmInk(null)}>Cancel</button>
-              <button className="btn-danger-action" onClick={handleDeleteInkExecute}>Delete Item</button>
+              <button className="btn-secondary" style={{ padding: '8px 20px' }} onClick={() => setDeleteConfirmInk(null)}>Cancel</button>
+              <button className="btn-danger-action" style={{ padding: '8px 20px', fontWeight: '700' }} onClick={handleDeleteInkExecute}>Delete Item</button>
             </div>
           </div>
         </div>
