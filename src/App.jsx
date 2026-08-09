@@ -1507,7 +1507,7 @@ export default function App() {
               )}
               {isTabAllowed('inventory') && (
                 <div 
-                  className={`nav-item ${activeTab === 'inventory' && currentUrlParams?.tab === 'issued_pos' ? 'active' : ''}`}
+                  className={`nav-item ${activeTab === 'inventory' && urlParams?.tab === 'issued_pos' ? 'active' : ''}`}
                   onClick={() => handleTabChange('inventory', { tab: 'issued_pos' })}
                 >
                   <FileText size={18} style={{ color: '#4f46e5' }} />
