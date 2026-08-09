@@ -733,8 +733,8 @@ export default function SalesManagement({
   }, [quotations, searchTerm, statusFilter]);
 
   // Analytics Metrics
-  const totalQuotationsCount = quotations.length;
-  const confirmedCount = quotations.filter(q => q.status.includes('Confirmed')).length;
+  const totalQuotationsCount = (quotations || []).length;
+  const confirmedCount = (quotations || []).filter(q => q.status.includes('Confirmed')).length;
   const conversionRatePct = totalQuotationsCount > 0 ? ((confirmedCount / totalQuotationsCount) * 100).toFixed(1) : 0;
   const totalPipelineValueRs = quotations.reduce((sum, q) => {
     const qtnTotal = (q.items || []).reduce((a, b) => a + (b.totalAmount || (b.quantity * b.ratePerUom * 1.18)), 0);
@@ -818,7 +818,7 @@ export default function SalesManagement({
           }}
           onClick={() => setActiveSubTab('list')}
         >
-          <FileText size={18} /> Sales Quotations Directory ({quotations.length})
+          <FileText size={18} /> Sales Quotations Directory ({(quotations || []).length})
         </button>
 
         <button 
@@ -872,7 +872,7 @@ export default function SalesManagement({
             </div>
 
             <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-              Showing <b>{filteredQuotations.length}</b> of <b>{quotations.length}</b> Quotations
+              Showing <b>{(filteredQuotations || []).length}</b> of <b>{(quotations || []).length}</b> Quotations
             </div>
           </div>
 

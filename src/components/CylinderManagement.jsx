@@ -92,7 +92,7 @@ export default function CylinderManagement({
 
   const openAddModal = () => {
     setEditingCylinder(null);
-    setSku(`SKU-CYL-00${cylinders.length + 1}`);
+    setSku(`SKU-CYL-00${(cylinders || []).length + 1}`);
     setJobName('');
     setClientGroup('');
     setColorsCount(6);

@@ -461,21 +461,21 @@ export default function ProductionRecordManagement({
             className={`tab-pill ${activeTab === 'punched_jobs' ? 'active' : ''}`}
             onClick={() => { setActiveTab('punched_jobs'); setSelectedRecord(null); }}
           >
-            📦 Punched Jobs ({orders.length})
+            📦 Punched Jobs ({(orders || []).length})
           </button>
 
           <button 
             className={`tab-pill ${activeTab === 'list' ? 'active' : ''}`}
             onClick={() => { setActiveTab('list'); setSelectedRecord(null); }}
           >
-            📑 Submitted Records ({productionRecords.length})
+            📑 Submitted Records ({(productionRecords || []).length})
           </button>
 
           <button 
             className={`tab-pill ${activeTab === 'job_cards' ? 'active' : ''}`}
             onClick={() => { setActiveTab('job_cards'); setSelectedRecord(null); }}
           >
-            📋 Job Cards Sign-Off ({jobMasters.length})
+            📋 Job Cards Sign-Off ({(jobMasters || []).length})
           </button>
 
           <button 
@@ -489,7 +489,7 @@ export default function ProductionRecordManagement({
             <button 
               className="btn-primary"
               onClick={() => { 
-                if (orders.length > 0) handleStartProductionForOrder(orders[0]);
+                if ((orders || []).length > 0) handleStartProductionForOrder(orders[0]);
                 else setActiveTab('new_record');
                 setSelectedRecord(null); 
               }}
@@ -544,7 +544,7 @@ export default function ProductionRecordManagement({
             </div>
 
             <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              Showing {jobMasters.length} Job Masters for Production Sign-Off
+              Showing {(jobMasters || []).length} Job Masters for Production Sign-Off
             </div>
           </div>
 
@@ -561,7 +561,7 @@ export default function ProductionRecordManagement({
                 </tr>
               </thead>
               <tbody>
-                {jobMasters.length === 0 ? (
+                {(jobMasters || []).length === 0 ? (
                   <tr>
                     <td colSpan="6" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
                       No Job Masters found in directory.

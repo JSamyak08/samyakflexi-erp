@@ -1142,13 +1142,13 @@ export default function InventoryManagement({
           {/* Sub Tab Pills */}
           <div className="scrollable-tabs-container" style={{ flex: 1 }}>
             <button className={`tab-pill ${activeTab === 'stock' ? 'active' : ''}`} onClick={() => handleTabClick('stock')}>
-              <Package size={16} /> Stock Register ({inventory.length})
+              <Package size={16} /> Stock Register ({(inventory || []).length})
             </button>
             <button className={`tab-pill ${activeTab === 'grn_inward' ? 'active' : ''}`} onClick={() => handleTabClick('grn_inward')}>
-              <FileCheck size={16} /> Inward GRNs ({grns.length})
+              <FileCheck size={16} /> Inward GRNs ({(grns || []).length})
             </button>
-            <button className={`tab-pill ${pendingQCGRNs.length > 0 ? 'red-tab' : ''} ${activeTab === 'qc_approval' ? 'active' : ''}`} onClick={() => handleTabClick('qc_approval')}>
-              🧪 QC Approval Lab ({pendingQCGRNs.length} Pending)
+            <button className={`tab-pill ${(pendingQCGRNs || []).length > 0 ? 'red-tab' : ''} ${activeTab === 'qc_approval' ? 'active' : ''}`} onClick={() => handleTabClick('qc_approval')}>
+              🧪 QC Approval Lab ({(pendingQCGRNs || []).length} Pending)
             </button>
             <button className={`tab-pill ${activeTab === 'dispatch' ? 'active' : ''}`} onClick={() => handleTabClick('dispatch')}>
               <Truck size={16} style={{ color: '#059669' }} /> Scale #4 Dispatch & Packing List
@@ -1695,7 +1695,7 @@ export default function InventoryManagement({
               <div>
                 <span className="stats-title" style={{ fontSize: '0.75rem' }}>Total Audit Items</span>
                 <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#0f172a', marginTop: '2px' }}>
-                  {inventory.length} SKUs
+                  {(inventory || []).length} SKUs
                 </div>
               </div>
 
@@ -1723,7 +1723,7 @@ export default function InventoryManagement({
               <div>
                 <span className="stats-title" style={{ fontSize: '0.75rem' }}>Discrepancies Ratio</span>
                 <div style={{ fontSize: '1.2rem', fontWeight: '800', color: (shortageCount + surplusCount) > 0 ? '#d97706' : '#059669', marginTop: '2px' }}>
-                  {inventory.length > 0 ? (((shortageCount + surplusCount) / inventory.length) * 100).toFixed(0) : 0}% Variance
+                  {(inventory || []).length > 0 ? (((shortageCount + surplusCount) / (inventory || []).length) * 100).toFixed(0) : 0}% Variance
                 </div>
               </div>
             </div>
@@ -1774,7 +1774,7 @@ export default function InventoryManagement({
                     }}
                     onClick={() => setRecStatusFilter('ALL')}
                   >
-                    All ({inventory.length})
+                    All ({(inventory || []).length})
                   </button>
 
                   <button
@@ -1962,7 +1962,7 @@ export default function InventoryManagement({
 
             <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                Showing <strong>{filteredRecItems.length}</strong> of <strong>{inventory.length}</strong> stock items
+                Showing <strong>{(filteredRecItems || []).length}</strong> of <strong>{(inventory || []).length}</strong> stock items
               </div>
               <button className="btn-primary" style={{ padding: '12px 24px', fontSize: '1rem' }} onClick={handleCommitReconciliation}>
                 <CheckCircle2 size={18} /> Commit Reconciliation & Update System Stock

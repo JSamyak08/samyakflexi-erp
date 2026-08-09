@@ -439,7 +439,7 @@ export default function ProductionScheduler({
             onClick={() => setActiveTab('machines')}
             style={{ background: activeTab === 'machines' ? 'var(--primary-brand)' : 'transparent', color: activeTab === 'machines' ? '#fff' : 'inherit' }}
           >
-            <Settings size={16} /> Machine Settings ({machines.length})
+            <Settings size={16} /> Machine Settings ({(machines || []).length})
           </button>
         </div>
       </div>

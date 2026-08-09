@@ -221,7 +221,7 @@ export default function UserManagement({
               style={{ background: activeSubTab === 'directory' ? '#0f172a' : 'transparent', color: activeSubTab === 'directory' ? '#ffffff' : '#334155', border: 'none', padding: '6px 14px', fontSize: '0.82rem', fontWeight: '700' }}
               onClick={() => setActiveSubTab('directory')}
             >
-              <Users size={16} /> User Directory ({users.length})
+              <Users size={16} /> User Directory ({(users || []).length})
             </button>
             <button 
               className={`btn-secondary ${activeSubTab === 'rbac' ? 'active' : ''}`}

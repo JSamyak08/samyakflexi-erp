@@ -866,7 +866,7 @@ export default function JobMasterDirectory({
       <div className="glass-panel" style={{ padding: '24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
           <div>
-            <h2 style={{ fontSize: '1.4rem', fontWeight: '700', color: 'var(--text-primary)' }}>Job Master Technical Directory ({jobMasters.length})</h2>
+            <h2 style={{ fontSize: '1.4rem', fontWeight: '700', color: 'var(--text-primary)' }}>Job Master Technical Directory ({(jobMasters || []).length})</h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px' }}>Central repository for all repeating job structures, film layer gauges, linked cylinders, and production histories.</p>
           </div>
           <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
@@ -893,7 +893,7 @@ export default function JobMasterDirectory({
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: '600' }}>
-              Showing <strong>{filteredJobMasters.length}</strong> of <strong>{jobMasters.length}</strong> Job Masters
+              Showing <strong>{(filteredJobMasters || []).length}</strong> of <strong>{(jobMasters || []).length}</strong> Job Masters
             </span>
             {activeFiltersCount > 0 && (
               <button 
@@ -920,7 +920,7 @@ export default function JobMasterDirectory({
               value={clientFilter} 
               onChange={e => setClientFilter(e.target.value)}
             >
-              <option value="ALL">All Clients ({allClientOptions.length})</option>
+              <option value="ALL">All Clients ({(allClientOptions || []).length})</option>
               {allClientOptions.map(c => (
                 <option key={c.id || c.name} value={c.name}>{c.name}</option>
               ))}
@@ -1016,7 +1016,7 @@ export default function JobMasterDirectory({
               style={{ fontSize: '0.75rem', padding: '4px 10px', background: activeFiltersCount === 0 ? 'var(--primary-brand)' : '#f1f5f9', color: activeFiltersCount === 0 ? '#ffffff' : '#334155', cursor: 'pointer' }} 
               onClick={resetAllFilters}
             >
-              All Jobs ({jobMasters.length})
+              All Jobs ({(jobMasters || []).length})
             </button>
             <button 
               type="button"

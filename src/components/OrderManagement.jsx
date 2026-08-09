@@ -510,7 +510,7 @@ export default function OrderManagement({
 
   const ordersPagination = usePagination(filteredOrders, 50);
 
-  const delayedOrdersCount = orders.filter(o => (o.status === 'Delayed' || new Date(o.targetDeliveryDate) < new Date()) && o.status !== 'Completed' && o.status !== 'On Hold').length;
+  const delayedOrdersCount = (orders || []).filter(o => (o.status === 'Delayed' || new Date(o.targetDeliveryDate) < new Date()) && o.status !== 'Completed' && o.status !== 'On Hold').length;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -584,7 +584,7 @@ export default function OrderManagement({
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: '500' }}>Filter Status:</span>
           <select className="form-control" style={{ width: '180px' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-            <option value="ALL">All Orders ({orders.length})</option>
+            <option value="ALL">All Orders ({(orders || []).length})</option>
             <option value="DELAYED">⚠️ Overdue / Delayed ({delayedOrdersCount})</option>
             <option value="ON_HOLD">⏸️ On Hold Orders</option>
             <option value="PENDING_PO">Pending PO Issuance</option>

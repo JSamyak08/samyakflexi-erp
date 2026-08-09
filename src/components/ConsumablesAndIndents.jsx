@@ -360,13 +360,13 @@ export default function ConsumablesAndIndents({
 
   // Low stock calculation
   const lowStockItemsCount = useMemo(() => {
-    return consumables.filter(c => c.currentStock <= c.minReserve).length;
+    return (consumables || []).filter(c => c.currentStock <= c.minReserve).length;
   }, [consumables]);
 
   // CRITICAL SORTING & FILTERING RULE:
   // Items falling below minimum reserve level MUST automatically come to the TOP of the list!
   const sortedAndFilteredConsumables = useMemo(() => {
-    return consumables.filter(c => {
+    return (consumables || []).filter(c => {
       // Search term
       const search = searchTerm.toLowerCase().trim();
       const matchesSearch = !search || 
@@ -532,7 +532,7 @@ export default function ConsumablesAndIndents({
       return;
     }
 
-    const indentId = `IND-2026-${String(indents.length + 1).padStart(3, '0')}`;
+    const indentId = `IND-2026-${String((indents || []).length + 1).padStart(3, '0')}`;
     const newIndent = {
       id: indentId,
       indentNo: indentId,
@@ -661,7 +661,7 @@ export default function ConsumablesAndIndents({
           }}
           onClick={() => setActiveSubTab('store')}
         >
-          <Package size={18} /> Consumables & Spares Store ({consumables.length})
+          <Package size={18} /> Consumables & Spares Store ({(consumables || []).length})
           {lowStockItemsCount > 0 && (
             <span className="badge badge-danger" style={{ padding: '2px 8px', fontSize: '0.75rem' }}>
               {lowStockItemsCount} Low Stock
@@ -683,10 +683,10 @@ export default function ConsumablesAndIndents({
           }}
           onClick={() => setActiveSubTab('indents')}
         >
-          <ClipboardList size={18} /> Material Requisition Indents ({indents.length})
-          {indents.filter(i => i.status === 'Pending Approval').length > 0 && (
+          <ClipboardList size={18} /> Material Requisition Indents ({(indents || []).length})
+          {(indents || []).filter(i => i.status === 'Pending Approval').length > 0 && (
             <span className="badge badge-warning" style={{ padding: '2px 8px', fontSize: '0.75rem' }}>
-              {indents.filter(i => i.status === 'Pending Approval').length} Pending
+              {(indents || []).filter(i => i.status === 'Pending Approval').length} Pending
             </span>
           )}
         </button>
@@ -705,7 +705,7 @@ export default function ConsumablesAndIndents({
           }}
           onClick={() => setActiveSubTab('issues')}
         >
-          <Cpu size={18} /> Machine Stock Issue Log ({machineIssues.length})
+          <Cpu size={18} /> Machine Stock Issue Log ({(machineIssues || []).length})
         </button>
       </div>
 
@@ -758,7 +758,7 @@ export default function ConsumablesAndIndents({
                 <SlidersHorizontal size={16} style={{ color: 'var(--primary-brand)' }} /> Filter Store Inventory
               </h3>
               <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                Showing <b>{sortedAndFilteredConsumables.length}</b> of <b>{consumables.length}</b> Items
+                Showing <b>{(sortedAndFilteredConsumables || []).length}</b> of <b>{(consumables || []).length}</b> Items
               </span>
             </div>
 
@@ -986,7 +986,7 @@ export default function ConsumablesAndIndents({
           </div>
 
           <div className="glass-panel" style={{ padding: '20px' }}>
-            {indents.length === 0 ? (
+            {(indents || []).length === 0 ? (
               <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-secondary)' }}>
                 <ClipboardList size={36} style={{ color: 'var(--text-muted)', marginBottom: '12px' }} />
                 <h4 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '4px' }}>No Material Indents Raised</h4>
