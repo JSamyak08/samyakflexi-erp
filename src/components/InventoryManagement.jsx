@@ -377,6 +377,16 @@ export default function InventoryManagement({
   const [grnItemName, setGrnItemName] = useState('');
   const [grnFilmType, setGrnFilmType] = useState('PET');
   const [grnMicron, setGrnMicron] = useState(12);
+  const [grnWidthMm, setGrnWidthMm] = useState(1000);
+  const [grnUnit, setGrnUnit] = useState('Kg');
+  const [grnPackagingType, setGrnPackagingType] = useState('Roll');
+  const [grnRolls, setGrnRolls] = useState(10);
+  const [grnWeightKg, setGrnWeightKg] = useState(1500);
+  const [grnPurchaseRate, setGrnPurchaseRate] = useState(120);
+  const [grnBatchNo, setGrnBatchNo] = useState('');
+  const [grnSelectedStockItemId, setGrnSelectedStockItemId] = useState('');
+  const [grnItemSearchTerm, setGrnItemSearchTerm] = useState('');
+  const [isGrnItemDropdownOpen, setIsGrnItemDropdownOpen] = useState(false);
   const [grnFreightAmount, setGrnFreightAmount] = useState('');
   const [grnTransporterName, setGrnTransporterName] = useState('');
 
