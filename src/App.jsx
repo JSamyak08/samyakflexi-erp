@@ -36,6 +36,7 @@ import {
   UserCheck,
   Printer,
   FileCode,
+  FileText,
   Settings as SettingsIcon,
   ShieldAlert,
   Droplet
