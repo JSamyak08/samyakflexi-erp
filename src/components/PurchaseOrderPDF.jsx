@@ -183,7 +183,7 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
           {/* PO Details Grid */}
           <div className="details-section-container" style={{ border: '1px solid #cbd5e1', borderRadius: '4px', marginBottom: '14px', overflow: 'hidden' }}>
             <div className="details-section-header" style={{ background: '#f1f5f9', padding: '6px 12px', fontWeight: '800', fontSize: '9.5pt', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid #cbd5e1' }}>
-              📋 Purchase Order Meta Information
+              📋 Purchase Order Details
             </div>
             <table className="details-grid-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9pt' }}>
               <tbody>
