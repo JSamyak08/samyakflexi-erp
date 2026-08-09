@@ -1,7 +1,17 @@
 -- =========================================================================
--- SAMYAK FLEXI-ERP DATABASE SCHEMA FOR SUPABASE
--- Samyak International Ltd, Indore - Flexible Packaging Division
+-- 0. SUPABASE MIGRATIONS SCHEMA INITIALIZATION
+-- Prevents "relation supabase_migrations.schema_migrations does not exist"
 -- =========================================================================
+CREATE SCHEMA IF NOT EXISTS supabase_migrations;
+
+CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations (
+    version TEXT PRIMARY KEY,
+    statements TEXT[],
+    name TEXT
+);
+
+GRANT ALL ON SCHEMA supabase_migrations TO postgres, service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA supabase_migrations TO postgres, service_role;
 
 -- 1. ORDERS / JOB PUNCHING TABLE
 CREATE TABLE IF NOT EXISTS public.orders (
