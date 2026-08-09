@@ -390,6 +390,10 @@ export default function InventoryManagement({
   const [grnFreightAmount, setGrnFreightAmount] = useState('');
   const [grnTransporterName, setGrnTransporterName] = useState('');
 
+  // Ledger Modal Pagination State
+  const [ledgerCurrentPage, setLedgerCurrentPage] = useState(1);
+  const [ledgerPageSize, setLedgerPageSize] = useState(50);
+
   // PO Directory State
   const [selectedPOForPDF, setSelectedPOForPDF] = useState(null);
   const [poSearchTerm, setPoSearchTerm] = useState('');
@@ -3473,6 +3477,8 @@ export default function InventoryManagement({
           return true;
         });
 
+        const paginatedLedgerItems = displayLines.slice((ledgerCurrentPage - 1) * ledgerPageSize, ledgerCurrentPage * ledgerPageSize);
+
         // Summary Calculations
         const totalPurchasedQty = inwardTxLines.reduce((sum, tx) => sum + tx.inwardQtyKg, 0) + openingStockQty;
         const totalSpendRs = inwardTxLines.reduce((sum, tx) => sum + tx.totalValue, 0) + (openingStockQty * (DEFAULT_DAILY_RATES[item.filmType] || 120));
@@ -3682,14 +3688,14 @@ export default function InventoryManagement({
                     </tr>
                   </thead>
                   <tbody>
-                    {ledgerPagination.paginatedItems.length === 0 ? (
+                    {paginatedLedgerItems.length === 0 ? (
                       <tr>
                         <td colSpan="10" style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
                           No transaction records found matching the filter criteria.
                         </td>
                       </tr>
                     ) : (
-                      ledgerPagination.paginatedItems.map((tx, idx) => {
+                      paginatedLedgerItems.map((tx, idx) => {
                         const isEditingThisBarcode = editingTxId === tx.txId;
                         return (
                           <tr key={tx.txId || idx} style={{ background: tx.category === 'reconciliation' ? '#f0f9ff' : (tx.category === 'usage' ? '#fff5f5' : 'transparent') }}>
@@ -3838,11 +3844,11 @@ export default function InventoryManagement({
                 </table>
               </div>
               <TablePagination
-                currentPage={ledgerPagination.currentPage}
-                totalItems={ledgerPagination.totalItems}
-                pageSize={ledgerPagination.pageSize}
-                onPageChange={ledgerPagination.setCurrentPage}
-                onPageSizeChange={ledgerPagination.setPageSize}
+                currentPage={ledgerCurrentPage}
+                totalItems={displayLines.length}
+                pageSize={ledgerPageSize}
+                onPageChange={setLedgerCurrentPage}
+                onPageSizeChange={setLedgerPageSize}
               />
             </div>
           </div>
