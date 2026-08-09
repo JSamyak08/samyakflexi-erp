@@ -1511,9 +1511,9 @@ export default function App() {
                 >
                   <Droplet size={18} style={{ color: '#6366f1' }} />
                   Ink Master & Solid Costing
-                  {(inks.filter(i => (parseFloat(i.stockQtyKg) || 0) < (parseFloat(i.reorderLevelKg) || 0)).length) > 0 && (
+                  {((inks || []).filter(i => (parseFloat(i.stockQtyKg) || 0) < (parseFloat(i.reorderLevelKg) || 0)).length) > 0 && (
                     <span className="badge badge-danger" style={{ marginLeft: 'auto', padding: '2px 6px', fontSize: '0.7rem' }}>
-                      {inks.filter(i => (parseFloat(i.stockQtyKg) || 0) < (parseFloat(i.reorderLevelKg) || 0)).length} Alert
+                      {(inks || []).filter(i => (parseFloat(i.stockQtyKg) || 0) < (parseFloat(i.reorderLevelKg) || 0)).length} Alert
                     </span>
                   )}
                 </div>
@@ -1564,7 +1564,7 @@ export default function App() {
                   onClick={() => handleTabChange('job_masters')}
                 >
                   <FileCode size={18} style={{ color: '#8b5cf6' }} />
-                  Job Master Directory ({jobMasters.length})
+                  Job Master Directory ({(jobMasters || []).length})
                 </div>
               )}
               {isTabAllowed('clients') && (
@@ -1573,7 +1573,7 @@ export default function App() {
                   onClick={() => handleTabChange('clients')}
                 >
                   <Briefcase size={18} />
-                  Clients & Directory ({clients.length})
+                  Clients & Directory ({(clients || []).length})
                 </div>
               )}
               {isTabAllowed('vendors') && (
@@ -1582,7 +1582,7 @@ export default function App() {
                   onClick={() => handleTabChange('vendors')}
                 >
                   <Building2 size={18} />
-                  Vendor Onboarding ({vendors.length})
+                  Vendor Onboarding ({(vendors || []).length})
                 </div>
               )}
             </>
@@ -1821,16 +1821,16 @@ export default function App() {
             )}
 
             {/* Urgent Low Stock Ink Alert Banner */}
-            {lowStockInks.length > 0 && (
+            {(lowStockInks || []).length > 0 && (
               <div className="delayed-alert-banner" style={{ background: '#fff1f2', border: '1px solid #fecdd3' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                   <Droplet size={32} style={{ color: '#e11d48' }} />
                   <div>
                     <h3 style={{ fontSize: '1.15rem', fontWeight: '700', color: '#e11d48' }}>
-                      CRITICAL INK ALERT: {lowStockInks.length} INK PRODUCT CODE(S) BELOW RESERVE LEVEL
+                      CRITICAL INK ALERT: {(lowStockInks || []).length} INK PRODUCT CODE(S) BELOW RESERVE LEVEL
                     </h3>
                     <p style={{ fontSize: '0.85rem', color: '#9f1239', marginTop: '2px' }}>
-                      Manufacturer Codes: {lowStockInks.map(i => `${i.productCode} (${i.shade})`).join(', ')}. Immediate supplier PO reorder required.
+                      Manufacturer Codes: {(lowStockInks || []).map(i => `${i.productCode} (${i.shade})`).join(', ')}. Immediate supplier PO reorder required.
                     </p>
                   </div>
                 </div>
@@ -1844,9 +1844,9 @@ export default function App() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px' }}>
               <div className="glass-card stats-card" style={{ cursor: 'pointer' }} onClick={() => handleTabChange('orders')}>
                 <span className="stats-title">Active Orders</span>
-                <span className="stats-value">{orders.length}</span>
+                <span className="stats-value">{(orders || []).length}</span>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                  Total Qty: {orders.reduce((a, b) => a + b.orderQtyKg, 0).toLocaleString()} kg
+                  Total Qty: {(orders || []).reduce((a, b) => a + (b.orderQtyKg || 0), 0).toLocaleString()} kg
                 </span>
               </div>
 
@@ -1863,9 +1863,9 @@ export default function App() {
               <div className="glass-card stats-card" style={{ cursor: 'pointer' }} onClick={() => handleTabChange('inventory')}>
                 <span className="stats-title">Available Film Stock</span>
                 <span className="stats-value">
-                  {inventory.reduce((a, b) => a + (parseFloat(b.availableQtyKg) || 0), 0).toLocaleString()} <span style={{ fontSize: '1rem' }}>kg</span>
+                  {(inventory || []).reduce((a, b) => a + (parseFloat(b.availableQtyKg) || 0), 0).toLocaleString()} <span style={{ fontSize: '1rem' }}>kg</span>
                 </span>
-                <span style={{ fontSize: '0.8rem', color: 'var(--success)' }}>Across {inventory.length} film grades</span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--success)' }}>Across {(inventory || []).length} film grades</span>
               </div>
 
               {/* Average Ink Cost (100% Solid Equivalent) Card */}
@@ -1875,7 +1875,7 @@ export default function App() {
                   ₹ {avgSolidEqInkCost.toFixed(2)} <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>/ kg</span>
                 </span>
                 <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                  Based on solid content % across {inks.length} active inks
+                  Based on solid content % across {(inks || []).length} active inks
                 </span>
               </div>
 
@@ -1884,23 +1884,23 @@ export default function App() {
                 <div className="glass-card stats-card" style={{ cursor: 'pointer', borderLeft: '4px solid #047857' }} onClick={() => handleTabChange('inventory')}>
                   <span className="stats-title" style={{ color: '#047857', fontWeight: '700' }}>Total Stock Purchase Valuation</span>
                   <span className="stats-value" style={{ color: '#047857', fontSize: '1.5rem', fontWeight: '800' }}>
-                    ₹ {inventory.reduce((sum, item) => sum + ((parseFloat(item.availableQtyKg) || 0) * (parseFloat(item.unitPrice || item.purchaseRatePerKg) || 0)), 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    ₹ {(inventory || []).reduce((sum, item) => sum + ((parseFloat(item.availableQtyKg) || 0) * (parseFloat(item.unitPrice || item.purchaseRatePerKg) || 0)), 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                   </span>
                   <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                    Valuation across {inventory.length} active inventory items
+                    Valuation across {(inventory || []).length} active inventory items
                   </span>
                 </div>
               )}
 
               <div className="glass-card stats-card" style={{ cursor: 'pointer' }} onClick={() => handleTabChange('vendors')}>
                 <span className="stats-title">Onboarded Vendors</span>
-                <span className="stats-value">{vendors.length}</span>
+                <span className="stats-value">{(vendors || []).length}</span>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>GSTIN Verified Suppliers</span>
               </div>
 
               <div className="glass-card stats-card" style={{ cursor: 'pointer' }} onClick={() => handleTabChange('clients')}>
                 <span className="stats-title">Client Directory</span>
-                <span className="stats-value">{clients.length}</span>
+                <span className="stats-value">{(clients || []).length}</span>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Registered Buyers</span>
               </div>
 

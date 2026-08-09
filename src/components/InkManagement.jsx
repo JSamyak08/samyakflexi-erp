@@ -105,7 +105,7 @@ export default function InkManagement({
     setShade('');
     setInkType('Reverse Ink');
     setManufacturer('DIC Inks');
-    setSupplierId(vendors.length > 0 ? vendors[0].id : '');
+    setSupplierId((vendors || []).length > 0 ? vendors[0].id : '');
     setSolidContentPct(40);
     setSolidVariationPct(2);
     setPricePerKg(300);
@@ -283,7 +283,7 @@ export default function InkManagement({
 
   // Filtering Ink Directory
   const filteredInks = useMemo(() => {
-    return inks.filter(i => {
+    return (inks || []).filter(i => {
       const matchSearch = (i.productCode || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                           (i.shade || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                           (i.manufacturer || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -304,17 +304,17 @@ export default function InkManagement({
   const pagination = usePagination(filteredInks, 10);
 
   // Surface Inks vs Reverse Inks Division Lists
-  const surfaceInks = useMemo(() => inks.filter(i => i.inkType === 'Surface Ink'), [inks]);
-  const reverseInks = useMemo(() => inks.filter(i => i.inkType === 'Reverse Ink'), [inks]);
+  const surfaceInks = useMemo(() => (inks || []).filter(i => i.inkType === 'Surface Ink'), [inks]);
+  const reverseInks = useMemo(() => (inks || []).filter(i => i.inkType === 'Reverse Ink'), [inks]);
 
-  const surfaceStockKg = useMemo(() => surfaceInks.reduce((a, b) => a + (parseFloat(b.stockQtyKg) || 0), 0), [surfaceInks]);
-  const surfaceValuation = useMemo(() => surfaceInks.reduce((a, b) => a + ((parseFloat(b.stockQtyKg) || 0) * (parseFloat(b.pricePerKg) || 0)), 0), [surfaceInks]);
+  const surfaceStockKg = useMemo(() => (surfaceInks || []).reduce((a, b) => a + (parseFloat(b.stockQtyKg) || 0), 0), [surfaceInks]);
+  const surfaceValuation = useMemo(() => (surfaceInks || []).reduce((a, b) => a + ((parseFloat(b.stockQtyKg) || 0) * (parseFloat(b.pricePerKg) || 0)), 0), [surfaceInks]);
 
-  const reverseStockKg = useMemo(() => reverseInks.reduce((a, b) => a + (parseFloat(b.stockQtyKg) || 0), 0), [reverseInks]);
-  const reverseValuation = useMemo(() => reverseInks.reduce((a, b) => a + ((parseFloat(b.stockQtyKg) || 0) * (parseFloat(b.pricePerKg) || 0)), 0), [reverseInks]);
+  const reverseStockKg = useMemo(() => (reverseInks || []).reduce((a, b) => a + (parseFloat(b.stockQtyKg) || 0), 0), [reverseInks]);
+  const reverseValuation = useMemo(() => (reverseInks || []).reduce((a, b) => a + ((parseFloat(b.stockQtyKg) || 0) * (parseFloat(b.pricePerKg) || 0)), 0), [reverseInks]);
 
   const totalStockKg = surfaceStockKg + reverseStockKg;
-  const lowStockCount = useMemo(() => inks.filter(i => (parseFloat(i.stockQtyKg) || 0) < (parseFloat(i.reorderLevelKg) || 0)).length, [inks]);
+  const lowStockCount = useMemo(() => (inks || []).filter(i => (parseFloat(i.stockQtyKg) || 0) < (parseFloat(i.reorderLevelKg) || 0)).length, [inks]);
 
   // Overall Average 100% Solid Equivalent Cost calculation
   const overallAvgSolidEquivalentCost = useMemo(() => {
@@ -434,7 +434,7 @@ export default function InkManagement({
                 fontSize: '0.85rem'
               }}
             >
-              <FileText size={16} /> Master Directory ({inks.length})
+              <FileText size={16} /> Master Directory ({(inks || []).length})
             </button>
 
             <button
@@ -951,7 +951,7 @@ export default function InkManagement({
                   <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Used exclusively for surface printing jobs</p>
                 </div>
                 <span className="badge badge-info" style={{ fontSize: '0.8rem', padding: '4px 10px' }}>
-                  {surfaceInks.length} Product Codes
+                  {(surfaceInks || []).length} Product Codes
                 </span>
               </div>
 
@@ -1019,7 +1019,7 @@ export default function InkManagement({
                   <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Used exclusively for reverse printing jobs</p>
                 </div>
                 <span className="badge badge-purple" style={{ fontSize: '0.8rem', padding: '4px 10px' }}>
-                  {reverseInks.length} Product Codes
+                  {(reverseInks || []).length} Product Codes
                 </span>
               </div>
 
