@@ -138,7 +138,14 @@ export default function BarcodePrinterModal({ roll, rolls, onClose }) {
             borderRadius: '4px',
             border: '1px solid currentColor'
           }}>
-            {isSFG ? 'SEMI-FINISHED (SFG)' : isFG ? 'FINISHED GOODS (FG)' : (isFilmItem ? 'RAW MATERIAL (RM)' : 'STORE CONSUMABLE')}
+            {isSFG 
+              ? 'SEMI-FINISHED (SFG)' 
+              : isFG 
+                ? 'FINISHED GOODS (FG)' 
+                : (isFilmItem 
+                  ? 'RAW MATERIAL (RM)' 
+                  : (r.category && r.category !== 'CONSUMABLE_ITEM' ? r.category.toUpperCase() : 'STORE ITEM')
+                )}
           </span>
         </div>
 
