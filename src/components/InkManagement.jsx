@@ -23,10 +23,12 @@ import {
   Calendar,
   Check,
   X,
-  Tag
+  Tag,
+  FileCheck
 } from 'lucide-react';
 import TablePagination, { usePagination } from './TablePagination';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
+import { notifyPurchaseOrderIssued } from '../services/emailService';
 
 export default function InkManagement({
   inks = [],
@@ -61,6 +63,21 @@ export default function InkManagement({
   const [deleteConfirmInk, setDeleteConfirmInk] = useState(null);
   const [activePoPdfData, setActivePoPdfData] = useState(null);
   const [stockAdjustInk, setStockAdjustInk] = useState(null);
+
+  // PO Issuance Confirmation Modal States
+  const [poConfirmInk, setPoConfirmInk] = useState(null);
+  const [poModalPoNumber, setPoModalPoNumber] = useState('');
+  const [poModalPoDate, setPoModalPoDate] = useState(new Date().toISOString().split('T')[0]);
+  const [poModalDeliveryDate, setPoModalDeliveryDate] = useState(
+    new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
+  );
+  const [poModalVendorId, setPoModalVendorId] = useState('');
+  const [poModalQtyKg, setPoModalQtyKg] = useState(100);
+  const [poModalRatePerKg, setPoModalRatePerKg] = useState(300);
+  const [poModalHsnCode, setPoModalHsnCode] = useState('3215');
+  const [poModalFreightTerms, setPoModalFreightTerms] = useState('Freight Included within Indore');
+  const [poModalPaymentTerms, setPoModalPaymentTerms] = useState('60 Days Net');
+  const [poModalNotes, setPoModalNotes] = useState('');
 
   // Form State for Add / Edit Ink Product Code
   const [productCode, setProductCode] = useState('');
@@ -239,9 +256,11 @@ export default function InkManagement({
     alert(`Stock updated for ${stockAdjustInk.productCode}. New Stock: ${newStock} kg`);
   };
 
-  // Issue Purchase Order to Supplier (Relaying Manufacturer Product Code)
+  // Issue Purchase Order to Supplier (Opens Confirmation & Edit Pop-up)
   const handleIssuePoForInk = (ink) => {
-    const matchedVendor = vendors.find(v => String(v.id) === String(ink.supplierId)) || {
+    if (!ink) return;
+    const matchedVendor = (vendors || []).find(v => String(v.id) === String(ink.supplierId) || String(v.companyName || v.name) === String(ink.supplierName)) || (vendors || [])[0] || {
+      id: 'VEN-01',
       companyName: ink.supplierName || 'DIC India Ltd',
       name: ink.supplierName || 'DIC India Ltd',
       address: 'Industrial Area, Sector 3, Pithampur / Indore (M.P.)',
@@ -251,26 +270,86 @@ export default function InkManagement({
       email: 'sales@inksupplier.com'
     };
 
-    const reorderDefQty = Math.max(100, (parseFloat(ink.reorderLevelKg) * 2) - parseFloat(ink.stockQtyKg));
+    const suggestedQty = Math.max(100, Math.ceil(((parseFloat(ink.reorderLevelKg) || 50) * 2) - (parseFloat(ink.stockQtyKg) || 0)));
+
+    setPoConfirmInk(ink);
+    setPoModalVendorId(matchedVendor.id || '');
+    setPoModalPoNumber(`SIL/PO/26-27/${Math.floor(1000 + Math.random() * 9000)}`);
+    setPoModalPoDate(new Date().toISOString().split('T')[0]);
+    setPoModalDeliveryDate(new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]);
+    setPoModalQtyKg(suggestedQty);
+    setPoModalRatePerKg(ink.pricePerKg || 300);
+    setPoModalHsnCode('3215');
+    setPoModalFreightTerms('Freight Included within Indore');
+    setPoModalPaymentTerms(matchedVendor.paymentTerms || '60 Days Net');
+    setPoModalNotes(`Manufacturer Code: ${ink.productCode}. Deliver in 20kg sealed drums. Batch CoA required.`);
+  };
+
+  // Confirm and Finalize PO Issuance after User Edit
+  const handleConfirmIssuePo = (e) => {
+    if (e) e.preventDefault();
+    if (!poConfirmInk) return;
+
+    const matchedVendor = (vendors || []).find(v => String(v.id) === String(poModalVendorId)) || {
+      companyName: poConfirmInk.supplierName || 'DIC India Ltd',
+      name: poConfirmInk.supplierName || 'DIC India Ltd',
+      address: 'Industrial Area, Sector 3, Pithampur / Indore (M.P.)',
+      gstin: '23AAACD1020K1Z5',
+      contactPerson: 'Sales Executive',
+      phone: '9826001122',
+      email: 'sales@inksupplier.com'
+    };
+
+    const poDateStr = poModalPoDate ? new Date(poModalPoDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const deliveryDateStr = poModalDeliveryDate ? new Date(poModalDeliveryDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : new Date(Date.now() + 7 * 86400000).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+    const qtyVal = parseFloat(poModalQtyKg) || 100;
+    const rateVal = parseFloat(poModalRatePerKg) || (poConfirmInk.pricePerKg || 0);
 
     const poData = {
-      poNumber: `SIL/PO/26-27/${Math.floor(1000 + Math.random() * 9000)}`,
-      poDate: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
-      deliveryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+      poNumber: poModalPoNumber.trim() || `SIL/PO/26-27/${Math.floor(1000 + Math.random() * 9000)}`,
+      poDate: poDateStr,
+      deliveryDate: deliveryDateStr,
+      promisedDeliveryDate: deliveryDateStr,
       vendor: matchedVendor,
+      category: 'Printing Inks & Toners',
+      source: `Ink Management (${poConfirmInk.productCode})`,
+      paymentTerms: poModalPaymentTerms,
+      logisticDetails: poModalFreightTerms,
+      notes: poModalNotes,
       items: [
         {
           id: 1,
-          itemId: ink.productCode, // MANUFACTURER PRODUCT CODE RELAYED IN PO
-          description: `${ink.shade} (${ink.inkType}) - Solid Content: ${ink.solidContentPct}% (±${ink.solidVariationPct}%)`,
-          make: ink.manufacturer || 'DIC Inks',
-          hsnCode: '3215',
-          qtyKg: reorderDefQty,
-          rate: ink.pricePerKg
+          itemId: poConfirmInk.productCode, // MANUFACTURER PRODUCT CODE RELAYED IN PO
+          description: `${poConfirmInk.shade} (${poConfirmInk.inkType}) - Solid Content: ${poConfirmInk.solidContentPct}% (±${poConfirmInk.solidVariationPct}%)`,
+          make: poConfirmInk.manufacturer || 'DIC Inks',
+          hsnCode: poModalHsnCode || '3215',
+          qtyKg: qtyVal,
+          rate: rateVal,
+          amount: Number((qtyVal * rateVal).toFixed(2))
         }
       ]
     };
 
+    // Save to central samyak_erp_issued_pos store for instant platform reflection
+    try {
+      const saved = localStorage.getItem('samyak_erp_issued_pos');
+      const store = saved ? JSON.parse(saved) : {};
+      store[poData.poNumber] = poData;
+      localStorage.setItem('samyak_erp_issued_pos', JSON.stringify(store));
+    } catch (err) {}
+
+    // Dispatch email notification log
+    notifyPurchaseOrderIssued({
+      poNumber: poData.poNumber,
+      supplierName: matchedVendor.companyName || matchedVendor.name,
+      itemName: `${poConfirmInk.productCode} - ${poConfirmInk.shade}`,
+      qty: qtyVal,
+      unit: 'kg',
+      totalAmount: qtyVal * rateVal * 1.18
+    }).catch(e => console.warn('Email notify notice:', e));
+
+    setPoConfirmInk(null);
     setActivePoPdfData(poData);
   };
 
@@ -1471,6 +1550,150 @@ export default function InkManagement({
                 </div>
               </form>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* =================================================================== */}
+      {/* MODAL: CONFIRM & EDIT INK PURCHASE ORDER (PO) */}
+      {/* =================================================================== */}
+      {poConfirmInk && (
+        <div className="pdf-modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', zIndex: 1100 }} onClick={() => setPoConfirmInk(null)}>
+          <div className="glass-panel" style={{ width: '740px', maxWidth: '95vw', borderRadius: '16px', background: '#ffffff', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', border: '1px solid #cbd5e1', padding: '0', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+            
+            {/* Dark Executive Header */}
+            <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '18px 24px', color: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ background: 'rgba(99, 102, 241, 0.2)', padding: '10px', borderRadius: '10px', color: '#818cf8', border: '1px solid rgba(129, 140, 248, 0.3)' }}>
+                  <ShoppingBag size={22} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: '800', margin: 0, color: '#ffffff', letterSpacing: '-0.01em' }}>
+                    Issue Official Purchase Order (PO)
+                  </h3>
+                  <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '2px 0 0 0' }}>
+                    Relaying Manufacturer Code: <strong style={{ color: '#60a5fa', fontFamily: 'monospace' }}>{poConfirmInk.productCode}</strong> ({poConfirmInk.shade})
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff', cursor: 'pointer' }} 
+                onClick={() => setPoConfirmInk(null)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Form Content */}
+            <form onSubmit={handleConfirmIssuePo} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              
+              {/* Section 1: PO Reference & Dates */}
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px' }}>
+                <div>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>PO Reference # *</label>
+                  <input type="text" className="form-control" required style={{ fontWeight: '800', color: '#4f46e5', fontFamily: 'monospace' }} value={poModalPoNumber} onChange={e => setPoModalPoNumber(e.target.value)} />
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>PO Issue Date *</label>
+                  <input type="date" className="form-control" required value={poModalPoDate} onChange={e => setPoModalPoDate(e.target.value)} />
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Promised Delivery Date *</label>
+                  <input type="date" className="form-control" required value={poModalDeliveryDate} onChange={e => setPoModalDeliveryDate(e.target.value)} />
+                </div>
+              </div>
+
+              {/* Section 2: Supplier Vendor Selection */}
+              <div>
+                <label className="form-label" style={{ fontWeight: '700', color: '#0f172a', marginBottom: '4px', display: 'block' }}>Select Ink Manufacturer / Vendor Supplier *</label>
+                <select className="form-control" style={{ fontWeight: '700' }} value={poModalVendorId} onChange={e => setPoModalVendorId(e.target.value)}>
+                  {(vendors || []).map(v => (
+                    <option key={v.id} value={v.id}>{v.companyName || v.name} ({v.gstin || 'GSTIN N/A'})</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Section 3: Ink Item & Quantity Details */}
+              <div style={{ background: '#ffffff', padding: '16px', borderRadius: '10px', border: '1px solid #cbd5e1', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
+                  <div>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Manufacturer Code</span>
+                    <div style={{ fontSize: '1rem', fontWeight: '900', color: '#1e293b', fontFamily: 'monospace' }}>{poConfirmInk.productCode}</div>
+                  </div>
+
+                  <div>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Ink Shade & Type</span>
+                    <div style={{ fontSize: '0.92rem', fontWeight: '700', color: '#0f172a' }}>{poConfirmInk.shade} ({poConfirmInk.inkType})</div>
+                  </div>
+
+                  <div>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Solid Content</span>
+                    <div style={{ fontSize: '0.88rem', fontWeight: '700', color: '#2563eb' }}>{poConfirmInk.solidContentPct}% (±{poConfirmInk.solidVariationPct}%)</div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px' }}>
+                  <div>
+                    <label className="form-label" style={{ fontWeight: '700', color: '#047857', marginBottom: '4px', display: 'block' }}>Order Quantity (kg) *</label>
+                    <input type="number" step="any" min="1" className="form-control" required style={{ fontWeight: '800', fontSize: '1.05rem' }} value={poModalQtyKg} onChange={e => setPoModalQtyKg(e.target.value)} />
+                  </div>
+
+                  <div>
+                    <label className="form-label" style={{ fontWeight: '700', color: '#047857', marginBottom: '4px', display: 'block' }}>Price per kg (₹) *</label>
+                    <input type="number" step="any" min="0" className="form-control" required style={{ fontWeight: '800', fontSize: '1.05rem' }} value={poModalRatePerKg} onChange={e => setPoModalRatePerKg(e.target.value)} />
+                  </div>
+
+                  <div>
+                    <label className="form-label" style={{ fontWeight: '700', color: '#475569', marginBottom: '4px', display: 'block' }}>HSN Code</label>
+                    <input type="text" className="form-control" value={poModalHsnCode} onChange={e => setPoModalHsnCode(e.target.value)} />
+                  </div>
+                </div>
+
+                {/* Subtotal & Estimated GST Calculation */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#ecfdf5', padding: '10px 14px', borderRadius: '8px', border: '1px solid #a7f3d0' }}>
+                  <div>
+                    <span style={{ fontSize: '0.8rem', color: '#065f46', fontWeight: '600' }}>Taxable Amount: </span>
+                    <strong style={{ fontSize: '0.95rem', color: '#047857' }}>₹ {((parseFloat(poModalQtyKg) || 0) * (parseFloat(poModalRatePerKg) || 0)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '0.8rem', color: '#065f46', fontWeight: '600' }}>Est. Total (Inc. 18% GST): </span>
+                    <strong style={{ fontSize: '1.1rem', color: '#047857', fontWeight: '900' }}>₹ {(((parseFloat(poModalQtyKg) || 0) * (parseFloat(poModalRatePerKg) || 0)) * 1.18).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 4: Freight & Payment Terms */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div>
+                  <label className="form-label" style={{ fontWeight: '700', color: '#0f172a', marginBottom: '4px', display: 'block' }}>Freight / Delivery Terms *</label>
+                  <input type="text" className="form-control" required placeholder="e.g. Freight Included within Indore" value={poModalFreightTerms} onChange={e => setPoModalFreightTerms(e.target.value)} />
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ fontWeight: '700', color: '#0f172a', marginBottom: '4px', display: 'block' }}>Payment Terms *</label>
+                  <input type="text" className="form-control" required placeholder="e.g. 60 Days Net / 30 Days Net" value={poModalPaymentTerms} onChange={e => setPoModalPaymentTerms(e.target.value)} />
+                </div>
+              </div>
+
+              {/* Section 5: Vendor Instructions */}
+              <div>
+                <label className="form-label" style={{ fontWeight: '700', color: '#0f172a', marginBottom: '4px', display: 'block' }}>Special Vendor Instructions & Notes</label>
+                <input type="text" className="form-control" placeholder="e.g. Deliver in 20kg sealed drums. Batch CoA & Dyne specs mandatory." value={poModalNotes} onChange={e => setPoModalNotes(e.target.value)} />
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '6px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
+                <button type="button" className="btn-secondary" style={{ padding: '8px 18px' }} onClick={() => setPoConfirmInk(null)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary" style={{ background: '#4f46e5', borderColor: '#4f46e5', padding: '10px 22px', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <FileCheck size={18} /> Confirm & Issue Official PO
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
