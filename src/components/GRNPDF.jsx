@@ -47,15 +47,16 @@ export default function GRNPDF({ grnData, onClose }) {
     status = "Approved",
     qcNotes = "Passed corona dyne level & gauge tolerance inspection.",
     inspectedBy = "Ramesh Kumar (Quality Chemist)",
-    storeManager = "Dilip Joshi (Store Inward Manager)"
+    storeManager = "Dilip Joshi (Store Inward Manager)",
+    freightAmount = 0,
+    transporterName = "Direct Dispatch / Self"
   } = grnData;
-
 
   const totalTaxable = netWeightKg * unitPrice;
   const cgstAmt = totalTaxable * 0.09;
   const sgstAmt = totalTaxable * 0.09;
   const totalTax = cgstAmt + sgstAmt;
-  const grandTotal = totalTaxable + totalTax;
+  const grandTotal = totalTaxable + totalTax + (parseFloat(freightAmount) || 0);
 
   const vendorDetails = {
     name: vendorName || "FlexiPoly Films Ltd",
@@ -178,6 +179,12 @@ export default function GRNPDF({ grnData, onClose }) {
                   <td className="value-col" style={{ color: status === 'Approved' ? '#059669' : '#dc2626', fontWeight: 'bold' }}>
                     {status.toUpperCase()}
                   </td>
+                </tr>
+                <tr>
+                  <td className="label-col">Transporter Name</td>
+                  <td className="value-col">{transporterName || 'Direct Dispatch / Self'}</td>
+                  <td className="label-col">Freight Charge</td>
+                  <td className="value-col">{parseFloat(freightAmount) > 0 ? formatINR(freightAmount) : 'Freight Included / Prepaid'}</td>
                 </tr>
                 <tr>
                   <td className="label-col">Received By</td>

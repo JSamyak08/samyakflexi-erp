@@ -1504,6 +1504,15 @@ export default function App() {
                   )}
                 </div>
               )}
+              {isTabAllowed('inventory') && (
+                <div 
+                  className={`nav-item ${activeTab === 'inventory' && currentUrlParams?.tab === 'issued_pos' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('inventory', { tab: 'issued_pos' })}
+                >
+                  <FileText size={18} style={{ color: '#4f46e5' }} />
+                  Issued Purchase Orders Hub
+                </div>
+              )}
               {isTabAllowed('ink_management') && (
                 <div 
                   className={`nav-item ${activeTab === 'ink_management' ? 'active' : ''}`}
@@ -2141,6 +2150,9 @@ export default function App() {
             grns={grns}
             vendors={vendors}
             orders={orders}
+            indents={indents}
+            inks={inks}
+            currentUser={currentUser}
             productionRecords={productionRecords}
             onAddGRN={handleAddGRN}
             onUpdateGRN={handleUpdateGRN}

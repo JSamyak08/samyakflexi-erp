@@ -30,6 +30,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import GRNPDF from './GRNPDF';
+import PurchaseOrderPDF from './PurchaseOrderPDF';
 import WeighingScaleInput from './WeighingScaleInput';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import DispatchPackingListPDF from './DispatchPackingListPDF';
@@ -82,6 +83,9 @@ export default function InventoryManagement({
   grns = [], 
   vendors = [], 
   orders = [], 
+  indents = [],
+  inks = [],
+  currentUser = null,
   productionRecords = [],
   onAddGRN, 
   onUpdateGRN, 
@@ -373,16 +377,188 @@ export default function InventoryManagement({
   const [grnItemName, setGrnItemName] = useState('');
   const [grnFilmType, setGrnFilmType] = useState('PET');
   const [grnMicron, setGrnMicron] = useState(12);
-  const [grnWidthMm, setGrnWidthMm] = useState(1000);
-  const [grnUnit, setGrnUnit] = useState('Kg');
-  const [grnPackagingType, setGrnPackagingType] = useState('Roll');
-  const [grnRolls, setGrnRolls] = useState(10);
-  const [grnWeightKg, setGrnWeightKg] = useState(1500);
-  const [grnPurchaseRate, setGrnPurchaseRate] = useState(120);
-  const [grnBatchNo, setGrnBatchNo] = useState('');
-  const [grnSelectedStockItemId, setGrnSelectedStockItemId] = useState('');
-  const [grnItemSearchTerm, setGrnItemSearchTerm] = useState('');
-  const [isGrnItemDropdownOpen, setIsGrnItemDropdownOpen] = useState(false);
+  const [grnFreightAmount, setGrnFreightAmount] = useState('');
+  const [grnTransporterName, setGrnTransporterName] = useState('');
+
+  // PO Directory State
+  const [selectedPOForPDF, setSelectedPOForPDF] = useState(null);
+  const [poSearchTerm, setPoSearchTerm] = useState('');
+  const [poStatusFilter, setPoStatusFilter] = useState('ALL');
+
+  // Unified Platform-wide Issued Purchase Orders Aggregator
+  const unifiedIssuedPOs = React.useMemo(() => {
+    const list = [];
+    const seenPoNumbers = new Set();
+
+    // 1. Load from localStorage / cached POs
+    try {
+      const saved = localStorage.getItem('samyak_erp_issued_pos');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        Object.values(parsed).forEach(po => {
+          if (po && po.poNumber && !seenPoNumbers.has(po.poNumber)) {
+            seenPoNumbers.add(po.poNumber);
+            list.push({
+              ...po,
+              source: po.source || 'Vendor / Purchase Requisition'
+            });
+          }
+        });
+      }
+    } catch (e) {}
+
+    // 2. Scrape from Order Material Requirements
+    (orders || []).forEach(ord => {
+      (ord.materialRequirements || []).forEach(r => {
+        if (r.poIssued) {
+          const poNo = r.poNumber || ord.poNumber || `PO-ORD-${ord.id}`;
+          if (!seenPoNumbers.has(poNo)) {
+            seenPoNumbers.add(poNo);
+            const vendorObj = (vendors || []).find(v => v.companyName === r.preferredVendor || v.name === r.preferredVendor) || {
+              companyName: r.preferredVendor || 'FlexiPoly Films Ltd',
+              contactPerson: 'Sales Representative',
+              phone: '9826001122',
+              gstin: '23AAQFC4167Q1ZT'
+            };
+            let itemRate = 165;
+            if ((r.filmType || '').includes('METPET')) itemRate = 185;
+            else if ((r.filmType || '').includes('LD')) itemRate = 135;
+
+            list.push({
+              poNumber: poNo,
+              poDate: ord.date || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+              promisedDeliveryDate: ord.targetDeliveryDate || new Date(Date.now() + 5*86400000).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+              vendor: vendorObj,
+              category: 'Film Substrates',
+              source: `Order #${ord.id} (${ord.jobName || 'Substrate Requirements'})`,
+              items: [{
+                id: r.id || 1,
+                itemDesc: `${r.filmType} ${r.micron && r.micron !== '-' ? r.micron + 'µ' : ''} (${r.widthMm}mm Width)`.trim(),
+                filmType: r.filmType,
+                micron: r.micron,
+                widthMm: r.widthMm,
+                qtyKg: r.requiredQtyKg || 500,
+                rate: itemRate,
+                amount: (r.requiredQtyKg || 500) * itemRate
+              }],
+              paymentTerms: '60 Days Net',
+              logisticDetails: 'Freight Included within Indore'
+            });
+          }
+        }
+      });
+    });
+
+    // 3. Scrape from Material Indents
+    (indents || []).forEach(ind => {
+      if (ind.poIssued || ind.poNumber) {
+        const poNo = ind.poNumber || `PO-${ind.id}`;
+        if (!seenPoNumbers.has(poNo)) {
+          seenPoNumbers.add(poNo);
+          const vendorObj = (vendors || []).find(v => v.companyName === ind.preferredVendor || v.id === ind.preferredVendor) || {
+            companyName: ind.preferredVendor || 'Store Consumable Vendor',
+            contactPerson: 'Vendor Rep',
+            phone: '9425066225',
+            gstin: '23AAQFC4167Q1ZT'
+          };
+          list.push({
+            poNumber: poNo,
+            poDate: ind.date || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+            promisedDeliveryDate: ind.promisedDeliveryDate || new Date(Date.now() + 3*86400000).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+            vendor: vendorObj,
+            category: ind.category || 'Store Consumables & Spares',
+            source: `Material Indent ${ind.indentNo || ind.id}`,
+            items: (ind.items || [{ itemDesc: ind.itemName || 'Store Item', qtyKg: ind.quantity || 100, rate: 250 }]),
+            paymentTerms: '30 Days Net',
+            logisticDetails: 'Direct Delivery to Store Gate 2'
+          });
+        }
+      }
+    });
+
+    // Process & calculate elapsed days, delay time, inward matching, status, and price discrepancy for each PO
+    return list.map(po => {
+      let poDateObj = new Date(po.poDate);
+      if (isNaN(poDateObj.getTime())) {
+        const parts = String(po.poDate).split(/[/.-]/);
+        if (parts.length === 3) {
+          poDateObj = new Date(parts[2], parts[1] - 1, parts[0]);
+        }
+      }
+      const daysElapsed = isNaN(poDateObj.getTime()) ? 0 : Math.max(0, Math.floor((new Date() - poDateObj) / 86400000));
+
+      let promisedDateObj = new Date(po.promisedDeliveryDate || po.deliveryDate);
+      if (isNaN(promisedDateObj.getTime())) {
+        const parts = String(po.promisedDeliveryDate || po.deliveryDate).split(/[/.-]/);
+        if (parts.length === 3) {
+          promisedDateObj = new Date(parts[2], parts[1] - 1, parts[0]);
+        }
+      }
+      const isPromisedValid = !isNaN(promisedDateObj.getTime());
+      const delayDays = isPromisedValid ? Math.floor((new Date() - promisedDateObj) / 86400000) : 0;
+
+      const matchingGRNs = (grns || []).filter(g => String(g.poNumber || '').trim().toLowerCase() === String(po.poNumber || '').trim().toLowerCase());
+      const totalInwardQty = matchingGRNs.reduce((sum, g) => sum + (parseFloat(g.netWeightKg) || parseFloat(g.quantity) || 0), 0);
+      const totalPoQty = (po.items || []).reduce((sum, it) => sum + (parseFloat(it.qtyKg) || parseFloat(it.qty) || 0), 0);
+      const pendingInwardQty = Math.max(0, totalPoQty - totalInwardQty);
+
+      let deliveryStatus = 'Pending Delivery';
+      if (totalInwardQty >= totalPoQty && totalPoQty > 0) {
+        deliveryStatus = 'Completed';
+      } else if (totalInwardQty > 0) {
+        deliveryStatus = 'Partial Delivery';
+      }
+
+      let priceDiscrepancy = null;
+      matchingGRNs.forEach(g => {
+        const grnRate = parseFloat(g.purchaseRatePerKg || g.purchaseRate || g.unitPrice) || 0;
+        (po.items || []).forEach(it => {
+          const poRate = parseFloat(it.rate) || 0;
+          if (grnRate > 0 && poRate > 0 && Math.abs(grnRate - poRate) > 0.5) {
+            priceDiscrepancy = {
+              poRate,
+              grnRate,
+              variance: grnRate - poRate,
+              grnNo: g.grnNo,
+              message: `⚠️ Rate Mismatch: PO Rate ₹${poRate}/kg vs Inward GRN Rate ₹${grnRate}/kg (₹${(grnRate - poRate).toFixed(2)} variance)`
+            };
+          }
+        });
+      });
+
+      return {
+        ...po,
+        daysElapsed,
+        promisedDeliveryDate: isPromisedValid ? promisedDateObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : (po.promisedDeliveryDate || 'Standard 5 Days'),
+        delayDays,
+        isOverdue: delayDays > 0 && deliveryStatus !== 'Completed',
+        totalPoQty,
+        totalInwardQty,
+        pendingInwardQty,
+        deliveryStatus,
+        matchingGRNs,
+        priceDiscrepancy
+      };
+    });
+  }, [orders, indents, grns, vendors]);
+
+  const handleCreateGRNFromPO = (po) => {
+    if (!po) return;
+    const firstItem = (po.items || [])[0] || {};
+    
+    setGrnPoNo(po.poNumber || '');
+    setGrnVendor(po.vendor?.companyName || po.vendorName || po.vendor?.name || '');
+    setGrnCategory(po.category || 'Film Substrates');
+    setGrnFilmType(firstItem.filmType || 'PET');
+    setGrnMicron(firstItem.micron || 12);
+    setGrnWidthMm(firstItem.widthMm || 1000);
+    setGrnWeightKg(po.pendingInwardQty > 0 ? po.pendingInwardQty : (firstItem.qtyKg || 1000));
+    setGrnPurchaseRate(firstItem.rate || 140);
+    setGrnItemName(firstItem.itemDesc || firstItem.description || '');
+    
+    setActiveTab('grn_inward');
+    setIsNewGRNModalOpen(true);
+  };
 
   const handleSelectStockItemForGrn = (item) => {
     if (!item) return;
@@ -686,11 +862,16 @@ export default function InventoryManagement({
       purchaseRate: rateVal,
       unitPrice: rateVal,
       batchNo: grnBatchNo,
+      freightAmount: parseFloat(grnFreightAmount) || 0,
+      transporterName: grnTransporterName.trim() || 'Direct Dispatch / Self',
       status: "Pending QC", // Goes to Store QC Verification
       qcNotes: "",
       inspectedBy: "",
       storeManager: "Store Mgr Dilip Joshi"
     };
+
+    setGrnFreightAmount('');
+    setGrnTransporterName('');
 
     if (onAddGRN) {
       onAddGRN(newGRN);
@@ -1094,15 +1275,40 @@ export default function InventoryManagement({
       widthStr.includes(term);
   });
 
+  const filteredPOs = (unifiedIssuedPOs || []).filter(po => {
+    // 1. Status Filter
+    if (poStatusFilter === 'PENDING' && po.deliveryStatus !== 'Pending Delivery') return false;
+    if (poStatusFilter === 'PARTIAL' && po.deliveryStatus !== 'Partial Delivery') return false;
+    if (poStatusFilter === 'COMPLETED' && po.deliveryStatus !== 'Completed') return false;
+    if (poStatusFilter === 'OVERDUE' && !po.isOverdue) return false;
+    if (poStatusFilter === 'ALERT' && !po.priceDiscrepancy) return false;
+
+    // 2. Search Term Filter
+    if (!poSearchTerm || !poSearchTerm.trim()) return true;
+    const term = poSearchTerm.toLowerCase().trim();
+    const poNo = (po.poNumber || '').toLowerCase();
+    const vendorName = (po.vendor?.companyName || po.vendor?.name || po.vendorName || '').toLowerCase();
+    const source = (po.source || '').toLowerCase();
+    const itemDescs = (po.items || []).map(it => (it.itemDesc || it.description || '').toLowerCase()).join(' ');
+
+    return poNo.includes(term) || vendorName.includes(term) || source.includes(term) || itemDescs.includes(term);
+  });
+
   const stockPagination = usePagination(filteredInventory, 50);
   const grnPagination = usePagination(grns, 50);
+  const poPagination = usePagination(filteredPOs, 50);
   const dispatchPagination = usePagination(dispatchShipments || initialDispatchShipments, 50);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {/* PDF View Modal */}
+      {/* GRN PDF View Modal */}
       {selectedGRNForPDF && (
         <GRNPDF grnData={selectedGRNForPDF} onClose={() => setSelectedGRNForPDF(null)} />
+      )}
+
+      {/* Purchase Order PDF View Modal */}
+      {selectedPOForPDF && (
+        <PurchaseOrderPDF poData={selectedPOForPDF} onClose={() => setSelectedPOForPDF(null)} />
       )}
 
       {/* Barcode Thermal Label Printer Modal */}
@@ -1144,6 +1350,9 @@ export default function InventoryManagement({
             <button className={`tab-pill ${activeTab === 'stock' ? 'active' : ''}`} onClick={() => handleTabClick('stock')}>
               <Package size={16} /> Stock Register ({(inventory || []).length})
             </button>
+            <button className={`tab-pill ${activeTab === 'issued_pos' ? 'active' : ''}`} onClick={() => handleTabClick('issued_pos')}>
+              <FileText size={16} style={{ color: '#4f46e5' }} /> Issued Purchase Orders Hub ({(unifiedIssuedPOs || []).length})
+            </button>
             <button className={`tab-pill ${activeTab === 'grn_inward' ? 'active' : ''}`} onClick={() => handleTabClick('grn_inward')}>
               <FileCheck size={16} /> Inward GRNs ({(grns || []).length})
             </button>
@@ -1171,6 +1380,267 @@ export default function InventoryManagement({
           </div>
         </div>
       </div>
+
+      {/* TAB: CENTRALIZED ISSUED PURCHASE ORDERS (PO) HUB */}
+      {activeTab === 'issued_pos' && (
+        <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          
+          {/* Header & Title */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+            <div>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: '800', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                <FileText size={22} style={{ color: '#4f46e5' }} />
+                Centralized Platform Issued Purchase Orders (PO) Hub
+              </h3>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px', margin: 0 }}>
+                Track days elapsed, vendor delivery SLAs, delay time, partial vs completed inward receipts, and rate discrepancy alerts.
+              </p>
+            </div>
+          </div>
+
+          {/* Admin Price Discrepancy Alert Banner */}
+          {unifiedIssuedPOs.some(po => po.priceDiscrepancy) && (
+            <div className="delayed-alert-banner" style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '14px 18px', borderRadius: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <AlertTriangle size={28} style={{ color: '#dc2626' }} />
+                <div>
+                  <h4 style={{ fontSize: '1rem', fontWeight: '800', color: '#991b1b', margin: 0 }}>
+                    ⚠️ ADMIN ALERT: PRICE DISCREPANCY DETECTED ON INWARD GRN RECEIPT(S)
+                  </h4>
+                  <p style={{ fontSize: '0.82rem', color: '#7f1d1d', marginTop: '2px', margin: 0 }}>
+                    Difference detected between original PO agreed unit rate and actual Inward GRN rate. Details highlighted in red table rows below.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* KPI Cards Strip */}
+          <div className="glass-card" style={{ background: '#f8fafc', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', padding: '14px' }}>
+            <div>
+              <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>Total Issued POs</span>
+              <div style={{ fontSize: '1.3rem', fontWeight: '800', color: '#0f172a', marginTop: '2px' }}>
+                {unifiedIssuedPOs.length} Orders
+              </div>
+            </div>
+
+            <div>
+              <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>Completed Deliveries</span>
+              <div style={{ fontSize: '1.3rem', fontWeight: '800', color: '#059669', marginTop: '2px' }}>
+                {unifiedIssuedPOs.filter(p => p.deliveryStatus === 'Completed').length} POs
+              </div>
+            </div>
+
+            <div>
+              <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>Partial / Pending Inward</span>
+              <div style={{ fontSize: '1.3rem', fontWeight: '800', color: '#d97706', marginTop: '2px' }}>
+                {unifiedIssuedPOs.filter(p => p.deliveryStatus === 'Partial Delivery').length} POs
+              </div>
+            </div>
+
+            <div>
+              <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>Overdue Delivery Alert</span>
+              <div style={{ fontSize: '1.3rem', fontWeight: '800', color: '#dc2626', marginTop: '2px' }}>
+                {unifiedIssuedPOs.filter(p => p.isOverdue).length} Overdue
+              </div>
+            </div>
+
+            <div>
+              <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>Price Variance Alerts</span>
+              <div style={{ fontSize: '1.3rem', fontWeight: '800', color: '#7c3aed', marginTop: '2px' }}>
+                {unifiedIssuedPOs.filter(p => p.priceDiscrepancy).length} Rate Mismatches
+              </div>
+            </div>
+          </div>
+
+          {/* Search & Status Filter Controls */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', background: '#ffffff', padding: '12px 16px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: '260px' }}>
+              <Search size={16} style={{ color: 'var(--text-muted)' }} />
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Search by PO Number, Vendor, Material, HSN..."
+                value={poSearchTerm}
+                onChange={e => setPoSearchTerm(e.target.value)}
+              />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-secondary)' }}>Status Filter:</span>
+              <select className="form-control" style={{ width: '220px', fontWeight: '600' }} value={poStatusFilter} onChange={e => setPoStatusFilter(e.target.value)}>
+                <option value="ALL">🌐 All Issued POs ({unifiedIssuedPOs.length})</option>
+                <option value="PENDING">⏳ Pending Inward (0 Received)</option>
+                <option value="PARTIAL">📦 Partial Delivery</option>
+                <option value="COMPLETED">✅ Completed Deliveries</option>
+                <option value="OVERDUE">⚠️ Overdue Delivery SLA</option>
+                <option value="ALERT">🚨 Price Discrepancy Alerts</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Issued POs Data Table */}
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>PO Number & Source</th>
+                  <th>Vendor / Supplier Details</th>
+                  <th>Material Items & PO Qty</th>
+                  <th>Days Elapsed</th>
+                  <th>Promised Date & Delay Time</th>
+                  <th>Inward Status & Delivery</th>
+                  <th>Price Alert (Admin)</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {poPagination.paginatedItems.map(po => {
+                  return (
+                    <tr key={po.poNumber} style={po.priceDiscrepancy ? { background: '#fef2f2' } : {}}>
+                      <td>
+                        <div style={{ fontWeight: '800', color: '#4f46e5', fontSize: '0.92rem', fontFamily: 'monospace' }}>
+                          {po.poNumber}
+                        </div>
+                        <span style={{ fontSize: '0.72rem', color: '#64748b', display: 'block', marginTop: '2px' }}>
+                          Date: <strong>{po.poDate}</strong>
+                        </span>
+                        <span className="badge badge-info" style={{ fontSize: '0.68rem', padding: '1px 6px', marginTop: '3px' }}>
+                          {po.source || 'Vendor Order'}
+                        </span>
+                      </td>
+
+                      <td>
+                        <div style={{ fontWeight: '800', color: '#0f172a' }}>
+                          {po.vendor?.companyName || po.vendor?.name || po.vendorName || 'Supplier'}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: '#475569', marginTop: '2px' }}>
+                          GSTIN: <code>{po.vendor?.gstin || 'N/A'}</code>
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                          Contact: {po.vendor?.contactPerson || po.vendor?.phone || 'Sales Rep'}
+                        </div>
+                      </td>
+
+                      <td>
+                        {(po.items || []).map((it, idx) => (
+                          <div key={idx} style={{ fontSize: '0.82rem', marginBottom: '2px' }}>
+                            • <strong>{it.itemDesc || it.description || 'Material'}</strong>
+                            <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                              PO Qty: <strong>{it.qtyKg || it.qty} kg</strong> @ ₹{it.rate}/kg
+                            </div>
+                          </div>
+                        ))}
+                      </td>
+
+                      <td>
+                        <span style={{ fontSize: '0.9rem', fontWeight: '800', color: '#0f172a' }}>
+                          {po.daysElapsed} Days
+                        </span>
+                        <span style={{ fontSize: '0.72rem', color: '#64748b', display: 'block' }}>
+                          Since PO issuance
+                        </span>
+                      </td>
+
+                      <td>
+                        <div style={{ fontSize: '0.85rem', fontWeight: '700' }}>
+                          {po.promisedDeliveryDate}
+                        </div>
+                        {po.isOverdue ? (
+                          <span className="badge badge-danger" style={{ fontSize: '0.7rem', padding: '2px 6px', marginTop: '2px' }}>
+                            ⚠️ {po.delayDays} Days Overdue
+                          </span>
+                        ) : po.deliveryStatus === 'Completed' ? (
+                          <span className="badge badge-success" style={{ fontSize: '0.7rem', padding: '2px 6px', marginTop: '2px' }}>
+                            ✓ Delivered on Time
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.72rem', color: '#059669', fontWeight: '600' }}>
+                            In Time Frame
+                          </span>
+                        )}
+                      </td>
+
+                      <td>
+                        {po.deliveryStatus === 'Completed' && (
+                          <span className="badge badge-success" style={{ fontSize: '0.8rem', padding: '4px 8px' }}>
+                            ✅ Completed ({(po.totalInwardQty || 0).toFixed(0)} kg Inwarded)
+                          </span>
+                        )}
+
+                        {po.deliveryStatus === 'Partial Delivery' && (
+                          <div>
+                            <span className="badge badge-warning" style={{ fontSize: '0.8rem', padding: '4px 8px' }}>
+                              📦 Partial Delivery
+                            </span>
+                            <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#d97706', marginTop: '3px' }}>
+                              Pending Inward: {po.pendingInwardQty.toFixed(1)} kg
+                            </div>
+                          </div>
+                        )}
+
+                        {po.deliveryStatus === 'Pending Delivery' && (
+                          <span className="badge badge-info" style={{ fontSize: '0.8rem', padding: '4px 8px' }}>
+                            ⏳ Pending Inward (0 Recd)
+                          </span>
+                        )}
+                      </td>
+
+                      <td>
+                        {po.priceDiscrepancy ? (
+                          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '4px 8px', borderRadius: '6px' }}>
+                            <span style={{ fontSize: '0.75rem', fontWeight: '800', color: '#dc2626', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <AlertTriangle size={12} /> Rate Mismatch
+                            </span>
+                            <div style={{ fontSize: '0.7rem', color: '#991b1b', marginTop: '2px' }}>
+                              PO: ₹{po.priceDiscrepancy.poRate} vs GRN: ₹{po.priceDiscrepancy.grnRate}
+                            </div>
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '0.75rem', color: '#059669', fontWeight: '600' }}>
+                            ✓ Price Matched
+                          </span>
+                        )}
+                      </td>
+
+                      <td>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <button
+                            className="btn-primary"
+                            style={{ padding: '4px 10px', fontSize: '0.75rem', background: '#047857', borderColor: '#047857' }}
+                            onClick={() => setSelectedPOForPDF(po)}
+                          >
+                            <Printer size={12} /> View PO PDF
+                          </button>
+
+                          {po.deliveryStatus !== 'Completed' && (
+                            <button
+                              className="btn-secondary"
+                              style={{ padding: '4px 10px', fontSize: '0.75rem', background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontWeight: '700' }}
+                              onClick={() => handleCreateGRNFromPO(po)}
+                            >
+                              <Plus size={12} /> Create Inward GRN
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <TablePagination
+            currentPage={poPagination.currentPage}
+            totalItems={poPagination.totalItems}
+            pageSize={poPagination.pageSize}
+            onPageChange={poPagination.setCurrentPage}
+            onPageSizeChange={poPagination.setPageSize}
+          />
+
+        </div>
+      )}
 
       {/* TAB 1: STOCK REGISTER */}
       {activeTab === 'stock' && (
@@ -2312,6 +2782,29 @@ export default function InventoryManagement({
                     </div>
                   </>
                 )}
+
+                <div className="form-group">
+                  <label style={{ fontWeight: '700', color: '#0369a1' }}>Transporter Name / Vehicle #</label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    placeholder="e.g. V-Trans Logistics / MP-09-AB-1234" 
+                    value={grnTransporterName} 
+                    onChange={e => setGrnTransporterName(e.target.value)} 
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label style={{ fontWeight: '700', color: '#0369a1' }}>Inward Freight Charge (₹)</label>
+                  <input 
+                    type="number" 
+                    step="any" 
+                    className="form-control" 
+                    placeholder="e.g. 2500 (Optional)" 
+                    value={grnFreightAmount} 
+                    onChange={e => setGrnFreightAmount(e.target.value)} 
+                  />
+                </div>
 
                 <div style={{ gridColumn: 'span 2', fontSize: '0.78rem', color: '#047857', fontWeight: '600', background: '#ecfdf5', padding: '8px 12px', borderRadius: '6px', border: '1px solid #a7f3d0' }}>
                   📦 Inward Package Breakdown: <strong>{grnWeightKg || 0} {grnCategory === 'Film Substrates' ? 'Kg' : grnUnit}</strong> total across <strong>{grnRolls || 1} {grnPackagingType}(s)</strong> = <strong>{( (parseFloat(grnWeightKg) || 0) / Math.max(1, parseInt(grnRolls) || 1) ).toFixed(2)} {grnCategory === 'Film Substrates' ? 'Kg' : grnUnit}</strong> per {grnPackagingType}. (1 barcode sticker generated per {grnPackagingType}).
