@@ -604,8 +604,8 @@ export default function InkManagement({
                 </tr>
               </thead>
               <tbody>
-                {pagination.pagedItems.length > 0 ? (
-                  pagination.pagedItems.map(ink => {
+                {(pagination.paginatedItems || []).length > 0 ? (
+                  pagination.paginatedItems.map(ink => {
                     const solidPct = parseFloat(ink.solidContentPct) || 40;
                     const mult = 100 / solidPct;
                     const solidCost100 = (parseFloat(ink.pricePerKg) || 0) * mult;
@@ -660,7 +660,7 @@ export default function InkManagement({
                           <div style={{ fontWeight: '800', color: 'var(--text-primary)' }}>
                             ₹ {ink.pricePerKg} / kg
                           </div>
-                          {ink.priceHistory && ink.priceHistory.length > 1 && (
+                          {Array.isArray(ink.priceHistory) && ink.priceHistory.length > 1 && (
                             <span style={{ fontSize: '0.7rem', color: '#059669', display: 'flex', alignItems: 'center', gap: '2px' }}>
                               <TrendingUp size={10} /> Updated {ink.priceHistory[0]?.date}
                             </span>
