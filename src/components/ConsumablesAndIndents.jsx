@@ -32,7 +32,8 @@ import {
   Lock,
   DollarSign,
   ShoppingBag,
-  Settings
+  Settings,
+  PackagePlus
 } from 'lucide-react';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
 import { notifyPurchaseIndentCreated, notifyPurchaseOrderIssued, notifyLowStockAlert } from '../services/emailService';
@@ -1196,20 +1197,34 @@ export default function ConsumablesAndIndents({
       {/* ========================================================================= */}
       {isIssueModalOpen && selectedItemForIssue && (
         <div className="modal-overlay" onClick={() => setIsIssueModalOpen(false)}>
-          <div className="modal-content" style={{ width: '600px' }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ fontSize: '1.2rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary-brand)' }}>
-                <ArrowDownToLine size={20} /> Issue Store Material to Machine
-              </h3>
-              <button className="btn-secondary" style={{ padding: '4px' }} onClick={() => setIsIssueModalOpen(false)}><X size={18} /></button>
+          <div className="modal-content" style={{ width: '640px' }} onClick={e => e.stopPropagation()}>
+            
+            {/* Dark Executive Header */}
+            <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ background: 'rgba(5, 150, 105, 0.2)', padding: '10px', borderRadius: '10px', color: '#34d399', border: '1px solid rgba(52, 211, 153, 0.3)' }}>
+                  <ArrowDownToLine size={22} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.18rem', fontWeight: '800', margin: 0, color: '#ffffff' }}>
+                    Issue Store Material to Machine
+                  </h3>
+                  <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0 0' }}>
+                    Deduct stock and record machine floor usage log
+                  </p>
+                </div>
+              </div>
+              <button type="button" className="modal-close-btn" onClick={() => setIsIssueModalOpen(false)}>
+                <X size={18} />
+              </button>
             </div>
 
-            <form onSubmit={handleConfirmIssueStock}>
-              <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>SELECTED ITEM:</div>
-                <div style={{ fontSize: '1.05rem', fontWeight: '800', color: 'var(--text-primary)' }}>{selectedItemForIssue.name}</div>
-                <div style={{ display: 'flex', gap: '16px', marginTop: '6px', fontSize: '0.85rem' }}>
-                  <span>Code: <b>{selectedItemForIssue.itemCode}</b></span>
+            <form onSubmit={handleConfirmIssueStock} style={{ padding: '24px' }}>
+              <div style={{ background: '#f8fafc', padding: '14px 18px', borderRadius: '10px', border: '1px solid #e2e8f0', marginBottom: '18px' }}>
+                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>SELECTED STORE ITEM</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#0f172a', marginTop: '2px' }}>{selectedItemForIssue.name}</div>
+                <div style={{ display: 'flex', gap: '20px', marginTop: '6px', fontSize: '0.85rem' }}>
+                  <span>SKU Code: <b style={{ fontFamily: 'monospace', color: '#4f46e5' }}>{selectedItemForIssue.itemCode}</b></span>
                   <span>Available Stock: <b style={{ color: '#047857' }}>{selectedItemForIssue.currentStock} {selectedItemForIssue.unit}</b></span>
                 </div>
               </div>
@@ -1281,9 +1296,9 @@ export default function ConsumablesAndIndents({
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
-                <button type="button" className="btn-secondary" onClick={() => setIsIssueModalOpen(false)}>Cancel</button>
-                <button type="submit" className="btn-primary" style={{ background: 'linear-gradient(135deg, #059669 0%, #047857 100%)' }}>Confirm Issue & Deduct Stock</button>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
+                <button type="button" className="btn-secondary" style={{ padding: '9px 18px' }} onClick={() => setIsIssueModalOpen(false)}>Cancel</button>
+                <button type="submit" className="btn-primary" style={{ padding: '10px 22px', fontWeight: '800', background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', borderColor: '#059669' }}>Confirm Issue & Deduct Stock</button>
               </div>
             </form>
           </div>
@@ -1295,15 +1310,29 @@ export default function ConsumablesAndIndents({
       {/* ========================================================================= */}
       {isIndentModalOpen && (
         <div className="modal-overlay" onClick={() => setIsIndentModalOpen(false)}>
-          <div className="modal-content" style={{ width: '850px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ fontSize: '1.2rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary-brand)' }}>
-                <ClipboardList size={20} /> Raise Store & Plant Material Requisition Indent
-              </h3>
-              <button className="btn-secondary" style={{ padding: '4px' }} onClick={() => setIsIndentModalOpen(false)}><X size={18} /></button>
+          <div className="modal-content" style={{ width: '850px', maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
+            
+            {/* Dark Executive Header */}
+            <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ background: 'rgba(99, 102, 241, 0.2)', padding: '10px', borderRadius: '10px', color: '#818cf8', border: '1px solid rgba(129, 140, 248, 0.3)' }}>
+                  <ClipboardList size={22} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.18rem', fontWeight: '800', margin: 0, color: '#ffffff' }}>
+                    Raise Store & Plant Material Requisition Indent
+                  </h3>
+                  <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0 0' }}>
+                    Create official requisition slip for shopfloor consumables & spares
+                  </p>
+                </div>
+              </div>
+              <button type="button" className="modal-close-btn" onClick={() => setIsIndentModalOpen(false)}>
+                <X size={18} />
+              </button>
             </div>
 
-            <form onSubmit={handleCreateIndent}>
+            <form onSubmit={handleCreateIndent} style={{ padding: '24px' }}>
               <div className="form-grid">
                 <div>
                   <label className="form-label">Priority Level *</label>
@@ -1431,15 +1460,29 @@ export default function ConsumablesAndIndents({
       {/* ========================================================================= */}
       {isRestockModalOpen && selectedItemForRestock && (
         <div className="modal-overlay" onClick={() => setIsRestockModalOpen(false)}>
-          <div className="modal-content" style={{ width: '500px' }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: 'var(--primary-brand)' }}>
-                Restock Store Item: {selectedItemForRestock.name}
-              </h3>
-              <button className="btn-secondary" style={{ padding: '4px' }} onClick={() => setIsRestockModalOpen(false)}><X size={18} /></button>
+          <div className="modal-content" style={{ width: '540px' }} onClick={e => e.stopPropagation()}>
+            
+            {/* Dark Executive Header */}
+            <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ background: 'rgba(99, 102, 241, 0.2)', padding: '10px', borderRadius: '10px', color: '#818cf8', border: '1px solid rgba(129, 140, 248, 0.3)' }}>
+                  <RotateCcw size={22} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: '800', margin: 0, color: '#ffffff' }}>
+                    Restock Store Item
+                  </h3>
+                  <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0 0' }}>
+                    Inward received stock for {selectedItemForRestock.name}
+                  </p>
+                </div>
+              </div>
+              <button type="button" className="modal-close-btn" onClick={() => setIsRestockModalOpen(false)}>
+                <X size={18} />
+              </button>
             </div>
 
-            <form onSubmit={handleConfirmRestock}>
+            <form onSubmit={handleConfirmRestock} style={{ padding: '24px' }}>
               <div style={{ marginBottom: '14px', fontSize: '0.85rem' }}>
                 Current Available Stock: <b>{selectedItemForRestock.currentStock} {selectedItemForRestock.unit}</b>
                 <br />
@@ -1472,18 +1515,32 @@ export default function ConsumablesAndIndents({
       {/* ========================================================================= */}
       {isNewItemModalOpen && (
         <div className="modal-overlay" onClick={() => setIsNewItemModalOpen(false)}>
-          <div className="modal-content" style={{ width: '650px' }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ fontSize: '1.2rem', fontWeight: '800', color: 'var(--primary-brand)' }}>
-                Add New Consumable or Spare Item to Store
-              </h3>
-              <button className="btn-secondary" style={{ padding: '4px' }} onClick={() => setIsNewItemModalOpen(false)}><X size={18} /></button>
+          <div className="modal-content" style={{ width: '700px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
+            
+            {/* Dark Executive Header */}
+            <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '18px 24px', color: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ background: 'rgba(99, 102, 241, 0.2)', padding: '10px', borderRadius: '10px', color: '#818cf8', border: '1px solid rgba(129, 140, 248, 0.3)' }}>
+                  <PackagePlus size={22} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.18rem', fontWeight: '800', margin: 0, color: '#ffffff' }}>
+                    Add New Consumable or Spare Item to Store
+                  </h3>
+                  <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0 0' }}>
+                    Register new store items, reserve thresholds, stock levels & assigned plant machines
+                  </p>
+                </div>
+              </div>
+              <button type="button" className="modal-close-btn" onClick={() => setIsNewItemModalOpen(false)}>
+                <X size={18} />
+              </button>
             </div>
 
-            <form onSubmit={handleCreateNewItem}>
+            <form onSubmit={handleCreateNewItem} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div className="form-grid">
                 <div>
-                  <label className="form-label">Item Description / Name *</label>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Item Description / Name *</label>
                   <input 
                     type="text" 
                     className="form-control" 
@@ -1495,7 +1552,7 @@ export default function ConsumablesAndIndents({
                 </div>
 
                 <div>
-                  <label className="form-label">Item Code / SKU</label>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Item Code / SKU</label>
                   <input 
                     type="text" 
                     className="form-control" 
@@ -1506,7 +1563,7 @@ export default function ConsumablesAndIndents({
                 </div>
 
                 <div>
-                  <label className="form-label">Category *</label>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Category *</label>
                   <select className="form-control" value={newItemCategory} onChange={e => setNewItemCategory(e.target.value)}>
                     <option value="Chemicals & Solvents">Chemicals & Solvents</option>
                     <option value="Inks & Toners">Inks & Toners</option>
@@ -1521,7 +1578,7 @@ export default function ConsumablesAndIndents({
                 </div>
 
                 <div>
-                  <label className="form-label">Unit of Measure *</label>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Unit of Measure *</label>
                   <select className="form-control" value={newItemUnit} onChange={e => setNewItemUnit(e.target.value)}>
                     <option value="Kg">Kg</option>
                     <option value="Litres">Litres</option>
@@ -1534,7 +1591,7 @@ export default function ConsumablesAndIndents({
                 </div>
 
                 <div>
-                  <label className="form-label">Initial Current Stock *</label>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Initial Current Stock *</label>
                   <input 
                     type="number" 
                     className="form-control" 
@@ -1545,7 +1602,7 @@ export default function ConsumablesAndIndents({
                 </div>
 
                 <div>
-                  <label className="form-label">Minimum Reserve Threshold Level *</label>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Minimum Reserve Threshold Level *</label>
                   <input 
                     type="number" 
                     className="form-control" 
@@ -1556,7 +1613,7 @@ export default function ConsumablesAndIndents({
                 </div>
 
                 <div>
-                  <label className="form-label">Unit Cost (₹)</label>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Unit Cost (₹)</label>
                   <input 
                     type="number" 
                     className="form-control" 
@@ -1566,7 +1623,7 @@ export default function ConsumablesAndIndents({
                 </div>
 
                 <div>
-                  <label className="form-label">Assigned Machine / Usage</label>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Assigned Machine / Usage</label>
                   <select className="form-control" value={newItemMachine} onChange={e => setNewItemMachine(e.target.value)}>
                     <option value="">— Select Machine / Usage Area —</option>
                     {dynamicMachineList.map(m => (
@@ -1580,8 +1637,8 @@ export default function ConsumablesAndIndents({
                 </div>
               </div>
 
-              <div style={{ marginTop: '12px' }}>
-                <label className="form-label">Storage Bin Location</label>
+              <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Storage Bin Location</label>
                 <input 
                   type="text" 
                   className="form-control" 
@@ -1591,9 +1648,9 @@ export default function ConsumablesAndIndents({
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
-                <button type="button" className="btn-secondary" onClick={() => setIsNewItemModalOpen(false)}>Cancel</button>
-                <button type="submit" className="btn-primary">Add Store Item</button>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
+                <button type="button" className="btn-secondary" style={{ padding: '9px 20px' }} onClick={() => setIsNewItemModalOpen(false)}>Cancel</button>
+                <button type="submit" className="btn-primary" style={{ padding: '10px 24px', fontWeight: '800', background: 'linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)', borderColor: '#4f46e5' }}>Add Store Item</button>
               </div>
             </form>
           </div>
@@ -1700,15 +1757,29 @@ export default function ConsumablesAndIndents({
       {/* ========================================================================= */}
       {isRaisePOModalOpen && targetIndentForPO && (
         <div className="modal-overlay" onClick={() => setIsRaisePOModalOpen(false)}>
-          <div className="modal-content glass-panel" style={{ width: '800px', maxHeight: '90vh', overflowY: 'auto', padding: '24px' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
-              <h3 style={{ fontSize: '1.2rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary-brand)' }}>
-                <ShoppingBag size={20} /> Issue Official Purchase Order (Admin Restricted)
-              </h3>
-              <button className="btn-secondary" style={{ padding: '4px' }} onClick={() => setIsRaisePOModalOpen(false)}><X size={18} /></button>
+          <div className="modal-content" style={{ width: '820px', maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
+            
+            {/* Dark Executive Header */}
+            <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ background: 'rgba(99, 102, 241, 0.2)', padding: '10px', borderRadius: '10px', color: '#818cf8', border: '1px solid rgba(129, 140, 248, 0.3)' }}>
+                  <ShoppingBag size={22} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.18rem', fontWeight: '800', margin: 0, color: '#ffffff' }}>
+                    Issue Official Purchase Order (Admin Restricted)
+                  </h3>
+                  <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0 0' }}>
+                    Convert requisition indent {targetIndentForPO.indentNo} to official supplier PO
+                  </p>
+                </div>
+              </div>
+              <button type="button" className="modal-close-btn" onClick={() => setIsRaisePOModalOpen(false)}>
+                <X size={18} />
+              </button>
             </div>
 
-            <form onSubmit={handleConfirmIssuePO}>
+            <form onSubmit={handleConfirmIssuePO} style={{ padding: '24px' }}>
               {/* Linked Indent Information Header */}
               <div style={{ background: '#f0f9ff', padding: '14px 18px', borderRadius: '8px', border: '1px solid #bae6fd', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
