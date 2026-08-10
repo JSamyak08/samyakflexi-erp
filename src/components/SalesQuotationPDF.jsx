@@ -139,7 +139,7 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
                 <tr style={{ background: '#1e293b', color: '#ffffff' }}>
                   <th style={{ padding: '8px 10px', textAlign: 'left' }}>S.N</th>
                   <th style={{ padding: '8px 10px', textAlign: 'left' }}>Product / Job Description</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'left' }}>Substrate Structure</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'left' }}>Structure / Description</th>
                   <th style={{ padding: '8px 10px', textAlign: 'left' }}>Material Format</th>
                   <th style={{ padding: '8px 10px', textAlign: 'right' }}>Quantity</th>
                   <th style={{ padding: '8px 10px', textAlign: 'right' }}>Rate / UOM</th>
@@ -151,7 +151,9 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
                   <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
                     <td style={{ padding: '10px' }}>{idx + 1}</td>
                     <td style={{ padding: '10px', fontWeight: '700', color: '#0f172a' }}>{it.jobTitle}</td>
-                    <td style={{ padding: '10px', fontSize: '0.8rem', color: '#334155' }}>{it.structure}</td>
+                    <td style={{ padding: '10px', fontSize: '0.8rem', color: '#334155' }}>
+                      {it.materialFormat === 'Rotogravure Cylinder' ? (it.description || it.structure || 'Rotogravure Cylinder Description N/A') : (it.structure || 'N/A')}
+                    </td>
                     <td style={{ padding: '10px' }}>
                       <span className="badge badge-info" style={{ fontSize: '0.72rem', background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1' }}>
                         {it.materialFormat || 'Roll Form'}

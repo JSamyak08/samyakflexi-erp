@@ -114,11 +114,12 @@ export default function DispatchManagement({
 
     // Default to first client if available
     const firstClient = (clients && clients[0]) || {};
-    setDcSelectedClientName(firstClient.companyName || '');
-    setDcClientAddress(firstClient.address || firstClient.factoryAddress || '');
-    setDcClientGstin(firstClient.gstin || '');
-    setDcClientContactPerson(firstClient.contactPerson || '');
-    setDcClientPhone(firstClient.phone || '');
+    const firstName = firstClient.name || firstClient.companyName || firstClient.clientName || '';
+    setDcSelectedClientName(firstName);
+    setDcClientAddress(firstClient.address || firstClient.factoryAddress || firstClient.registeredAddress || '');
+    setDcClientGstin(firstClient.gstin || firstClient.gstNumber || '');
+    setDcClientContactPerson(firstClient.contactPerson || firstClient.contactName || '');
+    setDcClientPhone(firstClient.phone || firstClient.contactNo || firstClient.mobile || '');
 
     setDcVehicleNo('MP-09-AB-1234');
     setDcTransporterName('Self / Direct Logistics Truck');
@@ -165,12 +166,12 @@ export default function DispatchManagement({
 
   const handleClientSelectChange = (clientNameStr) => {
     setDcSelectedClientName(clientNameStr);
-    const matched = clients.find(c => c.companyName === clientNameStr);
+    const matched = clients.find(c => (c.name || c.companyName || c.clientName) === clientNameStr);
     if (matched) {
-      setDcClientAddress(matched.address || matched.factoryAddress || '');
-      setDcClientGstin(matched.gstin || '');
-      setDcClientContactPerson(matched.contactPerson || '');
-      setDcClientPhone(matched.phone || matched.contactNo || '');
+      setDcClientAddress(matched.address || matched.factoryAddress || matched.registeredAddress || '');
+      setDcClientGstin(matched.gstin || matched.gstNumber || '');
+      setDcClientContactPerson(matched.contactPerson || matched.contactName || '');
+      setDcClientPhone(matched.phone || matched.contactNo || matched.mobile || '');
     }
   };
 
@@ -864,14 +865,18 @@ export default function DispatchManagement({
                   <label className="form-label">Client Name (Select from List) *</label>
                   <select 
                     className="form-control" 
+                    style={{ fontWeight: '700' }}
                     value={dcSelectedClientName} 
                     onChange={e => handleClientSelectChange(e.target.value)}
                     required
                   >
                     <option value="" disabled>-- Select Client --</option>
-                    {(clients || []).map(c => (
-                      <option key={c.id} value={c.companyName}>{c.companyName}</option>
-                    ))}
+                    {(clients || []).map(c => {
+                      const name = c.name || c.companyName || c.clientName || '';
+                      return (
+                        <option key={c.id || name} value={name}>{name}</option>
+                      );
+                    })}
                   </select>
                 </div>
               </div>
@@ -933,68 +938,75 @@ export default function DispatchManagement({
                   </button>
                 </div>
 
-                <div className="table-responsive">
-                  <table className="modern-table" style={{ fontSize: '0.82rem' }}>
+                <div style={{ overflowX: 'auto', width: '100%', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#ffffff' }}>
+                  <table className="data-table" style={{ width: '100%', minWidth: '680px', margin: 0, fontSize: '0.82rem' }}>
                     <thead>
-                      <tr>
-                        <th style={{ width: '40%' }}>Item Description *</th>
-                        <th style={{ width: '15%' }}>HSN / SAC</th>
-                        <th style={{ width: '15%' }}>Qty (Kg) *</th>
-                        <th style={{ width: '15%' }}>Rate (₹/kg)</th>
-                        <th style={{ width: '15%', textAlign: 'right' }}>Amount (₹)</th>
-                        <th style={{ width: '50px' }}></th>
+                      <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                        <th style={{ width: '35%', padding: '8px 10px' }}>Item Description *</th>
+                        <th style={{ width: '14%', padding: '8px 10px' }}>HSN / SAC</th>
+                        <th style={{ width: '14%', padding: '8px 10px' }}>Qty (Kg) *</th>
+                        <th style={{ width: '14%', padding: '8px 10px' }}>Rate (₹/kg)</th>
+                        <th style={{ width: '18%', padding: '8px 10px', textAlign: 'right' }}>Amount (₹)</th>
+                        <th style={{ width: '5%', padding: '8px 5px', textAlign: 'center' }}></th>
                       </tr>
                     </thead>
                     <tbody>
                       {dcItems.map((item, idx) => (
                         <tr key={item.id || idx}>
-                          <td>
+                          <td style={{ padding: '6px 8px' }}>
                             <input 
                               type="text" 
                               className="form-control" 
+                              style={{ padding: '5px 8px', fontSize: '0.82rem', fontWeight: '600' }}
                               value={item.description} 
                               onChange={e => handleUpdateDcItemRow(item.id, 'description', e.target.value)}
                               required 
                             />
                           </td>
-                          <td>
+                          <td style={{ padding: '6px 8px' }}>
                             <input 
                               type="text" 
                               className="form-control" 
+                              style={{ padding: '5px 8px', fontSize: '0.82rem', textAlign: 'center', fontWeight: '600' }}
                               value={item.hsnSac} 
                               onChange={e => handleUpdateDcItemRow(item.id, 'hsnSac', e.target.value)}
                             />
                           </td>
-                          <td>
+                          <td style={{ padding: '6px 8px' }}>
                             <input 
                               type="number" 
                               step="any"
                               className="form-control" 
+                              style={{ padding: '5px 8px', fontSize: '0.82rem', textAlign: 'right', fontWeight: '700' }}
                               value={item.quantity} 
                               onChange={e => handleUpdateDcItemRow(item.id, 'quantity', e.target.value)}
                               required 
                             />
                           </td>
-                          <td>
+                          <td style={{ padding: '6px 8px' }}>
                             <input 
                               type="number" 
                               step="any"
                               className="form-control" 
+                              style={{ padding: '5px 8px', fontSize: '0.82rem', textAlign: 'right', fontWeight: '700' }}
                               value={item.rate} 
                               onChange={e => handleUpdateDcItemRow(item.id, 'rate', e.target.value)}
                             />
                           </td>
-                          <td style={{ textAlign: 'right', fontWeight: 'bold' }}>
+                          <td style={{ padding: '6px 12px', textAlign: 'right', fontWeight: '800', color: '#0284c7', fontSize: '0.88rem', verticalAlign: 'middle' }}>
                             {formatINR(item.amount || (item.quantity * item.rate))}
                           </td>
-                          <td style={{ textAlign: 'center' }}>
-                            <button 
-                              type="button" 
-                              onClick={() => handleRemoveDcItemRow(item.id)}
-                              style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}
-                            >
-                              <Trash2 size={16} />
-                            </button>
+                          <td style={{ padding: '6px 8px', textAlign: 'center', verticalAlign: 'middle' }}>
+                            {dcItems.length > 1 && (
+                              <button 
+                                type="button" 
+                                onClick={() => handleRemoveDcItemRow(item.id)}
+                                style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '2px 4px' }}
+                                title="Delete Row"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -1007,25 +1019,25 @@ export default function DispatchManagement({
                   const subtotal = dcItems.reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
                   const gstInfo = calculateGSTBreakdown(dcClientGstin, dcClientAddress, subtotal, dcGstRatePct, COMPANY_DETAILS.gstin);
                   return (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                      <div style={{ fontSize: '0.8rem', color: '#475569' }}>
-                        Tax Rate: 
+                    <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginTop: '12px', background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ fontSize: '0.8rem', color: '#475569', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span>Tax Rate:</span>
                         <select 
                           value={dcGstRatePct} 
                           onChange={e => setDcGstRatePct(e.target.value)}
-                          style={{ marginLeft: '6px', padding: '2px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontWeight: '700' }}
+                          style={{ padding: '3px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontWeight: '700', fontSize: '0.8rem' }}
                         >
                           <option value={18}>18% GST</option>
                           <option value={12}>12% GST</option>
                           <option value={5}>5% GST</option>
                           <option value={0}>0% (Exempt)</option>
                         </select>
-                        <span style={{ marginLeft: '12px', fontWeight: '700', color: gstInfo.isIntraState ? '#047857' : '#0284c7' }}>
+                        <span style={{ fontWeight: '700', color: gstInfo.isIntraState ? '#047857' : '#0284c7', fontSize: '0.78rem' }}>
                           ({gstInfo.isIntraState ? 'CGST 9% + SGST 9% [Intra-State MP]' : 'IGST 18% [Inter-State]'})
                         </span>
                       </div>
 
-                      <div style={{ fontSize: '0.95rem', fontWeight: '800', color: '#0f172a' }}>
+                      <div style={{ fontSize: '0.92rem', fontWeight: '800', color: '#0f172a' }}>
                         Subtotal: {formatINR(subtotal)} | Grand Total: <span style={{ color: '#0284c7' }}>{formatINR(gstInfo.grandTotal)}</span>
                       </div>
                     </div>

@@ -165,6 +165,9 @@ export function parseStructureToLayers(structureStr) {
 
 // Helper to compute combined structure string from layers array
 export function getStructureString(item) {
+  if (item && item.materialFormat === 'Rotogravure Cylinder') {
+    return item.description || item.structure || 'Rotogravure Cylinder';
+  }
   if (item && item.layers && item.layers.length > 0) {
     return item.layers
       .map(l => `${l.filmType || 'PET'}${l.micron ? ' ' + l.micron + 'µ' : ''}`)
@@ -471,10 +474,12 @@ export default function SalesManagement({
       const rate = parseFloat(it.ratePerUom) || 0;
       const taxable = qty * rate;
       const gst = (taxable * (parseFloat(it.gstPct) || 18)) / 100;
-      const computedStructure = getStructureString(it);
+      const isCylinder = it.materialFormat === 'Rotogravure Cylinder';
+      const computedStructure = isCylinder ? (it.description || it.structure || 'Rotogravure Cylinder Set') : getStructureString(it);
       return {
         ...it,
         structure: computedStructure,
+        description: isCylinder ? (it.description || computedStructure) : undefined,
         taxableAmount: taxable,
         gstAmount: gst,
         totalAmount: taxable + gst
@@ -1337,215 +1342,254 @@ export default function SalesManagement({
               </button>
             </div>
 
-            <table className="data-table" style={{ background: '#ffffff' }}>
-              <thead>
-                <tr style={{ background: '#f8fafc' }}>
-                  <th style={{ width: '22%' }}>Job Title / Product</th>
-                  <th style={{ width: '38%' }}>Structure (Film Dropdown & Micron)</th>
-                  <th style={{ width: '14%' }}>Material Format *</th>
-                  <th style={{ width: '8%' }}>Qty</th>
-                  <th style={{ width: '8%' }}>UOM</th>
-                  <th style={{ width: '10%' }}>Rate (₹)</th>
-                  <th>Total (₹)</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((it, idx) => {
-                  const qty = parseFloat(it.quantity) || 0;
-                  const rate = parseFloat(it.ratePerUom) || 0;
-                  const total = qty * rate * 1.18;
-                  const currentLayers = it.layers || [
-                    { id: 1, filmType: 'PET', micron: 12 },
-                    { id: 2, filmType: 'Natural GP LD', micron: 40 }
-                  ];
+            <div style={{ overflowX: 'auto', width: '100%', maxWidth: '100%', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff' }}>
+              <table className="data-table" style={{ width: '100%', minWidth: '920px', margin: 0 }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc' }}>
+                    <th style={{ width: '20%' }}>Job Title / Product</th>
+                    <th style={{ width: '32%' }}>Structure / Description</th>
+                    <th style={{ width: '16%' }}>Material Format *</th>
+                    <th style={{ width: '7%' }}>Qty</th>
+                    <th style={{ width: '8%' }}>UOM</th>
+                    <th style={{ width: '8%' }}>Rate (₹)</th>
+                    <th style={{ width: '9%' }}>Total (₹)</th>
+                    <th style={{ width: '4%', textAlign: 'center' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((it, idx) => {
+                    const qty = parseFloat(it.quantity) || 0;
+                    const rate = parseFloat(it.ratePerUom) || 0;
+                    const total = qty * rate * 1.18;
+                    const isCylinder = it.materialFormat === 'Rotogravure Cylinder';
+                    const currentLayers = it.layers || [
+                      { id: 1, filmType: 'PET', micron: 12 },
+                      { id: 2, filmType: 'Natural GP LD', micron: 40 }
+                    ];
 
-                  return (
-                    <tr key={it.id || idx}>
-                      <td>
-                        <input 
-                          type="text" 
-                          className="form-control" 
-                          style={{ padding: '4px 8px', fontSize: '0.82rem', fontWeight: '700' }}
-                          placeholder="e.g. Britannia Bourbon 250g"
-                          value={it.jobTitle} 
-                          onChange={e => {
-                            const updated = [...items];
-                            updated[idx].jobTitle = e.target.value;
-                            setItems(updated);
-                          }} 
-                          required 
-                        />
-                      </td>
-                      <td style={{ verticalAlign: 'top', background: '#fafafa', padding: '8px' }}>
-                        {/* Film Layers Builder */}
-                        {currentLayers.map((layer, lIdx) => (
-                          <div key={layer.id || lIdx} style={{ display: 'flex', gap: '4px', alignItems: 'center', marginBottom: '4px' }}>
-                            <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 'bold', width: '24px' }}>
-                              L{lIdx + 1}:
-                            </span>
-                            {/* Film Type Dropdown */}
-                            <select 
-                              className="form-control" 
-                              style={{ padding: '2px 4px', fontSize: '0.78rem', flex: 2, fontWeight: '700' }}
-                              value={layer.filmType || 'PET'}
-                              onChange={e => {
-                                const updated = [...items];
-                                if (!updated[idx].layers) updated[idx].layers = [...currentLayers];
-                                updated[idx].layers[lIdx].filmType = e.target.value;
-                                updated[idx].structure = getStructureString(updated[idx]);
-                                setItems(updated);
-                              }}
-                            >
-                              {STANDARD_FILM_TYPES.map(f => (
-                                <option key={f} value={f}>{f}</option>
-                              ))}
-                            </select>
-
-                            {/* Micron Field */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flex: 1 }}>
+                    return (
+                      <tr key={it.id || idx}>
+                        <td style={{ verticalAlign: 'top', padding: '8px' }}>
+                          <input 
+                            type="text" 
+                            className="form-control" 
+                            style={{ padding: '4px 8px', fontSize: '0.82rem', fontWeight: '700' }}
+                            placeholder="e.g. Britannia Bourbon 250g"
+                            value={it.jobTitle} 
+                            onChange={e => {
+                              const updated = [...items];
+                              updated[idx].jobTitle = e.target.value;
+                              setItems(updated);
+                            }} 
+                            required 
+                          />
+                        </td>
+                        <td style={{ verticalAlign: 'top', background: isCylinder ? '#f0f9ff' : '#fafafa', padding: '8px' }}>
+                          {isCylinder ? (
+                            <div style={{ padding: '2px 0' }}>
+                              <label style={{ fontSize: '0.72rem', fontWeight: '800', color: '#0284c7', display: 'block', marginBottom: '4px' }}>
+                                Cylinder Description / Specs *
+                              </label>
                               <input 
-                                type="number" 
-                                step="any"
+                                type="text" 
                                 className="form-control" 
-                                style={{ padding: '2px 4px', fontSize: '0.78rem', textAlign: 'center', fontWeight: '700' }}
-                                placeholder="Micron"
-                                value={layer.micron || ''}
+                                style={{ padding: '6px 8px', fontSize: '0.82rem', fontWeight: '600', background: '#ffffff', borderColor: '#38bdf8' }}
+                                placeholder="e.g. 8 Color Engraved Cylinder Set for Front & Back"
+                                value={it.description !== undefined ? it.description : (it.structure && !it.structure.includes('µ') ? it.structure : '')} 
                                 onChange={e => {
                                   const updated = [...items];
-                                  if (!updated[idx].layers) updated[idx].layers = [...currentLayers];
-                                  updated[idx].layers[lIdx].micron = e.target.value;
-                                  updated[idx].structure = getStructureString(updated[idx]);
+                                  updated[idx].description = e.target.value;
+                                  updated[idx].structure = e.target.value;
                                   setItems(updated);
-                                }}
+                                }} 
+                                required={isCylinder}
                               />
-                              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 'bold' }}>µ</span>
+                              <div style={{ fontSize: '0.7rem', color: '#0284c7', marginTop: '4px', fontStyle: 'italic', fontWeight: '600' }}>
+                                ℹ️ Film Structure N/A for Rotogravure Cylinder
+                              </div>
                             </div>
+                          ) : (
+                            /* Film Layers Builder */
+                            <>
+                              {currentLayers.map((layer, lIdx) => (
+                                <div key={layer.id || lIdx} style={{ display: 'flex', gap: '4px', alignItems: 'center', marginBottom: '4px' }}>
+                                  <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 'bold', width: '22px', flexShrink: 0 }}>
+                                    L{lIdx + 1}:
+                                  </span>
+                                  {/* Film Type Dropdown */}
+                                  <select 
+                                    className="form-control" 
+                                    style={{ padding: '2px 4px', fontSize: '0.78rem', flex: 2, fontWeight: '700', minWidth: 0 }}
+                                    value={layer.filmType || 'PET'}
+                                    onChange={e => {
+                                      const updated = [...items];
+                                      if (!updated[idx].layers) updated[idx].layers = [...currentLayers];
+                                      updated[idx].layers[lIdx].filmType = e.target.value;
+                                      updated[idx].structure = getStructureString(updated[idx]);
+                                      setItems(updated);
+                                    }}
+                                  >
+                                    {STANDARD_FILM_TYPES.map(f => (
+                                      <option key={f} value={f}>{f}</option>
+                                    ))}
+                                  </select>
 
-                            {/* Remove Layer Icon */}
-                            {currentLayers.length > 1 && (
-                              <button 
-                                type="button" 
-                                style={{ border: 'none', background: 'none', color: '#ef4444', cursor: 'pointer', padding: '0 2px' }}
-                                onClick={() => {
-                                  const updated = [...items];
-                                  updated[idx].layers = currentLayers.filter((_, i) => i !== lIdx);
-                                  updated[idx].structure = getStructureString(updated[idx]);
-                                  setItems(updated);
-                                }}
-                                title="Remove Layer"
-                              >
-                                <Trash2 size={12} />
-                              </button>
-                            )}
-                          </div>
-                        ))}
+                                  {/* Micron Field */}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flex: 1, minWidth: 0 }}>
+                                    <input 
+                                      type="number" 
+                                      step="any"
+                                      className="form-control" 
+                                      style={{ padding: '2px 4px', fontSize: '0.78rem', textAlign: 'center', fontWeight: '700' }}
+                                      placeholder="Micron"
+                                      value={layer.micron || ''}
+                                      onChange={e => {
+                                        const updated = [...items];
+                                        if (!updated[idx].layers) updated[idx].layers = [...currentLayers];
+                                        updated[idx].layers[lIdx].micron = e.target.value;
+                                        updated[idx].structure = getStructureString(updated[idx]);
+                                        setItems(updated);
+                                      }}
+                                    />
+                                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 'bold', flexShrink: 0 }}>µ</span>
+                                  </div>
 
-                        {/* Add Layer & Computed Structure Summary */}
-                        <div style={{ marginTop: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <button 
-                            type="button" 
-                            style={{ background: 'none', border: '1px dashed #cbd5e1', borderRadius: '4px', padding: '2px 6px', fontSize: '0.72rem', color: '#0284c7', cursor: 'pointer', fontWeight: 'bold' }}
-                            onClick={() => {
+                                  {/* Remove Layer Icon */}
+                                  {currentLayers.length > 1 && (
+                                    <button 
+                                      type="button" 
+                                      style={{ border: 'none', background: 'none', color: '#ef4444', cursor: 'pointer', padding: '0 2px', flexShrink: 0 }}
+                                      onClick={() => {
+                                        const updated = [...items];
+                                        updated[idx].layers = currentLayers.filter((_, i) => i !== lIdx);
+                                        updated[idx].structure = getStructureString(updated[idx]);
+                                        setItems(updated);
+                                      }}
+                                      title="Remove Layer"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+
+                              {/* Add Layer & Computed Structure Summary */}
+                              <div style={{ marginTop: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <button 
+                                  type="button" 
+                                  style={{ background: 'none', border: '1px dashed #cbd5e1', borderRadius: '4px', padding: '2px 6px', fontSize: '0.72rem', color: '#0284c7', cursor: 'pointer', fontWeight: 'bold' }}
+                                  onClick={() => {
+                                    const updated = [...items];
+                                    const nextFilm = currentLayers.length === 1 ? 'METPET' : 'Natural GP LD';
+                                    const nextMicron = currentLayers.length === 1 ? 12 : 35;
+                                    updated[idx].layers = [...currentLayers, { id: Date.now(), filmType: nextFilm, micron: nextMicron }];
+                                    updated[idx].structure = getStructureString(updated[idx]);
+                                    setItems(updated);
+                                  }}
+                                >
+                                  + Add Layer
+                                </button>
+                                <div style={{ fontSize: '0.72rem', fontWeight: '800', color: '#047857' }}>
+                                  {getStructureString(it) || 'PET 12µ / LD 40µ'}
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </td>
+                        <td style={{ verticalAlign: 'top', padding: '8px' }}>
+                          <select 
+                            className="form-control" 
+                            style={{ padding: '4px 6px', fontSize: '0.8rem', fontWeight: '700' }}
+                            value={it.materialFormat || 'Roll Form'} 
+                            onChange={e => {
                               const updated = [...items];
-                              const nextFilm = currentLayers.length === 1 ? 'METPET' : 'Natural GP LD';
-                              const nextMicron = currentLayers.length === 1 ? 12 : 35;
-                              updated[idx].layers = [...currentLayers, { id: Date.now(), filmType: nextFilm, micron: nextMicron }];
-                              updated[idx].structure = getStructureString(updated[idx]);
+                              const newFmt = e.target.value;
+                              updated[idx].materialFormat = newFmt;
+                              if (newFmt === 'Rotogravure Cylinder') {
+                                if (!updated[idx].description) {
+                                  updated[idx].description = updated[idx].jobTitle ? `${updated[idx].jobTitle} - Cylinder Set` : 'Rotogravure Cylinder Set';
+                                }
+                                updated[idx].structure = updated[idx].description;
+                              } else {
+                                updated[idx].structure = getStructureString(updated[idx]);
+                              }
                               setItems(updated);
                             }}
                           >
-                            + Add Layer
-                          </button>
-                          <div style={{ fontSize: '0.72rem', fontWeight: '800', color: '#047857' }}>
-                            {getStructureString(it) || 'PET 12µ / LD 40µ'}
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        <select 
-                          className="form-control" 
-                          style={{ padding: '4px 6px', fontSize: '0.8rem', fontWeight: '700' }}
-                          value={it.materialFormat || 'Roll Form'} 
-                          onChange={e => {
-                            const updated = [...items];
-                            updated[idx].materialFormat = e.target.value;
-                            setItems(updated);
-                          }}
-                        >
-                          {MATERIAL_FORMATS.map(fmt => (
-                            <option key={fmt} value={fmt}>{fmt}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td style={{ width: '90px' }}>
-                        <input 
-                          type="number" 
-                          step="any"
-                          className="form-control" 
-                          style={{ padding: '4px 6px', fontSize: '0.85rem', fontWeight: '800' }}
-                          value={it.quantity} 
-                          onChange={e => {
-                            const updated = [...items];
-                            updated[idx].quantity = e.target.value;
-                            setItems(updated);
-                          }} 
-                          required 
-                        />
-                      </td>
-                      <td style={{ width: '95px' }}>
-                        <select 
-                          className="form-control" 
-                          style={{ padding: '4px 6px', fontSize: '0.8rem' }}
-                          value={it.uom} 
-                          onChange={e => {
-                            const updated = [...items];
-                            updated[idx].uom = e.target.value;
-                            setItems(updated);
-                          }}
-                        >
-                          <option value="Kg">Kg</option>
-                          <option value="Pcs">Pcs</option>
-                          <option value="Thousand Pouches">Thousand Pouches</option>
-                          <option value="Sets">Sets</option>
-                          <option value="Rolls">Rolls</option>
-                        </select>
-                      </td>
-                      <td style={{ width: '100px' }}>
-                        <input 
-                          type="number" 
-                          step="any"
-                          className="form-control" 
-                          style={{ padding: '4px 6px', fontSize: '0.85rem', fontWeight: '800' }}
-                          value={it.ratePerUom} 
-                          onChange={e => {
-                            const updated = [...items];
-                            updated[idx].ratePerUom = e.target.value;
-                            setItems(updated);
-                          }} 
-                          required 
-                        />
-                      </td>
-                      <td style={{ fontWeight: '800', color: 'var(--primary-brand)' }}>
-                        ₹ {Math.round(total).toLocaleString('en-IN')}
-                      </td>
-                      <td>
-                        {items.length > 1 && (
-                          <button 
-                            type="button" 
-                            className="btn-secondary" 
-                            style={{ padding: '4px 6px', color: '#dc2626', borderColor: '#fca5a5' }}
-                            onClick={() => setItems(items.filter((_, i) => i !== idx))}
+                            {MATERIAL_FORMATS.map(fmt => (
+                              <option key={fmt} value={fmt}>{fmt}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td style={{ verticalAlign: 'top', padding: '8px' }}>
+                          <input 
+                            type="number" 
+                            step="any"
+                            className="form-control" 
+                            style={{ padding: '4px 6px', fontSize: '0.85rem', fontWeight: '800' }}
+                            value={it.quantity} 
+                            onChange={e => {
+                              const updated = [...items];
+                              updated[idx].quantity = e.target.value;
+                              setItems(updated);
+                            }} 
+                            required 
+                          />
+                        </td>
+                        <td style={{ verticalAlign: 'top', padding: '8px' }}>
+                          <select 
+                            className="form-control" 
+                            style={{ padding: '4px 6px', fontSize: '0.8rem' }}
+                            value={it.uom} 
+                            onChange={e => {
+                              const updated = [...items];
+                              updated[idx].uom = e.target.value;
+                              setItems(updated);
+                            }}
                           >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                            <option value="Kg">Kg</option>
+                            <option value="Pcs">Pcs</option>
+                            <option value="Thousand Pouches">Thousand Pouches</option>
+                            <option value="Sets">Sets</option>
+                            <option value="Rolls">Rolls</option>
+                          </select>
+                        </td>
+                        <td style={{ verticalAlign: 'top', padding: '8px' }}>
+                          <input 
+                            type="number" 
+                            step="any"
+                            className="form-control" 
+                            style={{ padding: '4px 6px', fontSize: '0.85rem', fontWeight: '800' }}
+                            value={it.ratePerUom} 
+                            onChange={e => {
+                              const updated = [...items];
+                              updated[idx].ratePerUom = e.target.value;
+                              setItems(updated);
+                            }} 
+                            required 
+                          />
+                        </td>
+                        <td style={{ verticalAlign: 'top', padding: '12px 8px', fontWeight: '800', color: 'var(--primary-brand)', fontSize: '0.85rem' }}>
+                          ₹ {Math.round(total).toLocaleString('en-IN')}
+                        </td>
+                        <td style={{ verticalAlign: 'top', padding: '8px', textAlign: 'center' }}>
+                          {items.length > 1 && (
+                            <button 
+                              type="button" 
+                              className="btn-secondary" 
+                              style={{ padding: '4px 6px', color: '#dc2626', borderColor: '#fca5a5' }}
+                              onClick={() => setItems(items.filter((_, i) => i !== idx))}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {/* Terms & Conditions Template Selection Section (MANDATORY) */}
