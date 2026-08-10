@@ -165,6 +165,7 @@ export function usePagination(items = [], defaultPageSize = 50) {
     setPageSize,
     totalPages,
     paginatedItems,
+    pagedData: paginatedItems,
     totalItems: items?.length || 0
   };
 }

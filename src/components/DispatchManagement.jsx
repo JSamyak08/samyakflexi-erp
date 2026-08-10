@@ -591,7 +591,7 @@ export default function DispatchManagement({
                   </tr>
                 </thead>
                 <tbody>
-                  {challanPagination.pagedData.length === 0 ? (
+                  {(challanPagination.paginatedItems || []).length === 0 ? (
                     <tr>
                       <td colSpan={9} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
                         <Truck size={36} style={{ opacity: 0.25, display: 'block', margin: '0 auto 8px' }} />
@@ -599,7 +599,7 @@ export default function DispatchManagement({
                       </td>
                     </tr>
                   ) : (
-                    challanPagination.pagedData.map(dc => {
+                    (challanPagination.paginatedItems || []).map(dc => {
                       const totalQty = (dc.items || []).reduce((s, i) => s + (parseFloat(i.quantity) || 0), 0);
                       return (
                         <tr key={dc.id}>
@@ -703,7 +703,7 @@ export default function DispatchManagement({
                   </tr>
                 </thead>
                 <tbody>
-                  {coaPagination.pagedData.length === 0 ? (
+                  {(coaPagination.paginatedItems || []).length === 0 ? (
                     <tr>
                       <td colSpan={9} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
                         <FlaskConical size={36} style={{ opacity: 0.25, display: 'block', margin: '0 auto 8px' }} />
@@ -711,7 +711,7 @@ export default function DispatchManagement({
                       </td>
                     </tr>
                   ) : (
-                    coaPagination.pagedData.map(coa => (
+                    (coaPagination.paginatedItems || []).map(coa => (
                       <tr key={coa.id}>
                         <td>
                           <strong style={{ color: '#047857', fontFamily: 'monospace', fontSize: '0.9rem' }}>{coa.coaNo}</strong>
