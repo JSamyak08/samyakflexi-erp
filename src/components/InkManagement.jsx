@@ -26,7 +26,9 @@ import {
   Tag,
   FileCheck,
   CheckSquare,
-  Square
+  Square,
+  Upload,
+  Download
 } from 'lucide-react';
 import TablePagination, { usePagination } from './TablePagination';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
@@ -66,6 +68,8 @@ export default function InkManagement({
   const [deleteConfirmInk, setDeleteConfirmInk] = useState(null);
   const [activePoPdfData, setActivePoPdfData] = useState(null);
   const [stockAdjustInk, setStockAdjustInk] = useState(null);
+  const [bulkParsedInks, setBulkParsedInks] = useState([]);
+  const [isBulkPreviewModalOpen, setIsBulkPreviewModalOpen] = useState(false);
 
   // PO Issuance Confirmation Modal States
   const [poConfirmInk, setPoConfirmInk] = useState(null);
@@ -258,6 +262,199 @@ export default function InkManagement({
     setAdjustQtyKg('');
     setAdjustRemarks('');
     alert(`Stock updated for ${stockAdjustInk.productCode}. New Stock: ${newStock} kg`);
+  };
+
+  // ---------------------------------------------------------------------------
+  // BULK CSV TEMPLATE DOWNLOAD & IMPORT HANDLERS
+  // ---------------------------------------------------------------------------
+  const handleDownloadInkCsvTemplate = () => {
+    const headers = [
+      "Product Code",
+      "Shade / Colour",
+      "Ink Type",
+      "Manufacturer",
+      "Supplier Name",
+      "Solid Content %",
+      "Solid Variation %",
+      "Price Per Kg (INR)",
+      "Stock Qty (Kg)",
+      "Reorder Level (Kg)",
+      "Solvent Type",
+      "Notes"
+    ];
+
+    const sampleRows = [
+      ["DIC-REV-CYAN-01", "Process Cyan", "Reverse Ink", "DIC Inks", "DIC India Ltd", "42", "2", "320", "200", "80", "Ethyl Acetate + IPA", "High tint strength & adhesion for PET film"],
+      ["SIE-SURF-WHITE-02", "Opaque White", "Surface Ink", "Siegwerk", "Siegwerk India", "50", "2", "280", "350", "150", "Toluene + Ethyl Acetate", "High opacity surface white for LDPE"],
+      ["FLI-REV-MAGENTA-03", "Process Magenta", "Reverse Ink", "Flint Group", "Flint Group Ltd", "40", "2", "350", "150", "60", "Ethyl Acetate + IPA", "Lamination grade reverse ink"]
+    ];
+
+    const csvContent = "data:text/csv;charset=utf-8," + 
+      [headers.join(","), ...sampleRows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(","))].join("\n");
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "Ink_Product_Codes_Template_Samyak.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleBulkInkCsvUpload = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const text = evt.target.result;
+        const rawLines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        
+        if (rawLines.length <= 1) {
+          alert("CSV file is empty or only contains headers!");
+          return;
+        }
+
+        const parseCSVLine = (line) => {
+          const result = [];
+          let cur = '';
+          let inQuotes = false;
+          for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+            if (char === '"') {
+              if (inQuotes && line[i + 1] === '"') {
+                cur += '"';
+                i++;
+              } else {
+                inQuotes = !inQuotes;
+              }
+            } else if (char === ',' && !inQuotes) {
+              result.push(cur.trim());
+              cur = '';
+            } else {
+              cur += char;
+            }
+          }
+          result.push(cur.trim());
+          return result;
+        };
+
+        const headerRow = parseCSVLine(rawLines[0]).map(h => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
+        const getIndex = (keys) => headerRow.findIndex(h => keys.some(k => h.includes(k)));
+        
+        const codeIdx = getIndex(['productcode', 'code', 'itemcode', 'sku']);
+        const shadeIdx = getIndex(['shade', 'colour', 'color', 'name']);
+        const typeIdx = getIndex(['inktype', 'type']);
+        const mfrIdx = getIndex(['manufacturer', 'mfr', 'maker', 'brand']);
+        const suppIdx = getIndex(['supplier', 'vendor']);
+        const solidIdx = getIndex(['solidcontent', 'solidpct', 'solid']);
+        const solidVarIdx = getIndex(['solidvariation', 'variation']);
+        const priceIdx = getIndex(['price', 'rate', 'priceperkg', 'cost']);
+        const stockIdx = getIndex(['stock', 'qty', 'stockqty']);
+        const reorderIdx = getIndex(['reorder', 'minstock', 'reorderlevel']);
+        const solventIdx = getIndex(['solvent', 'solventtype']);
+        const notesIdx = getIndex(['notes', 'remark', 'remarks', 'description']);
+
+        const parsedInks = [];
+        const existingCodes = new Set((inks || []).map(i => (i.productCode || '').toUpperCase()));
+
+        for (let i = 1; i < rawLines.length; i++) {
+          const cols = parseCSVLine(rawLines[i]);
+          if (cols.length === 0 || !cols.join('').trim()) continue;
+
+          const codeVal = (codeIdx >= 0 ? cols[codeIdx] : cols[0]) || `INK-CODE-${i}`;
+          const shadeVal = (shadeIdx >= 0 ? cols[shadeIdx] : cols[1]) || 'Standard Shade';
+          const typeVal = (typeIdx >= 0 ? cols[typeIdx] : cols[2]) || 'Reverse Ink';
+          const mfrVal = (mfrIdx >= 0 ? cols[mfrIdx] : cols[3]) || 'DIC Inks';
+          const suppVal = (suppIdx >= 0 ? cols[suppIdx] : cols[4]) || '';
+          const solidVal = parseFloat(solidIdx >= 0 ? cols[solidIdx] : cols[5]) || 40;
+          const solidVarVal = parseFloat(solidVarIdx >= 0 ? cols[solidVarIdx] : cols[6]) || 2;
+          const priceVal = parseFloat(priceIdx >= 0 ? cols[priceIdx] : cols[7]) || 300;
+          const stockVal = parseFloat(stockIdx >= 0 ? cols[stockIdx] : cols[8]) || 100;
+          const reorderVal = parseFloat(reorderIdx >= 0 ? cols[reorderIdx] : cols[9]) || 50;
+          const solventVal = (solventIdx >= 0 ? cols[solventIdx] : cols[10]) || 'Ethyl Acetate + IPA';
+          const notesVal = (notesIdx >= 0 ? cols[notesIdx] : cols[11]) || '';
+
+          const matchedVendor = vendors.find(v => {
+            const vName = (v.companyName || v.name || '').toLowerCase();
+            return suppVal && vName.includes(suppVal.toLowerCase());
+          });
+
+          const upperCode = codeVal.trim().toUpperCase();
+          const isDuplicate = existingCodes.has(upperCode);
+
+          parsedInks.push({
+            tempId: `CSV-${i}-${Date.now()}`,
+            productCode: upperCode,
+            shade: shadeVal.trim(),
+            inkType: typeVal.trim() || 'Reverse Ink',
+            manufacturer: mfrVal.trim() || 'DIC Inks',
+            supplierId: matchedVendor ? matchedVendor.id : null,
+            supplierName: matchedVendor ? (matchedVendor.companyName || matchedVendor.name) : (suppVal.trim() || 'Local Supplier'),
+            solidContentPct: solidVal,
+            solidVariationPct: solidVarVal,
+            pricePerKg: priceVal,
+            stockQtyKg: stockVal,
+            reorderLevelKg: reorderVal,
+            unit: 'Kg',
+            solventType: solventVal.trim() || 'Ethyl Acetate + IPA',
+            notes: notesVal.trim(),
+            isDuplicate
+          });
+        }
+
+        if (parsedInks.length === 0) {
+          alert("No valid Ink Product Codes could be parsed from the file.");
+          return;
+        }
+
+        setBulkParsedInks(parsedInks);
+        setIsBulkPreviewModalOpen(true);
+      } catch (err) {
+        alert("Error reading CSV file. Please ensure it is a valid CSV formatted file.");
+        console.error("CSV Upload Error:", err);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleConfirmBulkImport = () => {
+    if (bulkParsedInks.length === 0) return;
+
+    let countAdded = 0;
+    bulkParsedInks.forEach((item, idx) => {
+      const inkObj = {
+        id: `INK-${Date.now()}-${idx}-${Math.floor(1000 + Math.random() * 9000)}`,
+        productCode: item.productCode,
+        shade: item.shade,
+        inkType: item.inkType,
+        manufacturer: item.manufacturer,
+        supplierId: item.supplierId,
+        supplierName: item.supplierName,
+        solidContentPct: item.solidContentPct,
+        solidVariationPct: item.solidVariationPct,
+        pricePerKg: item.pricePerKg,
+        stockQtyKg: item.stockQtyKg,
+        reorderLevelKg: item.reorderLevelKg,
+        unit: 'Kg',
+        solventType: item.solventType,
+        notes: item.notes,
+        priceHistory: [
+          { price: item.pricePerKg, date: new Date().toISOString().split('T')[0], reason: 'Bulk CSV Import' }
+        ],
+        createdAt: new Date().toISOString()
+      };
+
+      if (onAddInk) {
+        onAddInk(inkObj);
+        countAdded++;
+      }
+    });
+
+    alert(`✅ Success!\n\nImported ${countAdded} Ink Product Codes into Master Directory.`);
+    setIsBulkPreviewModalOpen(false);
+    setBulkParsedInks([]);
   };
 
   // Toggle Selection of Ink Item
@@ -752,9 +949,36 @@ export default function InkManagement({
             </div>
 
             {isAuthorized && (
-              <button className="btn-primary" onClick={openAddModal} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Plus size={16} /> Add Ink Product Code
-              </button>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <button 
+                  type="button" 
+                  className="btn-secondary" 
+                  onClick={handleDownloadInkCsvTemplate} 
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', padding: '8px 14px' }} 
+                  title="Download CSV Template with required headers"
+                >
+                  <Download size={15} /> Download CSV Template
+                </button>
+
+                <label 
+                  className="btn-secondary" 
+                  style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', padding: '8px 14px', margin: 0 }} 
+                  title="Bulk upload product codes from CSV file"
+                >
+                  <Upload size={15} /> Bulk Import CSV
+                  <input 
+                    type="file" 
+                    accept=".csv" 
+                    style={{ display: 'none' }} 
+                    onChange={handleBulkInkCsvUpload} 
+                    onClick={e => e.target.value = null} 
+                  />
+                </label>
+
+                <button className="btn-primary" onClick={openAddModal} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}>
+                  <Plus size={16} /> Add Ink Product Code
+                </button>
+              </div>
             )}
           </div>
 
@@ -1916,6 +2140,136 @@ export default function InkManagement({
           poData={activePoPdfData}
           onClose={() => setActivePoPdfData(null)}
         />
+      )}
+
+      {/* =================================================================== */}
+      {/* MODAL: BULK CSV IMPORT PREVIEW */}
+      {/* =================================================================== */}
+      {isBulkPreviewModalOpen && (
+        <div className="pdf-modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', zIndex: 1100 }}>
+          <div className="glass-panel" style={{ width: '920px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', borderRadius: '16px', background: '#ffffff', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', border: '1px solid #cbd5e1', padding: '0' }}>
+            
+            {/* Modal Header */}
+            <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '20px 24px', borderRadius: '16px 16px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#ffffff' }}>
+              <div>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '10px', color: '#ffffff', margin: 0 }}>
+                  <Upload size={22} style={{ color: '#818cf8' }} />
+                  Bulk CSV Import — Ink Product Codes Preview
+                </h3>
+                <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '4px', margin: 0 }}>
+                  Review parsed ink records before importing into the Master Directory.
+                </p>
+              </div>
+              <button 
+                type="button"
+                style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff', cursor: 'pointer' }} 
+                onClick={() => { setIsBulkPreviewModalOpen(false); setBulkParsedInks([]); }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              
+              {/* Stat summary cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+                <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', padding: '12px 16px', borderRadius: '10px' }}>
+                  <span style={{ fontSize: '0.72rem', color: '#0369a1', fontWeight: '700', textTransform: 'uppercase' }}>TOTAL CODES TO IMPORT</span>
+                  <div style={{ fontSize: '1.4rem', fontWeight: '800', color: '#0284c7', marginTop: '2px' }}>{bulkParsedInks.length}</div>
+                </div>
+
+                <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', padding: '12px 16px', borderRadius: '10px' }}>
+                  <span style={{ fontSize: '0.72rem', color: '#6d28d9', fontWeight: '700', textTransform: 'uppercase' }}>REVERSE INKS</span>
+                  <div style={{ fontSize: '1.4rem', fontWeight: '800', color: '#7c3aed', marginTop: '2px' }}>
+                    {bulkParsedInks.filter(i => i.inkType.includes('Reverse')).length}
+                  </div>
+                </div>
+
+                <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '12px 16px', borderRadius: '10px' }}>
+                  <span style={{ fontSize: '0.72rem', color: '#047857', fontWeight: '700', textTransform: 'uppercase' }}>SURFACE INKS</span>
+                  <div style={{ fontSize: '1.4rem', fontWeight: '800', color: '#059669', marginTop: '2px' }}>
+                    {bulkParsedInks.filter(i => i.inkType.includes('Surface')).length}
+                  </div>
+                </div>
+
+                <div style={{ background: bulkParsedInks.some(i => i.isDuplicate) ? '#fffbebf0' : '#f8fafc', border: `1px solid ${bulkParsedInks.some(i => i.isDuplicate) ? '#fde68a' : '#e2e8f0'}`, padding: '12px 16px', borderRadius: '10px' }}>
+                  <span style={{ fontSize: '0.72rem', color: bulkParsedInks.some(i => i.isDuplicate) ? '#b45309' : '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>EXISTING CODES</span>
+                  <div style={{ fontSize: '1.4rem', fontWeight: '800', color: bulkParsedInks.some(i => i.isDuplicate) ? '#d97706' : '#475569', marginTop: '2px' }}>
+                    {bulkParsedInks.filter(i => i.isDuplicate).length}
+                  </div>
+                </div>
+              </div>
+
+              {/* Parsed records table */}
+              <div style={{ overflowX: 'auto', width: '100%', maxHeight: '380px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#ffffff' }}>
+                <table className="data-table" style={{ width: '100%', minWidth: '850px', margin: 0, fontSize: '0.82rem' }}>
+                  <thead>
+                    <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                      <th style={{ padding: '10px', width: '40px', textAlign: 'center' }}>#</th>
+                      <th style={{ padding: '10px', whiteSpace: 'nowrap' }}>Product Code</th>
+                      <th style={{ padding: '10px' }}>Shade</th>
+                      <th style={{ padding: '10px', whiteSpace: 'nowrap' }}>Ink Type</th>
+                      <th style={{ padding: '10px', whiteSpace: 'nowrap' }}>Manufacturer</th>
+                      <th style={{ padding: '10px', whiteSpace: 'nowrap' }}>Supplier</th>
+                      <th style={{ padding: '10px', whiteSpace: 'nowrap' }}>Solid %</th>
+                      <th style={{ padding: '10px', whiteSpace: 'nowrap' }}>Rate (₹/Kg)</th>
+                      <th style={{ padding: '10px', whiteSpace: 'nowrap' }}>Stock (Kg)</th>
+                      <th style={{ padding: '10px', whiteSpace: 'nowrap' }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bulkParsedInks.map((item, idx) => (
+                      <tr key={item.tempId || idx} style={{ background: item.isDuplicate ? '#fffbeb' : 'transparent' }}>
+                        <td style={{ textAlign: 'center', fontWeight: '700', padding: '10px' }}>{idx + 1}</td>
+                        <td style={{ padding: '10px', whiteSpace: 'nowrap' }}>
+                          <strong style={{ color: '#0284c7', fontFamily: 'monospace' }}>{item.productCode}</strong>
+                        </td>
+                        <td style={{ padding: '10px', fontWeight: '600', color: '#0f172a' }}>{item.shade}</td>
+                        <td style={{ padding: '10px', whiteSpace: 'nowrap' }}>
+                          <span className={`badge ${item.inkType.includes('Reverse') ? 'badge-info' : 'badge-secondary'}`}>
+                            {item.inkType}
+                          </span>
+                        </td>
+                        <td style={{ padding: '10px', whiteSpace: 'nowrap', fontWeight: '600' }}>{item.manufacturer}</td>
+                        <td style={{ padding: '10px', whiteSpace: 'nowrap' }}>{item.supplierName}</td>
+                        <td style={{ padding: '10px', whiteSpace: 'nowrap', fontWeight: '700' }}>{item.solidContentPct}%</td>
+                        <td style={{ padding: '10px', whiteSpace: 'nowrap', fontWeight: '700', color: '#4f46e5' }}>₹ {item.pricePerKg}</td>
+                        <td style={{ padding: '10px', whiteSpace: 'nowrap', fontWeight: '700', color: '#047857' }}>{item.stockQtyKg} Kg</td>
+                        <td style={{ padding: '10px', whiteSpace: 'nowrap' }}>
+                          {item.isDuplicate ? (
+                            <span className="badge badge-warning" style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}>
+                              ⚠️ Existing Code
+                            </span>
+                          ) : (
+                            <span className="badge badge-success" style={{ background: '#dcfce7', color: '#15803d', border: '1px solid #86efac' }}>
+                              ✓ New Record
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Footer actions */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
+                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                  Need to change columns? <a href="#" onClick={(e) => { e.preventDefault(); handleDownloadInkCsvTemplate(); }} style={{ color: '#0284c7', fontWeight: '700', textDecoration: 'underline' }}>Download CSV Template</a>
+                </span>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button type="button" className="btn-secondary" style={{ padding: '8px 18px' }} onClick={() => { setIsBulkPreviewModalOpen(false); setBulkParsedInks([]); }}>
+                    Cancel
+                  </button>
+                  <button type="button" className="btn-primary" style={{ background: '#4f46e5', borderColor: '#4f46e5', padding: '10px 22px', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }} onClick={handleConfirmBulkImport}>
+                    <CheckCircle2 size={18} /> Confirm & Import {bulkParsedInks.length} Product Codes
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
       )}
 
     </div>
