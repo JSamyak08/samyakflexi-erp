@@ -576,19 +576,19 @@ export default function DispatchManagement({
         {/* TAB 1: DELIVERY CHALLANS TABLE */}
         {activeTab === 'challans' && (
           <>
-            <div className="table-responsive">
-              <table className="modern-table">
+            <div style={{ overflowX: 'auto', width: '100%', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#ffffff', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <table className="data-table" style={{ width: '100%', minWidth: '950px', margin: 0 }}>
                 <thead>
-                  <tr>
-                    <th>Challan No</th>
-                    <th>Invoice No</th>
-                    <th>Dispatch Date/Time</th>
-                    <th>Client / Consignee</th>
-                    <th>Vehicle No</th>
-                    <th>Items Count</th>
-                    <th>Total Dispatched</th>
-                    <th>Grand Total (₹)</th>
-                    <th style={{ textAlign: 'right' }}>Actions</th>
+                  <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '12%' }}>Challan No</th>
+                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '12%' }}>Invoice No</th>
+                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '14%' }}>Dispatch Date/Time</th>
+                    <th style={{ padding: '12px 14px', width: '22%' }}>Client / Consignee</th>
+                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '11%' }}>Vehicle No</th>
+                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '9%' }}>Items Count</th>
+                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '9%' }}>Total Dispatched</th>
+                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '10%' }}>Grand Total (₹)</th>
+                    <th style={{ padding: '12px 14px', textAlign: 'right', whiteSpace: 'nowrap', width: '11%' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -604,37 +604,37 @@ export default function DispatchManagement({
                       const totalQty = (dc.items || []).reduce((s, i) => s + (parseFloat(i.quantity) || 0), 0);
                       return (
                         <tr key={dc.id}>
-                          <td>
+                          <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                             <strong style={{ color: '#0284c7', fontFamily: 'monospace', fontSize: '0.9rem' }}>{dc.challanNo}</strong>
                           </td>
-                          <td>
-                            <span style={{ fontFamily: 'monospace', fontWeight: '600' }}>{dc.invoiceNo || 'N/A'}</span>
+                          <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                            <span style={{ fontFamily: 'monospace', fontWeight: '600', color: '#334155' }}>{dc.invoiceNo || 'N/A'}</span>
                           </td>
-                          <td>
+                          <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                             <div style={{ fontSize: '0.82rem', fontWeight: '600', color: '#334155' }}>
                               {dc.dispatchDateTime ? new Date(dc.dispatchDateTime).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—'}
                             </div>
                           </td>
-                          <td>
+                          <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
                             <div style={{ fontWeight: '700', color: '#0f172a' }}>{dc.clientName}</div>
-                            {dc.clientGstin && <div style={{ fontSize: '0.72rem', color: '#64748b' }}>GST: {dc.clientGstin}</div>}
+                            {dc.clientGstin && <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>GST: {dc.clientGstin}</div>}
                           </td>
-                          <td>
-                            <span className="badge badge-info" style={{ fontFamily: 'monospace' }}>
+                          <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                            <span className="badge badge-info" style={{ fontFamily: 'monospace', whiteSpace: 'nowrap', display: 'inline-block' }}>
                               {dc.vehicleNo || 'Self Hand'}
                             </span>
                           </td>
-                          <td>
-                            <span style={{ fontSize: '0.8rem', fontWeight: '700' }}>{(dc.items || []).length} SKU Item(s)</span>
+                          <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                            <span style={{ fontSize: '0.8rem', fontWeight: '700', color: '#334155' }}>{(dc.items || []).length} SKU Item(s)</span>
                           </td>
-                          <td>
+                          <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                             <strong style={{ color: '#047857' }}>{totalQty.toFixed(2)} Kg</strong>
                           </td>
-                          <td>
+                          <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                             <strong style={{ color: '#4f46e5' }}>{formatINR(dc.grandTotalAmount)}</strong>
                           </td>
-                          <td style={{ textAlign: 'right' }}>
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
+                          <td style={{ padding: '12px 14px', textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', whiteSpace: 'nowrap' }}>
                               <button 
                                 className="btn-secondary" 
                                 style={{ padding: '4px 10px', fontSize: '0.75rem' }}
@@ -688,19 +688,19 @@ export default function DispatchManagement({
         {/* TAB 2: CERTIFICATE OF ANALYSIS (COA) TABLE */}
         {activeTab === 'coas' && (
           <>
-            <div className="table-responsive">
-              <table className="modern-table">
+            <div style={{ overflowX: 'auto', width: '100%', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#ffffff', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <table className="data-table" style={{ width: '100%', minWidth: '1050px', margin: 0 }}>
                 <thead>
-                  <tr>
-                    <th>CoA Report Ref</th>
-                    <th>Testing Date</th>
-                    <th>Customer Name</th>
-                    <th>Job Name / SKU</th>
-                    <th>Batch Lot #</th>
-                    <th>Net Weight</th>
-                    <th>QC Status</th>
-                    <th>Quality Inspector</th>
-                    <th style={{ textAlign: 'right' }}>Actions</th>
+                  <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '12%' }}>CoA Report Ref</th>
+                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '10%' }}>Testing Date</th>
+                    <th style={{ padding: '12px 14px', width: '16%' }}>Customer Name</th>
+                    <th style={{ padding: '12px 14px', width: '22%' }}>Job Name / SKU</th>
+                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '10%' }}>Batch Lot #</th>
+                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '8%' }}>Net Weight</th>
+                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '10%' }}>QC Status</th>
+                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '12%' }}>Quality Inspector</th>
+                    <th style={{ padding: '12px 14px', textAlign: 'right', whiteSpace: 'nowrap', width: '10%' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -714,35 +714,35 @@ export default function DispatchManagement({
                   ) : (
                     (coaPagination.paginatedItems || []).map(coa => (
                       <tr key={coa.id}>
-                        <td>
+                        <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                           <strong style={{ color: '#047857', fontFamily: 'monospace', fontSize: '0.9rem' }}>{coa.coaNo}</strong>
                         </td>
-                        <td>
-                          <span style={{ fontSize: '0.82rem', fontWeight: '600' }}>{coa.testDate}</span>
+                        <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                          <span style={{ fontSize: '0.82rem', fontWeight: '600', color: '#334155' }}>{coa.testDate}</span>
                         </td>
-                        <td>
+                        <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
                           <div style={{ fontWeight: '700', color: '#0f172a' }}>{coa.customerName}</div>
                         </td>
-                        <td>
+                        <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
                           <div style={{ fontWeight: '700', color: '#0284c7' }}>{coa.jobName}</div>
-                          {coa.specification && <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{coa.specification}</div>}
+                          {coa.specification && <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>{coa.specification}</div>}
                         </td>
-                        <td>
-                          <span className="badge badge-secondary" style={{ fontFamily: 'monospace' }}>{coa.batchLotNo || 'N/A'}</span>
+                        <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                          <span className="badge badge-secondary" style={{ fontFamily: 'monospace', whiteSpace: 'nowrap', display: 'inline-block' }}>{coa.batchLotNo || 'N/A'}</span>
                         </td>
-                        <td>
-                          <strong style={{ color: '#334155' }}>{coa.netWeight || '—'}</strong>
+                        <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                          <strong style={{ color: '#334155', whiteSpace: 'nowrap' }}>{coa.netWeight || '—'}</strong>
                         </td>
-                        <td>
-                          <span className="badge badge-success" style={{ background: '#dcfce7', color: '#15803d', border: '1px solid #86efac', fontWeight: '700' }}>
+                        <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                          <span className="badge badge-success" style={{ background: '#dcfce7', color: '#15803d', border: '1px solid #86efac', fontWeight: '700', whiteSpace: 'nowrap', display: 'inline-block' }}>
                             ✓ {coa.overallStatus || 'PASSED'}
                           </span>
                         </td>
-                        <td>
-                          <span style={{ fontSize: '0.8rem', color: '#475569' }}>{coa.qcInspector}</span>
+                        <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                          <span style={{ fontSize: '0.82rem', color: '#334155', fontWeight: '600', whiteSpace: 'nowrap' }}>{coa.qcInspector}</span>
                         </td>
-                        <td style={{ textAlign: 'right' }}>
-                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
+                        <td style={{ padding: '12px 14px', textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', whiteSpace: 'nowrap' }}>
                             <button 
                               className="btn-secondary" 
                               style={{ padding: '4px 10px', fontSize: '0.75rem' }}
@@ -1226,62 +1226,66 @@ export default function DispatchManagement({
                   </button>
                 </div>
 
-                <div className="table-responsive" style={{ maxHeight: '280px', overflowY: 'auto' }}>
-                  <table className="modern-table" style={{ fontSize: '0.8rem' }}>
+                <div style={{ overflowX: 'auto', width: '100%', maxHeight: '280px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff' }}>
+                  <table className="data-table" style={{ width: '100%', minWidth: '600px', margin: 0, fontSize: '0.82rem' }}>
                     <thead>
-                      <tr>
-                        <th style={{ width: '60px' }}>Sr No</th>
-                        <th style={{ width: '35%' }}>Parameter Name</th>
-                        <th style={{ width: '15%' }}>Unit (UOM)</th>
-                        <th style={{ width: '20%' }}>Standard Target</th>
-                        <th style={{ width: '20%' }}>Measured Observation</th>
-                        <th style={{ width: '40px' }}></th>
+                      <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                        <th style={{ width: '50px', padding: '8px', textAlign: 'center' }}>#</th>
+                        <th style={{ width: '35%', padding: '8px 10px' }}>Parameter Name</th>
+                        <th style={{ width: '15%', padding: '8px 10px' }}>Unit (UOM)</th>
+                        <th style={{ width: '22%', padding: '8px 10px' }}>Standard Target</th>
+                        <th style={{ width: '22%', padding: '8px 10px' }}>Measured Observation</th>
+                        <th style={{ width: '6%', padding: '8px', textAlign: 'center' }}></th>
                       </tr>
                     </thead>
                     <tbody>
                       {coaParameters.map((param, idx) => (
                         <tr key={idx}>
-                          <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{idx + 1}</td>
-                          <td>
+                          <td style={{ textAlign: 'center', fontWeight: 'bold', padding: '6px' }}>{idx + 1}</td>
+                          <td style={{ padding: '6px' }}>
                             <input 
                               type="text" 
                               className="form-control" 
+                              style={{ padding: '5px 8px', fontSize: '0.82rem', fontWeight: '600' }}
                               value={param.parameter} 
                               onChange={e => handleUpdateCoaParameterRow(idx, 'parameter', e.target.value)} 
                               required 
                             />
                           </td>
-                          <td>
+                          <td style={{ padding: '6px' }}>
                             <input 
                               type="text" 
                               className="form-control" 
+                              style={{ padding: '5px 8px', fontSize: '0.82rem' }}
                               value={param.uom} 
                               onChange={e => handleUpdateCoaParameterRow(idx, 'uom', e.target.value)} 
                             />
                           </td>
-                          <td>
+                          <td style={{ padding: '6px' }}>
                             <input 
                               type="text" 
                               className="form-control" 
+                              style={{ padding: '5px 8px', fontSize: '0.82rem' }}
                               value={param.standard} 
                               onChange={e => handleUpdateCoaParameterRow(idx, 'standard', e.target.value)} 
                             />
                           </td>
-                          <td>
+                          <td style={{ padding: '6px' }}>
                             <input 
                               type="text" 
                               className="form-control" 
-                              style={{ fontWeight: '700', color: '#047857' }}
+                              style={{ padding: '5px 8px', fontSize: '0.82rem', fontWeight: '700', color: '#047857' }}
                               value={param.observation} 
                               onChange={e => handleUpdateCoaParameterRow(idx, 'observation', e.target.value)} 
                               required 
                             />
                           </td>
-                          <td style={{ textAlign: 'center' }}>
+                          <td style={{ textAlign: 'center', padding: '6px' }}>
                             <button 
                               type="button" 
                               onClick={() => handleRemoveCoaParameterRow(idx)}
-                              style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}
+                              style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '2px 4px' }}
+                              title="Delete Parameter"
                             >
                               <Trash2 size={15} />
                             </button>
