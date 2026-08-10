@@ -113,7 +113,7 @@ export default function DispatchManagement({
     setDcDispatchDateTime(isoString);
 
     // Default to first client if available
-    const firstClient = clients[0] || {};
+    const firstClient = (clients && clients[0]) || {};
     setDcSelectedClientName(firstClient.companyName || '');
     setDcClientAddress(firstClient.address || firstClient.factoryAddress || '');
     setDcClientGstin(firstClient.gstin || '');
@@ -255,10 +255,10 @@ export default function DispatchManagement({
     setCoaNo(nextCoa);
     setCoaTestDate(new Date().toLocaleDateString('en-GB'));
     
-    const firstClient = clients[0] || {};
+    const firstClient = (clients && clients[0]) || {};
     setCoaCustomerName(firstClient.companyName || 'Foodella Foods');
 
-    const firstJob = jobMasters[0] || {};
+    const firstJob = (jobMasters && jobMasters[0]) || {};
     setCoaJobName(firstJob.jobName || 'Foodella Reverse 7mm');
     setCoaJobCode(firstJob.id ? String(firstJob.id).replace('JM-', '') : '1');
     setCoaInvoiceNo(`SAM/25-26/${Math.floor(10000 + Math.random() * 90000)}`);
@@ -372,7 +372,7 @@ export default function DispatchManagement({
   // --------------------------------------------------------------------------
   const filteredChallans = useMemo(() => {
     const term = searchTerm.toLowerCase();
-    return deliveryChallans.filter(dc => 
+    return (deliveryChallans || []).filter(dc => 
       (dc.challanNo || '').toLowerCase().includes(term) ||
       (dc.invoiceNo || '').toLowerCase().includes(term) ||
       (dc.clientName || '').toLowerCase().includes(term) ||
@@ -382,7 +382,7 @@ export default function DispatchManagement({
 
   const filteredCoAs = useMemo(() => {
     const term = searchTerm.toLowerCase();
-    return certificateOfAnalyses.filter(coa => 
+    return (certificateOfAnalyses || []).filter(coa => 
       (coa.coaNo || '').toLowerCase().includes(term) ||
       (coa.customerName || '').toLowerCase().includes(term) ||
       (coa.jobName || '').toLowerCase().includes(term) ||
@@ -395,15 +395,18 @@ export default function DispatchManagement({
   const coaPagination = usePagination(filteredCoAs, 10);
 
   // Statistics
-  const totalChallansCount = deliveryChallans.length;
-  const totalDispatchedQtyKg = deliveryChallans.reduce((sum, dc) => {
+  const safeChallans = deliveryChallans || [];
+  const safeCoAs = certificateOfAnalyses || [];
+
+  const totalChallansCount = safeChallans.length;
+  const totalDispatchedQtyKg = safeChallans.reduce((sum, dc) => {
     const items = dc.items || [];
     return sum + items.reduce((s, i) => s + (parseFloat(i.quantity) || 0), 0);
   }, 0);
-  const totalChallanValue = deliveryChallans.reduce((sum, dc) => sum + (parseFloat(dc.grandTotalAmount) || 0), 0);
+  const totalChallanValue = safeChallans.reduce((sum, dc) => sum + (parseFloat(dc.grandTotalAmount) || 0), 0);
 
-  const totalCoasCount = certificateOfAnalyses.length;
-  const passedCoasCount = certificateOfAnalyses.filter(c => (c.overallStatus || '').includes('PASSED') || (c.overallStatus || '').includes('APPROVED')).length;
+  const totalCoasCount = safeCoAs.length;
+  const passedCoasCount = safeCoAs.filter(c => (c.overallStatus || '').includes('PASSED') || (c.overallStatus || '').includes('APPROVED')).length;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -866,7 +869,7 @@ export default function DispatchManagement({
                     required
                   >
                     <option value="" disabled>-- Select Client --</option>
-                    {clients.map(c => (
+                    {(clients || []).map(c => (
                       <option key={c.id} value={c.companyName}>{c.companyName}</option>
                     ))}
                   </select>
@@ -1117,7 +1120,7 @@ export default function DispatchManagement({
                     required
                   >
                     <option value="" disabled>-- Select Job Master --</option>
-                    {jobMasters.map(j => (
+                    {(jobMasters || []).map(j => (
                       <option key={j.id} value={j.jobName}>{j.jobName} ({j.clientName})</option>
                     ))}
                   </select>

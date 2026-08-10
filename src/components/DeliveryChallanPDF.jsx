@@ -57,7 +57,7 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
   } = challanData;
 
   // Calculate row amounts & tax breakdowns
-  const itemRows = items.length > 0 ? items : [
+  const itemRows = (Array.isArray(items) && items.length > 0) ? items : [
     { id: 1, description: "Flexible Packaging Laminated Film Rolls", hsnSac: "3923", quantity: 1000, unit: "Kg", rate: 180, amount: 180000 }
   ];
 
