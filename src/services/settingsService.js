@@ -66,6 +66,10 @@ export const DEFAULT_PREFIXES = {
   qtnCounter: 501,
   dispatchPrefix: 'SIL/DISP/26-27/',
   dispatchCounter: 301,
+  dcPrefix: 'SIL/DC/26-27/',
+  dcCounter: 101,
+  coaPrefix: 'SIL/COA/26-27/',
+  coaCounter: 101,
   jdsPrefix: 'SIL/JDS/26-27/',
   jdsCounter: 201,
   indentPrefix: 'SIL/IND/26-27/',
@@ -88,6 +92,12 @@ export const DEFAULT_DOCUMENT_TERMS = {
     "Material verified for micron gauge tolerance (±3%), dyne level (≥38 dynes/cm), and slit width accuracy.",
     "Stock updated in Factory Inventory store under inward batch reference.",
     "Rejection by Samyak QC will result in immediate material return at supplier's expense."
+  ],
+  dcTerms: [
+    "Goods once sold or dispatched will not be taken back or exchanged without prior written consent.",
+    "Please inspect material immediately upon receipt for physical roll condition, micron gauge, and net weight accuracy.",
+    "All supplies strictly comply with approved Job Master technical specifications & Purchase Order terms.",
+    "Subject to Indore / Dhar Jurisdiction only."
   ]
 };
 
@@ -171,7 +181,8 @@ export function getDocumentTerms() {
       paymentTerms: parsed.paymentTerms || DEFAULT_DOCUMENT_TERMS.paymentTerms,
       poTerms: Array.isArray(parsed.poTerms) && parsed.poTerms.length > 0 ? parsed.poTerms : DEFAULT_DOCUMENT_TERMS.poTerms,
       ocnTerms: Array.isArray(parsed.ocnTerms) && parsed.ocnTerms.length > 0 ? parsed.ocnTerms : DEFAULT_DOCUMENT_TERMS.ocnTerms,
-      grnTerms: Array.isArray(parsed.grnTerms) && parsed.grnTerms.length > 0 ? parsed.grnTerms : DEFAULT_DOCUMENT_TERMS.grnTerms
+      grnTerms: Array.isArray(parsed.grnTerms) && parsed.grnTerms.length > 0 ? parsed.grnTerms : DEFAULT_DOCUMENT_TERMS.grnTerms,
+      dcTerms: Array.isArray(parsed.dcTerms) && parsed.dcTerms.length > 0 ? parsed.dcTerms : DEFAULT_DOCUMENT_TERMS.dcTerms
     };
   } catch (e) {
     console.error("Failed to parse document terms", e);
@@ -214,6 +225,12 @@ export function generateDocRefNumber(type, customNumber) {
   } else if (type === 'dispatch') {
     const num = customNumber !== undefined ? customNumber : (config.dispatchCounter || 301);
     return `${config.dispatchPrefix || 'SIL/DISP/26-27/'}${num}`;
+  } else if (type === 'dc') {
+    const num = customNumber !== undefined ? customNumber : (config.dcCounter || 101);
+    return `${config.dcPrefix || 'SIL/DC/26-27/'}${num}`;
+  } else if (type === 'coa') {
+    const num = customNumber !== undefined ? customNumber : (config.coaCounter || 101);
+    return `${config.coaPrefix || 'SIL/COA/26-27/'}${num}`;
   } else if (type === 'jds') {
     const num = customNumber !== undefined ? customNumber : (config.jdsCounter || 201);
     return `${config.jdsPrefix || 'SIL/JDS/26-27/'}${num}`;
@@ -248,6 +265,12 @@ export function getNextDocRefNumber(type) {
   } else if (type === 'dispatch') {
     num = config.dispatchCounter || 301;
     key = 'dispatchCounter';
+  } else if (type === 'dc') {
+    num = config.dcCounter || 101;
+    key = 'dcCounter';
+  } else if (type === 'coa') {
+    num = config.coaCounter || 101;
+    key = 'coaCounter';
   } else if (type === 'jds') {
     num = config.jdsCounter || 201;
     key = 'jdsCounter';

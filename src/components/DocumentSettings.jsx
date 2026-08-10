@@ -516,6 +516,60 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
           </div>
 
           <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+            <h4 style={{ fontSize: '0.85rem', fontWeight: '700', marginBottom: '12px' }}>Delivery Challan (DC) Series</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div>
+                <label className="form-label">DC Prefix String</label>
+                <input 
+                  type="text" 
+                  className="form-control"
+                  value={prefixState.dcPrefix || 'SIL/DC/26-27/'}
+                  onChange={(e) => handlePrefixChange('dcPrefix', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="form-label">Sequence Start / Next Counter Number</label>
+                <input 
+                  type="number" 
+                  className="form-control"
+                  value={prefixState.dcCounter || 101}
+                  onChange={(e) => handlePrefixChange('dcCounter', parseInt(e.target.value) || 1)}
+                />
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Sample: <strong>{prefixState.dcPrefix || 'SIL/DC/26-27/'}{prefixState.dcCounter || 101}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+            <h4 style={{ fontSize: '0.85rem', fontWeight: '700', marginBottom: '12px' }}>Certificate of Analysis (CoA) Series</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div>
+                <label className="form-label">CoA Prefix String</label>
+                <input 
+                  type="text" 
+                  className="form-control"
+                  value={prefixState.coaPrefix || 'SIL/COA/26-27/'}
+                  onChange={(e) => handlePrefixChange('coaPrefix', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="form-label">Sequence Start / Next Counter Number</label>
+                <input 
+                  type="number" 
+                  className="form-control"
+                  value={prefixState.coaCounter || 101}
+                  onChange={(e) => handlePrefixChange('coaCounter', parseInt(e.target.value) || 1)}
+                />
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Sample: <strong>{prefixState.coaPrefix || 'SIL/COA/26-27/'}{prefixState.coaCounter || 101}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
             <h4 style={{ fontSize: '0.85rem', fontWeight: '700', marginBottom: '12px' }}>Job Data Sheet (JDS) Series</h4>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <div>

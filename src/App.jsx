@@ -39,7 +39,9 @@ import {
   FileText,
   Settings as SettingsIcon,
   ShieldAlert,
-  Droplet
+  Droplet,
+  Truck,
+  FlaskConical
 } from 'lucide-react';
 
 import AuthScreen from './components/AuthScreen';
@@ -60,6 +62,7 @@ import SalesManagement from './components/SalesManagement';
 import ScrapWastageAnalysis from './components/ScrapWastageAnalysis';
 import AuditLogsManagement from './components/AuditLogsManagement';
 import InkManagement from './components/InkManagement';
+import DispatchManagement from './components/DispatchManagement';
 import { fetchAuditLogsFromSupabase, saveAuditLogToSupabase, createAuditEntry, pruneOldAuditLogs } from './services/auditLogger';
 import { getRouteFromUrl, getTabFromUrl, pushSlugState } from './utils/slugRouter';
 import { isSupabaseConfigured } from './services/supabaseClient';
@@ -248,6 +251,8 @@ export default function App() {
   const [productionRecords, setProductionRecords] = useState(() => stripDummyRecords(loadLocalState('production_records', [])));
   const [inventoryRolls, setInventoryRolls] = useState(() => stripDummyRecords(loadLocalState('inventory_rolls', [])));
   const [dispatchShipments, setDispatchShipments] = useState(() => stripDummyRecords(loadLocalState('dispatch_shipments', [])));
+  const [deliveryChallans, setDeliveryChallans] = useState(() => stripDummyRecords(loadLocalState('delivery_challans', [])));
+  const [certificateOfAnalyses, setCertificateOfAnalyses] = useState(() => stripDummyRecords(loadLocalState('certificate_of_analyses', [])));
   const [machines, setMachines] = useState(() => stripDummyRecords(loadLocalState('printing_machines', [])));
   const [schedules, setSchedules] = useState(() => stripDummyRecords(loadLocalState('production_schedules', [])));
   const [clients, setClients] = useState(() => stripDummyRecords(loadLocalState('clients', [])));
@@ -313,6 +318,8 @@ export default function App() {
   useEffect(() => { safeLocalStorageSet('samyak_erp_production_records', productionRecords); }, [productionRecords]);
   useEffect(() => { safeLocalStorageSet('samyak_erp_inventory_rolls', inventoryRolls); }, [inventoryRolls]);
   useEffect(() => { safeLocalStorageSet('samyak_erp_dispatch_shipments', dispatchShipments); }, [dispatchShipments]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_delivery_challans', deliveryChallans); }, [deliveryChallans]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_certificate_of_analyses', certificateOfAnalyses); }, [certificateOfAnalyses]);
   useEffect(() => { safeLocalStorageSet('samyak_erp_printing_machines', machines); }, [machines]);
   useEffect(() => { safeLocalStorageSet('samyak_erp_production_schedules', schedules); }, [schedules]);
   useEffect(() => { safeLocalStorageSet('samyak_erp_clients', clients); }, [clients]);
@@ -1256,6 +1263,28 @@ export default function App() {
     }
   };
 
+  const handleSaveDeliveryChallan = (newDc) => {
+    setDeliveryChallans(prev => [newDc, ...prev.filter(d => d.id !== newDc.id)]);
+    logAudit('CREATE', 'Dispatch', `Issued Delivery Challan ${newDc.challanNo} for "${newDc.clientName}"`, newDc.id);
+  };
+
+  const handleDeleteDeliveryChallan = (id) => {
+    const updated = deliveryChallans.filter(d => d.id !== id);
+    setDeliveryChallans(updated);
+    logAudit('DELETE', 'Dispatch', `Deleted Delivery Challan ${id}`, id);
+  };
+
+  const handleSaveCoA = (newCoa) => {
+    setCertificateOfAnalyses(prev => [newCoa, ...prev.filter(c => c.id !== newCoa.id)]);
+    logAudit('CREATE', 'Quality', `Generated Quality CoA ${newCoa.coaNo} for "${newCoa.jobName}"`, newCoa.id);
+  };
+
+  const handleDeleteCoA = (id) => {
+    const updated = certificateOfAnalyses.filter(c => c.id !== id);
+    setCertificateOfAnalyses(updated);
+    logAudit('DELETE', 'Quality', `Deleted Quality CoA ${id}`, id);
+  };
+
   const handleAddClient = async (newClient) => {
     setClients(prev => [...prev.filter(c => c.id !== newClient.id), newClient]);
     logAudit('CREATE', 'Clients', `Saved client directory entry "${newClient.name}" (${newClient.id})`, newClient.id);
@@ -1537,6 +1566,15 @@ export default function App() {
                   Material Indents & Store
                 </div>
               )}
+              {isTabAllowed('dispatch') && (
+                <div 
+                  className={`nav-item ${activeTab === 'dispatch' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('dispatch')}
+                >
+                  <Truck size={18} style={{ color: '#38bdf8' }} />
+                  Dispatch, Challan & CoA
+                </div>
+              )}
             </>
           )}
 
@@ -1670,6 +1708,7 @@ export default function App() {
               {activeTab === 'inventory' && 'Raw Material Inventory, GRN & Quality Control'}
               {activeTab === 'ink_management' && 'Ink Master Directory, Solid Costing & Stock Management'}
               {activeTab === 'material_indents' && 'Material Indents Requisitions & Consumable Store'}
+              {activeTab === 'dispatch' && 'Finished Goods Dispatch, Delivery Challan & Quality CoA Hub'}
               {activeTab === 'user_management' && 'Departmental User Management (RBAC)'}
               {activeTab === 'cylinders' && 'Rotogravure Cylinder Database'}
               {activeTab === 'printing_scheduler' && 'Printing Machine Production Scheduler & Time Board'}
@@ -2183,6 +2222,22 @@ export default function App() {
             onUpdateIndents={handleUpdateIndents}
             machineIssues={machineIssues}
             onUpdateMachineIssues={handleUpdateMachineIssues}
+          />
+        )}
+
+        {/* TAB: DISPATCH, DELIVERY CHALLAN & COA HUB */}
+        {activeTab === 'dispatch' && (
+          <DispatchManagement 
+            deliveryChallans={deliveryChallans}
+            certificateOfAnalyses={certificateOfAnalyses}
+            clients={clients}
+            jobMasters={jobMasters}
+            orders={orders}
+            currentUser={currentUser}
+            onSaveDeliveryChallan={handleSaveDeliveryChallan}
+            onDeleteDeliveryChallan={handleDeleteDeliveryChallan}
+            onSaveCoA={handleSaveCoA}
+            onDeleteCoA={handleDeleteCoA}
           />
         )}
 
