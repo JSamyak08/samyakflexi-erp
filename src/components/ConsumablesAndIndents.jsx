@@ -37,7 +37,7 @@ import {
 } from 'lucide-react';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
 import { notifyPurchaseIndentCreated, notifyPurchaseOrderIssued, notifyLowStockAlert } from '../services/emailService';
-import { generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
+import { generateDocRefNumber, getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import TablePagination, { usePagination } from './TablePagination';
 
 // Default Plant Machine List for flexible packaging operations
@@ -264,13 +264,19 @@ export default function ConsumablesAndIndents({
       email: "orders@vendor.com"
     };
 
+    const finalPoNum = poNumber.trim() ? poNumber.trim() : getNextDocRefNumber('po');
+    // Save/increment sequence if using default
+    if (finalPoNum === generateDocRefNumber('po')) {
+      getNextDocRefNumber('po');
+    }
+
     // Update Indent status to "PO Issued"
     setIndents(prev => prev.map(ind => {
       if (ind.id === targetIndentForPO.id) {
         return {
           ...ind,
           status: "PO Issued",
-          poNumber: poNumber,
+          poNumber: finalPoNum,
           vendorName: selectedVendorName,
           poDate: new Date().toISOString().split('T')[0]
         };
@@ -280,7 +286,7 @@ export default function ConsumablesAndIndents({
 
     // Formatted PO Object for PurchaseOrderPDF viewer & central store
     const poPayload = {
-      poNumber: poNumber,
+      poNumber: finalPoNum,
       poDate: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
       deliveryDate: new Date(poDeliveryDate || new Date()).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
       indentNumber: targetIndentForPO ? targetIndentForPO.indentNo : "IND-2026-001",

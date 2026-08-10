@@ -33,7 +33,7 @@ import {
   DEFAULT_DAILY_RATES,
   DEFAULT_PROCESSING_RATES
 } from '../factoryStore';
-import { generateDocRefNumber } from '../services/settingsService';
+import { generateDocRefNumber, getNextDocRefNumber } from '../services/settingsService';
 import { 
   fetchSalesQuotations, 
   saveSalesQuotationToSupabase, 
@@ -359,9 +359,7 @@ export default function SalesManagement({
   // Open Create Form — everything blank, no seed data
   const handleOpenCreateForm = () => {
     setEditingQuotationId(null);
-    const nextNum = String(quotations.length + 1).padStart(3, '0');
-    const fy = '26-27';
-    setQuotationNo(`SIL/QTN/${fy}/${nextNum}`);
+    setQuotationNo(generateDocRefNumber('qtn'));
     setRevisionNo(0);
     setAmendmentNo('Rev 00');
     setEnquiryDate(new Date().toISOString().split('T')[0]);
@@ -483,9 +481,11 @@ export default function SalesManagement({
       };
     });
 
+    const finalQtnNo = editingQuotationId ? quotationNo : getNextDocRefNumber('qtn');
+
     const newQtn = {
       id: editingQuotationId || `QTN-${Date.now()}`,
-      quotationNo,
+      quotationNo: finalQtnNo,
       revisionNo,
       amendmentNo,
       enquiryDate,
@@ -526,7 +526,7 @@ export default function SalesManagement({
 
     setActiveSubTab('list');
     setActiveQuotationForPDF(newQtn); // Open PDF preview!
-    alert(`Sales Quotation ${quotationNo} (${amendmentNo}) saved & sent to client! Opening PDF preview now.`);
+    alert(`Sales Quotation ${finalQtnNo} (${amendmentNo}) saved & sent to client! Opening PDF preview now.`);
   };
 
   // Delete Sales Quotation
@@ -551,7 +551,7 @@ export default function SalesManagement({
       return;
     }
 
-    const ocnNo = `SIL/OCN/26-27/${Math.floor(100 + Math.random() * 900)}`;
+    const ocnNo = getNextDocRefNumber('ocn');
     const mainItem = (qtn.items && qtn.items[0]) || {};
 
     // Resolve layers — use item layers or fall back to parsing structure string

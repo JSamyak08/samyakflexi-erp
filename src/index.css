@@ -338,8 +338,72 @@ body {
   max-width: 95vw;
   max-height: 90vh;
   overflow-y: auto;
-  padding: 0;
+  box-sizing: border-box;
+  padding: 24px !important;
   animation: modalPopUpScale 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Edge-to-edge layout modal class */
+.modal-content-clean {
+  padding: 0 !important;
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+  overflow: hidden !important;
+}
+
+.modal-content-clean > .modal-header-bar {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  padding: 18px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #ffffff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-top-left-radius: 15px;
+  border-top-right-radius: 15px;
+  flex-shrink: 0;
+}
+
+.modal-content-clean > form,
+.modal-content-clean > .modal-body-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px !important;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.modal-content-clean .modal-footer-bar {
+  background: #ffffff;
+  padding: 16px 24px;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  border-bottom-left-radius: 15px;
+  border-bottom-right-radius: 15px;
+}
+
+/* Edge-to-edge header extension when inside padded modal-content */
+.modal-content > .modal-header,
+.modal-content > div[style*="linear-gradient"] {
+  margin: -24px -24px 20px -24px !important;
+  padding: 18px 24px;
+  border-top-left-radius: 15px !important;
+  border-top-right-radius: 15px !important;
+  box-sizing: border-box;
+}
+
+/* Prevent double padding when inner form has inline padding */
+.modal-content > form[style*="padding: 24px"],
+.modal-content > form[style*="padding:24px"],
+.modal-content > form[style*="padding: 28px"],
+.modal-content > form[style*="padding:28px"] {
+  padding: 0 !important;
 }
 
 .modal-close-btn {

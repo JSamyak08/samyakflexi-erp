@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { useReactToPrint } from 'react-to-print';
 import { Save, Printer, UploadCloud, ArrowLeft, CheckCircle2, RefreshCw, Trash2, Check, ExternalLink, Image as ImageIcon, CheckSquare, ShieldCheck, FileCode, Layers, Plus } from 'lucide-react';
 import { uploadArtworkFile, openArtworkViewer } from './services/supabaseStorageService';
-import { getAuthorisedSignature, getCompanyLogo } from './services/settingsService';
+import { getAuthorisedSignature, getCompanyLogo, getNextDocRefNumber, generateDocRefNumber } from './services/settingsService';
 import { safeLocalStorageSet } from './utils/safeStorage';
 import { COMPANY_DETAILS, FILM_DENSITIES } from './factoryStore';
 import { saveJobMasterToSupabase } from './services/supabaseDataService';
@@ -544,9 +544,10 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         };
       } else {
         // Create NEW Job Master automatically
+        const jmId = getNextDocRefNumber('jm');
         targetJobMaster = {
-          id: `JM-2026-${Math.floor(100 + Math.random() * 900)}`,
-          skuCode: formData.skuCode || `SKU-2026-${Math.floor(100 + Math.random() * 900)}`,
+          id: jmId,
+          skuCode: formData.skuCode || jmId.replace('JM', 'SKU'),
           jobName: formData.jobName || 'New Job',
           clientName: formData.partyName || 'General Client',
           structure: derivedStruct,

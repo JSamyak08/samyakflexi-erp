@@ -27,7 +27,8 @@ import {
   FileText,
   Check,
   History,
-  ChevronDown
+  ChevronDown,
+  X
 } from 'lucide-react';
 import GRNPDF from './GRNPDF';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
@@ -35,6 +36,7 @@ import WeighingScaleInput from './WeighingScaleInput';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import DispatchPackingListPDF from './DispatchPackingListPDF';
 import TablePagination, { usePagination } from './TablePagination';
+import { getNextDocRefNumber, generateDocRefNumber } from '../services/settingsService';
 import { 
   isReconciliationDue, 
   FILM_DENSITIES, 
@@ -336,7 +338,7 @@ export default function InventoryManagement({
     const totalGrossWeight = dispatchRollsList.reduce((sum, r) => sum + (parseFloat(r.grossWeightKg) || 0), 0);
 
     const newShipment = {
-      dispatchId: `DISP-2026-${Math.floor(100 + Math.random() * 900)}`,
+      dispatchId: getNextDocRefNumber('dispatch'),
       orderId,
       jobName: dispatchJobName,
       clientName: dispatchClientName,
@@ -857,7 +859,7 @@ export default function InventoryManagement({
     const rateVal = parseFloat(grnPurchaseRate) || 0;
 
     const newGRN = {
-      grnNo: `GRN-2026-${Math.floor(100 + Math.random() * 900)}`,
+      grnNo: getNextDocRefNumber('grn'),
       poNumber: grnPoNo,
       vendorName: grnVendor,
       invoiceNo: grnInvoiceNo,
@@ -2459,375 +2461,492 @@ export default function InventoryManagement({
       {/* Modal: New Inward GRN */}
       {isNewGRNModalOpen && (
         <div className="modal-overlay" onClick={() => setIsNewGRNModalOpen(false)}>
-          <div className="glass-card modal-content" style={{ width: '650px' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ marginBottom: '8px' }}>Create Goods Receipt Note (GRN Inward)</h3>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '20px' }}>
-              Store Manager stock inward entry. Creates downloadable GRN & triggers Quality Control (QC) inspection.
-            </p>
+          <div 
+            className="glass-card modal-content modal-content-clean" 
+            style={{ width: '740px', maxWidth: '94vw' }} 
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Dark Executive Header */}
+            <div className="modal-header-bar">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ 
+                  background: 'rgba(2, 132, 199, 0.25)', 
+                  padding: '10px', 
+                  borderRadius: '10px', 
+                  color: '#38bdf8', 
+                  border: '1px solid rgba(56, 189, 248, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justify: 'center'
+                }}>
+                  <Package size={22} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.18rem', fontWeight: '800', margin: 0, color: '#ffffff', letterSpacing: '-0.01em' }}>
+                    Create Goods Receipt Note (GRN Inward)
+                  </h3>
+                  <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0 0' }}>
+                    Store Manager stock inward entry • Generates downloadable GRN & triggers QC inspection
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                className="modal-close-btn" 
+                onClick={() => setIsNewGRNModalOpen(false)}
+                title="Close Modal"
+              >
+                <X size={18} />
+              </button>
+            </div>
 
+            {/* Scrollable Form Body */}
             <form onSubmit={handleSaveGRN}>
-              <div className="form-grid">
-                <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                    <label style={{ margin: 0, fontWeight: '600' }}>Vendor Name *</label>
-                    <button
-                      type="button"
-                      onClick={() => setIsVendorModalOpen(true)}
-                      style={{
-                        background: '#ecfdf5',
-                        border: '1px solid #a7f3d0',
-                        color: '#047857',
-                        fontSize: '0.78rem',
-                        fontWeight: '600',
-                        padding: '3px 10px',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}
-                    >
-                      <Plus size={14} /> Onboard New Vendor
-                    </button>
-                  </div>
-                  <select 
-                    className="form-control" 
-                    value={grnVendor} 
-                    onChange={e => {
-                      if (e.target.value === '__CREATE_NEW__') {
-                        setIsVendorModalOpen(true);
-                      } else {
-                        setGrnVendor(e.target.value);
-                      }
-                    }}
-                  >
-                    <option value="" disabled>-- Select Vendor --</option>
-                    {(vendors || []).map(v => (
-                      <option key={v.id} value={v.companyName}>{v.companyName} ({v.gstin || 'GSTIN N/A'})</option>
-                    ))}
-                    <option value="__CREATE_NEW__" style={{ fontWeight: '700', color: '#047857' }}>
-                      ➕ + Onboard / Create New Vendor...
-                    </option>
-                  </select>
+              
+              {/* Section 1: Vendor & Item Categorization */}
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Building2 size={14} style={{ color: '#0284c7' }} /> 1. Vendor & Item Categorization
                 </div>
 
-                <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                  <label style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>Inward Item Category *</label>
-                  <select 
-                    className="form-control" 
-                    style={{ fontWeight: '700' }}
-                    value={grnCategory} 
-                    onChange={e => setGrnCategory(e.target.value)}
-                  >
-                    <option value="Film Substrates">Film Substrates (PET, METPET, LDPE, BOPP, CPP, Foil)</option>
-                    <option value="Printing Inks & Toners">Printing Inks & Toners</option>
-                    <option value="Chemicals & Solvents">Chemicals & Solvents (Ethyl Acetate, Anilox Cleaner)</option>
-                    <option value="Adhesives & Hardener">Adhesives & Hardener (Solventless Comp A/B)</option>
-                    <option value="Doctor Blades & Wipers">Doctor Blades & Wipers</option>
-                    <option value="Rollers & Sleeves">Rollers & Sleeves</option>
-                    <option value="Machine Spare Parts">Machine Spare Parts</option>
-                    <option value="Lubricants & Oils">Lubricants & Oils</option>
-                    <option value="Tapes & Consumables">Tapes & Consumables (PTFE, Masking)</option>
-                    <option value="Safety Gear (PPE)">Safety Gear (PPE)</option>
-                  </select>
-                </div>
-
-                {/* Searchable Item Name connected to Existing Stock Items */}
-                <div className="form-group" style={{ gridColumn: 'span 2', position: 'relative' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                    <label style={{ margin: 0, fontWeight: '700', color: '#0f172a' }}>
-                      Select Existing Stock Item (Searchable List) *
-                    </label>
-                    {grnSelectedStockItemId && (
-                      <span style={{ fontSize: '0.75rem', color: '#047857', background: '#ecfdf5', padding: '2px 8px', borderRadius: '4px', border: '1px solid #a7f3d0', fontWeight: '600' }}>
-                        ✓ Linked SKU #{inventory.find(i => String(i.id) === String(grnSelectedStockItemId))?.itemCode || grnSelectedStockItemId}
-                      </span>
-                    )}
-                  </div>
-
-                  <div style={{ position: 'relative' }}>
-                    <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', zIndex: 2 }} />
-                    <input
-                      type="text"
-                      className="form-control"
-                      style={{ paddingLeft: '36px', paddingRight: '32px', fontWeight: grnSelectedStockItemId ? '700' : 'normal' }}
-                      placeholder="Search existing stock items (e.g. Doctor Blade, Cyan Ink, PET 12µ)..."
-                      value={grnItemSearchTerm}
-                      onChange={e => {
-                        const val = e.target.value;
-                        setGrnItemSearchTerm(val);
-                        setGrnItemName(val);
-                        setGrnSelectedStockItemId('');
-                        setIsGrnItemDropdownOpen(true);
-                      }}
-                      onFocus={() => setIsGrnItemDropdownOpen(true)}
-                    />
-                    <ChevronDown 
-                      size={16} 
-                      style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', cursor: 'pointer', zIndex: 2 }}
-                      onClick={() => setIsGrnItemDropdownOpen(!isGrnItemDropdownOpen)}
-                    />
-                  </div>
-
-                  {/* Dropdown Options List */}
-                  {isGrnItemDropdownOpen && (
-                    <div 
-                      style={{
-                        position: 'absolute',
-                        top: '100%',
-                        left: 0,
-                        right: 0,
-                        zIndex: 150,
-                        background: '#ffffff',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '8px',
-                        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15)',
-                        maxHeight: '220px',
-                        overflowY: 'auto',
-                        marginTop: '4px'
-                      }}
-                    >
-                      <div 
+                <div className="form-grid">
+                  {/* Vendor Selection */}
+                  <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <label style={{ margin: 0, fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                        Vendor Name <span style={{ color: '#ef4444' }}>*</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setIsVendorModalOpen(true)}
                         style={{
-                          padding: '10px 14px',
-                          fontSize: '0.82rem',
+                          background: '#ecfdf5',
+                          border: '1px solid #a7f3d0',
+                          color: '#047857',
+                          fontSize: '0.76rem',
                           fontWeight: '700',
-                          color: '#2563eb',
-                          background: '#eff6ff',
+                          padding: '4px 10px',
+                          borderRadius: '6px',
                           cursor: 'pointer',
-                          borderBottom: '1px solid #dbeafe',
-                          display: 'flex',
+                          display: 'inline-flex',
                           alignItems: 'center',
-                          gap: '6px'
-                        }}
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          setGrnSelectedStockItemId('');
-                          setIsGrnItemDropdownOpen(false);
+                          gap: '4px'
                         }}
                       >
-                        <Plus size={14} /> + Inward New Custom Item (Not in Stock List)
-                      </div>
+                        <Plus size={14} /> Onboard New Vendor
+                      </button>
+                    </div>
+                    <select 
+                      className="form-control" 
+                      value={grnVendor} 
+                      onChange={e => {
+                        if (e.target.value === '__CREATE_NEW__') {
+                          setIsVendorModalOpen(true);
+                        } else {
+                          setGrnVendor(e.target.value);
+                        }
+                      }}
+                      style={{ fontWeight: '500' }}
+                    >
+                      <option value="" disabled>-- Select Vendor --</option>
+                      {(vendors || []).map(v => (
+                        <option key={v.id} value={v.companyName}>{v.companyName} ({v.gstin || 'GSTIN N/A'})</option>
+                      ))}
+                      <option value="__CREATE_NEW__" style={{ fontWeight: '700', color: '#047857' }}>
+                        ➕ + Onboard / Create New Vendor...
+                      </option>
+                    </select>
+                  </div>
 
-                      {filteredStockItemsForGrn.length === 0 ? (
-                        <div style={{ padding: '12px', fontSize: '0.85rem', color: 'var(--text-muted)', textAlign: 'center' }}>
-                          No matching stock items found. You can enter a custom item name above.
-                        </div>
-                      ) : (
-                        filteredStockItemsForGrn.map(item => {
-                          const title = item.itemName || `${item.filmType || 'Film'} ${item.micron && item.micron !== '-' ? item.micron + 'µ' : ''} ${item.widthMm && item.widthMm !== '-' ? '(' + item.widthMm + 'mm)' : ''}`.trim();
-                          const isSelected = String(grnSelectedStockItemId) === String(item.id);
-                          
-                          return (
-                            <div
-                              key={item.id}
-                              style={{
-                                padding: '10px 14px',
-                                cursor: 'pointer',
-                                borderBottom: '1px solid #f1f5f9',
-                                background: isSelected ? '#f0f9ff' : 'transparent',
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                gap: '8px'
-                              }}
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                handleSelectStockItemForGrn(item);
-                              }}
-                            >
-                              <div>
-                                <div style={{ fontWeight: '700', fontSize: '0.88rem', color: '#0f172a' }}>
-                                  {title}
-                                </div>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', gap: '8px', marginTop: '2px' }}>
-                                  <span>Code: <strong>{item.itemCode || item.id}</strong></span>
-                                  <span>Category: <strong style={{ color: '#475569' }}>{item.category || 'Film Substrates'}</strong></span>
-                                </div>
-                              </div>
-                              <div style={{ textAlign: 'right' }}>
-                                <span className="badge badge-success" style={{ fontSize: '0.75rem', padding: '3px 8px' }}>
-                                  {item.availableQtyKg || 0} {item.unit || 'Kg'} in Stock
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })
+                  {/* Item Category */}
+                  <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                    <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155', marginBottom: '6px', display: 'block' }}>
+                      Inward Item Category <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <select 
+                      className="form-control" 
+                      style={{ fontWeight: '600', color: '#0284c7', background: '#f0f9ff', borderColor: '#bae6fd' }}
+                      value={grnCategory} 
+                      onChange={e => setGrnCategory(e.target.value)}
+                    >
+                      <option value="Film Substrates">Film Substrates (PET, METPET, LDPE, BOPP, CPP, Foil)</option>
+                      <option value="Printing Inks & Toners">Printing Inks & Toners</option>
+                      <option value="Chemicals & Solvents">Chemicals & Solvents (Ethyl Acetate, Anilox Cleaner)</option>
+                      <option value="Adhesives & Hardener">Adhesives & Hardener (Solventless Comp A/B)</option>
+                      <option value="Doctor Blades & Wipers">Doctor Blades & Wipers</option>
+                      <option value="Rollers & Sleeves">Rollers & Sleeves</option>
+                      <option value="Machine Spare Parts">Machine Spare Parts</option>
+                      <option value="Lubricants & Oils">Lubricants & Oils</option>
+                      <option value="Tapes & Consumables">Tapes & Consumables (PTFE, Masking)</option>
+                      <option value="Safety Gear (PPE)">Safety Gear (PPE)</option>
+                    </select>
+                  </div>
+
+                  {/* Searchable Stock Item Link */}
+                  <div className="form-group" style={{ gridColumn: 'span 2', position: 'relative' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <label style={{ margin: 0, fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                        Select Existing Stock Item (Searchable List) <span style={{ color: '#ef4444' }}>*</span>
+                      </label>
+                      {grnSelectedStockItemId && (
+                        <span style={{ fontSize: '0.74rem', color: '#047857', background: '#dcfce7', padding: '2px 8px', borderRadius: '4px', border: '1px solid #86efac', fontWeight: '700' }}>
+                          ✓ Linked SKU #{inventory.find(i => String(i.id) === String(grnSelectedStockItemId))?.itemCode || grnSelectedStockItemId}
+                        </span>
                       )}
                     </div>
-                  )}
-                </div>
 
-                <div className="form-group">
-                  <label>Ref PO Number</label>
-                  <input type="text" className="form-control" value={grnPoNo} onChange={e => setGrnPoNo(e.target.value)} />
-                </div>
-
-                <div className="form-group">
-                  <label>Vendor Invoice Number *</label>
-                  <input type="text" className="form-control" required placeholder="e.g. INV-FP-9904" value={grnInvoiceNo} onChange={e => setGrnInvoiceNo(e.target.value)} />
-                </div>
-
-                <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                  <label>Manufacturer Batch / Heat # *</label>
-                  <input type="text" className="form-control" required placeholder="e.g. BATCH-PET-991" value={grnBatchNo} onChange={e => setGrnBatchNo(e.target.value)} />
-                </div>
-
-                <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                  <label style={{ fontWeight: '700', color: '#1e40af' }}>Material / Container Packaging Type *</label>
-                  <select 
-                    className="form-control" 
-                    style={{ fontWeight: '700' }}
-                    value={grnPackagingType} 
-                    onChange={e => setGrnPackagingType(e.target.value)}
-                  >
-                    {PACKAGING_MATERIAL_TYPES.map(type => (
-                      <option key={type} value={type}>{type} ({type}s)</option>
-                    ))}
-                  </select>
-                </div>
-
-                {grnCategory === 'Film Substrates' ? (
-                  <>
-                    <div className="form-group">
-                      <label>Film Substrate</label>
-                      <select className="form-control" value={grnFilmType} onChange={e => setGrnFilmType(e.target.value)}>
-                        {Object.keys(FILM_DENSITIES).map(type => <option key={type} value={type}>{type}</option>)}
-                      </select>
-                    </div>
-
-                    <div className="form-group">
-                      <label>Micron Gauge (µ)</label>
-                      <input type="number" className="form-control" value={grnMicron} onChange={e => setGrnMicron(e.target.value)} />
-                    </div>
-
-                    <div className="form-group">
-                      <label>Slit Width (mm)</label>
-                      <input type="number" className="form-control" value={grnWidthMm} onChange={e => setGrnWidthMm(e.target.value)} />
-                    </div>
-
-                    <div className="form-group">
-                      <label>Number of {grnPackagingType}s Received *</label>
-                      <input type="number" min="1" className="form-control" value={grnRolls} onChange={e => setGrnRolls(e.target.value)} />
-                    </div>
-
-                    <div className="form-group">
-                      <label>Total Net Weight Inward (Kg) *</label>
-                      <input type="number" step="any" className="form-control" required value={grnWeightKg} onChange={e => setGrnWeightKg(e.target.value)} />
-                    </div>
-
-                    <div className="form-group">
-                      <label style={{ fontWeight: '700', color: '#047857' }}>Purchase Rate (₹ / Kg) *</label>
-                      <input 
-                        type="number" 
-                        step="any" 
-                        className="form-control" 
-                        required 
-                        placeholder="e.g. 145.50" 
-                        value={grnPurchaseRate} 
-                        onChange={e => setGrnPurchaseRate(e.target.value)} 
+                    <div style={{ position: 'relative' }}>
+                      <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', zIndex: 2 }} />
+                      <input
+                        type="text"
+                        className="form-control"
+                        style={{ paddingLeft: '36px', paddingRight: '36px', fontWeight: grnSelectedStockItemId ? '700' : 'normal' }}
+                        placeholder="Search existing stock items (e.g. Doctor Blade, Cyan Ink, PET 12µ)..."
+                        value={grnItemSearchTerm}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setGrnItemSearchTerm(val);
+                          setGrnItemName(val);
+                          setGrnSelectedStockItemId('');
+                          setIsGrnItemDropdownOpen(true);
+                        }}
+                        onFocus={() => setIsGrnItemDropdownOpen(true)}
                       />
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                      <label>Item Description / Specification *</label>
-                      <input 
-                        type="text" 
-                        className="form-control" 
-                        required 
-                        placeholder="e.g. Process Cyan Ink / Ethyl Acetate Solvent / Doctor Blades 0.15mm" 
-                        value={grnItemName} 
-                        onChange={e => setGrnItemName(e.target.value)} 
+                      <ChevronDown 
+                        size={16} 
+                        style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', cursor: 'pointer', zIndex: 2 }}
+                        onClick={() => setIsGrnItemDropdownOpen(!isGrnItemDropdownOpen)}
                       />
                     </div>
 
-                    <div className="form-group">
-                      <label>Unit of Measure (UOM) *</label>
-                      <select className="form-control" value={grnUnit} onChange={e => setGrnUnit(e.target.value)}>
-                        <option value="Kg">Kg</option>
-                        <option value="Litres">Litres</option>
-                        <option value="Meters">Meters</option>
-                        <option value="Boxes">Boxes</option>
-                        <option value="Rolls">Rolls</option>
-                        <option value="Pcs">Pcs</option>
-                        <option value="Drums">Drums</option>
-                        <option value="Bags">Bags</option>
-                        <option value="Cans">Cans</option>
-                      </select>
-                    </div>
+                    {/* Dropdown Options List */}
+                    {isGrnItemDropdownOpen && (
+                      <div 
+                        style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: 0,
+                          right: 0,
+                          zIndex: 200,
+                          background: '#ffffff',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: '10px',
+                          boxShadow: '0 12px 28px -4px rgba(15, 23, 42, 0.2)',
+                          maxHeight: '220px',
+                          overflowY: 'auto',
+                          marginTop: '4px'
+                        }}
+                      >
+                        <div 
+                          style={{
+                            padding: '10px 14px',
+                            fontSize: '0.82rem',
+                            fontWeight: '700',
+                            color: '#2563eb',
+                            background: '#eff6ff',
+                            cursor: 'pointer',
+                            borderBottom: '1px solid #dbeafe',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                          }}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setGrnSelectedStockItemId('');
+                            setIsGrnItemDropdownOpen(false);
+                          }}
+                        >
+                          <Plus size={14} /> + Inward New Custom Item (Not in Stock List)
+                        </div>
 
-                    <div className="form-group">
-                      <label>Number of {grnPackagingType}s Received (for Barcodes) *</label>
-                      <input 
-                        type="number" 
-                        min="1"
-                        className="form-control" 
-                        placeholder={`e.g. 5 ${grnPackagingType}s (Default: 1)`} 
-                        value={grnRolls} 
-                        onChange={e => setGrnRolls(e.target.value)} 
-                      />
-                    </div>
-
-                    <div className="form-group">
-                      <label>Total Inward Qty ({grnUnit}) *</label>
-                      <input 
-                        type="number" 
-                        step="any"
-                        className="form-control" 
-                        required 
-                        value={grnWeightKg} 
-                        onChange={e => setGrnWeightKg(e.target.value)} 
-                      />
-                    </div>
-
-                    <div className="form-group">
-                      <label style={{ fontWeight: '700', color: '#047857' }}>Purchase Rate (₹ / {grnUnit}) *</label>
-                      <input 
-                        type="number" 
-                        step="any" 
-                        className="form-control" 
-                        required 
-                        placeholder="e.g. 280.00" 
-                        value={grnPurchaseRate} 
-                        onChange={e => setGrnPurchaseRate(e.target.value)} 
-                      />
-                    </div>
-                  </>
-                )}
-
-                <div className="form-group">
-                  <label style={{ fontWeight: '700', color: '#0369a1' }}>Transporter Name / Vehicle #</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    placeholder="e.g. V-Trans Logistics / MP-09-AB-1234" 
-                    value={grnTransporterName} 
-                    onChange={e => setGrnTransporterName(e.target.value)} 
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label style={{ fontWeight: '700', color: '#0369a1' }}>Inward Freight Charge (₹)</label>
-                  <input 
-                    type="number" 
-                    step="any" 
-                    className="form-control" 
-                    placeholder="e.g. 2500 (Optional)" 
-                    value={grnFreightAmount} 
-                    onChange={e => setGrnFreightAmount(e.target.value)} 
-                  />
-                </div>
-
-                <div style={{ gridColumn: 'span 2', fontSize: '0.78rem', color: '#047857', fontWeight: '600', background: '#ecfdf5', padding: '8px 12px', borderRadius: '6px', border: '1px solid #a7f3d0' }}>
-                  📦 Inward Package Breakdown: <strong>{grnWeightKg || 0} {grnCategory === 'Film Substrates' ? 'Kg' : grnUnit}</strong> total across <strong>{grnRolls || 1} {grnPackagingType}(s)</strong> = <strong>{( (parseFloat(grnWeightKg) || 0) / Math.max(1, parseInt(grnRolls) || 1) ).toFixed(2)} {grnCategory === 'Film Substrates' ? 'Kg' : grnUnit}</strong> per {grnPackagingType}. (1 barcode sticker generated per {grnPackagingType}).
+                        {filteredStockItemsForGrn.length === 0 ? (
+                          <div style={{ padding: '12px', fontSize: '0.85rem', color: '#64748b', textAlign: 'center' }}>
+                            No matching stock items found. You can enter a custom item name above.
+                          </div>
+                        ) : (
+                          filteredStockItemsForGrn.map(item => {
+                            const title = item.itemName || `${item.filmType || 'Film'} ${item.micron && item.micron !== '-' ? item.micron + 'µ' : ''} ${item.widthMm && item.widthMm !== '-' ? '(' + item.widthMm + 'mm)' : ''}`.trim();
+                            const isSelected = String(grnSelectedStockItemId) === String(item.id);
+                            
+                            return (
+                              <div
+                                key={item.id}
+                                style={{
+                                  padding: '10px 14px',
+                                  cursor: 'pointer',
+                                  borderBottom: '1px solid #f1f5f9',
+                                  background: isSelected ? '#f0f9ff' : 'transparent',
+                                  display: 'flex',
+                                  justify: 'space-between',
+                                  alignItems: 'center',
+                                  gap: '8px'
+                                }}
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  handleSelectStockItemForGrn(item);
+                                }}
+                              >
+                                <div>
+                                  <div style={{ fontWeight: '700', fontSize: '0.88rem', color: '#0f172a' }}>
+                                    {title}
+                                  </div>
+                                  <div style={{ fontSize: '0.75rem', color: '#64748b', display: 'flex', gap: '8px', marginTop: '2px' }}>
+                                    <span>Code: <strong>{item.itemCode || item.id}</strong></span>
+                                    <span>Category: <strong style={{ color: '#475569' }}>{item.category || 'Film Substrates'}</strong></span>
+                                  </div>
+                                </div>
+                                <div style={{ textAlign: 'right' }}>
+                                  <span className="badge badge-success" style={{ fontSize: '0.75rem', padding: '3px 8px' }}>
+                                    {item.availableQtyKg || 0} {item.unit || 'Kg'} in Stock
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+              {/* Section 2: Reference & Batch Documentation */}
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <FileText size={14} style={{ color: '#0284c7' }} /> 2. Invoice & Batch Documentation
+                </div>
+
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>Ref PO Number</label>
+                    <input type="text" className="form-control" placeholder="e.g. SIL/PO/26-27/1941" value={grnPoNo} onChange={e => setGrnPoNo(e.target.value)} />
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                      Vendor Invoice Number <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input type="text" className="form-control" required placeholder="e.g. INV-FP-9904" value={grnInvoiceNo} onChange={e => setGrnInvoiceNo(e.target.value)} />
+                  </div>
+
+                  <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                    <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                      Manufacturer Batch / Heat # <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input type="text" className="form-control" required placeholder="e.g. BATCH-PET-991" value={grnBatchNo} onChange={e => setGrnBatchNo(e.target.value)} />
+                  </div>
+
+                  <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                    <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                      Material / Container Packaging Type <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <select 
+                      className="form-control" 
+                      style={{ fontWeight: '600', color: '#1e40af', background: '#eff6ff', borderColor: '#bfdbfe' }}
+                      value={grnPackagingType} 
+                      onChange={e => setGrnPackagingType(e.target.value)}
+                    >
+                      {PACKAGING_MATERIAL_TYPES.map(type => (
+                        <option key={type} value={type}>{type} ({type}s)</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 3: Specifications & Quantity Parameters */}
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Scale size={14} style={{ color: '#0284c7' }} /> 3. Specifications & Quantity Parameters
+                </div>
+
+                <div className="form-grid">
+                  {grnCategory === 'Film Substrates' ? (
+                    <>
+                      <div className="form-group">
+                        <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>Film Substrate</label>
+                        <select className="form-control" value={grnFilmType} onChange={e => setGrnFilmType(e.target.value)}>
+                          {Object.keys(FILM_DENSITIES).map(type => <option key={type} value={type}>{type}</option>)}
+                        </select>
+                      </div>
+
+                      <div className="form-group">
+                        <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>Micron Gauge (µ)</label>
+                        <input type="number" className="form-control" value={grnMicron} onChange={e => setGrnMicron(e.target.value)} />
+                      </div>
+
+                      <div className="form-group">
+                        <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>Slit Width (mm)</label>
+                        <input type="number" className="form-control" value={grnWidthMm} onChange={e => setGrnWidthMm(e.target.value)} />
+                      </div>
+
+                      <div className="form-group">
+                        <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                          Number of {grnPackagingType}s Received <span style={{ color: '#ef4444' }}>*</span>
+                        </label>
+                        <input type="number" min="1" className="form-control" value={grnRolls} onChange={e => setGrnRolls(e.target.value)} />
+                      </div>
+
+                      <div className="form-group">
+                        <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                          Total Net Weight Inward (Kg) <span style={{ color: '#ef4444' }}>*</span>
+                        </label>
+                        <input type="number" step="any" className="form-control" required value={grnWeightKg} onChange={e => setGrnWeightKg(e.target.value)} />
+                      </div>
+
+                      <div className="form-group">
+                        <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                          Purchase Rate (₹ / Kg) <span style={{ color: '#ef4444' }}>*</span>
+                        </label>
+                        <input 
+                          type="number" 
+                          step="any" 
+                          className="form-control" 
+                          required 
+                          placeholder="e.g. 145.50" 
+                          value={grnPurchaseRate} 
+                          onChange={e => setGrnPurchaseRate(e.target.value)} 
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                        <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                          Item Description / Specification <span style={{ color: '#ef4444' }}>*</span>
+                        </label>
+                        <input 
+                          type="text" 
+                          className="form-control" 
+                          required 
+                          placeholder="e.g. Process Cyan Ink / Ethyl Acetate Solvent / Doctor Blades 0.15mm" 
+                          value={grnItemName} 
+                          onChange={e => setGrnItemName(e.target.value)} 
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                          Unit of Measure (UOM) <span style={{ color: '#ef4444' }}>*</span>
+                        </label>
+                        <select className="form-control" value={grnUnit} onChange={e => setGrnUnit(e.target.value)}>
+                          <option value="Kg">Kg</option>
+                          <option value="Litres">Litres</option>
+                          <option value="Meters">Meters</option>
+                          <option value="Boxes">Boxes</option>
+                          <option value="Rolls">Rolls</option>
+                          <option value="Pcs">Pcs</option>
+                          <option value="Drums">Drums</option>
+                          <option value="Bags">Bags</option>
+                          <option value="Cans">Cans</option>
+                        </select>
+                      </div>
+
+                      <div className="form-group">
+                        <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                          Number of {grnPackagingType}s Received <span style={{ color: '#ef4444' }}>*</span>
+                        </label>
+                        <input 
+                          type="number" 
+                          min="1"
+                          className="form-control" 
+                          placeholder={`e.g. 5 ${grnPackagingType}s (Default: 1)`} 
+                          value={grnRolls} 
+                          onChange={e => setGrnRolls(e.target.value)} 
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                          Total Inward Qty ({grnUnit}) <span style={{ color: '#ef4444' }}>*</span>
+                        </label>
+                        <input 
+                          type="number" 
+                          step="any"
+                          className="form-control" 
+                          required 
+                          value={grnWeightKg} 
+                          onChange={e => setGrnWeightKg(e.target.value)} 
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                          Purchase Rate (₹ / {grnUnit}) <span style={{ color: '#ef4444' }}>*</span>
+                        </label>
+                        <input 
+                          type="number" 
+                          step="any" 
+                          className="form-control" 
+                          required 
+                          placeholder="e.g. 280.00" 
+                          value={grnPurchaseRate} 
+                          onChange={e => setGrnPurchaseRate(e.target.value)} 
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Section 4: Transporter & Freight */}
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Truck size={14} style={{ color: '#0284c7' }} /> 4. Logistics & Freight Expenses
+                </div>
+
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>Transporter Name / Vehicle #</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="e.g. V-Trans Logistics / MP-09-AB-1234" 
+                      value={grnTransporterName} 
+                      onChange={e => setGrnTransporterName(e.target.value)} 
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>Inward Freight Charge (₹)</label>
+                    <input 
+                      type="number" 
+                      step="any" 
+                      className="form-control" 
+                      placeholder="e.g. 2500 (Optional)" 
+                      value={grnFreightAmount} 
+                      onChange={e => setGrnFreightAmount(e.target.value)} 
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Breakdown Callout Box */}
+              <div style={{ 
+                background: 'linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%)', 
+                padding: '12px 16px', 
+                borderRadius: '10px', 
+                border: '1px solid #a7f3d0',
+                color: '#065f46',
+                fontSize: '0.81rem',
+                lineHeight: '1.45',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '10px'
+              }}>
+                <div style={{ background: '#d1fae5', padding: '6px', borderRadius: '8px', color: '#047857', marginTop: '2px' }}>
+                  <Barcode size={18} />
+                </div>
+                <div>
+                  <strong style={{ color: '#047857', display: 'block', marginBottom: '2px' }}>Inward Package Breakdown & Barcode Generation:</strong>
+                  <strong>{grnWeightKg || 0} {grnCategory === 'Film Substrates' ? 'Kg' : grnUnit}</strong> total across <strong>{grnRolls || 1} {grnPackagingType}(s)</strong> = <strong>{( (parseFloat(grnWeightKg) || 0) / Math.max(1, parseInt(grnRolls) || 1) ).toFixed(2)} {grnCategory === 'Film Substrates' ? 'Kg' : grnUnit}</strong> per {grnPackagingType}. (1 barcode sticker will be generated per {grnPackagingType}).
+                </div>
+              </div>
+
+              {/* Sticky Bottom Actions Footer */}
+              <div className="modal-footer-bar">
                 <button type="button" className="btn-secondary" onClick={() => setIsNewGRNModalOpen(false)}>Cancel</button>
-                <button type="submit" className="btn-primary">
+                <button type="submit" className="btn-primary" style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', padding: '10px 22px', fontWeight: '700', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                   <FileCheck size={18} /> Complete Inward & Submit to QC
                 </button>
               </div>
@@ -2839,27 +2958,44 @@ export default function InventoryManagement({
       {/* Modal: QC Inspection & Approval */}
       {qcInspectingGRN && (
         <div className="modal-overlay" onClick={() => setQcInspectingGRN(null)}>
-          <div className="glass-card modal-content" style={{ width: '550px' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ marginBottom: '8px' }}>🧪 QC Inspection Report: {qcInspectingGRN.grnNo}</h3>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '16px' }}>
-              Inspect physical roll parameters (Micron gauge accuracy, Corona dyne, tensile strength, visual defects).
-            </p>
-
-            <div className="form-group">
-              <label>QC Lab Inspector Notes & Test Results</label>
-              <textarea 
-                className="form-control"
-                placeholder="Enter gauge tolerance test, dyne level, or visual observations..."
-                value={qcNotesInput}
-                onChange={e => setQcNotesInput(e.target.value)}
-              />
+          <div className="glass-card modal-content modal-content-clean" style={{ width: '580px', maxWidth: '94vw' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header-bar">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ background: 'rgba(16, 185, 129, 0.2)', padding: '10px', borderRadius: '10px', color: '#34d399', border: '1px solid rgba(52, 211, 153, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <FileCheck size={22} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.18rem', fontWeight: '800', margin: 0, color: '#ffffff' }}>
+                    QC Inspection Report: {qcInspectingGRN.grnNo}
+                  </h3>
+                  <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0 0' }}>
+                    Inspect physical roll parameters (Micron gauge accuracy, Corona dyne, tensile strength, visual defects)
+                  </p>
+                </div>
+              </div>
+              <button type="button" className="modal-close-btn" onClick={() => setQcInspectingGRN(null)}>
+                <X size={18} />
+              </button>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
-              <button className="btn-secondary" style={{ border: '1px solid #ef4444', color: '#ef4444' }} onClick={() => handleQCAction('Rejected')}>
+            <div style={{ padding: '20px 24px' }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155', marginBottom: '8px', display: 'block' }}>QC Lab Inspector Notes & Test Results</label>
+                <textarea 
+                  className="form-control"
+                  style={{ minHeight: '110px' }}
+                  placeholder="Enter gauge tolerance test, dyne level, or visual observations..."
+                  value={qcNotesInput}
+                  onChange={e => setQcNotesInput(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="modal-footer-bar">
+              <button className="btn-secondary" style={{ border: '1px solid #fca5a5', color: '#dc2626', background: '#fef2f2', fontWeight: '600' }} onClick={() => handleQCAction('Rejected')}>
                 <XCircle size={16} /> Reject Material
               </button>
-              <button className="btn-primary" style={{ background: '#10b981' }} onClick={() => handleQCAction('Approved')}>
+              <button className="btn-primary" style={{ background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', fontWeight: '700', padding: '10px 20px' }} onClick={() => handleQCAction('Approved')}>
                 <CheckCircle2 size={16} /> Approve & Add Stock to Inventory
               </button>
             </div>

@@ -23,6 +23,7 @@ import {
 import { calculatePreVsPostCosting } from '../factoryStore';
 import { formatINR } from '../utils/pdfHelpers';
 import JobDataSheetPDF from './JobDataSheetPDF';
+import { getNextDocRefNumber, generateDocRefNumber } from '../services/settingsService';
 
 export default function JobDataSheet({ 
   orders = [], 
@@ -71,7 +72,7 @@ export default function JobDataSheet({
   const handleSaveDataSheet = (e) => {
     e.preventDefault();
 
-    const sheetId = editingSheetId || `JDS-${Math.floor(1000 + Math.random() * 9000)}`;
+    const sheetId = editingSheetId || getNextDocRefNumber('jds');
 
     const newSheet = {
       id: sheetId,

@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import TablePagination, { usePagination } from './TablePagination';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
+import { generateDocRefNumber, getNextDocRefNumber } from '../services/settingsService';
 import { notifyPurchaseOrderIssued } from '../services/emailService';
 
 export default function InkManagement({
@@ -308,7 +309,7 @@ export default function InkManagement({
     });
 
     setPoModalVendorId(matchedVendor.id || '');
-    setPoModalPoNumber(`SIL/PO/26-27/${Math.floor(1000 + Math.random() * 9000)}`);
+    setPoModalPoNumber(getNextDocRefNumber('po'));
     setPoModalPoDate(new Date().toISOString().split('T')[0]);
     setPoModalDeliveryDate(new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]);
     setPoModalFreightTerms('Freight Included within Indore');
@@ -407,7 +408,7 @@ export default function InkManagement({
     const totalTaxable = items.reduce((sum, i) => sum + i.amount, 0);
 
     const poData = {
-      poNumber: poModalPoNumber.trim() || `SIL/PO/26-27/${Math.floor(1000 + Math.random() * 9000)}`,
+      poNumber: poModalPoNumber.trim() || getNextDocRefNumber('po'),
       poDate: poDateStr,
       deliveryDate: deliveryDateStr,
       promisedDeliveryDate: deliveryDateStr,

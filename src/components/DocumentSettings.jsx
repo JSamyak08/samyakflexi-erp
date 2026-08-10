@@ -442,28 +442,136 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                 <input 
                   type="text" 
                   className="form-control"
-                  value={prefixState.grnPrefix}
+                  value={prefixState.grnPrefix || 'SIL/GRN/26-27/'}
                   onChange={(e) => handlePrefixChange('grnPrefix', e.target.value)}
                 />
               </div>
               <div>
-                <label className="form-label">Next Counter Number</label>
+                <label className="form-label">Sequence Start / Next Counter Number</label>
                 <input 
                   type="number" 
                   className="form-control"
-                  value={prefixState.grnCounter}
+                  value={prefixState.grnCounter || 104}
                   onChange={(e) => handlePrefixChange('grnCounter', parseInt(e.target.value) || 1)}
                 />
               </div>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Sample: <strong>{prefixState.grnPrefix}{prefixState.grnCounter}</strong>
+                Sample: <strong>{prefixState.grnPrefix || 'SIL/GRN/26-27/'}{prefixState.grnCounter || 104}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+            <h4 style={{ fontSize: '0.85rem', fontWeight: '700', marginBottom: '12px' }}>Sales Quotation (QTN) Series</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div>
+                <label className="form-label">QTN Prefix String</label>
+                <input 
+                  type="text" 
+                  className="form-control"
+                  value={prefixState.qtnPrefix || 'SIL/QTN/26-27/'}
+                  onChange={(e) => handlePrefixChange('qtnPrefix', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="form-label">Sequence Start / Next Counter Number</label>
+                <input 
+                  type="number" 
+                  className="form-control"
+                  value={prefixState.qtnCounter || 501}
+                  onChange={(e) => handlePrefixChange('qtnCounter', parseInt(e.target.value) || 1)}
+                />
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Sample: <strong>{prefixState.qtnPrefix || 'SIL/QTN/26-27/'}{prefixState.qtnCounter || 501}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+            <h4 style={{ fontSize: '0.85rem', fontWeight: '700', marginBottom: '12px' }}>Dispatch Packing List (DISP) Series</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div>
+                <label className="form-label">Dispatch Prefix String</label>
+                <input 
+                  type="text" 
+                  className="form-control"
+                  value={prefixState.dispatchPrefix || 'SIL/DISP/26-27/'}
+                  onChange={(e) => handlePrefixChange('dispatchPrefix', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="form-label">Sequence Start / Next Counter Number</label>
+                <input 
+                  type="number" 
+                  className="form-control"
+                  value={prefixState.dispatchCounter || 301}
+                  onChange={(e) => handlePrefixChange('dispatchCounter', parseInt(e.target.value) || 1)}
+                />
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Sample: <strong>{prefixState.dispatchPrefix || 'SIL/DISP/26-27/'}{prefixState.dispatchCounter || 301}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+            <h4 style={{ fontSize: '0.85rem', fontWeight: '700', marginBottom: '12px' }}>Job Data Sheet (JDS) Series</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div>
+                <label className="form-label">JDS Prefix String</label>
+                <input 
+                  type="text" 
+                  className="form-control"
+                  value={prefixState.jdsPrefix || 'SIL/JDS/26-27/'}
+                  onChange={(e) => handlePrefixChange('jdsPrefix', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="form-label">Sequence Start / Next Counter Number</label>
+                <input 
+                  type="number" 
+                  className="form-control"
+                  value={prefixState.jdsCounter || 201}
+                  onChange={(e) => handlePrefixChange('jdsCounter', parseInt(e.target.value) || 1)}
+                />
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Sample: <strong>{prefixState.jdsPrefix || 'SIL/JDS/26-27/'}{prefixState.jdsCounter || 201}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+            <h4 style={{ fontSize: '0.85rem', fontWeight: '700', marginBottom: '12px' }}>Material Indent (IND) Series</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div>
+                <label className="form-label">Indent Prefix String</label>
+                <input 
+                  type="text" 
+                  className="form-control"
+                  value={prefixState.indentPrefix || 'SIL/IND/26-27/'}
+                  onChange={(e) => handlePrefixChange('indentPrefix', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="form-label">Sequence Start / Next Counter Number</label>
+                <input 
+                  type="number" 
+                  className="form-control"
+                  value={prefixState.indentCounter || 101}
+                  onChange={(e) => handlePrefixChange('indentCounter', parseInt(e.target.value) || 1)}
+                />
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Sample: <strong>{prefixState.indentPrefix || 'SIL/IND/26-27/'}{prefixState.indentCounter || 101}</strong>
               </div>
             </div>
           </div>
 
           <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
             <button type="submit" className="btn-primary" style={{ padding: '8px 24px' }}>
-              <Check size={16} /> Save Document Prefixes
+              <Check size={16} /> Save Document Prefixes & Sequences
             </button>
           </div>
 

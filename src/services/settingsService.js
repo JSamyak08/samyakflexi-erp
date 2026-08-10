@@ -61,7 +61,15 @@ export const DEFAULT_PREFIXES = {
   ocnPrefix: 'SIL/OCN/26-27/',
   ocnCounter: 108,
   grnPrefix: 'SIL/GRN/26-27/',
-  grnCounter: 104
+  grnCounter: 104,
+  qtnPrefix: 'SIL/QTN/26-27/',
+  qtnCounter: 501,
+  dispatchPrefix: 'SIL/DISP/26-27/',
+  dispatchCounter: 301,
+  jdsPrefix: 'SIL/JDS/26-27/',
+  jdsCounter: 201,
+  indentPrefix: 'SIL/IND/26-27/',
+  indentCounter: 101
 };
 
 export const DEFAULT_DOCUMENT_TERMS = {
@@ -186,7 +194,7 @@ export function saveDocumentTerms(termsConfig) {
 
 
 /**
- * Generate formatted document reference number
+ * Generate formatted document reference number without incrementing counter
  */
 export function generateDocRefNumber(type, customNumber) {
   const config = getDocumentPrefixes();
@@ -200,9 +208,64 @@ export function generateDocRefNumber(type, customNumber) {
   } else if (type === 'grn') {
     const num = customNumber !== undefined ? customNumber : config.grnCounter;
     return `${config.grnPrefix}${num}`;
+  } else if (type === 'qtn') {
+    const num = customNumber !== undefined ? customNumber : (config.qtnCounter || 501);
+    return `${config.qtnPrefix || 'SIL/QTN/26-27/'}${num}`;
+  } else if (type === 'dispatch') {
+    const num = customNumber !== undefined ? customNumber : (config.dispatchCounter || 301);
+    return `${config.dispatchPrefix || 'SIL/DISP/26-27/'}${num}`;
+  } else if (type === 'jds') {
+    const num = customNumber !== undefined ? customNumber : (config.jdsCounter || 201);
+    return `${config.jdsPrefix || 'SIL/JDS/26-27/'}${num}`;
+  } else if (type === 'indent') {
+    const num = customNumber !== undefined ? customNumber : (config.indentCounter || 101);
+    return `${config.indentPrefix || 'SIL/IND/26-27/'}${num}`;
   }
   
   return `SIL/DOC/${customNumber || 100}`;
+}
+
+/**
+ * Get next document reference number AND increment counter in settings
+ */
+export function getNextDocRefNumber(type) {
+  const config = getDocumentPrefixes();
+  let num = 101;
+  let key = '';
+  
+  if (type === 'po') {
+    num = config.poCounter || 246;
+    key = 'poCounter';
+  } else if (type === 'ocn') {
+    num = config.ocnCounter || 108;
+    key = 'ocnCounter';
+  } else if (type === 'grn') {
+    num = config.grnCounter || 104;
+    key = 'grnCounter';
+  } else if (type === 'qtn') {
+    num = config.qtnCounter || 501;
+    key = 'qtnCounter';
+  } else if (type === 'dispatch') {
+    num = config.dispatchCounter || 301;
+    key = 'dispatchCounter';
+  } else if (type === 'jds') {
+    num = config.jdsCounter || 201;
+    key = 'jdsCounter';
+  } else if (type === 'indent') {
+    num = config.indentCounter || 101;
+    key = 'indentCounter';
+  }
+
+  const docRef = generateDocRefNumber(type, num);
+  
+  if (key) {
+    saveDocumentPrefixes({
+      ...config,
+      [key]: Number(num) + 1
+    });
+  }
+
+  return docRef;
 }
 
 const RATES_STORAGE_KEY = 'samyak_processing_rates';

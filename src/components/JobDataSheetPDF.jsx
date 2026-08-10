@@ -2,7 +2,7 @@ import React from 'react';
 import { Printer, ArrowLeft } from 'lucide-react';
 import { COMPANY_DETAILS } from '../factoryStore';
 import { formatINR } from '../utils/pdfHelpers';
-import { getAuthorisedSignature, getCompanyLogo } from '../services/settingsService';
+import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber } from '../services/settingsService';
 
 export default function JobDataSheetPDF({ sheetData, onClose }) {
   if (!sheetData) return null;
@@ -12,7 +12,7 @@ export default function JobDataSheetPDF({ sheetData, onClose }) {
 
 
   const {
-    id = `SIL/JDS/26-27/${Math.floor(100 + Math.random() * 900)}`,
+    id = generateDocRefNumber('jds'),
     jobId = "ORD-991",
     jobName = "Britannia Bourbon 250g",
     clientName = "Britannia Industries Ltd",
