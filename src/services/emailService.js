@@ -1,7 +1,10 @@
 /**
  * Frontend Email & Action Task Notification Service
  * Communicates with backend Express SMTP server (Hostinger: admin@samyakinternational.in)
+ * Uses dynamic configurable Email Templates from settingsService.js
  */
+
+import { getEmailTemplates, interpolateTemplate } from './settingsService';
 
 export const requestPasswordRecovery = async (email) => {
   try {
@@ -25,14 +28,14 @@ export const requestPasswordRecovery = async (email) => {
   }
 };
 
-export const sendERPEmailNotification = async ({ to, subject, html, text }) => {
+export const sendERPEmailNotification = async ({ to, cc, subject, html, text }) => {
   try {
     const response = await fetch('/api/send-email', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ to, subject, html, text }),
+      body: JSON.stringify({ to, cc, subject, html, text }),
     });
 
     const data = await response.json();
@@ -50,7 +53,7 @@ export const sendERPEmailNotification = async ({ to, subject, html, text }) => {
 /**
  * Base HTML Template Generator for ERP Action Emails
  */
-const buildEmailTemplate = ({ title, badgeText, badgeBg = '#0284c7', contentHtml }) => `
+export const buildEmailTemplate = ({ title, badgeText, badgeBg = '#0284c7', contentHtml, footerNote }) => `
 <!DOCTYPE html>
 <html>
 <head>
@@ -58,7 +61,7 @@ const buildEmailTemplate = ({ title, badgeText, badgeBg = '#0284c7', contentHtml
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 0; color: #0f172a; }
     .container { max-width: 640px; margin: 24px auto; background: #ffffff; border-radius: 12px; border: 1px solid #cbd5e1; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
-    .header { background: #0f172a; color: #ffffff; padding: 24px; text-align: center; border-bottom: 3px solid #0284c7; }
+    .header { background: #0f172a; color: #ffffff; padding: 24px; text-align: center; border-bottom: 3px solid ${badgeBg || '#0284c7'}; }
     .header h1 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.3px; }
     .header p { margin: 4px 0 0; font-size: 12px; color: #94a3b8; }
     .body-content { padding: 28px; }
@@ -68,7 +71,7 @@ const buildEmailTemplate = ({ title, badgeText, badgeBg = '#0284c7', contentHtml
     .data-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
     .data-table th { background: #f1f5f9; text-align: left; padding: 8px 12px; color: #475569; font-weight: 700; border-bottom: 1px solid #cbd5e1; }
     .data-table td { padding: 8px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b; }
-    .footer { background: #f8fafc; padding: 20px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #e2e8f0; line-height: 1.6; }
+    .footer { background: #f8fafc; padding: 20px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #e2e8f0; line-height: 1.6; white-space: pre-line; }
   </style>
 </head>
 <body>
@@ -83,9 +86,7 @@ const buildEmailTemplate = ({ title, badgeText, badgeBg = '#0284c7', contentHtml
       ${contentHtml}
     </div>
     <div class="footer">
-      <strong>Samyak International Ltd • Indore Packaging Division</strong><br/>
-      Kheda Industrial Area, Sector 3, Pithampur, MP | GSTIN: 23AABCM3526F1ZY<br/>
-      Automated Notification Engine • Hostinger Secure SMTP Server
+      ${footerNote ? footerNote : `<strong>Samyak International Ltd • Indore Packaging Division</strong><br/>Kheda Industrial Area, Sector 3, Pithampur, MP | GSTIN: 23AABCM3526F1ZY<br/>Automated Notification Engine • Hostinger Secure SMTP Server`}
     </div>
   </div>
 </body>
@@ -93,34 +94,55 @@ const buildEmailTemplate = ({ title, badgeText, badgeBg = '#0284c7', contentHtml
 `;
 
 /**
+ * Helper to get active template with variable interpolation
+ */
+const getActiveTemplate = (templateKey, vars = {}) => {
+  const templates = getEmailTemplates();
+  const tmpl = templates[templateKey];
+  if (!tmpl) return null;
+
+  return {
+    ...tmpl,
+    eventTitle: interpolateTemplate(tmpl.eventTitle || '', vars),
+    subject: interpolateTemplate(tmpl.subject || '', vars),
+    badgeText: interpolateTemplate(tmpl.badgeText || '', vars),
+    contentHtml: interpolateTemplate(tmpl.contentHtml || '', vars),
+    footerNote: interpolateTemplate(tmpl.footerNote || '', vars),
+    toEmail: interpolateTemplate(tmpl.toEmail || '', vars),
+    ccEmail: interpolateTemplate(tmpl.ccEmail || '', vars)
+  };
+};
+
+/**
  * 1. ACTION TASK: New Order Punched
  */
-export const notifyOrderPunched = async (order, to = 'admin@samyakinternational.in') => {
-  const title = `📦 New Job Order Punched: ${order.jobName}`;
-  const badgeText = "Action Task: Order Created";
+export const notifyOrderPunched = async (order, customTo) => {
+  const vars = {
+    orderId: order.id || '',
+    jobName: order.jobName || '',
+    clientName: order.clientName || '',
+    orderQtyKg: (order.orderQtyKg || 0).toLocaleString(),
+    structure: order.structure || 'Custom Layer',
+    targetDeliveryDate: order.targetDeliveryDate || 'N/A'
+  };
+
+  const tmpl = getActiveTemplate('order_punched', vars);
+  if (!tmpl || tmpl.enabled === false) return { success: false, message: 'Notification disabled.' };
+
+  const targetEmail = customTo || tmpl.toEmail || 'admin@samyakinternational.in';
+
   const html = buildEmailTemplate({
-    title,
-    badgeText,
-    badgeBg: '#0284c7',
-    contentHtml: `
-      <p style="font-size: 14px; color: #334155;">A new job order has been punched into the ERP system and queued for raw material allocation and cylinder scheduling.</p>
-      <div class="info-card">
-        <table style="width: 100%; font-size: 13px;">
-          <tr><td><strong>Order ID:</strong></td><td>${order.id}</td></tr>
-          <tr><td><strong>Job Name:</strong></td><td>${order.jobName}</td></tr>
-          <tr><td><strong>Client Name:</strong></td><td>${order.clientName}</td></tr>
-          <tr><td><strong>Order Quantity:</strong></td><td>${(order.orderQtyKg || 0).toLocaleString()} kg</td></tr>
-          <tr><td><strong>Substrate Structure:</strong></td><td>${order.structure || 'Custom Layer'}</td></tr>
-          <tr><td><strong>Target Delivery Date:</strong></td><td>${order.targetDeliveryDate || 'N/A'}</td></tr>
-        </table>
-      </div>
-      <p style="font-size: 13px; color: #64748b;">Please review material requirements in the Production Scheduler.</p>
-    `
+    title: tmpl.eventTitle,
+    badgeText: tmpl.badgeText,
+    badgeBg: tmpl.badgeBgColor || '#0284c7',
+    contentHtml: tmpl.contentHtml,
+    footerNote: tmpl.footerNote
   });
 
   return await sendERPEmailNotification({
-    to,
-    subject: `📦 Order Punched: ${order.jobName} (${order.id})`,
+    to: targetEmail,
+    cc: tmpl.ccEmail,
+    subject: tmpl.subject,
     html,
     text: `New order ${order.id} for ${order.jobName} (${order.orderQtyKg} kg) has been punched into SamyakFlexi ERP.`
   });
@@ -129,34 +151,35 @@ export const notifyOrderPunched = async (order, to = 'admin@samyakinternational.
 /**
  * 2. ACTION TASK: Production Record Submitted for Approval
  */
-export const notifyProductionRecordSubmitted = async (record, to = 'admin@samyakinternational.in') => {
-  const title = `📋 Production Record Submitted: ${record.jobName}`;
-  const badgeText = "Action Task: Admin Approval Required";
+export const notifyProductionRecordSubmitted = async (record, customTo) => {
+  const vars = {
+    recordId: record.id || '',
+    orderId: record.orderId || '',
+    jobName: record.jobName || '',
+    totalProductionQtyKg: (record.totalProductionQtyKg || 0).toLocaleString(),
+    totalMaterialCostRs: (record.totalMaterialCostRs || 0).toLocaleString(),
+    finalProductionCostRs: (record.finalProductionCostRs || 0).toLocaleString(),
+    totalScrapQtyKg: (record.totalScrapQtyKg || 0).toFixed(1),
+    filledBy: record.filledBy || 'Plant Manager'
+  };
+
+  const tmpl = getActiveTemplate('production_submitted', vars);
+  if (!tmpl || tmpl.enabled === false) return { success: false, message: 'Notification disabled.' };
+
+  const targetEmail = customTo || tmpl.toEmail || 'admin@samyakinternational.in';
+
   const html = buildEmailTemplate({
-    title,
-    badgeText,
-    badgeBg: '#d97706',
-    contentHtml: `
-      <p style="font-size: 14px; color: #334155;">Plant Manager has submitted a new production record. Administrative approval is required to finalize costings and job completion.</p>
-      <div class="info-card">
-        <table style="width: 100%; font-size: 13px;">
-          <tr><td><strong>Record ID:</strong></td><td>${record.id}</td></tr>
-          <tr><td><strong>Order ID:</strong></td><td>${record.orderId}</td></tr>
-          <tr><td><strong>Job Name:</strong></td><td>${record.jobName}</td></tr>
-          <tr><td><strong>Dispatch Ready Qty:</strong></td><td><strong>${(record.totalProductionQtyKg || 0).toLocaleString()} kg</strong></td></tr>
-          <tr><td><strong>Total Ingredients Cost:</strong></td><td>₹ ${(record.totalMaterialCostRs || 0).toLocaleString()}</td></tr>
-          <tr><td><strong>Final Cost of Production:</strong></td><td><strong style="color: #047857;">₹ ${(record.finalProductionCostRs || 0).toLocaleString()}</strong></td></tr>
-          <tr><td><strong>Total Scrap Logged:</strong></td><td>${(record.totalScrapQtyKg || 0).toFixed(1)} kg</td></tr>
-          <tr><td><strong>Submitted By:</strong></td><td>${record.filledBy}</td></tr>
-        </table>
-      </div>
-      <p style="font-size: 13px; color: #64748b;">Log into the ERP Admin Dashboard to approve or reject this production record.</p>
-    `
+    title: tmpl.eventTitle,
+    badgeText: tmpl.badgeText,
+    badgeBg: tmpl.badgeBgColor || '#d97706',
+    contentHtml: tmpl.contentHtml,
+    footerNote: tmpl.footerNote
   });
 
   return await sendERPEmailNotification({
-    to,
-    subject: `📋 Approval Required: Production Record for ${record.jobName} (${record.orderId})`,
+    to: targetEmail,
+    cc: tmpl.ccEmail,
+    subject: tmpl.subject,
     html,
     text: `Production record for ${record.jobName} (${record.orderId}) submitted by ${record.filledBy}. Pending Admin Approval.`
   });
@@ -165,31 +188,33 @@ export const notifyProductionRecordSubmitted = async (record, to = 'admin@samyak
 /**
  * 3. ACTION TASK: Production Record Approved
  */
-export const notifyProductionRecordApproved = async (record, to = 'plant.manager@plant.com') => {
-  const title = `✅ Production Record Approved: ${record.jobName}`;
-  const badgeText = "Action Task: Approved by Admin";
+export const notifyProductionRecordApproved = async (record, customTo) => {
+  const vars = {
+    recordId: record.id || '',
+    jobName: record.jobName || '',
+    totalProductionQtyKg: (record.totalProductionQtyKg || 0).toLocaleString(),
+    finalProductionCostRs: (record.finalProductionCostRs || 0).toLocaleString(),
+    approvedBy: record.approvedBy || 'Admin',
+    approvalDate: record.approvalDate || new Date().toISOString().split('T')[0]
+  };
+
+  const tmpl = getActiveTemplate('production_approved', vars);
+  if (!tmpl || tmpl.enabled === false) return { success: false, message: 'Notification disabled.' };
+
+  const targetEmail = customTo || tmpl.toEmail || 'plant.manager@plant.com';
+
   const html = buildEmailTemplate({
-    title,
-    badgeText,
-    badgeBg: '#059669',
-    contentHtml: `
-      <p style="font-size: 14px; color: #334155;">The production record for job <strong>${record.jobName}</strong> has been officially reviewed and APPROVED by the Admin.</p>
-      <div class="info-card">
-        <table style="width: 100%; font-size: 13px;">
-          <tr><td><strong>Record ID:</strong></td><td>${record.id}</td></tr>
-          <tr><td><strong>Job Name:</strong></td><td>${record.jobName}</td></tr>
-          <tr><td><strong>Produced Dispatch Qty:</strong></td><td>${(record.totalProductionQtyKg || 0).toLocaleString()} kg</td></tr>
-          <tr><td><strong>Final Production Cost:</strong></td><td>₹ ${(record.finalProductionCostRs || 0).toLocaleString()}</td></tr>
-          <tr><td><strong>Approved By:</strong></td><td>${record.approvedBy}</td></tr>
-          <tr><td><strong>Approval Date:</strong></td><td>${record.approvalDate}</td></tr>
-        </table>
-      </div>
-    `
+    title: tmpl.eventTitle,
+    badgeText: tmpl.badgeText,
+    badgeBg: tmpl.badgeBgColor || '#059669',
+    contentHtml: tmpl.contentHtml,
+    footerNote: tmpl.footerNote
   });
 
   return await sendERPEmailNotification({
-    to,
-    subject: `✅ Production Record Approved: ${record.jobName}`,
+    to: targetEmail,
+    cc: tmpl.ccEmail,
+    subject: tmpl.subject,
     html,
     text: `Production Record ${record.id} for ${record.jobName} approved by ${record.approvedBy}.`
   });
@@ -198,30 +223,32 @@ export const notifyProductionRecordApproved = async (record, to = 'plant.manager
 /**
  * 4. ACTION TASK: Purchase Indent Raised
  */
-export const notifyPurchaseIndentCreated = async (indent, to = 'admin@samyakinternational.in') => {
-  const title = `📝 New Purchase Indent Requisition: ${indent.indentNo}`;
-  const badgeText = "Action Task: Material Indent Raised";
+export const notifyPurchaseIndentCreated = async (indent, customTo) => {
+  const vars = {
+    indentNo: indent.indentNo || indent.id || '',
+    department: indent.department || 'Production Store',
+    priority: indent.priority || 'Normal',
+    itemCount: (indent.items || []).length,
+    remarks: indent.remarks || 'None'
+  };
+
+  const tmpl = getActiveTemplate('indent_created', vars);
+  if (!tmpl || tmpl.enabled === false) return { success: false, message: 'Notification disabled.' };
+
+  const targetEmail = customTo || tmpl.toEmail || 'admin@samyakinternational.in';
+
   const html = buildEmailTemplate({
-    title,
-    badgeText,
-    badgeBg: '#7c3aed',
-    contentHtml: `
-      <p style="font-size: 14px; color: #334155;">A new material purchase indent requisition has been raised for plant consumables / raw materials.</p>
-      <div class="info-card">
-        <table style="width: 100%; font-size: 13px;">
-          <tr><td><strong>Indent No:</strong></td><td>${indent.indentNo || indent.id}</td></tr>
-          <tr><td><strong>Department:</strong></td><td>${indent.department}</td></tr>
-          <tr><td><strong>Priority Level:</strong></td><td><strong style="color: ${indent.priority === 'High' ? '#dc2626' : '#2563eb'};">${indent.priority}</strong></td></tr>
-          <tr><td><strong>Items Requested:</strong></td><td>${(indent.items || []).length} item(s)</td></tr>
-          <tr><td><strong>Remarks:</strong></td><td>${indent.remarks || 'None'}</td></tr>
-        </table>
-      </div>
-    `
+    title: tmpl.eventTitle,
+    badgeText: tmpl.badgeText,
+    badgeBg: tmpl.badgeBgColor || '#7c3aed',
+    contentHtml: tmpl.contentHtml,
+    footerNote: tmpl.footerNote
   });
 
   return await sendERPEmailNotification({
-    to,
-    subject: `📝 Material Indent Raised: ${indent.indentNo} (${indent.priority} Priority)`,
+    to: targetEmail,
+    cc: tmpl.ccEmail,
+    subject: tmpl.subject,
     html,
     text: `Material Indent Requisition ${indent.indentNo} raised by ${indent.department} department.`
   });
@@ -230,31 +257,34 @@ export const notifyPurchaseIndentCreated = async (indent, to = 'admin@samyakinte
 /**
  * 5. ACTION TASK: Purchase Order Issued
  */
-export const notifyPurchaseOrderIssued = async (po, to = 'purchase@samyakinternational.in') => {
-  const title = `🛒 Purchase Order Issued: ${po.poNumber}`;
-  const badgeText = "Action Task: PO Issued to Vendor";
+export const notifyPurchaseOrderIssued = async (po, customTo) => {
+  const vars = {
+    poNumber: po.poNumber || '',
+    supplierName: po.supplierName || po.vendorName || '',
+    indentNumber: po.indentNumber || 'Direct PO',
+    itemName: po.itemName || '',
+    qty: po.qty || 0,
+    unit: po.unit || 'kg',
+    totalAmount: (po.totalAmount || 0).toLocaleString()
+  };
+
+  const tmpl = getActiveTemplate('po_issued', vars);
+  if (!tmpl || tmpl.enabled === false) return { success: false, message: 'Notification disabled.' };
+
+  const targetEmail = customTo || tmpl.toEmail || 'purchase@samyakinternational.in';
+
   const html = buildEmailTemplate({
-    title,
-    badgeText,
-    badgeBg: '#2563eb',
-    contentHtml: `
-      <p style="font-size: 14px; color: #334155;">A official Purchase Order has been generated and dispatched to the supplier.</p>
-      <div class="info-card">
-        <table style="width: 100%; font-size: 13px;">
-          <tr><td><strong>PO Number:</strong></td><td>${po.poNumber}</td></tr>
-          <tr><td><strong>Vendor / Supplier:</strong></td><td>${po.supplierName || po.vendorName}</td></tr>
-          <tr><td><strong>Indent Ref:</strong></td><td>${po.indentNumber || 'Direct PO'}</td></tr>
-          <tr><td><strong>Item Name:</strong></td><td>${po.itemName}</td></tr>
-          <tr><td><strong>Order Quantity:</strong></td><td>${po.qty} ${po.unit || 'kg'}</td></tr>
-          <tr><td><strong>Total PO Amount:</strong></td><td><strong>₹ ${(po.totalAmount || 0).toLocaleString()}</strong></td></tr>
-        </table>
-      </div>
-    `
+    title: tmpl.eventTitle,
+    badgeText: tmpl.badgeText,
+    badgeBg: tmpl.badgeBgColor || '#2563eb',
+    contentHtml: tmpl.contentHtml,
+    footerNote: tmpl.footerNote
   });
 
   return await sendERPEmailNotification({
-    to,
-    subject: `🛒 Purchase Order Issued: ${po.poNumber} - ${po.supplierName}`,
+    to: targetEmail,
+    cc: tmpl.ccEmail,
+    subject: tmpl.subject,
     html,
     text: `PO ${po.poNumber} issued to ${po.supplierName} for ${po.itemName} (${po.qty} ${po.unit}).`
   });
@@ -263,31 +293,33 @@ export const notifyPurchaseOrderIssued = async (po, to = 'purchase@samyakinterna
 /**
  * 6. ACTION TASK: Low Stock Alert Triggered
  */
-export const notifyLowStockAlert = async (stockItem, to = 'admin@samyakinternational.in') => {
-  const title = `⚠️ Low Inventory Alert: ${stockItem.name}`;
-  const badgeText = "Action Task: Inventory Alert";
+export const notifyLowStockAlert = async (stockItem, customTo) => {
+  const vars = {
+    itemCode: stockItem.itemCode || stockItem.id || '',
+    itemName: stockItem.name || '',
+    stockQty: stockItem.stockQty || 0,
+    unit: stockItem.unit || 'kg',
+    reorderLevel: stockItem.reorderLevel || 100,
+    location: stockItem.location || 'Store A'
+  };
+
+  const tmpl = getActiveTemplate('low_stock', vars);
+  if (!tmpl || tmpl.enabled === false) return { success: false, message: 'Notification disabled.' };
+
+  const targetEmail = customTo || tmpl.toEmail || 'admin@samyakinternational.in';
+
   const html = buildEmailTemplate({
-    title,
-    badgeText,
-    badgeBg: '#dc2626',
-    contentHtml: `
-      <p style="font-size: 14px; color: #334155;">Plant store stock level for item <strong>${stockItem.name}</strong> has fallen below the safety reorder threshold.</p>
-      <div class="info-card">
-        <table style="width: 100%; font-size: 13px;">
-          <tr><td><strong>Item Code:</strong></td><td>${stockItem.itemCode || stockItem.id}</td></tr>
-          <tr><td><strong>Item Name:</strong></td><td>${stockItem.name}</td></tr>
-          <tr><td><strong>Current In-Stock:</strong></td><td><strong style="color: #dc2626;">${stockItem.stockQty} ${stockItem.unit || 'kg'}</strong></td></tr>
-          <tr><td><strong>Minimum Reorder Level:</strong></td><td>${stockItem.reorderLevel || 100} ${stockItem.unit || 'kg'}</td></tr>
-          <tr><td><strong>Location / Rack:</strong></td><td>${stockItem.location || 'Store A'}</td></tr>
-        </table>
-      </div>
-      <p style="font-size: 13px; color: #64748b;">Immediate purchase requisition is recommended to avoid shop-floor downtime.</p>
-    `
+    title: tmpl.eventTitle,
+    badgeText: tmpl.badgeText,
+    badgeBg: tmpl.badgeBgColor || '#dc2626',
+    contentHtml: tmpl.contentHtml,
+    footerNote: tmpl.footerNote
   });
 
   return await sendERPEmailNotification({
-    to,
-    subject: `⚠️ Low Stock Warning: ${stockItem.name} (${stockItem.stockQty} left)`,
+    to: targetEmail,
+    cc: tmpl.ccEmail,
+    subject: tmpl.subject,
     html,
     text: `Inventory Alert: ${stockItem.name} stock level is low (${stockItem.stockQty} ${stockItem.unit} remaining).`
   });
@@ -296,32 +328,32 @@ export const notifyLowStockAlert = async (stockItem, to = 'admin@samyakinternati
 /**
  * 7. ACTION TASK: New User Onboarded
  */
-export const notifyUserCreated = async (user, to) => {
-  const targetEmail = to || user.email;
-  const title = `🎉 Welcome to SamyakFlexi ERP, ${user.name}!`;
-  const badgeText = "Action Task: User Onboarding";
+export const notifyUserCreated = async (user, customTo) => {
+  const vars = {
+    userName: user.name || '',
+    userEmail: user.email || '',
+    userRole: user.role || '',
+    userDepartment: user.department || 'Operations',
+    userPassword: user.password || 'password123'
+  };
+
+  const tmpl = getActiveTemplate('user_created', vars);
+  if (!tmpl || tmpl.enabled === false) return { success: false, message: 'Notification disabled.' };
+
+  const targetEmail = customTo || user.email || tmpl.toEmail;
+
   const html = buildEmailTemplate({
-    title,
-    badgeText,
-    badgeBg: '#059669',
-    contentHtml: `
-      <p style="font-size: 14px; color: #334155;">Your user account has been created on the SamyakFlexi ERP platform.</p>
-      <div class="info-card">
-        <table style="width: 100%; font-size: 13px;">
-          <tr><td><strong>Full Name:</strong></td><td>${user.name}</td></tr>
-          <tr><td><strong>Login Email:</strong></td><td>${user.email}</td></tr>
-          <tr><td><strong>Assigned Role:</strong></td><td><strong>${user.role}</strong></td></tr>
-          <tr><td><strong>Department:</strong></td><td>${user.department}</td></tr>
-          <tr><td><strong>Default Password:</strong></td><td><code>${user.password || 'password123'}</code></td></tr>
-        </table>
-      </div>
-      <p style="font-size: 13px; color: #64748b;">Please log in at <a href="https://app.samyakinternational.in">app.samyakinternational.in</a> and update your password.</p>
-    `
+    title: tmpl.eventTitle,
+    badgeText: tmpl.badgeText,
+    badgeBg: tmpl.badgeBgColor || '#059669',
+    contentHtml: tmpl.contentHtml,
+    footerNote: tmpl.footerNote
   });
 
   return await sendERPEmailNotification({
     to: targetEmail,
-    subject: `🎉 Account Created — SamyakFlexi ERP (${user.role})`,
+    cc: tmpl.ccEmail,
+    subject: tmpl.subject,
     html,
     text: `Welcome ${user.name}! Your account has been created with role ${user.role}. Login with ${user.email}.`
   });

@@ -112,7 +112,7 @@ app.post('/api/recover-password', async (req, res) => {
  * API Endpoint: General ERP Transactional Email Dispatch
  */
 app.post('/api/send-email', async (req, res) => {
-  const { to, subject, html, text } = req.body;
+  const { to, cc, subject, html, text } = req.body;
 
   if (!to || !subject) {
     return res.status(400).json({ success: false, message: 'Recipient email and subject are required.' });
@@ -121,6 +121,7 @@ app.post('/api/send-email', async (req, res) => {
   const mailOptions = {
     from: `"Samyak International ERP" <${process.env.SMTP_USER || 'admin@samyakinternational.in'}>`,
     to,
+    ...(cc ? { cc } : {}),
     subject,
     text,
     html
@@ -128,7 +129,7 @@ app.post('/api/send-email', async (req, res) => {
 
   try {
     const info = await transporter.sendMail(mailOptions);
-    console.log(`✉️ Notification email sent to ${to} (Message ID: ${info.messageId})`);
+    console.log(`✉️ Notification email sent to ${to} ${cc ? `(cc: ${cc})` : ''} (Message ID: ${info.messageId})`);
     return res.status(200).json({ success: true, messageId: info.messageId });
   } catch (error) {
     console.error('❌ Notification email error:', error);
