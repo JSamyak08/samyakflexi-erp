@@ -13,10 +13,13 @@ import {
   UploadCloud,
   ExternalLink,
   Image as ImageIcon,
-  Check,
-  Info
+  Check, 
+  Info,
+  FileCode,
+  X
 } from 'lucide-react';
 import { calculateUtilisation } from '../dataStore';
+import { FILM_DENSITIES } from '../factoryStore';
 import CylinderJobCardForm from '../CylinderJobCardForm';
 import { uploadArtworkFile, openArtworkViewer } from '../services/supabaseStorageService';
 import ArtworkModal from './ArtworkModal';
@@ -24,6 +27,8 @@ import ArtworkModal from './ArtworkModal';
 export default function CylinderManagement({ 
   urlParams = {},
   cylinders = [], 
+  jobMasters = [],
+  onAddJobMaster,
   currentUser,
   onAddCylinder, 
   onUpdateCylinder,
@@ -79,6 +84,29 @@ export default function CylinderManagement({
   const [isUploading, setIsUploading] = useState(false);
   const [autoCalculateCost, setAutoCalculateCost] = useState(true);
 
+  // Product Substrate Structure State for Job Master Integration
+  const availableFilmTypes = useMemo(() => Object.keys(FILM_DENSITIES), []);
+  const [layers, setLayers] = useState([
+    { id: 1, filmType: 'PET', micron: 12 },
+    { id: 2, filmType: 'METPET', micron: 12 },
+    { id: 3, filmType: 'Natural GP LD', micron: 35 }
+  ]);
+  const [createJobMaster, setCreateJobMaster] = useState(true);
+  const [pouchOpenWidth, setPouchOpenWidth] = useState(0);
+  const [pouchHeight, setPouchHeight] = useState(0);
+
+  const addLayer = () => {
+    setLayers(prev => [
+      ...prev,
+      { id: Date.now(), filmType: 'Natural GP LD', micron: 30 }
+    ]);
+  };
+
+  const removeLayer = (id) => {
+    if (layers.length <= 1) return;
+    setLayers(prev => prev.filter(l => l.id !== id));
+  };
+
   // Surface Area and Cost Calculations: (Face Length × Circumference ÷ 100) × Rate × Colors
   const billingAreaUnits = Number(((Number(circumferenceMm || 0) * Number(faceLengthMm || 0)) / 100).toFixed(2));
   const calculatedCostPerCylinder = Math.round(billingAreaUnits * Number(rate || 1.6));
@@ -111,6 +139,14 @@ export default function CylinderManagement({
     setStatus('Active In-Use');
     setAssignedPress(printingPresses[0] || '');
     setArtworkUrl('');
+    setLayers([
+      { id: 1, filmType: 'PET', micron: 12 },
+      { id: 2, filmType: 'METPET', micron: 12 },
+      { id: 3, filmType: 'Natural GP LD', micron: 35 }
+    ]);
+    setCreateJobMaster(true);
+    setPouchOpenWidth(0);
+    setPouchHeight(0);
     setIsModalOpen(true);
   };
 
@@ -135,6 +171,28 @@ export default function CylinderManagement({
     setStatus(cyl.status || 'Active In-Use');
     setAssignedPress(cyl.assignedPress || printingPresses[0] || '');
     setArtworkUrl(cyl.artworkUrl || '');
+
+    if (cyl.layers && cyl.layers.length > 0) {
+      setLayers(cyl.layers);
+    } else if (cyl.structure) {
+      const parts = String(cyl.structure).split('/');
+      setLayers(parts.map((p, i) => {
+        const trimmed = p.trim();
+        const mMatch = trimmed.match(/(\d+)\s*µ?/);
+        const mic = mMatch ? parseInt(mMatch[1], 10) : 12;
+        const ft = trimmed.replace(/\d+\s*µ?/, '').trim() || 'PET';
+        return { id: i + 1, filmType: ft, micron: mic };
+      }));
+    } else {
+      setLayers([
+        { id: 1, filmType: 'PET', micron: 12 },
+        { id: 2, filmType: 'METPET', micron: 12 },
+        { id: 3, filmType: 'Natural GP LD', micron: 35 }
+      ]);
+    }
+    setCreateJobMaster(false);
+    setPouchOpenWidth(cyl.pouchOpenWidth || 0);
+    setPouchHeight(cyl.pouchHeight || 0);
     setIsModalOpen(true);
   };
 
@@ -167,11 +225,17 @@ export default function CylinderManagement({
       return;
     }
 
+    const structureSummary = layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
+    const nextJmId = `JM-2026-${String((jobMasters ? jobMasters.length : 0) + 101).padStart(3, '0')}`;
+
     const payload = {
       id: editingCylinder ? editingCylinder.id : Date.now(),
       sku,
       jobName,
       clientGroup,
+      structure: structureSummary,
+      layers,
+      jobMasterId: editingCylinder ? (editingCylinder.jobMasterId || editingCylinder.id) : nextJmId,
       colorsCount: parseInt(colorsCount) || 1,
       rate: parseFloat(rate) || 1.6,
       ratePerSqInch: parseFloat(rate) || 1.6,
@@ -182,6 +246,8 @@ export default function CylinderManagement({
       costBorneType,
       circumferenceMm: parseInt(circumferenceMm) || 400,
       faceLengthMm: parseInt(faceLengthMm) || 1050,
+      pouchOpenWidth: parseFloat(pouchOpenWidth) || 0,
+      pouchHeight: parseFloat(pouchHeight) || 0,
       layer1PrintedQtyKg: parseFloat(layer1PrintedQtyKg) || 0,
       dispatchedQty: parseFloat(dispatchedQty) || 0,
       utilisationLimit: parseInt(utilisationLimit) || 10000,
@@ -194,10 +260,35 @@ export default function CylinderManagement({
       if (onUpdateCylinder) onUpdateCylinder(payload);
     } else {
       if (onAddCylinder) onAddCylinder(payload);
+
+      // Automatically create consequent product entry in Job Master Directory if enabled
+      if (createJobMaster && onAddJobMaster) {
+        const newJobMaster = {
+          id: nextJmId,
+          skuCode: sku.trim(),
+          jobName: jobName.trim(),
+          clientName: clientGroup.trim() || 'Standard Client',
+          structure: structureSummary,
+          printWidthMm: parseFloat(faceLengthMm) || 1050,
+          repeatLengthMm: parseFloat(circumferenceMm) || 400,
+          pouchOpenWidth: parseFloat(pouchOpenWidth) || 0,
+          pouchHeight: parseFloat(pouchHeight) || 0,
+          layers: layers,
+          cylinderSku: sku.trim(),
+          cylinderCost: `₹ ${parseInt(cylinderCost || 0).toLocaleString()}`,
+          colorsCount: parseInt(colorsCount) || 6,
+          engravuresName,
+          costBorneBy,
+          utilisationLimit: parseFloat(utilisationLimit) || 10000,
+          artworkUrl: artworkUrl || null,
+          creationDate: new Date().toISOString().split('T')[0]
+        };
+        onAddJobMaster(newJobMaster);
+      }
     }
 
     setIsModalOpen(false);
-    alert(`Rotogravure Cylinder Set "${jobName}" saved successfully!`);
+    alert(`Rotogravure Cylinder Set "${jobName}" saved successfully!${!editingCylinder && createJobMaster ? ` Linked Job Master ${nextJmId} created.` : ''}`);
   };
 
   const handleDelete = (cyl) => {
@@ -540,6 +631,65 @@ export default function CylinderManagement({
                     </div>
                   </div>
                 )}
+
+                {/* PRODUCT STRUCTURE & AUTOMATIC JOB MASTER CREATION */}
+                <div style={{ gridColumn: 'span 2', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <div>
+                      <strong style={{ fontSize: '0.9rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <FileCode size={16} style={{ color: 'var(--primary-brand)' }} />
+                        Product Structure (Laminate Layers) <span style={{ color: '#dc2626' }}>*</span>
+                      </strong>
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
+                        Summary: <code style={{ fontWeight: '700', color: '#0f172a' }}>{layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')}</code>
+                      </div>
+                    </div>
+                    <button type="button" className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.75rem' }} onClick={addLayer}>
+                      <Plus size={14} /> Add Substrate Layer
+                    </button>
+                  </div>
+
+                  {layers.map((l, idx) => (
+                    <div key={l.id} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px 32px', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: '600' }}>Layer {idx + 1}</span>
+                      <select className="form-control" style={{ padding: '4px 8px', fontSize: '0.85rem' }} value={l.filmType} onChange={e => setLayers(prev => prev.map(item => item.id === l.id ? { ...item, filmType: e.target.value } : item))}>
+                        {availableFilmTypes.map(filmKey => <option key={filmKey} value={filmKey}>{filmKey} ({FILM_DENSITIES[filmKey]} g/cc)</option>)}
+                      </select>
+                      <input type="number" className="form-control" style={{ padding: '4px 8px', fontSize: '0.85rem' }} value={l.micron} onChange={e => setLayers(prev => prev.map(item => item.id === l.id ? { ...item, micron: parseFloat(e.target.value) || 0 } : item))} placeholder="Microns" />
+                      {layers.length > 1 && <button type="button" className="btn-secondary" style={{ padding: '4px' }} onClick={() => removeLayer(l.id)}><X size={14} /></button>}
+                    </div>
+                  ))}
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px', paddingTop: '10px', borderTop: '1px dashed #cbd5e1' }}>
+                    <div>
+                      <label style={{ fontSize: '0.75rem', color: '#64748b' }}>Pouch Open Width (mm)</label>
+                      <input type="number" className="form-control" style={{ padding: '4px 8px', fontSize: '0.85rem' }} value={pouchOpenWidth} onChange={e => setPouchOpenWidth(e.target.value)} placeholder="e.g. 240" />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.75rem', color: '#64748b' }}>Pouch Height (mm)</label>
+                      <input type="number" className="form-control" style={{ padding: '4px 8px', fontSize: '0.85rem' }} value={pouchHeight} onChange={e => setPouchHeight(e.target.value)} placeholder="e.g. 350" />
+                    </div>
+                  </div>
+
+                  {!editingCylinder && (
+                    <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: '700', cursor: 'pointer', color: '#047857' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={createJobMaster} 
+                          onChange={e => setCreateJobMaster(e.target.checked)} 
+                          style={{ width: '16px', height: '16px', accentColor: '#047857' }}
+                        />
+                        Auto-Create Product in Job Master Directory
+                      </label>
+                      {createJobMaster && (
+                        <span className="badge badge-success" style={{ fontSize: '0.75rem', padding: '3px 8px' }}>
+                          Consequent ID: JM-2026-{String((jobMasters ? jobMasters.length : 0) + 101).padStart(3, '0')}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
 
                 <div className="form-group">
                   <label>Engraver Name</label>
