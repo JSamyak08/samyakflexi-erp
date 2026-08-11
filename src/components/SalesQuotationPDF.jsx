@@ -142,8 +142,8 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
                   <th style={{ padding: '8px 10px', textAlign: 'left' }}>Structure / Description</th>
                   <th style={{ padding: '8px 10px', textAlign: 'left' }}>Material Format</th>
                   <th style={{ padding: '8px 10px', textAlign: 'right' }}>Quantity</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Rate / UOM</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Taxable Amt (₹)</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right', minWidth: '120px', whiteSpace: 'nowrap' }}>Rate / UOM</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right', minWidth: '130px', whiteSpace: 'nowrap' }}>Taxable Amt (₹)</th>
                 </tr>
               </thead>
               <tbody>
@@ -159,13 +159,13 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
                         {it.materialFormat || 'Roll Form'}
                       </span>
                     </td>
-                    <td style={{ padding: '10px', textAlign: 'right', fontWeight: '800' }}>
+                    <td style={{ padding: '10px', textAlign: 'right', fontWeight: '800', whiteSpace: 'nowrap' }}>
                       {(parseFloat(it.quantity) || 0).toLocaleString()} {it.uom}
                     </td>
-                    <td style={{ padding: '10px', textAlign: 'right', fontWeight: '700' }}>
+                    <td style={{ padding: '10px', textAlign: 'right', fontWeight: '700', minWidth: '120px', whiteSpace: 'nowrap' }}>
                       ₹ {(parseFloat(it.ratePerUom) || 0).toFixed(2)}
                     </td>
-                    <td style={{ padding: '10px', textAlign: 'right', fontWeight: '800', color: '#1e293b' }}>
+                    <td style={{ padding: '10px', textAlign: 'right', fontWeight: '800', color: '#1e293b', minWidth: '130px', whiteSpace: 'nowrap' }}>
                       ₹ {((parseFloat(it.quantity) || 0) * (parseFloat(it.ratePerUom) || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                   </tr>
