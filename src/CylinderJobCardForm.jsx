@@ -20,7 +20,8 @@ function parseStructureToLayers(structStr) {
   });
 }
 
-const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
+const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, ref) => {
+  const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'SuperAdmin';
   const managementSignature = getAuthorisedSignature();
   const companyLogo = getCompanyLogo() || COMPANY_DETAILS.logoUrl || '/samyak-logo.png';
 
@@ -163,7 +164,7 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
                 <td className="label-cell">Engraver Name</td><td className="value-cell" style={{ fontWeight: '700', color: '#1e293b' }}>{data.engravure || data.engravuresName || '—'}</td>
               </tr>
               <tr>
-                <td className="label-cell">Cost Borne By</td><td className="value-cell">{data.costBorneBy || '—'}</td>
+                <td className="label-cell">Cost Borne By</td><td className="value-cell">{isAdmin ? (data.costBorneBy || '—') : '🔒 Restricted (Admin Only)'}</td>
                 <td className="label-cell">Utilisation Limit</td><td className="value-cell">{data.utilisationLimit ? `${Number(data.utilisationLimit).toLocaleString()} Kg` : '10,000 Kg'}</td>
               </tr>
             </tbody>
@@ -266,6 +267,7 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview }, ref) => {
 });
 
 export default function CylinderJobCardForm({ onSave, initialData, onClose, currentUser, jobMasters = [] }) {
+  const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'SuperAdmin';
   const componentRef = useRef();
 
   const [selectedJobMasterId, setSelectedJobMasterId] = useState(initialData?.jobMasterId || initialData?.id || '');
@@ -624,7 +626,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
 
       {/* A4 Landscape Job Card Component Wrapper */}
       <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '16px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
-        <PrintableJobCard ref={componentRef} data={formData} imagePreview={imagePreview} />
+          <PrintableJobCard ref={componentRef} data={formData} imagePreview={imagePreview} currentUser={currentUser} />
       </div>
 
       {/* Editable Form Grid (Shown below preview for customization) */}
@@ -930,10 +932,12 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
             <label>Engraver Name</label>
             <input className="form-control" name="engravure" value={formData.engravure} onChange={handleChange} />
           </div>
-          <div className="form-group">
-            <label>Cost Borne By</label>
-            <input className="form-control" name="costBorneBy" value={formData.costBorneBy} onChange={handleChange} />
-          </div>
+          {isAdmin && (
+            <div className="form-group">
+              <label>Cost Borne By</label>
+              <input className="form-control" name="costBorneBy" value={formData.costBorneBy} onChange={handleChange} />
+            </div>
+          )}
           <div className="form-group">
             <label>Approved By</label>
             <input className="form-control" name="approvedBy" value={formData.approvedBy} onChange={handleChange} />

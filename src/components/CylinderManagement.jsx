@@ -24,11 +24,13 @@ import ArtworkModal from './ArtworkModal';
 export default function CylinderManagement({ 
   urlParams = {},
   cylinders = [], 
+  currentUser,
   onAddCylinder, 
   onUpdateCylinder,
   onDeleteCylinder,
   machines = []
 }) {
+  const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'SuperAdmin';
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
@@ -223,7 +225,7 @@ export default function CylinderManagement({
               <Layers size={22} style={{ color: 'var(--primary-brand)' }} /> Rotogravure Cylinder Database & Utilisation Tracking
             </h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '2px' }}>
-              Automated Cylinder Surface Area & Cost Calculation, Cloud Artwork Storage, and Layer 1 Substrate Wear Tracking.
+              Automated Cylinder Surface Area {isAdmin ? '& Cost Calculation' : 'Tracking'}, Cloud Artwork Storage, and Layer 1 Substrate Wear Tracking.
             </p>
           </div>
 
@@ -264,8 +266,8 @@ export default function CylinderManagement({
                 <th>Job Name & Colors</th>
                 <th>Dimensions & Area</th>
                 <th>Client Group</th>
-                <th>Cost & Engraver</th>
-                <th>Cost Borne By</th>
+                <th>{isAdmin ? 'Cost & Engraver' : 'Engraver'}</th>
+                {isAdmin && <th>Cost Borne By</th>}
                 <th>Layer 1 Print (Kg)</th>
                 <th>Wear Utilisation</th>
                 <th>Status</th>
@@ -333,17 +335,23 @@ export default function CylinderManagement({
                         <div style={{ fontWeight: '600' }}>{c.clientGroup || 'Standard'}</div>
                       </td>
                       <td>
-                        <div style={{ fontWeight: '700', color: '#0f172a' }}>{c.cylinderCost}</div>
-                        {c.costPerCylinder && (
-                          <div style={{ fontSize: '0.75rem', color: '#047857', fontWeight: '600' }}>
-                            ({c.costPerCylinder} / cyl)
-                          </div>
+                        {isAdmin && (
+                          <>
+                            <div style={{ fontWeight: '700', color: '#0f172a' }}>{c.cylinderCost}</div>
+                            {c.costPerCylinder && (
+                              <div style={{ fontSize: '0.75rem', color: '#047857', fontWeight: '600' }}>
+                                ({c.costPerCylinder} / cyl)
+                              </div>
+                            )}
+                          </>
                         )}
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{c.engravuresName}</div>
                       </td>
-                      <td>
-                        <span className={`badge badge-${c.costBorneType || 'client'}`}>{c.costBorneBy || 'Client (100%)'}</span>
-                      </td>
+                      {isAdmin && (
+                        <td>
+                          <span className={`badge badge-${c.costBorneType || 'client'}`}>{c.costBorneBy || 'Client (100%)'}</span>
+                        </td>
+                      )}
                       <td>
                         <div style={{ fontWeight: '800', color: 'var(--primary-brand)' }}>
                           {c.layer1PrintedQtyKg ? `${c.layer1PrintedQtyKg} kg` : `${c.dispatchedQty} kg`}
@@ -447,108 +455,112 @@ export default function CylinderManagement({
                   <input type="number" className="form-control" required value={faceLengthMm} onChange={e => setFaceLengthMm(e.target.value)} />
                 </div>
 
-                {/* AUTOMATED COST CALCULATION SECTION */}
-                <div style={{ gridColumn: 'span 2', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                    <div style={{ fontWeight: '700', fontSize: '0.95rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <Calculator size={18} style={{ color: '#2563eb' }} />
-                      Cylinder Cost Calculator (Formula Engine)
+                {/* AUTOMATED COST CALCULATION SECTION (ADMIN ONLY) */}
+                {isAdmin && (
+                  <div style={{ gridColumn: 'span 2', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                      <div style={{ fontWeight: '700', fontSize: '0.95rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Calculator size={18} style={{ color: '#2563eb' }} />
+                        Cylinder Cost Calculator (Formula Engine)
+                      </div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', cursor: 'pointer' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={autoCalculateCost} 
+                          onChange={e => setAutoCalculateCost(e.target.checked)} 
+                        />
+                        Auto-Calculate from Dimensions
+                      </label>
                     </div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', cursor: 'pointer' }}>
-                      <input 
-                        type="checkbox" 
-                        checked={autoCalculateCost} 
-                        onChange={e => setAutoCalculateCost(e.target.checked)} 
-                      />
-                      Auto-Calculate from Dimensions
-                    </label>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '12px' }}>
+                      <div>
+                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Surface Area (sq cm)</div>
+                        <div style={{ fontWeight: '700', fontSize: '1rem', color: '#0f172a' }}>{billingAreaUnits.toLocaleString()} sq. cm</div>
+                        <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>({faceLengthMm} × {circumferenceMm} ÷ 100)</div>
+                      </div>
+
+                      <div>
+                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Cylinder Rate (₹/sq cm)</div>
+                        <input 
+                          type="number" 
+                          step="0.01"
+                          className="form-control" 
+                          style={{ padding: '4px 8px', fontSize: '0.9rem', marginTop: '2px' }}
+                          value={rate} 
+                          onChange={e => setRate(e.target.value)} 
+                        />
+                      </div>
+
+                      <div>
+                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Cost / Cylinder (₹)</div>
+                        <input 
+                          type="number" 
+                          className="form-control" 
+                          style={{ padding: '4px 8px', fontSize: '0.9rem', marginTop: '2px', fontWeight: '700', color: '#047857' }}
+                          value={costPerCylinder} 
+                          onChange={e => {
+                            setCostPerCylinder(e.target.value);
+                            setAutoCalculateCost(false);
+                          }} 
+                        />
+                      </div>
+
+                      <div>
+                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Total Set Cost ({colorsCount} Cyls)</div>
+                        <input 
+                          type="number" 
+                          className="form-control" 
+                          style={{ padding: '4px 8px', fontSize: '0.9rem', marginTop: '2px', fontWeight: '800', color: '#1e3a8a' }}
+                          value={cylinderCost} 
+                          onChange={e => {
+                            setCylinderCost(e.target.value);
+                            setAutoCalculateCost(false);
+                          }} 
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: '#475569', borderTop: '1px solid #e2e8f0', paddingTop: '8px' }}>
+                      <span>Formula: <code>(Face Length × Circumference ÷ 100) × Rate × Colors</code></span>
+                      {!autoCalculateCost && (
+                        <button 
+                          type="button" 
+                          className="btn-secondary" 
+                          style={{ padding: '2px 8px', fontSize: '0.75rem' }}
+                          onClick={() => {
+                            setAutoCalculateCost(true);
+                            setCostPerCylinder(String(calculatedCostPerCylinder));
+                            setCylinderCost(String(calculatedTotalSetCost));
+                          }}
+                        >
+                          Reset to Calculated (₹{calculatedTotalSetCost.toLocaleString()})
+                        </button>
+                      )}
+                    </div>
                   </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '12px' }}>
-                    <div>
-                      <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Surface Area (sq cm)</div>
-                      <div style={{ fontWeight: '700', fontSize: '1rem', color: '#0f172a' }}>{billingAreaUnits.toLocaleString()} sq. cm</div>
-                      <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>({faceLengthMm} × {circumferenceMm} ÷ 100)</div>
-                    </div>
-
-                    <div>
-                      <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Cylinder Rate (₹/sq cm)</div>
-                      <input 
-                        type="number" 
-                        step="0.01"
-                        className="form-control" 
-                        style={{ padding: '4px 8px', fontSize: '0.9rem', marginTop: '2px' }}
-                        value={rate} 
-                        onChange={e => setRate(e.target.value)} 
-                      />
-                    </div>
-
-                    <div>
-                      <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Cost / Cylinder (₹)</div>
-                      <input 
-                        type="number" 
-                        className="form-control" 
-                        style={{ padding: '4px 8px', fontSize: '0.9rem', marginTop: '2px', fontWeight: '700', color: '#047857' }}
-                        value={costPerCylinder} 
-                        onChange={e => {
-                          setCostPerCylinder(e.target.value);
-                          setAutoCalculateCost(false);
-                        }} 
-                      />
-                    </div>
-
-                    <div>
-                      <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Total Set Cost ({colorsCount} Cyls)</div>
-                      <input 
-                        type="number" 
-                        className="form-control" 
-                        style={{ padding: '4px 8px', fontSize: '0.9rem', marginTop: '2px', fontWeight: '800', color: '#1e3a8a' }}
-                        value={cylinderCost} 
-                        onChange={e => {
-                          setCylinderCost(e.target.value);
-                          setAutoCalculateCost(false);
-                        }} 
-                      />
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: '#475569', borderTop: '1px solid #e2e8f0', paddingTop: '8px' }}>
-                    <span>Formula: <code>(Face Length × Circumference ÷ 100) × Rate × Colors</code></span>
-                    {!autoCalculateCost && (
-                      <button 
-                        type="button" 
-                        className="btn-secondary" 
-                        style={{ padding: '2px 8px', fontSize: '0.75rem' }}
-                        onClick={() => {
-                          setAutoCalculateCost(true);
-                          setCostPerCylinder(String(calculatedCostPerCylinder));
-                          setCylinderCost(String(calculatedTotalSetCost));
-                        }}
-                      >
-                        Reset to Calculated (₹{calculatedTotalSetCost.toLocaleString()})
-                      </button>
-                    )}
-                  </div>
-                </div>
+                )}
 
                 <div className="form-group">
                   <label>Engraver Name</label>
                   <input type="text" className="form-control" value={engravuresName} onChange={e => setEngravuresName(e.target.value)} />
                 </div>
 
-                <div className="form-group">
-                  <label>Cost Borne By</label>
-                  <select className="form-control" value={costBorneBy} onChange={e => {
-                    setCostBorneBy(e.target.value);
-                    if (e.target.value.includes('Client')) setCostBorneType('client');
-                    else if (e.target.value.includes('Us')) setCostBorneType('us');
-                    else setCostBorneType('both');
-                  }}>
-                    <option value="Client (100%)">Client (100%)</option>
-                    <option value="Us (100%)">Us / Samyak (100%)</option>
-                    <option value="Both (50/50)">Both (50/50)</option>
-                  </select>
-                </div>
+                {isAdmin && (
+                  <div className="form-group">
+                    <label>Cost Borne By</label>
+                    <select className="form-control" value={costBorneBy} onChange={e => {
+                      setCostBorneBy(e.target.value);
+                      if (e.target.value.includes('Client')) setCostBorneType('client');
+                      else if (e.target.value.includes('Us')) setCostBorneType('us');
+                      else setCostBorneType('both');
+                    }}>
+                      <option value="Client (100%)">Client (100%)</option>
+                      <option value="Us (100%)">Us / Samyak (100%)</option>
+                      <option value="Both (50/50)">Both (50/50)</option>
+                    </select>
+                  </div>
+                )}
 
                 {/* ARTWORK UPLOAD SECTION (SUPABASE STORAGE) */}
                 <div style={{ gridColumn: 'span 2', border: '1px dashed #cbd5e1', padding: '14px', borderRadius: '8px', background: '#fafafa' }}>
@@ -662,6 +674,7 @@ export default function CylinderManagement({
           <div className="pdf-paper-container landscape" style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', maxWidth: '1200px', width: '95vw', overflowY: 'auto' }}>
             <CylinderJobCardForm 
               initialData={selectedForPDF} 
+              currentUser={currentUser}
               onClose={() => setSelectedForPDF(null)} 
               onSave={(updated) => {
                 if (onUpdateCylinder) {

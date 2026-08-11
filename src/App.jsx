@@ -2344,6 +2344,7 @@ export default function App() {
           <CylinderManagement 
             urlParams={urlParams}
             cylinders={cylinders}
+            currentUser={currentUser}
             onAddCylinder={handleAddCylinder}
             onUpdateCylinder={handleUpdateCylinder}
             onDeleteCylinder={handleDeleteCylinder}
