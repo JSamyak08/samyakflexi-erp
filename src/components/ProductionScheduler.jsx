@@ -43,6 +43,17 @@ export default function ProductionScheduler({
   const [activeTab, setActiveTab] = useState('gantt'); // 'gantt', 'queue', 'machines'
   const [selectedDate, setSelectedDate] = useState('2026-08-02');
   const [selectedShiftFilter, setSelectedShiftFilter] = useState('All'); // 'All', 'Day Shift', 'Night Shift'
+
+  // Filter machines to ONLY Rotogravure printing machine type
+  const rotogravureMachines = useMemo(() => {
+    return (machines || []).filter(m => {
+      const type = (m.type || m.category || '').toLowerCase();
+      const name = (m.name || '').toLowerCase();
+      if (type.includes('pouch') || type.includes('laminat') || type.includes('slitt') || type.includes('extrud')) return false;
+      if (name.includes('pouch') || name.includes('laminat') || name.includes('slitt') || name.includes('extrud')) return false;
+      return true;
+    });
+  }, [machines]);
   
   // Machine Management Modal State
   const [isMachineModalOpen, setIsMachineModalOpen] = useState(false);
@@ -276,7 +287,7 @@ export default function ProductionScheduler({
     setEditingScheduleId(null);
     setSchedulingOrder(order);
 
-    const firstMachine = machines[0] || initialMachines[0];
+    const firstMachine = rotogravureMachines[0] || initialMachines[0] || { id: 'MAC-ROTO-1', maxSpeedMpm: 250 };
     setTargetMachineId(firstMachine.id);
     setCustomSpeedInput(firstMachine.maxSpeedMpm || 250);
     setTargetShift('Day Shift');
@@ -401,7 +412,7 @@ export default function ProductionScheduler({
     setIsScheduleModalOpen(false);
     setEditingScheduleId(null);
     setSchedulingOrder(null);
-    alert(`Job "${newSchedule.jobName}" ${editingScheduleId ? 'updated' : 'scheduled'} on ${machines.find(m => m.id === targetMachineId)?.name} (${targetShift})! Total duration: ${previewMetrics.totalDurationHours} hrs.`);
+    alert(`Job "${newSchedule.jobName}" ${editingScheduleId ? 'updated' : 'scheduled'} on ${rotogravureMachines.find(m => m.id === targetMachineId)?.name || 'Machine'} (${targetShift})! Total duration: ${previewMetrics.totalDurationHours} hrs.`);
   };
 
   return (
@@ -436,11 +447,11 @@ export default function ProductionScheduler({
           </button>
 
           <button 
-            className={`btn-secondary ${activeTab === 'machines' ? 'active' : ''}`}
+            className={`btn-secondary ${activeTab === 'machines' ? 'active' : ''}`} 
             onClick={() => setActiveTab('machines')}
             style={{ background: activeTab === 'machines' ? 'var(--primary-brand)' : 'transparent', color: activeTab === 'machines' ? '#fff' : 'inherit' }}
           >
-            <Settings size={16} /> Machine Settings ({(machines || []).length})
+            <Settings size={16} /> Machine Settings ({(rotogravureMachines || []).length})
           </button>
         </div>
       </div>
@@ -497,7 +508,7 @@ export default function ProductionScheduler({
 
           {/* Machine Gantt Timeline Cards */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {machines.map(mac => {
+            {rotogravureMachines.map(mac => {
               const windowStart = new Date(selectedDate);
               const windowEnd = new Date(selectedDate);
               windowEnd.setDate(windowEnd.getDate() + 6); // include 7 days total
@@ -1120,7 +1131,7 @@ export default function ProductionScheduler({
             <tbody>
               {readyForScheduleOrders.map(order => {
                 const assignedSchedule = schedules.find(s => s.orderId === order.id);
-                const assignedMachine = assignedSchedule ? machines.find(m => m.id === assignedSchedule.machineId) : null;
+                const assignedMachine = assignedSchedule ? rotogravureMachines.find(m => m.id === assignedSchedule.machineId) : null;
 
                 return (
                   <tr key={order.id} className={order.isOverdue ? 'row-delayed-highlight' : ''}>
@@ -1204,7 +1215,7 @@ export default function ProductionScheduler({
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '20px' }}>
-            {machines.map(mac => (
+            {rotogravureMachines.map(mac => (
               <div key={mac.id} className="glass-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px', position: 'relative' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.75rem', fontWeight: '800', color: 'var(--primary-brand)' }}>{mac.id}</span>
@@ -1368,11 +1379,11 @@ export default function ProductionScheduler({
                     value={targetMachineId}
                     onChange={e => {
                       setTargetMachineId(e.target.value);
-                      const mac = machines.find(m => m.id === e.target.value);
+                      const mac = rotogravureMachines.find(m => m.id === e.target.value);
                       if (mac) setCustomSpeedInput(mac.maxSpeedMpm);
                     }}
                   >
-                    {machines.map(m => (
+                    {rotogravureMachines.map(m => (
                       <option key={m.id} value={m.id}>{m.name} ({m.type} - Max {m.maxSpeedMpm} m/min)</option>
                     ))}
                   </select>

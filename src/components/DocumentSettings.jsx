@@ -201,6 +201,17 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     triggerSaveNotification();
   };
 
+  const openAddMachineModal = () => {
+    setEditingMachine({ isNew: true, id: `MAC-2026-${Date.now()}` });
+    setEditMachineName('');
+    setEditMachineType('Rotogravure');
+    setEditMachineSpeed(250);
+    setEditMachineWidth(1200);
+    setEditMachineColors(8);
+    setEditMachineLocation('Bay 1 - Rotogravure Hall');
+    setEditMachineStatus('Active');
+  };
+
   const openEditMachineModal = (m) => {
     setEditingMachine(m);
     setEditMachineName(m.name || '');
@@ -219,7 +230,8 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
       return;
     }
     const updated = {
-      ...editingMachine,
+      ...(editingMachine || {}),
+      id: editingMachine?.id || `MAC-2026-${Date.now()}`,
       name: editMachineName.trim(),
       type: editMachineType,
       maxSpeedMpm: Number(editMachineSpeed) || 0,
@@ -228,6 +240,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
       location: editMachineLocation.trim(),
       status: editMachineStatus
     };
+    delete updated.isNew;
     if (onUpdateMachine) {
       onUpdateMachine(updated);
     } else if (onSaveMachine) {
@@ -669,6 +682,10 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                   Configure printing presses, laminators, slitters, and pouching machines for production scheduling.
                 </p>
               </div>
+
+              <button type="button" className="btn-primary" onClick={openAddMachineModal}>
+                <Plus size={16} /> Add New Machine
+              </button>
             </div>
 
             <table className="data-table" style={{ width: '100%', marginBottom: '16px' }}>
@@ -1132,7 +1149,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
           <div className="modal-container" style={{ maxWidth: '540px' }}>
             <div className="modal-header">
               <h3 style={{ fontSize: '1.1rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Cpu size={20} style={{ color: 'var(--primary-brand)' }} /> Edit Machine Technical Specifications
+                <Cpu size={20} style={{ color: 'var(--primary-brand)' }} /> {editingMachine?.isNew ? 'Add New Plant Machine' : 'Edit Machine Technical Specifications'}
               </h3>
               <button type="button" className="btn-icon" onClick={() => setEditingMachine(null)}>
                 <X size={18} />
