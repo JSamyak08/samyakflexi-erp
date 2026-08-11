@@ -150,7 +150,7 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
                   <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
                     <td style={{ padding: '10px' }}>{idx + 1}</td>
                     <td style={{ padding: '10px', fontWeight: '700', color: '#0f172a' }}>{it.jobTitle}</td>
-                    <td style={{ padding: '10px', fontSize: '0.8rem', color: '#334155' }}>
+                    <td style={{ padding: '10px', fontSize: '0.8rem', color: '#334155', whiteSpace: 'pre-wrap' }}>
                       {it.materialFormat === 'Rotogravure Cylinder' ? (it.description || it.structure || 'Rotogravure Cylinder Description N/A') : (it.structure || 'N/A')}
                     </td>
                     <td style={{ padding: '10px' }}>

@@ -925,7 +925,7 @@ export default function SalesManagement({
                         </td>
                         <td>
                           <div style={{ fontWeight: '700', fontSize: '0.85rem' }}>{mainItem.jobTitle}</div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{mainItem.structure}</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap' }}>{mainItem.structure}</div>
                           <div style={{ marginTop: '2px' }}>
                             <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>
                               {mainItem.materialFormat || 'Roll Form'}
@@ -1390,11 +1390,11 @@ export default function SalesManagement({
                               <label style={{ fontSize: '0.72rem', fontWeight: '800', color: '#0284c7', display: 'block', marginBottom: '4px' }}>
                                 Cylinder Description / Specs *
                               </label>
-                              <input 
-                                type="text" 
+                              <textarea 
                                 className="form-control" 
-                                style={{ padding: '6px 8px', fontSize: '0.82rem', fontWeight: '600', background: '#ffffff', borderColor: '#38bdf8' }}
-                                placeholder="e.g. 8 Color Engraved Cylinder Set for Front & Back"
+                                rows={3}
+                                style={{ padding: '8px 10px', fontSize: '0.82rem', fontWeight: '600', background: '#ffffff', borderColor: '#38bdf8', minHeight: '75px', resize: 'vertical', lineHeight: '1.4' }}
+                                placeholder={"e.g. 8 Color Engraved Cylinder Set\nCircumference: 420mm\nWidth: 1050mm"}
                                 value={it.description !== undefined ? it.description : (it.structure && !it.structure.includes('µ') ? it.structure : '')} 
                                 onChange={e => {
                                   const updated = [...items];
