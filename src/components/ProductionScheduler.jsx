@@ -24,7 +24,8 @@ import {
 import { 
   initialMachines, 
   initialProductionSchedules, 
-  calculatePrintingScheduleMetrics 
+  calculatePrintingScheduleMetrics,
+  isOrderOverdue
 } from '../factoryStore';
 
 export default function ProductionScheduler({
@@ -80,7 +81,7 @@ export default function ProductionScheduler({
   // Auto-detect Ready for Production Scheduling Queue (Orders where raw materials are available)
   const readyForScheduleOrders = useMemo(() => {
     return orders.map(order => {
-      const isOverdue = order.status === 'Delayed' || new Date(order.targetDeliveryDate) < new Date('2026-07-24');
+      const isOverdue = isOrderOverdue(order);
       const reqs = order.materialRequirements || order.rawMaterialRequirements || [];
 
       // Extract Print Width and Micron — check multiple field paths for

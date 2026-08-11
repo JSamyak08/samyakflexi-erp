@@ -433,13 +433,48 @@ export const initialStockAdjustments = [];
 /**
  * Helper to check if current date is within the last 2 days of the current month
  */
-export const isReconciliationDue = (currentDateString = "2026-07-24") => {
+export const isReconciliationDue = (currentDateString = new Date().toISOString().split('T')[0]) => {
   const date = new Date(currentDateString);
   const year = date.getFullYear();
   const month = date.getMonth();
   const lastDayOfMonth = new Date(year, month + 1, 0).getDate();
   const currentDay = date.getDate();
   return (lastDayOfMonth - currentDay) <= 1; // True on last 2 days
+};
+
+/**
+ * Helper to check if an order is overdue past target delivery date
+ */
+export const isOrderOverdue = (order) => {
+  if (!order) return false;
+  if (order.status === 'Completed' || order.status === 'On Hold') return false;
+  if (order.status === 'Delayed') return true;
+
+  const targetDateStr = order.targetDeliveryDate || order.deliveryDate;
+  if (!targetDateStr) return false;
+
+  let targetDate;
+  if (typeof targetDateStr === 'string' && targetDateStr.includes('/')) {
+    const parts = targetDateStr.split('/');
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        targetDate = new Date(`${parts[0]}-${parts[1]}-${parts[2]}`);
+      } else {
+        targetDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+      }
+    }
+  }
+
+  if (!targetDate || isNaN(targetDate.getTime())) {
+    targetDate = new Date(targetDateStr);
+  }
+
+  if (isNaN(targetDate.getTime())) return false;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return targetDate < today;
 };
 
 /**

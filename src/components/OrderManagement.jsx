@@ -17,7 +17,7 @@ import {
 import PurchaseOrderPDF from './PurchaseOrderPDF';
 import TablePagination, { usePagination } from './TablePagination';
 import { pushSlugState } from '../utils/slugRouter';
-import { calculateJobRawMaterials } from '../factoryStore';
+import { calculateJobRawMaterials, isOrderOverdue } from '../factoryStore';
 
 export default function OrderManagement({ 
   urlParams = {},
@@ -499,7 +499,7 @@ export default function OrderManagement({
       o.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       getSubstrateStructure(o).toLowerCase().includes(searchTerm.toLowerCase());
     
-    const isOverdue = (o.status === 'Delayed' || new Date(o.targetDeliveryDate) < new Date()) && o.status !== 'On Hold' && o.status !== 'Completed';
+    const isOverdue = isOrderOverdue(o);
     
     if (statusFilter === 'DELAYED' && !isOverdue) return false;
     if (statusFilter === 'ON_HOLD' && o.status !== 'On Hold') return false;
@@ -510,7 +510,7 @@ export default function OrderManagement({
 
   const ordersPagination = usePagination(filteredOrders, 50);
 
-  const delayedOrdersCount = (orders || []).filter(o => (o.status === 'Delayed' || new Date(o.targetDeliveryDate) < new Date()) && o.status !== 'Completed' && o.status !== 'On Hold').length;
+  const delayedOrdersCount = (orders || []).filter(o => isOrderOverdue(o)).length;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -605,7 +605,7 @@ export default function OrderManagement({
       {/* Orders List with Itemized Raw Material Requirements Drawer */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {ordersPagination.paginatedItems.map(order => {
-          const isOverdue = order.status === 'Delayed' || new Date(order.targetDeliveryDate) < new Date('2026-07-24');
+          const isOverdue = isOrderOverdue(order);
           const isExpanded = expandedOrders[order.id];
           const reqs = getOrderMaterialRequirements(order);
           const allReqsSelected = reqs.length > 0 && reqs.every(r => selectedReqIds[r.id]);

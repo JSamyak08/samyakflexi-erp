@@ -14,7 +14,8 @@ import {
   initialClients,
   initialJobMasters,
   initialInks,
-  DEFAULT_ROLE_PERMISSIONS
+  DEFAULT_ROLE_PERMISSIONS,
+  isOrderOverdue
 } from './factoryStore';
 import { initialCylinders } from './dataStore';
 import { 
@@ -872,8 +873,8 @@ export default function App() {
     }
   };
 
-  const isRecDue = isReconciliationDue("2026-07-24");
-  const delayedOrdersCount = (orders || []).filter(o => o.status === 'Delayed' || new Date(o.targetDeliveryDate) < new Date('2026-07-24')).length;
+  const isRecDue = isReconciliationDue();
+  const delayedOrdersCount = (orders || []).filter(o => isOrderOverdue(o)).length;
   const pendingQCGRNsCount = (grns || []).filter(g => g.status === 'Pending QC').length;
   const pendingProductionApprovalCount = (productionRecords || []).filter(r => r.status === 'Filled by Plant Manager').length;
 
@@ -2082,7 +2083,7 @@ export default function App() {
                     </thead>
                     <tbody>
                       {(orders || []).map(o => {
-                        const isOverdue = o.status === 'Delayed' || new Date(o.targetDeliveryDate) < new Date('2026-07-24');
+                        const isOverdue = isOrderOverdue(o);
                         // Derive substrate structure from the matching Job Master's layers, fallback to order.structure
                         const matchedJM = (jobMasters || []).find(j =>
                           (j.jobName || '').toLowerCase().trim() === (o.jobName || '').toLowerCase().trim()
