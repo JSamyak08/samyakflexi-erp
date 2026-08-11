@@ -1476,7 +1476,7 @@ export async function fetchInks() {
       return null;
     }
 
-    if (data && data.length > 0) {
+    if (data) {
       return data.map(i => ({
         id: i.id,
         productCode: i.product_code,

@@ -378,6 +378,47 @@ CREATE TABLE IF NOT EXISTS public.job_masters (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 15. INKS MASTER TABLE
+CREATE TABLE IF NOT EXISTS public.inks (
+    id TEXT PRIMARY KEY,
+    product_code TEXT UNIQUE NOT NULL,
+    shade TEXT NOT NULL,
+    ink_type TEXT DEFAULT 'Reverse Ink',
+    manufacturer TEXT,
+    supplier_id TEXT REFERENCES public.vendors(id) ON DELETE SET NULL,
+    supplier_name TEXT,
+    solid_content_pct NUMERIC DEFAULT 40,
+    solid_variation_pct NUMERIC DEFAULT 2,
+    price_per_kg NUMERIC DEFAULT 0,
+    stock_qty_kg NUMERIC DEFAULT 0,
+    reorder_level_kg NUMERIC DEFAULT 0,
+    unit TEXT DEFAULT 'Kg',
+    solvent_type TEXT,
+    notes TEXT,
+    price_history JSONB DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    last_updated TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 16. AUDIT LOGS TABLE
+CREATE TABLE IF NOT EXISTS public.audit_logs (
+    id TEXT PRIMARY KEY,
+    username TEXT DEFAULT 'System',
+    user_role TEXT DEFAULT 'Admin',
+    action_type TEXT DEFAULT 'UPDATE',
+    module TEXT DEFAULT 'System',
+    details TEXT,
+    target_id TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 17. SYSTEM SETTINGS TABLE
+CREATE TABLE IF NOT EXISTS public.system_settings (
+    setting_key TEXT PRIMARY KEY,
+    setting_value TEXT NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Enable Row Level Security (RLS) & default open access rules
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.vendors ENABLE ROW LEVEL SECURITY;
@@ -393,6 +434,9 @@ ALTER TABLE public.printing_machines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.production_schedules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.job_masters ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.inks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.system_settings ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow public read-write for orders" ON public.orders FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for vendors" ON public.vendors FOR ALL USING (true);
@@ -408,6 +452,9 @@ CREATE POLICY "Allow public read-write for inventory_rolls" ON public.inventory_
 CREATE POLICY "Allow public read-write for dispatch_shipments" ON public.dispatch_shipments FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for printing_machines" ON public.printing_machines FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for production_schedules" ON public.production_schedules FOR ALL USING (true);
+CREATE POLICY "Allow public read-write for inks" ON public.inks FOR ALL USING (true);
+CREATE POLICY "Allow public read-write for audit_logs" ON public.audit_logs FOR ALL USING (true);
+CREATE POLICY "Allow public read-write for system_settings" ON public.system_settings FOR ALL USING (true);
 
 -- Ensure all columns exist on inventory if table was previously created with older schema
 ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS item_code TEXT;

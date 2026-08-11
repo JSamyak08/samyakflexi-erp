@@ -602,7 +602,7 @@ export default function App() {
         supaJobMasters.filter(isDummyRecord).forEach(d => deleteJobMasterFromSupabase(d.id).catch(console.warn));
       }
 
-      if (Array.isArray(supaInks) && supaInks.length > 0) {
+      if (Array.isArray(supaInks)) {
         setInks(prev => {
           const map = new Map();
           supaInks.forEach(i => { if (i && i.id) map.set(i.id, i); });
