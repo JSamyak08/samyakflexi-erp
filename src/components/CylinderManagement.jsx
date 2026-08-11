@@ -16,7 +16,9 @@ import {
   Check, 
   Info,
   FileCode,
-  X
+  X,
+  Building2,
+  Lock
 } from 'lucide-react';
 import { calculateUtilisation } from '../dataStore';
 import { FILM_DENSITIES } from '../factoryStore';
@@ -27,6 +29,8 @@ import ArtworkModal from './ArtworkModal';
 export default function CylinderManagement({ 
   urlParams = {},
   cylinders = [], 
+  clients = [],
+  onAddClient,
   jobMasters = [],
   onAddJobMaster,
   currentUser,
@@ -35,7 +39,11 @@ export default function CylinderManagement({
   onDeleteCylinder,
   machines = []
 }) {
-  const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'SuperAdmin';
+  const EDIT_ROLES = ['Admin', 'SuperAdmin', 'Plant Manager', 'Production Manager'];
+  const userRole = currentUser?.role || 'Admin';
+  const canEditCylinders = EDIT_ROLES.includes(userRole);
+  const isAdmin = userRole === 'Admin' || userRole === 'SuperAdmin';
+
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
@@ -84,27 +92,73 @@ export default function CylinderManagement({
   const [isUploading, setIsUploading] = useState(false);
   const [autoCalculateCost, setAutoCalculateCost] = useState(true);
 
-  // Product Substrate Structure State for Job Master Integration
-  const availableFilmTypes = useMemo(() => Object.keys(FILM_DENSITIES), []);
-  const [layers, setLayers] = useState([
-    { id: 1, filmType: 'PET', micron: 12 },
-    { id: 2, filmType: 'METPET', micron: 12 },
-    { id: 3, filmType: 'Natural GP LD', micron: 35 }
-  ]);
-  const [createJobMaster, setCreateJobMaster] = useState(true);
-  const [pouchOpenWidth, setPouchOpenWidth] = useState(0);
-  const [pouchHeight, setPouchHeight] = useState(0);
+  // Quick Client Onboarding State
+  const [isOnboardClientModalOpen, setIsOnboardClientModalOpen] = useState(false);
+  const [newClientName, setNewClientName] = useState('');
+  const [newContactPerson, setNewContactPerson] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newGstin, setNewGstin] = useState('');
 
-  const addLayer = () => {
-    setLayers(prev => [
-      ...prev,
-      { id: Date.now(), filmType: 'Natural GP LD', micron: 30 }
-    ]);
-  };
+  // Client Directory Dropdown Options
+  const allClientOptions = useMemo(() => {
+    const map = new Map();
+    (clients || []).forEach(c => {
+      if (c.companyName || c.name) {
+        const name = (c.companyName || c.name).trim();
+        if (name) map.set(name.toLowerCase(), { name, gstin: c.gstin || '' });
+      }
+    });
+    (jobMasters || []).forEach(j => {
+      if (j.clientName) {
+        const name = j.clientName.trim();
+        if (name && !map.has(name.toLowerCase())) {
+          map.set(name.toLowerCase(), { name, gstin: '' });
+        }
+      }
+    });
+    (cylinders || []).forEach(c => {
+      if (c.clientGroup) {
+        const name = c.clientGroup.trim();
+        if (name && !map.has(name.toLowerCase())) {
+          map.set(name.toLowerCase(), { name, gstin: '' });
+        }
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [clients, jobMasters, cylinders]);
 
-  const removeLayer = (id) => {
-    if (layers.length <= 1) return;
-    setLayers(prev => prev.filter(l => l.id !== id));
+  const handleQuickOnboardClientSubmit = (e) => {
+    e.preventDefault();
+    if (!newClientName.trim()) {
+      alert("Company / Client Name is required!");
+      return;
+    }
+
+    const name = newClientName.trim();
+    const createdClient = {
+      id: `CLI-2026-${Date.now().toString().slice(-4)}`,
+      name,
+      companyName: name,
+      contactPerson: newContactPerson.trim(),
+      phone: newPhone.trim(),
+      email: newEmail.trim(),
+      gstin: newGstin.trim(),
+      createdAt: new Date().toISOString()
+    };
+
+    if (onAddClient) {
+      onAddClient(createdClient);
+    }
+
+    setClientGroup(name);
+    setIsOnboardClientModalOpen(false);
+    setNewClientName('');
+    setNewContactPerson('');
+    setNewPhone('');
+    setNewEmail('');
+    setNewGstin('');
+    alert(`Client "${name}" onboarded and selected!`);
   };
 
   // Surface Area and Cost Calculations: (Face Length × Circumference ÷ 100) × Rate × Colors
@@ -333,9 +387,15 @@ export default function CylinderManagement({
               />
             </div>
 
-            <button className="btn-primary" onClick={openAddModal}>
-              <Plus size={16} /> Add New Cylinder Set
-            </button>
+            {canEditCylinders ? (
+              <button className="btn-primary" onClick={openAddModal}>
+                <Plus size={16} /> Add New Cylinder Set
+              </button>
+            ) : (
+              <span className="badge badge-warning" style={{ fontSize: '0.8rem', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Lock size={14} /> View-Only Access ({userRole})
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -474,22 +534,30 @@ export default function CylinderManagement({
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: '6px' }}>
-                          <button className="btn-secondary" style={{ padding: '6px 8px', fontSize: '0.75rem' }} onClick={() => openEditModal(c)} title="Edit Specifications">
-                            <Edit3 size={14} />
-                          </button>
+                          {canEditCylinders ? (
+                            <>
+                              <button className="btn-secondary" style={{ padding: '6px 8px', fontSize: '0.75rem' }} onClick={() => openEditModal(c)} title="Edit Specifications">
+                                <Edit3 size={14} />
+                              </button>
 
-                          <button className="btn-secondary" style={{ padding: '6px 8px', fontSize: '0.75rem' }} onClick={() => setSelectedForPDF(c)} title="Print Job Card">
-                            <Printer size={14} />
-                          </button>
+                              <button className="btn-secondary" style={{ padding: '6px 8px', fontSize: '0.75rem' }} onClick={() => setSelectedForPDF(c)} title="Print Job Card">
+                                <Printer size={14} />
+                              </button>
 
-                          <button 
-                            className="btn-secondary" 
-                            style={{ padding: '6px 8px', fontSize: '0.75rem', color: '#dc2626', borderColor: '#fecaca' }} 
-                            onClick={() => handleDelete(c)}
-                            title="Delete Cylinder Set"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                              <button 
+                                className="btn-secondary text-danger" 
+                                style={{ padding: '6px 8px', fontSize: '0.75rem' }} 
+                                onClick={() => handleDelete(c)}
+                                title="Delete Cylinder Set"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </>
+                          ) : (
+                            <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => setSelectedForPDF(c)} title="View Job Card">
+                              <Printer size={13} /> View Specs
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -504,57 +572,117 @@ export default function CylinderManagement({
       {/* Add / Edit Cylinder Modal */}
       {isModalOpen && (
         <div className="modal-overlay" onClick={() => setIsModalOpen(false)}>
-          <div className="glass-card modal-content" style={{ width: '760px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <h3 style={{ fontSize: '1.2rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Layers size={20} style={{ color: 'var(--primary-brand)' }} /> {editingCylinder ? 'Edit Cylinder Set' : 'Add New Rotogravure Cylinder Set'}
-              </h3>
+          <div className="glass-card modal-content" style={{ width: '850px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', padding: '24px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px', margin: 0, color: 'var(--text-primary)' }}>
+                  <Layers size={22} style={{ color: 'var(--primary-brand)' }} /> {editingCylinder ? 'Edit Cylinder Set Specifications' : 'Add New Rotogravure Cylinder Set'}
+                </h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', margin: '4px 0 0 0' }}>
+                  Configure cylinder technical parameters, substrate layers, cost calculations, and production tracking.
+                </p>
+              </div>
+              <button type="button" className="btn-icon" onClick={() => setIsModalOpen(false)}>
+                <X size={18} />
+              </button>
             </div>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '18px' }}>
-              Enter cylinder technical parameters, substrate wear limits, and calculate engraving costs automatically.
-            </p>
 
-            <form onSubmit={handleSaveCylinder}>
-              <div className="form-grid">
-                <div className="form-group">
-                  <label>Cylinder SKU Code *</label>
-                  <input type="text" className="form-control" required value={sku} onChange={e => setSku(e.target.value)} />
+            <form onSubmit={handleSaveCylinder} style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginTop: '12px' }}>
+              
+              {/* SECTION 1: BASIC CYLINDER & JOB SPECIFICATIONS */}
+              <div style={{ background: '#ffffff', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <h4 style={{ fontSize: '0.9rem', fontWeight: '800', color: '#0f172a', marginBottom: '14px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
+                  1. Basic Cylinder & Job Information
+                </h4>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <div className="form-group">
+                    <label style={{ fontWeight: '700' }}>Cylinder SKU Code *</label>
+                    <input type="text" className="form-control" required value={sku} onChange={e => setSku(e.target.value)} />
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ fontWeight: '700' }}>Job / Brand Name *</label>
+                    <input type="text" className="form-control" required placeholder="e.g. Britannia Bourbon 250g" value={jobName} onChange={e => setJobName(e.target.value)} />
+                  </div>
+
+                  <div className="form-group">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                      <label style={{ margin: 0, fontWeight: '700' }}>Client Group / Company *</label>
+                      <button 
+                        type="button" 
+                        onClick={() => setIsOnboardClientModalOpen(true)}
+                        style={{ background: 'none', border: 'none', color: 'var(--primary-brand)', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                      >
+                        <Plus size={12} /> Add New Client
+                      </button>
+                    </div>
+                    <select 
+                      className="form-control" 
+                      required 
+                      value={clientGroup} 
+                      onChange={e => setClientGroup(e.target.value)}
+                    >
+                      <option value="">-- Select Client from Directory --</option>
+                      {allClientOptions.map(c => (
+                        <option key={c.name} value={c.name}>{c.name} {c.gstin ? `(GST: ${c.gstin})` : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ fontWeight: '700' }}>Number of Printing Colors (Cylinders) *</label>
+                    <input type="number" className="form-control" required min="1" max="12" value={colorsCount} onChange={e => setColorsCount(e.target.value)} />
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ fontWeight: '700' }}>Cylinder Circumference (mm) *</label>
+                    <input type="number" className="form-control" required value={circumferenceMm} onChange={e => setCircumferenceMm(e.target.value)} />
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ fontWeight: '700' }}>Face Length (mm) *</label>
+                    <input type="number" className="form-control" required value={faceLengthMm} onChange={e => setFaceLengthMm(e.target.value)} />
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 2: ENGRAVING & COMMERCIAL COSTING (ADMIN ONLY) */}
+              <div style={{ background: '#ffffff', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <h4 style={{ fontSize: '0.9rem', fontWeight: '800', color: '#0f172a', marginBottom: '14px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Calculator size={16} style={{ color: 'var(--primary-brand)' }} /> 2. Engraving & Commercial Costing
+                </h4>
+
+                <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? '1fr 1fr' : '1fr', gap: '14px', marginBottom: isAdmin ? '14px' : '0' }}>
+                  <div className="form-group">
+                    <label>Engraver Name</label>
+                    <input type="text" className="form-control" value={engravuresName} onChange={e => setEngravuresName(e.target.value)} />
+                  </div>
+
+                  {isAdmin && (
+                    <div className="form-group">
+                      <label>Cost Borne By</label>
+                      <select className="form-control" value={costBorneBy} onChange={e => {
+                        setCostBorneBy(e.target.value);
+                        if (e.target.value.includes('Client')) setCostBorneType('client');
+                        else if (e.target.value.includes('Us')) setCostBorneType('us');
+                        else setCostBorneType('both');
+                      }}>
+                        <option value="Client (100%)">Client (100%)</option>
+                        <option value="Us (100%)">Us / Samyak (100%)</option>
+                        <option value="Both (50/50)">Both (50/50)</option>
+                      </select>
+                    </div>
+                  )}
                 </div>
 
-                <div className="form-group">
-                  <label>Job / Brand Name *</label>
-                  <input type="text" className="form-control" required placeholder="e.g. Britannia Bourbon 250g" value={jobName} onChange={e => setJobName(e.target.value)} />
-                </div>
-
-                <div className="form-group">
-                  <label>Client Group *</label>
-                  <input type="text" className="form-control" required placeholder="e.g. Britannia Industries" value={clientGroup} onChange={e => setClientGroup(e.target.value)} />
-                </div>
-
-                <div className="form-group">
-                  <label>Number of Printing Colors (Cylinders) *</label>
-                  <input type="number" className="form-control" required min="1" max="12" value={colorsCount} onChange={e => setColorsCount(e.target.value)} />
-                </div>
-
-                <div className="form-group">
-                  <label>Cylinder Circumference (mm) *</label>
-                  <input type="number" className="form-control" required value={circumferenceMm} onChange={e => setCircumferenceMm(e.target.value)} />
-                </div>
-
-                <div className="form-group">
-                  <label>Face Length (mm) *</label>
-                  <input type="number" className="form-control" required value={faceLengthMm} onChange={e => setFaceLengthMm(e.target.value)} />
-                </div>
-
-                {/* AUTOMATED COST CALCULATION SECTION (ADMIN ONLY) */}
                 {isAdmin && (
-                  <div style={{ gridColumn: 'span 2', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                      <div style={{ fontWeight: '700', fontSize: '0.95rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <Calculator size={18} style={{ color: '#2563eb' }} />
-                        Cylinder Cost Calculator (Formula Engine)
-                      </div>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', cursor: 'pointer' }}>
+                      <span style={{ fontWeight: '700', fontSize: '0.85rem', color: '#0f172a' }}>
+                        Automated Cost Calculator (Formula Engine)
+                      </span>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', cursor: 'pointer' }}>
                         <input 
                           type="checkbox" 
                           checked={autoCalculateCost} 
@@ -564,31 +692,31 @@ export default function CylinderManagement({
                       </label>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
                       <div>
-                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Surface Area (sq cm)</div>
-                        <div style={{ fontWeight: '700', fontSize: '1rem', color: '#0f172a' }}>{billingAreaUnits.toLocaleString()} sq. cm</div>
-                        <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>({faceLengthMm} × {circumferenceMm} ÷ 100)</div>
+                        <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '600' }}>Surface Area</div>
+                        <div style={{ fontWeight: '800', fontSize: '0.95rem', color: '#0f172a', marginTop: '4px' }}>{billingAreaUnits.toLocaleString()} sq. cm</div>
+                        <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>({faceLengthMm} × {circumferenceMm} ÷ 100)</div>
                       </div>
 
                       <div>
-                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Cylinder Rate (₹/sq cm)</div>
+                        <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '600' }}>Cylinder Rate (₹/sq cm)</div>
                         <input 
                           type="number" 
                           step="0.01"
                           className="form-control" 
-                          style={{ padding: '4px 8px', fontSize: '0.9rem', marginTop: '2px' }}
+                          style={{ padding: '4px 8px', fontSize: '0.85rem', marginTop: '4px' }}
                           value={rate} 
                           onChange={e => setRate(e.target.value)} 
                         />
                       </div>
 
                       <div>
-                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Cost / Cylinder (₹)</div>
+                        <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '600' }}>Cost / Cylinder (₹)</div>
                         <input 
                           type="number" 
                           className="form-control" 
-                          style={{ padding: '4px 8px', fontSize: '0.9rem', marginTop: '2px', fontWeight: '700', color: '#047857' }}
+                          style={{ padding: '4px 8px', fontSize: '0.85rem', marginTop: '4px', fontWeight: '700', color: '#047857' }}
                           value={costPerCylinder} 
                           onChange={e => {
                             setCostPerCylinder(e.target.value);
@@ -598,11 +726,11 @@ export default function CylinderManagement({
                       </div>
 
                       <div>
-                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Total Set Cost ({colorsCount} Cyls)</div>
+                        <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '600' }}>Total Set Cost ({colorsCount} Cyls)</div>
                         <input 
                           type="number" 
                           className="form-control" 
-                          style={{ padding: '4px 8px', fontSize: '0.9rem', marginTop: '2px', fontWeight: '800', color: '#1e3a8a' }}
+                          style={{ padding: '4px 8px', fontSize: '0.85rem', marginTop: '4px', fontWeight: '800', color: '#1e3a8a' }}
                           value={cylinderCost} 
                           onChange={e => {
                             setCylinderCost(e.target.value);
@@ -611,201 +739,171 @@ export default function CylinderManagement({
                         />
                       </div>
                     </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: '#475569', borderTop: '1px solid #e2e8f0', paddingTop: '8px' }}>
-                      <span>Formula: <code>(Face Length × Circumference ÷ 100) × Rate × Colors</code></span>
-                      {!autoCalculateCost && (
-                        <button 
-                          type="button" 
-                          className="btn-secondary" 
-                          style={{ padding: '2px 8px', fontSize: '0.75rem' }}
-                          onClick={() => {
-                            setAutoCalculateCost(true);
-                            setCostPerCylinder(String(calculatedCostPerCylinder));
-                            setCylinderCost(String(calculatedTotalSetCost));
-                          }}
-                        >
-                          Reset to Calculated (₹{calculatedTotalSetCost.toLocaleString()})
-                        </button>
-                      )}
-                    </div>
                   </div>
                 )}
+              </div>
 
-                {/* PRODUCT STRUCTURE & AUTOMATIC JOB MASTER CREATION */}
-                <div style={{ gridColumn: 'span 2', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <div>
-                      <strong style={{ fontSize: '0.9rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <FileCode size={16} style={{ color: 'var(--primary-brand)' }} />
-                        Product Structure (Laminate Layers) <span style={{ color: '#dc2626' }}>*</span>
-                      </strong>
-                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
-                        Summary: <code style={{ fontWeight: '700', color: '#0f172a' }}>{layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')}</code>
-                      </div>
+              {/* SECTION 3: PRODUCT STRUCTURE & JOB MASTER INTEGRATION */}
+              <div style={{ background: '#ffffff', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
+                  <div>
+                    <h4 style={{ fontSize: '0.9rem', fontWeight: '800', color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <FileCode size={16} style={{ color: 'var(--primary-brand)' }} /> 3. Product Substrate Structure (Laminate Layers) *
+                    </h4>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
+                      Summary: <code style={{ fontWeight: '700', color: '#0f172a' }}>{layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')}</code>
                     </div>
-                    <button type="button" className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.75rem' }} onClick={addLayer}>
-                      <Plus size={14} /> Add Substrate Layer
-                    </button>
                   </div>
+                  <button type="button" className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.78rem' }} onClick={addLayer}>
+                    <Plus size={14} /> Add Substrate Layer
+                  </button>
+                </div>
 
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '14px' }}>
                   {layers.map((l, idx) => (
-                    <div key={l.id} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px 32px', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
-                      <span style={{ fontSize: '0.8rem', fontWeight: '600' }}>Layer {idx + 1}</span>
-                      <select className="form-control" style={{ padding: '4px 8px', fontSize: '0.85rem' }} value={l.filmType} onChange={e => setLayers(prev => prev.map(item => item.id === l.id ? { ...item, filmType: e.target.value } : item))}>
+                    <div key={l.id} style={{ display: 'grid', gridTemplateColumns: '90px 1fr 120px 36px', gap: '10px', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: '700', color: '#475569' }}>Layer {idx + 1}</span>
+                      <select className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={l.filmType} onChange={e => setLayers(prev => prev.map(item => item.id === l.id ? { ...item, filmType: e.target.value } : item))}>
                         {availableFilmTypes.map(filmKey => <option key={filmKey} value={filmKey}>{filmKey} ({FILM_DENSITIES[filmKey]} g/cc)</option>)}
                       </select>
-                      <input type="number" className="form-control" style={{ padding: '4px 8px', fontSize: '0.85rem' }} value={l.micron} onChange={e => setLayers(prev => prev.map(item => item.id === l.id ? { ...item, micron: parseFloat(e.target.value) || 0 } : item))} placeholder="Microns" />
-                      {layers.length > 1 && <button type="button" className="btn-secondary" style={{ padding: '4px' }} onClick={() => removeLayer(l.id)}><X size={14} /></button>}
+                      <input type="number" className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={l.micron} onChange={e => setLayers(prev => prev.map(item => item.id === l.id ? { ...item, micron: parseFloat(e.target.value) || 0 } : item))} placeholder="Microns (µ)" />
+                      {layers.length > 1 && <button type="button" className="btn-secondary text-danger" style={{ padding: '6px' }} onClick={() => removeLayer(l.id)} title="Remove Layer"><X size={14} /></button>}
                     </div>
                   ))}
+                </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px', paddingTop: '10px', borderTop: '1px dashed #cbd5e1' }}>
-                    <div>
-                      <label style={{ fontSize: '0.75rem', color: '#64748b' }}>Pouch Open Width (mm)</label>
-                      <input type="number" className="form-control" style={{ padding: '4px 8px', fontSize: '0.85rem' }} value={pouchOpenWidth} onChange={e => setPouchOpenWidth(e.target.value)} placeholder="e.g. 240" />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '0.75rem', color: '#64748b' }}>Pouch Height (mm)</label>
-                      <input type="number" className="form-control" style={{ padding: '4px 8px', fontSize: '0.85rem' }} value={pouchHeight} onChange={e => setPouchHeight(e.target.value)} placeholder="e.g. 350" />
-                    </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', paddingTop: '10px', borderTop: '1px dashed #cbd5e1' }}>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', color: '#64748b' }}>Pouch Open Width (mm)</label>
+                    <input type="number" className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={pouchOpenWidth} onChange={e => setPouchOpenWidth(e.target.value)} placeholder="e.g. 240" />
                   </div>
-
-                  {!editingCylinder && (
-                    <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: '700', cursor: 'pointer', color: '#047857' }}>
-                        <input 
-                          type="checkbox" 
-                          checked={createJobMaster} 
-                          onChange={e => setCreateJobMaster(e.target.checked)} 
-                          style={{ width: '16px', height: '16px', accentColor: '#047857' }}
-                        />
-                        Auto-Create Product in Job Master Directory
-                      </label>
-                      {createJobMaster && (
-                        <span className="badge badge-success" style={{ fontSize: '0.75rem', padding: '3px 8px' }}>
-                          Consequent ID: JM-2026-{String((jobMasters ? jobMasters.length : 0) + 101).padStart(3, '0')}
-                        </span>
-                      )}
-                    </div>
-                  )}
+                  <div>
+                    <label style={{ fontSize: '0.75rem', color: '#64748b' }}>Pouch Height (mm)</label>
+                    <input type="number" className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={pouchHeight} onChange={e => setPouchHeight(e.target.value)} placeholder="e.g. 350" />
+                  </div>
                 </div>
 
-                <div className="form-group">
-                  <label>Engraver Name</label>
-                  <input type="text" className="form-control" value={engravuresName} onChange={e => setEngravuresName(e.target.value)} />
-                </div>
-
-                {isAdmin && (
-                  <div className="form-group">
-                    <label>Cost Borne By</label>
-                    <select className="form-control" value={costBorneBy} onChange={e => {
-                      setCostBorneBy(e.target.value);
-                      if (e.target.value.includes('Client')) setCostBorneType('client');
-                      else if (e.target.value.includes('Us')) setCostBorneType('us');
-                      else setCostBorneType('both');
-                    }}>
-                      <option value="Client (100%)">Client (100%)</option>
-                      <option value="Us (100%)">Us / Samyak (100%)</option>
-                      <option value="Both (50/50)">Both (50/50)</option>
-                    </select>
+                {!editingCylinder && (
+                  <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: '700', cursor: 'pointer', color: '#047857' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={createJobMaster} 
+                        onChange={e => setCreateJobMaster(e.target.checked)} 
+                        style={{ width: '16px', height: '16px', accentColor: '#047857' }}
+                      />
+                      Auto-Create Product in Job Master Directory
+                    </label>
+                    {createJobMaster && (
+                      <span className="badge badge-success" style={{ fontSize: '0.75rem', padding: '3px 8px' }}>
+                        Consequent ID: JM-2026-{String((jobMasters ? jobMasters.length : 0) + 101).padStart(3, '0')}
+                      </span>
+                    )}
                   </div>
                 )}
+              </div>
 
-                {/* ARTWORK UPLOAD SECTION (SUPABASE STORAGE) */}
-                <div style={{ gridColumn: 'span 2', border: '1px dashed #cbd5e1', padding: '14px', borderRadius: '8px', background: '#fafafa' }}>
-                  <label style={{ display: 'block', fontWeight: '600', marginBottom: '8px', fontSize: '0.85rem' }}>
-                    Artwork Proof / Keyline Drawing (Supabase Cloud Storage)
-                  </label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-                    {artworkUrl ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <img 
-                          src={artworkUrl} 
-                          alt="Artwork Preview" 
-                          style={{ width: '60px', height: '60px', objectFit: 'contain', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }} 
-                          onClick={() => setActiveArtworkModal({ isOpen: true, url: artworkUrl, title: `${sku || 'Cylinder'} Artwork` })}
-                          title="Click to view full image"
-                        />
-                        <div>
-                          <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#047857', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <Check size={14} /> Artwork Stored
-                          </div>
-                          <button 
-                            type="button" 
-                            onClick={() => setActiveArtworkModal({ isOpen: true, url: artworkUrl, title: `${sku || 'Cylinder'} Artwork` })}
-                            style={{ background: 'none', border: 'none', padding: 0, fontSize: '0.75rem', color: '#2563eb', cursor: 'pointer', textDecoration: 'underline' }}
-                          >
-                            View Full Artwork
-                          </button>
-                          <button type="button" style={{ display: 'block', fontSize: '0.7rem', color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginTop: '2px' }} onClick={() => setArtworkUrl('')}>
-                            Remove Artwork
-                          </button>
+              {/* SECTION 4: ARTWORK & MEDIA */}
+              <div style={{ background: '#ffffff', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <h4 style={{ fontSize: '0.9rem', fontWeight: '800', color: '#0f172a', marginBottom: '12px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
+                  4. Artwork Proof & Keyline Drawing
+                </h4>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                  {artworkUrl ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <img 
+                        src={artworkUrl} 
+                        alt="Artwork Preview" 
+                        style={{ width: '60px', height: '60px', objectFit: 'contain', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }} 
+                        onClick={() => setActiveArtworkModal({ isOpen: true, url: artworkUrl, title: `${sku || 'Cylinder'} Artwork` })}
+                        title="Click to view full image"
+                      />
+                      <div>
+                        <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#047857', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <Check size={14} /> Artwork Stored
                         </div>
+                        <button 
+                          type="button" 
+                          onClick={() => setActiveArtworkModal({ isOpen: true, url: artworkUrl, title: `${sku || 'Cylinder'} Artwork` })}
+                          style={{ background: 'none', border: 'none', padding: 0, fontSize: '0.75rem', color: '#2563eb', cursor: 'pointer', textDecoration: 'underline' }}
+                        >
+                          View Full Artwork
+                        </button>
+                        <button type="button" style={{ display: 'block', fontSize: '0.7rem', color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginTop: '2px' }} onClick={() => setArtworkUrl('')}>
+                          Remove Artwork
+                        </button>
                       </div>
-                    ) : (
-                      <div style={{ fontSize: '0.85rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <ImageIcon size={20} /> No artwork uploaded yet.
-                      </div>
-                    )}
-
-                    <div style={{ marginLeft: 'auto' }}>
-                      <label className="btn-secondary" style={{ cursor: isUploading ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem' }}>
-                        <UploadCloud size={14} /> {isUploading ? 'Uploading to Supabase...' : 'Upload Artwork File'}
-                        <input 
-                          type="file" 
-                          accept="image/*,.pdf" 
-                          style={{ display: 'none' }} 
-                          disabled={isUploading}
-                          onChange={handleArtworkUpload} 
-                        />
-                      </label>
                     </div>
+                  ) : (
+                    <div style={{ fontSize: '0.85rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <ImageIcon size={20} /> No artwork uploaded yet.
+                    </div>
+                  )}
+
+                  <div style={{ marginLeft: 'auto' }}>
+                    <label className="btn-secondary" style={{ cursor: isUploading ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem' }}>
+                      <UploadCloud size={14} /> {isUploading ? 'Uploading to Supabase...' : 'Upload Artwork File'}
+                      <input 
+                        type="file" 
+                        accept="image/*,.pdf" 
+                        style={{ display: 'none' }} 
+                        disabled={isUploading}
+                        onChange={handleArtworkUpload} 
+                      />
+                    </label>
                   </div>
-                </div>
-
-                <div className="form-group">
-                  <label>Layer 1 Printing Substrate Qty (Kg)</label>
-                  <input type="number" className="form-control" value={layer1PrintedQtyKg} onChange={e => setLayer1PrintedQtyKg(e.target.value)} />
-                </div>
-
-                <div className="form-group">
-                  <label>Total Dispatched Printed Qty (Kg)</label>
-                  <input type="number" className="form-control" value={dispatchedQty} onChange={e => setDispatchedQty(e.target.value)} />
-                </div>
-
-                <div className="form-group">
-                  <label>Max Utilisation Life Limit (Kg)</label>
-                  <input type="number" className="form-control" value={utilisationLimit} onChange={e => setUtilisationLimit(e.target.value)} />
-                </div>
-
-                <div className="form-group">
-                  <label>Cylinder Status</label>
-                  <select className="form-control" value={status} onChange={e => setStatus(e.target.value)}>
-                    <option value="Active In-Use">Active In-Use</option>
-                    <option value="Under Engraving">Under Engraving / Chroming</option>
-                    <option value="Worn Out / Retouch Needed">Worn Out / Retouch Needed</option>
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label>Assigned Printing Press</label>
-                  <select className="form-control" value={assignedPress} onChange={e => setAssignedPress(e.target.value)}>
-                    <option value="">— Not Assigned —</option>
-                    {printingPresses.map(p => (
-                      <option key={p} value={p}>{p}</option>
-                    ))}
-                  </select>
-                  <small style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '3px', display: 'block' }}>
-                    Manage presses in Settings → Plant Machine Directory
-                  </small>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+              {/* SECTION 5: PRODUCTION & WEAR TRACKING */}
+              <div style={{ background: '#ffffff', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <h4 style={{ fontSize: '0.9rem', fontWeight: '800', color: '#0f172a', marginBottom: '14px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
+                  5. Wear Life Limits & Station Assignment
+                </h4>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <div className="form-group">
+                    <label>Assigned Printing Press</label>
+                    <select className="form-control" value={assignedPress} onChange={e => setAssignedPress(e.target.value)}>
+                      <option value="">— Not Assigned —</option>
+                      {printingPresses.map(p => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Cylinder Operational Status</label>
+                    <select className="form-control" value={status} onChange={e => setStatus(e.target.value)}>
+                      <option value="Active In-Use">Active In-Use</option>
+                      <option value="Under Engraving">Under Engraving / Chroming</option>
+                      <option value="Worn Out / Retouch Needed">Worn Out / Retouch Needed</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Layer 1 Printing Substrate Qty (Kg)</label>
+                    <input type="number" className="form-control" value={layer1PrintedQtyKg} onChange={e => setLayer1PrintedQtyKg(e.target.value)} />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Total Dispatched Printed Qty (Kg)</label>
+                    <input type="number" className="form-control" value={dispatchedQty} onChange={e => setDispatchedQty(e.target.value)} />
+                  </div>
+
+                  <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                    <label>Max Utilisation Life Limit (Kg)</label>
+                    <input type="number" className="form-control" value={utilisationLimit} onChange={e => setUtilisationLimit(e.target.value)} />
+                  </div>
+                </div>
+              </div>
+
+              {/* FOOTER ACTIONS */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '10px' }}>
                 <button type="button" className="btn-secondary" onClick={() => setIsModalOpen(false)}>Cancel</button>
                 <button type="submit" className="btn-primary">
-                  <CheckCircle2 size={16} /> Save Cylinder Details
+                  <CheckCircle2 size={16} /> {editingCylinder ? 'Save Changes' : 'Save Cylinder Set'}
                 </button>
               </div>
             </form>
@@ -844,6 +942,67 @@ export default function CylinderManagement({
                 }
               }}
             />
+          </div>
+        </div>
+      )}
+
+      {/* QUICK CLIENT ONBOARDING MODAL */}
+      {isOnboardClientModalOpen && (
+        <div className="modal-overlay" style={{ zIndex: 2000 }} onClick={() => setIsOnboardClientModalOpen(false)}>
+          <div className="glass-card modal-content" style={{ width: '540px', maxWidth: '95vw', padding: '24px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
+              <h3 style={{ fontSize: '1.15rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)', margin: 0 }}>
+                <Building2 size={20} style={{ color: 'var(--primary-brand)' }} /> Quick Onboard New Client
+              </h3>
+              <button type="button" className="btn-icon" onClick={() => setIsOnboardClientModalOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleQuickOnboardClientSubmit}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div className="form-group">
+                  <label style={{ fontWeight: '700' }}>Company / Client Name *</label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    required 
+                    placeholder="e.g. Britannia Industries Ltd"
+                    value={newClientName} 
+                    onChange={e => setNewClientName(e.target.value)} 
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div className="form-group">
+                    <label>Contact Person</label>
+                    <input type="text" className="form-control" placeholder="Key contact" value={newContactPerson} onChange={e => setNewContactPerson(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label>Phone Number</label>
+                    <input type="text" className="form-control" placeholder="10-digit mobile" value={newPhone} onChange={e => setNewPhone(e.target.value)} />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div className="form-group">
+                    <label>GSTIN Number</label>
+                    <input type="text" className="form-control" placeholder="23AAAC..." value={newGstin} onChange={e => setNewGstin(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label>Email Address</label>
+                    <input type="email" className="form-control" placeholder="purchase@client.com" value={newEmail} onChange={e => setNewEmail(e.target.value)} />
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+                <button type="button" className="btn-secondary" onClick={() => setIsOnboardClientModalOpen(false)}>Cancel</button>
+                <button type="submit" className="btn-primary">
+                  <Check size={16} /> Save & Select Client
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

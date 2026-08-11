@@ -267,7 +267,10 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, 
 });
 
 export default function CylinderJobCardForm({ onSave, initialData, onClose, currentUser, jobMasters = [] }) {
-  const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'SuperAdmin';
+  const EDIT_ROLES = ['Admin', 'SuperAdmin', 'Plant Manager', 'Production Manager'];
+  const userRole = currentUser?.role || 'Admin';
+  const canEdit = EDIT_ROLES.includes(userRole);
+  const isAdmin = userRole === 'Admin' || userRole === 'SuperAdmin';
   const componentRef = useRef();
 
   const [selectedJobMasterId, setSelectedJobMasterId] = useState(initialData?.jobMasterId || initialData?.id || '');
@@ -980,27 +983,31 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
                 </div>
               )}
 
-              <div style={{ marginLeft: 'auto' }}>
-                <label className="btn-secondary" style={{ cursor: isUploading ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', padding: '8px 14px' }}>
-                  <UploadCloud size={16} /> {isUploading ? 'Uploading to Supabase...' : (imagePreview ? 'Replace Artwork File' : 'Upload Artwork to Cloud')}
-                  <input 
-                    type="file" 
-                    accept="image/*,.pdf" 
-                    style={{ display: 'none' }} 
-                    disabled={isUploading}
-                    onChange={handleImageUpload} 
-                  />
-                </label>
-              </div>
+              {canEdit && (
+                <div style={{ marginLeft: 'auto' }}>
+                  <label className="btn-secondary" style={{ cursor: isUploading ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', padding: '8px 14px' }}>
+                    <UploadCloud size={16} /> {isUploading ? 'Uploading to Supabase...' : (imagePreview ? 'Replace Artwork File' : 'Upload Artwork to Cloud')}
+                    <input 
+                      type="file" 
+                      accept="image/*,.pdf" 
+                      style={{ display: 'none' }} 
+                      disabled={isUploading}
+                      onChange={handleImageUpload} 
+                    />
+                  </label>
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
-          <button className="btn-primary" style={{ background: '#059669', padding: '10px 20px' }} onClick={handleSaveSettings}>
-            <Save size={16} /> Save Parameters & Settings
-          </button>
-        </div>
+        {canEdit && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
+            <button className="btn-primary" style={{ background: '#059669', padding: '10px 20px' }} onClick={handleSaveSettings}>
+              <Save size={16} /> Save Parameters & Settings
+            </button>
+          </div>
+        )}
       </div>
 
       {/* In-App Artwork Lightbox Modal */}
