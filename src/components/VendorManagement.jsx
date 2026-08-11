@@ -14,7 +14,45 @@ import {
   X
 } from 'lucide-react';
 import { generateVendorId } from '../factoryStore';
-import PurchaseOrderPDF from './PurchaseOrderPDF';
+function VendorMaterialItemsCell({ items = [] }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  if (!items || items.length === 0) {
+    return <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>No items</span>;
+  }
+
+  const visibleItems = isExpanded ? items : items.slice(0, 1);
+  const hiddenCount = items.length - 1;
+
+  return (
+    <div>
+      {visibleItems.map((it, i) => (
+        <div key={i} style={{ fontSize: '0.8rem', fontWeight: '600', marginBottom: '2px' }}>
+          • {it.itemDesc || it.description} ({it.qtyKg || it.qty} kg @ ₹{it.rate}/kg)
+        </div>
+      ))}
+      {items.length > 1 && (
+        <button
+          type="button"
+          onClick={() => setIsExpanded(!isExpanded)}
+          style={{
+            background: '#eff6ff',
+            border: '1px solid #bfdbfe',
+            borderRadius: '4px',
+            color: '#1d4ed8',
+            fontSize: '0.72rem',
+            fontWeight: '700',
+            cursor: 'pointer',
+            padding: '2px 6px',
+            marginTop: '4px'
+          }}
+        >
+          {isExpanded ? 'Show Less ▲' : `+ ${hiddenCount} More (Show More ▼)`}
+        </button>
+      )}
+    </div>
+  );
+}
 
 export default function VendorManagement({ urlParams = {}, vendors = [], orders = [], onAddVendor }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -329,11 +367,7 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
                                 <td style={{ fontWeight: '800', color: 'var(--primary-brand)' }}>{po.poNumber}</td>
                                 <td>{po.date || 'Recent'}</td>
                                 <td>
-                                  {(po.items || []).map((it, i) => (
-                                    <div key={i} style={{ fontSize: '0.8rem', fontWeight: '600' }}>
-                                      • {it.itemDesc || it.description} ({it.qtyKg} kg @ ₹{it.rate}/kg)
-                                    </div>
-                                  ))}
+                                  <VendorMaterialItemsCell items={po.items || []} />
                                 </td>
                                 <td style={{ fontWeight: '800', color: '#047857' }}>
                                   ₹{(totalVal ?? 0).toLocaleString()}

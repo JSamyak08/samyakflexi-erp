@@ -79,6 +79,59 @@ export const INVENTORY_UOMS = [
   { value: "Sheets", label: "Sheets" }
 ];
 
+function MaterialItemsCell({ items = [] }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  if (!items || items.length === 0) {
+    return <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>No items</span>;
+  }
+
+  const visibleItems = isExpanded ? items : items.slice(0, 1);
+  const hiddenCount = items.length - 1;
+
+  return (
+    <div style={{ minWidth: '200px' }}>
+      {visibleItems.map((it, idx) => (
+        <div key={idx} style={{ fontSize: '0.82rem', marginBottom: '4px' }}>
+          • <strong>{it.itemDesc || it.description || 'Material'}</strong>
+          <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+            PO Qty: <strong>{it.qtyKg || it.qty} kg</strong> @ ₹{it.rate}/kg
+          </div>
+        </div>
+      ))}
+
+      {items.length > 1 && (
+        <button
+          type="button"
+          onClick={() => setIsExpanded(!isExpanded)}
+          style={{
+            background: '#eff6ff',
+            border: '1px solid #bfdbfe',
+            borderRadius: '4px',
+            color: '#1d4ed8',
+            fontSize: '0.72rem',
+            fontWeight: '700',
+            cursor: 'pointer',
+            padding: '3px 8px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px',
+            marginTop: '4px',
+            transition: 'all 0.15s ease'
+          }}
+          title={isExpanded ? "Collapse item list" : "Expand all PO material items"}
+        >
+          {isExpanded ? (
+            <>Show Less ▲</>
+          ) : (
+            <>+ {hiddenCount} More {hiddenCount === 1 ? 'Item' : 'Items'} (Show More ▼)</>
+          )}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function InventoryManagement({ 
   urlParams = {},
   inventory = [], 
@@ -1539,14 +1592,7 @@ export default function InventoryManagement({
                       </td>
 
                       <td>
-                        {(po.items || []).map((it, idx) => (
-                          <div key={idx} style={{ fontSize: '0.82rem', marginBottom: '2px' }}>
-                            • <strong>{it.itemDesc || it.description || 'Material'}</strong>
-                            <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                              PO Qty: <strong>{it.qtyKg || it.qty} kg</strong> @ ₹{it.rate}/kg
-                            </div>
-                          </div>
-                        ))}
+                        <MaterialItemsCell items={po.items || []} />
                       </td>
 
                       <td>
