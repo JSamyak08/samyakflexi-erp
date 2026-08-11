@@ -144,7 +144,7 @@ export function compressImageDataUrl(dataUrl, maxDimension = 800, quality = 0.7)
     }
 
     try {
-      const img = new Image();
+      const img = document.createElement('img');
       img.onload = () => {
         try {
           let width = img.width;

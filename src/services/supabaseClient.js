@@ -251,8 +251,8 @@ export const saveSupabaseCredentials = (supabaseUrl, supabaseAnonKey) => {
   currentClientKey = '';
 
   // Notify the entire application of credential update
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('supabase-credentials-changed', {
+  if (typeof window !== 'undefined' && typeof window.CustomEvent === 'function') {
+    window.dispatchEvent(new window.CustomEvent('supabase-credentials-changed', {
       detail: { url: trimmedUrl, key: trimmedKey, configured: isSupabaseConfigured() }
     }));
   }
@@ -272,8 +272,8 @@ export const clearSupabaseCredentials = () => {
   currentClientInstance = null;
   currentClientKey = '';
 
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('supabase-credentials-changed', {
+  if (typeof window !== 'undefined' && typeof window.CustomEvent === 'function') {
+    window.dispatchEvent(new window.CustomEvent('supabase-credentials-changed', {
       detail: { url: '', key: '', configured: false }
     }));
   }
