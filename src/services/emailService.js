@@ -358,3 +358,72 @@ export const notifyUserCreated = async (user, customTo) => {
     text: `Welcome ${user.name}! Your account has been created with role ${user.role}. Login with ${user.email}.`
   });
 };
+
+/**
+ * 8. ACTION TASK: Over Wastage Alert (Pre-costing Threshold Exceeded)
+ */
+export const notifyOverWastageAlert = async ({ record, order, allowedWastagePct, customTo }) => {
+  const actualWastageKg = Number(record.totalScrapQtyKg || 0);
+  const actualWastagePct = Number(record.overallScrapPctOfDispatch || record.overallScrapPctOfOutput || 0);
+  const targetWastagePct = Number(allowedWastagePct || order?.calculationDetails?.wastagePct || order?.wastagePct || 5);
+  const variancePct = Number((actualWastagePct - targetWastagePct).toFixed(1));
+
+  // Build HTML table for stage-wise wastage breakdown
+  const breakdownRows = [
+    { label: 'Printing Plain Setting', val: record.printingPlainSettingWastageKg },
+    { label: 'Printing Process Wastage', val: record.printingWastageKg },
+    { label: 'Lamination Plain Substrate', val: record.laminationPlainSubstrateWastageKg },
+    { label: 'Printed Film Wastage', val: record.printedWastageKg },
+    { label: 'Laminate Roll Wastage', val: record.laminateWastageKg },
+    { label: 'Slitting Side Trim Wastage', val: record.trimWastageKg }
+  ].filter(item => Number(item.val || 0) > 0);
+
+  const breakdownTableHtml = breakdownRows.length > 0 ? `
+    <table class="data-table">
+      <thead>
+        <tr><th>Process Stage Scrap Category</th><th style="text-align: right;">Wastage Qty (kg)</th></tr>
+      </thead>
+      <tbody>
+        ${breakdownRows.map(r => `<tr><td>${r.label}</td><td style="text-align: right; font-weight: 700; color: #dc2626;">${Number(r.val).toFixed(1)} kg</td></tr>`).join('')}
+      </tbody>
+    </table>
+  ` : '<p style="font-size: 12px; color: #64748b;">No stage-wise wastage breakdown recorded.</p>';
+
+  const prodDateTime = record.recordedAt 
+    ? new Date(record.recordedAt).toLocaleString('en-IN')
+    : `${record.dateFilled || new Date().toISOString().split('T')[0]} ${new Date().toLocaleTimeString('en-IN')}`;
+
+  const vars = {
+    jobName: record.jobName || order?.jobName || 'Packaging Job',
+    orderId: record.orderId || order?.id || 'ORD-000',
+    productionDateTime: prodDateTime,
+    orderQtyKg: (order?.orderQtyKg || record.totalProductionQtyKg || 0).toLocaleString(),
+    totalProductionQtyKg: (record.totalProductionQtyKg || 0).toLocaleString(),
+    allowedWastagePct: targetWastagePct.toFixed(1),
+    actualWastagePct: actualWastagePct.toFixed(1),
+    actualWastageKg: actualWastageKg.toFixed(1),
+    wastageVariancePct: variancePct > 0 ? `+${variancePct}` : `${variancePct}`,
+    wastageBreakdownHtml: breakdownTableHtml
+  };
+
+  const tmpl = getActiveTemplate('over_wastage', vars);
+  if (!tmpl || tmpl.enabled === false) return { success: false, message: 'Notification disabled.' };
+
+  const targetEmail = customTo || tmpl.toEmail || 'admin@samyakinternational.in';
+
+  const html = buildEmailTemplate({
+    title: tmpl.eventTitle,
+    badgeText: tmpl.badgeText,
+    badgeBg: tmpl.badgeBgColor || '#dc2626',
+    contentHtml: tmpl.contentHtml,
+    footerNote: tmpl.footerNote
+  });
+
+  return await sendERPEmailNotification({
+    to: targetEmail,
+    cc: tmpl.ccEmail,
+    subject: tmpl.subject,
+    html,
+    text: `OVER WASTAGE WARNING: Job ${vars.jobName} recorded ${actualWastagePct}% scrap wastage vs ${targetWastagePct}% pre-costing target.`
+  });
+};

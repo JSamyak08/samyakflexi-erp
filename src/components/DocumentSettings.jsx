@@ -361,7 +361,8 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     po_issued: ['{poNumber}', '{supplierName}', '{indentNumber}', '{itemName}', '{qty}', '{unit}', '{totalAmount}'],
     low_stock: ['{itemCode}', '{itemName}', '{stockQty}', '{unit}', '{reorderLevel}', '{location}'],
     user_created: ['{userName}', '{userEmail}', '{userRole}', '{userDepartment}', '{userPassword}'],
-    password_recovery: ['{userEmail}', '{recoveryCode}']
+    password_recovery: ['{userEmail}', '{recoveryCode}'],
+    over_wastage: ['{jobName}', '{orderId}', '{productionDateTime}', '{orderQtyKg}', '{totalProductionQtyKg}', '{allowedWastagePct}', '{actualWastagePct}', '{actualWastageKg}', '{wastageVariancePct}', '{wastageBreakdownHtml}']
   };
 
   // Sample Variables for Live Preview Rendering
@@ -401,7 +402,13 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     userRole: 'Plant Manager',
     userDepartment: 'Production Operations',
     userPassword: 'Samyak#Pass2026',
-    recoveryCode: '849201'
+    recoveryCode: '849201',
+    productionDateTime: '11/08/2026, 09:30:15 PM',
+    allowedWastagePct: '5.0',
+    actualWastagePct: '8.4',
+    actualWastageKg: '210.0',
+    wastageVariancePct: '+3.4',
+    wastageBreakdownHtml: `<table class="data-table"><thead><tr><th>Process Stage Scrap Category</th><th style="text-align: right;">Wastage Qty (kg)</th></tr></thead><tbody><tr><td>Printing Plain Setting</td><td style="text-align: right; font-weight: 700; color: #dc2626;">65.0 kg</td></tr><tr><td>Printing Process Wastage</td><td style="text-align: right; font-weight: 700; color: #dc2626;">45.0 kg</td></tr><tr><td>Lamination Plain Substrate</td><td style="text-align: right; font-weight: 700; color: #dc2626;">30.0 kg</td></tr><tr><td>Slitting Side Trim Wastage</td><td style="text-align: right; font-weight: 700; color: #dc2626;">70.0 kg</td></tr></tbody></table>`
   };
 
   const previewSubject = interpolateTemplate(currentTemplate.subject || '', previewVars);

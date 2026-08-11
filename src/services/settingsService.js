@@ -533,6 +533,33 @@ export const DEFAULT_EMAIL_TEMPLATES = {
   Please enter this verification code on the ERP login screen to set a new password. This code will expire in 15 minutes.
 </p>`,
     footerNote: 'Samyak International Ltd • Indore Packaging Division\nKheda Industrial Area, Sector 3, Pithampur, MP | GSTIN: 23AABCM3526F1ZY'
+  },
+  over_wastage: {
+    key: 'over_wastage',
+    name: 'Over Wastage Alert (Pre-costing Threshold Exceeded)',
+    eventTitle: '⚠️ Over Wastage Alert: {jobName}',
+    subject: '⚠️ Over Wastage Threshold Exceeded: {jobName} ({actualWastagePct}% vs {allowedWastagePct}% allowed)',
+    badgeText: 'Action Task: High Scrap Warning',
+    badgeBgColor: '#dc2626',
+    toEmail: 'admin@samyakinternational.in',
+    ccEmail: 'plant.manager@plant.com',
+    enabled: true,
+    contentHtml: `<p style="font-size: 14px; color: #334155;">Production record entry for job <strong>{jobName}</strong> exceeded the pre-costing scrap & wastage allowance threshold by <strong>+{wastageVariancePct}%</strong>.</p>
+<div class="info-card">
+  <table style="width: 100%; font-size: 13px;">
+    <tr><td><strong>Job Name:</strong></td><td>{jobName} ({orderId})</td></tr>
+    <tr><td><strong>Production Date & Time:</strong></td><td>{productionDateTime}</td></tr>
+    <tr><td><strong>Target Order Quantity:</strong></td><td>{orderQtyKg} kg</td></tr>
+    <tr><td><strong>Net Dispatch Quantity Produced:</strong></td><td><strong>{totalProductionQtyKg} kg</strong></td></tr>
+    <tr><td><strong>Pre-costing Allowed Wastage %:</strong></td><td>{allowedWastagePct}%</td></tr>
+    <tr><td><strong>Actual Logged Wastage %:</strong></td><td><strong style="color: #dc2626;">{actualWastagePct}%</strong></td></tr>
+    <tr><td><strong>Total Wastage Produced:</strong></td><td><strong style="color: #dc2626;">{actualWastageKg} kg</strong></td></tr>
+  </table>
+</div>
+<h4 style="font-size: 13px; color: #0f172a; margin-top: 16px; margin-bottom: 8px;">Breakdown of Process Scrap Generated:</h4>
+{wastageBreakdownHtml}
+<p style="font-size: 13px; color: #64748b; margin-top: 16px;">Please review shop-floor extrusion/printing setup logs and machine settings in the Plant Operations dashboard.</p>`,
+    footerNote: 'Samyak International Ltd • Indore Packaging Division\nKheda Industrial Area, Sector 3, Pithampur, MP | GSTIN: 23AABCM3526F1ZY'
   }
 };
 

@@ -28,7 +28,7 @@ import WeighingScaleInput from './WeighingScaleInput';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import CylinderJobCardForm from '../CylinderJobCardForm';
 import { DEFAULT_DAILY_RATES, generateBarcodeId } from '../factoryStore';
-import { notifyProductionRecordSubmitted, notifyProductionRecordApproved } from '../services/emailService';
+import { notifyProductionRecordSubmitted, notifyProductionRecordApproved, notifyOverWastageAlert } from '../services/emailService';
 
 export default function ProductionRecordManagement({
   urlParams = {},
@@ -425,6 +425,18 @@ export default function ProductionRecordManagement({
 
     if (onSaveProductionRecord) onSaveProductionRecord(newRecord);
     notifyProductionRecordSubmitted(newRecord).catch(err => console.error("Production submission email error:", err));
+
+    // Over-Wastage Alert Email Trigger if scrap % exceeds pre-costing target
+    const targetWastagePct = Number(selectedOrder?.calculationDetails?.wastagePct || selectedOrder?.wastagePct || 5);
+    const actualWastagePct = Math.max(overallScrapPctOfDispatch, overallScrapPctOfOutput);
+    if (actualWastagePct > targetWastagePct) {
+      notifyOverWastageAlert({
+        record: newRecord,
+        order: selectedOrder,
+        allowedWastagePct: targetWastagePct
+      }).catch(err => console.error("Over-wastage alert email error:", err));
+    }
+
     setIsConfirmModalOpen(false);
     alert(`🎉 Production Record for "${selectedOrder.jobName}" saved & submitted for Admin Approval!\n\nStage production, scrap generated (${totalScrapQtyKg} kg), and inventory roll returns updated successfully.`);
     setActiveTab('list');
