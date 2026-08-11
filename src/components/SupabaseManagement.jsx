@@ -419,6 +419,65 @@ CREATE TABLE IF NOT EXISTS public.system_settings (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 18. SALES QUOTATIONS TABLE
+CREATE TABLE IF NOT EXISTS public.sales_quotations (
+    id TEXT PRIMARY KEY,
+    quotation_no TEXT UNIQUE NOT NULL,
+    revision_no INT DEFAULT 0,
+    amendment_no TEXT DEFAULT 'Rev 00',
+    enquiry_date DATE,
+    estimated_delivery_date DATE,
+    sales_manager TEXT,
+    client_name TEXT NOT NULL,
+    client_address TEXT,
+    client_gstin TEXT,
+    contact_person TEXT,
+    contact_phone TEXT,
+    contact_email TEXT,
+    payment_terms TEXT,
+    cylinder_terms TEXT,
+    transport_terms TEXT,
+    status TEXT DEFAULT 'Sent to Client',
+    ocn_ref_no TEXT,
+    converted_date TIMESTAMPTZ,
+    items JSONB DEFAULT '[]'::jsonb,
+    terms_and_conditions JSONB DEFAULT '[]'::jsonb,
+    comments TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 19. EMAIL SETTINGS TABLE
+CREATE TABLE IF NOT EXISTS public.email_settings (
+    id TEXT PRIMARY KEY DEFAULT 'default',
+    smtp_host TEXT,
+    smtp_port INT DEFAULT 465,
+    smtp_secure BOOLEAN DEFAULT true,
+    smtp_user TEXT,
+    smtp_pass TEXT,
+    sender_name TEXT,
+    admin_email TEXT,
+    plant_manager_email TEXT,
+    purchase_email TEXT,
+    dispatch_email TEXT,
+    last_updated TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 20. EMAIL TEMPLATES TABLE
+CREATE TABLE IF NOT EXISTS public.email_templates (
+    key TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    event_title TEXT,
+    subject TEXT,
+    badge_text TEXT,
+    badge_bg_color TEXT DEFAULT '#0284c7',
+    to_email TEXT,
+    cc_email TEXT,
+    enabled BOOLEAN DEFAULT true,
+    content_html TEXT,
+    footer_note TEXT,
+    last_updated TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Enable Row Level Security (RLS) & default open access rules
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.vendors ENABLE ROW LEVEL SECURITY;
@@ -437,6 +496,9 @@ ALTER TABLE public.job_masters ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.system_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sales_quotations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.email_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.email_templates ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow public read-write for orders" ON public.orders FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for vendors" ON public.vendors FOR ALL USING (true);
@@ -455,8 +517,11 @@ CREATE POLICY "Allow public read-write for production_schedules" ON public.produ
 CREATE POLICY "Allow public read-write for inks" ON public.inks FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for audit_logs" ON public.audit_logs FOR ALL USING (true);
 CREATE POLICY "Allow public read-write for system_settings" ON public.system_settings FOR ALL USING (true);
+CREATE POLICY "Allow public read-write for sales_quotations" ON public.sales_quotations FOR ALL USING (true);
+CREATE POLICY "Allow public read-write for email_settings" ON public.email_settings FOR ALL USING (true);
+CREATE POLICY "Allow public read-write for email_templates" ON public.email_templates FOR ALL USING (true);
 
--- Ensure all columns exist on inventory if table was previously created with older schema
+-- Column extensions & updates for backward compatibility
 ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS item_code TEXT;
 ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'Film Substrates';
 ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS film_type TEXT;
@@ -473,7 +538,20 @@ ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS last_vendor TEXT;
 ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS last_batch TEXT;
 ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS last_updated TIMESTAMPTZ DEFAULT NOW();
 
--- 15. STORAGE BUCKETS FOR PACKAGING ARTWORK & DOCUMENTS
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS structure TEXT;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS print_width_mm NUMERIC;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS repeat_length_mm NUMERIC;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS pouch_open_width NUMERIC;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS pouch_height NUMERIC;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS layers JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS cylinder_sku TEXT;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS engravures_name TEXT;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS utilisation_limit NUMERIC DEFAULT 10000;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS job_card_file_name TEXT;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS job_card_file_url TEXT;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS creation_date DATE;
+
+-- STORAGE BUCKETS FOR PACKAGING ARTWORK & DOCUMENTS
 INSERT INTO storage.buckets (id, name, public) 
 VALUES ('erp-files', 'erp-files', true), ('artwork', 'artwork', true)
 ON CONFLICT (id) DO UPDATE SET public = true;
