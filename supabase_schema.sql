@@ -317,6 +317,40 @@ CREATE TABLE IF NOT EXISTS public.inks (
     last_updated TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 17. EMAIL CONFIGURATION & ROUTING SETTINGS TABLE
+CREATE TABLE IF NOT EXISTS public.email_settings (
+    id TEXT PRIMARY KEY DEFAULT 'default',
+    smtp_host TEXT NOT NULL DEFAULT 'smtp.hostinger.com',
+    smtp_port INT NOT NULL DEFAULT 465,
+    smtp_secure BOOLEAN NOT NULL DEFAULT TRUE,
+    smtp_user TEXT NOT NULL DEFAULT 'admin@samyakinternational.in',
+    smtp_pass TEXT NOT NULL DEFAULT 'Admin#3994',
+    sender_name TEXT NOT NULL DEFAULT 'Samyak International ERP',
+    admin_email TEXT DEFAULT 'admin@samyakinternational.in',
+    plant_manager_email TEXT DEFAULT 'plant.manager@plant.com',
+    purchase_email TEXT DEFAULT 'purchase@samyakinternational.in',
+    dispatch_email TEXT DEFAULT 'dispatch@samyakinternational.in',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    last_updated TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 18. EMAIL ACTION TEMPLATES TABLE
+CREATE TABLE IF NOT EXISTS public.email_templates (
+    key TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    event_title TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    badge_text TEXT,
+    badge_bg_color TEXT DEFAULT '#0284c7',
+    to_email TEXT,
+    cc_email TEXT,
+    enabled BOOLEAN DEFAULT TRUE,
+    content_html TEXT NOT NULL,
+    footer_note TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    last_updated TIMESTAMPTZ DEFAULT NOW()
+);
+
 
 -- Enable Row Level Security (RLS) & Grant Permissive Access to Anon & Authenticated Roles for Internal ERP
 DO $$ 

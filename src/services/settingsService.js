@@ -9,7 +9,7 @@ const PREFIX_STORAGE_KEY = 'samyak_doc_prefixes';
 const TERMS_STORAGE_KEY = 'samyak_doc_terms';
 
 import { compressImageDataUrl, safeLocalStorageSet } from '../utils/safeStorage';
-import { saveSystemSetting } from './supabaseDataService';
+import { saveSystemSetting, saveEmailSettingsToSupabase, saveEmailTemplatesToSupabase } from './supabaseDataService';
 
 
 /**
@@ -564,7 +564,7 @@ export function getEmailSettings() {
 export function saveEmailSettings(config) {
   try {
     localStorage.setItem(EMAIL_SETTINGS_STORAGE_KEY, JSON.stringify(config));
-    saveSystemSetting('email_settings', config).catch(() => {});
+    saveEmailSettingsToSupabase(config).catch(() => {});
   } catch (e) {
     console.error("Failed to save email settings", e);
   }
@@ -596,7 +596,7 @@ export function getEmailTemplates() {
 export function saveEmailTemplates(templates) {
   try {
     localStorage.setItem(EMAIL_TEMPLATES_STORAGE_KEY, JSON.stringify(templates));
-    saveSystemSetting('email_templates', templates).catch(() => {});
+    saveEmailTemplatesToSupabase(templates).catch(() => {});
   } catch (e) {
     console.error("Failed to save email templates", e);
   }
@@ -608,7 +608,7 @@ export function saveEmailTemplates(templates) {
 export function resetEmailTemplates() {
   try {
     localStorage.setItem(EMAIL_TEMPLATES_STORAGE_KEY, JSON.stringify(DEFAULT_EMAIL_TEMPLATES));
-    saveSystemSetting('email_templates', DEFAULT_EMAIL_TEMPLATES).catch(() => {});
+    saveEmailTemplatesToSupabase(DEFAULT_EMAIL_TEMPLATES).catch(() => {});
     return { ...DEFAULT_EMAIL_TEMPLATES };
   } catch (e) {
     return { ...DEFAULT_EMAIL_TEMPLATES };

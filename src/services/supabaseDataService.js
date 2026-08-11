@@ -1613,6 +1613,122 @@ export async function fetchRolePermissionsFromSupabase() {
   return await fetchSystemSetting('role_permissions');
 }
 
+export async function saveEmailSettingsToSupabase(config) {
+  if (!isSupabaseConfigured()) return;
+  try {
+    await ensureValidSession();
+    const payload = {
+      id: 'default',
+      smtp_host: config.smtpHost || 'smtp.hostinger.com',
+      smtp_port: parseInt(config.smtpPort || 465, 10),
+      smtp_secure: config.smtpSecure !== false,
+      smtp_user: config.smtpUser || 'admin@samyakinternational.in',
+      smtp_pass: config.smtpPass || 'Admin#3994',
+      sender_name: config.senderName || 'Samyak International ERP',
+      admin_email: config.adminEmail || 'admin@samyakinternational.in',
+      plant_manager_email: config.plantManagerEmail || 'plant.manager@plant.com',
+      purchase_email: config.purchaseEmail || 'purchase@samyakinternational.in',
+      dispatch_email: config.dispatchEmail || 'dispatch@samyakinternational.in',
+      last_updated: new Date().toISOString()
+    };
+    const { error } = await supabase.from('email_settings').upsert(payload, { onConflict: 'id' });
+    if (error) {
+      console.warn('[email_settings] Table upsert note:', error.message);
+      await saveSystemSetting('email_settings', config);
+    } else {
+      console.log('[email_settings] Saved successfully to email_settings table.');
+    }
+  } catch (err) {
+    console.warn('[email_settings] Exception, falling back to system_settings:', err.message);
+    await saveSystemSetting('email_settings', config);
+  }
+}
+
+export async function fetchEmailSettingsFromSupabase() {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const { data, error } = await supabase.from('email_settings').select('*').eq('id', 'default').maybeSingle();
+    if (data) {
+      return {
+        smtpHost: data.smtp_host,
+        smtpPort: data.smtp_port,
+        smtpSecure: data.smtp_secure,
+        smtpUser: data.smtp_user,
+        smtpPass: data.smtp_pass,
+        senderName: data.sender_name,
+        adminEmail: data.admin_email,
+        plantManagerEmail: data.plant_manager_email,
+        purchaseEmail: data.purchase_email,
+        dispatchEmail: data.dispatch_email
+      };
+    }
+  } catch (e) {
+    console.warn('[email_settings] Table fetch note:', e.message);
+  }
+  return await fetchSystemSetting('email_settings');
+}
+
+export async function saveEmailTemplatesToSupabase(templates) {
+  if (!isSupabaseConfigured() || !templates) return;
+  try {
+    await ensureValidSession();
+    const rows = Object.values(templates).map(t => ({
+      key: t.key,
+      name: t.name || t.key,
+      event_title: t.eventTitle || '',
+      subject: t.subject || '',
+      badge_text: t.badgeText || '',
+      badge_bg_color: t.badgeBgColor || '#0284c7',
+      to_email: t.toEmail || '',
+      cc_email: t.ccEmail || '',
+      enabled: t.enabled !== false,
+      content_html: t.contentHtml || '',
+      footer_note: t.footerNote || '',
+      last_updated: new Date().toISOString()
+    }));
+
+    const { error } = await supabase.from('email_templates').upsert(rows, { onConflict: 'key' });
+    if (error) {
+      console.warn('[email_templates] Table upsert note:', error.message);
+      await saveSystemSetting('email_templates', templates);
+    } else {
+      console.log('[email_templates] Saved templates successfully to email_templates table.');
+    }
+  } catch (err) {
+    console.warn('[email_templates] Exception, falling back to system_settings:', err.message);
+    await saveSystemSetting('email_templates', templates);
+  }
+}
+
+export async function fetchEmailTemplatesFromSupabase() {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const { data, error } = await supabase.from('email_templates').select('*');
+    if (data && data.length > 0) {
+      const templatesMap = {};
+      data.forEach(r => {
+        templatesMap[r.key] = {
+          key: r.key,
+          name: r.name,
+          eventTitle: r.event_title,
+          subject: r.subject,
+          badgeText: r.badge_text,
+          badgeBgColor: r.badge_bg_color,
+          toEmail: r.to_email,
+          ccEmail: r.cc_email,
+          enabled: r.enabled,
+          contentHtml: r.content_html,
+          footerNote: r.footer_note
+        };
+      });
+      return templatesMap;
+    }
+  } catch (e) {
+    console.warn('[email_templates] Table fetch note:', e.message);
+  }
+  return await fetchSystemSetting('email_templates');
+}
+
 export async function deleteGRNFromSupabase(grnId) {
   if (!isSupabaseConfigured()) return;
   await ensureValidSession();
