@@ -118,13 +118,12 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
 
             <div style={{ borderLeft: '1px solid #cbd5e1', paddingLeft: '16px' }}>
               <div style={{ fontSize: '0.75rem', fontWeight: '800', color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
-                CONTACT PERSON & SALES EXECUTIVE
+                CONTACT PERSON DETAILS
               </div>
               <div style={{ fontSize: '0.85rem', color: '#334155' }}>
                 <div>Contact Person: <b>{contactPerson}</b></div>
                 <div>Phone: <b>{contactPhone}</b></div>
                 <div>Email: <b>{contactEmail}</b></div>
-                <div style={{ marginTop: '6px' }}>Sales Representative: <b>{salesManager}</b></div>
               </div>
             </div>
           </div>
