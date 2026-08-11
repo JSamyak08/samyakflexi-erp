@@ -1412,41 +1412,51 @@ export default function InventoryManagement({
       )}
 
       {/* Top Controls & Navigation */}
-      <div className="glass-panel" style={{ padding: '24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-          {/* Sub Tab Pills */}
-          <div className="scrollable-tabs-container" style={{ flex: 1 }}>
-            <button className={`tab-pill ${activeTab === 'stock' ? 'active' : ''}`} onClick={() => handleTabClick('stock')}>
-              <Package size={16} /> Stock Register ({(inventory || []).length})
-            </button>
-            <button className={`tab-pill ${activeTab === 'issued_pos' ? 'active' : ''}`} onClick={() => handleTabClick('issued_pos')}>
-              <FileText size={16} style={{ color: '#4f46e5' }} /> Issued Purchase Orders Hub ({(unifiedIssuedPOs || []).length})
-            </button>
-            <button className={`tab-pill ${activeTab === 'grn_inward' ? 'active' : ''}`} onClick={() => handleTabClick('grn_inward')}>
-              <FileCheck size={16} /> Inward GRNs ({(grns || []).length})
-            </button>
-            <button className={`tab-pill ${(pendingQCGRNs || []).length > 0 ? 'red-tab' : ''} ${activeTab === 'qc_approval' ? 'active' : ''}`} onClick={() => handleTabClick('qc_approval')}>
-              🧪 QC Approval Lab ({(pendingQCGRNs || []).length} Pending)
-            </button>
-            <button className={`tab-pill ${activeTab === 'dispatch' ? 'active' : ''}`} onClick={() => handleTabClick('dispatch')}>
-              <Truck size={16} style={{ color: '#059669' }} /> Scale #4 Dispatch & Packing List
-            </button>
-            <button className={`tab-pill ${activeTab === 'reconciliation' ? 'active' : ''}`} onClick={() => handleTabClick('reconciliation')}>
-              <FileSpreadsheet size={16} /> Barcode Stock Reconciliation
-            </button>
+      <div className="glass-panel" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {/* Top Title & Actions Row */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '14px' }}>
+          <div>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: '800', margin: 0, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Package size={22} style={{ color: 'var(--primary-brand)' }} /> Raw Material Inventory, GRN & Quality Control
+            </h3>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '2px 0 0 0' }}>
+              Manage stock ledger, issued purchase orders, store inward GRNs, laboratory QC approvals, and dispatch packing lists.
+            </p>
           </div>
 
-          <div style={{ display: 'flex', gap: '12px' }}>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
             <button className="btn-secondary" onClick={() => setIsIssueModalOpen(true)}>
-              <ArrowUpRight size={18} /> Issue / Return to Store
+              <ArrowUpRight size={16} /> Issue / Return to Store
             </button>
             <button className="btn-primary" style={{ background: '#2563eb', borderColor: '#2563eb' }} onClick={() => openAddStockModal()}>
-              <Plus size={18} /> Add Stock Item
+              <Plus size={16} /> Add Stock Item
             </button>
             <button className="btn-primary" onClick={() => openNewGRNModal()}>
-              <Plus size={18} /> Inward GRN (New Stock)
+              <Plus size={16} /> Inward GRN (New Stock)
             </button>
           </div>
+        </div>
+
+        {/* Sub Tab Pills (Fully Visible Flex Wrap Grid - No Sliding UI) */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', width: '100%' }}>
+          <button className={`tab-pill ${activeTab === 'stock' ? 'active' : ''}`} onClick={() => handleTabClick('stock')}>
+            <Package size={16} /> Stock Register ({(inventory || []).length})
+          </button>
+          <button className={`tab-pill ${activeTab === 'issued_pos' ? 'active' : ''}`} onClick={() => handleTabClick('issued_pos')}>
+            <FileText size={16} style={{ color: '#4f46e5' }} /> Issued Purchase Orders Hub ({(unifiedIssuedPOs || []).length})
+          </button>
+          <button className={`tab-pill ${activeTab === 'grn_inward' ? 'active' : ''}`} onClick={() => handleTabClick('grn_inward')}>
+            <FileCheck size={16} /> Inward GRNs ({(grns || []).length})
+          </button>
+          <button className={`tab-pill ${(pendingQCGRNs || []).length > 0 ? 'red-tab' : ''} ${activeTab === 'qc_approval' ? 'active' : ''}`} onClick={() => handleTabClick('qc_approval')}>
+            🧪 QC Approval Lab ({(pendingQCGRNs || []).length} Pending)
+          </button>
+          <button className={`tab-pill ${activeTab === 'dispatch' ? 'active' : ''}`} onClick={() => handleTabClick('dispatch')}>
+            <Truck size={16} style={{ color: '#059669' }} /> Scale #4 Dispatch & Packing List
+          </button>
+          <button className={`tab-pill ${activeTab === 'reconciliation' ? 'active' : ''}`} onClick={() => handleTabClick('reconciliation')}>
+            <FileSpreadsheet size={16} /> Barcode Stock Reconciliation
+          </button>
         </div>
       </div>
 
