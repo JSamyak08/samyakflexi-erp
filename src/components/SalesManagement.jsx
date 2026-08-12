@@ -124,6 +124,7 @@ export const STANDARD_FILM_TYPES = [
   "Natural GP LD",
   "White LD",
   "BOPP Natural",
+  "Matte Finish BOPP",
   "Metalised BOPP",
   "Pearlised BOPP",
   "CPP Natural",

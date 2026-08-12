@@ -261,7 +261,7 @@ export default function InventoryManagement({
 
   const vendorMaterialOptions = [
     "PET", "METPET", "LDPE", "Natural GP LD", "White LD", 
-    "BOPP Natural", "Metalised BOPP", "Pearlised BOPP", 
+    "BOPP Natural", "Matte Finish BOPP", "Metalised BOPP", "Pearlised BOPP", 
     "CPP Natural", "Metalised CPP", "Liquid Inks", "Solvent-less Adhesive", "Solvents"
   ];
 

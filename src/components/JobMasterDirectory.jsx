@@ -383,6 +383,9 @@ export default function JobMasterDirectory({
       if (!matchedFilm) {
         if (rawType.includes('metpet')) matchedFilm = 'METPET';
         else if (rawType.includes('pet')) matchedFilm = 'PET';
+        else if (rawType.includes('matte') || rawType.includes('matt')) matchedFilm = 'Matte Finish BOPP';
+        else if (rawType.includes('pearl')) matchedFilm = 'Pearlised BOPP';
+        else if (rawType.includes('met') && rawType.includes('bopp')) matchedFilm = 'Metalised BOPP';
         else if (rawType.includes('atta')) matchedFilm = 'Milky Atta (High Dart) Film';
         else if (rawType.includes('metallocene')) matchedFilm = 'Natural LD Metallocene Film';
         else if (rawType.includes('ld')) matchedFilm = 'Natural LD GP Film';

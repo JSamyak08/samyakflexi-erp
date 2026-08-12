@@ -84,6 +84,7 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
     "Natural GP LD", 
     "White LD", 
     "BOPP Natural", 
+    "Matte Finish BOPP",
     "Metalised BOPP", 
     "Pearlised BOPP", 
     "CPP Natural", 

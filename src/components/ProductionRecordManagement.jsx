@@ -1404,6 +1404,7 @@ export default function ProductionRecordManagement({
                     'Solvent-based Adhesive',
                     'Milky LD Film',
                     'BOPP Natural',
+                    'Matte Finish BOPP',
                     'Metalised BOPP',
                     'Pearlised BOPP',
                     'CPP Natural',

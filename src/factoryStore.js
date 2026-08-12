@@ -27,6 +27,7 @@ export const FILM_DENSITIES = {
   "Natural GP LD": 0.93,
   "White LD": 0.93,
   "BOPP Natural": 0.91,
+  "Matte Finish BOPP": 0.91,
   "Metalised BOPP": 0.91,
   "Pearlised BOPP": 0.70,
   "CPP Natural": 0.91,
@@ -47,6 +48,7 @@ export const DEFAULT_DAILY_RATES = {
   "Natural GP LD": 115,
   "White LD": 120,
   "BOPP Natural": 130,
+  "Matte Finish BOPP": 140,
   "Metalised BOPP": 145,
   "Pearlised BOPP": 160,
   "CPP Natural": 135,
@@ -491,7 +493,7 @@ export const WEIGHING_STATIONS = [
  * Material Categories (RM, Inks, Solvents, SFG, FG)
  */
 export const RAW_MATERIAL_CATEGORIES = {
-  FILMS: ["PET", "METPET", "Natural LD GP Film", "Milky LD GP Film", "Natural LD Metallocene Film", "Milky LD Metallocene Film", "Milky Atta (High Dart) Film", "LDPE", "Natural GP LD", "White LD", "BOPP Natural", "Metalised BOPP", "Pearlised BOPP", "CPP Natural", "Metalised CPP"],
+  FILMS: ["PET", "METPET", "Natural LD GP Film", "Milky LD GP Film", "Natural LD Metallocene Film", "Milky LD Metallocene Film", "Milky Atta (High Dart) Film", "LDPE", "Natural GP LD", "White LD", "BOPP Natural", "Matte Finish BOPP", "Metalised BOPP", "Pearlised BOPP", "CPP Natural", "Metalised CPP"],
   INKS: ["Reverse Ink - Process Cyan", "Reverse Ink - Process Magenta", "Reverse Ink - Process Yellow", "Reverse Ink - Process Black", "Reverse Ink - White High Opacity", "Surface Ink - Gloss White", "Surface Ink - Process Red"],
   SOLVENTS: ["Ethyl Acetate", "Toluene", "MIBK (Methyl Isobutyl Ketone)", "Ethyl Cellosolve", "Isopropanol (IPA)"],
   ADHESIVES: ["Solvent-less Adhesive Component A", "Solvent-less Adhesive Component B", "Solvent-based Adhesive"]
