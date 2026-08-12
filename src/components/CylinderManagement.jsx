@@ -92,6 +92,35 @@ export default function CylinderManagement({
   const [isUploading, setIsUploading] = useState(false);
   const [autoCalculateCost, setAutoCalculateCost] = useState(true);
 
+  // Product Structure (Laminate Layers) State
+  const [layers, setLayers] = useState([
+    { id: 1, filmType: 'PET', micron: 12 },
+    { id: 2, filmType: 'METPET', micron: 12 },
+    { id: 3, filmType: 'Natural GP LD', micron: 35 }
+  ]);
+
+  // Job Master Auto-Creation Toggle
+  const [createJobMaster, setCreateJobMaster] = useState(true);
+
+  // Pouch Dimensions
+  const [pouchOpenWidth, setPouchOpenWidth] = useState(0);
+  const [pouchHeight, setPouchHeight] = useState(0);
+
+  // Available film types for substrate layer dropdown
+  const availableFilmTypes = useMemo(() => Object.keys(FILM_DENSITIES), []);
+
+  // Add / Remove substrate layer helpers
+  const addLayer = () => {
+    setLayers(prev => [
+      ...prev,
+      { id: Date.now(), filmType: 'PET', micron: 12 }
+    ]);
+  };
+
+  const removeLayer = (layerId) => {
+    setLayers(prev => prev.filter(l => l.id !== layerId));
+  };
+
   // Quick Client Onboarding State
   const [isOnboardClientModalOpen, setIsOnboardClientModalOpen] = useState(false);
   const [newClientName, setNewClientName] = useState('');

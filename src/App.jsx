@@ -74,7 +74,7 @@ import {
   fetchGRNs, saveGRNToSupabase, deleteGRNFromSupabase,
   fetchCylinders, saveCylinderToSupabase, deleteCylinderFromSupabase,
   fetchProductionRecords, saveProductionRecordToSupabase, deleteProductionRecordFromSupabase,
-  fetchUsers, saveUserToSupabase, deleteUserFromSupabase,
+  fetchUsers, saveUserToSupabase, deleteUserFromSupabase, updateUserPasswordInDB,
   fetchJobDataSheets, saveJobDataSheetToSupabase, deleteJobDataSheetFromSupabase,
   fetchInventoryRolls, saveInventoryRollToSupabase,
   fetchDispatchShipments, saveDispatchShipmentToSupabase,
@@ -86,6 +86,8 @@ import {
   fetchRolePermissionsFromSupabase, saveRolePermissionsToSupabase,
   fetchSystemSetting, saveSystemSetting
 } from './services/supabaseDataService';
+import { createUserInSupabaseAuth } from './services/authService';
+
 import JobMasterDirectory from './components/JobMasterDirectory';
 import { initialInventoryRolls, initialDispatchShipments } from './factoryStore';
 import { safeLocalStorageSet, safeLocalStorageGet, initSafeStorage, idbGet } from './utils/safeStorage';
@@ -1160,6 +1162,18 @@ export default function App() {
     });
     logAudit('CREATE', 'User Management', `Created user account for ${newUser.name} (${newUser.email}) - Role: ${newUser.role}`, newUser.id);
     try {
+      // 1. Register in Supabase Auth so they can log in with email+password
+      const authResult = await createUserInSupabaseAuth({
+        email: newUser.email,
+        password: newUser.password || 'password123',
+        name: newUser.name,
+        role: newUser.role,
+        department: newUser.department
+      });
+      if (!authResult.success && !authResult.alreadyExists) {
+        console.warn('[UserOnboard] Supabase Auth registration issue:', authResult.message);
+      }
+      // 2. Save full profile (including password_hash) to public.users table
       await saveUserToSupabase(newUser);
     } catch (err) {
       console.warn("[Sync Notice] User saved locally. Supabase notice:", err);
@@ -1174,6 +1188,7 @@ export default function App() {
     });
     logAudit('UPDATE', 'User Management', `Updated user account/permissions for ${updatedUser.name} (${updatedUser.email}) - Role: ${updatedUser.role}`, updatedUser.id);
     try {
+      // Save full profile including the updated password_hash
       await saveUserToSupabase(updatedUser);
     } catch (err) {
       console.warn("[Sync Notice] User updated locally. Supabase notice:", err);
@@ -1407,7 +1422,19 @@ export default function App() {
 
   // Render Authentication Screen if user is not signed in
   if (!isAuthenticated || !currentUser) {
-    return <AuthScreen users={users} onLogin={handleLogin} />;
+    // Callback: update password in local state after OTP-verified reset
+    const handleUpdatePassword = (email, newPassword) => {
+      setUsers(prev => {
+        const updated = prev.map(u =>
+          u.email?.toLowerCase().trim() === email?.toLowerCase().trim()
+            ? { ...u, password: newPassword }
+            : u
+        );
+        safeLocalStorageSet('samyak_erp_users', updated);
+        return updated;
+      });
+    };
+    return <AuthScreen users={users} onLogin={handleLogin} onUpdatePassword={handleUpdatePassword} />;
   }
 
   return (

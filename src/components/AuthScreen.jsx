@@ -17,8 +17,11 @@ import {
 import { requestPasswordRecovery } from '../services/emailService';
 import { signInUser, sendPasswordResetEmail } from '../services/authService';
 import { isSupabaseConfigured } from '../services/supabaseClient';
+import { updateUserPasswordInDB } from '../services/supabaseDataService';
 
-export default function AuthScreen({ users = [], onLogin }) {
+
+export default function AuthScreen({ users = [], onLogin, onUpdatePassword }) {
+
   const [viewMode, setViewMode] = useState('signin'); // 'signin', 'forgot_password', 'code_sent'
   const isSupabaseActive = isSupabaseConfigured();
   
@@ -100,7 +103,7 @@ export default function AuthScreen({ users = [], onLogin }) {
 
 
   // Verify OTP & Reset Password Handler
-  const handleVerifyOtpAndReset = (e) => {
+  const handleVerifyOtpAndReset = async (e) => {
     e.preventDefault();
     setError('');
 
@@ -116,12 +119,25 @@ export default function AuthScreen({ users = [], onLogin }) {
     if (otpCode.trim() === serverOtp.trim() || otpCode.trim() === '123456') {
       setPasswordResetDone(true);
       setError('');
+
+      // Persist new password to Supabase users table
+      try {
+        await updateUserPasswordInDB(recoveryEmail, newPassword);
+      } catch (err) {
+        console.warn('[PasswordReset] Could not persist password to DB:', err.message);
+      }
+
+      // Also update in local users state so the change is reflected immediately
+      if (onUpdatePassword) {
+        onUpdatePassword(recoveryEmail, newPassword);
+      }
+
       setTimeout(() => {
         setViewMode('signin');
         setEmail(recoveryEmail);
         setPassword(newPassword);
         setPasswordResetDone(false);
-        setRecoverySuccessMsg('Password updated successfully! You can now sign in.');
+        setRecoverySuccessMsg('✅ Password updated successfully! You can now sign in with your new password.');
       }, 1200);
     } else {
       setError('Invalid verification code. Please check your email and try again.');

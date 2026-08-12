@@ -629,6 +629,252 @@ export default function JobMasterDirectory({
     saveJobMasterToSupabase(updatedJob);
   };
 
+  const renderJobMasterModals = () => (
+    <>
+      {/* CREATE / EDIT JOB MASTER MODAL */}
+      {isCreateModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsCreateModalOpen(false)}>
+          <div className="modal-content" style={{ width: '820px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FileCode size={20} style={{ color: 'var(--primary-brand)' }} />
+                {editingJobId ? 'Edit Job Master' : 'Create New Job Master'}
+              </h3>
+              <button className="btn-secondary" style={{ padding: '4px' }} onClick={() => setIsCreateModalOpen(false)}><X size={18} /></button>
+            </div>
+
+            <form onSubmit={handleCreateJobMaster}>
+              <div className="form-grid">
+                {/* SKU Code */}
+                <div>
+                  <label className="form-label">SKU Code *</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={skuCode}
+                    onChange={e => setSkuCode(e.target.value.toUpperCase())}
+                    required
+                    disabled={!!editingJobId}
+                    style={editingJobId ? { backgroundColor: '#f1f5f9', cursor: 'not-allowed' } : {}}
+                  />
+                  {isSkuDuplicate && (
+                    <div style={{ color: '#dc2626', fontSize: '0.75rem', fontWeight: '700', marginTop: '4px' }}>
+                      ⚠️ SKU Code "{skuCode}" already exists! Must be unique.
+                    </div>
+                  )}
+                </div>
+
+                {/* Job Name */}
+                <div className="form-group">
+                  <label>Job Name *</label>
+                  <input type="text" className="form-control" required value={jobName} onChange={e => setJobName(e.target.value)} />
+                </div>
+
+                {/* Client Name with Dropdown */}
+                <div className="form-group" style={{ gridColumn: 'span 2', position: 'relative' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label style={{ fontWeight: '700', fontSize: '0.85rem' }}>Client Name *</label>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ padding: '3px 10px', fontSize: '0.75rem', color: '#047857', borderColor: '#a7f3d0', background: '#ecfdf5', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: '700' }}
+                      onClick={() => setIsOnboardModalOpen(true)}
+                    >
+                      <Plus size={13} /> Onboard New Client
+                    </button>
+                  </div>
+                  <div style={{ position: 'relative' }}>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="Type to search or select a client..."
+                        required
+                        value={clientName}
+                        onChange={e => { setClientName(e.target.value); setClientSearchTerm(e.target.value); setIsClientDropdownOpen(true); }}
+                        onFocus={() => setIsClientDropdownOpen(true)}
+                      />
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        style={{ marginLeft: '6px', padding: '6px 10px', whiteSpace: 'nowrap' }}
+                        onClick={() => setIsClientDropdownOpen(!isClientDropdownOpen)}
+                      >
+                        {isClientDropdownOpen ? '▲ Hide' : '▼ List All'}
+                      </button>
+                    </div>
+                    {isClientDropdownOpen && (
+                      <div style={{
+                        position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100,
+                        background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px',
+                        boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', maxHeight: '220px', overflowY: 'auto', marginTop: '4px'
+                      }}>
+                        <div style={{ padding: '8px 12px', borderBottom: '1px solid #f1f5f9', background: '#f8fafc' }}>
+                          <input
+                            type="text"
+                            className="form-control"
+                            style={{ fontSize: '0.8rem', padding: '4px 8px' }}
+                            placeholder="Filter clients..."
+                            value={clientSearchTerm}
+                            onChange={e => setClientSearchTerm(e.target.value)}
+                            autoFocus
+                          />
+                        </div>
+                        {filteredClients.length > 0 ? (
+                          filteredClients.map(c => (
+                            <div
+                              key={c.name}
+                              style={{ padding: '8px 12px', cursor: 'pointer', fontSize: '0.85rem', borderBottom: '1px solid #f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                              onClick={() => { setClientName(c.name); setIsClientDropdownOpen(false); }}
+                            >
+                              <span style={{ fontWeight: '600', color: '#0f172a' }}>{c.name}</span>
+                              {c.gstin && <span style={{ fontSize: '0.75rem', color: '#64748b' }}>GST: {c.gstin}</span>}
+                            </div>
+                          ))
+                        ) : (
+                          <div style={{ padding: '12px', fontSize: '0.8rem', color: '#64748b', textAlign: 'center' }}>
+                            No client found matching "{clientSearchTerm}".
+                            <button
+                              type="button"
+                              style={{ display: 'block', margin: '6px auto 0', color: 'var(--primary-brand)', background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', fontWeight: '700' }}
+                              onClick={() => { setNewClientName(clientSearchTerm); setIsOnboardModalOpen(true); setIsClientDropdownOpen(false); }}
+                            >
+                              + Quick Onboard "{clientSearchTerm}"
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Dimensions */}
+                <div className="form-group"><label>Print Width / Face Length (mm) *</label><input type="number" className="form-control" required value={printWidthMm} onChange={e => setPrintWidthMm(e.target.value)} /></div>
+                <div className="form-group"><label>Repeat Length / Circumference (mm) *</label><input type="number" className="form-control" required value={repeatLengthMm} onChange={e => setRepeatLengthMm(e.target.value)} /></div>
+                <div className="form-group"><label>Pouch Open Width (mm)</label><input type="number" className="form-control" value={pouchOpenWidth} onChange={e => setPouchOpenWidth(e.target.value)} /></div>
+                <div className="form-group"><label>Pouch Height (mm)</label><input type="number" className="form-control" value={pouchHeight} onChange={e => setPouchHeight(e.target.value)} /></div>
+
+                {/* Multi-Layer Substrate */}
+                <div style={{ gridColumn: 'span 2', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <div>
+                      <strong style={{ fontSize: '0.9rem', color: '#1e293b' }}>Substrate Structure (Laminate Layers) <span style={{ color: '#dc2626' }}>*</span></strong>
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
+                        Summary: <code style={{ fontWeight: '700', color: '#0f172a' }}>{layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')}</code>
+                      </div>
+                    </div>
+                    <button type="button" className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.75rem' }} onClick={addLayer}>
+                      <Plus size={14} /> Add Layer
+                    </button>
+                  </div>
+                  {layers.map((l, idx) => (
+                    <div key={l.id} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px 32px', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: '600' }}>Layer {idx + 1}</span>
+                      <select className="form-control" style={{ padding: '4px 8px', fontSize: '0.85rem' }} value={l.filmType} onChange={e => setLayers(prev => prev.map(item => item.id === l.id ? { ...item, filmType: e.target.value } : item))}>
+                        {availableFilmTypes.map(f => <option key={f} value={f}>{f} ({FILM_DENSITIES[f]} g/cc)</option>)}
+                      </select>
+                      <input type="number" className="form-control" style={{ padding: '4px 8px', fontSize: '0.85rem' }} value={l.micron} onChange={e => setLayers(prev => prev.map(item => item.id === l.id ? { ...item, micron: parseFloat(e.target.value) || 0 } : item))} placeholder="Microns" />
+                      {layers.length > 1 && <button type="button" className="btn-secondary" style={{ padding: '4px' }} onClick={() => removeLayer(l.id)}><X size={14} /></button>}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Colors & Cost */}
+                <div className="form-group"><label>Colors Count (No. of Cylinders)</label><input type="number" className="form-control" value={colorsCount} onChange={e => setColorsCount(e.target.value)} /></div>
+                <div className="form-group"><label>Engraver Name</label><input type="text" className="form-control" value={engravuresName} onChange={e => setEngravuresName(e.target.value)} /></div>
+
+                <div className="form-group"><label>Total Set Cylinder Cost (₹)</label><input type="text" className="form-control" value={cylinderCost} onChange={e => setCylinderCost(e.target.value)} /></div>
+                <div className="form-group"><label>Cost Borne By</label>
+                  <select className="form-control" value={costBorneBy} onChange={e => setCostBorneBy(e.target.value)}>
+                    <option value="Client (100%)">Client (100%)</option>
+                    <option value="Us (100%)">Us / Samyak (100%)</option>
+                    <option value="Both (50/50)">Both (50/50)</option>
+                  </select>
+                </div>
+
+                <div className="form-group"><label>Max Utilisation Limit (Kg)</label><input type="number" className="form-control" value={utilisationLimit} onChange={e => setUtilisationLimit(e.target.value)} /></div>
+
+                {!editingJobId && (
+                  <div style={{ gridColumn: 'span 2', background: '#ecfdf5', padding: '12px', borderRadius: '6px', border: '1px solid #a7f3d0' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '700', color: '#047857' }}>
+                      <input type="checkbox" checked={createCylinder} onChange={e => setCreateCylinder(e.target.checked)} />
+                      Automatically create linked Cylinder Set in Cylinder Database
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                <button type="button" className="btn-secondary" onClick={() => setIsCreateModalOpen(false)}>Cancel</button>
+                <button type="submit" className="btn-primary" disabled={isSkuDuplicate} style={isSkuDuplicate ? { opacity: 0.6, cursor: 'not-allowed' } : {}}>
+                  <CheckCircle2 size={16} /> {editingJobId ? 'Save Changes' : 'Save Job Master'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* QUICK CLIENT ONBOARDING MODAL */}
+      {isOnboardModalOpen && (
+        <div className="modal-overlay" style={{ zIndex: 2000 }} onClick={() => setIsOnboardModalOpen(false)}>
+          <div className="glass-card modal-content" style={{ width: '560px', maxWidth: '95vw', padding: '24px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '1.15rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)' }}>
+                <Building2 size={20} style={{ color: 'var(--primary-brand)' }} /> Quick Client Onboarding
+              </h3>
+              <button type="button" className="btn-secondary" style={{ padding: '4px' }} onClick={() => setIsOnboardModalOpen(false)}><X size={16} /></button>
+            </div>
+            <form onSubmit={handleOnboardClientSubmit}>
+              <div className="form-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)', gap: '14px' }}>
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label style={{ fontWeight: '700' }}>Company / Client Name *</label>
+                  <input type="text" className="form-control" required placeholder="e.g. Britannia Industries Ltd" value={newClientName} onChange={e => setNewClientName(e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label>Contact Person</label>
+                  <input type="text" className="form-control" placeholder="Key contact name" value={newContactPerson} onChange={e => setNewContactPerson(e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label>Phone Number</label>
+                  <input type="text" className="form-control" placeholder="10-digit mobile" value={newPhone} onChange={e => setNewPhone(e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label>GSTIN Number</label>
+                  <input type="text" className="form-control" placeholder="23AAAC..." value={newGstin} onChange={e => setNewGstin(e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label>Email Address</label>
+                  <input type="email" className="form-control" placeholder="purchase@client.com" value={newEmail} onChange={e => setNewEmail(e.target.value)} />
+                </div>
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label>Billing & Delivery Address</label>
+                  <textarea className="form-control" rows="2" placeholder="Plot 45, Pithampur Industrial Area, Sector 3, Dhar MP" value={newAddress} onChange={e => setNewAddress(e.target.value)} />
+                </div>
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label>Payment Terms</label>
+                  <select className="form-control" value={newPaymentTerms} onChange={e => setNewPaymentTerms(e.target.value)}>
+                    <option value="30 Days Net">30 Days Net</option>
+                    <option value="15 Days Net">15 Days Net</option>
+                    <option value="45 Days Net">45 Days Net</option>
+                    <option value="50% Advance, Balance Before Dispatch">50% Advance, Balance Before Dispatch</option>
+                    <option value="Immediate / Cash on Delivery">Immediate / Cash on Delivery</option>
+                  </select>
+                </div>
+              </div>
+              <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button type="button" className="btn-secondary" onClick={() => setIsOnboardModalOpen(false)}>Cancel</button>
+                <button type="submit" className="btn-primary" style={{ background: '#047857', borderColor: '#047857' }}>
+                  <CheckCircle2 size={16} /> Save Client & Auto-Fill
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
+  );
+
   if (selectedJob) {
     const linkedCylinder = getLinkedCylinder(selectedJob);
     const jobHistory = getJobProductionRecords(selectedJob);
@@ -857,6 +1103,10 @@ export default function JobMasterDirectory({
             )}
           </div>
         </div>
+
+
+        {/* EDIT & ONBOARD CLIENT MODALS */}
+        {renderJobMasterModals()}
       </div>
     );
   }
@@ -1120,328 +1370,7 @@ export default function JobMasterDirectory({
           </>
         )}
       </div>
-
-      {isCreateModalOpen && (
-        <div className="modal-overlay" onClick={() => setIsCreateModalOpen(false)}>
-          <div className="modal-content" style={{ width: '800px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ fontSize: '1.2rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <FileCode size={20} style={{ color: 'var(--primary-brand)' }} /> {editingJobId ? 'Edit Job Master' : 'Create New Job Master'}
-              </h3>
-              <button className="btn-secondary" style={{ padding: '4px' }} onClick={() => setIsCreateModalOpen(false)}><X size={18} /></button>
-            </div>
-
-            <form onSubmit={handleCreateJobMaster}>
-              <div className="form-grid">
-                <div>
-                  <label className="form-label">SKU Code (Auto-generated/Custom) *</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    value={skuCode} 
-                    onChange={(e) => setSkuCode(e.target.value.toUpperCase())}
-                    required
-                    disabled={!!editingJobId}
-                    style={editingJobId ? { backgroundColor: '#f1f5f9', cursor: 'not-allowed' } : {}}
-                  />
-                  {isSkuDuplicate && (
-                    <div style={{ color: '#dc2626', fontSize: '0.75rem', fontWeight: '700', marginTop: '4px' }}>
-                      ⚠️ SKU Code "{skuCode}" already exists! Must be unique.
-                    </div>
-                  )}
-                </div>
-                <div className="form-group"><label>Job Name *</label><input type="text" className="form-control" required value={jobName} onChange={e => setJobName(e.target.value)} /></div>
-                
-                <div className="form-group" style={{ gridColumn: 'span 2', position: 'relative' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                    <label style={{ fontWeight: '700', fontSize: '0.85rem' }}>Client Name *</label>
-                    <button 
-                      type="button"
-                      className="btn-secondary"
-                      style={{ padding: '3px 10px', fontSize: '0.75rem', color: '#047857', borderColor: '#a7f3d0', background: '#ecfdf5', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontWeight: '700' }}
-                      onClick={() => setIsOnboardModalOpen(true)}
-                    >
-                      <Plus size={13} /> Onboard New Client
-                    </button>
-                  </div>
-
-                  <div style={{ position: 'relative' }}>
-                    <div style={{ display: 'flex', alignItems: 'center' }}>
-                      <input 
-                        type="text" 
-                        className="form-control"
-                        placeholder="Type to search existing clients or pick below..."
-                        required
-                        value={clientName}
-                        onChange={e => {
-                          setClientName(e.target.value);
-                          setClientSearchTerm(e.target.value);
-                          setIsClientDropdownOpen(true);
-                        }}
-                        onFocus={() => setIsClientDropdownOpen(true)}
-                      />
-                      {clientName && (
-                        <button 
-                          type="button" 
-                          style={{ position: 'absolute', right: '10px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
-                          onClick={() => { setClientName(''); setClientSearchTerm(''); setIsClientDropdownOpen(true); }}
-                        >
-                          <X size={14} />
-                        </button>
-                      )}
-                    </div>
-
-                    {isClientDropdownOpen && (
-                      <div 
-                        style={{ 
-                          position: 'absolute', 
-                          top: '100%', 
-                          left: 0, 
-                          right: 0, 
-                          zIndex: 100, 
-                          background: '#ffffff', 
-                          border: '1px solid #cbd5e1', 
-                          borderRadius: '8px', 
-                          boxShadow: '0 10px 25px -5px rgba(0,0,0,0.15)', 
-                          maxHeight: '210px', 
-                          overflowY: 'auto',
-                          marginTop: '4px'
-                        }}
-                      >
-                        {filteredClients.length === 0 ? (
-                          <div style={{ padding: '12px', fontSize: '0.82rem', color: 'var(--text-muted)', textAlign: 'center' }}>
-                            No matching clients found. 
-                            <button 
-                              type="button" 
-                              style={{ marginLeft: '8px', color: '#047857', border: 'none', background: 'none', fontWeight: '700', cursor: 'pointer', textDecoration: 'underline' }}
-                              onClick={() => { setIsClientDropdownOpen(false); setIsOnboardModalOpen(true); }}
-                            >
-                              Onboard "{clientSearchTerm}"
-                            </button>
-                          </div>
-                        ) : (
-                          filteredClients.map(c => (
-                            <div 
-                              key={c.id || c.name}
-                              style={{ 
-                                padding: '10px 14px', 
-                                fontSize: '0.85rem', 
-                                cursor: 'pointer', 
-                                borderBottom: '1px solid #f1f5f9',
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                background: clientName === c.name ? '#eff6ff' : 'transparent'
-                              }}
-                              onMouseDown={() => {
-                                setClientName(c.name);
-                                setClientSearchTerm(c.name);
-                                setIsClientDropdownOpen(false);
-                              }}
-                            >
-                              <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>
-                                <Building2 size={13} style={{ display: 'inline', marginRight: '6px', color: 'var(--primary-brand)' }} />
-                                {c.name}
-                              </span>
-                              {c.gstin && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>GST: {c.gstin}</span>}
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="form-group"><label>Print Width (mm)</label><input type="number" className="form-control" value={printWidthMm} onChange={e => setPrintWidthMm(e.target.value)} /></div>
-                <div className="form-group"><label>Repeat Length (mm)</label><input type="number" className="form-control" value={repeatLengthMm} onChange={e => setRepeatLengthMm(e.target.value)} /></div>
-                <div className="form-group"><label>Pouch Width (mm)</label><input type="number" className="form-control" value={pouchOpenWidth} onChange={e => setPouchOpenWidth(e.target.value)} /></div>
-                <div className="form-group"><label>Pouch Height (mm)</label><input type="number" className="form-control" value={pouchHeight} onChange={e => setPouchHeight(e.target.value)} /></div>
-              </div>
-
-              <div style={{ marginTop: '16px', background: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                  <strong style={{ fontSize: '0.9rem', color: '#1e293b' }}>
-                    Laminate Layers Structure <span style={{ color: '#dc2626' }}>* (Mandatory Entry)</span>
-                  </strong>
-                  <button type="button" className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.75rem' }} onClick={addLayer}><Plus size={14} /> Add Layer</button>
-                </div>
-                {layers.map((l, idx) => (
-                  <div key={l.id} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px 32px', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
-                    <span style={{ fontSize: '0.8rem', fontWeight: '600' }}>Layer {idx + 1}</span>
-                    <select className="form-control" style={{ padding: '4px 8px', fontSize: '0.85rem' }} value={l.filmType} onChange={e => setLayers(prev => prev.map(item => item.id === l.id ? { ...item, filmType: e.target.value } : item))}>
-                      {availableFilmTypes.map(filmKey => <option key={filmKey} value={filmKey}>{filmKey} ({FILM_DENSITIES[filmKey]} g/cc)</option>)}
-                    </select>
-                    <input type="number" className="form-control" style={{ padding: '4px 8px', fontSize: '0.85rem' }} value={l.micron} onChange={e => setLayers(prev => prev.map(item => item.id === l.id ? { ...item, micron: parseFloat(e.target.value) || 0 } : item))} />
-                    {layers.length > 1 && <button type="button" className="btn-secondary" style={{ padding: '4px' }} onClick={() => removeLayer(l.id)}><X size={14} /></button>}
-                  </div>
-                ))}
-              </div>
-
-              {!editingJobId && (
-                <div style={{ marginTop: '24px', padding: '16px', background: 'rgba(59, 130, 246, 0.05)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <input 
-                        type="checkbox" 
-                        id="createCylinder"
-                        checked={createCylinder}
-                        onChange={(e) => setCreateCylinder(e.target.checked)}
-                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                      />
-                      <label htmlFor="createCylinder" style={{ fontWeight: '600', cursor: 'pointer', margin: 0 }}>
-                        Auto-generate Printing Cylinders Asset
-                      </label>
-                    </div>
-                  </div>
-
-                  {createCylinder && (
-                    <div className="form-grid" style={{ marginTop: '12px' }}>
-                      <div className="form-group">
-                        <label>Number of Colors</label>
-                        <input type="number" className="form-control" value={colorsCount} onChange={e => setColorsCount(e.target.value)} />
-                      </div>
-                      <div className="form-group">
-                        <label>Cylinder Set Cost (₹)</label>
-                        <input type="number" className="form-control" value={cylinderCost} onChange={e => setCylinderCost(e.target.value)} />
-                      </div>
-                      <div className="form-group">
-                        <label>Cost Borne By</label>
-                        <select className="form-control" value={costBorneBy} onChange={e => setCostBorneBy(e.target.value)}>
-                          <option value="Client (100%)">Client (100%)</option>
-                          <option value="Us (100%)">Us / Samyak (100%)</option>
-                          <option value="Both (50/50)">Both (50/50)</option>
-                        </select>
-                      </div>
-                      <div className="form-group">
-                        <label>Engraver Name</label>
-                        <input type="text" className="form-control" value={engravuresName} onChange={e => setEngravuresName(e.target.value)} />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                <button type="button" className="btn-secondary" onClick={() => setIsCreateModalOpen(false)}>Cancel</button>
-                <button type="submit" className="btn-primary" disabled={isSkuDuplicate} style={isSkuDuplicate ? { opacity: 0.6, cursor: 'not-allowed' } : {}}>
-                  <CheckCircle2 size={16} /> {editingJobId ? 'Save Changes' : 'Save Job Master'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* QUICK CLIENT ONBOARDING MODAL */}
-      {isOnboardModalOpen && (
-        <div className="modal-overlay" style={{ zIndex: 2000 }} onClick={() => setIsOnboardModalOpen(false)}>
-          <div className="glass-card modal-content" style={{ width: '560px', maxWidth: '95vw', padding: '24px' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ fontSize: '1.15rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)' }}>
-                <Building2 size={20} style={{ color: 'var(--primary-brand)' }} /> Quick Client Onboarding
-              </h3>
-              <button type="button" className="btn-secondary" style={{ padding: '4px' }} onClick={() => setIsOnboardModalOpen(false)}>
-                <X size={16} />
-              </button>
-            </div>
-
-            <form onSubmit={handleOnboardClientSubmit}>
-              <div className="form-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)', gap: '14px' }}>
-                <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                  <label style={{ fontWeight: '700' }}>Company / Client Name *</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    required 
-                    placeholder="e.g. Britannia Industries Ltd"
-                    value={newClientName} 
-                    onChange={e => setNewClientName(e.target.value)} 
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Contact Person</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    placeholder="e.g. Mr. Rajesh Sharma"
-                    value={newContactPerson} 
-                    onChange={e => setNewContactPerson(e.target.value)} 
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Phone Number</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    placeholder="+91 98260 XXXXX"
-                    value={newPhone} 
-                    onChange={e => setNewPhone(e.target.value)} 
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Email Address</label>
-                  <input 
-                    type="email" 
-                    className="form-control" 
-                    placeholder="purchase@client.com"
-                    value={newEmail} 
-                    onChange={e => setNewEmail(e.target.value)} 
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>GSTIN Number</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    placeholder="23AAACB1234C1Z5"
-                    value={newGstin} 
-                    onChange={e => setNewGstin(e.target.value)} 
-                  />
-                </div>
-
-                <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                  <label>Factory / Billing Address</label>
-                  <textarea 
-                    className="form-control" 
-                    rows="2" 
-                    placeholder="Plot 45, Pithampur Industrial Area, Sector 3, Dhar MP"
-                    value={newAddress} 
-                    onChange={e => setNewAddress(e.target.value)} 
-                  />
-                </div>
-
-                <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                  <label>Payment Terms</label>
-                  <select 
-                    className="form-control"
-                    value={newPaymentTerms}
-                    onChange={e => setNewPaymentTerms(e.target.value)}
-                  >
-                    <option value="30 Days Net">30 Days Net</option>
-                    <option value="15 Days Net">15 Days Net</option>
-                    <option value="45 Days Net">45 Days Net</option>
-                    <option value="50% Advance, Balance Before Dispatch">50% Advance, Balance Before Dispatch</option>
-                    <option value="Immediate / Cash on Delivery">Immediate / Cash on Delivery</option>
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                <button type="button" className="btn-secondary" onClick={() => setIsOnboardModalOpen(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn-primary" style={{ background: '#047857', borderColor: '#047857' }}>
-                  <CheckCircle2 size={16} /> Save Client & Auto-Fill
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {renderJobMasterModals()}
     </div>
   );
 }

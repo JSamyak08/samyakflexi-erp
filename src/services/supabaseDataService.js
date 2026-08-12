@@ -707,7 +707,9 @@ export async function fetchUsers() {
         email: u.email || (u.username?.includes('@') ? u.username : `${u.id.toLowerCase()}@plant.com`),
         role: u.role || 'Shop Floor Operator',
         department: u.department || 'Operations',
-        status: u.status || (u.active !== false ? 'Active' : 'Inactive')
+        status: u.status || (u.active !== false ? 'Active' : 'Inactive'),
+        // Return stored password so local auth fallback works after reload
+        password: u.password_hash || u.password || ''
       }));
   } catch (err) {
     console.error("Error fetching users from Supabase:", err);
@@ -721,6 +723,8 @@ export async function saveUserToSupabase(user) {
   try {
     await ensureValidSession();
     const userId = user.id || `USR-${Math.floor(1000 + Math.random() * 9000)}`;
+    const passwordToStore = user.password || 'password123';
+
     const fullPayload = {
       id: userId,
       username: user.email?.toLowerCase() || userId,
@@ -728,7 +732,12 @@ export async function saveUserToSupabase(user) {
       email: user.email || '',
       role: user.role || 'Shop Floor Operator',
       department: user.department || 'Operations',
-      active: user.status !== 'Inactive'
+      active: user.status !== 'Inactive',
+      // Store plaintext password in the custom users table for local ERP auth fallback
+      // NOTE: Supabase Auth (auth.users) is the primary auth system;
+      // this column is only used as a last-resort local fallback when Supabase Auth is unavailable.
+      password_hash: passwordToStore,
+      status: user.status || 'Active'
     };
 
     const { data, error: fullErr } = await supabase
@@ -737,11 +746,13 @@ export async function saveUserToSupabase(user) {
       .select();
 
     if (fullErr) {
-      console.warn('[users] Full payload failed, trying minimal:', fullErr.message);
+      console.warn('[users] Full payload upsert failed:', fullErr.message, '— trying minimal payload...');
+      // Retry without optional columns that might not exist yet in the schema
       const minPayload = {
         id: userId,
         username: user.email?.toLowerCase() || userId,
         full_name: user.name || '',
+        email: user.email || '',
         role: user.role || 'Shop Floor Operator'
       };
       const { data: minData, error: minErr } = await supabase
@@ -753,12 +764,39 @@ export async function saveUserToSupabase(user) {
         handleSupabaseError(minErr, 'users');
         return null;
       }
+      console.log('[users] Saved with minimal payload (password_hash column may not exist yet — run SQL migration).');
       return minData ? minData[0] : minPayload;
     }
+
+    console.log('[users] Saved user with password to Supabase:', userId, user.email);
     return data ? data[0] : fullPayload;
   } catch (err) {
     handleSupabaseError(err, 'users exception');
     return null;
+  }
+}
+
+/**
+ * Update only the password for a user already in the users table.
+ * Called after OTP-verified password reset from AuthScreen.
+ */
+export async function updateUserPasswordInDB(email, newPassword) {
+  if (!isSupabaseConfigured() || !email || !newPassword) return false;
+  try {
+    await ensureValidSession();
+    const { error } = await supabase
+      .from('users')
+      .update({ password_hash: newPassword })
+      .eq('email', email.toLowerCase().trim());
+    if (error) {
+      console.warn('[users] Could not update password_hash:', error.message);
+      return false;
+    }
+    console.log('[users] Password updated in DB for:', email);
+    return true;
+  } catch (err) {
+    console.warn('[users] updateUserPasswordInDB exception:', err.message);
+    return false;
   }
 }
 
