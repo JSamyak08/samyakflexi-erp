@@ -83,6 +83,7 @@ export default function CylinderManagement({
   const [costBorneType, setCostBorneType] = useState('client');
   const [circumferenceMm, setCircumferenceMm] = useState(400);
   const [faceLengthMm, setFaceLengthMm] = useState(1050);
+  const [printWidthMm, setPrintWidthMm] = useState(1000);
   const [layer1PrintedQtyKg, setLayer1PrintedQtyKg] = useState(385.5);
   const [dispatchedQty, setDispatchedQty] = useState(3855);
   const [utilisationLimit, setUtilisationLimit] = useState(10000);
@@ -220,6 +221,7 @@ export default function CylinderManagement({
     setRate(1.60);
     setCircumferenceMm(400);
     setFaceLengthMm(1050);
+    setPrintWidthMm(1000);
     setAutoCalculateCost(true);
     setCostBorneBy('Client (100%)');
     setCostBorneType('client');
@@ -255,6 +257,7 @@ export default function CylinderManagement({
     setRate(cyl.rate || cyl.ratePerSqInch || 1.60);
     setCircumferenceMm(cyl.circumferenceMm || 400);
     setFaceLengthMm(cyl.faceLengthMm || 1050);
+    setPrintWidthMm(cyl.printWidthMm || cyl.pouchOpenWidth || 1000);
     setCylinderCost(`${cyl.cylinderCost || ''}`.replace(/[^0-9]/g, ''));
     setCostPerCylinder(`${cyl.costPerCylinder || ''}`.replace(/[^0-9]/g, '') || String(Math.round((parseInt(`${cyl.cylinderCost || 0}`.replace(/[^0-9]/g, '')) || 0) / (cyl.colorsCount || 1))));
     setAutoCalculateCost(false);
@@ -346,6 +349,7 @@ export default function CylinderManagement({
       costBorneType,
       circumferenceMm: parseInt(circumferenceMm) || 400,
       faceLengthMm: parseInt(faceLengthMm) || 1050,
+      printWidthMm: parseFloat(printWidthMm) || 1000,
       pouchOpenWidth: parseFloat(pouchOpenWidth) || 0,
       pouchHeight: parseFloat(pouchHeight) || 0,
       layer1PrintedQtyKg: parseFloat(layer1PrintedQtyKg) || 0,
@@ -374,7 +378,8 @@ export default function CylinderManagement({
           jobName: jobName.trim(),
           clientName: clientGroup.trim() || 'Standard Client',
           structure: structureSummary,
-          printWidthMm: parseFloat(faceLengthMm) || 1050,
+          printWidthMm: parseFloat(printWidthMm) || 1000,
+          faceLengthMm: parseFloat(faceLengthMm) || 1050,
           repeatLengthMm: parseFloat(circumferenceMm) || 400,
           pouchOpenWidth: parseFloat(pouchOpenWidth) || 0,
           pouchHeight: parseFloat(pouchHeight) || 0,
@@ -692,13 +697,24 @@ export default function CylinderManagement({
                   </div>
 
                   <div className="form-group">
-                    <label style={{ fontWeight: '700' }}>Cylinder Circumference (mm) *</label>
-                    <input type="number" className="form-control" required value={circumferenceMm} onChange={e => setCircumferenceMm(e.target.value)} />
+                    <label style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <span style={{ fontWeight: '700' }}>Print Width (mm) *</span>
+                      <span style={{ fontSize: '0.72rem', color: '#047857' }}>Always used for material ordering</span>
+                    </label>
+                    <input type="number" className="form-control" required value={printWidthMm} onChange={e => setPrintWidthMm(e.target.value)} placeholder="e.g. 1000" />
                   </div>
 
                   <div className="form-group">
-                    <label style={{ fontWeight: '700' }}>Face Length (mm) *</label>
-                    <input type="number" className="form-control" required value={faceLengthMm} onChange={e => setFaceLengthMm(e.target.value)} />
+                    <label style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <span style={{ fontWeight: '700' }}>Cylinder Face Length (mm) *</span>
+                      <span style={{ fontSize: '0.72rem', color: '#2563eb' }}>For records & cylinder costing only</span>
+                    </label>
+                    <input type="number" className="form-control" required value={faceLengthMm} onChange={e => setFaceLengthMm(e.target.value)} placeholder="e.g. 1050" />
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ fontWeight: '700' }}>Cylinder Circumference (mm) *</label>
+                    <input type="number" className="form-control" required value={circumferenceMm} onChange={e => setCircumferenceMm(e.target.value)} placeholder="e.g. 400" />
                   </div>
                 </div>
               </div>

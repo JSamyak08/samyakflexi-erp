@@ -575,7 +575,8 @@ export async function fetchCylinders() {
         costBorneType: c.cost_borne_type,
         clientGroup: c.client_group,
         circumferenceMm: Number(c.circumference_mm) || 0,
-        faceLengthMm: Number(c.face_length_mm) || 0,
+        faceLengthMm: Number(c.face_length_mm) || 1050,
+        printWidthMm: Number(c.print_width_mm || c.pouch_open_width || pm.printWidthMm) || 1000,
         layer1PrintedQtyKg: Number(c.layer1_printed_qty_kg) || 0,
         dispatchedQty: Number(c.dispatched_qty) || 0,
         utilisationLimit: Number(c.utilisation_limit) || 10000,
@@ -623,6 +624,8 @@ export async function saveCylinderToSupabase(cyl) {
     slittingMark: cyl.slittingMark || 'Yes',
     trackerLine: cyl.trackerLine || 'Yes',
     specialInstructions: cyl.specialInstructions || '',
+    printWidthMm: Number(cyl.printWidthMm) || 1000,
+    faceLengthMm: Number(cyl.faceLengthMm) || 1050,
     layers: layers,
     pouchOpenWidth: Number(cyl.pouchOpenWidth) || 0,
     pouchHeight: Number(cyl.pouchHeight) || 0,
@@ -650,7 +653,8 @@ export async function saveCylinderToSupabase(cyl) {
     cost_borne_type: cyl.costBorneType,
     client_group: cyl.clientGroup,
     circumference_mm: cyl.circumferenceMm,
-    face_length_mm: cyl.faceLengthMm,
+    face_length_mm: cyl.faceLengthMm || 1050,
+    print_width_mm: Number(cyl.printWidthMm) || 1000,
     layer1_printed_qty_kg: cyl.layer1PrintedQtyKg,
     dispatched_qty: cyl.dispatchedQty,
     utilisation_limit: cyl.utilisationLimit,
@@ -1358,6 +1362,7 @@ export async function fetchJobMasters() {
         clientName: j.client_name || '',
         structure: derivedStructure,
         printWidthMm: Number(j.print_width_mm || j.print_width || j.pouch_width_mm || j.width_mm || j.pouch_open_width) || 1000,
+        faceLengthMm: Number(j.face_length_mm || j.face_length || j.shell_size || pm.faceLengthMm) || (Number(j.print_width_mm) || 1050),
         repeatLengthMm: Number(j.repeat_length_mm || j.repeat_length || j.circumference_mm) || 400,
         pouchOpenWidth: Number(j.pouch_open_width || pm.pouchOpenWidth) || 0,
         pouchHeight: Number(j.pouch_height || j.pouch_height_mm || pm.pouchHeight) || 0,
@@ -1410,6 +1415,7 @@ export async function saveJobMasterToSupabase(jobMaster) {
     ? layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
     : (jobMaster.structure || '—');
   const printWidthMm = Number(jobMaster.printWidthMm || jobMaster.pouchWidthMm || jobMaster.pouch_width_mm) || 1000;
+  const faceLengthMm = Number(jobMaster.faceLengthMm || jobMaster.face_length_mm || jobMaster.shellSize || jobMaster.totalWidth) || (printWidthMm + 50);
   const repeatLengthMm = Number(jobMaster.repeatLengthMm || jobMaster.repeat_length_mm) || 400;
   const pouchWidthMm = Number(jobMaster.pouchOpenWidth) || printWidthMm;
   const pouchHeightMm = Number(jobMaster.pouchHeight) || 150;
@@ -1426,6 +1432,8 @@ export async function saveJobMasterToSupabase(jobMaster) {
     slittingMark: jobMaster.slittingMark || 'Yes',
     trackerLine: jobMaster.trackerLine || 'Yes',
     specialInstructions: jobMaster.specialInstructions || '',
+    printWidthMm: printWidthMm,
+    faceLengthMm: faceLengthMm,
     chkEyemark: jobMaster.chkEyemark ?? false,
     chkBarcode: jobMaster.chkBarcode ?? false,
     chkOrientation: jobMaster.chkOrientation ?? false,
@@ -1436,8 +1444,8 @@ export async function saveJobMasterToSupabase(jobMaster) {
     variant: jobMaster.variant || 'Standard',
     printing: jobMaster.printing || 'Reverse',
     invoiceTo: jobMaster.invoiceTo || 'Samyak International Ltd',
-    shellSize: jobMaster.shellSize || '',
-    petSize: jobMaster.petSize || ''
+    shellSize: jobMaster.shellSize || `${faceLengthMm} mm`,
+    petSize: jobMaster.petSize || `${faceLengthMm + 10} mm`
   };
 
   const legacyPayload = {
@@ -1462,6 +1470,7 @@ export async function saveJobMasterToSupabase(jobMaster) {
     ...legacyPayload,
     structure,
     print_width_mm: printWidthMm,
+    face_length_mm: faceLengthMm,
     pouch_open_width: Number(jobMaster.pouchOpenWidth) || 0,
     pouch_height: Number(jobMaster.pouchHeight) || 0,
     layers: Array.isArray(jobMaster.layers) ? jobMaster.layers : [],

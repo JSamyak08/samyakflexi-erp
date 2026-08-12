@@ -156,8 +156,12 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, 
                 <td className="label-cell">PET Substrate Size</td><td className="value-cell">{data.petSize || '—'}</td>
               </tr>
               <tr>
-                <td className="label-cell">Total Width (Face)</td><td className="value-cell">{data.totalWidth || '—'}</td>
+                <td className="label-cell">Print Width (Material Ordering)</td><td className="value-cell" style={{ fontWeight: '800', color: '#047857' }}>{data.printWidth || (data.printWidthMm ? `${data.printWidthMm} mm` : (data.totalWidth || '—'))}</td>
+                <td className="label-cell">Cylinder Face Length (Records & Cost)</td><td className="value-cell" style={{ fontWeight: '700', color: '#2563eb' }}>{data.faceLength || (data.faceLengthMm ? `${data.faceLengthMm} mm` : (data.totalWidth || '—'))}</td>
+              </tr>
+              <tr>
                 <td className="label-cell">Total Repeat (Circum.)</td><td className="value-cell">{data.totalHeight || '—'}</td>
+                <td className="label-cell">PET Substrate Size</td><td className="value-cell">{data.petSize || '—'}</td>
               </tr>
               <tr>
                 <td className="label-cell">Shell Size</td><td className="value-cell">{data.shellSize || '—'}</td>
@@ -348,10 +352,12 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         pouchHeight: initialData.pouchHeight ? (String(initialData.pouchHeight).includes('mm') ? initialData.pouchHeight : `${initialData.pouchHeight} mm`) : '',
         numberOfCylinders: `${initialData.colorsCount || initialData.numberOfCylinders || 6}`,
         jobStructure: derivedStruct,
-        totalWidth: initialData.faceLengthMm ? `${initialData.faceLengthMm} mm` : (initialData.totalWidth || (initialData.printWidthMm ? `${initialData.printWidthMm} mm` : '')),
-        totalHeight: initialData.circumferenceMm ? `${initialData.circumferenceMm} mm` : (initialData.totalHeight || (initialData.repeatLengthMm ? `${initialData.repeatLengthMm} mm` : '')),
-        shellSize: initialData.shellSize || (initialData.faceLengthMm ? `${initialData.faceLengthMm} mm` : (initialData.printWidthMm ? `${initialData.printWidthMm} mm` : '')),
-        petSize: initialData.petSize || (initialData.faceLengthMm ? `${initialData.faceLengthMm + 10} mm` : (initialData.printWidthMm ? `${initialData.printWidthMm + 10} mm` : '')),
+        printWidth: initialData.printWidth ? (String(initialData.printWidth).includes('mm') ? initialData.printWidth : `${initialData.printWidth} mm`) : (initialData.printWidthMm ? `${initialData.printWidthMm} mm` : '1000 mm'),
+        faceLength: initialData.faceLength ? (String(initialData.faceLength).includes('mm') ? initialData.faceLength : `${initialData.faceLength} mm`) : (initialData.faceLengthMm ? `${initialData.faceLengthMm} mm` : (initialData.totalWidth || '1050 mm')),
+        totalWidth: initialData.faceLengthMm ? `${initialData.faceLengthMm} mm` : (initialData.totalWidth || (initialData.printWidthMm ? `${initialData.printWidthMm} mm` : '1050 mm')),
+        totalHeight: initialData.circumferenceMm ? `${initialData.circumferenceMm} mm` : (initialData.totalHeight || (initialData.repeatLengthMm ? `${initialData.repeatLengthMm} mm` : '400 mm')),
+        shellSize: initialData.shellSize || (initialData.faceLengthMm ? `${initialData.faceLengthMm} mm` : (initialData.printWidthMm ? `${initialData.printWidthMm} mm` : '1050 mm')),
+        petSize: initialData.petSize || (initialData.faceLengthMm ? `${initialData.faceLengthMm + 10} mm` : (initialData.printWidthMm ? `${initialData.printWidthMm + 10} mm` : '1060 mm')),
         silLogo: initialData.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
         arcMark: initialData.arcMark || 'Yes',
         slittingMark: initialData.slittingMark || 'Yes',
@@ -452,10 +458,12 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         pouchHeight: jm.pouchHeight ? `${jm.pouchHeight} mm` : prev.pouchHeight,
         numberOfCylinders: `${jm.colorsCount || prev.numberOfCylinders || 6}`,
         jobStructure: derived,
-        totalWidth: jm.printWidthMm ? `${jm.printWidthMm} mm` : prev.totalWidth,
+        printWidth: jm.printWidthMm ? `${jm.printWidthMm} mm` : prev.printWidth,
+        faceLength: jm.faceLengthMm ? `${jm.faceLengthMm} mm` : (jm.printWidthMm ? `${jm.printWidthMm} mm` : prev.faceLength),
+        totalWidth: jm.faceLengthMm ? `${jm.faceLengthMm} mm` : (jm.printWidthMm ? `${jm.printWidthMm} mm` : prev.totalWidth),
         totalHeight: jm.repeatLengthMm ? `${jm.repeatLengthMm} mm` : prev.totalHeight,
-        shellSize: jm.shellSize || (jm.printWidthMm ? `${jm.printWidthMm} mm` : prev.shellSize),
-        petSize: jm.petSize || (jm.printWidthMm ? `${jm.printWidthMm + 10} mm` : prev.petSize),
+        shellSize: jm.faceLengthMm ? `${jm.faceLengthMm} mm` : (jm.shellSize || (jm.printWidthMm ? `${jm.printWidthMm} mm` : prev.shellSize)),
+        petSize: jm.faceLengthMm ? `${jm.faceLengthMm + 10} mm` : (jm.petSize || (jm.printWidthMm ? `${jm.printWidthMm + 10} mm` : prev.petSize)),
         engravure: jm.engravuresName || prev.engravure,
         costBorneBy: jm.costBorneBy || prev.costBorneBy,
         silLogo: jm.silLogo || prev.silLogo,
@@ -535,7 +543,8 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
           clientName: formData.partyName || existingJM.clientName,
           structure: derivedStruct,
           layers: layers,
-          printWidthMm: Number(String(formData.totalWidth).replace(/\D/g, '')) || Number(String(formData.pouchOpenWidth).replace(/\D/g, '')) || existingJM.printWidthMm || 1000,
+          printWidthMm: Number(String(formData.printWidth || formData.totalWidth).replace(/\D/g, '')) || Number(String(formData.pouchOpenWidth).replace(/\D/g, '')) || existingJM.printWidthMm || 1000,
+          faceLengthMm: Number(String(formData.faceLength || formData.totalWidth).replace(/\D/g, '')) || existingJM.faceLengthMm || 1050,
           repeatLengthMm: Number(String(formData.totalHeight).replace(/\D/g, '')) || Number(String(formData.pouchHeight).replace(/\D/g, '')) || existingJM.repeatLengthMm || 400,
           pouchOpenWidth: Number(String(formData.pouchOpenWidth).replace(/\D/g, '')) || existingJM.pouchOpenWidth || 0,
           pouchHeight: Number(String(formData.pouchHeight).replace(/\D/g, '')) || existingJM.pouchHeight || 0,
@@ -552,7 +561,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
           variant: formData.variant || 'Standard',
           printing: formData.printing || 'Reverse',
           invoiceTo: formData.invoiceTo || 'Samyak International Ltd',
-          shellSize: formData.shellSize || '',
+          shellSize: formData.shellSize || `${formData.faceLength || '1050 mm'}`,
           petSize: formData.petSize || '',
           chkEyemark: formData.chkEyemark,
           chkBarcode: formData.chkBarcode,
@@ -572,7 +581,8 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
           clientName: formData.partyName || 'General Client',
           structure: derivedStruct,
           layers: layers,
-          printWidthMm: Number(String(formData.totalWidth).replace(/\D/g, '')) || Number(String(formData.pouchOpenWidth).replace(/\D/g, '')) || 1000,
+          printWidthMm: Number(String(formData.printWidth || formData.totalWidth).replace(/\D/g, '')) || Number(String(formData.pouchOpenWidth).replace(/\D/g, '')) || 1000,
+          faceLengthMm: Number(String(formData.faceLength || formData.totalWidth).replace(/\D/g, '')) || 1050,
           repeatLengthMm: Number(String(formData.totalHeight).replace(/\D/g, '')) || Number(String(formData.pouchHeight).replace(/\D/g, '')) || 400,
           pouchOpenWidth: Number(String(formData.pouchOpenWidth).replace(/\D/g, '')) || 0,
           pouchHeight: Number(String(formData.pouchHeight).replace(/\D/g, '')) || 0,
@@ -591,7 +601,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
           variant: formData.variant || 'Standard',
           printing: formData.printing || 'Reverse',
           invoiceTo: formData.invoiceTo || 'Samyak International Ltd',
-          shellSize: formData.shellSize || '',
+          shellSize: formData.shellSize || `${formData.faceLength || '1050 mm'}`,
           petSize: formData.petSize || '',
           chkEyemark: formData.chkEyemark,
           chkBarcode: formData.chkBarcode,
@@ -1014,8 +1024,12 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
             <input className="form-control" name="jobStructure" value={formData.jobStructure} readOnly style={{ background: '#f1f5f9', fontWeight: '700' }} />
           </div>
           <div className="form-group">
-            <label>Total Width (Face Length)</label>
-            <input className="form-control" name="totalWidth" value={formData.totalWidth} onChange={handleChange} onBlur={handleDimensionBlur} placeholder="e.g. 1050 mm" />
+            <label style={{ color: '#047857', fontWeight: '700' }}>Print Width (Ordering Width)*</label>
+            <input className="form-control" name="printWidth" value={formData.printWidth} onChange={handleChange} onBlur={handleDimensionBlur} placeholder="e.g. 1000 mm" />
+          </div>
+          <div className="form-group">
+            <label style={{ color: '#2563eb', fontWeight: '700' }}>Cylinder Face Length (Costing & Records)*</label>
+            <input className="form-control" name="faceLength" value={formData.faceLength} onChange={handleChange} onBlur={handleDimensionBlur} placeholder="e.g. 1050 mm" />
           </div>
           <div className="form-group">
             <label>Total Height (Circumference)</label>

@@ -107,6 +107,7 @@ export default function JobMasterDirectory({
 
   const [skuCode, setSkuCode] = useState('');
   const [printWidthMm, setPrintWidthMm] = useState('1000');
+  const [faceLengthMm, setFaceLengthMm] = useState('1050');
   const [repeatLengthMm, setRepeatLengthMm] = useState('400');
   const [pouchOpenWidth, setPouchOpenWidth] = useState('120');
   const [pouchHeight, setPouchHeight] = useState('150');
@@ -342,6 +343,7 @@ export default function JobMasterDirectory({
     setJobName('');
     setClientName('');
     setPrintWidthMm('1000');
+    setFaceLengthMm('1050');
     setRepeatLengthMm('400');
     setPouchOpenWidth('120');
     setPouchHeight('150');
@@ -403,6 +405,7 @@ export default function JobMasterDirectory({
     setJobName(job.jobName || '');
     setClientName(job.clientName || '');
     setPrintWidthMm(job.printWidthMm ? String(job.printWidthMm) : '1000');
+    setFaceLengthMm(job.faceLengthMm ? String(job.faceLengthMm) : (job.printWidthMm ? String(job.printWidthMm) : '1050'));
     setRepeatLengthMm(job.repeatLengthMm ? String(job.repeatLengthMm) : '400');
     setPouchOpenWidth(job.pouchOpenWidth ? String(job.pouchOpenWidth) : '120');
     setPouchHeight(job.pouchHeight ? String(job.pouchHeight) : '150');
@@ -456,6 +459,7 @@ export default function JobMasterDirectory({
         clientName: clientName.trim(),
         structure: structureSummary,
         printWidthMm: parseFloat(printWidthMm) || 1000,
+        faceLengthMm: parseFloat(faceLengthMm) || 1050,
         repeatLengthMm: parseFloat(repeatLengthMm) || 400,
         pouchOpenWidth: parseFloat(pouchOpenWidth) || 0,
         pouchHeight: parseFloat(pouchHeight) || 0,
@@ -489,6 +493,7 @@ export default function JobMasterDirectory({
       clientName: clientName.trim(),
       structure: structureSummary,
       printWidthMm: parseFloat(printWidthMm) || 1000,
+      faceLengthMm: parseFloat(faceLengthMm) || 1050,
       repeatLengthMm: parseFloat(repeatLengthMm) || 400,
       pouchOpenWidth: parseFloat(pouchOpenWidth) || 0,
       pouchHeight: parseFloat(pouchHeight) || 0,
@@ -521,7 +526,8 @@ export default function JobMasterDirectory({
         costBorneBy,
         costBorneType: costBorneBy.includes('Client') ? 'client' : (costBorneBy.includes('Us') ? 'us' : 'both'),
         circumferenceMm: parseFloat(repeatLengthMm) || 400,
-        faceLengthMm: parseFloat(printWidthMm) || 1050,
+        faceLengthMm: parseFloat(faceLengthMm) || 1050,
+        printWidthMm: parseFloat(printWidthMm) || 1000,
         layer1PrintedQtyKg: 0,
         dispatchedQty: 0,
         utilisationLimit: parseFloat(utilisationLimit) || 10000,
@@ -565,10 +571,10 @@ export default function JobMasterDirectory({
       jobName: job.jobName,
       clientName: job.clientName,
       clientGroup: job.clientName,
-      printWidthMm: job.printWidthMm,
+      printWidthMm: job.printWidthMm || 1000,
+      faceLengthMm: job.faceLengthMm || job.printWidthMm || 1050,
       repeatLengthMm: job.repeatLengthMm,
       circumferenceMm: job.repeatLengthMm,
-      faceLengthMm: job.printWidthMm,
       pouchOpenWidth: job.pouchOpenWidth,
       pouchHeight: job.pouchHeight,
       structure: job.structure,
@@ -797,11 +803,60 @@ export default function JobMasterDirectory({
                   </div>
                 </div>
 
-                {/* Dimensions */}
-                <div className="form-group"><label>Print Width / Face Length (mm) *</label><input type="number" className="form-control" required value={printWidthMm} onChange={e => setPrintWidthMm(e.target.value)} /></div>
-                <div className="form-group"><label>Repeat Length / Circumference (mm) *</label><input type="number" className="form-control" required value={repeatLengthMm} onChange={e => setRepeatLengthMm(e.target.value)} /></div>
-                <div className="form-group"><label>Pouch Open Width (mm)</label><input type="number" className="form-control" value={pouchOpenWidth} onChange={e => setPouchOpenWidth(e.target.value)} /></div>
-                <div className="form-group"><label>Pouch Height (mm)</label><input type="number" className="form-control" value={pouchHeight} onChange={e => setPouchHeight(e.target.value)} /></div>
+                {/* Dimensions: Separate Inputs for Print Width and Face Length */}
+                <div className="form-group">
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <span style={{ fontWeight: '700' }}>Print Width (mm) *</span>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 'normal' }}>Used for substrate raw material ordering & slitting</span>
+                  </label>
+                  <input 
+                    type="number" 
+                    className="form-control" 
+                    required 
+                    value={printWidthMm} 
+                    onChange={e => setPrintWidthMm(e.target.value)} 
+                    placeholder="e.g. 1000"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <span style={{ fontWeight: '700' }}>Cylinder Face Length (mm) *</span>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 'normal' }}>Used for cylinder records & cost calculations</span>
+                  </label>
+                  <input 
+                    type="number" 
+                    className="form-control" 
+                    required 
+                    value={faceLengthMm} 
+                    onChange={e => setFaceLengthMm(e.target.value)} 
+                    placeholder="e.g. 1050"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <span style={{ fontWeight: '700' }}>Repeat Length / Circumference (mm) *</span>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 'normal' }}>Printing repeat cylinder circumference</span>
+                  </label>
+                  <input 
+                    type="number" 
+                    className="form-control" 
+                    required 
+                    value={repeatLengthMm} 
+                    onChange={e => setRepeatLengthMm(e.target.value)} 
+                    placeholder="e.g. 400"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Pouch Open Width (mm)</label>
+                  <input type="number" className="form-control" value={pouchOpenWidth} onChange={e => setPouchOpenWidth(e.target.value)} placeholder="e.g. 120" />
+                </div>
+                <div className="form-group">
+                  <label>Pouch Height (mm)</label>
+                  <input type="number" className="form-control" value={pouchHeight} onChange={e => setPouchHeight(e.target.value)} placeholder="e.g. 150" />
+                </div>
 
                 {/* Multi-Layer Substrate */}
                 <div style={{ gridColumn: 'span 2', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
@@ -1060,15 +1115,19 @@ export default function JobMasterDirectory({
               
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', fontSize: '0.85rem', marginBottom: '16px' }}>
                 <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Print Width (Face Length)</div>
+                  <div style={{ color: '#047857', fontSize: '0.75rem', fontWeight: '700' }}>Print Width (Material Ordering)</div>
                   <strong style={{ fontSize: '1rem', color: 'var(--text-primary)' }}>{selectedJob.printWidthMm} mm</strong>
+                </div>
+                <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ color: '#2563eb', fontSize: '0.75rem', fontWeight: '700' }}>Cylinder Face Length (Cost & Records)</div>
+                  <strong style={{ fontSize: '1rem', color: 'var(--text-primary)' }}>{selectedJob.faceLengthMm || selectedJob.printWidthMm || 1050} mm</strong>
                 </div>
                 <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
                   <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Repeat Length (Circumference)</div>
                   <strong style={{ fontSize: '1rem', color: 'var(--text-primary)' }}>{selectedJob.repeatLengthMm} mm</strong>
                 </div>
                 {selectedJob.pouchOpenWidth > 0 && (
-                  <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)', gridColumn: 'span 2' }}>
+                  <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
                     <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Individual Pouch Size (Open W x H)</div>
                     <strong style={{ fontSize: '0.95rem', color: 'var(--text-primary)' }}>{selectedJob.pouchOpenWidth} mm x {selectedJob.pouchHeight} mm</strong>
                   </div>
