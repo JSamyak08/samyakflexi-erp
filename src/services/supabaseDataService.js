@@ -554,27 +554,53 @@ export async function fetchCylinders() {
     }
     if (!data) return [];
 
-    return data.map(c => ({
-      id: c.id,
-      sku: c.sku,
-      jobName: c.job_name,
-      colorsCount: Number(c.colors_count) || 0,
-      cylinderCost: c.cylinder_cost,
-      costPerCylinder: c.cost_per_cylinder,
-      rate: Number(c.rate_per_sq_cm ?? c.rate_per_sq_inch) || 1.6,
-      ratePerSqInch: Number(c.rate_per_sq_cm ?? c.rate_per_sq_inch) || 1.6,
-      engravuresName: c.engravures_name,
-      costBorneBy: c.cost_borne_by,
-      costBorneType: c.cost_borne_type,
-      clientGroup: c.client_group,
-      circumferenceMm: Number(c.circumference_mm) || 0,
-      faceLengthMm: Number(c.face_length_mm) || 0,
-      layer1PrintedQtyKg: Number(c.layer1_printed_qty_kg) || 0,
-      dispatchedQty: Number(c.dispatched_qty) || 0,
-      utilisationLimit: Number(c.utilisation_limit) || 10000,
-      status: c.status || 'Active In-Use',
-      artworkUrl: c.artwork_url || null
-    }));
+    return data.map(c => {
+      const pm = c.press_marks || {};
+      let layers = Array.isArray(c.layers) ? c.layers : (pm.layers || []);
+      if (layers.length === 0 && c.structure && c.structure !== '—') {
+        layers = parseStructureStringToLayers(c.structure);
+      }
+
+      return {
+        id: c.id,
+        sku: c.sku,
+        jobName: c.job_name,
+        colorsCount: Number(c.colors_count) || 0,
+        cylinderCost: c.cylinder_cost,
+        costPerCylinder: c.cost_per_cylinder,
+        rate: Number(c.rate_per_sq_cm ?? c.rate_per_sq_inch) || 1.6,
+        ratePerSqInch: Number(c.rate_per_sq_cm ?? c.rate_per_sq_inch) || 1.6,
+        engravuresName: c.engravures_name,
+        costBorneBy: c.cost_borne_by,
+        costBorneType: c.cost_borne_type,
+        clientGroup: c.client_group,
+        circumferenceMm: Number(c.circumference_mm) || 0,
+        faceLengthMm: Number(c.face_length_mm) || 0,
+        layer1PrintedQtyKg: Number(c.layer1_printed_qty_kg) || 0,
+        dispatchedQty: Number(c.dispatched_qty) || 0,
+        utilisationLimit: Number(c.utilisation_limit) || 10000,
+        status: c.status || 'Active In-Use',
+        artworkUrl: c.artwork_url || null,
+        layers: layers,
+        structure: c.structure || (layers.length > 0 ? layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ') : '—'),
+        pouchOpenWidth: Number(c.pouch_open_width || pm.pouchOpenWidth) || 0,
+        pouchHeight: Number(c.pouch_height || pm.pouchHeight) || 0,
+        jobMasterId: c.job_master_id || pm.jobMasterId || '',
+        assignedPress: c.assigned_press || pm.assignedPress || '',
+        silLogo: c.sil_logo || pm.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+        arcMark: c.arc_mark || pm.arcMark || 'Yes',
+        slittingMark: c.slitting_mark || pm.slittingMark || 'Yes',
+        trackerLine: c.tracker_line || pm.trackerLine || 'Yes',
+        specialInstructions: c.special_instructions || pm.specialInstructions || '',
+        chkEyemark: c.chk_eyemark ?? pm.chkEyemark ?? false,
+        chkBarcode: c.chk_barcode ?? pm.chkBarcode ?? false,
+        chkOrientation: c.chk_orientation ?? pm.chkOrientation ?? false,
+        chkClientApproval: c.chk_client_approval ?? pm.chkClientApproval ?? false,
+        approvedByHead: c.approved_by_head ?? pm.approvedByHead ?? false,
+        approvedHeadName: c.approved_head_name || pm.approvedHeadName || '',
+        approvedHeadDate: c.approved_head_date || pm.approvedHeadDate || ''
+      };
+    });
   } catch (err) {
     console.error("Error fetching cylinders from Supabase:", err);
     return [];
@@ -582,11 +608,37 @@ export async function fetchCylinders() {
 }
 
 export async function saveCylinderToSupabase(cyl) {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !cyl) return;
   await ensureValidSession();
   const rateVal = cyl.rate !== undefined ? cyl.rate : cyl.ratePerSqInch;
-  const { error } = await supabase.from('cylinders').upsert({
-    id: cyl.id || `CYL-${Math.floor(100 + Math.random() * 900)}`,
+  const id = cyl.id || `CYL-${Math.floor(100 + Math.random() * 900)}`;
+  const layers = Array.isArray(cyl.layers) ? cyl.layers : [];
+  const structureSummary = (layers.length > 0)
+    ? layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
+    : (cyl.structure || '—');
+
+  const pressMarks = {
+    silLogo: cyl.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+    arcMark: cyl.arcMark || 'Yes',
+    slittingMark: cyl.slittingMark || 'Yes',
+    trackerLine: cyl.trackerLine || 'Yes',
+    specialInstructions: cyl.specialInstructions || '',
+    layers: layers,
+    pouchOpenWidth: Number(cyl.pouchOpenWidth) || 0,
+    pouchHeight: Number(cyl.pouchHeight) || 0,
+    jobMasterId: cyl.jobMasterId || '',
+    assignedPress: cyl.assignedPress || '',
+    chkEyemark: cyl.chkEyemark ?? false,
+    chkBarcode: cyl.chkBarcode ?? false,
+    chkOrientation: cyl.chkOrientation ?? false,
+    chkClientApproval: cyl.chkClientApproval ?? false,
+    approvedByHead: cyl.approvedByHead ?? false,
+    approvedHeadName: cyl.approvedHeadName || '',
+    approvedHeadDate: cyl.approvedHeadDate || ''
+  };
+
+  const fullPayload = {
+    id,
     sku: cyl.sku,
     job_name: cyl.jobName,
     colors_count: cyl.colorsCount,
@@ -603,10 +655,57 @@ export async function saveCylinderToSupabase(cyl) {
     dispatched_qty: cyl.dispatchedQty,
     utilisation_limit: cyl.utilisationLimit,
     status: cyl.status || 'Active In-Use',
-    artwork_url: cyl.artworkUrl || cyl.artwork_url || null
-  }, { onConflict: 'id' });
+    artwork_url: cyl.artworkUrl || cyl.artwork_url || null,
+    structure: structureSummary,
+    layers: layers,
+    pouch_open_width: Number(cyl.pouchOpenWidth) || 0,
+    pouch_height: Number(cyl.pouchHeight) || 0,
+    job_master_id: cyl.jobMasterId || '',
+    assigned_press: cyl.assignedPress || '',
+    sil_logo: pressMarks.silLogo,
+    arc_mark: pressMarks.arcMark,
+    slitting_mark: pressMarks.slittingMark,
+    tracker_line: pressMarks.trackerLine,
+    special_instructions: pressMarks.specialInstructions,
+    press_marks: pressMarks,
+    chk_eyemark: pressMarks.chkEyemark,
+    chk_barcode: pressMarks.chkBarcode,
+    chk_orientation: pressMarks.chkOrientation,
+    chk_client_approval: pressMarks.chkClientApproval,
+    approved_by_head: pressMarks.approvedByHead,
+    approved_head_name: pressMarks.approvedHeadName,
+    approved_head_date: pressMarks.approvedHeadDate
+  };
 
-  handleSupabaseError(error, 'cylinders');
+  const { error: fullErr } = await supabase.from('cylinders').upsert(fullPayload, { onConflict: 'id' });
+  if (fullErr) {
+    console.warn('[cylinders] Full payload upsert rejected, trying standard payload:', fullErr.message);
+    const standardPayload = {
+      id,
+      sku: cyl.sku,
+      job_name: cyl.jobName,
+      colors_count: cyl.colorsCount,
+      cylinder_cost: cyl.cylinderCost,
+      cost_per_cylinder: cyl.costPerCylinder,
+      rate_per_sq_inch: rateVal,
+      engravures_name: cyl.engravuresName,
+      cost_borne_by: cyl.costBorneBy,
+      cost_borne_type: cyl.costBorneType,
+      client_group: cyl.clientGroup,
+      circumference_mm: cyl.circumferenceMm,
+      face_length_mm: cyl.faceLengthMm,
+      layer1_printed_qty_kg: cyl.layer1PrintedQtyKg,
+      dispatched_qty: cyl.dispatchedQty,
+      utilisation_limit: cyl.utilisationLimit,
+      status: cyl.status || 'Active In-Use',
+      artwork_url: cyl.artworkUrl || cyl.artwork_url || null
+    };
+    const { error: stdErr } = await supabase.from('cylinders').upsert(standardPayload, { onConflict: 'id' });
+    if (stdErr) {
+      console.error('[cylinders] Standard payload failed:', stdErr.message);
+      handleSupabaseError(stdErr, 'cylinders');
+    }
+  }
 }
 
 export async function deleteCylinderFromSupabase(cylinderId) {
@@ -1242,7 +1341,8 @@ export async function fetchJobMasters() {
     if (!data) return [];
 
     return data.map(j => {
-      let layers = Array.isArray(j.layers) ? j.layers : [];
+      const pm = j.press_marks || {};
+      let layers = Array.isArray(j.layers) ? j.layers : (pm.layers || []);
       const derivedStructure = (layers.length > 0)
         ? layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
         : (j.structure || j.film_structure || '—');
@@ -1259,8 +1359,8 @@ export async function fetchJobMasters() {
         structure: derivedStructure,
         printWidthMm: Number(j.print_width_mm || j.print_width || j.pouch_width_mm || j.width_mm || j.pouch_open_width) || 1000,
         repeatLengthMm: Number(j.repeat_length_mm || j.repeat_length || j.circumference_mm) || 400,
-        pouchOpenWidth: Number(j.pouch_open_width) || 0,
-        pouchHeight: Number(j.pouch_height || j.pouch_height_mm) || 0,
+        pouchOpenWidth: Number(j.pouch_open_width || pm.pouchOpenWidth) || 0,
+        pouchHeight: Number(j.pouch_height || j.pouch_height_mm || pm.pouchHeight) || 0,
         layers: layers,
         cylinderSku: j.cylinder_sku || j.sku_code || '',
         cylinderCost: j.cylinder_cost || '₹ 0',
@@ -1271,6 +1371,23 @@ export async function fetchJobMasters() {
         jobCardFileName: j.job_card_file_name || (j.job_card_file_url || j.artwork_url ? 'Artwork_KLD_Proof.pdf' : ''),
         jobCardFileUrl: j.job_card_file_url || j.artwork_url || '',
         artworkUrl: j.artwork_url || j.job_card_file_url || '',
+        silLogo: j.sil_logo || pm.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+        arcMark: j.arc_mark || pm.arcMark || 'Yes',
+        slittingMark: j.slitting_mark || pm.slittingMark || 'Yes',
+        trackerLine: j.tracker_line || pm.trackerLine || 'Yes',
+        specialInstructions: j.special_instructions || pm.specialInstructions || '',
+        chkEyemark: j.chk_eyemark ?? pm.chkEyemark ?? false,
+        chkBarcode: j.chk_barcode ?? pm.chkBarcode ?? false,
+        chkOrientation: j.chk_orientation ?? pm.chkOrientation ?? false,
+        chkClientApproval: j.chk_client_approval ?? pm.chkClientApproval ?? false,
+        approvedByHead: j.approved_by_head ?? pm.approvedByHead ?? false,
+        approvedHeadName: j.approved_head_name || pm.approvedHeadName || '',
+        approvedHeadDate: j.approved_head_date || pm.approvedHeadDate || '',
+        variant: j.variant || pm.variant || 'Standard',
+        printing: j.printing_process || j.printing || pm.printing || 'Reverse',
+        invoiceTo: j.invoice_to || pm.invoiceTo || 'Samyak International Ltd',
+        shellSize: j.shell_size || pm.shellSize || '',
+        petSize: j.pet_size || pm.petSize || '',
         creationDate: j.creation_date || j.created_at ? String(j.created_at).split('T')[0] : new Date().toISOString().split('T')[0]
       };
     });
@@ -1281,7 +1398,7 @@ export async function fetchJobMasters() {
 }
 
 export async function saveJobMasterToSupabase(jobMaster) {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !jobMaster) return;
   await ensureValidSession();
   
   const id = jobMaster.id || `JM-2026-${Math.floor(100 + Math.random() * 900)}`;
@@ -1299,9 +1416,29 @@ export async function saveJobMasterToSupabase(jobMaster) {
   const colorsCount = Number(jobMaster.colorsCount) || 6;
   const cylinderCost = String(jobMaster.cylinderCost || '₹ 0');
   const costBorneBy = jobMaster.costBorneBy || 'Client (100%)';
-  const engraverName = jobMaster.engravuresName || '';
+  const engraverName = jobMaster.engravuresName || jobMaster.engraverName || '';
   const fileUrl = jobMaster.jobCardFileUrl || jobMaster.artworkUrl || '';
   const fileName = jobMaster.jobCardFileName || (fileUrl ? 'Artwork_KLD_Proof.pdf' : '');
+
+  const pressMarks = {
+    silLogo: jobMaster.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+    arcMark: jobMaster.arcMark || 'Yes',
+    slittingMark: jobMaster.slittingMark || 'Yes',
+    trackerLine: jobMaster.trackerLine || 'Yes',
+    specialInstructions: jobMaster.specialInstructions || '',
+    chkEyemark: jobMaster.chkEyemark ?? false,
+    chkBarcode: jobMaster.chkBarcode ?? false,
+    chkOrientation: jobMaster.chkOrientation ?? false,
+    chkClientApproval: jobMaster.chkClientApproval ?? false,
+    approvedByHead: jobMaster.approvedByHead ?? false,
+    approvedHeadName: jobMaster.approvedHeadName || '',
+    approvedHeadDate: jobMaster.approvedHeadDate || '',
+    variant: jobMaster.variant || 'Standard',
+    printing: jobMaster.printing || 'Reverse',
+    invoiceTo: jobMaster.invoiceTo || 'Samyak International Ltd',
+    shellSize: jobMaster.shellSize || '',
+    petSize: jobMaster.petSize || ''
+  };
 
   const legacyPayload = {
     id,
@@ -1334,10 +1471,23 @@ export async function saveJobMasterToSupabase(jobMaster) {
     job_card_file_name: fileName,
     job_card_file_url: fileUrl,
     artwork_url: fileUrl,
+    sil_logo: pressMarks.silLogo,
+    arc_mark: pressMarks.arcMark,
+    slitting_mark: pressMarks.slittingMark,
+    tracker_line: pressMarks.trackerLine,
+    special_instructions: pressMarks.specialInstructions,
+    press_marks: pressMarks,
+    chk_eyemark: pressMarks.chkEyemark,
+    chk_barcode: pressMarks.chkBarcode,
+    chk_orientation: pressMarks.chkOrientation,
+    chk_client_approval: pressMarks.chkClientApproval,
+    approved_by_head: pressMarks.approvedByHead,
+    approved_head_name: pressMarks.approvedHeadName,
+    approved_head_date: pressMarks.approvedHeadDate,
     creation_date: jobMaster.creationDate || new Date().toISOString().split('T')[0]
   };
 
-  // 1. Try extended payload with new columns (including layers) FIRST
+  // 1. Try extended payload with new columns (including press marks & layers) FIRST
   const { error: extErr } = await supabase.from('job_masters').upsert(extendedPayload, { onConflict: 'id' });
 
   if (extErr) {

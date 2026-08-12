@@ -87,6 +87,13 @@ export default function JobMasterDirectory({
   const [clientSearchTerm, setClientSearchTerm] = useState('');
   const [isClientDropdownOpen, setIsClientDropdownOpen] = useState(false);
 
+  // Press Marks & Quality Guidelines Form State
+  const [silLogo, setSilLogo] = useState("Yes - 'Pkg Material Mfg by - Samyak International Ltd'");
+  const [arcMark, setArcMark] = useState('Yes');
+  const [slittingMark, setSlittingMark] = useState('Yes');
+  const [trackerLine, setTrackerLine] = useState('Yes');
+  const [specialInstructions, setSpecialInstructions] = useState('');
+
   // Quick Client Onboarding Modal State
   const [isOnboardModalOpen, setIsOnboardModalOpen] = useState(false);
   const [newClientName, setNewClientName] = useState('');
@@ -342,6 +349,11 @@ export default function JobMasterDirectory({
     setCylinderCost('35000');
     setCostBorneBy('Client (100%)');
     setUtilisationLimit(10000);
+    setSilLogo("Yes - 'Pkg Material Mfg by - Samyak International Ltd'");
+    setArcMark('Yes');
+    setSlittingMark('Yes');
+    setTrackerLine('Yes');
+    setSpecialInstructions('');
     const defaultFilm = availableFilmTypes[0] || 'PET';
     setLayers([
       { id: Date.now(), filmType: defaultFilm, micron: 12 },
@@ -399,6 +411,11 @@ export default function JobMasterDirectory({
     setCostBorneBy(job.costBorneBy || 'Client (100%)');
     setEngravuresName(job.engravuresName || 'Acme Rotogravure Engravers');
     setUtilisationLimit(job.utilisationLimit || 10000);
+    setSilLogo(job.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'");
+    setArcMark(job.arcMark || 'Yes');
+    setSlittingMark(job.slittingMark || 'Yes');
+    setTrackerLine(job.trackerLine || 'Yes');
+    setSpecialInstructions(job.specialInstructions || '');
     
     if (job.layers && job.layers.length > 0) {
       setLayers(job.layers.map((l, idx) => ({ ...l, id: l.id || Date.now() + idx })));
@@ -448,7 +465,12 @@ export default function JobMasterDirectory({
         colorsCount: parseInt(colorsCount) || 6,
         engravuresName,
         costBorneBy,
-        utilisationLimit: parseFloat(utilisationLimit) || 10000
+        utilisationLimit: parseFloat(utilisationLimit) || 10000,
+        silLogo: silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+        arcMark: arcMark || 'Yes',
+        slittingMark: slittingMark || 'Yes',
+        trackerLine: trackerLine || 'Yes',
+        specialInstructions: specialInstructions || ''
       };
 
       if (onUpdateJobMaster) await onUpdateJobMaster(updatedJobMaster);
@@ -477,6 +499,11 @@ export default function JobMasterDirectory({
       engravuresName,
       costBorneBy,
       utilisationLimit: parseFloat(utilisationLimit) || 10000,
+      silLogo: silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+      arcMark: arcMark || 'Yes',
+      slittingMark: slittingMark || 'Yes',
+      trackerLine: trackerLine || 'Yes',
+      specialInstructions: specialInstructions || '',
       creationDate: new Date().toISOString().split('T')[0]
     };
 
@@ -498,7 +525,12 @@ export default function JobMasterDirectory({
         layer1PrintedQtyKg: 0,
         dispatchedQty: 0,
         utilisationLimit: parseFloat(utilisationLimit) || 10000,
-        status: 'Active In-Use'
+        status: 'Active In-Use',
+        silLogo: silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+        arcMark: arcMark || 'Yes',
+        slittingMark: slittingMark || 'Yes',
+        trackerLine: trackerLine || 'Yes',
+        specialInstructions: specialInstructions || ''
       });
     }
 
@@ -547,7 +579,24 @@ export default function JobMasterDirectory({
       costBorneBy: job.costBorneBy || (linkedCyl ? linkedCyl.costBorneBy : 'Client (100%)'),
       creationDate: job.creationDate || new Date().toLocaleDateString('en-GB'),
       jobCardFileUrl: job.jobCardFileUrl || job.artworkUrl || '',
-      artworkUrl: job.jobCardFileUrl || job.artworkUrl || ''
+      artworkUrl: job.jobCardFileUrl || job.artworkUrl || '',
+      silLogo: job.silLogo || (linkedCyl ? linkedCyl.silLogo : "Yes - 'Pkg Material Mfg by - Samyak International Ltd'"),
+      arcMark: job.arcMark || (linkedCyl ? linkedCyl.arcMark : 'Yes'),
+      slittingMark: job.slittingMark || (linkedCyl ? linkedCyl.slittingMark : 'Yes'),
+      trackerLine: job.trackerLine || (linkedCyl ? linkedCyl.trackerLine : 'Yes'),
+      specialInstructions: job.specialInstructions || (linkedCyl ? linkedCyl.specialInstructions : ''),
+      chkEyemark: job.chkEyemark ?? (linkedCyl?.chkEyemark ?? false),
+      chkBarcode: job.chkBarcode ?? (linkedCyl?.chkBarcode ?? false),
+      chkOrientation: job.chkOrientation ?? (linkedCyl?.chkOrientation ?? false),
+      chkClientApproval: job.chkClientApproval ?? (linkedCyl?.chkClientApproval ?? false),
+      approvedByHead: job.approvedByHead ?? (linkedCyl?.approvedByHead ?? false),
+      approvedHeadName: job.approvedHeadName || (linkedCyl?.approvedHeadName || ''),
+      approvedHeadDate: job.approvedHeadDate || (linkedCyl?.approvedHeadDate || ''),
+      variant: job.variant || 'Standard',
+      printing: job.printing || 'Reverse',
+      invoiceTo: job.invoiceTo || 'Samyak International Ltd',
+      shellSize: job.shellSize || '',
+      petSize: job.petSize || ''
     };
     setActiveJobCardData(cardData);
   };
@@ -793,6 +842,62 @@ export default function JobMasterDirectory({
                 </div>
 
                 <div className="form-group"><label>Max Utilisation Limit (Kg)</label><input type="number" className="form-control" value={utilisationLimit} onChange={e => setUtilisationLimit(e.target.value)} /></div>
+
+                {/* Press Marks & Quality Guidelines Section */}
+                <div style={{ gridColumn: 'span 2', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                  <h4 style={{ fontSize: '0.9rem', fontWeight: '800', color: '#0f172a', marginBottom: '12px', borderBottom: '1px solid #e2e8f0', paddingBottom: '6px' }}>
+                    Press Marks & Quality Guidelines
+                  </h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div className="form-group">
+                      <label style={{ fontSize: '0.75rem', color: '#64748b' }}>SIL Logo / Press Line</label>
+                      <input 
+                        type="text" 
+                        className="form-control" 
+                        style={{ padding: '6px 10px', fontSize: '0.85rem' }} 
+                        value={silLogo} 
+                        onChange={e => setSilLogo(e.target.value)} 
+                        placeholder="e.g. Yes - 'Pkg Material Mfg by - Samyak International Ltd'" 
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label style={{ fontSize: '0.75rem', color: '#64748b' }}>ARC Mark</label>
+                      <select className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={arcMark} onChange={e => setArcMark(e.target.value)}>
+                        <option value="Yes">Yes (Standard)</option>
+                        <option value="Yes (Both Edges)">Yes (Both Edges)</option>
+                        <option value="No">No</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label style={{ fontSize: '0.75rem', color: '#64748b' }}>Slitting Mark</label>
+                      <select className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={slittingMark} onChange={e => setSlittingMark(e.target.value)}>
+                        <option value="Yes">Yes (Standard)</option>
+                        <option value="1.5mm Dashed">1.5mm Dashed</option>
+                        <option value="Continuous Solid Line">Continuous Solid Line</option>
+                        <option value="No">No</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label style={{ fontSize: '0.75rem', color: '#64748b' }}>Tracker Line</label>
+                      <select className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={trackerLine} onChange={e => setTrackerLine(e.target.value)}>
+                        <option value="Yes">Yes (Standard)</option>
+                        <option value="Continuous 1mm">Continuous 1mm</option>
+                        <option value="No">No</option>
+                      </select>
+                    </div>
+                    <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                      <label style={{ fontSize: '0.75rem', color: '#64748b' }}>Special Quality Guidelines & Plant Instructions</label>
+                      <textarea 
+                        className="form-control" 
+                        rows="2" 
+                        style={{ padding: '6px 10px', fontSize: '0.85rem' }} 
+                        value={specialInstructions} 
+                        onChange={e => setSpecialInstructions(e.target.value)} 
+                        placeholder="e.g. Core 76mm ID. Winding direction: Face Out. Maintain solvent retention < 5 mg/m²." 
+                      />
+                    </div>
+                  </div>
+                </div>
 
                 {!editingJobId && (
                   <div style={{ gridColumn: 'span 2', background: '#ecfdf5', padding: '12px', borderRadius: '6px', border: '1px solid #a7f3d0' }}>

@@ -106,6 +106,13 @@ export default function CylinderManagement({
   const [pouchOpenWidth, setPouchOpenWidth] = useState(0);
   const [pouchHeight, setPouchHeight] = useState(0);
 
+  // Press Marks & Quality Guidelines State
+  const [silLogo, setSilLogo] = useState("Yes - 'Pkg Material Mfg by - Samyak International Ltd'");
+  const [arcMark, setArcMark] = useState('Yes');
+  const [slittingMark, setSlittingMark] = useState('Yes');
+  const [trackerLine, setTrackerLine] = useState('Yes');
+  const [specialInstructions, setSpecialInstructions] = useState('');
+
   // Available film types for substrate layer dropdown
   const availableFilmTypes = useMemo(() => Object.keys(FILM_DENSITIES), []);
 
@@ -230,6 +237,11 @@ export default function CylinderManagement({
     setCreateJobMaster(true);
     setPouchOpenWidth(0);
     setPouchHeight(0);
+    setSilLogo("Yes - 'Pkg Material Mfg by - Samyak International Ltd'");
+    setArcMark('Yes');
+    setSlittingMark('Yes');
+    setTrackerLine('Yes');
+    setSpecialInstructions('');
     setIsModalOpen(true);
   };
 
@@ -276,6 +288,11 @@ export default function CylinderManagement({
     setCreateJobMaster(false);
     setPouchOpenWidth(cyl.pouchOpenWidth || 0);
     setPouchHeight(cyl.pouchHeight || 0);
+    setSilLogo(cyl.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'");
+    setArcMark(cyl.arcMark || 'Yes');
+    setSlittingMark(cyl.slittingMark || 'Yes');
+    setTrackerLine(cyl.trackerLine || 'Yes');
+    setSpecialInstructions(cyl.specialInstructions || '');
     setIsModalOpen(true);
   };
 
@@ -336,7 +353,12 @@ export default function CylinderManagement({
       utilisationLimit: parseInt(utilisationLimit) || 10000,
       status,
       assignedPress: assignedPress || '',
-      artworkUrl: artworkUrl || null
+      artworkUrl: artworkUrl || null,
+      silLogo: silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+      arcMark: arcMark || 'Yes',
+      slittingMark: slittingMark || 'Yes',
+      trackerLine: trackerLine || 'Yes',
+      specialInstructions: specialInstructions || ''
     };
 
     if (editingCylinder) {
@@ -364,6 +386,11 @@ export default function CylinderManagement({
           costBorneBy,
           utilisationLimit: parseFloat(utilisationLimit) || 10000,
           artworkUrl: artworkUrl || null,
+          silLogo: silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+          arcMark: arcMark || 'Yes',
+          slittingMark: slittingMark || 'Yes',
+          trackerLine: trackerLine || 'Yes',
+          specialInstructions: specialInstructions || '',
           creationDate: new Date().toISOString().split('T')[0]
         };
         onAddJobMaster(newJobMaster);
@@ -832,10 +859,66 @@ export default function CylinderManagement({
                 )}
               </div>
 
-              {/* SECTION 4: ARTWORK & MEDIA */}
+              {/* SECTION 4: PRESS MARKS & QUALITY GUIDELINES */}
               <div style={{ background: '#ffffff', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                 <h4 style={{ fontSize: '0.9rem', fontWeight: '800', color: '#0f172a', marginBottom: '12px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
-                  4. Artwork Proof & Keyline Drawing
+                  4. Press Marks & Quality Guidelines
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div className="form-group">
+                    <label style={{ fontSize: '0.75rem', color: '#64748b' }}>SIL Logo / Press Line</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      style={{ padding: '6px 10px', fontSize: '0.85rem' }} 
+                      value={silLogo} 
+                      onChange={e => setSilLogo(e.target.value)} 
+                      placeholder="e.g. Yes - 'Pkg Material Mfg by - Samyak International Ltd'" 
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label style={{ fontSize: '0.75rem', color: '#64748b' }}>ARC Mark</label>
+                    <select className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={arcMark} onChange={e => setArcMark(e.target.value)}>
+                      <option value="Yes">Yes (Standard)</option>
+                      <option value="Yes (Both Edges)">Yes (Both Edges)</option>
+                      <option value="No">No</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label style={{ fontSize: '0.75rem', color: '#64748b' }}>Slitting Mark</label>
+                    <select className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={slittingMark} onChange={e => setSlittingMark(e.target.value)}>
+                      <option value="Yes">Yes (Standard)</option>
+                      <option value="1.5mm Dashed">1.5mm Dashed</option>
+                      <option value="Continuous Solid Line">Continuous Solid Line</option>
+                      <option value="No">No</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label style={{ fontSize: '0.75rem', color: '#64748b' }}>Tracker Line</label>
+                    <select className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={trackerLine} onChange={e => setTrackerLine(e.target.value)}>
+                      <option value="Yes">Yes (Standard)</option>
+                      <option value="Continuous 1mm">Continuous 1mm</option>
+                      <option value="No">No</option>
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                    <label style={{ fontSize: '0.75rem', color: '#64748b' }}>Special Quality Guidelines / Operator Instructions</label>
+                    <textarea 
+                      className="form-control" 
+                      rows="2" 
+                      style={{ padding: '6px 10px', fontSize: '0.85rem' }} 
+                      value={specialInstructions} 
+                      onChange={e => setSpecialInstructions(e.target.value)} 
+                      placeholder="e.g. Core 76mm ID. Winding direction: Face Out. Maintain solvent retention < 5 mg/m²." 
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 5: ARTWORK & MEDIA */}
+              <div style={{ background: '#ffffff', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <h4 style={{ fontSize: '0.9rem', fontWeight: '800', color: '#0f172a', marginBottom: '12px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
+                  5. Artwork Proof & Keyline Drawing
                 </h4>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
@@ -885,10 +968,10 @@ export default function CylinderManagement({
                 </div>
               </div>
 
-              {/* SECTION 5: PRODUCTION & WEAR TRACKING */}
+              {/* SECTION 6: PRODUCTION & WEAR TRACKING */}
               <div style={{ background: '#ffffff', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                 <h4 style={{ fontSize: '0.9rem', fontWeight: '800', color: '#0f172a', marginBottom: '14px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
-                  5. Wear Life Limits & Station Assignment
+                  6. Wear Life Limits & Station Assignment
                 </h4>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
@@ -966,7 +1049,19 @@ export default function CylinderManagement({
                     costBorneBy: updated.costBorneBy || selectedForPDF.costBorneBy,
                     clientGroup: updated.partyName || selectedForPDF.clientGroup,
                     colorsCount: parseInt(updated.numberOfCylinders) || selectedForPDF.colorsCount,
-                    artworkUrl: updated.artworkUrl || selectedForPDF.artworkUrl
+                    artworkUrl: updated.artworkUrl || selectedForPDF.artworkUrl,
+                    silLogo: updated.silLogo || selectedForPDF.silLogo,
+                    arcMark: updated.arcMark || selectedForPDF.arcMark,
+                    slittingMark: updated.slittingMark || selectedForPDF.slittingMark,
+                    trackerLine: updated.trackerLine || selectedForPDF.trackerLine,
+                    specialInstructions: updated.specialInstructions || selectedForPDF.specialInstructions,
+                    chkEyemark: updated.chkEyemark ?? selectedForPDF.chkEyemark,
+                    chkBarcode: updated.chkBarcode ?? selectedForPDF.chkBarcode,
+                    chkOrientation: updated.chkOrientation ?? selectedForPDF.chkOrientation,
+                    chkClientApproval: updated.chkClientApproval ?? selectedForPDF.chkClientApproval,
+                    approvedByHead: updated.approvedByHead ?? selectedForPDF.approvedByHead,
+                    approvedHeadName: updated.approvedHeadName || selectedForPDF.approvedHeadName,
+                    approvedHeadDate: updated.approvedHeadDate || selectedForPDF.approvedHeadDate
                   });
                 }
               }}

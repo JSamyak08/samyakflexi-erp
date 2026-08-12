@@ -454,10 +454,15 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         jobStructure: derived,
         totalWidth: jm.printWidthMm ? `${jm.printWidthMm} mm` : prev.totalWidth,
         totalHeight: jm.repeatLengthMm ? `${jm.repeatLengthMm} mm` : prev.totalHeight,
-        shellSize: jm.printWidthMm ? `${jm.printWidthMm} mm` : prev.shellSize,
-        petSize: jm.printWidthMm ? `${jm.printWidthMm + 10} mm` : prev.petSize,
+        shellSize: jm.shellSize || (jm.printWidthMm ? `${jm.printWidthMm} mm` : prev.shellSize),
+        petSize: jm.petSize || (jm.printWidthMm ? `${jm.printWidthMm + 10} mm` : prev.petSize),
         engravure: jm.engravuresName || prev.engravure,
         costBorneBy: jm.costBorneBy || prev.costBorneBy,
+        silLogo: jm.silLogo || prev.silLogo,
+        arcMark: jm.arcMark || prev.arcMark,
+        slittingMark: jm.slittingMark || prev.slittingMark,
+        trackerLine: jm.trackerLine || prev.trackerLine,
+        specialInstructions: jm.specialInstructions || prev.specialInstructions,
         artworkUrl: jm.jobCardFileUrl || jm.artworkUrl || prev.artworkUrl
       }));
 
@@ -539,6 +544,16 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
           costBorneBy: formData.costBorneBy || existingJM.costBorneBy,
           jobCardFileUrl: fileUrl,
           artworkUrl: fileUrl,
+          silLogo: formData.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+          arcMark: formData.arcMark || 'Yes',
+          slittingMark: formData.slittingMark || 'Yes',
+          trackerLine: formData.trackerLine || 'Yes',
+          specialInstructions: formData.specialInstructions || '',
+          variant: formData.variant || 'Standard',
+          printing: formData.printing || 'Reverse',
+          invoiceTo: formData.invoiceTo || 'Samyak International Ltd',
+          shellSize: formData.shellSize || '',
+          petSize: formData.petSize || '',
           chkEyemark: formData.chkEyemark,
           chkBarcode: formData.chkBarcode,
           chkOrientation: formData.chkOrientation,
@@ -568,6 +583,16 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
           utilisationLimit: Number(formData.utilisationLimit) || 10000,
           jobCardFileUrl: fileUrl,
           artworkUrl: fileUrl,
+          silLogo: formData.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+          arcMark: formData.arcMark || 'Yes',
+          slittingMark: formData.slittingMark || 'Yes',
+          trackerLine: formData.trackerLine || 'Yes',
+          specialInstructions: formData.specialInstructions || '',
+          variant: formData.variant || 'Standard',
+          printing: formData.printing || 'Reverse',
+          invoiceTo: formData.invoiceTo || 'Samyak International Ltd',
+          shellSize: formData.shellSize || '',
+          petSize: formData.petSize || '',
           chkEyemark: formData.chkEyemark,
           chkBarcode: formData.chkBarcode,
           chkOrientation: formData.chkOrientation,
@@ -866,6 +891,79 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
               Total Calculated GSM: <strong>
                 {layers.reduce((sum, l) => sum + (l.micron * (FILM_DENSITIES[l.filmType] || 1.40)), 0).toFixed(2)} g/m²
               </strong>
+            </div>
+          </div>
+        </div>
+
+        {/* SECTION 3: PRESS MARKS & QUALITY GUIDELINES (INPUT ENTRY) */}
+        <div style={{ marginBottom: '20px', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+          <div style={{ marginBottom: '12px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>
+            <label style={{ fontWeight: '800', fontSize: '0.95rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+              <CheckSquare size={18} style={{ color: 'var(--primary-brand)' }} />
+              3. Press Marks & Quality Guidelines (Input Entry)
+            </label>
+            <p style={{ margin: '4px 0 0 0', fontSize: '0.78rem', color: '#64748b' }}>
+              Configure press line branding, alignment marks, slitting tracker lines, and special plant execution instructions.
+            </p>
+          </div>
+
+          <div className="form-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
+            <div className="form-group">
+              <label>SIL Logo / Press Line</label>
+              <input 
+                className="form-control" 
+                name="silLogo" 
+                value={formData.silLogo} 
+                onChange={handleChange} 
+                placeholder="e.g. Yes - 'Pkg Material Mfg by - Samyak International Ltd'" 
+              />
+            </div>
+
+            <div className="form-group">
+              <label>ARC Mark (Auto Register Control)</label>
+              <select className="form-control" name="arcMark" value={formData.arcMark} onChange={handleChange}>
+                <option value="Yes">Yes (Standard)</option>
+                <option value="Yes (Both Edges)">Yes (Both Edges)</option>
+                <option value="Yes (Operator Side)">Yes (Operator Side)</option>
+                <option value="Yes (Gear Side)">Yes (Gear Side)</option>
+                <option value="No">No</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label>Slitting Mark</label>
+              <select className="form-control" name="slittingMark" value={formData.slittingMark} onChange={handleChange}>
+                <option value="Yes">Yes (Standard)</option>
+                <option value="1.5mm Dashed">1.5mm Dashed</option>
+                <option value="Continuous Solid Line">Continuous Solid Line</option>
+                <option value="2mm Center Slit">2mm Center Slit</option>
+                <option value="No">No</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label>Tracker Line</label>
+              <select className="form-control" name="trackerLine" value={formData.trackerLine} onChange={handleChange}>
+                <option value="Yes">Yes (Standard)</option>
+                <option value="Continuous 1mm">Continuous 1mm</option>
+                <option value="1mm Edge Guide">1mm Edge Guide</option>
+                <option value="No">No</option>
+              </select>
+            </div>
+
+            <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+              <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>Special Quality Guidelines & Operator Instructions</span>
+                <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 'normal' }}>Printed on Job Card in red highlighted banner</span>
+              </label>
+              <textarea 
+                className="form-control" 
+                name="specialInstructions" 
+                rows="3" 
+                value={formData.specialInstructions} 
+                onChange={handleChange} 
+                placeholder="e.g. Core 76mm ID. Winding direction: Face Out. Maintain solvent retention < 5 mg/m². Corona treatment dynes > 38."
+              />
             </div>
           </div>
         </div>
