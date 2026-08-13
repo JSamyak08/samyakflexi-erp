@@ -28,6 +28,7 @@ import {
 import { calculateUtilisation } from '../dataStore';
 import { FILM_DENSITIES } from '../factoryStore';
 import CylinderJobCardForm from '../CylinderJobCardForm';
+import { saveJobMasterToSupabase, saveCylinderToSupabase } from '../services/supabaseDataService';
 
 export default function JobMasterDirectory({ 
   urlParams = {},
