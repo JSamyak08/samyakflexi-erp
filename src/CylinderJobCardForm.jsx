@@ -274,6 +274,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
   const EDIT_ROLES = ['Admin', 'SuperAdmin', 'Plant Manager', 'Production Manager'];
   const userRole = currentUser?.role || 'Admin';
   const canEdit = EDIT_ROLES.includes(userRole);
+  const isAdmin = userRole === 'Admin' || userRole === 'SuperAdmin';
   const componentRef = useRef();
 
   const [layers, setLayers] = useState(() => {
