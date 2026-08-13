@@ -3,7 +3,7 @@ import { useReactToPrint } from 'react-to-print';
 import { Save, Printer, UploadCloud, ArrowLeft, CheckCircle2, RefreshCw, Trash2, Check, ExternalLink, Image as ImageIcon, CheckSquare, ShieldCheck, FileCode, Layers, Plus } from 'lucide-react';
 import { uploadArtworkFile, openArtworkViewer } from './services/supabaseStorageService';
 import { getAuthorisedSignature, getCompanyLogo, getNextDocRefNumber, generateDocRefNumber } from './services/settingsService';
-import { safeLocalStorageSet } from './utils/safeStorage';
+import { safeLocalStorageSet, safeLocalStorageGet } from './utils/safeStorage';
 import { COMPANY_DETAILS, FILM_DENSITIES } from './factoryStore';
 import { saveJobMasterToSupabase } from './services/supabaseDataService';
 import ArtworkModal from './components/ArtworkModal';
@@ -853,7 +853,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
           <select 
             className="form-control" 
             style={{ fontWeight: '700', background: '#ffffff' }}
-            value={selectedJobMasterId}
+            value={formData.jobMasterId || ''}
             onChange={handleJobMasterSelect}
           >
             <option value="">-- Create New Job Master / Manual Specs Entry --</option>
