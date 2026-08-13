@@ -286,6 +286,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
   const [imagePreview, setImagePreview] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [saveNotification, setSaveNotification] = useState(null);
+  const [activeArtworkModal, setActiveArtworkModal] = useState({ isOpen: false, url: '', title: '' });
 
   const [formData, setFormData] = useState({
     jobMasterId: initialData?.jobMasterId || initialData?.id || '',
