@@ -5,7 +5,7 @@ import { uploadArtworkFile, openArtworkViewer } from './services/supabaseStorage
 import { getAuthorisedSignature, getCompanyLogo, getNextDocRefNumber, generateDocRefNumber } from './services/settingsService';
 import { safeLocalStorageSet, safeLocalStorageGet } from './utils/safeStorage';
 import { COMPANY_DETAILS, FILM_DENSITIES } from './factoryStore';
-import { saveJobMasterToSupabase, saveCylinderToSupabase } from './services/supabaseDataService';
+import { saveJobMasterToSupabase, saveCylinderToSupabase, saveSystemSetting } from './services/supabaseDataService';
 import ArtworkModal from './components/ArtworkModal';
 
 function parseStructureToLayers(structStr) {
