@@ -274,21 +274,17 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
   const EDIT_ROLES = ['Admin', 'SuperAdmin', 'Plant Manager', 'Production Manager'];
   const userRole = currentUser?.role || 'Admin';
   const canEdit = EDIT_ROLES.includes(userRole);
-  const isAdmin = userRole === 'Admin' || userRole === 'SuperAdmin';
   const componentRef = useRef();
 
-  const [selectedJobMasterId, setSelectedJobMasterId] = useState(initialData?.jobMasterId || initialData?.id || '');
   const [layers, setLayers] = useState(() => {
     if (initialData?.layers && initialData.layers.length > 0) return initialData.layers;
-    if (initialData?.structure) return parseStructureToLayers(initialData.structure);
-    return [
-      { id: 1, filmType: 'PET', micron: 12 },
-      { id: 2, filmType: 'METPET', micron: 12 },
-      { id: 3, filmType: 'Natural GP LD', micron: 35 }
-    ];
+    return [{ id: 1, filmType: 'PET', micron: 12 }];
   });
 
   const availableFilmTypes = useMemo(() => Object.keys(FILM_DENSITIES), []);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [saveNotification, setSaveNotification] = useState(null);
 
   const [formData, setFormData] = useState({
     jobMasterId: initialData?.jobMasterId || initialData?.id || '',
@@ -301,8 +297,10 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
     printing: 'Reverse',
     pouchOpenWidth: '',
     pouchHeight: '',
-    numberOfCylinders: '6',
+    numberOfCylinders: '',
     jobStructure: '—',
+    printWidth: '',
+    faceLength: '',
     totalWidth: '',
     totalHeight: '',
     shellSize: '',
@@ -313,8 +311,10 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
     trackerLine: 'Yes',
     specialInstructions: '',
     approvedBy: '',
-    engravure: 'Acme Rotogravure Engravers',
-    cylinderCost: '₹35,000',
+    engravure: '',
+    cylinderCost: '',
+    costPerCylinder: '',
+    ratePerSqInch: 1.60,
     utilisationLimit: '10000',
     costBorneBy: 'Client (100%)',
     costBorneType: 'client',
@@ -324,71 +324,94 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
     chkClientApproval: false,
     approvedByHead: false,
     approvedHeadName: '',
-    approvedHeadDate: ''
+    approvedHeadDate: '',
+    artworkUrl: ''
   });
 
   useEffect(() => {
     if (initialData) {
-      let initLayers = initialData.layers || [];
-      if (initLayers.length === 0 && (initialData.structure || initialData.film_structure)) {
-        initLayers = parseStructureToLayers(initialData.structure || initialData.film_structure);
+      const matchingJM = (jobMasters || []).find(j => 
+        (j.id && (j.id === initialData.jobMasterId || j.id === initialData.id)) ||
+        (j.skuCode && j.skuCode === (initialData.sku || initialData.skuCode)) ||
+        (j.jobName && j.jobName.toLowerCase() === (initialData.jobName || '').toLowerCase().trim())
+      );
+
+      const storageKey = `samyak_erp_jobcard_settings_${initialData.sku || initialData.skuCode || initialData.jobName || initialData.id}`;
+      const savedLocal = safeLocalStorageGet(storageKey, null);
+
+      const src = { ...(matchingJM || {}), ...initialData, ...(savedLocal || {}) };
+
+      let initLayers = src.layers || [];
+      if (initLayers.length === 0 && (src.structure || src.film_structure)) {
+        initLayers = parseStructureToLayers(src.structure || src.film_structure);
       }
       if (initLayers.length > 0) setLayers(initLayers);
 
       const derivedStruct = (initLayers.length > 0)
         ? initLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
-        : (initialData.structure || initialData.film_structure || initialData.jobStructure || '—');
+        : (src.structure || src.film_structure || src.jobStructure || '—');
+
+      const printWidthVal = src.printWidth 
+        ? (String(src.printWidth).includes('mm') ? src.printWidth : `${src.printWidth} mm`)
+        : (src.printWidthMm ? `${src.printWidthMm} mm` : (src.pouchOpenWidth ? `${src.pouchOpenWidth} mm` : ''));
+
+      const faceLengthVal = src.faceLength 
+        ? (String(src.faceLength).includes('mm') ? src.faceLength : `${src.faceLength} mm`)
+        : (src.faceLengthMm ? `${src.faceLengthMm} mm` : (src.shellSize ? (String(src.shellSize).includes('mm') ? src.shellSize : `${src.shellSize} mm`) : ''));
+
+      const repeatHeightVal = src.totalHeight
+        ? (String(src.totalHeight).includes('mm') ? src.totalHeight : `${src.totalHeight} mm`)
+        : (src.circumferenceMm ? `${src.circumferenceMm} mm` : (src.repeatLengthMm ? `${src.repeatLengthMm} mm` : (src.pouchHeight ? `${src.pouchHeight} mm` : '')));
 
       setFormData({
-        jobMasterId: initialData.jobMasterId || initialData.id || '',
-        skuCode: initialData.sku || initialData.skuCode || '',
-        jobName: initialData.jobName || '',
-        creationDate: initialData.creationDate || new Date().toLocaleDateString('en-GB'),
-        partyName: initialData.clientGroup || initialData.partyName || initialData.clientName || '',
-        invoiceTo: initialData.invoiceTo || 'Samyak International Ltd',
-        variant: initialData.variant || '',
-        printing: initialData.printing || 'Reverse',
-        pouchOpenWidth: initialData.pouchOpenWidth ? (String(initialData.pouchOpenWidth).includes('mm') ? initialData.pouchOpenWidth : `${initialData.pouchOpenWidth} mm`) : '',
-        pouchHeight: initialData.pouchHeight ? (String(initialData.pouchHeight).includes('mm') ? initialData.pouchHeight : `${initialData.pouchHeight} mm`) : '',
-        numberOfCylinders: `${initialData.colorsCount || initialData.numberOfCylinders || 6}`,
+        jobMasterId: src.jobMasterId || src.id || '',
+        skuCode: src.sku || src.skuCode || '',
+        jobName: src.jobName || '',
+        creationDate: src.creationDate || new Date().toLocaleDateString('en-GB'),
+        partyName: src.clientGroup || src.partyName || src.clientName || '',
+        invoiceTo: src.invoiceTo || 'Samyak International Ltd',
+        variant: src.variant || '',
+        printing: src.printing || 'Reverse',
+        pouchOpenWidth: src.pouchOpenWidth ? (String(src.pouchOpenWidth).includes('mm') ? src.pouchOpenWidth : `${src.pouchOpenWidth} mm`) : '',
+        pouchHeight: src.pouchHeight ? (String(src.pouchHeight).includes('mm') ? src.pouchHeight : `${src.pouchHeight} mm`) : '',
+        numberOfCylinders: src.colorsCount || src.numberOfCylinders ? `${src.colorsCount || src.numberOfCylinders}` : '',
         jobStructure: derivedStruct,
-        printWidth: initialData.printWidth ? (String(initialData.printWidth).includes('mm') ? initialData.printWidth : `${initialData.printWidth} mm`) : (initialData.printWidthMm ? `${initialData.printWidthMm} mm` : '1000 mm'),
-        faceLength: initialData.faceLength ? (String(initialData.faceLength).includes('mm') ? initialData.faceLength : `${initialData.faceLength} mm`) : (initialData.faceLengthMm ? `${initialData.faceLengthMm} mm` : (initialData.totalWidth || '1050 mm')),
-        totalWidth: initialData.faceLengthMm ? `${initialData.faceLengthMm} mm` : (initialData.totalWidth || (initialData.printWidthMm ? `${initialData.printWidthMm} mm` : '1050 mm')),
-        totalHeight: initialData.circumferenceMm ? `${initialData.circumferenceMm} mm` : (initialData.totalHeight || (initialData.repeatLengthMm ? `${initialData.repeatLengthMm} mm` : '400 mm')),
-        shellSize: initialData.shellSize || (initialData.faceLengthMm ? `${initialData.faceLengthMm} mm` : (initialData.printWidthMm ? `${initialData.printWidthMm} mm` : '1050 mm')),
-        petSize: initialData.petSize || (initialData.faceLengthMm ? `${initialData.faceLengthMm + 10} mm` : (initialData.printWidthMm ? `${initialData.printWidthMm + 10} mm` : '1060 mm')),
-        silLogo: initialData.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
-        arcMark: initialData.arcMark || 'Yes',
-        slittingMark: initialData.slittingMark || 'Yes',
-        trackerLine: initialData.trackerLine || 'Yes',
-        specialInstructions: initialData.specialInstructions || '',
-        approvedBy: initialData.approvedBy || '',
-        engravure: initialData.engravuresName || initialData.engravure || 'Acme Rotogravure Engravers',
-        cylinderCost: initialData.cylinderCost || '₹35,000',
-        costPerCylinder: initialData.costPerCylinder || '',
-        ratePerSqInch: initialData.ratePerSqInch || 1.60,
-        utilisationLimit: `${initialData.utilisationLimit || 10000}`,
-        costBorneBy: initialData.costBorneBy || 'Client (100%)',
-        costBorneType: initialData.costBorneType || 'client',
-        artworkUrl: initialData.artworkUrl || initialData.jobCardFileUrl || initialData.imageUrl || initialData.artworkImage || '',
-        chkEyemark: initialData.chkEyemark ?? false,
-        chkBarcode: initialData.chkBarcode ?? false,
-        chkOrientation: initialData.chkOrientation ?? false,
-        chkClientApproval: initialData.chkClientApproval ?? false,
-        approvedByHead: initialData.approvedByHead ?? initialData.productionApproved ?? false,
-        approvedHeadName: initialData.approvedHeadName || '',
-        approvedHeadDate: initialData.approvedHeadDate || ''
+        printWidth: printWidthVal,
+        faceLength: faceLengthVal,
+        totalWidth: faceLengthVal || printWidthVal,
+        totalHeight: repeatHeightVal,
+        shellSize: src.shellSize || faceLengthVal,
+        petSize: src.petSize || (src.faceLengthMm ? `${src.faceLengthMm + 10} mm` : ''),
+        silLogo: src.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+        arcMark: src.arcMark || 'Yes',
+        slittingMark: src.slittingMark || 'Yes',
+        trackerLine: src.trackerLine || 'Yes',
+        specialInstructions: src.specialInstructions || '',
+        approvedBy: src.approvedBy || '',
+        engravure: src.engravuresName || src.engravure || src.engraverName || '',
+        cylinderCost: src.cylinderCost || '',
+        costPerCylinder: src.costPerCylinder || '',
+        ratePerSqInch: src.ratePerSqInch || 1.60,
+        utilisationLimit: `${src.utilisationLimit || 10000}`,
+        costBorneBy: src.costBorneBy || 'Client (100%)',
+        costBorneType: src.costBorneType || 'client',
+        artworkUrl: src.artworkUrl || src.jobCardFileUrl || src.imageUrl || src.artworkImage || '',
+        chkEyemark: src.chkEyemark ?? false,
+        chkBarcode: src.chkBarcode ?? false,
+        chkOrientation: src.chkOrientation ?? false,
+        chkClientApproval: src.chkClientApproval ?? false,
+        approvedByHead: src.approvedByHead ?? src.productionApproved ?? false,
+        approvedHeadName: src.approvedHeadName || '',
+        approvedHeadDate: src.approvedHeadDate || ''
       });
 
-      const initialArtworkUrl = initialData.artworkUrl || initialData.jobCardFileUrl || initialData.imageUrl || initialData.artworkImage || '';
+      const initialArtworkUrl = src.artworkUrl || src.jobCardFileUrl || src.imageUrl || src.artworkImage || '';
       if (initialArtworkUrl) {
         setImagePreview(initialArtworkUrl);
       }
     }
-  }, [initialData]);
+  }, [initialData, jobMasters]);
 
-  // Keep derived structure in sync with layers changes
   useEffect(() => {
     if (layers && layers.length > 0) {
       const structStr = layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
@@ -396,81 +419,59 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
     }
   }, [layers]);
 
-  const [imagePreview, setImagePreview] = useState(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [saveNotification, setSaveNotification] = useState(null);
-  const [activeArtworkModal, setActiveArtworkModal] = useState({ isOpen: false, url: '', title: '' });
+  const handlePrint = useReactToPrint({ contentRef: componentRef, documentTitle: `Job_Card_${formData.jobName || 'Draft'}` });
 
-  useEffect(() => {
-    if (!formData.jobName && !formData.skuCode) return;
-    try {
-      const storageKey = `samyak_erp_jobcard_settings_${formData.skuCode || formData.jobName}`;
-      safeLocalStorageSet(storageKey, formData);
-    } catch (e) {
-      console.warn("Auto-save failed", e);
-    }
-  }, [formData]);
-
-  const handlePrint = useReactToPrint({
-    contentRef: componentRef,
-    documentTitle: `Job_Card_${formData.jobName || 'Draft'}`,
-  });
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleDimensionBlur = (e) => {
-    const { name, value } = e.target;
-    if (value && /^\d+(\.\d+)?$/.test(value.trim())) {
-      setFormData(prev => ({ ...prev, [name]: `${value.trim()} mm` }));
-    }
-  };
-
-  // Job Master selector handler to auto-fill all parameters
   const handleJobMasterSelect = (e) => {
     const selectedId = e.target.value;
-    setSelectedJobMasterId(selectedId);
-    if (!selectedId) return;
-
     const jm = (jobMasters || []).find(j => j.id === selectedId);
     if (jm) {
       let jmLayers = jm.layers || [];
       if (jmLayers.length === 0 && jm.structure) {
         jmLayers = parseStructureToLayers(jm.structure);
       }
-      if (jmLayers.length > 0) {
-        setLayers(jmLayers);
-      }
+      if (jmLayers.length > 0) setLayers(jmLayers);
 
-      const derived = (jmLayers.length > 0)
+      const derivedStruct = (jmLayers.length > 0)
         ? jmLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
         : (jm.structure || '—');
+
+      const printWidthVal = jm.printWidthMm ? `${jm.printWidthMm} mm` : '';
+      const faceLengthVal = jm.faceLengthMm ? `${jm.faceLengthMm} mm` : '';
+      const repeatHeightVal = jm.repeatLengthMm ? `${jm.repeatLengthMm} mm` : (jm.circumferenceMm ? `${jm.circumferenceMm} mm` : '');
 
       setFormData(prev => ({
         ...prev,
         jobMasterId: jm.id,
-        skuCode: jm.skuCode || jm.sku || prev.skuCode,
+        skuCode: jm.skuCode || prev.skuCode,
         jobName: jm.jobName || prev.jobName,
         partyName: jm.clientName || prev.partyName,
-        pouchOpenWidth: jm.pouchOpenWidth ? `${jm.pouchOpenWidth} mm` : (jm.printWidthMm ? `${jm.printWidthMm} mm` : prev.pouchOpenWidth),
-        pouchHeight: jm.pouchHeight ? `${jm.pouchHeight} mm` : prev.pouchHeight,
-        numberOfCylinders: `${jm.colorsCount || prev.numberOfCylinders || 6}`,
-        jobStructure: derived,
-        printWidth: jm.printWidthMm ? `${jm.printWidthMm} mm` : prev.printWidth,
-        faceLength: jm.faceLengthMm ? `${jm.faceLengthMm} mm` : (jm.printWidthMm ? `${jm.printWidthMm} mm` : prev.faceLength),
-        totalWidth: jm.faceLengthMm ? `${jm.faceLengthMm} mm` : (jm.printWidthMm ? `${jm.printWidthMm} mm` : prev.totalWidth),
-        totalHeight: jm.repeatLengthMm ? `${jm.repeatLengthMm} mm` : prev.totalHeight,
-        shellSize: jm.faceLengthMm ? `${jm.faceLengthMm} mm` : (jm.shellSize || (jm.printWidthMm ? `${jm.printWidthMm} mm` : prev.shellSize)),
-        petSize: jm.faceLengthMm ? `${jm.faceLengthMm + 10} mm` : (jm.petSize || (jm.printWidthMm ? `${jm.printWidthMm + 10} mm` : prev.petSize)),
-        engravure: jm.engravuresName || prev.engravure,
+        jobStructure: derivedStruct,
+        printWidth: printWidthVal || prev.printWidth,
+        faceLength: faceLengthVal || prev.faceLength,
+        totalWidth: faceLengthVal || printWidthVal || prev.totalWidth,
+        totalHeight: repeatHeightVal || prev.totalHeight,
+        shellSize: jm.shellSize || faceLengthVal || prev.shellSize,
+        petSize: jm.petSize || (jm.faceLengthMm ? `${jm.faceLengthMm + 10} mm` : prev.petSize),
+        numberOfCylinders: `${jm.colorsCount || prev.numberOfCylinders}`,
+        cylinderCost: jm.cylinderCost || prev.cylinderCost,
+        engravure: jm.engravuresName || jm.engraverName || prev.engravure,
         costBorneBy: jm.costBorneBy || prev.costBorneBy,
+        utilisationLimit: `${jm.utilisationLimit || prev.utilisationLimit}`,
         silLogo: jm.silLogo || prev.silLogo,
         arcMark: jm.arcMark || prev.arcMark,
         slittingMark: jm.slittingMark || prev.slittingMark,
         trackerLine: jm.trackerLine || prev.trackerLine,
         specialInstructions: jm.specialInstructions || prev.specialInstructions,
+        chkEyemark: jm.chkEyemark ?? prev.chkEyemark,
+        chkBarcode: jm.chkBarcode ?? prev.chkBarcode,
+        chkOrientation: jm.chkOrientation ?? prev.chkOrientation,
+        chkClientApproval: jm.chkClientApproval ?? prev.chkClientApproval,
+        approvedByHead: jm.approvedByHead ?? prev.approvedByHead,
+        approvedHeadName: jm.approvedHeadName || prev.approvedHeadName,
+        approvedHeadDate: jm.approvedHeadDate || prev.approvedHeadDate,
+        variant: jm.variant || prev.variant,
+        printing: jm.printing || prev.printing,
+        invoiceTo: jm.invoiceTo || prev.invoiceTo,
         artworkUrl: jm.jobCardFileUrl || jm.artworkUrl || prev.artworkUrl
       }));
 
@@ -480,42 +481,44 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
     }
   };
 
+  const handleLayerChange = (id, field, value) => {
+    setLayers(prev => prev.map(l => l.id === id ? { ...l, [field]: value } : l));
+  };
+
+  const addLayer = () => {
+    setLayers(prev => [...prev, { id: Date.now(), filmType: availableFilmTypes[0] || 'PET', micron: 12 }]);
+  };
+
+  const removeLayer = (id) => {
+    if (layers.length <= 1) {
+      alert("At least one laminate layer is required.");
+      return;
+    }
+    setLayers(prev => prev.filter(l => l.id !== id));
+  };
+
   const handleImageUpload = async (e) => {
-    const file = e.target.files?.[0];
+    const file = e.target.files[0];
     if (!file) return;
 
     setIsUploading(true);
     try {
       const result = await uploadArtworkFile(file, formData.skuCode || formData.jobName || 'jobcard');
-      if (result.publicUrl) {
+      if (result && result.publicUrl) {
         setImagePreview(result.publicUrl);
         setFormData(prev => ({ ...prev, artworkUrl: result.publicUrl }));
-        
-        if (onSave) {
-          onSave({ ...formData, artworkUrl: result.publicUrl });
-        }
-        setSaveNotification('✅ Artwork Uploaded to Supabase Cloud Storage Successfully!');
-        setTimeout(() => setSaveNotification(null), 4000);
       }
     } catch (err) {
-      console.error("Artwork upload failed:", err);
+      console.error("Image upload failed", err);
       alert("Failed to upload artwork: " + err.message);
     } finally {
       setIsUploading(false);
     }
   };
 
-  const handleRemoveArtwork = () => {
-    setImagePreview(null);
-    setFormData(prev => ({ ...prev, artworkUrl: '' }));
-    if (onSave) {
-      onSave({ ...formData, artworkUrl: '' });
-    }
-  };
-
-  const handleSaveSettings = () => {
-    if (!formData.chkEyemark || !formData.chkBarcode || !formData.chkOrientation || !formData.chkClientApproval) {
-      alert("⚠️ MANDATORY CHECKLIST UNVERIFIED:\n\nYou must verify and check all 4 Pre-Press & Quality Checklist items (Eye-mark, Barcode/FSSAI, Orientation, Client Approval) mandatorily before saving Job Card parameters!");
+  const handleSaveSettings = async () => {
+    if (!canEdit) {
+      alert("Access Denied: Only Admin, SuperAdmin, Plant Manager, or Production Manager can save Job Card specs.");
       return;
     }
 
@@ -525,8 +528,15 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         : (formData.jobStructure || '—');
 
       const fileUrl = imagePreview || formData.artworkUrl || '';
+      const fileName = fileUrl ? 'Artwork_KLD_Proof.pdf' : '';
 
-      // 1. Check if Job Master already exists
+      const printWidthNum = Number(String(formData.printWidth || formData.totalWidth).replace(/\D/g, '')) || Number(String(formData.pouchOpenWidth).replace(/\D/g, '')) || 1000;
+      const faceLengthNum = Number(String(formData.faceLength || formData.totalWidth).replace(/\D/g, '')) || 1050;
+      const repeatLengthNum = Number(String(formData.totalHeight).replace(/\D/g, '')) || Number(String(formData.pouchHeight).replace(/\D/g, '')) || 400;
+      const pouchOpenWidthNum = Number(String(formData.pouchOpenWidth).replace(/\D/g, '')) || 0;
+      const pouchHeightNum = Number(String(formData.pouchHeight).replace(/\D/g, '')) || 0;
+      const colorsCountNum = Number(formData.numberOfCylinders) || 6;
+
       const existingJM = (jobMasters || []).find(j => 
         (j.id && j.id === formData.jobMasterId) ||
         (j.skuCode && j.skuCode.toLowerCase() === (formData.skuCode || '').toLowerCase().trim()) ||
@@ -535,7 +545,6 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
 
       let targetJobMaster;
       if (existingJM) {
-        // Update existing Job Master
         targetJobMaster = {
           ...existingJM,
           skuCode: formData.skuCode || existingJM.skuCode,
@@ -543,15 +552,20 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
           clientName: formData.partyName || existingJM.clientName,
           structure: derivedStruct,
           layers: layers,
-          printWidthMm: Number(String(formData.printWidth || formData.totalWidth).replace(/\D/g, '')) || Number(String(formData.pouchOpenWidth).replace(/\D/g, '')) || existingJM.printWidthMm || 1000,
-          faceLengthMm: Number(String(formData.faceLength || formData.totalWidth).replace(/\D/g, '')) || existingJM.faceLengthMm || 1050,
-          repeatLengthMm: Number(String(formData.totalHeight).replace(/\D/g, '')) || Number(String(formData.pouchHeight).replace(/\D/g, '')) || existingJM.repeatLengthMm || 400,
-          pouchOpenWidth: Number(String(formData.pouchOpenWidth).replace(/\D/g, '')) || existingJM.pouchOpenWidth || 0,
-          pouchHeight: Number(String(formData.pouchHeight).replace(/\D/g, '')) || existingJM.pouchHeight || 0,
-          colorsCount: Number(formData.numberOfCylinders) || existingJM.colorsCount || 6,
-          engravuresName: formData.engravure || existingJM.engravuresName,
+          printWidthMm: printWidthNum,
+          faceLengthMm: faceLengthNum,
+          repeatLengthMm: repeatLengthNum,
+          pouchOpenWidth: pouchOpenWidthNum,
+          pouchHeight: pouchHeightNum,
+          colorsCount: colorsCountNum,
+          engravuresName: formData.engravure || existingJM.engravuresName || '',
           costBorneBy: formData.costBorneBy || existingJM.costBorneBy,
+          cylinderCost: formData.cylinderCost || existingJM.cylinderCost || '',
+          costPerCylinder: formData.costPerCylinder || existingJM.costPerCylinder || '',
+          ratePerSqInch: formData.ratePerSqInch || existingJM.ratePerSqInch || 1.6,
+          utilisationLimit: Number(formData.utilisationLimit) || existingJM.utilisationLimit || 10000,
           jobCardFileUrl: fileUrl,
+          jobCardFileName: fileName,
           artworkUrl: fileUrl,
           silLogo: formData.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
           arcMark: formData.arcMark || 'Yes',
@@ -561,8 +575,8 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
           variant: formData.variant || 'Standard',
           printing: formData.printing || 'Reverse',
           invoiceTo: formData.invoiceTo || 'Samyak International Ltd',
-          shellSize: formData.shellSize || `${formData.faceLength || '1050 mm'}`,
-          petSize: formData.petSize || '',
+          shellSize: formData.shellSize || `${faceLengthNum} mm`,
+          petSize: formData.petSize || `${faceLengthNum + 10} mm`,
           chkEyemark: formData.chkEyemark,
           chkBarcode: formData.chkBarcode,
           chkOrientation: formData.chkOrientation,
@@ -572,7 +586,6 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
           approvedHeadDate: formData.approvedHeadDate
         };
       } else {
-        // Create NEW Job Master automatically
         const jmId = getNextDocRefNumber('jm');
         targetJobMaster = {
           id: jmId,
@@ -581,17 +594,20 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
           clientName: formData.partyName || 'General Client',
           structure: derivedStruct,
           layers: layers,
-          printWidthMm: Number(String(formData.printWidth || formData.totalWidth).replace(/\D/g, '')) || Number(String(formData.pouchOpenWidth).replace(/\D/g, '')) || 1000,
-          faceLengthMm: Number(String(formData.faceLength || formData.totalWidth).replace(/\D/g, '')) || 1050,
-          repeatLengthMm: Number(String(formData.totalHeight).replace(/\D/g, '')) || Number(String(formData.pouchHeight).replace(/\D/g, '')) || 400,
-          pouchOpenWidth: Number(String(formData.pouchOpenWidth).replace(/\D/g, '')) || 0,
-          pouchHeight: Number(String(formData.pouchHeight).replace(/\D/g, '')) || 0,
-          colorsCount: Number(formData.numberOfCylinders) || 6,
-          engravuresName: formData.engravure || 'Acme Rotogravure Engravers',
+          printWidthMm: printWidthNum,
+          faceLengthMm: faceLengthNum,
+          repeatLengthMm: repeatLengthNum,
+          pouchOpenWidth: pouchOpenWidthNum,
+          pouchHeight: pouchHeightNum,
+          colorsCount: colorsCountNum,
+          engravuresName: formData.engravure || '',
           costBorneBy: formData.costBorneBy || 'Client (100%)',
-          cylinderCost: formData.cylinderCost || '₹35,000',
+          cylinderCost: formData.cylinderCost || '',
+          costPerCylinder: formData.costPerCylinder || '',
+          ratePerSqInch: formData.ratePerSqInch || 1.6,
           utilisationLimit: Number(formData.utilisationLimit) || 10000,
           jobCardFileUrl: fileUrl,
+          jobCardFileName: fileName,
           artworkUrl: fileUrl,
           silLogo: formData.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
           arcMark: formData.arcMark || 'Yes',
@@ -601,8 +617,8 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
           variant: formData.variant || 'Standard',
           printing: formData.printing || 'Reverse',
           invoiceTo: formData.invoiceTo || 'Samyak International Ltd',
-          shellSize: formData.shellSize || `${formData.faceLength || '1050 mm'}`,
-          petSize: formData.petSize || '',
+          shellSize: formData.shellSize || `${faceLengthNum} mm`,
+          petSize: formData.petSize || `${faceLengthNum + 10} mm`,
           chkEyemark: formData.chkEyemark,
           chkBarcode: formData.chkBarcode,
           chkOrientation: formData.chkOrientation,
@@ -614,17 +630,69 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         };
       }
 
-      // Sync & Persist Job Master to Supabase & localStorage
-      saveJobMasterToSupabase(targetJobMaster);
+      const cylId = (initialData?.id && String(initialData.id).startsWith('CYL-'))
+        ? initialData.id 
+        : (initialData?.cylinderId || `CYL-${Date.now()}`);
 
-      const storageKey = `samyak_erp_jobcard_settings_${formData.skuCode || formData.jobName}`;
-      safeLocalStorageSet(storageKey, { ...formData, jobStructure: derivedStruct, layers });
+      const targetCylinder = {
+        id: cylId,
+        sku: formData.skuCode || targetJobMaster.skuCode,
+        jobName: formData.jobName || targetJobMaster.jobName,
+        clientGroup: formData.partyName || targetJobMaster.clientName,
+        colorsCount: colorsCountNum,
+        cylinderCost: formData.cylinderCost || targetJobMaster.cylinderCost,
+        costPerCylinder: formData.costPerCylinder,
+        ratePerSqInch: formData.ratePerSqInch || 1.6,
+        engravuresName: formData.engravure || targetJobMaster.engravuresName || '',
+        costBorneBy: formData.costBorneBy || 'Client (100%)',
+        costBorneType: formData.costBorneType || 'client',
+        circumferenceMm: repeatLengthNum,
+        faceLengthMm: faceLengthNum,
+        printWidthMm: printWidthNum,
+        pouchOpenWidth: pouchOpenWidthNum,
+        pouchHeight: pouchHeightNum,
+        layers: layers,
+        structure: derivedStruct,
+        utilisationLimit: Number(formData.utilisationLimit) || 10000,
+        status: initialData?.status || 'Active In-Use',
+        artworkUrl: fileUrl,
+        jobCardFileUrl: fileUrl,
+        jobCardFileName: fileName,
+        jobMasterId: targetJobMaster.id,
+        silLogo: formData.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+        arcMark: formData.arcMark || 'Yes',
+        slittingMark: formData.slittingMark || 'Yes',
+        trackerLine: formData.trackerLine || 'Yes',
+        specialInstructions: formData.specialInstructions || '',
+        chkEyemark: formData.chkEyemark ?? false,
+        chkBarcode: formData.chkBarcode ?? false,
+        chkOrientation: formData.chkOrientation ?? false,
+        chkClientApproval: formData.chkClientApproval ?? false,
+        approvedByHead: formData.approvedByHead ?? false,
+        approvedHeadName: formData.approvedHeadName || '',
+        approvedHeadDate: formData.approvedHeadDate || '',
+        variant: formData.variant || 'Standard',
+        printing: formData.printing || 'Reverse',
+        invoiceTo: formData.invoiceTo || 'Samyak International Ltd',
+        shellSize: formData.shellSize || `${faceLengthNum} mm`,
+        petSize: formData.petSize || `${faceLengthNum + 10} mm`,
+        creationDate: formData.creationDate || new Date().toLocaleDateString('en-GB')
+      };
+
+      await Promise.allSettled([
+        saveJobMasterToSupabase(targetJobMaster),
+        saveCylinderToSupabase(targetCylinder),
+        saveSystemSetting(`jobcard_${targetJobMaster.skuCode || targetJobMaster.id}`, { ...formData, jobStructure: derivedStruct, layers, artworkUrl: fileUrl, targetJobMaster, targetCylinder })
+      ]);
+
+      const storageKey = `samyak_erp_jobcard_settings_${formData.skuCode || formData.jobName || targetJobMaster.id}`;
+      safeLocalStorageSet(storageKey, { ...formData, jobStructure: derivedStruct, layers, artworkUrl: fileUrl, printWidth: `${printWidthNum} mm`, faceLength: `${faceLengthNum} mm` });
 
       if (onSave) {
-        onSave({ ...formData, jobStructure: derivedStruct, layers, artworkUrl: fileUrl }, targetJobMaster);
+        onSave({ ...formData, jobStructure: derivedStruct, layers, artworkUrl: fileUrl, printWidth: `${printWidthNum} mm`, faceLength: `${faceLengthNum} mm` }, targetJobMaster, targetCylinder);
       }
 
-      setSaveNotification(existingJM ? '✅ Job Master & Job Card Specs Synced Successfully!' : '✅ New Job Master Created & Job Card Specs Saved!');
+      setSaveNotification(existingJM ? '✅ Job Master & Rotogravure Cylinder Specs Synced to Database!' : '✅ New Job Master & Cylinder Record Created in Database!');
       setTimeout(() => setSaveNotification(null), 4000);
     } catch (e) {
       console.error("Save failed", e);

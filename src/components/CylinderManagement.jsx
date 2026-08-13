@@ -33,6 +33,7 @@ export default function CylinderManagement({
   onAddClient,
   jobMasters = [],
   onAddJobMaster,
+  onUpdateJobMaster,
   currentUser,
   onAddCylinder, 
   onUpdateCylinder,
@@ -50,7 +51,9 @@ export default function CylinderManagement({
     if (urlParams && urlParams.id) {
       setSearchTerm(urlParams.id);
     }
-  }, [urlParams?.id]);
+  }, [urlParams]);
+
+  // Modal State for Add / Edit Cylinder Set
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCylinder, setEditingCylinder] = useState(null);
   const [selectedForPDF, setSelectedForPDF] = useState(null);
@@ -70,12 +73,12 @@ export default function CylinderManagement({
     ];
   }, [machines]);
 
-  // Form State
+  // Form Fields State
   const [sku, setSku] = useState('');
   const [jobName, setJobName] = useState('');
   const [clientGroup, setClientGroup] = useState('');
   const [colorsCount, setColorsCount] = useState(6);
-  const [engravuresName, setEngravuresName] = useState('Acme Rotogravure Engravers');
+  const [engravuresName, setEngravuresName] = useState('');
   const [rate, setRate] = useState(1.60);
   const [cylinderCost, setCylinderCost] = useState('35000');
   const [costPerCylinder, setCostPerCylinder] = useState('5833');
@@ -217,7 +220,7 @@ export default function CylinderManagement({
     setJobName('');
     setClientGroup('');
     setColorsCount(6);
-    setEngravuresName('Acme Rotogravure Engravers');
+    setEngravuresName('');
     setRate(1.60);
     setCircumferenceMm(400);
     setFaceLengthMm(1050);
@@ -225,8 +228,8 @@ export default function CylinderManagement({
     setAutoCalculateCost(true);
     setCostBorneBy('Client (100%)');
     setCostBorneType('client');
-    setLayer1PrintedQtyKg(500);
-    setDispatchedQty(500);
+    setLayer1PrintedQtyKg(0);
+    setDispatchedQty(0);
     setUtilisationLimit(10000);
     setStatus('Active In-Use');
     setAssignedPress(printingPresses[0] || '');
@@ -253,7 +256,7 @@ export default function CylinderManagement({
     setJobName(cyl.jobName || '');
     setClientGroup(cyl.clientGroup || '');
     setColorsCount(cyl.colorsCount || 6);
-    setEngravuresName(cyl.engravuresName || 'Acme Rotogravure Engravers');
+    setEngravuresName(cyl.engravuresName || '');
     setRate(cyl.rate || cyl.ratePerSqInch || 1.60);
     setCircumferenceMm(cyl.circumferenceMm || 400);
     setFaceLengthMm(cyl.faceLengthMm || 1050);
@@ -1050,35 +1053,63 @@ export default function CylinderManagement({
           <div className="pdf-paper-container landscape" style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', maxWidth: '1200px', width: '95vw', overflowY: 'auto' }}>
             <CylinderJobCardForm 
               initialData={selectedForPDF} 
+              jobMasters={jobMasters}
               currentUser={currentUser}
               onClose={() => setSelectedForPDF(null)} 
-              onSave={(updated) => {
+              onSave={(updated, targetJobMaster, targetCylinder) => {
+                const printWidthNum = Number(String(updated.printWidth || updated.totalWidth).replace(/\D/g, '')) || selectedForPDF.printWidthMm || 1000;
+                const faceLengthNum = Number(String(updated.faceLength || updated.totalWidth).replace(/\D/g, '')) || selectedForPDF.faceLengthMm || 1050;
+                const repeatLengthNum = Number(String(updated.totalHeight).replace(/\D/g, '')) || selectedForPDF.circumferenceMm || 400;
+
+                const fullUpdatedCyl = {
+                  ...selectedForPDF,
+                  ...(targetCylinder || {}),
+                  sku: updated.skuCode || updated.sku || selectedForPDF.sku,
+                  jobName: updated.jobName || selectedForPDF.jobName,
+                  cylinderCost: updated.cylinderCost || selectedForPDF.cylinderCost,
+                  costPerCylinder: updated.costPerCylinder || selectedForPDF.costPerCylinder,
+                  ratePerSqInch: updated.ratePerSqInch || selectedForPDF.ratePerSqInch,
+                  engravuresName: updated.engravure || selectedForPDF.engravuresName || '',
+                  costBorneBy: updated.costBorneBy || selectedForPDF.costBorneBy,
+                  clientGroup: updated.partyName || selectedForPDF.clientGroup,
+                  colorsCount: parseInt(updated.numberOfCylinders) || selectedForPDF.colorsCount || 6,
+                  printWidthMm: printWidthNum,
+                  faceLengthMm: faceLengthNum,
+                  circumferenceMm: repeatLengthNum,
+                  pouchOpenWidth: Number(String(updated.pouchOpenWidth).replace(/\D/g, '')) || selectedForPDF.pouchOpenWidth || 0,
+                  pouchHeight: Number(String(updated.pouchHeight).replace(/\D/g, '')) || selectedForPDF.pouchHeight || 0,
+                  layers: updated.layers || selectedForPDF.layers,
+                  structure: updated.jobStructure || selectedForPDF.structure,
+                  artworkUrl: updated.artworkUrl || selectedForPDF.artworkUrl,
+                  jobCardFileUrl: updated.artworkUrl || selectedForPDF.jobCardFileUrl,
+                  jobCardFileName: updated.artworkUrl ? 'Artwork_KLD_Proof.pdf' : '',
+                  silLogo: updated.silLogo || selectedForPDF.silLogo,
+                  arcMark: updated.arcMark || selectedForPDF.arcMark,
+                  slittingMark: updated.slittingMark || selectedForPDF.slittingMark,
+                  trackerLine: updated.trackerLine || selectedForPDF.trackerLine,
+                  specialInstructions: updated.specialInstructions || selectedForPDF.specialInstructions,
+                  chkEyemark: updated.chkEyemark ?? selectedForPDF.chkEyemark,
+                  chkBarcode: updated.chkBarcode ?? selectedForPDF.chkBarcode,
+                  chkOrientation: updated.chkOrientation ?? selectedForPDF.chkOrientation,
+                  chkClientApproval: updated.chkClientApproval ?? selectedForPDF.chkClientApproval,
+                  approvedByHead: updated.approvedByHead ?? selectedForPDF.approvedByHead,
+                  approvedHeadName: updated.approvedHeadName || selectedForPDF.approvedHeadName,
+                  approvedHeadDate: updated.approvedHeadDate || selectedForPDF.approvedHeadDate,
+                  variant: updated.variant || selectedForPDF.variant,
+                  printing: updated.printing || selectedForPDF.printing,
+                  invoiceTo: updated.invoiceTo || selectedForPDF.invoiceTo,
+                  shellSize: updated.shellSize || selectedForPDF.shellSize,
+                  petSize: updated.petSize || selectedForPDF.petSize
+                };
+
                 if (onUpdateCylinder) {
-                  onUpdateCylinder({
-                    ...selectedForPDF,
-                    sku: updated.skuCode || updated.sku || selectedForPDF.sku,
-                    jobName: updated.jobName || selectedForPDF.jobName,
-                    cylinderCost: updated.cylinderCost || selectedForPDF.cylinderCost,
-                    costPerCylinder: updated.costPerCylinder || selectedForPDF.costPerCylinder,
-                    ratePerSqInch: updated.ratePerSqInch || selectedForPDF.ratePerSqInch,
-                    engravuresName: updated.engravure || selectedForPDF.engravuresName,
-                    costBorneBy: updated.costBorneBy || selectedForPDF.costBorneBy,
-                    clientGroup: updated.partyName || selectedForPDF.clientGroup,
-                    colorsCount: parseInt(updated.numberOfCylinders) || selectedForPDF.colorsCount,
-                    artworkUrl: updated.artworkUrl || selectedForPDF.artworkUrl,
-                    silLogo: updated.silLogo || selectedForPDF.silLogo,
-                    arcMark: updated.arcMark || selectedForPDF.arcMark,
-                    slittingMark: updated.slittingMark || selectedForPDF.slittingMark,
-                    trackerLine: updated.trackerLine || selectedForPDF.trackerLine,
-                    specialInstructions: updated.specialInstructions || selectedForPDF.specialInstructions,
-                    chkEyemark: updated.chkEyemark ?? selectedForPDF.chkEyemark,
-                    chkBarcode: updated.chkBarcode ?? selectedForPDF.chkBarcode,
-                    chkOrientation: updated.chkOrientation ?? selectedForPDF.chkOrientation,
-                    chkClientApproval: updated.chkClientApproval ?? selectedForPDF.chkClientApproval,
-                    approvedByHead: updated.approvedByHead ?? selectedForPDF.approvedByHead,
-                    approvedHeadName: updated.approvedHeadName || selectedForPDF.approvedHeadName,
-                    approvedHeadDate: updated.approvedHeadDate || selectedForPDF.approvedHeadDate
-                  });
+                  onUpdateCylinder(fullUpdatedCyl);
+                }
+                setSelectedForPDF(fullUpdatedCyl);
+
+                if (targetJobMaster) {
+                  if (onUpdateJobMaster) onUpdateJobMaster(targetJobMaster);
+                  else if (onAddJobMaster) onAddJobMaster(targetJobMaster);
                 }
               }}
             />

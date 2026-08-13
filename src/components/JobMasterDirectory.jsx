@@ -189,9 +189,9 @@ export default function JobMasterDirectory({
     { id: 2, filmType: 'METPET', micron: 12 },
     { id: 3, filmType: 'Natural GP LD', micron: 35 }
   ]);
-  const [cylinderCost, setCylinderCost] = useState('35000');
+  const [cylinderCost, setCylinderCost] = useState('');
   const [costBorneBy, setCostBorneBy] = useState('Client (100%)');
-  const [engravuresName, setEngravuresName] = useState('Acme Rotogravure Engravers');
+  const [engravuresName, setEngravuresName] = useState('');
   const [utilisationLimit, setUtilisationLimit] = useState(10000);
 
   const filteredJobMasters = useMemo(() => {
@@ -413,9 +413,9 @@ export default function JobMasterDirectory({
     setPouchOpenWidth(job.pouchOpenWidth ? String(job.pouchOpenWidth) : '120');
     setPouchHeight(job.pouchHeight ? String(job.pouchHeight) : '150');
     setColorsCount(job.colorsCount || 6);
-    setCylinderCost(job.cylinderCost ? String(job.cylinderCost).replace(/[^0-9]/g, '') : '35000');
+    setCylinderCost(job.cylinderCost ? String(job.cylinderCost).replace(/[^0-9]/g, '') : '');
     setCostBorneBy(job.costBorneBy || 'Client (100%)');
-    setEngravuresName(job.engravuresName || 'Acme Rotogravure Engravers');
+    setEngravuresName(job.engravuresName || '');
     setUtilisationLimit(job.utilisationLimit || 10000);
     setSilLogo(job.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'");
     setArcMark(job.arcMark || 'Yes');
@@ -583,8 +583,8 @@ export default function JobMasterDirectory({
       structure: job.structure,
       layers: job.layers || [],
       colorsCount: job.colorsCount || (linkedCyl ? linkedCyl.colorsCount : 6),
-      cylinderCost: job.cylinderCost || (linkedCyl ? linkedCyl.cylinderCost : '35000'),
-      engravuresName: job.engravuresName || (linkedCyl ? linkedCyl.engravuresName : 'Acme Rotogravure Engravers'),
+      cylinderCost: job.cylinderCost || (linkedCyl ? linkedCyl.cylinderCost : ''),
+      engravuresName: job.engravuresName || (linkedCyl ? linkedCyl.engravuresName : ''),
       costBorneBy: job.costBorneBy || (linkedCyl ? linkedCyl.costBorneBy : 'Client (100%)'),
       creationDate: job.creationDate || new Date().toLocaleDateString('en-GB'),
       jobCardFileUrl: job.jobCardFileUrl || job.artworkUrl || '',
@@ -610,8 +610,8 @@ export default function JobMasterDirectory({
     setActiveJobCardData(cardData);
   };
 
-  const handleSaveJobCardData = (updatedData) => {
-    const targetJob = selectedJob || jobMasters.find(j => j.id === updatedData.jobMasterId || j.skuCode === updatedData.skuCode);
+  const handleSaveJobCardData = (updatedData, targetJobMaster, targetCylinder) => {
+    const targetJob = targetJobMaster || selectedJob || jobMasters.find(j => j.id === updatedData.jobMasterId || j.skuCode === updatedData.skuCode);
     if (!targetJob) return;
 
     const fileUrl = updatedData.artworkUrl || updatedData.jobCardFileUrl || targetJob.jobCardFileUrl || '';
@@ -628,6 +628,9 @@ export default function JobMasterDirectory({
     if (selectedJob && selectedJob.id === updatedJob.id) {
       setSelectedJob(updatedJob);
     }
+    if (activeJobCardData) {
+      setActiveJobCardData(prev => ({ ...prev, ...updatedJob }));
+    }
     if (onAddJobMaster) onAddJobMaster(updatedJob);
 
     try {
@@ -635,7 +638,9 @@ export default function JobMasterDirectory({
     } catch (e) {}
 
     saveJobMasterToSupabase(updatedJob);
-    alert("Job Card Parameters & Cloud Artwork saved successfully!");
+    if (targetCylinder) {
+      saveCylinderToSupabase(targetCylinder);
+    }
   };
 
   const handleFileUpload = (e) => {

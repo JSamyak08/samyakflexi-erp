@@ -510,9 +510,41 @@ export default function App() {
       if (Array.isArray(supaCyls)) {
         const cleanSupa = stripDummyRecords(supaCyls);
         setCylinders(prev => {
+          const prevMap = new Map();
+          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p)) prevMap.set(p.id, p); });
+
           const map = new Map();
-          cleanSupa.forEach(c => { if (c && c.id) map.set(c.id, c); });
-          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
+          cleanSupa.forEach(c => {
+            if (c && c.id) {
+              const existing = prevMap.get(c.id);
+              const mergedRecord = {
+                ...(existing || {}),
+                ...c,
+                layers: (c.layers && c.layers.length > 0) ? c.layers : (existing?.layers || []),
+                press_marks: { ...(existing?.press_marks || {}), ...(c.press_marks || {}) },
+                printWidthMm: c.printWidthMm || existing?.printWidthMm || 1000,
+                faceLengthMm: c.faceLengthMm || existing?.faceLengthMm || 1050,
+                jobCardFileUrl: c.jobCardFileUrl || existing?.jobCardFileUrl || existing?.artworkUrl || '',
+                artworkUrl: c.artworkUrl || existing?.artworkUrl || existing?.jobCardFileUrl || '',
+                silLogo: c.silLogo || existing?.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+                arcMark: c.arcMark || existing?.arcMark || 'Yes',
+                slittingMark: c.slittingMark || existing?.slittingMark || 'Yes',
+                trackerLine: c.trackerLine || existing?.trackerLine || 'Yes',
+                specialInstructions: c.specialInstructions || existing?.specialInstructions || '',
+                chkEyemark: c.chkEyemark ?? existing?.chkEyemark ?? false,
+                chkBarcode: c.chkBarcode ?? existing?.chkBarcode ?? false,
+                chkOrientation: c.chkOrientation ?? existing?.chkOrientation ?? false,
+                chkClientApproval: c.chkClientApproval ?? existing?.chkClientApproval ?? false,
+                approvedByHead: c.approvedByHead ?? existing?.approvedByHead ?? false,
+                approvedHeadName: c.approvedHeadName || existing?.approvedHeadName || '',
+                approvedHeadDate: c.approvedHeadDate || existing?.approvedHeadDate || ''
+              };
+              map.set(c.id, mergedRecord);
+            }
+          });
+          prevMap.forEach((p, id) => {
+            if (!map.has(id)) map.set(id, p);
+          });
           const merged = Array.from(map.values());
           safeLocalStorageSet('samyak_erp_cylinders', merged);
           return merged;
@@ -595,9 +627,41 @@ export default function App() {
       if (Array.isArray(supaJobMasters)) {
         const cleanSupa = stripDummyRecords(supaJobMasters);
         setJobMasters(prev => {
+          const prevMap = new Map();
+          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p)) prevMap.set(p.id, p); });
+
           const map = new Map();
-          cleanSupa.forEach(j => { if (j && j.id) map.set(j.id, j); });
-          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
+          cleanSupa.forEach(j => {
+            if (j && j.id) {
+              const existing = prevMap.get(j.id);
+              const mergedRecord = {
+                ...(existing || {}),
+                ...j,
+                layers: (j.layers && j.layers.length > 0) ? j.layers : (existing?.layers || []),
+                press_marks: { ...(existing?.press_marks || {}), ...(j.press_marks || {}) },
+                printWidthMm: j.printWidthMm || existing?.printWidthMm || 1000,
+                faceLengthMm: j.faceLengthMm || existing?.faceLengthMm || 1050,
+                jobCardFileUrl: j.jobCardFileUrl || existing?.jobCardFileUrl || existing?.artworkUrl || '',
+                artworkUrl: j.artworkUrl || existing?.artworkUrl || existing?.jobCardFileUrl || '',
+                silLogo: j.silLogo || existing?.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+                arcMark: j.arcMark || existing?.arcMark || 'Yes',
+                slittingMark: j.slittingMark || existing?.slittingMark || 'Yes',
+                trackerLine: j.trackerLine || existing?.trackerLine || 'Yes',
+                specialInstructions: j.specialInstructions || existing?.specialInstructions || '',
+                chkEyemark: j.chkEyemark ?? existing?.chkEyemark ?? false,
+                chkBarcode: j.chkBarcode ?? existing?.chkBarcode ?? false,
+                chkOrientation: j.chkOrientation ?? existing?.chkOrientation ?? false,
+                chkClientApproval: j.chkClientApproval ?? existing?.chkClientApproval ?? false,
+                approvedByHead: j.approvedByHead ?? existing?.approvedByHead ?? false,
+                approvedHeadName: j.approvedHeadName || existing?.approvedHeadName || '',
+                approvedHeadDate: j.approvedHeadDate || existing?.approvedHeadDate || ''
+              };
+              map.set(j.id, mergedRecord);
+            }
+          });
+          prevMap.forEach((p, id) => {
+            if (!map.has(id)) map.set(id, p);
+          });
           const merged = Array.from(map.values());
           safeLocalStorageSet('samyak_erp_job_masters', merged);
           return merged;
@@ -2375,6 +2439,7 @@ export default function App() {
             onAddClient={handleAddClient}
             jobMasters={jobMasters}
             onAddJobMaster={handleAddJobMaster}
+            onUpdateJobMaster={handleUpdateJobMaster}
             currentUser={currentUser}
             onAddCylinder={handleAddCylinder}
             onUpdateCylinder={handleUpdateCylinder}

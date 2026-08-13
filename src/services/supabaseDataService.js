@@ -566,22 +566,24 @@ export async function fetchCylinders() {
         sku: c.sku,
         jobName: c.job_name,
         colorsCount: Number(c.colors_count) || 0,
-        cylinderCost: c.cylinder_cost,
-        costPerCylinder: c.cost_per_cylinder,
-        rate: Number(c.rate_per_sq_cm ?? c.rate_per_sq_inch) || 1.6,
-        ratePerSqInch: Number(c.rate_per_sq_cm ?? c.rate_per_sq_inch) || 1.6,
-        engravuresName: c.engravures_name,
-        costBorneBy: c.cost_borne_by,
-        costBorneType: c.cost_borne_type,
-        clientGroup: c.client_group,
-        circumferenceMm: Number(c.circumference_mm) || 0,
-        faceLengthMm: Number(c.face_length_mm) || 1050,
+        cylinderCost: c.cylinder_cost || pm.cylinderCost || '',
+        costPerCylinder: c.cost_per_cylinder || pm.costPerCylinder || '',
+        rate: Number(c.rate_per_sq_cm ?? c.rate_per_sq_inch ?? pm.ratePerSqInch) || 1.6,
+        ratePerSqInch: Number(c.rate_per_sq_cm ?? c.rate_per_sq_inch ?? pm.ratePerSqInch) || 1.6,
+        engravuresName: c.engravures_name || pm.engravuresName || '',
+        costBorneBy: c.cost_borne_by || pm.costBorneBy || 'Client (100%)',
+        costBorneType: c.cost_borne_type || pm.costBorneType || 'client',
+        clientGroup: c.client_group || pm.clientGroup || '',
+        circumferenceMm: Number(c.circumference_mm || pm.circumferenceMm) || 0,
+        faceLengthMm: Number(c.face_length_mm || pm.faceLengthMm) || 1050,
         printWidthMm: Number(c.print_width_mm || c.pouch_open_width || pm.printWidthMm) || 1000,
         layer1PrintedQtyKg: Number(c.layer1_printed_qty_kg) || 0,
         dispatchedQty: Number(c.dispatched_qty) || 0,
-        utilisationLimit: Number(c.utilisation_limit) || 10000,
+        utilisationLimit: Number(c.utilisation_limit || pm.utilisationLimit) || 10000,
         status: c.status || 'Active In-Use',
-        artworkUrl: c.artwork_url || null,
+        artworkUrl: c.artwork_url || c.job_card_file_url || pm.artworkUrl || null,
+        jobCardFileUrl: c.job_card_file_url || c.artwork_url || pm.jobCardFileUrl || '',
+        jobCardFileName: c.job_card_file_name || pm.jobCardFileName || '',
         layers: layers,
         structure: c.structure || (layers.length > 0 ? layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ') : '—'),
         pouchOpenWidth: Number(c.pouch_open_width || pm.pouchOpenWidth) || 0,
@@ -599,7 +601,14 @@ export async function fetchCylinders() {
         chkClientApproval: c.chk_client_approval ?? pm.chkClientApproval ?? false,
         approvedByHead: c.approved_by_head ?? pm.approvedByHead ?? false,
         approvedHeadName: c.approved_head_name || pm.approvedHeadName || '',
-        approvedHeadDate: c.approved_head_date || pm.approvedHeadDate || ''
+        approvedHeadDate: c.approved_head_date || pm.approvedHeadDate || '',
+        variant: c.variant || pm.variant || 'Standard',
+        printing: c.printing || pm.printing || 'Reverse',
+        invoiceTo: c.invoice_to || pm.invoiceTo || 'Samyak International Ltd',
+        shellSize: c.shell_size || pm.shellSize || '',
+        petSize: c.pet_size || pm.petSize || '',
+        creationDate: c.creation_date || (c.created_at ? String(c.created_at).split('T')[0] : new Date().toISOString().split('T')[0]),
+        press_marks: pm
       };
     });
   } catch (err) {
@@ -618,6 +627,9 @@ export async function saveCylinderToSupabase(cyl) {
     ? layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
     : (cyl.structure || '—');
 
+  const fileUrl = cyl.artworkUrl || cyl.jobCardFileUrl || cyl.artwork_url || '';
+  const fileName = cyl.jobCardFileName || (fileUrl ? 'Artwork_KLD_Proof.pdf' : '');
+
   const pressMarks = {
     silLogo: cyl.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
     arcMark: cyl.arcMark || 'Yes',
@@ -627,6 +639,7 @@ export async function saveCylinderToSupabase(cyl) {
     printWidthMm: Number(cyl.printWidthMm) || 1000,
     faceLengthMm: Number(cyl.faceLengthMm) || 1050,
     layers: layers,
+    structure: structureSummary,
     pouchOpenWidth: Number(cyl.pouchOpenWidth) || 0,
     pouchHeight: Number(cyl.pouchHeight) || 0,
     jobMasterId: cyl.jobMasterId || '',
@@ -637,7 +650,23 @@ export async function saveCylinderToSupabase(cyl) {
     chkClientApproval: cyl.chkClientApproval ?? false,
     approvedByHead: cyl.approvedByHead ?? false,
     approvedHeadName: cyl.approvedHeadName || '',
-    approvedHeadDate: cyl.approvedHeadDate || ''
+    approvedHeadDate: cyl.approvedHeadDate || '',
+    variant: cyl.variant || 'Standard',
+    printing: cyl.printing || 'Reverse',
+    invoiceTo: cyl.invoiceTo || 'Samyak International Ltd',
+    shellSize: cyl.shellSize || '',
+    petSize: cyl.petSize || '',
+    cylinderCost: cyl.cylinderCost || '',
+    costPerCylinder: cyl.costPerCylinder || '',
+    engravuresName: cyl.engravuresName || '',
+    costBorneBy: cyl.costBorneBy || 'Client (100%)',
+    costBorneType: cyl.costBorneType || 'client',
+    clientGroup: cyl.clientGroup || '',
+    circumferenceMm: Number(cyl.circumferenceMm) || 0,
+    utilisationLimit: Number(cyl.utilisationLimit) || 10000,
+    jobCardFileUrl: fileUrl,
+    jobCardFileName: fileName,
+    artworkUrl: fileUrl
   };
 
   const fullPayload = {
@@ -659,7 +688,9 @@ export async function saveCylinderToSupabase(cyl) {
     dispatched_qty: cyl.dispatchedQty,
     utilisation_limit: cyl.utilisationLimit,
     status: cyl.status || 'Active In-Use',
-    artwork_url: cyl.artworkUrl || cyl.artwork_url || null,
+    artwork_url: fileUrl || null,
+    job_card_file_url: fileUrl || null,
+    job_card_file_name: fileName || null,
     structure: structureSummary,
     layers: layers,
     pouch_open_width: Number(cyl.pouchOpenWidth) || 0,
@@ -678,13 +709,24 @@ export async function saveCylinderToSupabase(cyl) {
     chk_client_approval: pressMarks.chkClientApproval,
     approved_by_head: pressMarks.approvedByHead,
     approved_head_name: pressMarks.approvedHeadName,
-    approved_head_date: pressMarks.approvedHeadDate
+    approved_head_date: pressMarks.approvedHeadDate,
+    variant: pressMarks.variant,
+    printing: pressMarks.printing,
+    invoice_to: pressMarks.invoiceTo,
+    shell_size: pressMarks.shellSize,
+    pet_size: pressMarks.petSize
   };
+
+  // Dual-Persist: Save failsafe snapshot in system_settings
+  try {
+    const key = `jobcard_${cyl.sku || id}`;
+    saveSystemSetting(key, { ...cyl, ...pressMarks, id, sku: cyl.sku, jobName: cyl.jobName }).catch(() => {});
+  } catch (e) {}
 
   const { error: fullErr } = await supabase.from('cylinders').upsert(fullPayload, { onConflict: 'id' });
   if (fullErr) {
-    console.warn('[cylinders] Full payload upsert rejected, trying standard payload:', fullErr.message);
-    const standardPayload = {
+    console.warn('[cylinders] Full payload upsert rejected, trying payload with press_marks JSON:', fullErr.message);
+    const fallbackPayload = {
       id,
       sku: cyl.sku,
       job_name: cyl.jobName,
@@ -702,12 +744,25 @@ export async function saveCylinderToSupabase(cyl) {
       dispatched_qty: cyl.dispatchedQty,
       utilisation_limit: cyl.utilisationLimit,
       status: cyl.status || 'Active In-Use',
-      artwork_url: cyl.artworkUrl || cyl.artwork_url || null
+      artwork_url: fileUrl || null,
+      press_marks: pressMarks
     };
-    const { error: stdErr } = await supabase.from('cylinders').upsert(standardPayload, { onConflict: 'id' });
-    if (stdErr) {
-      console.error('[cylinders] Standard payload failed:', stdErr.message);
-      handleSupabaseError(stdErr, 'cylinders');
+    const { error: fbErr } = await supabase.from('cylinders').upsert(fallbackPayload, { onConflict: 'id' });
+    if (fbErr) {
+      console.warn('[cylinders] Fallback with press_marks failed, trying minimal payload:', fbErr.message);
+      const minimalPayload = {
+        id,
+        sku: cyl.sku,
+        job_name: cyl.jobName,
+        colors_count: cyl.colorsCount,
+        cylinder_cost: cyl.cylinderCost,
+        status: cyl.status || 'Active In-Use'
+      };
+      const { error: minErr } = await supabase.from('cylinders').upsert(minimalPayload, { onConflict: 'id' });
+      if (minErr) {
+        console.error('[cylinders] Minimal payload failed:', minErr.message);
+        handleSupabaseError(minErr, 'cylinders');
+      }
     }
   }
 }
@@ -1487,6 +1542,11 @@ export async function saveJobMasterToSupabase(jobMaster) {
     special_instructions: pressMarks.specialInstructions,
     press_marks: pressMarks,
     chk_eyemark: pressMarks.chkEyemark,
+    variant: pressMarks.variant,
+    printing: pressMarks.printing,
+    invoice_to: pressMarks.invoiceTo,
+    shell_size: pressMarks.shellSize,
+    pet_size: pressMarks.petSize,
     chk_barcode: pressMarks.chkBarcode,
     chk_orientation: pressMarks.chkOrientation,
     chk_client_approval: pressMarks.chkClientApproval,
@@ -1496,14 +1556,24 @@ export async function saveJobMasterToSupabase(jobMaster) {
     creation_date: jobMaster.creationDate || new Date().toISOString().split('T')[0]
   };
 
+  // Dual-Persist: Save failsafe snapshot in system_settings
+  try {
+    const key = `jobcard_${skuCode || id}`;
+    saveSystemSetting(key, { ...jobMaster, ...pressMarks, id, skuCode, jobName }).catch(() => {});
+  } catch (e) {}
+
   // 1. Try extended payload with new columns (including press marks & layers) FIRST
   const { error: extErr } = await supabase.from('job_masters').upsert(extendedPayload, { onConflict: 'id' });
 
   if (extErr) {
-    console.warn("[Supabase Sync Notice] Extended payload rejected, trying legacy payload...", extErr.message);
+    console.warn("[Supabase Sync Notice] Extended payload rejected, trying payload with press_marks JSON...", extErr.message);
     
-    // 2. Try legacy payload
-    const { error: legacyErr } = await supabase.from('job_masters').upsert(legacyPayload, { onConflict: 'id' });
+    // 2. Try legacy payload with press_marks JSON
+    const { error: legacyErr } = await supabase.from('job_masters').upsert({
+      ...legacyPayload,
+      press_marks: pressMarks,
+      layers: Array.isArray(jobMaster.layers) ? jobMaster.layers : []
+    }, { onConflict: 'id' });
 
     if (legacyErr) {
       console.warn("[Supabase Sync Notice] Legacy payload rejected, trying absolute minimal payload...", legacyErr.message);
