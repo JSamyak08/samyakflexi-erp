@@ -421,6 +421,26 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
 
   const handlePrint = useReactToPrint({ contentRef: componentRef, documentTitle: `Job_Card_${formData.jobName || 'Draft'}` });
 
+  const handleChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
+  };
+
+  const handleDimensionBlur = (e) => {
+    const { name, value } = e.target;
+    if (!value) return;
+    const trimmed = String(value).trim();
+    if (trimmed && !trimmed.toLowerCase().includes('mm') && !isNaN(Number(trimmed.replace(/,/g, '')))) {
+      setFormData(prev => ({
+        ...prev,
+        [name]: `${trimmed} mm`
+      }));
+    }
+  };
+
   const handleJobMasterSelect = (e) => {
     const selectedId = e.target.value;
     const jm = (jobMasters || []).find(j => j.id === selectedId);
@@ -514,6 +534,11 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
     } finally {
       setIsUploading(false);
     }
+  };
+
+  const handleRemoveArtwork = () => {
+    setImagePreview(null);
+    setFormData(prev => ({ ...prev, artworkUrl: '' }));
   };
 
   const handleSaveSettings = async () => {
