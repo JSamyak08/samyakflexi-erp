@@ -37,9 +37,12 @@ export default function ProductionRecordManagement({
   inventory = [],
   inventoryRolls = [],
   jobMasters = [],
+  cylinders = [],
   currentUser,
   onSaveProductionRecord,
   onApproveProductionRecord,
+  onUpdateJobMaster,
+  onUpdateCylinder,
   onAddRoll
 }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -527,10 +530,17 @@ export default function ProductionRecordManagement({
             <div style={{ background: '#ffffff', width: '1000px', maxWidth: '98vw', borderRadius: '8px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)', padding: '24px' }}>
               <CylinderJobCardForm 
                 initialData={activeJobCardData} 
+                jobMasters={jobMasters}
                 currentUser={currentUser}
-                onSave={(updatedData) => {
+                onClose={() => setActiveJobCardData(null)}
+                onSave={(updatedData, targetJobMaster, targetCylinder) => {
                   setActiveJobCardData(prev => ({ ...prev, ...updatedData }));
-                  alert("Job Card sign-off and parameters updated!");
+                  if (targetJobMaster && onUpdateJobMaster) {
+                    onUpdateJobMaster(targetJobMaster);
+                  }
+                  if (targetCylinder && onUpdateCylinder) {
+                    onUpdateCylinder(targetCylinder);
+                  }
                 }}
               />
             </div>

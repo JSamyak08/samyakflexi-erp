@@ -156,8 +156,8 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, 
                 <td className="label-cell">PET Substrate Size</td><td className="value-cell">{data.petSize || '—'}</td>
               </tr>
               <tr>
-                <td className="label-cell">Print Width (Material Ordering)</td><td className="value-cell" style={{ fontWeight: '800', color: '#047857' }}>{data.printWidth || (data.printWidthMm ? `${data.printWidthMm} mm` : (data.totalWidth || '—'))}</td>
-                <td className="label-cell">Cylinder Face Length (Records & Cost)</td><td className="value-cell" style={{ fontWeight: '700', color: '#2563eb' }}>{data.faceLength || (data.faceLengthMm ? `${data.faceLengthMm} mm` : (data.totalWidth || '—'))}</td>
+                <td className="label-cell">Print Width (PET Size)</td><td className="value-cell" style={{ fontWeight: '800', color: '#047857' }}>{data.printWidth || (data.printWidthMm ? `${data.printWidthMm} mm` : (data.totalWidth || '—'))}</td>
+                <td className="label-cell">Face Length (Shell)</td><td className="value-cell" style={{ fontWeight: '700', color: '#2563eb' }}>{data.faceLength || (data.faceLengthMm ? `${data.faceLengthMm} mm` : (data.totalWidth || '—'))}</td>
               </tr>
               <tr>
                 <td className="label-cell">Total Repeat (Circum.)</td><td className="value-cell">{data.totalHeight || '—'}</td>
@@ -398,13 +398,13 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         costBorneBy: src.costBorneBy || 'Client (100%)',
         costBorneType: src.costBorneType || 'client',
         artworkUrl: src.artworkUrl || src.jobCardFileUrl || src.imageUrl || src.artworkImage || '',
-        chkEyemark: src.chkEyemark ?? false,
-        chkBarcode: src.chkBarcode ?? false,
-        chkOrientation: src.chkOrientation ?? false,
-        chkClientApproval: src.chkClientApproval ?? false,
-        approvedByHead: src.approvedByHead ?? src.productionApproved ?? false,
-        approvedHeadName: src.approvedHeadName || '',
-        approvedHeadDate: src.approvedHeadDate || ''
+        chkEyemark: Boolean(src.chkEyemark || initialData?.chkEyemark || matchingJM?.chkEyemark || savedLocal?.chkEyemark),
+        chkBarcode: Boolean(src.chkBarcode || initialData?.chkBarcode || matchingJM?.chkBarcode || savedLocal?.chkBarcode),
+        chkOrientation: Boolean(src.chkOrientation || initialData?.chkOrientation || matchingJM?.chkOrientation || savedLocal?.chkOrientation),
+        chkClientApproval: Boolean(src.chkClientApproval || initialData?.chkClientApproval || matchingJM?.chkClientApproval || savedLocal?.chkClientApproval),
+        approvedByHead: Boolean(src.approvedByHead || src.productionApproved || initialData?.approvedByHead || initialData?.productionApproved || matchingJM?.approvedByHead || matchingJM?.productionApproved || savedLocal?.approvedByHead),
+        approvedHeadName: src.approvedHeadName || initialData?.approvedHeadName || matchingJM?.approvedHeadName || savedLocal?.approvedHeadName || '',
+        approvedHeadDate: src.approvedHeadDate || initialData?.approvedHeadDate || matchingJM?.approvedHeadDate || savedLocal?.approvedHeadDate || ''
       });
 
       const initialArtworkUrl = src.artworkUrl || src.jobCardFileUrl || src.imageUrl || src.artworkImage || '';
@@ -543,117 +543,116 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
     setFormData(prev => ({ ...prev, artworkUrl: '' }));
   };
 
-  const handleSaveSettings = async () => {
-    if (!canEdit) {
-      alert("Access Denied: Only Admin, SuperAdmin, Plant Manager, or Production Manager can save Job Card specs.");
-      return;
-    }
-
+  const saveJobCardSpecs = async (customData = formData, customNotification = null) => {
     try {
       const derivedStruct = (layers && layers.length > 0)
         ? layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
-        : (formData.jobStructure || '—');
+        : (customData.jobStructure || '—');
 
-      const fileUrl = imagePreview || formData.artworkUrl || '';
+      const fileUrl = imagePreview || customData.artworkUrl || '';
       const fileName = fileUrl ? 'Artwork_KLD_Proof.pdf' : '';
 
-      const printWidthNum = Number(String(formData.printWidth || formData.totalWidth).replace(/\D/g, '')) || Number(String(formData.pouchOpenWidth).replace(/\D/g, '')) || 1000;
-      const faceLengthNum = Number(String(formData.faceLength || formData.totalWidth).replace(/\D/g, '')) || 1050;
-      const repeatLengthNum = Number(String(formData.totalHeight).replace(/\D/g, '')) || Number(String(formData.pouchHeight).replace(/\D/g, '')) || 400;
-      const pouchOpenWidthNum = Number(String(formData.pouchOpenWidth).replace(/\D/g, '')) || 0;
-      const pouchHeightNum = Number(String(formData.pouchHeight).replace(/\D/g, '')) || 0;
-      const colorsCountNum = Number(formData.numberOfCylinders) || 6;
+      const printWidthNum = Number(String(customData.printWidth || customData.totalWidth).replace(/\D/g, '')) || Number(String(customData.pouchOpenWidth).replace(/\D/g, '')) || 1000;
+      const faceLengthNum = Number(String(customData.faceLength || customData.totalWidth).replace(/\D/g, '')) || 1050;
+      const repeatLengthNum = Number(String(customData.totalHeight).replace(/\D/g, '')) || Number(String(customData.pouchHeight).replace(/\D/g, '')) || 400;
+      const pouchOpenWidthNum = Number(String(customData.pouchOpenWidth).replace(/\D/g, '')) || 0;
+      const pouchHeightNum = Number(String(customData.pouchHeight).replace(/\D/g, '')) || 0;
+      const colorsCountNum = Number(customData.numberOfCylinders) || 6;
 
       const existingJM = (jobMasters || []).find(j => 
-        (j.id && j.id === formData.jobMasterId) ||
-        (j.skuCode && j.skuCode.toLowerCase() === (formData.skuCode || '').toLowerCase().trim()) ||
-        (j.jobName && j.jobName.toLowerCase() === (formData.jobName || '').toLowerCase().trim())
+        (j.id && j.id === customData.jobMasterId) ||
+        (j.skuCode && j.skuCode.toLowerCase() === (customData.skuCode || '').toLowerCase().trim()) ||
+        (j.jobName && j.jobName.toLowerCase() === (customData.jobName || '').toLowerCase().trim())
       );
 
       let targetJobMaster;
       if (existingJM) {
         targetJobMaster = {
           ...existingJM,
-          skuCode: formData.skuCode || existingJM.skuCode,
-          jobName: formData.jobName || existingJM.jobName,
-          clientName: formData.partyName || existingJM.clientName,
+          skuCode: customData.skuCode || existingJM.skuCode,
+          jobName: customData.jobName || existingJM.jobName,
+          clientName: customData.partyName || existingJM.clientName,
           structure: derivedStruct,
+          filmStructure: derivedStruct,
           layers: layers,
           printWidthMm: printWidthNum,
           faceLengthMm: faceLengthNum,
           repeatLengthMm: repeatLengthNum,
+          circumferenceMm: repeatLengthNum,
           pouchOpenWidth: pouchOpenWidthNum,
           pouchHeight: pouchHeightNum,
           colorsCount: colorsCountNum,
-          engravuresName: formData.engravure || existingJM.engravuresName || '',
-          costBorneBy: formData.costBorneBy || existingJM.costBorneBy,
-          cylinderCost: formData.cylinderCost || existingJM.cylinderCost || '',
-          costPerCylinder: formData.costPerCylinder || existingJM.costPerCylinder || '',
-          ratePerSqInch: formData.ratePerSqInch || existingJM.ratePerSqInch || 1.6,
-          utilisationLimit: Number(formData.utilisationLimit) || existingJM.utilisationLimit || 10000,
+          engravuresName: customData.engravure || existingJM.engravuresName || '',
+          costBorneBy: customData.costBorneBy || existingJM.costBorneBy,
+          cylinderCost: customData.cylinderCost || existingJM.cylinderCost || '',
+          costPerCylinder: customData.costPerCylinder || existingJM.costPerCylinder || '',
+          ratePerSqInch: customData.ratePerSqInch || existingJM.ratePerSqInch || 1.6,
+          utilisationLimit: Number(customData.utilisationLimit) || existingJM.utilisationLimit || 10000,
           jobCardFileUrl: fileUrl,
           jobCardFileName: fileName,
           artworkUrl: fileUrl,
-          silLogo: formData.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
-          arcMark: formData.arcMark || 'Yes',
-          slittingMark: formData.slittingMark || 'Yes',
-          trackerLine: formData.trackerLine || 'Yes',
-          specialInstructions: formData.specialInstructions || '',
-          variant: formData.variant || 'Standard',
-          printing: formData.printing || 'Reverse',
-          invoiceTo: formData.invoiceTo || 'Samyak International Ltd',
-          shellSize: formData.shellSize || `${faceLengthNum} mm`,
-          petSize: formData.petSize || `${faceLengthNum + 10} mm`,
-          chkEyemark: formData.chkEyemark,
-          chkBarcode: formData.chkBarcode,
-          chkOrientation: formData.chkOrientation,
-          chkClientApproval: formData.chkClientApproval,
-          approvedByHead: formData.approvedByHead,
-          approvedHeadName: formData.approvedHeadName,
-          approvedHeadDate: formData.approvedHeadDate
+          silLogo: customData.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+          arcMark: customData.arcMark || 'Yes',
+          slittingMark: customData.slittingMark || 'Yes',
+          trackerLine: customData.trackerLine || 'Yes',
+          specialInstructions: customData.specialInstructions || '',
+          variant: customData.variant || 'Standard',
+          printing: customData.printing || 'Reverse',
+          invoiceTo: customData.invoiceTo || 'Samyak International Ltd',
+          shellSize: customData.shellSize || `${faceLengthNum} mm`,
+          petSize: customData.petSize || `${faceLengthNum + 10} mm`,
+          chkEyemark: customData.chkEyemark ?? false,
+          chkBarcode: customData.chkBarcode ?? false,
+          chkOrientation: customData.chkOrientation ?? false,
+          chkClientApproval: customData.chkClientApproval ?? false,
+          approvedByHead: customData.approvedByHead ?? false,
+          approvedHeadName: customData.approvedHeadName || '',
+          approvedHeadDate: customData.approvedHeadDate || ''
         };
       } else {
         const jmId = getNextDocRefNumber('jm');
         targetJobMaster = {
           id: jmId,
-          skuCode: formData.skuCode || jmId.replace('JM', 'SKU'),
-          jobName: formData.jobName || 'New Job',
-          clientName: formData.partyName || 'General Client',
+          skuCode: customData.skuCode || jmId.replace('JM', 'SKU'),
+          jobName: customData.jobName || 'New Job',
+          clientName: customData.partyName || 'General Client',
           structure: derivedStruct,
+          filmStructure: derivedStruct,
           layers: layers,
           printWidthMm: printWidthNum,
           faceLengthMm: faceLengthNum,
           repeatLengthMm: repeatLengthNum,
+          circumferenceMm: repeatLengthNum,
           pouchOpenWidth: pouchOpenWidthNum,
           pouchHeight: pouchHeightNum,
           colorsCount: colorsCountNum,
-          engravuresName: formData.engravure || '',
-          costBorneBy: formData.costBorneBy || 'Client (100%)',
-          cylinderCost: formData.cylinderCost || '',
-          costPerCylinder: formData.costPerCylinder || '',
-          ratePerSqInch: formData.ratePerSqInch || 1.6,
-          utilisationLimit: Number(formData.utilisationLimit) || 10000,
+          engravuresName: customData.engravure || '',
+          costBorneBy: customData.costBorneBy || 'Client (100%)',
+          cylinderCost: customData.cylinderCost || '',
+          costPerCylinder: customData.costPerCylinder || '',
+          ratePerSqInch: customData.ratePerSqInch || 1.6,
+          utilisationLimit: Number(customData.utilisationLimit) || 10000,
           jobCardFileUrl: fileUrl,
           jobCardFileName: fileName,
           artworkUrl: fileUrl,
-          silLogo: formData.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
-          arcMark: formData.arcMark || 'Yes',
-          slittingMark: formData.slittingMark || 'Yes',
-          trackerLine: formData.trackerLine || 'Yes',
-          specialInstructions: formData.specialInstructions || '',
-          variant: formData.variant || 'Standard',
-          printing: formData.printing || 'Reverse',
-          invoiceTo: formData.invoiceTo || 'Samyak International Ltd',
-          shellSize: formData.shellSize || `${faceLengthNum} mm`,
-          petSize: formData.petSize || `${faceLengthNum + 10} mm`,
-          chkEyemark: formData.chkEyemark,
-          chkBarcode: formData.chkBarcode,
-          chkOrientation: formData.chkOrientation,
-          chkClientApproval: formData.chkClientApproval,
-          approvedByHead: formData.approvedByHead,
-          approvedHeadName: formData.approvedHeadName,
-          approvedHeadDate: formData.approvedHeadDate,
-          creationDate: formData.creationDate || new Date().toLocaleDateString('en-GB')
+          silLogo: customData.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+          arcMark: customData.arcMark || 'Yes',
+          slittingMark: customData.slittingMark || 'Yes',
+          trackerLine: customData.trackerLine || 'Yes',
+          specialInstructions: customData.specialInstructions || '',
+          variant: customData.variant || 'Standard',
+          printing: customData.printing || 'Reverse',
+          invoiceTo: customData.invoiceTo || 'Samyak International Ltd',
+          shellSize: customData.shellSize || `${faceLengthNum} mm`,
+          petSize: customData.petSize || `${faceLengthNum + 10} mm`,
+          chkEyemark: customData.chkEyemark ?? false,
+          chkBarcode: customData.chkBarcode ?? false,
+          chkOrientation: customData.chkOrientation ?? false,
+          chkClientApproval: customData.chkClientApproval ?? false,
+          approvedByHead: customData.approvedByHead ?? false,
+          approvedHeadName: customData.approvedHeadName || '',
+          approvedHeadDate: customData.approvedHeadDate || '',
+          creationDate: customData.creationDate || new Date().toLocaleDateString('en-GB')
         };
       }
 
@@ -663,16 +662,16 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
 
       const targetCylinder = {
         id: cylId,
-        sku: formData.skuCode || targetJobMaster.skuCode,
-        jobName: formData.jobName || targetJobMaster.jobName,
-        clientGroup: formData.partyName || targetJobMaster.clientName,
+        sku: customData.skuCode || targetJobMaster.skuCode,
+        jobName: customData.jobName || targetJobMaster.jobName,
+        clientGroup: customData.partyName || targetJobMaster.clientName,
         colorsCount: colorsCountNum,
-        cylinderCost: formData.cylinderCost || targetJobMaster.cylinderCost,
-        costPerCylinder: formData.costPerCylinder,
-        ratePerSqInch: formData.ratePerSqInch || 1.6,
-        engravuresName: formData.engravure || targetJobMaster.engravuresName || '',
-        costBorneBy: formData.costBorneBy || 'Client (100%)',
-        costBorneType: formData.costBorneType || 'client',
+        cylinderCost: customData.cylinderCost || targetJobMaster.cylinderCost,
+        costPerCylinder: customData.costPerCylinder,
+        ratePerSqInch: customData.ratePerSqInch || 1.6,
+        engravuresName: customData.engravure || targetJobMaster.engravuresName || '',
+        costBorneBy: customData.costBorneBy || 'Client (100%)',
+        costBorneType: customData.costBorneType || 'client',
         circumferenceMm: repeatLengthNum,
         faceLengthMm: faceLengthNum,
         printWidthMm: printWidthNum,
@@ -680,51 +679,81 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         pouchHeight: pouchHeightNum,
         layers: layers,
         structure: derivedStruct,
-        utilisationLimit: Number(formData.utilisationLimit) || 10000,
+        utilisationLimit: Number(customData.utilisationLimit) || 10000,
         status: initialData?.status || 'Active In-Use',
         artworkUrl: fileUrl,
         jobCardFileUrl: fileUrl,
         jobCardFileName: fileName,
         jobMasterId: targetJobMaster.id,
-        silLogo: formData.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
-        arcMark: formData.arcMark || 'Yes',
-        slittingMark: formData.slittingMark || 'Yes',
-        trackerLine: formData.trackerLine || 'Yes',
-        specialInstructions: formData.specialInstructions || '',
-        chkEyemark: formData.chkEyemark ?? false,
-        chkBarcode: formData.chkBarcode ?? false,
-        chkOrientation: formData.chkOrientation ?? false,
-        chkClientApproval: formData.chkClientApproval ?? false,
-        approvedByHead: formData.approvedByHead ?? false,
-        approvedHeadName: formData.approvedHeadName || '',
-        approvedHeadDate: formData.approvedHeadDate || '',
-        variant: formData.variant || 'Standard',
-        printing: formData.printing || 'Reverse',
-        invoiceTo: formData.invoiceTo || 'Samyak International Ltd',
-        shellSize: formData.shellSize || `${faceLengthNum} mm`,
-        petSize: formData.petSize || `${faceLengthNum + 10} mm`,
-        creationDate: formData.creationDate || new Date().toLocaleDateString('en-GB')
+        silLogo: customData.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+        arcMark: customData.arcMark || 'Yes',
+        slittingMark: customData.slittingMark || 'Yes',
+        trackerLine: customData.trackerLine || 'Yes',
+        specialInstructions: customData.specialInstructions || '',
+        chkEyemark: customData.chkEyemark ?? false,
+        chkBarcode: customData.chkBarcode ?? false,
+        chkOrientation: customData.chkOrientation ?? false,
+        chkClientApproval: customData.chkClientApproval ?? false,
+        approvedByHead: customData.approvedByHead ?? false,
+        approvedHeadName: customData.approvedHeadName || '',
+        approvedHeadDate: customData.approvedHeadDate || '',
+        variant: customData.variant || 'Standard',
+        printing: customData.printing || 'Reverse',
+        invoiceTo: customData.invoiceTo || 'Samyak International Ltd',
+        shellSize: customData.shellSize || `${faceLengthNum} mm`,
+        petSize: customData.petSize || `${faceLengthNum + 10} mm`,
+        creationDate: customData.creationDate || new Date().toLocaleDateString('en-GB')
       };
 
       await Promise.allSettled([
         saveJobMasterToSupabase(targetJobMaster),
         saveCylinderToSupabase(targetCylinder),
-        saveSystemSetting(`jobcard_${targetJobMaster.skuCode || targetJobMaster.id}`, { ...formData, jobStructure: derivedStruct, layers, artworkUrl: fileUrl, targetJobMaster, targetCylinder })
+        saveSystemSetting(`jobcard_${targetJobMaster.skuCode || targetJobMaster.id}`, { ...customData, jobStructure: derivedStruct, layers, artworkUrl: fileUrl, targetJobMaster, targetCylinder })
       ]);
 
-      const storageKey = `samyak_erp_jobcard_settings_${formData.skuCode || formData.jobName || targetJobMaster.id}`;
-      safeLocalStorageSet(storageKey, { ...formData, jobStructure: derivedStruct, layers, artworkUrl: fileUrl, printWidth: `${printWidthNum} mm`, faceLength: `${faceLengthNum} mm` });
+      const storageKey = `samyak_erp_jobcard_settings_${customData.skuCode || customData.jobName || targetJobMaster.id}`;
+      safeLocalStorageSet(storageKey, { ...customData, jobStructure: derivedStruct, layers, artworkUrl: fileUrl, printWidth: `${printWidthNum} mm`, faceLength: `${faceLengthNum} mm` });
 
       if (onSave) {
-        onSave({ ...formData, jobStructure: derivedStruct, layers, artworkUrl: fileUrl, printWidth: `${printWidthNum} mm`, faceLength: `${faceLengthNum} mm` }, targetJobMaster, targetCylinder);
+        onSave({ ...customData, jobStructure: derivedStruct, layers, artworkUrl: fileUrl, printWidth: `${printWidthNum} mm`, faceLength: `${faceLengthNum} mm` }, targetJobMaster, targetCylinder);
       }
 
-      setSaveNotification(existingJM ? '✅ Job Master & Rotogravure Cylinder Specs Synced to Database!' : '✅ New Job Master & Cylinder Record Created in Database!');
+      setSaveNotification(customNotification || (existingJM ? '✅ Job Master & Rotogravure Cylinder Specs Synced to Database!' : '✅ New Job Master & Cylinder Record Created in Database!'));
       setTimeout(() => setSaveNotification(null), 4000);
+      return true;
     } catch (e) {
       console.error("Save failed", e);
       alert("Failed to save settings: " + e.message);
+      return false;
     }
+  };
+
+  const handleSaveSettings = async () => {
+    if (!canEdit) {
+      alert("Access Denied: Only Admin, SuperAdmin, Plant Manager, or Production Manager can save Job Card specs.");
+      return;
+    }
+    await saveJobCardSpecs(formData);
+  };
+
+  const handleToggleApproval = async (shouldApprove) => {
+    const approverName = shouldApprove ? (currentUser?.name || 'Production Head') : '';
+    const dateStr = shouldApprove ? new Date().toLocaleDateString('en-IN') : '';
+
+    const updatedFormData = {
+      ...formData,
+      approvedByHead: shouldApprove,
+      approvedHeadName: approverName,
+      approvedHeadDate: dateStr
+    };
+
+    setFormData(updatedFormData);
+
+    const notificationMsg = shouldApprove
+      ? `✅ Job Card signed off by ${approverName} and synced to Database!`
+      : '✅ Job Card sign-off revoked and synced to Database.';
+
+    await saveJobCardSpecs(updatedFormData, notificationMsg);
   };
 
   return (
@@ -737,86 +766,78 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         </div>
       )}
 
-      {/* Top Action Toolbar */}
-      <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', maxWidth: '1000px', background: '#f8fafc', padding: '12px 20px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+      {/* Action Toolbar */}
+      <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', maxWidth: '1000px', background: '#ffffff', padding: '16px 20px', borderRadius: '10px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '12px' }}>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           {onClose && (
-            <button className="btn-secondary" style={{ padding: '8px 14px', fontSize: '0.85rem' }} onClick={onClose}>
+            <button className="btn-secondary" onClick={onClose}>
               <ArrowLeft size={16} /> Back
             </button>
           )}
-          <span style={{ fontWeight: '800', color: '#1e293b', fontSize: '0.95rem' }}>
-            Job Card Specification & Artwork Controls
-          </span>
-        </div>
-
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <button className="btn-primary" style={{ background: '#1e293b', borderColor: '#1e293b' }} onClick={handlePrint}>
-            <Printer size={16} /> Print / Export Job Card PDF
-          </button>
-        </div>
-      </div>
-
-      {/* A4 Landscape Job Card Component Wrapper */}
-      <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '16px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
-          <PrintableJobCard ref={componentRef} data={formData} imagePreview={imagePreview} currentUser={currentUser} />
-      </div>
-
-      {/* Editable Form Grid (Shown below preview for customization) */}
-      <div className="glass-card no-print" style={{ maxWidth: '1000px', width: '100%' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <div>
-            <h4 style={{ margin: 0, fontWeight: '700', fontSize: '1.05rem' }}>Edit Job Card Data Parameters & Settings</h4>
-            <p style={{ margin: '2px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              All edits update the preview in real-time and auto-save.
-            </p>
+            <h2 style={{ fontSize: '1.2rem', fontWeight: '800', margin: 0, color: '#0f172a' }}>
+              Rotogravure Cylinder Job Card
+            </h2>
+            <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
+              Job: <b style={{ color: '#0f172a' }}>{formData.jobName || 'Untitled Job'}</b> ({formData.skuCode || 'SKU-NEW'})
+            </div>
           </div>
-          <button className="btn-primary" style={{ background: '#059669', padding: '8px 16px', fontSize: '0.85rem' }} onClick={handleSaveSettings}>
-            <CheckCircle2 size={16} /> Save Job Card Parameters
-          </button>
         </div>
 
-        {/* Mandatory Checkbox-based Pre-Press & Quality Checklist */}
-        <div style={{ marginBottom: '20px', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-          <label style={{ fontWeight: '800', fontSize: '0.9rem', marginBottom: '8px', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <CheckSquare size={18} style={{ color: 'var(--primary-brand)' }} />
-            Pre-Press & Quality Verification Checklist <span style={{ color: '#dc2626', fontWeight: '900' }}>* (Mandatory All 4 Items)</span>
-          </label>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '8px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer', background: formData.chkEyemark ? '#ecfdf5' : '#fff', padding: '8px 12px', borderRadius: '6px', border: formData.chkEyemark ? '1px solid #6ee7b7' : '1px solid #cbd5e1' }}>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          {canEdit && (
+            <button className="btn-primary" style={{ background: '#047857', borderColor: '#047857', display: 'flex', alignItems: 'center', gap: '6px' }} onClick={handleSaveSettings}>
+              <Save size={16} /> Save Parameters & Settings
+            </button>
+          )}
+          <button className="btn-primary" style={{ background: '#1e293b', borderColor: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => handlePrint()}>
+            <Printer size={16} /> Print / Save PDF
+          </button>
+        </div>
+      </div>
+
+      {/* Quick Settings & Checklist Section */}
+      <div className="no-print glass-panel" style={{ width: '100%', maxWidth: '1000px', padding: '20px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '10px' }}>
+        <h3 style={{ fontSize: '1rem', fontWeight: '800', color: '#0f172a', marginBottom: '14px', borderBottom: '2px solid #e2e8f0', paddingBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <CheckSquare size={18} color="#047857" /> Mandatory Pre-Press QA Checklist & Approval
+        </h3>
+
+        {/* 4-Item Checklist */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '20px', background: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', fontSize: '0.85rem', cursor: 'pointer' }}>
               <input 
                 type="checkbox" 
-                name="chkEyemark" 
                 checked={formData.chkEyemark} 
                 onChange={e => setFormData(prev => ({ ...prev, chkEyemark: e.target.checked }))} 
               />
-              Eye-mark positioning verified
+              Eye Mark Verified
             </label>
-
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer', background: formData.chkBarcode ? '#ecfdf5' : '#fff', padding: '8px 12px', borderRadius: '6px', border: formData.chkBarcode ? '1px solid #6ee7b7' : '1px solid #cbd5e1' }}>
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', fontSize: '0.85rem', cursor: 'pointer' }}>
               <input 
                 type="checkbox" 
-                name="chkBarcode" 
                 checked={formData.chkBarcode} 
                 onChange={e => setFormData(prev => ({ ...prev, chkBarcode: e.target.checked }))} 
               />
-              Bar-code & FSSAI license checked
+              Barcode Verified
             </label>
-
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer', background: formData.chkOrientation ? '#ecfdf5' : '#fff', padding: '8px 12px', borderRadius: '6px', border: formData.chkOrientation ? '1px solid #6ee7b7' : '1px solid #cbd5e1' }}>
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', fontSize: '0.85rem', cursor: 'pointer' }}>
               <input 
                 type="checkbox" 
-                name="chkOrientation" 
                 checked={formData.chkOrientation} 
                 onChange={e => setFormData(prev => ({ ...prev, chkOrientation: e.target.checked }))} 
               />
-              Reverse / Surface orientation confirmed
+              Orientation Checked
             </label>
-
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer', background: formData.chkClientApproval ? '#ecfdf5' : '#fff', padding: '8px 12px', borderRadius: '6px', border: formData.chkClientApproval ? '1px solid #6ee7b7' : '1px solid #cbd5e1' }}>
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', fontSize: '0.85rem', cursor: 'pointer' }}>
               <input 
                 type="checkbox" 
-                name="chkClientApproval" 
                 checked={formData.chkClientApproval} 
                 onChange={e => setFormData(prev => ({ ...prev, chkClientApproval: e.target.checked }))} 
               />
@@ -844,9 +865,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
               type="button" 
               className="btn-secondary" 
               style={{ color: '#dc2626', borderColor: '#fca5a5', fontSize: '0.82rem', padding: '6px 12px' }}
-              onClick={() => {
-                setFormData(prev => ({ ...prev, approvedByHead: false, approvedHeadName: '', approvedHeadDate: '' }));
-              }}
+              onClick={() => handleToggleApproval(false)}
             >
               Revoke Sign-Off
             </button>
@@ -855,17 +874,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
               type="button" 
               className="btn-primary" 
               style={{ background: '#047857', borderColor: '#047857', fontWeight: '800', fontSize: '0.85rem', padding: '8px 16px' }}
-              onClick={() => {
-                const approverName = currentUser?.name || 'Production Head';
-                const dateStr = new Date().toLocaleDateString('en-IN');
-                setFormData(prev => ({
-                  ...prev,
-                  approvedByHead: true,
-                  approvedHeadName: approverName,
-                  approvedHeadDate: dateStr
-                }));
-                alert(`Job Card approved and signed off by ${approverName}!`);
-              }}
+              onClick={() => handleToggleApproval(true)}
             >
               <CheckCircle2 size={16} /> Sign-Off & Approve Job Card
             </button>
@@ -1119,11 +1128,11 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
             <input className="form-control" name="jobStructure" value={formData.jobStructure} readOnly style={{ background: '#f1f5f9', fontWeight: '700' }} />
           </div>
           <div className="form-group">
-            <label style={{ color: '#047857', fontWeight: '700' }}>Print Width (Ordering Width)*</label>
+            <label style={{ color: '#047857', fontWeight: '700' }}>Print Width (PET Size) (mm)*</label>
             <input className="form-control" name="printWidth" value={formData.printWidth} onChange={handleChange} onBlur={handleDimensionBlur} placeholder="e.g. 1000 mm" />
           </div>
           <div className="form-group">
-            <label style={{ color: '#2563eb', fontWeight: '700' }}>Cylinder Face Length (Costing & Records)*</label>
+            <label style={{ color: '#2563eb', fontWeight: '700' }}>Face Length (Shell) (mm)*</label>
             <input className="form-control" name="faceLength" value={formData.faceLength} onChange={handleChange} onBlur={handleDimensionBlur} placeholder="e.g. 1050 mm" />
           </div>
           <div className="form-group">

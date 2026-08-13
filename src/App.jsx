@@ -531,11 +531,11 @@ export default function App() {
                 slittingMark: c.slittingMark || existing?.slittingMark || 'Yes',
                 trackerLine: c.trackerLine || existing?.trackerLine || 'Yes',
                 specialInstructions: c.specialInstructions || existing?.specialInstructions || '',
-                chkEyemark: c.chkEyemark ?? existing?.chkEyemark ?? false,
-                chkBarcode: c.chkBarcode ?? existing?.chkBarcode ?? false,
-                chkOrientation: c.chkOrientation ?? existing?.chkOrientation ?? false,
-                chkClientApproval: c.chkClientApproval ?? existing?.chkClientApproval ?? false,
-                approvedByHead: c.approvedByHead ?? existing?.approvedByHead ?? false,
+                chkEyemark: Boolean(c.chkEyemark || existing?.chkEyemark),
+                chkBarcode: Boolean(c.chkBarcode || existing?.chkBarcode),
+                chkOrientation: Boolean(c.chkOrientation || existing?.chkOrientation),
+                chkClientApproval: Boolean(c.chkClientApproval || existing?.chkClientApproval),
+                approvedByHead: Boolean(c.approvedByHead || existing?.approvedByHead),
                 approvedHeadName: c.approvedHeadName || existing?.approvedHeadName || '',
                 approvedHeadDate: c.approvedHeadDate || existing?.approvedHeadDate || ''
               };
@@ -648,11 +648,11 @@ export default function App() {
                 slittingMark: j.slittingMark || existing?.slittingMark || 'Yes',
                 trackerLine: j.trackerLine || existing?.trackerLine || 'Yes',
                 specialInstructions: j.specialInstructions || existing?.specialInstructions || '',
-                chkEyemark: j.chkEyemark ?? existing?.chkEyemark ?? false,
-                chkBarcode: j.chkBarcode ?? existing?.chkBarcode ?? false,
-                chkOrientation: j.chkOrientation ?? existing?.chkOrientation ?? false,
-                chkClientApproval: j.chkClientApproval ?? existing?.chkClientApproval ?? false,
-                approvedByHead: j.approvedByHead ?? existing?.approvedByHead ?? false,
+                chkEyemark: Boolean(j.chkEyemark || existing?.chkEyemark),
+                chkBarcode: Boolean(j.chkBarcode || existing?.chkBarcode),
+                chkOrientation: Boolean(j.chkOrientation || existing?.chkOrientation),
+                chkClientApproval: Boolean(j.chkClientApproval || existing?.chkClientApproval),
+                approvedByHead: Boolean(j.approvedByHead || existing?.approvedByHead),
                 approvedHeadName: j.approvedHeadName || existing?.approvedHeadName || '',
                 approvedHeadDate: j.approvedHeadDate || existing?.approvedHeadDate || ''
               };
@@ -1968,9 +1968,12 @@ export default function App() {
             inventory={inventory}
             inventoryRolls={inventoryRolls}
             jobMasters={jobMasters}
+            cylinders={cylinders}
             currentUser={currentUser}
             onSaveProductionRecord={handleSaveProductionRecord}
             onApproveProductionRecord={handleApproveProductionRecord}
+            onUpdateJobMaster={handleUpdateJobMaster}
+            onUpdateCylinder={handleUpdateCylinder}
             onAddRoll={handleAddRoll}
           />
         )}

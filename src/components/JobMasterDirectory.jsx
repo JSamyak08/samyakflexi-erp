@@ -815,7 +815,7 @@ export default function JobMasterDirectory({
                 {/* Dimensions: Separate Inputs for Print Width and Face Length */}
                 <div className="form-group">
                   <label style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <span style={{ fontWeight: '700' }}>Print Width (mm) *</span>
+                    <span style={{ fontWeight: '700' }}>Print Width (PET Size) (mm) *</span>
                     <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 'normal' }}>Used for substrate raw material ordering & slitting</span>
                   </label>
                   <input 
@@ -830,7 +830,7 @@ export default function JobMasterDirectory({
 
                 <div className="form-group">
                   <label style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <span style={{ fontWeight: '700' }}>Cylinder Face Length (mm) *</span>
+                    <span style={{ fontWeight: '700' }}>Face Length (Shell) (mm) *</span>
                     <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 'normal' }}>Used for cylinder records & cost calculations</span>
                   </label>
                   <input 
@@ -1124,11 +1124,11 @@ export default function JobMasterDirectory({
               
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', fontSize: '0.85rem', marginBottom: '16px' }}>
                 <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ color: '#047857', fontSize: '0.75rem', fontWeight: '700' }}>Print Width (Material Ordering)</div>
+                  <div style={{ color: '#047857', fontSize: '0.75rem', fontWeight: '700' }}>Print Width (PET Size)</div>
                   <strong style={{ fontSize: '1rem', color: 'var(--text-primary)' }}>{selectedJob.printWidthMm} mm</strong>
                 </div>
                 <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ color: '#2563eb', fontSize: '0.75rem', fontWeight: '700' }}>Cylinder Face Length (Cost & Records)</div>
+                  <div style={{ color: '#2563eb', fontSize: '0.75rem', fontWeight: '700' }}>Face Length (Shell)</div>
                   <strong style={{ fontSize: '1rem', color: 'var(--text-primary)' }}>{selectedJob.faceLengthMm || selectedJob.printWidthMm || 1050} mm</strong>
                 </div>
                 <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>

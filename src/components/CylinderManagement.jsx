@@ -701,7 +701,7 @@ export default function CylinderManagement({
 
                   <div className="form-group">
                     <label style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <span style={{ fontWeight: '700' }}>Print Width (mm) *</span>
+                      <span style={{ fontWeight: '700' }}>Print Width (PET Size) (mm) *</span>
                       <span style={{ fontSize: '0.72rem', color: '#047857' }}>Always used for material ordering</span>
                     </label>
                     <input type="number" className="form-control" required value={printWidthMm} onChange={e => setPrintWidthMm(e.target.value)} placeholder="e.g. 1000" />
@@ -709,7 +709,7 @@ export default function CylinderManagement({
 
                   <div className="form-group">
                     <label style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <span style={{ fontWeight: '700' }}>Cylinder Face Length (mm) *</span>
+                      <span style={{ fontWeight: '700' }}>Face Length (Shell) (mm) *</span>
                       <span style={{ fontSize: '0.72rem', color: '#2563eb' }}>For records & cylinder costing only</span>
                     </label>
                     <input type="number" className="form-control" required value={faceLengthMm} onChange={e => setFaceLengthMm(e.target.value)} placeholder="e.g. 1050" />
