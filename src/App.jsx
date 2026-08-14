@@ -2212,6 +2212,7 @@ export default function App() {
             productionRecords={productionRecords}
             orders={orders}
             clients={clients}
+            machines={machines}
             currentUser={currentUser}
             onAddJobMaster={handleAddJobMaster}
             onUpdateJobMaster={handleUpdateJobMaster}
@@ -2843,6 +2844,7 @@ export default function App() {
             orders={orders}
             cylinders={cylinders}
             productionRecords={productionRecords}
+            machines={machines}
             onAddJobMaster={handleAddJobMaster}
             onUpdateJobMaster={handleUpdateJobMaster}
             onDeleteJobMaster={handleDeleteJobMaster}

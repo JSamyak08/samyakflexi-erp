@@ -538,6 +538,7 @@ CREATE TABLE IF NOT EXISTS public.email_templates (
 -- Column migrations for scrap wastage, gross output & job master specifications
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS wastage_percentage NUMERIC DEFAULT 5;
 ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS wastage_percentage NUMERIC DEFAULT 5;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS process_routing JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS client_name TEXT;
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS date_filled DATE DEFAULT CURRENT_DATE;
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS total_wastage_kg NUMERIC DEFAULT 0;

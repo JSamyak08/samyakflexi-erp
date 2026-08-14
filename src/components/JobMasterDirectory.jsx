@@ -23,7 +23,13 @@ import {
   Filter,
   RotateCcw,
   SlidersHorizontal,
-  Trash2
+  Trash2,
+  Cpu,
+  Repeat,
+  ArrowRight,
+  ChevronUp,
+  ChevronDown,
+  GitBranch
 } from 'lucide-react';
 import { calculateUtilisation } from '../dataStore';
 import { FILM_DENSITIES } from '../factoryStore';
@@ -37,6 +43,7 @@ export default function JobMasterDirectory({
   productionRecords = [], 
   orders = [],
   clients = [],
+  machines = [],
   currentUser,
   onAddJobMaster,
   onAddCylinder,
@@ -194,6 +201,186 @@ export default function JobMasterDirectory({
   const [costBorneBy, setCostBorneBy] = useState('Client (100%)');
   const [engravuresName, setEngravuresName] = useState('');
   const [utilisationLimit, setUtilisationLimit] = useState(10000);
+  const [processRouting, setProcessRouting] = useState([]);
+
+  // Helper: Auto-generate Process Routing based on layers and available machinery
+  const generateDefaultRouting = (layersList = layers, availableMachines = machines) => {
+    const list = Array.isArray(layersList) && layersList.length > 0 ? layersList : [
+      { id: 1, filmType: 'PET', micron: 12 },
+      { id: 2, filmType: 'METPET', micron: 12 },
+      { id: 3, filmType: 'Natural GP LD', micron: 35 }
+    ];
+    
+    // Find machinery matching type or default from Settings
+    const rotoMachine = (availableMachines || []).find(m => (m.type || '').toLowerCase().includes('roto') || (m.name || '').toLowerCase().includes('roto') || (m.type || '').toLowerCase().includes('print')) || (availableMachines || [])[0] || { id: 'MAC-ROTO-1', name: 'Rotogravure Press 1', type: 'Rotogravure', maxSpeedMpm: 250 };
+    const lamMachine = (availableMachines || []).find(m => (m.type || '').toLowerCase().includes('lam') || (m.name || '').toLowerCase().includes('lam')) || (availableMachines || [])[1] || { id: 'MAC-LAM-1', name: 'Solventless Laminator 1', type: 'Lamination', maxSpeedMpm: 300 };
+    const slitMachine = (availableMachines || []).find(m => (m.type || '').toLowerCase().includes('slit') || (m.name || '').toLowerCase().includes('slit')) || (availableMachines || [])[2] || { id: 'MAC-SLIT-1', name: 'High Speed Slitter 1', type: 'Slitting', maxSpeedMpm: 400 };
+
+    const routing = [];
+    let stepNo = 1;
+
+    // 1. Printing Operation (Pass 1)
+    routing.push({
+      id: `step-${Date.now()}-${stepNo}`,
+      stepNumber: stepNo++,
+      operation: 'Rotogravure Printing (Reverse)',
+      machineId: rotoMachine.id || 'MAC-ROTO-1',
+      machineName: rotoMachine.name || 'Rotogravure Press',
+      machineType: rotoMachine.type || 'Rotogravure',
+      pass: 'Pass 1 (Single Pass)',
+      stageOutput: 'Semi-Finished Goods (SFG)',
+      stageDescription: `SFG - Printed Web (${list[0]?.filmType || 'PET'} ${list[0]?.micron || 12}µ)`,
+      targetSpeedMpm: rotoMachine.maxSpeedMpm || 250,
+      notes: 'Ensure accurate eyemark & reverse printing registration.'
+    });
+
+    // 2. Multi-Pass Lamination based on layers count
+    if (list.length >= 2) {
+      // First Pass: Layer 1 + Layer 2
+      routing.push({
+        id: `step-${Date.now()}-${stepNo}`,
+        stepNumber: stepNo++,
+        operation: 'Solventless Lamination',
+        machineId: lamMachine.id || 'MAC-LAM-1',
+        machineName: lamMachine.name || 'Solventless Laminator',
+        machineType: lamMachine.type || 'Lamination',
+        pass: 'Pass 1 (Layer 1 + Layer 2)',
+        stageOutput: 'Semi-Finished Goods (SFG)',
+        stageDescription: `SFG - 2-Ply Laminate (${list[0]?.filmType || 'L1'} + ${list[1]?.filmType || 'L2'})`,
+        targetSpeedMpm: lamMachine.maxSpeedMpm || 280,
+        notes: list.length > 2 ? 'Allow 12-24h curing before secondary lamination pass.' : 'Standard curing before slitting.'
+      });
+    }
+
+    if (list.length >= 3) {
+      // Second Pass: 2-Ply + Layer 3 (Triplex structure)
+      routing.push({
+        id: `step-${Date.now()}-${stepNo}`,
+        stepNumber: stepNo++,
+        operation: 'Solventless Lamination',
+        machineId: lamMachine.id || 'MAC-LAM-1',
+        machineName: lamMachine.name || 'Solventless Laminator',
+        machineType: lamMachine.type || 'Lamination',
+        pass: 'Pass 2 (2-Ply + Layer 3)',
+        stageOutput: 'Semi-Finished Goods (SFG)',
+        stageDescription: `SFG - 3-Ply Triplex Laminate (${list.map(l => l.filmType).join(' + ')})`,
+        targetSpeedMpm: lamMachine.maxSpeedMpm || 260,
+        notes: 'Final triplex curing before slitting/pouching.'
+      });
+    }
+
+    if (list.length >= 4) {
+      // Third Pass: 3-Ply + Layer 4 (Quadplex structure)
+      routing.push({
+        id: `step-${Date.now()}-${stepNo}`,
+        stepNumber: stepNo++,
+        operation: 'Solventless Lamination',
+        machineId: lamMachine.id || 'MAC-LAM-1',
+        machineName: lamMachine.name || 'Solventless Laminator',
+        machineType: lamMachine.type || 'Lamination',
+        pass: 'Pass 3 (3-Ply + Layer 4)',
+        stageOutput: 'Semi-Finished Goods (SFG)',
+        stageDescription: 'SFG - 4-Ply Quadplex Laminate',
+        targetSpeedMpm: lamMachine.maxSpeedMpm || 240,
+        notes: 'Quadplex curing sequence.'
+      });
+    }
+
+    // 3. Slitting & Rewinding
+    routing.push({
+      id: `step-${Date.now()}-${stepNo}`,
+      stepNumber: stepNo++,
+      operation: 'Slitting & Rewinding',
+      machineId: slitMachine.id || 'MAC-SLIT-1',
+      machineName: slitMachine.name || 'High Speed Slitter',
+      machineType: slitMachine.type || 'Slitting',
+      pass: 'Single Pass',
+      stageOutput: 'Semi-Finished Goods (SFG)',
+      stageDescription: 'SFG - Slit Rolls / Inspection Passed',
+      targetSpeedMpm: slitMachine.maxSpeedMpm || 400,
+      notes: 'Trim width check, tension control, core alignment.'
+    });
+
+    // 4. Final Packing & Dispatch stage
+    routing.push({
+      id: `step-${Date.now()}-${stepNo}`,
+      stepNumber: stepNo++,
+      operation: 'Final Inspection & Dispatch',
+      machineId: 'MANUAL-PACKING',
+      machineName: 'Dispatch & Packing Bay',
+      machineType: 'Packing / QC',
+      pass: 'Final Stage',
+      stageOutput: 'Finished Goods (FG)',
+      stageDescription: 'Finished Goods (FG) - Ready for Client Dispatch',
+      targetSpeedMpm: 0,
+      notes: 'QC CoA verification, roll stretch wrapping, barcode labeling.'
+    });
+
+    return routing;
+  };
+
+  const handleAddRoutingStep = () => {
+    const nextStepNo = processRouting.length + 1;
+    const defaultMac = (machines && machines.length > 0) ? machines[0] : { id: 'MAC-ROTO-1', name: 'Rotogravure Press 1', type: 'Rotogravure', maxSpeedMpm: 250 };
+    setProcessRouting(prev => [
+      ...prev,
+      {
+        id: `step-${Date.now()}-${nextStepNo}`,
+        stepNumber: nextStepNo,
+        operation: 'Rotogravure Printing (Reverse)',
+        machineId: defaultMac.id,
+        machineName: defaultMac.name,
+        machineType: defaultMac.type || 'General',
+        pass: 'Single Pass',
+        stageOutput: 'Semi-Finished Goods (SFG)',
+        stageDescription: 'SFG - Intermediate Process Web',
+        targetSpeedMpm: defaultMac.maxSpeedMpm || 200,
+        notes: ''
+      }
+    ]);
+  };
+
+  const handleRemoveRoutingStep = (stepId) => {
+    if (processRouting.length <= 1) {
+      alert("At least 1 process routing step is required!");
+      return;
+    }
+    setProcessRouting(prev => {
+      const filtered = prev.filter(s => s.id !== stepId);
+      return filtered.map((s, idx) => ({ ...s, stepNumber: idx + 1 }));
+    });
+  };
+
+  const handleMoveRoutingStep = (idx, direction) => {
+    if (direction === 'up' && idx === 0) return;
+    if (direction === 'down' && idx === processRouting.length - 1) return;
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    setProcessRouting(prev => {
+      const copy = [...prev];
+      const temp = copy[idx];
+      copy[idx] = copy[targetIdx];
+      copy[targetIdx] = temp;
+      return copy.map((s, i) => ({ ...s, stepNumber: i + 1 }));
+    });
+  };
+
+  const handleUpdateRoutingStep = (stepId, field, value) => {
+    setProcessRouting(prev => prev.map(s => {
+      if (s.id !== stepId) return s;
+      const updated = { ...s, [field]: value };
+      if (field === 'machineId') {
+        const found = (machines || []).find(m => m.id === value);
+        if (found) {
+          updated.machineName = found.name;
+          updated.machineType = found.type || 'General';
+          if (!updated.targetSpeedMpm || updated.targetSpeedMpm === 0) {
+            updated.targetSpeedMpm = found.maxSpeedMpm || 200;
+          }
+        }
+      }
+      return updated;
+    }));
+  };
 
   const filteredJobMasters = useMemo(() => {
     if (!jobMasters) return [];
@@ -358,11 +545,13 @@ export default function JobMasterDirectory({
     setTrackerLine('Yes');
     setSpecialInstructions('');
     const defaultFilm = availableFilmTypes[0] || 'PET';
-    setLayers([
+    const initLayers = [
       { id: Date.now(), filmType: defaultFilm, micron: 12 },
       { id: Date.now()+1, filmType: availableFilmTypes[1] || 'METPET', micron: 12 },
       { id: Date.now()+2, filmType: availableFilmTypes[2] || 'Natural GP LD', micron: 35 }
-    ]);
+    ];
+    setLayers(initLayers);
+    setProcessRouting(generateDefaultRouting(initLayers, machines));
     setIsCreateModalOpen(true);
   };
 
@@ -424,13 +613,22 @@ export default function JobMasterDirectory({
     setTrackerLine(job.trackerLine || 'Yes');
     setSpecialInstructions(job.specialInstructions || '');
     
+    let currentLayers = [];
     if (job.layers && job.layers.length > 0) {
-      setLayers(job.layers.map((l, idx) => ({ ...l, id: l.id || Date.now() + idx })));
+      currentLayers = job.layers.map((l, idx) => ({ ...l, id: l.id || Date.now() + idx }));
+      setLayers(currentLayers);
     } else if (job.structure) {
       const parsed = parseStructureToLayers(job.structure);
       if (parsed && parsed.length > 0) {
+        currentLayers = parsed;
         setLayers(parsed);
       }
+    }
+
+    if (job.processRouting && job.processRouting.length > 0) {
+      setProcessRouting(job.processRouting.map((s, idx) => ({ ...s, id: s.id || `step-${Date.now()}-${idx}` })));
+    } else {
+      setProcessRouting(generateDefaultRouting(currentLayers, machines));
     }
     setIsCreateModalOpen(true);
   };
@@ -468,6 +666,7 @@ export default function JobMasterDirectory({
         pouchOpenWidth: parseFloat(pouchOpenWidth) || 0,
         pouchHeight: parseFloat(pouchHeight) || 0,
         layers,
+        processRouting: Array.isArray(processRouting) && processRouting.length > 0 ? processRouting : generateDefaultRouting(layers, machines),
         cylinderSku: skuCode.trim(),
         cylinderCost: `₹ ${parseInt(cylinderCost || 0).toLocaleString()}`,
         colorsCount: parseInt(colorsCount) || 6,
@@ -502,6 +701,7 @@ export default function JobMasterDirectory({
       pouchOpenWidth: parseFloat(pouchOpenWidth) || 0,
       pouchHeight: parseFloat(pouchHeight) || 0,
       layers,
+      processRouting: Array.isArray(processRouting) && processRouting.length > 0 ? processRouting : generateDefaultRouting(layers, machines),
       cylinderSku: skuCode.trim(),
       cylinderCost: `₹ ${parseInt(cylinderCost || 0).toLocaleString()}`,
       colorsCount: parseInt(colorsCount) || 6,
@@ -892,6 +1092,231 @@ export default function JobMasterDirectory({
                   ))}
                 </div>
 
+                {/* Process Routing & Machine Sequence (SFG Tracking) */}
+                <div style={{ gridColumn: 'span 2', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                    <div>
+                      <strong style={{ fontSize: '0.9rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Cpu size={16} style={{ color: 'var(--primary-brand)' }} /> Process Routing & Machine Sequence
+                      </strong>
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
+                        Sequence of machinery and multi-pass operations. Material is classified as <strong>Semi-Finished Goods (SFG)</strong> until final dispatch.
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button 
+                        type="button" 
+                        className="btn-secondary" 
+                        style={{ padding: '4px 10px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }} 
+                        onClick={() => setProcessRouting(generateDefaultRouting(layers, machines))}
+                        title="Auto-configure lamination passes and machines based on active layers"
+                      >
+                        <Sparkles size={13} style={{ color: '#d97706' }} /> Auto-Suggest from Layers
+                      </button>
+                      <button 
+                        type="button" 
+                        className="btn-secondary" 
+                        style={{ padding: '4px 10px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }} 
+                        onClick={handleAddRoutingStep}
+                      >
+                        <Plus size={13} /> Add Operation / Pass
+                      </button>
+                    </div>
+                  </div>
+
+                  {processRouting.length === 0 ? (
+                    <div style={{ padding: '16px', textAlign: 'center', background: '#ffffff', borderRadius: '6px', border: '1px dashed #cbd5e1', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                      No process routing steps configured. Click <strong>Auto-Suggest from Layers</strong> to generate standard passes.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {processRouting.map((step, idx) => (
+                        <div 
+                          key={step.id || idx} 
+                          style={{ 
+                            background: '#ffffff', 
+                            border: '1px solid #e2e8f0', 
+                            borderRadius: '8px', 
+                            padding: '12px 14px',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ 
+                                width: '24px', 
+                                height: '24px', 
+                                borderRadius: '50%', 
+                                background: step.stageOutput === 'Finished Goods (FG)' ? '#047857' : 'var(--primary-brand)', 
+                                color: '#ffffff', 
+                                fontSize: '0.75rem', 
+                                fontWeight: '800', 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                justifyContent: 'center' 
+                              }}>
+                                {idx + 1}
+                              </span>
+                              <strong style={{ fontSize: '0.86rem', color: '#0f172a' }}>Step {idx + 1}: {step.operation}</strong>
+                              
+                              {/* SFG / FG Classification Badge */}
+                              <span style={{
+                                fontSize: '0.72rem',
+                                fontWeight: '800',
+                                padding: '2px 8px',
+                                borderRadius: '9999px',
+                                background: step.stageOutput === 'Finished Goods (FG)' ? '#ecfdf5' : '#e0f2fe',
+                                color: step.stageOutput === 'Finished Goods (FG)' ? '#047857' : '#0369a1',
+                                border: step.stageOutput === 'Finished Goods (FG)' ? '1px solid #a7f3d0' : '1px solid #bae6fd',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.03em'
+                              }}>
+                                {step.stageOutput === 'Finished Goods (FG)' ? 'FG (Finished Goods)' : 'SFG (Semi-Finished Goods)'}
+                              </span>
+                            </div>
+
+                            {/* Reorder and Delete Controls */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <button 
+                                type="button" 
+                                className="btn-secondary" 
+                                style={{ padding: '2px 6px', fontSize: '0.7rem' }} 
+                                disabled={idx === 0} 
+                                onClick={() => handleMoveRoutingStep(idx, 'up')}
+                                title="Move Step Up"
+                              >
+                                <ChevronUp size={14} />
+                              </button>
+                              <button 
+                                type="button" 
+                                className="btn-secondary" 
+                                style={{ padding: '2px 6px', fontSize: '0.7rem' }} 
+                                disabled={idx === processRouting.length - 1} 
+                                onClick={() => handleMoveRoutingStep(idx, 'down')}
+                                title="Move Step Down"
+                              >
+                                <ChevronDown size={14} />
+                              </button>
+                              {processRouting.length > 1 && (
+                                <button 
+                                  type="button" 
+                                  className="btn-secondary" 
+                                  style={{ padding: '2px 6px', fontSize: '0.7rem', color: '#dc2626', borderColor: '#fca5a5' }} 
+                                  onClick={() => handleRemoveRoutingStep(step.id)}
+                                  title="Delete Step"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
+                            {/* Operation / Stage */}
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                              <label style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700' }}>Operation / Process</label>
+                              <select 
+                                className="form-control" 
+                                style={{ padding: '4px 8px', fontSize: '0.82rem' }}
+                                value={step.operation}
+                                onChange={e => handleUpdateRoutingStep(step.id, 'operation', e.target.value)}
+                              >
+                                <option value="Rotogravure Printing (Reverse)">Rotogravure Printing (Reverse)</option>
+                                <option value="Rotogravure Printing (Surface)">Rotogravure Printing (Surface)</option>
+                                <option value="Solventless Lamination">Solventless Lamination</option>
+                                <option value="Solvent-based Lamination">Solvent-based Lamination</option>
+                                <option value="Extrusion Lamination">Extrusion Lamination</option>
+                                <option value="Slitting & Rewinding">Slitting & Rewinding</option>
+                                <option value="Center Seal Pouching">Center Seal Pouching</option>
+                                <option value="3-Side Seal Pouching">3-Side Seal Pouching</option>
+                                <option value="Stand-up Zipper Pouching">Stand-up Zipper Pouching</option>
+                                <option value="Doctoring / Inspection Rewinder">Doctoring / Inspection Rewinder</option>
+                                <option value="Final QC Inspection & Dispatch">Final QC Inspection & Dispatch</option>
+                                <option value="Custom Operation">Custom Operation</option>
+                              </select>
+                            </div>
+
+                            {/* Machine Selection (From Settings) */}
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                              <label style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700' }}>Allocated Machine (from Settings)</label>
+                              <select 
+                                className="form-control" 
+                                style={{ padding: '4px 8px', fontSize: '0.82rem' }}
+                                value={step.machineId}
+                                onChange={e => handleUpdateRoutingStep(step.id, 'machineId', e.target.value)}
+                              >
+                                {machines && machines.length > 0 ? (
+                                  machines.map(m => (
+                                    <option key={m.id} value={m.id}>
+                                      {m.name} ({m.type || 'Machine'} • Max {m.maxSpeedMpm || 0} mpm)
+                                    </option>
+                                  ))
+                                ) : (
+                                  <>
+                                    <option value="MAC-ROTO-1">Rotogravure Press 1 (Rotogravure)</option>
+                                    <option value="MAC-LAM-1">Solventless Laminator 1 (Lamination)</option>
+                                    <option value="MAC-SLIT-1">High Speed Slitter 1 (Slitting)</option>
+                                  </>
+                                )}
+                                <option value="MANUAL-PACKING">Manual / Dispatch Bay (QC & Packing)</option>
+                              </select>
+                            </div>
+
+                            {/* Pass Selection */}
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                              <label style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700' }}>Machine Pass / Cycle</label>
+                              <select 
+                                className="form-control" 
+                                style={{ padding: '4px 8px', fontSize: '0.82rem' }}
+                                value={step.pass}
+                                onChange={e => handleUpdateRoutingStep(step.id, 'pass', e.target.value)}
+                              >
+                                <option value="Single Pass">Single Pass</option>
+                                <option value="Pass 1 (Single Pass)">Pass 1 (Single Pass)</option>
+                                <option value="Pass 1 (Layer 1 + Layer 2)">Pass 1 (Layer 1 + Layer 2)</option>
+                                <option value="Pass 2 (2-Ply + Layer 3)">Pass 2 (2-Ply + Layer 3)</option>
+                                <option value="Pass 3 (3-Ply + Layer 4)">Pass 3 (3-Ply + Layer 4)</option>
+                                <option value="Pass 1 (Front Print)">Pass 1 (Front Print)</option>
+                                <option value="Pass 2 (Reverse Print)">Pass 2 (Reverse Print)</option>
+                                <option value="Pass 1 (Base Coat)">Pass 1 (Base Coat)</option>
+                                <option value="Pass 2 (Top Coat)">Pass 2 (Top Coat)</option>
+                                <option value="Final Stage">Final Stage</option>
+                              </select>
+                            </div>
+
+                            {/* Stage Output Classification (SFG vs FG) */}
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                              <label style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700' }}>Stage Output Classification</label>
+                              <select 
+                                className="form-control" 
+                                style={{ padding: '4px 8px', fontSize: '0.82rem', fontWeight: '700' }}
+                                value={step.stageOutput}
+                                onChange={e => handleUpdateRoutingStep(step.id, 'stageOutput', e.target.value)}
+                              >
+                                <option value="Semi-Finished Goods (SFG)">Semi-Finished Goods (SFG)</option>
+                                <option value="Finished Goods (FG)">Finished Goods (FG) / Dispatch</option>
+                              </select>
+                            </div>
+
+                            {/* Stage Output Description */}
+                            <div className="form-group" style={{ gridColumn: 'span 2', marginBottom: 0 }}>
+                              <label style={{ fontSize: '0.72rem', color: '#64748b' }}>Stage Output Label & Remarks</label>
+                              <input 
+                                type="text"
+                                className="form-control"
+                                style={{ padding: '4px 8px', fontSize: '0.82rem' }}
+                                placeholder="e.g. SFG - 2-Ply Laminate Web. 24 hr curing before Pass 2."
+                                value={step.stageDescription || step.notes || ''}
+                                onChange={e => handleUpdateRoutingStep(step.id, 'stageDescription', e.target.value)}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 {/* Colors & Cost */}
                 <div className="form-group"><label>Colors Count (No. of Cylinders)</label><input type="number" className="form-control" value={colorsCount} onChange={e => setColorsCount(e.target.value)} /></div>
                 <div className="form-group"><label>Engraver Name</label><input type="text" className="form-control" value={engravuresName} onChange={e => setEngravuresName(e.target.value)} /></div>
@@ -1177,6 +1602,103 @@ export default function JobMasterDirectory({
                 })()}
                 </tbody>
               </table>
+            </div>
+
+            {/* Process Routing & Machinery Sequence Panel */}
+            <div className="glass-panel" style={{ padding: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                  <Cpu size={18} style={{ color: 'var(--primary-brand)' }} /> Process Routing & Machine Sequence
+                </h3>
+                <span className="badge" style={{ background: '#f1f5f9', color: '#334155', fontWeight: '700', fontSize: '0.75rem' }}>
+                  {(selectedJob.processRouting && selectedJob.processRouting.length > 0 ? selectedJob.processRouting : generateDefaultRouting(selectedJob.layers, machines)).length} Total Stages
+                </span>
+              </div>
+
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '14px' }}>
+                Sequential workflow across shopfloor machinery. Up until final dispatch, material in progress is classified as <strong>Semi-Finished Goods (SFG)</strong>.
+              </div>
+
+              {(() => {
+                const routingList = (selectedJob.processRouting && selectedJob.processRouting.length > 0)
+                  ? selectedJob.processRouting
+                  : generateDefaultRouting(selectedJob.layers, machines);
+
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {routingList.map((step, idx) => (
+                      <div 
+                        key={step.id || idx}
+                        style={{
+                          background: '#f8fafc',
+                          border: '1px solid var(--border-color)',
+                          borderLeft: step.stageOutput === 'Finished Goods (FG)' ? '4px solid #047857' : '4px solid var(--primary-brand)',
+                          borderRadius: '8px',
+                          padding: '12px 14px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '6px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{
+                              width: '22px',
+                              height: '22px',
+                              borderRadius: '50%',
+                              background: step.stageOutput === 'Finished Goods (FG)' ? '#047857' : 'var(--primary-brand)',
+                              color: '#ffffff',
+                              fontSize: '0.72rem',
+                              fontWeight: '800',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}>
+                              {idx + 1}
+                            </span>
+                            <strong style={{ fontSize: '0.9rem', color: 'var(--text-primary)' }}>{step.operation}</strong>
+                            <span className="badge" style={{ background: '#ffffff', border: '1px solid #cbd5e1', color: '#0f172a', fontWeight: '700', fontSize: '0.72rem' }}>
+                              {step.pass || 'Single Pass'}
+                            </span>
+                          </div>
+
+                          <span style={{
+                            fontSize: '0.72rem',
+                            fontWeight: '800',
+                            padding: '2px 8px',
+                            borderRadius: '9999px',
+                            background: step.stageOutput === 'Finished Goods (FG)' ? '#ecfdf5' : '#e0f2fe',
+                            color: step.stageOutput === 'Finished Goods (FG)' ? '#047857' : '#0369a1',
+                            border: step.stageOutput === 'Finished Goods (FG)' ? '1px solid #a7f3d0' : '1px solid #bae6fd',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.03em'
+                          }}>
+                            {step.stageOutput === 'Finished Goods (FG)' ? 'FG (Finished Goods)' : 'SFG (Semi-Finished Goods)'}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', color: 'var(--text-secondary)', flexWrap: 'wrap', gap: '8px' }}>
+                          <div>
+                            Allocated Machine: <strong style={{ color: '#0f172a' }}>{step.machineName || 'Allocated Press'}</strong>
+                            {step.targetSpeedMpm > 0 && <span style={{ color: 'var(--text-muted)', marginLeft: '6px' }}>({step.targetSpeedMpm} mpm)</span>}
+                          </div>
+                          {step.stageDescription && (
+                            <div style={{ fontStyle: 'italic', color: '#475569' }}>
+                              {step.stageDescription}
+                            </div>
+                          )}
+                        </div>
+
+                        {step.notes && (
+                          <div style={{ fontSize: '0.75rem', color: '#64748b', background: '#ffffff', padding: '4px 8px', borderRadius: '4px', border: '1px dashed #cbd5e1' }}>
+                            📝 {step.notes}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="glass-panel" style={{ padding: '20px' }}>
@@ -1502,7 +2024,7 @@ export default function JobMasterDirectory({
           <>
             <table className="data-table">
               <thead>
-                <tr><th>Job Master ID</th><th>SKU Code</th><th>Job Name</th><th>Client Name</th><th>Laminate Structure</th><th>Print Width x Repeat</th><th>Colors & Engraver</th><th>Actions</th></tr>
+                <tr><th>Job Master ID</th><th>SKU Code</th><th>Job Name</th><th>Client Name</th><th>Laminate Structure</th><th>Process Routing</th><th>Print Width x Repeat</th><th>Colors & Engraver</th><th>Actions</th></tr>
               </thead>
               <tbody>
                 {jobsPagination.paginatedItems.map(job => (
@@ -1512,6 +2034,15 @@ export default function JobMasterDirectory({
                     <td style={{ fontWeight: '700' }}>{job.jobName}</td>
                     <td style={{ color: 'var(--text-secondary)' }}>{job.clientName}</td>
                     <td style={{ fontSize: '0.8rem', fontWeight: '600' }}>{job.structure}</td>
+                    <td>
+                      <div style={{ fontSize: '0.78rem', fontWeight: '700', color: 'var(--primary-brand)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Cpu size={12} />
+                        {(job.processRouting && job.processRouting.length > 0 ? job.processRouting : generateDefaultRouting(job.layers, machines)).length} Stages
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: '#0369a1', fontWeight: '600' }}>
+                        SFG → FG
+                      </div>
+                    </td>
                     <td>{job.printWidthMm}mm x {job.repeatLengthMm}mm</td>
                     <td>
                       <div style={{ fontSize: '0.8rem' }}>

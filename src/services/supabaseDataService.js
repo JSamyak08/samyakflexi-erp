@@ -1574,6 +1574,7 @@ export async function fetchJobMasters() {
         invoiceTo: j.invoice_to || pm.invoiceTo || 'Samyak International Ltd',
         shellSize: j.shell_size || pm.shellSize || '',
         petSize: j.pet_size || pm.petSize || '',
+        processRouting: Array.isArray(j.process_routing) ? j.process_routing : (Array.isArray(pm.processRouting) ? pm.processRouting : []),
         creationDate: j.creation_date || j.created_at ? String(j.created_at).split('T')[0] : new Date().toISOString().split('T')[0]
       };
     });
@@ -1592,6 +1593,7 @@ export async function saveJobMasterToSupabase(jobMaster) {
   const jobName = jobMaster.jobName || '';
   const clientName = jobMaster.clientName || '';
   const layers = Array.isArray(jobMaster.layers) ? jobMaster.layers : [];
+  const processRouting = Array.isArray(jobMaster.processRouting) ? jobMaster.processRouting : [];
   const structure = (layers.length > 0)
     ? layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
     : (jobMaster.structure || '—');
@@ -1626,7 +1628,8 @@ export async function saveJobMasterToSupabase(jobMaster) {
     printing: jobMaster.printing || 'Reverse',
     invoiceTo: jobMaster.invoiceTo || 'Samyak International Ltd',
     shellSize: jobMaster.shellSize || `${faceLengthMm} mm`,
-    petSize: jobMaster.petSize || `${faceLengthMm + 10} mm`
+    petSize: jobMaster.petSize || `${faceLengthMm + 10} mm`,
+    processRouting: processRouting
   };
 
   const legacyPayload = {
@@ -1655,6 +1658,7 @@ export async function saveJobMasterToSupabase(jobMaster) {
     pouch_open_width: Number(jobMaster.pouchOpenWidth) || 0,
     pouch_height: Number(jobMaster.pouchHeight) || 0,
     layers: Array.isArray(jobMaster.layers) ? jobMaster.layers : [],
+    process_routing: processRouting,
     cylinder_sku: jobMaster.cylinderSku || skuCode,
     engravures_name: engraverName,
     utilisation_limit: Number(jobMaster.utilisationLimit) || 10000,

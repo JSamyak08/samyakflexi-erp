@@ -277,6 +277,7 @@ ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS engravures_name TEXT;
 ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS cost_borne_by TEXT;
 ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS utilisation_limit NUMERIC DEFAULT 10000;
 ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS wastage_percentage NUMERIC DEFAULT 5;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS process_routing JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS creation_date DATE DEFAULT CURRENT_DATE;
 
 -- Ensure all columns exist on orders
