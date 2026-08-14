@@ -1492,15 +1492,54 @@ export default function InventoryManagement({
 
           {/* Admin Price Discrepancy Alert Banner */}
           {unifiedIssuedPOs.some(po => po.priceDiscrepancy) && (
-            <div className="delayed-alert-banner" style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '14px 18px', borderRadius: '10px' }}>
+            <div style={{
+              background: 'linear-gradient(135deg, #ffffff 0%, #fffbfb 100%)',
+              border: '1px solid #fecaca',
+              borderLeft: '4px solid #dc2626',
+              padding: '14px 18px',
+              borderRadius: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '12px',
+              boxShadow: '0 2px 6px -2px rgba(220, 38, 38, 0.06)'
+            }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <AlertTriangle size={28} style={{ color: '#dc2626' }} />
+                <div style={{
+                  width: '34px',
+                  height: '34px',
+                  borderRadius: '8px',
+                  background: '#fee2e2',
+                  color: '#dc2626',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  <AlertTriangle size={18} />
+                </div>
                 <div>
-                  <h4 style={{ fontSize: '1rem', fontWeight: '800', color: '#991b1b', margin: 0 }}>
-                    ⚠️ ADMIN ALERT: PRICE DISCREPANCY DETECTED ON INWARD GRN RECEIPT(S)
-                  </h4>
-                  <p style={{ fontSize: '0.82rem', color: '#7f1d1d', marginTop: '2px', margin: 0 }}>
-                    Difference detected between original PO agreed unit rate and actual Inward GRN rate. Details highlighted in red table rows below.
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <h4 style={{ fontSize: '0.92rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                      Rate Discrepancy Detected
+                    </h4>
+                    <span style={{
+                      background: '#fee2e2',
+                      color: '#dc2626',
+                      border: '1px solid #fca5a5',
+                      fontSize: '0.72rem',
+                      fontWeight: '800',
+                      padding: '2px 8px',
+                      borderRadius: '9999px',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em'
+                    }}>
+                      Inward GRN Rate Difference
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px', margin: 0 }}>
+                    Difference detected between original PO agreed unit rate and actual Inward GRN rate. Highlighted in red table rows below.
                   </p>
                 </div>
               </div>

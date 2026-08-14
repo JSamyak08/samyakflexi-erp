@@ -552,15 +552,54 @@ export default function OrderManagement({
 
       {/* Red Delay Alert Notification if delayed orders exist */}
       {delayedOrdersCount > 0 && (
-        <div className="delayed-alert-banner">
+        <div style={{
+          background: 'linear-gradient(135deg, #ffffff 0%, #fffbfb 100%)',
+          border: '1px solid #fecaca',
+          borderLeft: '4px solid #dc2626',
+          padding: '14px 18px',
+          borderRadius: '10px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px',
+          boxShadow: '0 2px 6px -2px rgba(220, 38, 38, 0.06)'
+        }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <AlertTriangle size={28} style={{ color: '#dc2626' }} />
+            <div style={{
+              width: '34px',
+              height: '34px',
+              borderRadius: '8px',
+              background: '#fee2e2',
+              color: '#dc2626',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}>
+              <AlertTriangle size={18} />
+            </div>
             <div>
-              <h3 style={{ fontSize: '1rem', fontWeight: '700', color: '#dc2626' }}>
-                RED HIGHLIGHT WARNING: {delayedOrdersCount} ORDER(S) OVERDUE PAST TARGET DELIVERY DEADLINE
-              </h3>
-              <p style={{ fontSize: '0.8rem', color: '#991b1b', marginTop: '2px' }}>
-                Orders marked in RED require immediate raw material procurement and vendor PO issuance.
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <h4 style={{ fontSize: '0.92rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                  Delivery Deadline Overdue
+                </h4>
+                <span style={{
+                  background: '#fee2e2',
+                  color: '#dc2626',
+                  border: '1px solid #fca5a5',
+                  fontSize: '0.72rem',
+                  fontWeight: '800',
+                  padding: '2px 8px',
+                  borderRadius: '9999px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em'
+                }}>
+                  {delayedOrdersCount} {delayedOrdersCount === 1 ? 'Order' : 'Orders'} Highlighted in Red
+                </span>
+              </div>
+              <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px', margin: 0 }}>
+                Orders have crossed target delivery deadlines. Ensure vendor raw materials and printing cylinders are allocated.
               </p>
             </div>
           </div>
