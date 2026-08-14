@@ -519,40 +519,76 @@ export default function App() {
           const prevMap = new Map();
           (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p)) prevMap.set(p.id, p); });
 
-          const map = new Map();
+          // Deduplicate supaCyls by SKU / Job Name so duplicate rows are collapsed into 1 accurate record
+          const skuMap = new Map();
+          const redundantIdsToDelete = [];
+
           cleanSupa.forEach(c => {
-            if (c && c.id) {
-              const existing = prevMap.get(c.id);
-              const mergedRecord = {
-                ...(existing || {}),
-                ...c,
-                layers: (c.layers && c.layers.length > 0) ? c.layers : (existing?.layers || []),
-                press_marks: { ...(existing?.press_marks || {}), ...(c.press_marks || {}) },
-                printWidthMm: c.printWidthMm || existing?.printWidthMm || 1000,
-                faceLengthMm: c.faceLengthMm || existing?.faceLengthMm || 1050,
-                jobCardFileUrl: c.jobCardFileUrl || existing?.jobCardFileUrl || existing?.artworkUrl || '',
-                artworkUrl: c.artworkUrl || existing?.artworkUrl || existing?.jobCardFileUrl || '',
-                silLogo: c.silLogo || existing?.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
-                arcMark: c.arcMark || existing?.arcMark || 'Yes',
-                slittingMark: c.slittingMark || existing?.slittingMark || 'Yes',
-                trackerLine: c.trackerLine || existing?.trackerLine || 'Yes',
-                specialInstructions: c.specialInstructions || existing?.specialInstructions || '',
-                chkEyemark: Boolean(c.chkEyemark || existing?.chkEyemark),
-                chkBarcode: Boolean(c.chkBarcode || existing?.chkBarcode),
-                chkOrientation: Boolean(c.chkOrientation || existing?.chkOrientation),
-                chkClientApproval: Boolean(c.chkClientApproval || existing?.chkClientApproval),
-                approvedByHead: Boolean(c.approvedByHead || existing?.approvedByHead),
-                approvedHeadName: c.approvedHeadName || existing?.approvedHeadName || '',
-                approvedHeadDate: c.approvedHeadDate || existing?.approvedHeadDate || ''
-              };
-              map.set(c.id, mergedRecord);
+            if (!c || !c.id) return;
+            const skuKey = (c.sku || '').trim().toLowerCase();
+            const nameKey = (c.jobName || '').trim().toLowerCase();
+            const matchKey = skuKey || nameKey || String(c.id);
+
+            const existingLocal = prevMap.get(c.id);
+            const mergedRecord = {
+              ...(existingLocal || {}),
+              ...c,
+              layers: (c.layers && c.layers.length > 0) ? c.layers : (existingLocal?.layers || []),
+              press_marks: { ...(existingLocal?.press_marks || {}), ...(c.press_marks || {}) },
+              printWidthMm: c.printWidthMm || existingLocal?.printWidthMm || 1000,
+              faceLengthMm: c.faceLengthMm || existingLocal?.faceLengthMm || 1050,
+              jobCardFileUrl: c.jobCardFileUrl || existingLocal?.jobCardFileUrl || existingLocal?.artworkUrl || '',
+              artworkUrl: c.artworkUrl || existingLocal?.artworkUrl || existingLocal?.jobCardFileUrl || '',
+              silLogo: c.silLogo || existingLocal?.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+              arcMark: c.arcMark || existingLocal?.arcMark || 'Yes',
+              slittingMark: c.slittingMark || existingLocal?.slittingMark || 'Yes',
+              trackerLine: c.trackerLine || existingLocal?.trackerLine || 'Yes',
+              specialInstructions: c.specialInstructions || existingLocal?.specialInstructions || '',
+              chkEyemark: Boolean(c.chkEyemark || existingLocal?.chkEyemark),
+              chkBarcode: Boolean(c.chkBarcode || existingLocal?.chkBarcode),
+              chkOrientation: Boolean(c.chkOrientation || existingLocal?.chkOrientation),
+              chkClientApproval: Boolean(c.chkClientApproval || existingLocal?.chkClientApproval),
+              approvedByHead: Boolean(c.approvedByHead || existingLocal?.approvedByHead),
+              approvedHeadName: c.approvedHeadName || existingLocal?.approvedHeadName || '',
+              approvedHeadDate: c.approvedHeadDate || existingLocal?.approvedHeadDate || ''
+            };
+
+            if (skuMap.has(matchKey)) {
+              const prevEntry = skuMap.get(matchKey);
+              // Pick the more complete / approved record
+              const isCurrentBetter = (mergedRecord.approvedByHead && !prevEntry.approvedByHead) ||
+                                      (mergedRecord.artworkUrl && !prevEntry.artworkUrl) ||
+                                      ((mergedRecord.layers?.length || 0) > (prevEntry.layers?.length || 0));
+              if (isCurrentBetter) {
+                redundantIdsToDelete.push(prevEntry.id);
+                skuMap.set(matchKey, { ...prevEntry, ...mergedRecord });
+              } else {
+                redundantIdsToDelete.push(mergedRecord.id);
+                skuMap.set(matchKey, { ...mergedRecord, ...prevEntry });
+              }
+            } else {
+              skuMap.set(matchKey, mergedRecord);
             }
           });
-          prevMap.forEach((p, id) => {
-            if (!map.has(id)) map.set(id, p);
+
+          // Also include any local-only cylinders
+          prevMap.forEach((p) => {
+            const skuKey = (p.sku || '').trim().toLowerCase();
+            const nameKey = (p.jobName || '').trim().toLowerCase();
+            const matchKey = skuKey || nameKey || String(p.id);
+            if (!skuMap.has(matchKey)) {
+              skuMap.set(matchKey, p);
+            }
           });
-          const merged = Array.from(map.values());
+
+          const merged = Array.from(skuMap.values());
           safeLocalStorageSet('samyak_erp_cylinders', merged);
+
+          // Clean up older duplicate IDs in background
+          redundantIdsToDelete.forEach(id => {
+            if (id) deleteCylinderFromSupabase(id).catch(console.warn);
+          });
+
           return merged;
         });
         supaCyls.filter(isDummyRecord).forEach(d => deleteCylinderFromSupabase(d.id).catch(console.warn));
@@ -1506,8 +1542,33 @@ export default function App() {
   };
 
   const handleAddCylinder = async (newCyl) => {
-    setCylinders(prev => [newCyl, ...prev.filter(c => c.id !== newCyl.id)]);
-    logAudit('CREATE', 'Cylinders', `Added rotogravure cylinder ${newCyl.sku} for "${newCyl.jobName}"`, newCyl.id);
+    if (!newCyl) return;
+    const targetSku = (newCyl.sku || '').trim().toLowerCase();
+    const targetJobName = (newCyl.jobName || '').trim().toLowerCase();
+
+    setCylinders(prev => {
+      const matchIndex = prev.findIndex(c => 
+        c.id === newCyl.id || 
+        (targetSku && c.sku && c.sku.trim().toLowerCase() === targetSku) ||
+        (targetJobName && c.jobName && c.jobName.trim().toLowerCase() === targetJobName)
+      );
+
+      if (matchIndex >= 0) {
+        const existing = prev[matchIndex];
+        const updated = { ...existing, ...newCyl, id: existing.id || newCyl.id };
+        const copy = [...prev];
+        copy[matchIndex] = updated;
+        return copy.filter((c, idx) => {
+          if (idx === matchIndex) return true;
+          if (targetSku && c.sku && c.sku.trim().toLowerCase() === targetSku) return false;
+          if (targetJobName && c.jobName && c.jobName.trim().toLowerCase() === targetJobName) return false;
+          return true;
+        });
+      }
+      return [newCyl, ...prev];
+    });
+
+    logAudit('CREATE', 'Cylinders', `Saved rotogravure cylinder ${newCyl.sku} for "${newCyl.jobName}"`, newCyl.id);
     try {
       await saveCylinderToSupabase(newCyl);
     } catch (err) {
@@ -1516,7 +1577,32 @@ export default function App() {
   };
 
   const handleUpdateCylinder = async (updatedCyl) => {
-    setCylinders(prev => prev.map(c => c.id === updatedCyl.id ? updatedCyl : c));
+    if (!updatedCyl) return;
+    const targetSku = (updatedCyl.sku || '').trim().toLowerCase();
+    const targetJobName = (updatedCyl.jobName || '').trim().toLowerCase();
+
+    setCylinders(prev => {
+      const matchIndex = prev.findIndex(c => 
+        c.id === updatedCyl.id || 
+        (targetSku && c.sku && c.sku.trim().toLowerCase() === targetSku) ||
+        (targetJobName && c.jobName && c.jobName.trim().toLowerCase() === targetJobName)
+      );
+
+      if (matchIndex >= 0) {
+        const existing = prev[matchIndex];
+        const merged = { ...existing, ...updatedCyl, id: existing.id || updatedCyl.id };
+        const copy = [...prev];
+        copy[matchIndex] = merged;
+        return copy.filter((c, idx) => {
+          if (idx === matchIndex) return true;
+          if (targetSku && c.sku && c.sku.trim().toLowerCase() === targetSku) return false;
+          if (targetJobName && c.jobName && c.jobName.trim().toLowerCase() === targetJobName) return false;
+          return true;
+        });
+      }
+      return [updatedCyl, ...prev];
+    });
+
     logAudit('UPDATE', 'Cylinders', `Updated rotogravure cylinder ${updatedCyl.sku} for "${updatedCyl.jobName}"`, updatedCyl.id);
     try {
       await saveCylinderToSupabase(updatedCyl);
@@ -2218,6 +2304,7 @@ export default function App() {
             onUpdateJobMaster={handleUpdateJobMaster}
             onDeleteJobMaster={handleDeleteJobMaster}
             onAddCylinder={handleAddCylinder}
+            onUpdateCylinder={handleUpdateCylinder}
             onAddClient={handleAddClient}
             onPunchOrderFromJobMaster={handlePunchOrderFromJobMaster}
           />
@@ -2848,6 +2935,8 @@ export default function App() {
             onAddJobMaster={handleAddJobMaster}
             onUpdateJobMaster={handleUpdateJobMaster}
             onDeleteJobMaster={handleDeleteJobMaster}
+            onAddCylinder={handleAddCylinder}
+            onUpdateCylinder={handleUpdateCylinder}
             onOpenJobCardModal={(jm) => {
               setSelectedJobMasterForPunch(jm);
               setActiveTab('job_punching');

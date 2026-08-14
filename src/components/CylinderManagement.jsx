@@ -417,9 +417,35 @@ export default function CylinderManagement({
     }
   };
 
-  const filteredCylinders = cylinders.filter(c => 
-    c.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.jobName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+  const uniqueCylinders = useMemo(() => {
+    const map = new Map();
+    (cylinders || []).forEach(c => {
+      if (!c) return;
+      const skuKey = (c.sku || '').trim().toLowerCase();
+      const nameKey = (c.jobName || '').trim().toLowerCase();
+      const matchKey = skuKey || nameKey || String(c.id);
+
+      if (!map.has(matchKey)) {
+        map.set(matchKey, c);
+      } else {
+        const existing = map.get(matchKey);
+        const isBetter = (c.updated_at && existing.updated_at && new Date(c.updated_at) > new Date(existing.updated_at)) ||
+                         (c.approvedByHead && !existing.approvedByHead) ||
+                         (c.artworkUrl && !existing.artworkUrl) ||
+                         ((c.layers?.length || 0) > (existing.layers?.length || 0));
+        if (isBetter) {
+          map.set(matchKey, { ...existing, ...c });
+        } else {
+          map.set(matchKey, { ...c, ...existing });
+        }
+      }
+    });
+    return Array.from(map.values());
+  }, [cylinders]);
+
+  const filteredCylinders = uniqueCylinders.filter(c => 
+    (c.sku && c.sku.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (c.jobName && c.jobName.toLowerCase().includes(searchTerm.toLowerCase())) ||
     (c.clientGroup && c.clientGroup.toLowerCase().includes(searchTerm.toLowerCase())) ||
     (c.engravuresName && c.engravuresName.toLowerCase().includes(searchTerm.toLowerCase()))
   );
@@ -1054,6 +1080,7 @@ export default function CylinderManagement({
             <CylinderJobCardForm 
               initialData={selectedForPDF} 
               jobMasters={jobMasters}
+              cylinders={cylinders}
               currentUser={currentUser}
               onClose={() => setSelectedForPDF(null)} 
               onSave={(updated, targetJobMaster, targetCylinder) => {

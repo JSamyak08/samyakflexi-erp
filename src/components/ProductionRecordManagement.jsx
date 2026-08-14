@@ -577,6 +577,7 @@ export default function ProductionRecordManagement({
               <CylinderJobCardForm 
                 initialData={activeJobCardData} 
                 jobMasters={jobMasters}
+                cylinders={cylinders}
                 currentUser={currentUser}
                 onClose={() => setActiveJobCardData(null)}
                 onSave={(updatedData, targetJobMaster, targetCylinder) => {

@@ -270,7 +270,7 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, 
   );
 });
 
-export default function CylinderJobCardForm({ onSave, initialData, onClose, currentUser, jobMasters = [] }) {
+export default function CylinderJobCardForm({ onSave, initialData, onClose, currentUser, jobMasters = [], cylinders = [] }) {
   const EDIT_ROLES = ['Admin', 'SuperAdmin', 'Plant Manager', 'Production Manager'];
   const userRole = currentUser?.role || 'Admin';
   const canEdit = EDIT_ROLES.includes(userRole);
@@ -656,9 +656,32 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         };
       }
 
-      const cylId = (initialData?.id && String(initialData.id).startsWith('CYL-'))
-        ? initialData.id 
-        : (initialData?.cylinderId || `CYL-${Date.now()}`);
+      // Robustly locate existing cylinder to update in place rather than creating new duplicate rows
+      const targetSku = (customData.skuCode || targetJobMaster.skuCode || initialData?.sku || initialData?.skuCode || '').trim();
+      const targetJobName = (customData.jobName || targetJobMaster.jobName || initialData?.jobName || '').trim();
+
+      const existingCylinder = (cylinders || []).find(c => 
+        (initialData?.id && c.id === initialData.id) ||
+        (initialData?.cylinderId && c.id === initialData.cylinderId) ||
+        (targetJobMaster.id && c.jobMasterId && c.jobMasterId === targetJobMaster.id) ||
+        (targetSku && c.sku && c.sku.toLowerCase() === targetSku.toLowerCase()) ||
+        (targetJobName && c.jobName && c.jobName.toLowerCase() === targetJobName.toLowerCase())
+      );
+
+      let cylId = existingCylinder?.id;
+      if (!cylId) {
+        if (initialData?.id && String(initialData.id).startsWith('CYL-')) {
+          cylId = initialData.id;
+        } else if (initialData?.cylinderId) {
+          cylId = initialData.cylinderId;
+        } else if (targetSku) {
+          cylId = `CYL-${targetSku.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+        } else if (targetJobMaster?.id) {
+          cylId = `CYL-${targetJobMaster.id}`;
+        } else {
+          cylId = `CYL-${Date.now()}`;
+        }
+      }
 
       const targetCylinder = {
         id: cylId,

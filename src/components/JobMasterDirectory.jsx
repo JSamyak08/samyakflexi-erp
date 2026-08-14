@@ -47,6 +47,7 @@ export default function JobMasterDirectory({
   currentUser,
   onAddJobMaster,
   onAddCylinder,
+  onUpdateCylinder,
   onAddClient,
   onPunchOrderFromJobMaster,
   onUpdateJobMaster,
@@ -873,6 +874,11 @@ export default function JobMasterDirectory({
 
     saveJobMasterToSupabase(updatedJob);
     if (targetCylinder) {
+      if (onUpdateCylinder) {
+        onUpdateCylinder(targetCylinder);
+      } else if (onAddCylinder) {
+        onAddCylinder(targetCylinder);
+      }
       saveCylinderToSupabase(targetCylinder);
     }
   };
@@ -1472,7 +1478,10 @@ export default function JobMasterDirectory({
               <div style={{ background: '#ffffff', width: '1000px', maxWidth: '98vw', borderRadius: '8px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)', padding: '24px' }}>
                 <CylinderJobCardForm 
                   initialData={activeJobCardData} 
+                  jobMasters={jobMasters}
+                  cylinders={cylinders}
                   onSave={handleSaveJobCardData}
+                  onClose={() => setActiveJobCardData(null)}
                   currentUser={currentUser}
                 />
               </div>
