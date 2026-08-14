@@ -538,13 +538,64 @@ CREATE TABLE IF NOT EXISTS public.email_templates (
 -- Column migrations for scrap wastage, gross output & job master specifications
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS wastage_percentage NUMERIC DEFAULT 5;
 ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS wastage_percentage NUMERIC DEFAULT 5;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS client_name TEXT;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS date_filled DATE DEFAULT CURRENT_DATE;
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS total_wastage_kg NUMERIC DEFAULT 0;
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS wastage_percentage NUMERIC DEFAULT 0;
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS overall_scrap_pct_of_output NUMERIC DEFAULT 0;
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS overall_scrap_pct_of_dispatch NUMERIC DEFAULT 0;
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS gross_production_kg NUMERIC DEFAULT 0;
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS net_usable_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS printing_plain_setting_wastage_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS printing_wastage_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS lamination_plain_substrate_wastage_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS printed_wastage_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS laminate_wastage_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS trim_wastage_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS total_material_cost_rs NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS processing_cost_per_kg NUMERIC DEFAULT 25;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS total_processing_cost_rs NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS final_production_cost_rs NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS filled_by TEXT;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS approved_by TEXT;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS approval_date TEXT;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS materials_list JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS process_logs JSONB;
+
+-- VIEW: HIGH SCRAP & WASTAGE AUDIT REGISTRY (threshold >= 5.0%)
+CREATE OR REPLACE VIEW public.high_scrap_audit_registry AS
+SELECT 
+    pr.id AS record_id,
+    pr.order_id,
+    pr.job_name,
+    pr.client_name,
+    pr.operator_name,
+    pr.shift,
+    COALESCE(pr.date_filled, pr.recorded_at::date) AS record_date,
+    pr.gross_production_kg,
+    pr.net_usable_kg,
+    pr.total_wastage_kg,
+    pr.wastage_percentage,
+    pr.overall_scrap_pct_of_output,
+    pr.overall_scrap_pct_of_dispatch,
+    pr.printing_plain_setting_wastage_kg,
+    pr.printing_wastage_kg,
+    pr.lamination_plain_substrate_wastage_kg,
+    pr.printed_wastage_kg,
+    pr.laminate_wastage_kg,
+    pr.trim_wastage_kg,
+    pr.final_production_cost_rs,
+    pr.status,
+    pr.filled_by,
+    pr.approved_by,
+    pr.notes,
+    CASE 
+        WHEN pr.wastage_percentage >= 5.0 THEN TRUE 
+        ELSE FALSE 
+    END AS is_high_scrap_alert
+FROM public.production_records pr
+ORDER BY pr.recorded_at DESC;
 
 -- Enable Row Level Security (RLS) & default open access rules
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
