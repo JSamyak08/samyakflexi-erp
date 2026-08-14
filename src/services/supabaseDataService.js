@@ -34,7 +34,8 @@ import {
   initialUsers, 
   initialProductionRecords,
   initialClients,
-  initialJobMasters
+  initialJobMasters,
+  FILM_DENSITIES
 } from '../factoryStore';
 import { initialCylinders } from '../dataStore';
 
@@ -312,21 +313,32 @@ export async function deleteClientFromSupabase(clientId) {
 export function mapInventoryItemToDbPayload(item) {
   if (!item) return null;
   const category = item.category || 'Film Substrates';
-  const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films';
+  const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films' || Boolean(item.filmType && FILM_DENSITIES[item.filmType]);
   const filmTypeStr = item.filmType || (isFilm ? (item.itemName ? item.itemName.split(' ')[0] : 'PET') : '');
   const itemCodeStr = item.itemCode || item.id || 'INVT-0001';
-  const itemNameStr = item.itemName || (filmTypeStr ? `${filmTypeStr} ${item.micron || 12}µ (${item.widthMm || 1000}mm)` : `Item ${itemCodeStr}`);
+  const itemNameStr = item.itemName || (isFilm && filmTypeStr ? `${filmTypeStr} ${item.micron || 12}µ (${item.widthMm || 1000}mm)` : `Item ${itemCodeStr}`);
+  const fallbackUnit = isFilm ? 'Kg' : (
+    category === 'Chemicals & Solvents' || category === 'Solvents' ? 'Litres' : 
+    category === 'Doctor Blades & Wipers' ? 'Meters' : 
+    category === 'Tapes & Consumables' ? 'Rolls' : 
+    category === 'Safety Gear (PPE)' ? 'Boxes' : 
+    category === 'Machine Spare Parts' ? 'Nos' : 'Kg'
+  );
 
   // Pack all metadata properties into a single serializable object
   const meta = {
     category: category,
     filmType: filmTypeStr,
-    micron: item.micron,
-    widthMm: item.widthMm,
+    grade: item.grade || '',
+    subType: item.subType || '',
+    shade: item.shade || '',
+    dimensions: item.dimensions || '',
+    micron: isFilm ? ((item.micron !== undefined && item.micron !== null && item.micron !== '-') ? item.micron : 12) : '-',
+    widthMm: item.widthMm !== undefined && item.widthMm !== null && item.widthMm !== '-' ? item.widthMm : (isFilm ? 1000 : '-'),
     allocatedQtyKg: item.allocatedQtyKg,
     reorderLevelKg: item.reorderLevelKg,
-    unit: item.unit || (isFilm ? 'Kg' : (category === 'Printing Inks' || category === 'Solvents' || category === 'Lamination Adhesives' ? 'Kg' : 'Pcs')),
-    density: item.density,
+    unit: item.unit || fallbackUnit,
+    density: isFilm ? (item.density || 1.4) : 1.0,
     location: item.location || 'Bay A',
     lastVendor: item.lastVendor || '',
     lastBatch: item.lastBatch || '',
@@ -370,8 +382,15 @@ export async function fetchInventory() {
       }
 
       const category = meta.category || i.category || 'Film Substrates';
-      const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films';
+      const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films' || Boolean((meta.filmType || i.film_type) && FILM_DENSITIES[meta.filmType || i.film_type]);
       const filmTypeVal = meta.filmType || i.film_type || (isFilm && itemName ? itemName.split(' ')[0] : '');
+      const fallbackUnit = isFilm ? 'Kg' : (
+        category === 'Chemicals & Solvents' || category === 'Solvents' ? 'Litres' : 
+        category === 'Doctor Blades & Wipers' ? 'Meters' : 
+        category === 'Tapes & Consumables' ? 'Rolls' : 
+        category === 'Safety Gear (PPE)' ? 'Boxes' : 
+        category === 'Machine Spare Parts' ? 'Nos' : 'Kg'
+      );
 
       return {
         id: String(i.id),
@@ -379,13 +398,17 @@ export async function fetchInventory() {
         itemName: itemName,
         category: category,
         filmType: filmTypeVal || (isFilm ? 'PET' : ''),
-        micron: meta.micron !== undefined ? meta.micron : (isFilm ? 12 : '-'),
-        widthMm: meta.widthMm !== undefined ? meta.widthMm : (isFilm ? 1000 : '-'),
+        grade: meta.grade || '',
+        subType: meta.subType || '',
+        shade: meta.shade || '',
+        dimensions: meta.dimensions || '',
+        micron: isFilm ? ((meta.micron !== undefined && meta.micron !== null && meta.micron !== '-') ? meta.micron : 12) : '-',
+        widthMm: meta.widthMm !== undefined && meta.widthMm !== null ? meta.widthMm : (isFilm ? 1000 : '-'),
         availableQtyKg: Number(i.stock_qty_kg ?? 0) || 0,
         allocatedQtyKg: Number(meta.allocatedQtyKg ?? 0) || 0,
         reorderLevelKg: Number(meta.reorderLevelKg ?? 0) || 0,
         unitPrice: Number(i.unit_price ?? 0) || 0,
-        unit: meta.unit || (isFilm ? 'Kg' : (category === 'Printing Inks' || category === 'Solvents' || category === 'Lamination Adhesives' ? 'Kg' : 'Pcs')),
+        unit: meta.unit || fallbackUnit,
         density: meta.density !== undefined ? meta.density : (isFilm ? 1.4 : 1.0),
         location: meta.location || 'Bay A',
         lastVendor: meta.lastVendor || '',

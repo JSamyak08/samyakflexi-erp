@@ -15,7 +15,8 @@ import {
   initialJobMasters,
   initialInks,
   DEFAULT_ROLE_PERMISSIONS,
-  isOrderOverdue
+  isOrderOverdue,
+  FILM_DENSITIES
 } from './factoryStore';
 import { initialCylinders } from './dataStore';
 import { 
@@ -715,21 +716,28 @@ export default function App() {
             setInventory(prev => {
               if (prev.some(i => String(i.id) === String(newRow.id))) return prev;
               const category = newRow.category || 'Film Substrates';
-              const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films';
+              const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films' || Boolean(newRow.film_type && FILM_DENSITIES[newRow.film_type]);
               const filmTypeVal = newRow.film_type || (isFilm && newRow.item_name ? newRow.item_name.split(' ')[0] : '');
+              const fallbackUnit = isFilm ? 'Kg' : (
+                category === 'Chemicals & Solvents' || category === 'Solvents' ? 'Litres' : 
+                category === 'Doctor Blades & Wipers' ? 'Meters' : 
+                category === 'Tapes & Consumables' ? 'Rolls' : 
+                category === 'Safety Gear (PPE)' ? 'Boxes' : 
+                category === 'Machine Spare Parts' ? 'Nos' : 'Kg'
+              );
               const mapped = {
                 id: String(newRow.id),
                 itemCode: newRow.item_code || String(newRow.id),
                 itemName: newRow.item_name || 'Stock Item',
                 category: category,
                 filmType: filmTypeVal || (isFilm ? 'PET' : ''),
-                micron: (newRow.micron !== null && newRow.micron !== undefined && !isNaN(Number(newRow.micron))) ? Number(newRow.micron) : (isFilm ? 12 : '-'),
+                micron: isFilm ? ((newRow.micron !== null && newRow.micron !== undefined && !isNaN(Number(newRow.micron))) ? Number(newRow.micron) : 12) : '-',
                 widthMm: (newRow.width_mm !== null && newRow.width_mm !== undefined && !isNaN(Number(newRow.width_mm))) ? Number(newRow.width_mm) : (isFilm ? 1000 : '-'),
                 availableQtyKg: Number(newRow.stock_qty_kg ?? newRow.available_qty_kg ?? 0) || 0,
                 allocatedQtyKg: Number(newRow.allocated_qty_kg ?? 0) || 0,
                 reorderLevelKg: Number(newRow.reorder_level_kg ?? 0) || 0,
                 unitPrice: Number(newRow.unit_price ?? 0) || 0,
-                unit: newRow.unit || (isFilm ? 'Kg' : (category === 'Printing Inks' || category === 'Solvents' || category === 'Lamination Adhesives' ? 'Kg' : 'Pcs')),
+                unit: newRow.unit || fallbackUnit,
                 density: (newRow.density !== null && newRow.density !== undefined && !isNaN(Number(newRow.density))) ? Number(newRow.density) : (isFilm ? 1.4 : 1.0),
                 location: newRow.location || 'Bay A',
                 lastVendor: newRow.last_vendor || '',
@@ -744,8 +752,15 @@ export default function App() {
             setInventory(prev => prev.map(i => {
               if (String(i.id) === String(updatedRow.id)) {
                 const category = updatedRow.category || i.category || 'Film Substrates';
-                const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films';
+                const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films' || Boolean((updatedRow.film_type || i.filmType) && FILM_DENSITIES[updatedRow.film_type || i.filmType]);
                 const filmTypeVal = updatedRow.film_type || (isFilm && updatedRow.item_name ? updatedRow.item_name.split(' ')[0] : (i.filmType || ''));
+                const fallbackUnit = isFilm ? 'Kg' : (
+                  category === 'Chemicals & Solvents' || category === 'Solvents' ? 'Litres' : 
+                  category === 'Doctor Blades & Wipers' ? 'Meters' : 
+                  category === 'Tapes & Consumables' ? 'Rolls' : 
+                  category === 'Safety Gear (PPE)' ? 'Boxes' : 
+                  category === 'Machine Spare Parts' ? 'Nos' : 'Kg'
+                );
                 return {
                   ...i,
                   id: String(updatedRow.id),
@@ -753,13 +768,13 @@ export default function App() {
                   itemName: updatedRow.item_name || i.itemName,
                   category: category,
                   filmType: filmTypeVal,
-                  micron: (updatedRow.micron !== null && updatedRow.micron !== undefined && !isNaN(Number(updatedRow.micron))) ? Number(updatedRow.micron) : (isFilm ? 12 : '-'),
+                  micron: isFilm ? ((updatedRow.micron !== null && updatedRow.micron !== undefined && !isNaN(Number(updatedRow.micron))) ? Number(updatedRow.micron) : 12) : '-',
                   widthMm: (updatedRow.width_mm !== null && updatedRow.width_mm !== undefined && !isNaN(Number(updatedRow.width_mm))) ? Number(updatedRow.width_mm) : (isFilm ? 1000 : '-'),
                   availableQtyKg: Number(updatedRow.stock_qty_kg ?? updatedRow.available_qty_kg ?? 0) || 0,
                   allocatedQtyKg: Number(updatedRow.allocated_qty_kg ?? 0) || 0,
                   reorderLevelKg: Number(updatedRow.reorder_level_kg ?? 0) || 0,
                   unitPrice: Number(updatedRow.unit_price ?? 0) || 0,
-                  unit: updatedRow.unit || i.unit || 'Kg',
+                  unit: updatedRow.unit || i.unit || fallbackUnit,
                   density: (updatedRow.density !== null && updatedRow.density !== undefined && !isNaN(Number(updatedRow.density))) ? Number(updatedRow.density) : (i.density || 1.0),
                   location: updatedRow.location || i.location || 'Bay A',
                   lastVendor: updatedRow.last_vendor || i.lastVendor || '',
@@ -2258,45 +2273,115 @@ export default function App() {
                         const reorder = i.reorderLevelKg;
                         return reorder != null && reorder > 0 && avail <= reorder;
                       }).map(i => {
-                        // Build display name from actual data only
-                        const micronStr = i.micron ? `${i.micron}µ` : '';
+                        const category = i.category || 'Film Substrates';
+                        const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films' || Boolean(!i.category && i.filmType && FILM_DENSITIES[i.filmType]);
+                        const unitStr = i.unit && i.unit !== '-' ? i.unit : (isFilm ? 'kg' : 'Pcs');
                         const displayName = i.itemName ||
-                          (i.filmType ? [i.filmType, micronStr].filter(Boolean).join(' ') : '');
+                          (isFilm && i.filmType ? [i.filmType, (i.micron && i.micron !== '-') ? `${i.micron}µ` : ''].filter(Boolean).join(' ') : (i.filmType || `${category} Item`));
+                        
+                        // Badge logic: Only film items with valid numeric micron show micron badge; other items show category/product type badge
+                        const hasValidMicron = isFilm && i.micron && i.micron !== '-' && !isNaN(Number(i.micron));
+
+                        // Render item-type specific specifications
+                        const renderSpecs = () => {
+                          if (isFilm) {
+                            return (
+                              <>
+                                {i.filmType && <>Substrate: <strong>{i.filmType}</strong></>}
+                                {i.widthMm && i.widthMm !== '-' ? <>{i.filmType ? ' | ' : ''}Width: <strong>{i.widthMm}mm</strong></> : null}
+                              </>
+                            );
+                          }
+                          
+                          // Doctor Blades & Wipers
+                          if (category === 'Doctor Blades & Wipers' || category === 'Doctor Blades' || (i.itemName && i.itemName.toLowerCase().includes('blade'))) {
+                            const gradeVal = i.grade || (i.filmType && i.filmType !== category && i.filmType !== 'PET' ? i.filmType : '');
+                            const dimVal = i.dimensions || (i.widthMm && i.widthMm !== '-' ? `${i.widthMm}mm` : '');
+                            return (
+                              <>
+                                {gradeVal && <>Grade: <strong>{gradeVal}</strong></>}
+                                {dimVal && <>{gradeVal ? ' | ' : ''}Size: <strong>{dimVal}</strong></>}
+                                {!gradeVal && !dimVal && <>Category: <strong>Doctor Blades</strong></>}
+                              </>
+                            );
+                          }
+
+                          // Printing Inks & Toners
+                          if (category === 'Printing Inks & Toners' || category === 'Printing Inks' || category === 'Inks & Solvents' || (i.itemName && i.itemName.toLowerCase().includes('ink'))) {
+                            const shadeVal = i.shade || i.subType || i.grade || (i.filmType && i.filmType !== category && i.filmType !== 'PET' ? i.filmType : '');
+                            return (
+                              <>
+                                {shadeVal ? <>Shade: <strong>{shadeVal}</strong></> : <>Category: <strong>Printing Inks</strong></>}
+                              </>
+                            );
+                          }
+
+                          // Chemicals & Solvents
+                          if (category === 'Chemicals & Solvents' || category === 'Solvents' || (i.itemName && (i.itemName.toLowerCase().includes('solvent') || i.itemName.toLowerCase().includes('acetate')))) {
+                            const typeVal = i.subType || i.grade || (i.filmType && i.filmType !== category && i.filmType !== 'PET' ? i.filmType : '');
+                            return (
+                              <>
+                                {typeVal ? <>Type: <strong>{typeVal}</strong></> : <>Category: <strong>Solvents</strong></>}
+                              </>
+                            );
+                          }
+
+                          // Adhesives & Hardener
+                          if (category === 'Adhesives & Hardener' || category === 'Adhesives' || category === 'Lamination Adhesives' || (i.itemName && i.itemName.toLowerCase().includes('adhesive'))) {
+                            const typeVal = i.subType || i.grade || (i.filmType && i.filmType !== category && i.filmType !== 'PET' ? i.filmType : '');
+                            return (
+                              <>
+                                {typeVal ? <>Type: <strong>{typeVal}</strong></> : <>Category: <strong>Adhesives</strong></>}
+                              </>
+                            );
+                          }
+
+                          // Fallback for all other items (Rollers, Spares, Tapes, PPE, Packaging, etc.)
+                          const specVal = i.dimensions || (i.widthMm && i.widthMm !== '-' ? `${i.widthMm}mm` : '');
+                          const subVal = i.subType || i.grade || (i.filmType && i.filmType !== category && i.filmType !== 'PET' ? i.filmType : '');
+                          return (
+                            <>
+                              <span>Category: <strong>{category}</strong></span>
+                              {subVal && <span> | Type: <strong>{subVal}</strong></span>}
+                              {specVal && <span> | Size: <strong>{specVal}</strong></span>}
+                            </>
+                          );
+                        };
+
                         return (
                           <div key={i.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '10px 12px', background: '#fef2f2', borderRadius: '6px', border: '1px solid #fecaca' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <span style={{ fontWeight: '700', fontSize: '0.9rem', color: '#991b1b' }}>
                                 {displayName}
                               </span>
-                              {/* Only show micron badge when an actual micron value exists */}
-                              {i.micron ? (
+                              {hasValidMicron ? (
                                 <span style={{ fontSize: '0.75rem', fontWeight: '700', background: '#dc2626', color: '#ffffff', padding: '2px 6px', borderRadius: '4px' }}>
                                   {i.micron} µ
                                 </span>
-                              ) : null}
+                              ) : (
+                                <span style={{ fontSize: '0.7rem', fontWeight: '700', background: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5', padding: '2px 8px', borderRadius: '4px' }}>
+                                  {category}
+                                </span>
+                              )}
                             </div>
 
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', marginTop: '2px' }}>
                               <span style={{ color: '#475569' }}>
-                                {i.filmType ? (
-                                  <>Grade: <strong>{i.filmType}</strong>{i.widthMm ? ` | ${i.widthMm}mm Width` : ''}</>
-                                ) : (
-                                  i.grade ? <>Grade: <strong>{i.grade}</strong></> : null
-                                )}
+                                {renderSpecs()}
                               </span>
                               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                                 <span style={{ color: '#b91c1c', fontWeight: '800' }}>
-                                  Avail: {(i.availableQtyKg ?? 0).toLocaleString()} kg
+                                  Avail: {(i.availableQtyKg ?? 0).toLocaleString()} {unitStr}
                                 </span>
                                 {i.allocatedQtyKg > 0 && (
                                   <span style={{ color: '#64748b', fontSize: '0.75rem' }}>
-                                    (Alloc: {i.allocatedQtyKg} kg)
+                                    (Alloc: {i.allocatedQtyKg} {unitStr})
                                   </span>
                                 )}
                                 {/* Only show Min when a real reorder level exists */}
                                 {i.reorderLevelKg != null && i.reorderLevelKg > 0 && (
                                   <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>
-                                    [Min: {i.reorderLevelKg} kg]
+                                    [Min: {i.reorderLevelKg} {unitStr}]
                                   </span>
                                 )}
                               </div>
