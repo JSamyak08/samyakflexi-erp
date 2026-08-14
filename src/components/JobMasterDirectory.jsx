@@ -824,17 +824,20 @@ export default function JobMasterDirectory({
       jobCardFileName: fileUrl ? (targetJob.jobCardFileName || 'Artwork_KLD_Proof.pdf') : null
     };
 
-    const updatedJobs = jobMasters.map(j => j.id === updatedJob.id ? updatedJob : j);
-    setJobMasters(updatedJobs);
     if (selectedJob && selectedJob.id === updatedJob.id) {
       setSelectedJob(updatedJob);
     }
     if (activeJobCardData) {
       setActiveJobCardData(prev => ({ ...prev, ...updatedJob }));
     }
-    if (onAddJobMaster) onAddJobMaster(updatedJob);
+    if (onUpdateJobMaster) {
+      onUpdateJobMaster(updatedJob);
+    } else if (onAddJobMaster) {
+      onAddJobMaster(updatedJob);
+    }
 
     try {
+      const updatedJobs = jobMasters.map(j => j.id === updatedJob.id ? updatedJob : j);
       localStorage.setItem('samyak_erp_job_masters', JSON.stringify(updatedJobs));
     } catch (e) {}
 
