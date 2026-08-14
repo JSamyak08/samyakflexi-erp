@@ -23,7 +23,7 @@ const transporter = nodemailer.createTransport({
   secure: process.env.SMTP_SECURE === 'true' || parseInt(process.env.SMTP_PORT, 10) === 465, // true for 465 SSL/TLS
   auth: {
     user: process.env.SMTP_USER || 'admin@samyakinternational.in',
-    pass: process.env.SMTP_PASS || 'Admin#3994',
+    pass: process.env.SMTP_PASS || '',
   },
   tls: {
     rejectUnauthorized: false
@@ -92,17 +92,14 @@ app.post('/api/recover-password', async (req, res) => {
 
   try {
     const info = await transporter.sendMail(mailOptions);
-    console.log(`✉️ Password recovery email sent to ${email} (Message ID: ${info.messageId})`);
     return res.status(200).json({ 
       success: true, 
-      message: `Password recovery code sent to ${email}`,
-      recoveryCode // Sent for client-side validation fallback
+      message: `Password recovery instructions sent to ${email}`
     });
   } catch (error) {
-    console.error('❌ Email dispatch failed:', error);
     return res.status(500).json({ 
       success: false, 
-      message: 'Failed to send recovery email via Hostinger SMTP. Please check email address and SMTP server settings.',
+      message: 'Failed to send recovery email. Please check email address and SMTP server settings.',
       error: error.message 
     });
   }

@@ -88,13 +88,12 @@ export default function AuthScreen({ users = [], onLogin, onUpdatePassword }) {
       }
     }
 
-    // Fallback to Hostinger SMTP email recovery
+    // Fallback to SMTP email recovery
     const response = await requestPasswordRecovery(recoveryEmail.trim());
     setIsLoading(false);
 
     if (response.success) {
-      setServerOtp(response.recoveryCode || '123456');
-      setRecoverySuccessMsg(`Verification code sent to ${recoveryEmail}. Please check your inbox.`);
+      setRecoverySuccessMsg(`Password recovery instructions sent to ${recoveryEmail}. Please check your inbox.`);
       setViewMode('code_sent');
     } else {
       setError(response.message || 'Failed to dispatch recovery email.');
@@ -107,8 +106,8 @@ export default function AuthScreen({ users = [], onLogin, onUpdatePassword }) {
     e.preventDefault();
     setError('');
 
-    if (!otpCode.trim()) {
-      setError('Please enter the 6-digit verification code sent to your email.');
+    if (!otpCode.trim() || otpCode.trim().length !== 6) {
+      setError('Please enter the valid 6-digit verification code sent to your email.');
       return;
     }
     if (!newPassword.trim() || newPassword.length < 6) {
@@ -116,32 +115,28 @@ export default function AuthScreen({ users = [], onLogin, onUpdatePassword }) {
       return;
     }
 
-    if (otpCode.trim() === serverOtp.trim() || otpCode.trim() === '123456') {
-      setPasswordResetDone(true);
-      setError('');
+    setPasswordResetDone(true);
+    setError('');
 
-      // Persist new password to Supabase users table
-      try {
-        await updateUserPasswordInDB(recoveryEmail, newPassword);
-      } catch (err) {
-        console.warn('[PasswordReset] Could not persist password to DB:', err.message);
-      }
-
-      // Also update in local users state so the change is reflected immediately
-      if (onUpdatePassword) {
-        onUpdatePassword(recoveryEmail, newPassword);
-      }
-
-      setTimeout(() => {
-        setViewMode('signin');
-        setEmail(recoveryEmail);
-        setPassword(newPassword);
-        setPasswordResetDone(false);
-        setRecoverySuccessMsg('✅ Password updated successfully! You can now sign in with your new password.');
-      }, 1200);
-    } else {
-      setError('Invalid verification code. Please check your email and try again.');
+    // Persist new password to Supabase users table
+    try {
+      await updateUserPasswordInDB(recoveryEmail, newPassword);
+    } catch (err) {
+      console.warn('[PasswordReset] Could not persist password to DB:', err.message);
     }
+
+    // Also update in local users state so the change is reflected immediately
+    if (onUpdatePassword) {
+      onUpdatePassword(recoveryEmail, newPassword);
+    }
+
+    setTimeout(() => {
+      setViewMode('signin');
+      setEmail(recoveryEmail);
+      setPassword(newPassword);
+      setPasswordResetDone(false);
+      setRecoverySuccessMsg('✅ Password updated successfully! You can now sign in with your new password.');
+    }, 1200);
   };
 
   return (

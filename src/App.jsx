@@ -706,14 +706,12 @@ export default function App() {
   useEffect(() => {
     if (!isSupaActive || !isAuthReady || !isAuthenticated) return;
 
-    console.log('[Supabase Realtime] Subscribing to public.inventory changes...');
     const channel = supabase
       .channel('public:inventory_changes')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'inventory' },
         (payload) => {
-          console.log('[Supabase Realtime] Inventory event received:', payload.eventType, payload);
           if (payload.eventType === 'INSERT') {
             const newRow = payload.new;
             if (!newRow || !newRow.id) return;

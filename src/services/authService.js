@@ -133,18 +133,14 @@ export async function createUserInSupabaseAuth({ email, password, name, role, de
     if (error) {
       // If user already exists, that's OK — the public.users table save will still work
       if (error.message?.toLowerCase().includes('already registered') ||
-          error.message?.toLowerCase().includes('user already exists')) {
-        console.log('[Auth] User already exists in Supabase Auth:', cleanEmail, '— updating public.users table only.');
+          error.message?.toLowerCase().includes('already exists')) {
         return { success: true, alreadyExists: true };
       }
-      console.warn('[Auth] signUp error:', error.message);
       return { success: false, message: error.message };
     }
 
-    console.log('[Auth] Created Supabase Auth user:', cleanEmail);
     return { success: true, user: data.user };
   } catch (err) {
-    console.warn('[Auth] createUserInSupabaseAuth exception:', err.message);
     return { success: false, message: err.message };
   }
 }

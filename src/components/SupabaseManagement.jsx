@@ -33,9 +33,7 @@ export default function SupabaseManagement() {
   const [urlInput, setUrlInput] = useState(() => {
     return getSupabaseCredentials().url || '';
   });
-  const [keyInput, setKeyInput] = useState(() => {
-    return getSupabaseCredentials().key || '';
-  });
+  const [keyInput, setKeyInput] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [seeding, setSeeding] = useState(false);
@@ -109,7 +107,9 @@ export default function SupabaseManagement() {
 
   const handleSaveConfig = (e) => {
     e.preventDefault();
-    saveSupabaseCredentials(urlInput, keyInput);
+    const effectiveKey = keyInput.trim() || getSupabaseCredentials().key;
+    saveSupabaseCredentials(urlInput, effectiveKey);
+    setKeyInput('');
     runConnectionCheck();
   };
 
@@ -1016,7 +1016,7 @@ END $$;`;
               </label>
               <input
                 type="password"
-                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                placeholder={isSupabaseConfigured() ? '•••••••••••••••• (Configured)' : 'Enter Supabase Anon API Key...'}
                 value={keyInput}
                 onChange={(e) => setKeyInput(e.target.value)}
                 className="form-control"

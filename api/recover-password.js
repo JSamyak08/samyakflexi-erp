@@ -59,17 +59,15 @@ export default async function handler(req, res) {
   };
 
   try {
-    const info = await transporter.sendMail(mailOptions);
+    await transporter.sendMail(mailOptions);
     return res.status(200).json({
       success: true,
-      message: `Password recovery code sent to ${email}`,
-      recoveryCode,
+      message: `Password recovery instructions sent to ${email}`
     });
   } catch (error) {
-    console.error('Email dispatch failed:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to send recovery email via Hostinger SMTP. Please check email address and SMTP server settings.',
+      message: 'Failed to send recovery email. Please check email address and SMTP server settings.',
       error: error.message,
     });
   }

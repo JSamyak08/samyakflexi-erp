@@ -339,7 +339,7 @@ export const DEFAULT_EMAIL_SETTINGS = {
   smtpPort: 465,
   smtpSecure: true,
   smtpUser: 'admin@samyakinternational.in',
-  smtpPass: 'Admin#3994',
+  smtpPass: '',
   senderName: 'Samyak International ERP',
   adminEmail: 'admin@samyakinternational.in',
   plantManagerEmail: 'plant.manager@plant.com',

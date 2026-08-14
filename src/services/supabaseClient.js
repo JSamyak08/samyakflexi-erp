@@ -53,14 +53,12 @@ export const getSupabaseCredentials = () => {
   try { url = cleanVal(localStorage.getItem('samyak_supabase_url')); } catch (e) {}
   if (!url) try { url = cleanVal(sessionStorage.getItem('samyak_supabase_url')); } catch (e) {}
   if (!url) url = cleanVal(getCookie('samyak_supabase_url'));
-  if (!url) url = cleanVal(import.meta.env.VITE_SUPABASE_URL || 'https://eamstsaqkbeiywfaanhi.supabase.co');
+  if (!url) url = cleanVal(import.meta.env.VITE_SUPABASE_URL || '');
 
   try { key = cleanVal(localStorage.getItem('samyak_supabase_key')); } catch (e) {}
   if (!key) try { key = cleanVal(sessionStorage.getItem('samyak_supabase_key')); } catch (e) {}
   if (!key) key = cleanVal(getCookie('samyak_supabase_key'));
-  if (!key) key = cleanVal(import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVhbXN0c2Fxa2JlaXl3ZmFhbmhpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwNTg1NTYsImV4cCI6MjEwMDYzNDU1Nn0.qLcMES3SvNut2zS1wZqqT_NDefXlreGEyVr_I9FInaU');
-  console.log("[Supabase Env Debug] VITE_SUPABASE_URL:", import.meta.env.VITE_SUPABASE_URL, "VITE_SUPABASE_ANON_KEY length:", import.meta.env.VITE_SUPABASE_ANON_KEY ? import.meta.env.VITE_SUPABASE_ANON_KEY.length : 0);
-  console.log("[Supabase Credentials Debug] resolved url:", url, "resolved key length:", key ? key.length : 0);
+  if (!key) key = cleanVal(import.meta.env.VITE_SUPABASE_ANON_KEY || '');
 
   return { url, key };
 };
@@ -250,10 +248,10 @@ export const saveSupabaseCredentials = (supabaseUrl, supabaseAnonKey) => {
   currentClientInstance = null;
   currentClientKey = '';
 
-  // Notify the entire application of credential update
+  // Notify the entire application of credential update (without broadcasting raw secrets)
   if (typeof window !== 'undefined' && typeof window.CustomEvent === 'function') {
     window.dispatchEvent(new window.CustomEvent('supabase-credentials-changed', {
-      detail: { url: trimmedUrl, key: trimmedKey, configured: isSupabaseConfigured() }
+      detail: { configured: isSupabaseConfigured() }
     }));
   }
 };
@@ -274,7 +272,7 @@ export const clearSupabaseCredentials = () => {
 
   if (typeof window !== 'undefined' && typeof window.CustomEvent === 'function') {
     window.dispatchEvent(new window.CustomEvent('supabase-credentials-changed', {
-      detail: { url: '', key: '', configured: false }
+      detail: { configured: false }
     }));
   }
 };

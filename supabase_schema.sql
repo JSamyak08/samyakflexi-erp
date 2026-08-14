@@ -324,7 +324,7 @@ CREATE TABLE IF NOT EXISTS public.email_settings (
     smtp_port INT NOT NULL DEFAULT 465,
     smtp_secure BOOLEAN NOT NULL DEFAULT TRUE,
     smtp_user TEXT NOT NULL DEFAULT 'admin@samyakinternational.in',
-    smtp_pass TEXT NOT NULL DEFAULT 'Admin#3994',
+    smtp_pass TEXT DEFAULT '',
     sender_name TEXT NOT NULL DEFAULT 'Samyak International ERP',
     admin_email TEXT DEFAULT 'admin@samyakinternational.in',
     plant_manager_email TEXT DEFAULT 'plant.manager@plant.com',
