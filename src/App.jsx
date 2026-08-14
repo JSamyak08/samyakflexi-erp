@@ -1344,6 +1344,7 @@ export default function App() {
       console.warn("[Sync Notice] Order updated locally. Supabase notice:", err);
     }
   };
+  const handleUpdateOrderStatus = handleUpdateOrder;
 
   const handleDeleteOrder = async (orderId) => {
     setOrders(prev => prev.filter(o => o.id !== orderId));
@@ -2683,16 +2684,21 @@ export default function App() {
           <OrderManagement 
             urlParams={urlParams}
             orders={orders} 
-            onUpdateOrderStatus={handleUpdateOrderStatus} 
-            onDeleteOrder={handleDeleteOrder}
-            jobMasters={jobMasters}
-            clients={clients}
+            vendors={vendors}
             inventory={inventory}
-            cylinders={cylinders}
+            jobMasters={jobMasters}
+            currentUser={currentUser}
             productionRecords={productionRecords}
-            onNavigateToJobPunching={() => handleTabChange('job_punching')}
+            onUpdateOrder={handleUpdateOrder} 
+            onDeleteOrder={handleDeleteOrder}
+            onNavigateToPunching={() => handleTabChange('job_punching')}
             onNavigateToProductionRecords={() => handleTabChange('production_records')}
           />
+        )}
+
+        {/* TAB 5: VENDOR MANAGEMENT */}
+        {activeTab === 'vendors' && (
+          <VendorManagement urlParams={urlParams} vendors={vendors} orders={orders} onAddVendor={handleAddVendor} />
         )}
 
         {/* TAB 6: INVENTORY, GRN & QC */}
