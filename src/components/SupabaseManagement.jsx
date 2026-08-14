@@ -535,6 +535,17 @@ CREATE TABLE IF NOT EXISTS public.email_templates (
     last_updated TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Column migrations for scrap wastage, gross output & job master specifications
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS wastage_percentage NUMERIC DEFAULT 5;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS wastage_percentage NUMERIC DEFAULT 5;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS total_wastage_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS wastage_percentage NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS overall_scrap_pct_of_output NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS overall_scrap_pct_of_dispatch NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS gross_production_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS net_usable_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS process_logs JSONB;
+
 -- Enable Row Level Security (RLS) & default open access rules
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.vendors ENABLE ROW LEVEL SECURITY;

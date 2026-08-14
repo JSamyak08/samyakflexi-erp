@@ -100,6 +100,8 @@ export async function fetchOrders() {
         targetDeliveryDate: o.target_delivery_date,
         orderDate: jd.orderDate || (o.created_at ? new Date(o.created_at).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB')),
         status: o.status || 'Scheduled',
+        wastagePct: Number(o.wastage_percentage) || Number(jd.wastagePct) || Number(jd.calculationDetails?.wastagePct) || 5,
+        wastageKg: Number(jd.wastageKg) || Number(jd.calculationDetails?.wastageKg) || 0,
         structure: jd.structure || (layerList.length > 0 ? layerList.map(l => `${l.filmType} ${l.micron}µ`).join(' / ') : '—'),
         printWidthMm: jd.printWidthMm || null,
         repeatLengthMm: jd.repeatLengthMm || null,
@@ -122,7 +124,6 @@ export async function fetchOrders() {
 
 export async function saveOrderToSupabase(order) {
   if (!isSupabaseConfigured()) {
-    console.warn('[Orders] Supabase not configured, skipping save.');
     return;
   }
   await ensureValidSession();
@@ -135,6 +136,8 @@ export async function saveOrderToSupabase(order) {
     repeatLengthMm: order.repeatLengthMm || order.jobDetails?.repeatLengthMm || null,
     colorsCount: order.colorsCount || order.jobDetails?.colorsCount || 6,
     orderDate: order.orderDate || order.jobDetails?.orderDate || new Date().toLocaleDateString('en-GB'),
+    wastagePct: Number(order.wastagePct) || Number(order.calculationDetails?.wastagePct) || 5,
+    wastageKg: Number(order.wastageKg) || Number(order.calculationDetails?.wastageKg) || 0,
     calculationDetails: order.calculationDetails || order.jobDetails?.calculationDetails || null,
     poIssued: order.poIssued || false,
     poNumber: order.poNumber || '',
@@ -160,10 +163,8 @@ export async function saveOrderToSupabase(order) {
     status: order.status || 'Scheduled'
   };
 
-  console.log('[Orders] Saving order via schema-independent metadata envelope:', order.id, order.jobName);
   const { error } = await supabase.from('orders').upsert(payload, { onConflict: 'id' });
   if (error) {
-    console.error('[Orders] Failed to save order:', error.message);
     handleSupabaseError(error, 'orders');
   }
 }
@@ -852,10 +853,11 @@ export async function fetchProductionRecords() {
         laminateWastageKg: Number(extra.laminateWastageKg) || 0,
         trimWastageKg: Number(extra.trimWastageKg) || 0,
         totalScrapQtyKg: Number(extra.totalScrapQtyKg) || Number(r.total_wastage_kg) || 0,
-        totalWastageKg: Number(r.total_wastage_kg) || Number(extra.totalScrapQtyKg) || 0,
-        overallScrapPctOfOutput: Number(extra.overallScrapPctOfOutput) || Number(r.wastage_percentage) || 0,
-        overallScrapPctOfDispatch: Number(extra.overallScrapPctOfDispatch) || 0,
-        wastagePercentage: Number(r.wastage_percentage) || Number(extra.overallScrapPctOfOutput) || 0,
+        totalWastageKg: Number(r.total_wastage_kg) || Number(extra.totalScrapQtyKg) || Number(extra.totalWastageKg) || 0,
+        overallScrapPctOfOutput: Number(extra.overallScrapPctOfOutput) || Number(r.overall_scrap_pct_of_output) || Number(r.wastage_percentage) || 0,
+        overallScrapPctOfDispatch: Number(extra.overallScrapPctOfDispatch) || Number(r.overall_scrap_pct_of_dispatch) || 0,
+        wastagePercentage: Number(r.wastage_percentage) || Number(extra.wastagePercentage) || Number(extra.overallScrapPctOfOutput) || 0,
+        scrapWastagePct: Number(r.wastage_percentage) || Number(extra.scrapWastagePct) || Number(extra.overallScrapPctOfOutput) || 0,
         status: r.status || extra.status || 'Filled by Plant Manager',
         filledBy: extra.filledBy || r.operator_name || '',
         approvedBy: extra.approvedBy || '',
@@ -875,6 +877,12 @@ export async function saveProductionRecordToSupabase(record) {
   if (!isSupabaseConfigured()) return;
   await ensureValidSession();
   const recId = record.id || `REC-${Date.now()}`;
+  const scrapKg = Number(record.totalScrapQtyKg ?? record.totalWastageKg ?? 0);
+  const scrapPct = Number(record.overallScrapPctOfOutput ?? record.wastagePercentage ?? record.scrapWastagePct ?? 0);
+  const scrapPctDispatch = Number(record.overallScrapPctOfDispatch ?? 0);
+  const grossKg = Number(record.totalProductionQtyKg ?? record.grossProductionKg ?? 0);
+  const netKg = Number(record.qtyDispatch ?? record.netUsableKg ?? record.totalProductionQtyKg ?? 0);
+
   const extra = {
     orderId: record.orderId,
     jobName: record.jobName,
@@ -885,7 +893,9 @@ export async function saveProductionRecordToSupabase(record) {
     qtyInspection: record.qtyInspection,
     qtySlitting: record.qtySlitting,
     qtyDispatch: record.qtyDispatch,
-    totalProductionQtyKg: record.totalProductionQtyKg,
+    totalProductionQtyKg: grossKg,
+    grossProductionKg: grossKg,
+    netUsableKg: netKg,
     totalMaterialCostRs: record.totalMaterialCostRs,
     processingCostPerKg: record.processingCostPerKg,
     totalProcessingCostRs: record.totalProcessingCostRs,
@@ -896,9 +906,12 @@ export async function saveProductionRecordToSupabase(record) {
     printedWastageKg: record.printedWastageKg,
     laminateWastageKg: record.laminateWastageKg,
     trimWastageKg: record.trimWastageKg,
-    totalScrapQtyKg: record.totalScrapQtyKg,
-    overallScrapPctOfOutput: record.overallScrapPctOfOutput,
-    overallScrapPctOfDispatch: record.overallScrapPctOfDispatch,
+    totalScrapQtyKg: scrapKg,
+    totalWastageKg: scrapKg,
+    overallScrapPctOfOutput: scrapPct,
+    overallScrapPctOfDispatch: scrapPctDispatch,
+    wastagePercentage: scrapPct,
+    scrapWastagePct: scrapPct,
     filledBy: record.filledBy,
     approvedBy: record.approvedBy,
     approvalDate: record.approvalDate,
@@ -911,25 +924,42 @@ export async function saveProductionRecordToSupabase(record) {
     job_name: record.jobName || 'Production Record',
     operator_name: record.operatorName || record.filledBy || '',
     shift: record.shift || 'Day Shift',
-    gross_production_kg: Number(record.totalProductionQtyKg || record.grossProductionKg || 0),
-    net_usable_kg: Number(record.qtyDispatch || record.netUsableKg || record.totalProductionQtyKg || 0),
-    total_wastage_kg: Number(record.totalScrapQtyKg || record.totalWastageKg || 0),
-    wastage_percentage: Number(record.overallScrapPctOfOutput || record.wastagePercentage || 0),
+    gross_production_kg: grossKg,
+    net_usable_kg: netKg,
+    total_wastage_kg: scrapKg,
+    wastage_percentage: scrapPct,
+    overall_scrap_pct_of_output: scrapPct,
+    overall_scrap_pct_of_dispatch: scrapPctDispatch,
     status: record.status || 'Filled by Plant Manager',
     process_logs: extra
   };
-  console.log('[production_records] Saving:', recId, record.jobName);
+  
   const { error: fullErr } = await supabase.from('production_records').upsert(fullPayload, { onConflict: 'id' });
   if (fullErr) {
-    console.warn('[production_records] Full payload failed, trying minimal:', fullErr.message);
-    const { error: minErr } = await supabase.from('production_records').upsert({
+    // Retry without extended columns that might not exist in an un-migrated schema
+    const fallbackPayload = {
       id: recId,
+      order_id: record.orderId,
       job_name: record.jobName || 'Production Record',
-      status: record.status || 'Filled by Plant Manager'
-    }, { onConflict: 'id' });
-    if (minErr) { console.error('[production_records] Minimal payload failed:', minErr.message, minErr.details); handleSupabaseError(minErr, 'production_records'); }
-    else { console.log('[production_records] Saved with minimal payload.'); }
-  } else { console.log('[production_records] Saved successfully.'); }
+      operator_name: record.operatorName || record.filledBy || '',
+      shift: record.shift || 'Day Shift',
+      gross_production_kg: grossKg,
+      net_usable_kg: netKg,
+      total_wastage_kg: scrapKg,
+      wastage_percentage: scrapPct,
+      status: record.status || 'Filled by Plant Manager',
+      process_logs: extra
+    };
+    const { error: fbErr } = await supabase.from('production_records').upsert(fallbackPayload, { onConflict: 'id' });
+    if (fbErr) {
+      const { error: minErr } = await supabase.from('production_records').upsert({
+        id: recId,
+        job_name: record.jobName || 'Production Record',
+        status: record.status || 'Filled by Plant Manager'
+      }, { onConflict: 'id' });
+      if (minErr) { handleSupabaseError(minErr, 'production_records'); }
+    }
+  }
 }
 
 // ============================================================================

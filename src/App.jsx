@@ -999,7 +999,12 @@ export default function App() {
 
     const getAvgScrap = (recList) => {
       if (recList.length === 0) return 0;
-      const sum = recList.reduce((acc, r) => acc + (r.wastagePercentage || 0), 0);
+      const sum = recList.reduce((acc, r) => {
+        const grossKg = r.grossProductionKg || r.totalProductionQtyKg || ((r.netUsableKg || r.qtyDispatch || 0) + (r.totalWastageKg || r.totalScrapQtyKg || 0));
+        const wastageKg = r.totalWastageKg || r.totalScrapQtyKg || 0;
+        const wastagePct = Number(r.wastagePercentage ?? r.overallScrapPctOfOutput ?? (grossKg > 0 ? (wastageKg / grossKg) * 100 : 0));
+        return acc + wastagePct;
+      }, 0);
       return sum / recList.length;
     };
 

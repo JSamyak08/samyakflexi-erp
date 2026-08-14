@@ -122,7 +122,8 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
       }
 
       // High scrap alerts filter (wastage >= 5%)
-      if (filterType === 'ALERTS_ONLY' && (r.wastagePercentage || 0) < 5) {
+      const wastagePct = r.wastagePercentage ?? r.overallScrapPctOfOutput ?? r.overallScrapPctOfDispatch ?? 0;
+      if (filterType === 'ALERTS_ONLY' && wastagePct < 5) {
         return false;
       }
 
@@ -151,9 +152,13 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
     });
 
     allInPeriod.forEach(r => {
-      totalGross += r.grossProductionKg || 0;
-      totalWastage += r.totalWastageKg || 0;
-      if ((r.wastagePercentage || 0) >= 5) {
+      const grossKg = r.grossProductionKg || r.totalProductionQtyKg || ((r.netUsableKg || r.qtyDispatch || 0) + (r.totalWastageKg || r.totalScrapQtyKg || 0));
+      const wastageKg = r.totalWastageKg || r.totalScrapQtyKg || 0;
+      const wastagePct = r.wastagePercentage ?? r.overallScrapPctOfOutput ?? (grossKg > 0 ? (wastageKg / grossKg) * 100 : 0);
+
+      totalGross += grossKg;
+      totalWastage += wastageKg;
+      if (wastagePct >= 5) {
         highScrapCount++;
       }
     });
@@ -346,7 +351,10 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
                 </tr>
               ) : (
                 recordsPagination.paginatedItems.map(r => {
-                  const isHigh = (r.wastagePercentage || 0) >= 5;
+                  const grossKg = r.grossProductionKg || r.totalProductionQtyKg || ((r.netUsableKg || r.qtyDispatch || 0) + (r.totalWastageKg || r.totalScrapQtyKg || 0));
+                  const wastageKg = r.totalWastageKg || r.totalScrapQtyKg || 0;
+                  const wastagePct = Number(r.wastagePercentage ?? r.overallScrapPctOfOutput ?? (grossKg > 0 ? (wastageKg / grossKg) * 100 : 0));
+                  const isHigh = wastagePct >= 5;
                   const dateStr = r.recordedAt || r.dateFilled || '';
                   const displayDate = dateStr ? new Date(dateStr).toLocaleDateString('en-GB') : '—';
                   
@@ -368,9 +376,9 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
                         <div>{r.operatorName || '—'}</div>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{r.shift || '—'}</div>
                       </td>
-                      <td style={{ textAlign: 'right', fontWeight: '600' }}>{(r.grossProductionKg || 0).toLocaleString()} kg</td>
+                      <td style={{ textAlign: 'right', fontWeight: '600' }}>{grossKg.toLocaleString()} kg</td>
                       <td style={{ textAlign: 'right', fontWeight: '600', color: isHigh ? '#dc2626' : 'inherit' }}>
-                        {(r.totalWastageKg || 0).toLocaleString()} kg
+                        {wastageKg.toLocaleString()} kg
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <span 
@@ -387,7 +395,7 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
                             textAlign: 'center'
                           }}
                         >
-                          {r.wastagePercentage || 0}%
+                          {wastagePct.toFixed(1)}%
                         </span>
                       </td>
                       <td>

@@ -276,7 +276,20 @@ ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS colors_count INT DEFAULT
 ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS engravures_name TEXT;
 ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS cost_borne_by TEXT;
 ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS utilisation_limit NUMERIC DEFAULT 10000;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS wastage_percentage NUMERIC DEFAULT 5;
 ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS creation_date DATE DEFAULT CURRENT_DATE;
+
+-- Ensure all columns exist on orders
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS wastage_percentage NUMERIC DEFAULT 5;
+
+-- Ensure all scrap & wastage columns exist on production_records
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS total_wastage_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS wastage_percentage NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS overall_scrap_pct_of_output NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS overall_scrap_pct_of_dispatch NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS gross_production_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS net_usable_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS process_logs JSONB;
 
 -- Ensure all columns exist on inventory if table was previously created with older schema
 ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS item_code TEXT;

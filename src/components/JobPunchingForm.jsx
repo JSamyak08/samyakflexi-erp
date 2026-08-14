@@ -223,6 +223,8 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       repeatLengthMm: parseFloat(repeatLengthMm),
       colorsCount: parseInt(colorsCount),
       status: 'In Progress',
+      wastagePct: parseFloat(calculationResults.wastagePct) || 5,
+      wastageKg: parseFloat(calculationResults.wastageKg) || 0,
       layers,
       structure: layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / '),
       calculationDetails: calculationResults,

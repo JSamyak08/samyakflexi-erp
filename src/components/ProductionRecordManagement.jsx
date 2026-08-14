@@ -455,11 +455,14 @@ export default function ProductionRecordManagement({
       laminationPlainSubstrateWastageKg: parseFloat(laminationPlainSubstrateWastageKg) || 0,
       printedWastageKg: parseFloat(printedWastageKg) || 0,
       laminateWastageKg: parseFloat(laminateWastageKg) || 0,
-      trimWastageKg: parseFloat(trimWastageKg) || 0,
-      
       totalScrapQtyKg: totalScrapQtyKg,
+      totalWastageKg: totalScrapQtyKg,
+      grossProductionKg: totalJobMaterialOutputKg,
+      netUsableKg: totalNetQtyKg,
       overallScrapPctOfOutput: overallScrapPctOfOutput,
       overallScrapPctOfDispatch: overallScrapPctOfDispatch,
+      wastagePercentage: overallScrapPctOfOutput,
+      scrapWastagePct: overallScrapPctOfOutput,
       finalProductionCostRs: finalProductionCostRs,
 
       status: "Filled by Plant Manager",
