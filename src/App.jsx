@@ -267,6 +267,7 @@ export default function App() {
   const [indents, setIndents] = useState(() => stripDummyRecords(loadLocalState('material_indents', [])));
   const [machineIssues, setMachineIssues] = useState(() => stripDummyRecords(loadLocalState('machine_issues', [])));
   const [consumables, setConsumables] = useState(() => stripDummyRecords(loadLocalState('consumables', [])));
+  const [storeIssueTransactions, setStoreIssueTransactions] = useState(() => stripDummyRecords(loadLocalState('store_issue_transactions', [])));
   const [auditLogs, setAuditLogs] = useState(() => pruneOldAuditLogs(loadLocalState('audit_logs', [])));
 
 
@@ -334,6 +335,7 @@ export default function App() {
   useEffect(() => { safeLocalStorageSet('samyak_erp_material_indents', indents); }, [indents]);
   useEffect(() => { safeLocalStorageSet('samyak_erp_machine_issues', machineIssues); }, [machineIssues]);
   useEffect(() => { safeLocalStorageSet('samyak_erp_consumables', consumables); }, [consumables]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_store_issue_transactions', storeIssueTransactions); }, [storeIssueTransactions]);
 
 
   // Asynchronously hydrate any full artwork assets from IndexedDB if needed on mount
@@ -418,7 +420,7 @@ export default function App() {
       // Fetch schema-independent system settings & lifted store states
       const [
         dbPrefixes, dbTerms, dbLogo, dbSignature,
-        dbIndents, dbIssues, dbConsumables
+        dbIndents, dbIssues, dbConsumables, dbStoreTx
       ] = await Promise.all([
         fetchSafe(() => fetchSystemSetting('doc_prefixes'), 'Prefixes'),
         fetchSafe(() => fetchSystemSetting('doc_terms'), 'Terms'),
@@ -426,7 +428,8 @@ export default function App() {
         fetchSafe(() => fetchSystemSetting('auth_signature'), 'Signature'),
         fetchSafe(() => fetchSystemSetting('material_indents'), 'Indents'),
         fetchSafe(() => fetchSystemSetting('machine_issues'), 'Machine Issues'),
-        fetchSafe(() => fetchSystemSetting('consumables'), 'Consumables')
+        fetchSafe(() => fetchSystemSetting('consumables'), 'Consumables'),
+        fetchSafe(() => fetchSystemSetting('store_issue_transactions'), 'Store Issue Transactions')
       ]);
 
       if (!isMounted) return;
@@ -439,6 +442,7 @@ export default function App() {
       if (dbIndents && Array.isArray(dbIndents)) setIndents(dbIndents);
       if (dbIssues && Array.isArray(dbIssues)) setMachineIssues(dbIssues);
       if (dbConsumables && Array.isArray(dbConsumables)) setConsumables(dbConsumables);
+      if (dbStoreTx && Array.isArray(dbStoreTx)) setStoreIssueTransactions(stripDummyRecords(dbStoreTx));
 
       if (Array.isArray(supaOrders)) {
         const cleanSupa = stripDummyRecords(supaOrders);
@@ -1101,6 +1105,193 @@ export default function App() {
       }
       return r;
     }));
+  };
+
+  const handleStoreIssueReturn = async ({ item, issueType, qty, jobName, user, notes, barcode }) => {
+    if (!item || !qty || qty <= 0 || !jobName) return;
+
+    const unitStr = item.unit || 'Kg';
+    const itemNameStr = item.itemName || `${item.filmType || ''} ${item.micron && item.micron !== '-' ? `${item.micron}µ` : ''}`.trim() || `${item.category || 'Store'} Item`;
+
+    // 1. Update Inventory State and Supabase
+    let updatedInv = inventory.map(i => {
+      if (i.id === item.id) {
+        let avail = Number(i.availableQtyKg || 0);
+        let alloc = Number(i.allocatedQtyKg || 0);
+        if (issueType === 'issue') {
+          avail = Math.max(0, avail - qty);
+          alloc = alloc + qty;
+        } else {
+          avail = avail + qty;
+          alloc = Math.max(0, alloc - qty);
+        }
+        return {
+          ...i,
+          availableQtyKg: avail,
+          allocatedQtyKg: alloc
+        };
+      }
+      return i;
+    });
+    setInventory(updatedInv);
+    const updatedItem = updatedInv.find(i => i.id === item.id);
+    if (updatedItem) {
+      saveInventoryItemToSupabase(updatedItem).catch(console.warn);
+    }
+
+    // 2. Record Transaction in storeIssueTransactions
+    const newTx = {
+      id: `ISS-${Date.now()}`,
+      itemId: item.id,
+      itemCode: item.itemCode || item.id,
+      itemName: itemNameStr,
+      filmType: item.filmType || item.itemName,
+      micron: item.micron || '-',
+      widthMm: item.widthMm || '-',
+      category: item.category || 'Film Substrates',
+      issueType: issueType, // 'issue' | 'return'
+      jobName: jobName,
+      qtyKg: qty,
+      unit: unitStr,
+      unitPrice: Number(item.unitPrice || item.purchaseRatePerKg || 0),
+      date: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
+      issuedBy: user || currentUser?.name || 'Store Manager',
+      notes: notes || (issueType === 'issue'
+        ? `Issued ${qty} ${unitStr} to Job: ${jobName}`
+        : `Returned ${qty} ${unitStr} from Job: ${jobName} back to Store`),
+      barcode: barcode || item.lastBatch || `BAR-ISS-${item.id}`
+    };
+
+    const newTxList = [newTx, ...storeIssueTransactions];
+    setStoreIssueTransactions(newTxList);
+    try {
+      await saveSystemSetting('store_issue_transactions', newTxList);
+    } catch (e) {}
+
+    // 3. Update / Earmark the Production Record of this Job
+    const targetOrder = (orders || []).find(o => 
+      o.jobName?.trim().toLowerCase() === jobName.trim().toLowerCase() || o.id === jobName
+    );
+    const orderId = targetOrder ? targetOrder.id : jobName;
+    const clientName = targetOrder ? targetOrder.clientName : '';
+
+    setProductionRecords(prevRecords => {
+      const existingIdx = prevRecords.findIndex(r => 
+        r.orderId === orderId || (r.jobName && r.jobName.trim().toLowerCase() === jobName.trim().toLowerCase())
+      );
+
+      let targetRecord;
+      if (existingIdx >= 0) {
+        targetRecord = { ...prevRecords[existingIdx] };
+      } else {
+        targetRecord = {
+          id: `REC-${Date.now()}`,
+          orderId: orderId,
+          jobName: jobName,
+          clientName: clientName,
+          dateFilled: new Date().toISOString().split('T')[0],
+          materialsList: [],
+          qtyFirstPassL1: 0,
+          qtySecondPassL2: 0,
+          qtyInspection: 0,
+          qtySlitting: 0,
+          qtyDispatch: 0,
+          totalProductionQtyKg: 0,
+          totalMaterialCostRs: 0,
+          processingCostPerKg: 25,
+          totalProcessingCostRs: 0,
+          printingPlainSettingWastageKg: 0,
+          printingWastageKg: 0,
+          laminationPlainSubstrateWastageKg: 0,
+          printedWastageKg: 0,
+          laminateWastageKg: 0,
+          trimWastageKg: 0,
+          totalScrapQtyKg: 0,
+          overallScrapPctOfOutput: 0,
+          overallScrapPctOfDispatch: 0,
+          finalProductionCostRs: 0,
+          status: "In Progress",
+          filledBy: user || currentUser?.name || "Store Issue Auto-Sync",
+          approvedBy: "",
+          approvalDate: "",
+          notes: `Material issued from store on ${new Date().toLocaleDateString()}`
+        };
+      }
+
+      let currentMaterials = Array.isArray(targetRecord.materialsList) ? [...targetRecord.materialsList] : [];
+      const matIdx = currentMaterials.findIndex(m => 
+        (m.itemId && m.itemId === item.id) ||
+        (m.itemName && m.itemName.toLowerCase().trim() === itemNameStr.toLowerCase().trim()) ||
+        (m.filmType && m.filmType.toLowerCase().trim() === (item.filmType || item.itemName || '').toLowerCase().trim())
+      );
+
+      const itemRate = parseFloat(item.unitPrice || item.purchaseRatePerKg) || 0;
+
+      if (matIdx >= 0) {
+        const existingMat = currentMaterials[matIdx];
+        const currIssued = parseFloat(existingMat.issueQtyKg) || 0;
+        const currReturned = parseFloat(existingMat.returnQtyKg) || 0;
+
+        const newIssued = issueType === 'issue' ? currIssued + qty : currIssued;
+        const newReturned = issueType === 'return' ? currReturned + qty : currReturned;
+        const netConsumed = Math.max(0, newIssued - newReturned);
+        const matRate = parseFloat(existingMat.unitPricePerKg) || itemRate;
+
+        currentMaterials[matIdx] = {
+          ...existingMat,
+          itemId: item.id,
+          itemCode: item.itemCode || existingMat.itemCode,
+          itemName: itemNameStr,
+          unit: unitStr,
+          issueQtyKg: newIssued,
+          returnQtyKg: newReturned,
+          netConsumedQtyKg: netConsumed,
+          unitPricePerKg: matRate,
+          totalMaterialCost: netConsumed * matRate
+        };
+      } else {
+        const issuedQty = issueType === 'issue' ? qty : 0;
+        const returnedQty = issueType === 'return' ? qty : 0;
+        const netConsumed = Math.max(0, issuedQty - returnedQty);
+
+        currentMaterials.push({
+          id: `mat-${Date.now()}-${currentMaterials.length + 1}`,
+          itemId: item.id,
+          itemCode: item.itemCode || item.id,
+          itemName: itemNameStr,
+          filmType: item.itemName || item.filmType || item.category || 'Material',
+          category: item.category || 'Raw Material',
+          micron: item.micron || '-',
+          widthMm: item.widthMm || '-',
+          unit: unitStr,
+          barcode: barcode || item.lastBatch || `BAR-ISS-${item.id}`,
+          issueQtyKg: issuedQty,
+          returnQtyKg: returnedQty,
+          netConsumedQtyKg: netConsumed,
+          unitPricePerKg: itemRate,
+          totalMaterialCost: netConsumed * itemRate,
+          jobMasterFilmType: item.filmType || item.itemName,
+          jobMasterMicron: item.micron && item.micron !== '-' ? Number(item.micron) : 0,
+          jobMasterWidthMm: item.widthMm && item.widthMm !== '-' ? Number(item.widthMm) : 0
+        });
+      }
+
+      targetRecord.materialsList = currentMaterials;
+      targetRecord.totalMaterialCostRs = currentMaterials.reduce((sum, m) => sum + (parseFloat(m.totalMaterialCost) || 0), 0);
+      targetRecord.finalProductionCostRs = (parseFloat(targetRecord.totalProcessingCostRs) || 0) + targetRecord.totalMaterialCostRs;
+
+      saveProductionRecordToSupabase(targetRecord).catch(console.warn);
+
+      if (existingIdx >= 0) {
+        const updatedAll = [...prevRecords];
+        updatedAll[existingIdx] = targetRecord;
+        return updatedAll;
+      } else {
+        return [targetRecord, ...prevRecords];
+      }
+    });
+
+    logAudit('CREATE', 'Store Issue Ledger', `${issueType === 'issue' ? 'Issued' : 'Returned'} ${qty} ${unitStr} of ${itemNameStr} for job "${jobName}"`, newTx.id);
   };
 
   const handleUpdateConsumables = async (newConsumables) => {
@@ -2412,38 +2603,96 @@ export default function App() {
           />
         )}
 
-        {/* TAB 0.5: JOB PUNCHING & COSTING ENGINE */}
+        {/* TAB: PRODUCTION RECORDS & APPROVAL FLOW */}
+        {activeTab === 'production_records' && (
+          <ProductionRecordManagement 
+            urlParams={urlParams}
+            productionRecords={productionRecords}
+            orders={orders}
+            inventory={inventory}
+            inventoryRolls={inventoryRolls}
+            jobMasters={jobMasters}
+            cylinders={cylinders}
+            currentUser={currentUser}
+            storeIssueTransactions={storeIssueTransactions}
+            onSaveProductionRecord={handleSaveProductionRecord}
+            onApproveProductionRecord={handleApproveProductionRecord}
+            onUpdateJobMaster={handleUpdateJobMaster}
+            onUpdateCylinder={handleUpdateCylinder}
+            onAddRoll={handleAddRoll}
+          />
+        )}
+
+        {/* TAB: CLIENTS */}
+        {activeTab === 'clients' && (
+          <ClientManagement 
+            urlParams={urlParams}
+            clients={clients}
+            orders={orders}
+            cylinders={cylinders}
+            onAddClient={handleAddClient}
+            onUpdateClient={handleUpdateClient}
+            onDeleteClient={handleDeleteClient}
+          />
+        )}
+
+        {/* TAB: JOB MASTER DIRECTORY */}
+        {activeTab === 'job_masters' && (
+          <JobMasterDirectory 
+            urlParams={urlParams}
+            jobMasters={jobMasters}
+            orders={orders}
+            cylinders={cylinders}
+            productionRecords={productionRecords}
+            onAddJobMaster={handleAddJobMaster}
+            onUpdateJobMaster={handleUpdateJobMaster}
+            onDeleteJobMaster={handleDeleteJobMaster}
+            onOpenJobCardModal={(jm) => {
+              setSelectedJobMasterForPunch(jm);
+              setActiveTab('job_punching');
+            }}
+          />
+        )}
+
+        {/* TAB: CYLINDERS */}
+        {activeTab === 'cylinders' && (
+          <CylinderManagement 
+            urlParams={urlParams}
+            cylinders={cylinders}
+            orders={orders}
+            jobMasters={jobMasters}
+            onAddCylinder={handleAddCylinder}
+            onUpdateCylinder={handleUpdateCylinder}
+            onDeleteCylinder={handleDeleteCylinder}
+          />
+        )}
+
+        {/* TAB 1: JOB PUNCHING & PRE-COSTING */}
         {activeTab === 'job_punching' && (
           <JobPunchingForm 
-            onSaveOrder={handleAddOrder}
-            onNavigateToDashboard={() => handleTabChange('orders')}
+            onSaveOrder={handleSaveOrder} 
+            onNavigateToDashboard={() => handleTabChange('dashboard')} 
             initialJobMasterData={selectedJobMasterForPunch}
             clients={clients}
             jobMasters={jobMasters}
           />
         )}
 
-        {/* TAB 3: ORDER MANAGEMENT & POS */}
+        {/* TAB 2: ORDER MANAGEMENT */}
         {activeTab === 'orders' && (
           <OrderManagement 
             urlParams={urlParams}
             orders={orders} 
-            vendors={vendors} 
-            inventory={inventory}
-            jobMasters={jobMasters}
-            currentUser={currentUser}
-            productionRecords={productionRecords}
-            onUpdateOrder={handleUpdateOrder} 
+            onUpdateOrderStatus={handleUpdateOrderStatus} 
             onDeleteOrder={handleDeleteOrder}
-            onNavigateToPunching={() => handleTabChange('job_punching')}
+            jobMasters={jobMasters}
+            clients={clients}
+            inventory={inventory}
+            cylinders={cylinders}
+            productionRecords={productionRecords}
+            onNavigateToJobPunching={() => handleTabChange('job_punching')}
             onNavigateToProductionRecords={() => handleTabChange('production_records')}
           />
-        )}
-
-
-        {/* TAB 5: VENDOR MANAGEMENT */}
-        {activeTab === 'vendors' && (
-          <VendorManagement urlParams={urlParams} vendors={vendors} orders={orders} onAddVendor={handleAddVendor} />
         )}
 
         {/* TAB 6: INVENTORY, GRN & QC */}
@@ -2458,6 +2707,8 @@ export default function App() {
             inks={inks}
             currentUser={currentUser}
             productionRecords={productionRecords}
+            storeIssueTransactions={storeIssueTransactions}
+            onStoreIssueReturn={handleStoreIssueReturn}
             onAddGRN={handleAddGRN}
             onUpdateGRN={handleUpdateGRN}
             onUpdateInventory={handleUpdateInventory}

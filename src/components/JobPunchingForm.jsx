@@ -21,11 +21,11 @@ import { getProcessingRates } from '../services/settingsService';
 
 export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, initialJobMasterData, clients = [], jobMasters = [] }) {
   // Form State
-  const [jobName, setJobName] = useState(() => initialJobMasterData?.jobName || 'Britannia Bourbon 250g Packaging');
-  const [clientName, setClientName] = useState(() => initialJobMasterData?.clientName || 'Britannia Industries Ltd');
-  const [printWidthMm, setPrintWidthMm] = useState(() => initialJobMasterData?.printWidthMm || 1000);
-  const [repeatLengthMm, setRepeatLengthMm] = useState(() => initialJobMasterData?.repeatLengthMm || 400);
-  const [orderQtyKg, setOrderQtyKg] = useState(1000);
+  const [jobName, setJobName] = useState(() => initialJobMasterData?.jobName || '');
+  const [clientName, setClientName] = useState(() => initialJobMasterData?.clientName || '');
+  const [printWidthMm, setPrintWidthMm] = useState(() => initialJobMasterData?.printWidthMm || '');
+  const [repeatLengthMm, setRepeatLengthMm] = useState(() => initialJobMasterData?.repeatLengthMm || '');
+  const [orderQtyKg, setOrderQtyKg] = useState('');
   const [orderType, setOrderType] = useState('Pouching'); // Reel or Pouching
   const [inkGsm, setInkGsm] = useState(1.5);
   const [adhesiveGsm, setAdhesiveGsm] = useState(1.5);
@@ -33,7 +33,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
   // Editable Processing Prices State (loaded from System Settings baseline, editable inline)
   const [inkPrice, setInkPrice] = useState(() => getProcessingRates().liquidInkPrice || DEFAULT_PROCESSING_RATES.liquidInkPrice);
   const [adhesivePrice, setAdhesivePrice] = useState(() => getProcessingRates().adhesivePrice || DEFAULT_PROCESSING_RATES.adhesivePrice);
-  const [colorsCount, setColorsCount] = useState(() => initialJobMasterData?.colorsCount || 6);
+  const [colorsCount, setColorsCount] = useState(() => initialJobMasterData?.colorsCount || '');
   const [targetDeliveryDays, setTargetDeliveryDays] = useState(10);
   const [isSubmitted, setIsSubmitted] = useState(false);
 
@@ -67,7 +67,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
     if (matchedJM) {
       if (matchedJM.printWidthMm) setPrintWidthMm(matchedJM.printWidthMm);
       if (matchedJM.repeatLengthMm) setRepeatLengthMm(matchedJM.repeatLengthMm);
-      if (matchedJM.clientName && (!clientName || clientName === 'Britannia Industries Ltd')) setClientName(matchedJM.clientName);
+      if (matchedJM.clientName && !clientName) setClientName(matchedJM.clientName);
       if (matchedJM.colorsCount) setColorsCount(matchedJM.colorsCount);
       if (matchedJM.layers && matchedJM.layers.length > 0) {
         setLayers(matchedJM.layers.map(l => ({ ...l, rate: l.rate ?? l.ratePerKg ?? '' })));

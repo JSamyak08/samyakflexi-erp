@@ -815,20 +815,56 @@ export async function fetchProductionRecords() {
     }
     if (!data) return [];
 
-    return data.map(r => ({
-      id: r.id,
-      orderId: r.order_id,
-      jobName: r.job_name,
-      operatorName: r.operator_name,
-      shift: r.shift,
-      grossProductionKg: Number(r.gross_production_kg) || 0,
-      netUsableKg: Number(r.net_usable_kg) || 0,
-      totalWastageKg: Number(r.total_wastage_kg) || 0,
-      wastagePercentage: Number(r.wastage_percentage) || 0,
-      status: r.status || 'Pending Plant Approval',
-      recordedAt: r.recorded_at,
-      processLogs: r.process_logs
-    }));
+    return data.map(r => {
+      let extra = {};
+      if (r.process_logs) {
+        if (typeof r.process_logs === 'object') {
+          extra = r.process_logs;
+        } else if (typeof r.process_logs === 'string') {
+          try { extra = JSON.parse(r.process_logs); } catch (e) {}
+        }
+      }
+      return {
+        id: r.id,
+        orderId: r.order_id || extra.orderId,
+        jobName: r.job_name || extra.jobName,
+        clientName: extra.clientName || '',
+        operatorName: r.operator_name || extra.operatorName || '',
+        shift: r.shift || extra.shift || 'Day Shift',
+        dateFilled: extra.dateFilled || (r.recorded_at ? r.recorded_at.split('T')[0] : new Date().toISOString().split('T')[0]),
+        materialsList: Array.isArray(extra.materialsList) ? extra.materialsList : [],
+        qtyFirstPassL1: Number(extra.qtyFirstPassL1) || 0,
+        qtySecondPassL2: Number(extra.qtySecondPassL2) || 0,
+        qtyInspection: Number(extra.qtyInspection) || 0,
+        qtySlitting: Number(extra.qtySlitting) || 0,
+        qtyDispatch: Number(extra.qtyDispatch) || Number(r.net_usable_kg) || 0,
+        totalProductionQtyKg: Number(extra.totalProductionQtyKg) || Number(r.gross_production_kg) || 0,
+        grossProductionKg: Number(r.gross_production_kg) || Number(extra.totalProductionQtyKg) || 0,
+        netUsableKg: Number(r.net_usable_kg) || Number(extra.qtyDispatch) || 0,
+        totalMaterialCostRs: Number(extra.totalMaterialCostRs) || 0,
+        processingCostPerKg: Number(extra.processingCostPerKg) || 25,
+        totalProcessingCostRs: Number(extra.totalProcessingCostRs) || 0,
+        finalProductionCostRs: Number(extra.finalProductionCostRs) || 0,
+        printingPlainSettingWastageKg: Number(extra.printingPlainSettingWastageKg) || 0,
+        printingWastageKg: Number(extra.printingWastageKg) || 0,
+        laminationPlainSubstrateWastageKg: Number(extra.laminationPlainSubstrateWastageKg) || 0,
+        printedWastageKg: Number(extra.printedWastageKg) || 0,
+        laminateWastageKg: Number(extra.laminateWastageKg) || 0,
+        trimWastageKg: Number(extra.trimWastageKg) || 0,
+        totalScrapQtyKg: Number(extra.totalScrapQtyKg) || Number(r.total_wastage_kg) || 0,
+        totalWastageKg: Number(r.total_wastage_kg) || Number(extra.totalScrapQtyKg) || 0,
+        overallScrapPctOfOutput: Number(extra.overallScrapPctOfOutput) || Number(r.wastage_percentage) || 0,
+        overallScrapPctOfDispatch: Number(extra.overallScrapPctOfDispatch) || 0,
+        wastagePercentage: Number(r.wastage_percentage) || Number(extra.overallScrapPctOfOutput) || 0,
+        status: r.status || extra.status || 'Filled by Plant Manager',
+        filledBy: extra.filledBy || r.operator_name || '',
+        approvedBy: extra.approvedBy || '',
+        approvalDate: extra.approvalDate || '',
+        notes: extra.notes || '',
+        recordedAt: r.recorded_at,
+        processLogs: extra
+      };
+    });
   } catch (err) {
     console.error("Error fetching production records from Supabase:", err);
     return [];
@@ -838,19 +874,49 @@ export async function fetchProductionRecords() {
 export async function saveProductionRecordToSupabase(record) {
   if (!isSupabaseConfigured()) return;
   await ensureValidSession();
-  const recId = record.id || `PROD-${Math.floor(100 + Math.random() * 900)}`;
+  const recId = record.id || `REC-${Date.now()}`;
+  const extra = {
+    orderId: record.orderId,
+    jobName: record.jobName,
+    clientName: record.clientName,
+    materialsList: record.materialsList || [],
+    qtyFirstPassL1: record.qtyFirstPassL1,
+    qtySecondPassL2: record.qtySecondPassL2,
+    qtyInspection: record.qtyInspection,
+    qtySlitting: record.qtySlitting,
+    qtyDispatch: record.qtyDispatch,
+    totalProductionQtyKg: record.totalProductionQtyKg,
+    totalMaterialCostRs: record.totalMaterialCostRs,
+    processingCostPerKg: record.processingCostPerKg,
+    totalProcessingCostRs: record.totalProcessingCostRs,
+    finalProductionCostRs: record.finalProductionCostRs,
+    printingPlainSettingWastageKg: record.printingPlainSettingWastageKg,
+    printingWastageKg: record.printingWastageKg,
+    laminationPlainSubstrateWastageKg: record.laminationPlainSubstrateWastageKg,
+    printedWastageKg: record.printedWastageKg,
+    laminateWastageKg: record.laminateWastageKg,
+    trimWastageKg: record.trimWastageKg,
+    totalScrapQtyKg: record.totalScrapQtyKg,
+    overallScrapPctOfOutput: record.overallScrapPctOfOutput,
+    overallScrapPctOfDispatch: record.overallScrapPctOfDispatch,
+    filledBy: record.filledBy,
+    approvedBy: record.approvedBy,
+    approvalDate: record.approvalDate,
+    notes: record.notes,
+    dateFilled: record.dateFilled
+  };
   const fullPayload = {
     id: recId,
     order_id: record.orderId,
     job_name: record.jobName || 'Production Record',
-    operator_name: record.operatorName || '',
+    operator_name: record.operatorName || record.filledBy || '',
     shift: record.shift || 'Day Shift',
-    gross_production_kg: Number(record.grossProductionKg) || 0,
-    net_usable_kg: Number(record.netUsableKg) || 0,
-    total_wastage_kg: Number(record.totalWastageKg) || 0,
-    wastage_percentage: Number(record.wastagePercentage) || 0,
-    status: record.status || 'Pending Plant Approval',
-    process_logs: record.processLogs || []
+    gross_production_kg: Number(record.totalProductionQtyKg || record.grossProductionKg || 0),
+    net_usable_kg: Number(record.qtyDispatch || record.netUsableKg || record.totalProductionQtyKg || 0),
+    total_wastage_kg: Number(record.totalScrapQtyKg || record.totalWastageKg || 0),
+    wastage_percentage: Number(record.overallScrapPctOfOutput || record.wastagePercentage || 0),
+    status: record.status || 'Filled by Plant Manager',
+    process_logs: extra
   };
   console.log('[production_records] Saving:', recId, record.jobName);
   const { error: fullErr } = await supabase.from('production_records').upsert(fullPayload, { onConflict: 'id' });
@@ -859,7 +925,7 @@ export async function saveProductionRecordToSupabase(record) {
     const { error: minErr } = await supabase.from('production_records').upsert({
       id: recId,
       job_name: record.jobName || 'Production Record',
-      status: record.status || 'Pending Plant Approval'
+      status: record.status || 'Filled by Plant Manager'
     }, { onConflict: 'id' });
     if (minErr) { console.error('[production_records] Minimal payload failed:', minErr.message, minErr.details); handleSupabaseError(minErr, 'production_records'); }
     else { console.log('[production_records] Saved with minimal payload.'); }

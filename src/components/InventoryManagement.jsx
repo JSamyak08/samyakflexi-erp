@@ -142,6 +142,8 @@ export default function InventoryManagement({
   inks = [],
   currentUser = null,
   productionRecords = [],
+  storeIssueTransactions = [],
+  onStoreIssueReturn,
   onAddGRN, 
   onUpdateGRN, 
   onUpdateInventory,
@@ -205,7 +207,7 @@ export default function InventoryManagement({
     }
   });
 
-  const [storeIssueTransactions, setStoreIssueTransactions] = useState(() => {
+  const [localStoreIssueTransactions, setLocalStoreIssueTransactions] = useState(() => {
     try {
       const saved = localStorage.getItem('samyak_erp_store_issue_transactions');
       return saved ? JSON.parse(saved) : [];
@@ -214,8 +216,28 @@ export default function InventoryManagement({
     }
   });
 
+  const effectiveStoreIssueTransactions = storeIssueTransactions && storeIssueTransactions.length > 0
+    ? storeIssueTransactions
+    : localStoreIssueTransactions;
+
   const [editingTxId, setEditingTxId] = useState(null);
   const [editingBarcodeVal, setEditingBarcodeVal] = useState('');
+
+  // Active unapproved jobs filter for Store Issue / Return & Dispatch
+  const activeProductionOrders = useMemo(() => {
+    return (orders || []).filter(o => {
+      if (['Completed', 'Dispatched', 'Delivered', 'Cancelled'].includes(o.status)) {
+        return false;
+      }
+      const prodRec = (productionRecords || []).find(r => 
+        r.orderId === o.id || (r.jobName && r.jobName.trim().toLowerCase() === (o.jobName || '').trim().toLowerCase())
+      );
+      if (prodRec && prodRec.status === 'Approved by Admin') {
+        return false;
+      }
+      return true;
+    });
+  }, [orders, productionRecords]);
 
   // Ledger Filter & Quick Adjustment State
   const [ledgerFilterTab, setLedgerFilterTab] = useState('all'); // 'all', 'inward', 'usage', 'reconciliation'
@@ -223,7 +245,7 @@ export default function InventoryManagement({
 
   const [isQuickAdjOpen, setIsQuickAdjOpen] = useState(false);
   const [adjType, setAdjType] = useState('Physical Audit (+)');
-  const [adjQtyKg, setAdjQtyKg] = useState(10);
+  const [adjQtyKg, setAdjQtyKg] = useState('');
   const [adjBarcode, setAdjBarcode] = useState('');
   const [adjReason, setAdjReason] = useState('Physical Stock Count Variance');
 
@@ -233,15 +255,12 @@ export default function InventoryManagement({
 
   // Dispatch Form State (Scale #4 Station)
   const [isNewDispatchModalOpen, setIsNewDispatchModalOpen] = useState(false);
-  const [dispatchJobName, setDispatchJobName] = useState(orders[0]?.jobName || 'Britannia Bourbon 250g Packaging');
-  const [dispatchClientName, setDispatchClientName] = useState(orders[0]?.clientName || 'Britannia Industries Ltd');
-  const [dispatchVehicleNo, setDispatchVehicleNo] = useState('MP-09-HH-4491');
-  const [dispatchLrNo, setDispatchLrNo] = useState('LR-99821-IND');
-  const [dispatchRollsList, setDispatchRollsList] = useState([
-    { rollNo: 1, barcodeId: generateBarcodeId('FG-DISP'), substrateSpec: 'PET 12µ / METPET 12µ / Milky LD 40µ', netWeightKg: 210.0, grossWeightKg: 214.5, coreSize: '3 inch' },
-    { rollNo: 2, barcodeId: generateBarcodeId('FG-DISP'), substrateSpec: 'PET 12µ / METPET 12µ / Milky LD 40µ', netWeightKg: 210.0, grossWeightKg: 214.5, coreSize: '3 inch' }
-  ]);
-  const [currentDispatchNetWeight, setCurrentDispatchNetWeight] = useState(210.0);
+  const [dispatchJobName, setDispatchJobName] = useState(orders[0]?.jobName || '');
+  const [dispatchClientName, setDispatchClientName] = useState(orders[0]?.clientName || '');
+  const [dispatchVehicleNo, setDispatchVehicleNo] = useState('');
+  const [dispatchLrNo, setDispatchLrNo] = useState('');
+  const [dispatchRollsList, setDispatchRollsList] = useState([]);
+  const [currentDispatchNetWeight, setCurrentDispatchNetWeight] = useState(0);
 
   // Barcode Audit Scanner State for Reconciliation
   const [scannedAuditBarcodes, setScannedAuditBarcodes] = useState('');
@@ -417,8 +436,8 @@ export default function InventoryManagement({
   const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
   const [issueType, setIssueType] = useState('issue'); // issue or return
   const [selectedInvItem, setSelectedInvItem] = useState(inventory[0] || null);
-  const [issueQtyKg, setIssueQtyKg] = useState(100);
-  const [issueJobName, setIssueJobName] = useState(orders[0]?.jobName || '');
+  const [issueQtyKg, setIssueQtyKg] = useState('');
+  const [issueJobName, setIssueJobName] = useState('');
   const [stockSearchTerm, setStockSearchTerm] = useState('');
 
   // Stock Register Directory Filter State
@@ -426,18 +445,18 @@ export default function InventoryManagement({
 
   // Inward GRN Form State
   const [grnVendor, setGrnVendor] = useState(vendors[0]?.companyName || '');
-  const [grnPoNo, setGrnPoNo] = useState('PO-2026-042');
+  const [grnPoNo, setGrnPoNo] = useState('');
   const [grnInvoiceNo, setGrnInvoiceNo] = useState('');
   const [grnCategory, setGrnCategory] = useState('Film Substrates');
   const [grnItemName, setGrnItemName] = useState('');
   const [grnFilmType, setGrnFilmType] = useState('PET');
-  const [grnMicron, setGrnMicron] = useState(12);
-  const [grnWidthMm, setGrnWidthMm] = useState(1000);
+  const [grnMicron, setGrnMicron] = useState('');
+  const [grnWidthMm, setGrnWidthMm] = useState('');
   const [grnUnit, setGrnUnit] = useState('Kg');
   const [grnPackagingType, setGrnPackagingType] = useState('Roll');
-  const [grnRolls, setGrnRolls] = useState(10);
-  const [grnWeightKg, setGrnWeightKg] = useState(1500);
-  const [grnPurchaseRate, setGrnPurchaseRate] = useState(120);
+  const [grnRolls, setGrnRolls] = useState('');
+  const [grnWeightKg, setGrnWeightKg] = useState('');
+  const [grnPurchaseRate, setGrnPurchaseRate] = useState('');
   const [grnBatchNo, setGrnBatchNo] = useState('');
   const [grnSelectedStockItemId, setGrnSelectedStockItemId] = useState('');
   const [grnItemSearchTerm, setGrnItemSearchTerm] = useState('');
@@ -1074,69 +1093,59 @@ export default function InventoryManagement({
     alert(`GRN ${updatedGRN.grnNo} has been marked as ${status}!`);
   };
 
-  // Issue / Return Submit (Records transaction in Store Issue/Return Ledger)
+  // Issue / Return Submit (Records transaction in Store Issue/Return Ledger & updates Job Production Record Costing)
   const handleIssueReturnSubmit = () => {
-    if (!selectedInvItem || issueQtyKg <= 0) return;
-
-    const qty = parseFloat(issueQtyKg);
-    let updatedInv = [...inventory];
-    const idx = updatedInv.findIndex(i => i.id === selectedInvItem.id);
-
-    if (idx >= 0) {
-      const item = updatedInv[idx];
-      const unitStr = item.unit || 'Kg';
-      const itemNameStr = item.itemName || `${item.filmType} ${item.micron !== '-' ? `${item.micron}µ` : ''}`;
-
-      if (issueType === 'issue') {
-        if (item.availableQtyKg < qty) {
-          alert(`Insufficient available stock! Only ${item.availableQtyKg} ${unitStr} available.`);
-          return;
-        }
-        item.availableQtyKg -= qty;
-        item.allocatedQtyKg = (item.allocatedQtyKg || 0) + qty;
-      } else {
-        item.availableQtyKg += qty;
-        if ((item.allocatedQtyKg || 0) >= qty) {
-          item.allocatedQtyKg -= qty;
-        }
-      }
-
-      // Record in storeIssueTransactions
-      const newTx = {
-        id: `ISS-${Date.now()}`,
-        itemId: item.id,
-        itemCode: item.itemCode,
-        itemName: itemNameStr,
-        filmType: item.filmType,
-        micron: item.micron,
-        widthMm: item.widthMm,
-        category: item.category || 'Film Substrates',
-        issueType: issueType, // 'issue' | 'return'
-        jobName: issueJobName || 'General Production Floor',
-        qtyKg: qty,
-        unit: unitStr,
-        date: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
-        issuedBy: 'Store Mgr Dilip Joshi',
-        notes: issueType === 'issue'
-          ? `Issued ${qty} ${unitStr} to Job: ${issueJobName || 'Production'}`
-          : `Returned ${qty} ${unitStr} from Job: ${issueJobName || 'Production'} back to Store`,
-        barcode: item.lastBatch || `BAR-ISS-${item.id}`
-      };
-
-      const updatedTxList = [newTx, ...storeIssueTransactions];
-      setStoreIssueTransactions(updatedTxList);
-      try {
-        localStorage.setItem('samyak_erp_store_issue_transactions', JSON.stringify(updatedTxList));
-      } catch (e) {}
-
-      if (onUpdateInventory) {
-        onUpdateInventory(updatedInv);
-      }
-
-      alert(`${issueType === 'issue' ? 'Issued' : 'Returned'} ${qty} ${unitStr} of ${itemNameStr} successfully! Ledger updated.`);
+    if (!selectedInvItem || !issueQtyKg || parseFloat(issueQtyKg) <= 0) {
+      alert("Please select an inventory item and enter a valid quantity.");
+      return;
     }
 
+    const qty = parseFloat(issueQtyKg);
+    const chosenJobName = issueJobName || (activeProductionOrders[0]?.jobName || '');
+    if (!chosenJobName) {
+      alert("Please select an active production job.");
+      return;
+    }
+
+    const unitStr = selectedInvItem.unit || 'Kg';
+    const itemNameStr = selectedInvItem.itemName || `${selectedInvItem.filmType || ''} ${selectedInvItem.micron && selectedInvItem.micron !== '-' ? `${selectedInvItem.micron}µ` : ''}`.trim() || `${selectedInvItem.category || 'Store'} Item`;
+
+    if (issueType === 'issue' && (selectedInvItem.availableQtyKg || 0) < qty) {
+      alert(`Insufficient available stock! Only ${selectedInvItem.availableQtyKg || 0} ${unitStr} available.`);
+      return;
+    }
+
+    if (onStoreIssueReturn) {
+      onStoreIssueReturn({
+        item: selectedInvItem,
+        issueType: issueType,
+        qty: qty,
+        jobName: chosenJobName,
+        user: currentUser?.name || 'Store Manager',
+        notes: issueType === 'issue'
+          ? `Issued ${qty} ${unitStr} to Job: ${chosenJobName}`
+          : `Returned ${qty} ${unitStr} from Job: ${chosenJobName} back to Store`,
+        barcode: selectedInvItem.lastBatch || `BAR-ISS-${selectedInvItem.id}`
+      });
+    } else {
+      let updatedInv = [...inventory];
+      const idx = updatedInv.findIndex(i => i.id === selectedInvItem.id);
+      if (idx >= 0) {
+        const item = updatedInv[idx];
+        if (issueType === 'issue') {
+          item.availableQtyKg = Math.max(0, (item.availableQtyKg || 0) - qty);
+          item.allocatedQtyKg = (item.allocatedQtyKg || 0) + qty;
+        } else {
+          item.availableQtyKg = (item.availableQtyKg || 0) + qty;
+          item.allocatedQtyKg = Math.max(0, (item.allocatedQtyKg || 0) - qty);
+        }
+        if (onUpdateInventory) onUpdateInventory(updatedInv);
+      }
+    }
+
+    alert(`${issueType === 'issue' ? 'Issued' : 'Returned'} ${qty} ${unitStr} of ${itemNameStr} for Job "${chosenJobName}" successfully!\n\nProduction Record material consumed list and total costing have been updated.`);
     setIsIssueModalOpen(false);
+    setIssueQtyKg('');
   };
 
   // Download Physical Stock CSV Template
@@ -3110,23 +3119,46 @@ export default function InventoryManagement({
               </select>
             </div>
 
-            {issueType === 'issue' && (
-              <div className="form-group">
-                <label>Production Job Name *</label>
-                <select className="form-control" value={issueJobName} onChange={e => setIssueJobName(e.target.value)}>
-                  {(orders || []).map(o => <option key={o.id} value={o.jobName}>{o.jobName} ({o.id})</option>)}
+            <div className="form-group">
+              <label>Production Job Name *</label>
+              {activeProductionOrders.length === 0 ? (
+                <div style={{ fontSize: '0.85rem', color: '#b91c1c', padding: '10px 14px', background: '#fef2f2', borderRadius: '6px', border: '1px solid #fecaca' }}>
+                  ⚠️ No active unapproved production jobs available. Only active jobs currently in production appear here.
+                </div>
+              ) : (
+                <select 
+                  className="form-control" 
+                  value={issueJobName || activeProductionOrders[0]?.jobName || ''} 
+                  onChange={e => setIssueJobName(e.target.value)}
+                >
+                  <option value="">-- Select Active Production Job --</option>
+                  {activeProductionOrders.map(o => (
+                    <option key={o.id} value={o.jobName}>
+                      {o.jobName} ({o.id}) {o.clientName ? `- ${o.clientName}` : ''}
+                    </option>
+                  ))}
                 </select>
-              </div>
-            )}
+              )}
+            </div>
 
             <div className="form-group">
-              <label>Quantity in Kg *</label>
-              <input type="number" className="form-control" value={issueQtyKg} onChange={e => setIssueQtyKg(e.target.value)} />
+              <label>Quantity ({selectedInvItem?.unit || 'Kg'}) *</label>
+              <input 
+                type="number" 
+                className="form-control" 
+                placeholder={`Enter quantity in ${selectedInvItem?.unit || 'Kg'}`} 
+                value={issueQtyKg} 
+                onChange={e => setIssueQtyKg(e.target.value)} 
+              />
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
               <button className="btn-secondary" onClick={() => setIsIssueModalOpen(false)}>Cancel</button>
-              <button className="btn-primary" onClick={handleIssueReturnSubmit}>
+              <button 
+                className="btn-primary" 
+                onClick={handleIssueReturnSubmit}
+                disabled={activeProductionOrders.length === 0}
+              >
                 Submit {issueType === 'issue' ? 'Material Issue' : 'Material Return'}
               </button>
             </div>
@@ -3553,7 +3585,7 @@ export default function InventoryManagement({
         });
 
         // 3. Gather Manual Store Issues & Returns
-        const storeIssueLines = (storeIssueTransactions || [])
+        const storeIssueLines = (effectiveStoreIssueTransactions || [])
           .filter(tx => isItemMatch(tx, item))
           .map(tx => {
             const isIssue = tx.issueType === 'issue';

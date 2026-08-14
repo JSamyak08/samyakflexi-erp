@@ -39,6 +39,7 @@ export default function ProductionRecordManagement({
   jobMasters = [],
   cylinders = [],
   currentUser,
+  storeIssueTransactions = [],
   onSaveProductionRecord,
   onApproveProductionRecord,
   onUpdateJobMaster,
@@ -79,15 +80,6 @@ export default function ProductionRecordManagement({
 
   // Form State for creating/editing a Production Record
   const [selectedOrder, setSelectedOrder] = useState(orders[0] || null);
-  
-  const DEFAULT_6_INGREDIENTS = [
-    { id: '1', filmType: 'PET Film', micron: '12', widthMm: '1000', barcode: '', issueQtyKg: 400, returnQtyKg: 0, unitPricePerKg: 125 },
-    { id: '2', filmType: 'METPET Film', micron: '12', widthMm: '1000', barcode: '', issueQtyKg: 400, returnQtyKg: 0, unitPricePerKg: 140 },
-    { id: '3', filmType: 'Natural LD Film', micron: '35', widthMm: '1005', barcode: '', issueQtyKg: 850, returnQtyKg: 0, unitPricePerKg: 115 },
-    { id: '4', filmType: 'Ethyl Acetate (Solvent)', micron: '-', widthMm: '-', barcode: '', issueQtyKg: 55, returnQtyKg: 0, unitPricePerKg: 210 },
-    { id: '5', filmType: 'Toluene (Solvent)', micron: '-', widthMm: '-', barcode: '', issueQtyKg: 40, returnQtyKg: 0, unitPricePerKg: 185 },
-    { id: '6', filmType: 'MIBK (Solvent)', micron: '-', widthMm: '-', barcode: '', issueQtyKg: 25, returnQtyKg: 0, unitPricePerKg: 260 }
-  ];
 
   const [materialsList, setMaterialsList] = useState([]);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
@@ -96,20 +88,20 @@ export default function ProductionRecordManagement({
   // Processing Cost Per Kg (Default from Settings: ₹ 25/kg)
   const [processingCostPerKg, setProcessingCostPerKg] = useState(25);
 
-  // Stage-wise Production Quantities (in kg)
-  const [qtyFirstPassL1, setQtyFirstPassL1] = useState(1040);
+  // Stage-wise Production Quantities (in kg) — Clean 0 defaults for data entry
+  const [qtyFirstPassL1, setQtyFirstPassL1] = useState(0);
   const [qtySecondPassL2, setQtySecondPassL2] = useState(0);
-  const [qtyInspection, setQtyInspection] = useState(1010);
-  const [qtySlitting, setQtySlitting] = useState(1005);
-  const [qtyDispatch, setQtyDispatch] = useState(1000);
+  const [qtyInspection, setQtyInspection] = useState(0);
+  const [qtySlitting, setQtySlitting] = useState(0);
+  const [qtyDispatch, setQtyDispatch] = useState(0);
 
-  // Stage-wise Scrap & Wastage Breakdown fields (in kg)
-  const [printingPlainSettingWastageKg, setPrintingPlainSettingWastageKg] = useState(15.0);
-  const [printingWastageKg, setPrintingWastageKg] = useState(12.5);
-  const [laminationPlainSubstrateWastageKg, setLaminationPlainSubstrateWastageKg] = useState(10.0);
-  const [printedWastageKg, setPrintedWastageKg] = useState(8.0);
-  const [laminateWastageKg, setLaminateWastageKg] = useState(7.0);
-  const [trimWastageKg, setTrimWastageKg] = useState(14.0);
+  // Stage-wise Scrap & Wastage Breakdown fields (in kg) — Clean 0 defaults for data entry
+  const [printingPlainSettingWastageKg, setPrintingPlainSettingWastageKg] = useState(0);
+  const [printingWastageKg, setPrintingWastageKg] = useState(0);
+  const [laminationPlainSubstrateWastageKg, setLaminationPlainSubstrateWastageKg] = useState(0);
+  const [printedWastageKg, setPrintedWastageKg] = useState(0);
+  const [laminateWastageKg, setLaminateWastageKg] = useState(0);
+  const [trimWastageKg, setTrimWastageKg] = useState(0);
 
   // Scrap Disposal Transactions State
   const [scrapDisposals, setScrapDisposals] = useState(() => {
@@ -130,73 +122,124 @@ export default function ProductionRecordManagement({
 
   const [recordNotes, setRecordNotes] = useState('');
 
-  // Helper to open 'Start Production' for a specific punched job/order — pulls strictly from Job Master
+  // Helper to open 'Start Production' for a specific punched job/order — pulls actual store issues & Job Master
   const handleStartProductionForOrder = (ord) => {
     setSelectedOrder(ord);
-    setSelectedRecord(null);
 
-    // Match Job Master (authoritative specification benchmark)
-    const matchedJM = jobMasters.find(j => 
-      (j.jobName || '').toLowerCase().trim() === (ord.jobName || '').toLowerCase().trim() ||
-      (j.skuCode || '').toLowerCase().trim() === (ord.id || '').toLowerCase().trim()
+    // 1. Check if an existing production record already exists for this order/job
+    const existingRec = (productionRecords || []).find(r => 
+      r.orderId === ord.id || (r.jobName && r.jobName.trim().toLowerCase() === (ord.jobName || '').trim().toLowerCase())
     );
 
-    let initialMaterials = [];
-
-    // Pre-populate raw materials directly from Job Master layers
-    if (matchedJM && matchedJM.layers && matchedJM.layers.length > 0) {
-      const targetWidth = matchedJM.printWidthMm ? String(matchedJM.printWidthMm) : (ord.printWidthMm ? String(ord.printWidthMm) : '1000');
-      initialMaterials = matchedJM.layers.map((l, idx) => ({
-        id: String(idx + 1),
-        filmType: l.filmType || 'PET Film',
-        micron: l.micron ? String(l.micron) : '12',
-        widthMm: targetWidth,
-        barcode: '',
-        issueQtyKg: Math.round(((ord.orderQtyKg || 1000) * 0.45) * 1.05),
-        returnQtyKg: 0,
-        unitPricePerKg: DEFAULT_DAILY_RATES[l.filmType] || 125,
-        // Benchmark Job Master Specs for Spec Variation Calculation
-        jobMasterFilmType: l.filmType || 'PET Film',
-        jobMasterMicron: l.micron ? Number(l.micron) : 12,
-        jobMasterWidthMm: Number(targetWidth) || 1000
-      }));
-    } else if (ord.materialRequirements && ord.materialRequirements.length > 0) {
-      initialMaterials = ord.materialRequirements.map((req, idx) => ({
-        id: String(idx + 1),
-        filmType: req.filmType,
-        micron: req.micron ? String(req.micron) : '12',
-        widthMm: req.widthMm ? String(req.widthMm) : '1000',
-        barcode: '',
-        issueQtyKg: Math.round((req.qtyKg || 500) * 1.05),
-        returnQtyKg: 0,
-        unitPricePerKg: DEFAULT_DAILY_RATES[req.filmType] || 120,
-        jobMasterFilmType: req.filmType,
-        jobMasterMicron: req.micron ? Number(req.micron) : 12,
-        jobMasterWidthMm: req.widthMm ? Number(req.widthMm) : 1000
-      }));
-    } else {
-      // Benchmark Fallback: 2 Substrate Layers
-      initialMaterials = [
-        { id: '1', filmType: 'PET Film', micron: '12', widthMm: '1000', barcode: '', issueQtyKg: 400, returnQtyKg: 0, unitPricePerKg: 125, jobMasterFilmType: 'PET Film', jobMasterMicron: 12, jobMasterWidthMm: 1000 },
-        { id: '2', filmType: 'METPET Film', micron: '12', widthMm: '1000', barcode: '', issueQtyKg: 400, returnQtyKg: 0, unitPricePerKg: 140, jobMasterFilmType: 'METPET Film', jobMasterMicron: 12, jobMasterWidthMm: 1000 }
-      ];
+    if (existingRec) {
+      setSelectedRecord(existingRec);
+      setMaterialsList(Array.isArray(existingRec.materialsList) ? existingRec.materialsList : []);
+      setQtyFirstPassL1(existingRec.qtyFirstPassL1 || 0);
+      setQtySecondPassL2(existingRec.qtySecondPassL2 || 0);
+      setQtyInspection(existingRec.qtyInspection || 0);
+      setQtySlitting(existingRec.qtySlitting || 0);
+      setQtyDispatch(existingRec.qtyDispatch || 0);
+      setProcessingCostPerKg(existingRec.processingCostPerKg || 25);
+      setPrintingPlainSettingWastageKg(existingRec.printingPlainSettingWastageKg || 0);
+      setPrintingWastageKg(existingRec.printingWastageKg || 0);
+      setLaminationPlainSubstrateWastageKg(existingRec.laminationPlainSubstrateWastageKg || 0);
+      setPrintedWastageKg(existingRec.printedWastageKg || 0);
+      setLaminateWastageKg(existingRec.laminateWastageKg || 0);
+      setTrimWastageKg(existingRec.trimWastageKg || 0);
+      setRecordNotes(existingRec.notes || '');
+      setActiveTab('new_record');
+      return;
     }
 
-    // Always include standard process solvents/adhesives relevant for lamination & printing
-    const processIngredients = [
-      { id: `proc-1`, filmType: 'Ethyl Acetate (Solvent)', micron: '-', widthMm: '-', barcode: '', issueQtyKg: 45, returnQtyKg: 0, unitPricePerKg: 210, jobMasterFilmType: 'Ethyl Acetate (Solvent)', jobMasterMicron: 0, jobMasterWidthMm: 0 },
-      { id: `proc-2`, filmType: 'Liquid Inks & Solvents', micron: '-', widthMm: '-', barcode: '', issueQtyKg: 35, returnQtyKg: 0, unitPricePerKg: 185, jobMasterFilmType: 'Liquid Inks & Solvents', jobMasterMicron: 0, jobMasterWidthMm: 0 }
-    ];
+    setSelectedRecord(null);
 
-    setMaterialsList([...initialMaterials, ...processIngredients]);
+    // 2. Check if materials have already been issued / returned from Store for this job
+    const jobTxList = (storeIssueTransactions || []).filter(tx => 
+      (tx.jobName && tx.jobName.trim().toLowerCase() === (ord.jobName || '').trim().toLowerCase())
+    );
 
-    // Stage Production Qty Pre-fills
-    const ordQty = Number(ord.orderQtyKg) || 1000;
-    setQtyFirstPassL1(Math.round(ordQty * 1.04));
-    setQtySecondPassL2(matchedJM?.layers?.length >= 3 ? Math.round(ordQty * 1.02) : 0);
-    setQtyInspection(Math.round(ordQty * 1.01));
-    setQtySlitting(Math.round(ordQty * 1.005));
-    setQtyDispatch(ordQty);
+    if (jobTxList.length > 0) {
+      // Group by item to create material list from actual store issues
+      const matMap = new Map();
+      jobTxList.forEach(tx => {
+        const key = tx.itemId || tx.itemName || tx.filmType;
+        const rate = parseFloat(tx.unitPrice) || 0;
+        const isIssue = tx.issueType === 'issue';
+        const qty = parseFloat(tx.qtyKg) || 0;
+
+        if (matMap.has(key)) {
+          const entry = matMap.get(key);
+          if (isIssue) entry.issueQtyKg += qty;
+          else entry.returnQtyKg += qty;
+          entry.netConsumedQtyKg = Math.max(0, entry.issueQtyKg - entry.returnQtyKg);
+          entry.totalMaterialCost = entry.netConsumedQtyKg * entry.unitPricePerKg;
+        } else {
+          const issueQty = isIssue ? qty : 0;
+          const returnQty = isIssue ? 0 : qty;
+          const net = Math.max(0, issueQty - returnQty);
+          matMap.set(key, {
+            id: `mat-${Date.now()}-${matMap.size + 1}`,
+            itemId: tx.itemId,
+            itemCode: tx.itemCode || tx.itemId,
+            itemName: tx.itemName,
+            filmType: tx.filmType || tx.itemName,
+            micron: tx.micron || '-',
+            widthMm: tx.widthMm || '-',
+            unit: tx.unit || 'Kg',
+            barcode: tx.barcode || '',
+            issueQtyKg: issueQty,
+            returnQtyKg: returnQty,
+            netConsumedQtyKg: net,
+            unitPricePerKg: rate,
+            totalMaterialCost: net * rate,
+            jobMasterFilmType: tx.filmType || tx.itemName,
+            jobMasterMicron: tx.micron && tx.micron !== '-' ? Number(tx.micron) : 0,
+            jobMasterWidthMm: tx.widthMm && tx.widthMm !== '-' ? Number(tx.widthMm) : 0
+          });
+        }
+      });
+      setMaterialsList(Array.from(matMap.values()));
+    } else {
+      // Check Job Master layers for structure benchmark, with clean 0 initial quantities
+      const matchedJM = jobMasters.find(j => 
+        (j.jobName || '').toLowerCase().trim() === (ord.jobName || '').toLowerCase().trim() ||
+        (j.skuCode || '').toLowerCase().trim() === (ord.id || '').toLowerCase().trim()
+      );
+
+      if (matchedJM && matchedJM.layers && matchedJM.layers.length > 0) {
+        const targetWidth = matchedJM.printWidthMm ? String(matchedJM.printWidthMm) : (ord.printWidthMm ? String(ord.printWidthMm) : '');
+        const initialMaterials = matchedJM.layers.map((l, idx) => ({
+          id: String(idx + 1),
+          filmType: l.filmType || 'PET Film',
+          micron: l.micron ? String(l.micron) : '',
+          widthMm: targetWidth,
+          barcode: '',
+          issueQtyKg: 0,
+          returnQtyKg: 0,
+          unitPricePerKg: parseFloat(l.rate) || DEFAULT_DAILY_RATES[l.filmType] || 125,
+          jobMasterFilmType: l.filmType || 'PET Film',
+          jobMasterMicron: l.micron ? Number(l.micron) : 0,
+          jobMasterWidthMm: Number(targetWidth) || 0
+        }));
+        setMaterialsList(initialMaterials);
+      } else {
+        setMaterialsList([]);
+      }
+    }
+
+    // Initialize Stage Production Quantities cleanly (zeroed)
+    setQtyFirstPassL1(0);
+    setQtySecondPassL2(0);
+    setQtyInspection(0);
+    setQtySlitting(0);
+    setQtyDispatch(0);
+    setPrintingPlainSettingWastageKg(0);
+    setPrintingWastageKg(0);
+    setLaminationPlainSubstrateWastageKg(0);
+    setPrintedWastageKg(0);
+    setLaminateWastageKg(0);
+    setTrimWastageKg(0);
+    setRecordNotes('');
 
     setActiveTab('new_record');
   };
@@ -218,7 +261,7 @@ export default function ProductionRecordManagement({
         micron: '12',
         widthMm: '1000',
         barcode: '',
-        issueQtyKg: 100,
+        issueQtyKg: 0,
         returnQtyKg: 0,
         unitPricePerKg: 125,
         jobMasterFilmType: 'PET Film',
