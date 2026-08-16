@@ -79,17 +79,32 @@ export default function BarcodePrinterModal({ roll, rolls, onClose }) {
       'Doctor Blades', 'Doctor Blades & Wipers', 'Inks & Solvents',
       'Printing Inks & Toners', 'Chemicals & Solvents', 'Adhesives & Hardener',
       'Rollers & Sleeves', 'Machine Spare Parts', 'Lubricants & Oils',
-      'Tapes & Consumables', 'Safety Gear (PPE)', 'General Store', 'CONSUMABLE_ITEM'
+      'Tapes & Consumables', 'Safety Gear (PPE)', 'General Store', 'CONSUMABLE_ITEM', 'Packaging & Cores'
     ];
 
+    const itemNameLower = String(r.itemName || '').toLowerCase();
+    const catLower = String(r.category || '').toLowerCase();
+
+    const KNOWN_NON_FILM_KEYWORDS = [
+      'acetate', 'solvent', 'ink', 'cyan', 'magenta', 'yellow', 'black', 'white',
+      'blade', 'wiper', 'adhesive', 'hardener', 'tape', 'core', 'roller', 'sleeve',
+      'lubricant', 'oil', 'gear', 'ppe', 'glove', 'mask', 'chemical', 'cylinder',
+      'thinner', 'alcohol', 'toluene', 'varnish'
+    ];
+
+    const isNonFilmByKeyword = KNOWN_NON_FILM_KEYWORDS.some(kw => 
+      itemNameLower.includes(kw) || catLower.includes(kw)
+    );
+
     const isExplicitNonFilm = nonFilmCategories.includes(r.category) || 
-      (r.unit && !['kg', 'Kg', 'KG'].includes(String(r.unit).trim())) ||
+      isNonFilmByKeyword ||
       r.rollType === 'CONSUMABLE_ITEM';
+
+    const hasValidFilmSpecs = parseFloat(r.micron) > 0 && parseFloat(r.widthMm) > 0 && r.micron !== '-' && r.widthMm !== '-';
 
     const isFilmItem = !isExplicitNonFilm && 
       (r.rollType === 'RAW_MATERIAL' || r.category === 'Film Substrates') && 
-      r.micron > 0 && 
-      r.widthMm > 0;
+      hasValidFilmSpecs;
 
     const displayUnit = r.unit || r.uom || (isFilmItem ? 'kg' : 'Pcs');
     const displayQty = r.netWeightKg ?? r.availableWeightKg ?? r.qty ?? 0;

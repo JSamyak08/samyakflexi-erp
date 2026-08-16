@@ -345,10 +345,38 @@ export function sanitizeInventoryItem(rawItem) {
     } catch (e) {}
   }
 
-  const category = rawItem.category || extractedMeta.category || 'Film Substrates';
+  // 1. Resolve true category with priority to extracted metadata
+  let category = extractedMeta.category || rawItem.category;
+  const lowerName = rawName.toLowerCase();
+
+  // If category is unspecified or defaulted to 'Film Substrates', check keywords
+  if (!category || category === 'Film Substrates' || category === 'Film') {
+    if (lowerName.includes('acetate') || lowerName.includes('solvent') || lowerName.includes('thinner') || lowerName.includes('alcohol') || lowerName.includes('chemical') || lowerName.includes('toluene') || lowerName.includes('ipa')) {
+      category = 'Chemicals & Solvents';
+    } else if (lowerName.includes('ink') || lowerName.includes('cyan') || lowerName.includes('magenta') || lowerName.includes('yellow') || lowerName.includes('varnish') || lowerName.includes('toner')) {
+      category = 'Printing Inks & Toners';
+    } else if (lowerName.includes('adhesive') || lowerName.includes('hardener') || lowerName.includes('glue') || lowerName.includes('polyurethane')) {
+      category = 'Adhesives & Hardener';
+    } else if (lowerName.includes('blade') || lowerName.includes('wiper')) {
+      category = 'Doctor Blades & Wipers';
+    } else if (lowerName.includes('tape') || lowerName.includes('core') || lowerName.includes('packaging')) {
+      category = 'Tapes & Consumables';
+    } else if (lowerName.includes('sleeve') || lowerName.includes('roller')) {
+      category = 'Rollers & Sleeves';
+    } else if (lowerName.includes('oil') || lowerName.includes('lubricant') || lowerName.includes('grease')) {
+      category = 'Lubricants & Oils';
+    } else if (lowerName.includes('spare') || lowerName.includes('bearing') || lowerName.includes('gear') || lowerName.includes('sensor')) {
+      category = 'Machine Spare Parts';
+    } else if (lowerName.includes('glove') || lowerName.includes('mask') || lowerName.includes('ppe') || lowerName.includes('helmet')) {
+      category = 'Safety Gear (PPE)';
+    } else {
+      category = category || 'Film Substrates';
+    }
+  }
+
   const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films';
 
-  const filmType = extractedMeta.filmType || rawItem.filmType || (isFilm ? (rawName ? rawName.split(' ')[0] : 'PET') : '');
+  const filmType = isFilm ? (extractedMeta.filmType || rawItem.filmType || (rawName ? rawName.split(' ')[0] : 'PET')) : '';
   const micron = isFilm 
     ? ((extractedMeta.micron !== undefined && extractedMeta.micron !== null && extractedMeta.micron !== '-') ? extractedMeta.micron : (rawItem.micron && rawItem.micron !== '-' ? rawItem.micron : 12)) 
     : '-';

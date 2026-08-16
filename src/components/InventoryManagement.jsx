@@ -3991,7 +3991,7 @@ export default function InventoryManagement({
       )}
       {/* Raw Material Stock Ledger & Barcode Tracking Modal */}
       {selectedItemForPurchaseHistory && (() => {
-        const item = selectedItemForPurchaseHistory;
+        const item = sanitizeInventoryItem(selectedItemForPurchaseHistory);
         const unitStr = item.unit || 'Kg';
 
         // Universal Item Matcher for Films, Inks, Solvents, Adhesives, Blades, Tapes, PPE & Spares
@@ -4543,20 +4543,21 @@ export default function InventoryManagement({
                                       type="button" 
                                       style={{ background: 'none', border: 'none', color: '#059669', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
                                       onClick={() => {
-                                        const isFilm = item.category === 'Film Substrates' || item.filmType?.toLowerCase().includes('pet') || item.filmType?.toLowerCase().includes('bopp') || item.filmType?.toLowerCase().includes('ldpe') || item.filmType?.toLowerCase().includes('cpp');
-                                        setSelectedRollForBarcodeModal({
-                                          barcodeId: tx.barcode,
-                                          rollType: isFilm ? 'RAW_MATERIAL' : 'CONSUMABLE_ITEM',
-                                          itemName: item.itemName || (isFilm ? `${item.filmType} Film (${item.micron}µ x ${item.widthMm}mm)` : `${item.category || 'Stock Item'}`),
-                                          category: item.category || (isFilm ? 'Film Substrates' : 'General Store'),
-                                          unit: item.unit || (isFilm ? 'Kg' : 'Boxes'),
-                                          micron: isFilm ? (parseFloat(item.micron) || 0) : 0,
-                                          widthMm: isFilm ? (parseFloat(item.widthMm) || 0) : 0,
-                                          netWeightKg: tx.inwardQtyKg || tx.outwardQtyKg || 0,
-                                          vendorName: tx.partyName,
-                                          stationId: 'SCALE_1_INWARD'
-                                        });
-                                      }}
+                                         const hasNumericSpecs = parseFloat(item.micron) > 0 && parseFloat(item.widthMm) > 0 && item.micron !== '-' && item.widthMm !== '-';
+                                         const isFilm = (item.category === 'Film Substrates' || item.category === 'Film') && hasNumericSpecs;
+                                         setSelectedRollForBarcodeModal({
+                                           barcodeId: tx.barcode,
+                                           rollType: isFilm ? 'RAW_MATERIAL' : 'CONSUMABLE_ITEM',
+                                           itemName: item.itemName || (isFilm ? `${item.filmType} Film (${item.micron}µ x ${item.widthMm}mm)` : `${item.category || 'Stock Item'}`),
+                                           category: item.category || (isFilm ? 'Film Substrates' : 'General Store'),
+                                           unit: item.unit || (isFilm ? 'Kg' : 'Kg'),
+                                           micron: isFilm ? (parseFloat(item.micron) || 0) : '-',
+                                           widthMm: isFilm ? (parseFloat(item.widthMm) || 0) : '-',
+                                           netWeightKg: tx.inwardQtyKg || tx.outwardQtyKg || 0,
+                                           vendorName: tx.partyName || item.lastVendor,
+                                           stationId: 'SCALE_1_INWARD'
+                                         });
+                                       }}
                                       title="Print Barcode Sticker"
                                     >
                                       <Printer size={13} />
