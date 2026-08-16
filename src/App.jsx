@@ -732,6 +732,41 @@ export default function App() {
           });
           const merged = Array.from(map.values());
           safeLocalStorageSet('samyak_erp_inks', merged);
+
+          // Synchronize each ink into inventory under category 'Printing Inks & Toners'
+          setInventory(prevInv => {
+            let updatedInv = [...(prevInv || [])];
+            let modified = false;
+            merged.forEach(ink => {
+              const invId = ink.productCode || ink.id;
+              const exists = updatedInv.some(i => i.id === invId || i.itemCode === ink.productCode);
+              if (!exists) {
+                const newInvItem = sanitizeInventoryItem({
+                  id: invId,
+                  itemCode: ink.productCode || invId,
+                  itemName: `${ink.manufacturer || 'DIC Inks'} ${ink.shade} (${ink.inkType || 'Reverse Ink'})`,
+                  category: 'Printing Inks & Toners',
+                  unit: 'Kg',
+                  availableQtyKg: Number(ink.stockQtyKg !== undefined ? ink.stockQtyKg : 200),
+                  allocatedQtyKg: 0,
+                  reorderLevelKg: Number(ink.reorderLevelKg || 50),
+                  unitPrice: Number(ink.pricePerKg || 300),
+                  purchaseRatePerKg: Number(ink.pricePerKg || 300),
+                  location: 'Ink Store Room',
+                  lastVendor: ink.manufacturer || ink.supplierName || 'DIC Inks',
+                  lastBatch: `LOT-${ink.productCode}`,
+                  micron: '-',
+                  widthMm: '-'
+                });
+                updatedInv.push(newInvItem);
+                saveInventoryItemToSupabase(newInvItem).catch(console.warn);
+                modified = true;
+              }
+            });
+            if (modified) safeLocalStorageSet('samyak_erp_inventory', updatedInv);
+            return modified ? updatedInv : prevInv;
+          });
+
           return merged;
         });
       }
@@ -1743,9 +1778,39 @@ export default function App() {
     }
   };
 
-  // Ink Management Handlers
+  // Ink Management Handlers & Inventory Synchronization
+  const syncInkToInventory = (ink, overrideStock = null) => {
+    const invId = ink.productCode || ink.id;
+    const invItem = {
+      id: invId,
+      itemCode: ink.productCode || invId,
+      itemName: `${ink.manufacturer || 'DIC Inks'} ${ink.shade} (${ink.inkType || 'Reverse Ink'})`,
+      category: 'Printing Inks & Toners',
+      unit: 'Kg',
+      availableQtyKg: overrideStock !== null ? Number(overrideStock) : (ink.stockQtyKg !== undefined ? Number(ink.stockQtyKg) : 200),
+      allocatedQtyKg: 0,
+      reorderLevelKg: Number(ink.reorderLevelKg || 50),
+      unitPrice: Number(ink.pricePerKg || 300),
+      purchaseRatePerKg: Number(ink.pricePerKg || 300),
+      location: 'Ink Store Room',
+      lastVendor: ink.manufacturer || ink.supplierName || 'DIC Inks',
+      lastBatch: `LOT-${ink.productCode}`,
+      micron: '-',
+      widthMm: '-'
+    };
+    setInventory(prev => {
+      const exists = prev.some(i => i.id === invId || i.itemCode === ink.productCode);
+      const updated = exists 
+        ? prev.map(i => (i.id === invId || i.itemCode === ink.productCode) ? { ...i, ...invItem, availableQtyKg: overrideStock !== null ? Number(overrideStock) : i.availableQtyKg } : i)
+        : [invItem, ...prev];
+      return updated.map(sanitizeInventoryItem);
+    });
+    saveInventoryItemToSupabase(invItem).catch(console.warn);
+  };
+
   const handleAddInk = async (newInk) => {
     setInks(prev => [newInk, ...prev.filter(i => i.id !== newInk.id)]);
+    syncInkToInventory(newInk, newInk.stockQtyKg);
     logAudit('CREATE', 'Ink Management', `Added ink product code "${newInk.productCode}" - ${newInk.shade} (${newInk.inkType}, ${newInk.solidContentPct}% solid)`, newInk.id);
     try {
       await saveInkToSupabase(newInk);
@@ -1756,6 +1821,7 @@ export default function App() {
 
   const handleUpdateInk = async (updatedInk) => {
     setInks(prev => prev.map(i => i.id === updatedInk.id ? updatedInk : i));
+    syncInkToInventory(updatedInk);
     logAudit('UPDATE', 'Ink Management', `Updated ink product code "${updatedInk.productCode}" - ${updatedInk.shade}`, updatedInk.id);
     try {
       await saveInkToSupabase(updatedInk);
@@ -1766,6 +1832,7 @@ export default function App() {
 
   const handleUpdateInkPrice = async (updatedInk, newPrice, reason) => {
     setInks(prev => prev.map(i => i.id === updatedInk.id ? updatedInk : i));
+    syncInkToInventory({ ...updatedInk, pricePerKg: newPrice });
     logAudit('UPDATE', 'Ink Management', `Updated rate for ink "${updatedInk.productCode}" (${updatedInk.shade}) to ₹${newPrice}/kg. Reason: ${reason}`, updatedInk.id);
     try {
       await saveInkToSupabase(updatedInk);
@@ -1776,9 +1843,11 @@ export default function App() {
 
   const handleDeleteInk = async (inkId) => {
     setInks(prev => prev.filter(i => i.id !== inkId));
+    setInventory(prev => prev.filter(i => i.id !== inkId && i.itemCode !== inkId));
     logAudit('DELETE', 'Ink Management', `Deleted ink product code ${inkId}`, inkId);
     try {
       await deleteInkFromSupabase(inkId);
+      await deleteInventoryItemFromSupabase(inkId);
     } catch (err) {
       console.warn("[Sync Notice] Ink deleted locally. Supabase notice:", err);
     }
@@ -2335,6 +2404,10 @@ export default function App() {
         {activeTab === 'ink_management' && (
           <InkManagement 
             inks={inks}
+            inventory={inventory}
+            grns={grns}
+            storeIssueTransactions={storeIssueTransactions}
+            productionRecords={productionRecords}
             vendors={vendors}
             currentUser={currentUser}
             onAddInk={handleAddInk}
@@ -2342,6 +2415,7 @@ export default function App() {
             onDeleteInk={handleDeleteInk}
             onUpdateInkPrice={handleUpdateInkPrice}
             onSaveOrder={handleAddOrder}
+            onNavigateTab={handleTabChange}
           />
         )}
 

@@ -37,13 +37,18 @@ import { notifyPurchaseOrderIssued } from '../services/emailService';
 
 export default function InkManagement({
   inks = [],
+  inventory = [],
+  grns = [],
+  storeIssueTransactions = [],
+  productionRecords = [],
   vendors = [],
   currentUser,
   onAddInk,
   onUpdateInk,
   onDeleteInk,
   onUpdateInkPrice,
-  onSaveOrder
+  onSaveOrder,
+  onNavigateTab
 }) {
   const isAuthorized = currentUser?.role === 'Admin' || 
                        currentUser?.role === 'Plant Manager' || 
@@ -67,7 +72,7 @@ export default function InkManagement({
   const [priceUpdateInk, setPriceUpdateInk] = useState(null);
   const [deleteConfirmInk, setDeleteConfirmInk] = useState(null);
   const [activePoPdfData, setActivePoPdfData] = useState(null);
-  const [stockAdjustInk, setStockAdjustInk] = useState(null);
+  const [selectedInkForHistory, setSelectedInkForHistory] = useState(null);
   const [bulkParsedInks, setBulkParsedInks] = useState([]);
   const [isBulkPreviewModalOpen, setIsBulkPreviewModalOpen] = useState(false);
 
@@ -649,9 +654,60 @@ export default function InkManagement({
     }
   };
 
+  // Enriched Inks combining Technical Formulation with Live Inventory Stock & Transaction Logs
+  const enrichedInks = useMemo(() => {
+    return (inks || []).map(ink => {
+      const invItem = (inventory || []).find(i => 
+        (i.id && (i.id === ink.productCode || i.id === ink.id)) ||
+        (i.itemCode && (i.itemCode === ink.productCode || i.itemCode === ink.id)) ||
+        ((i.category === 'Printing Inks & Toners' || i.category === 'Inks & Solvents') && 
+         i.itemName && ink.shade && i.itemName.toLowerCase().includes(ink.shade.toLowerCase()))
+      );
+
+      const liveStock = invItem ? Number(invItem.availableQtyKg || 0) : Number(ink.stockQtyKg || 0);
+      const allocatedStock = invItem ? Number(invItem.allocatedQtyKg || 0) : 0;
+      const reorderLevel = invItem?.reorderLevelKg !== undefined ? Number(invItem.reorderLevelKg) : Number(ink.reorderLevelKg || 50);
+      const livePrice = invItem?.unitPrice !== undefined ? Number(invItem.unitPrice) : Number(ink.pricePerKg || 300);
+      const isLow = liveStock < reorderLevel;
+
+      // Find matching GRNs for this ink
+      const matchingGRNs = (grns || []).filter(g => 
+        (g.itemId && (g.itemId === ink.productCode || g.itemId === ink.id)) ||
+        (g.itemName && ink.shade && g.itemName.toLowerCase().includes(ink.shade.toLowerCase()))
+      );
+
+      // Find matching Job Store Issue Consumptions for this ink
+      const matchingJobIssues = (storeIssueTransactions || []).filter(tx => 
+        (tx.itemId && (tx.itemId === ink.productCode || tx.itemId === ink.id)) ||
+        (tx.itemCode && (tx.itemCode === ink.productCode || tx.itemCode === ink.id)) ||
+        (tx.itemName && ink.shade && tx.itemName.toLowerCase().includes(ink.shade.toLowerCase()))
+      );
+
+      const totalInwardQty = matchingGRNs.reduce((sum, g) => sum + (Number(g.netWeightKg) || 0), 0);
+      const totalJobConsumedQty = matchingJobIssues.filter(t => t.issueType === 'issue').reduce((sum, t) => sum + (Number(t.qtyKg) || 0), 0);
+      const totalJobReturnedQty = matchingJobIssues.filter(t => t.issueType === 'return').reduce((sum, t) => sum + (Number(t.qtyKg) || 0), 0);
+      const netJobConsumedQty = Math.max(0, totalJobConsumedQty - totalJobReturnedQty);
+
+      return {
+        ...ink,
+        stockQtyKg: liveStock,
+        allocatedQtyKg: allocatedStock,
+        reorderLevelKg: reorderLevel,
+        pricePerKg: livePrice,
+        isLowStock: isLow,
+        linkedInvItem: invItem || null,
+        matchingGRNs,
+        matchingJobIssues,
+        totalInwardQty,
+        netJobConsumedQty,
+        valuationRs: liveStock * livePrice
+      };
+    });
+  }, [inks, inventory, grns, storeIssueTransactions]);
+
   // Filtering Ink Directory
   const filteredInks = useMemo(() => {
-    return (inks || []).filter(i => {
+    return (enrichedInks || []).filter(i => {
       const matchSearch = (i.productCode || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                           (i.shade || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                           (i.manufacturer || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -660,20 +716,19 @@ export default function InkManagement({
       const matchType = filterType === 'All' || i.inkType === filterType;
       const matchSupplier = filterSupplier === 'All' || String(i.supplierId) === String(filterSupplier);
       
-      const isLow = (parseFloat(i.stockQtyKg) || 0) < (parseFloat(i.reorderLevelKg) || 0);
       const matchStock = filterStockStatus === 'All' || 
-                         (filterStockStatus === 'Low Stock' && isLow) || 
-                         (filterStockStatus === 'In Stock' && !isLow);
+                         (filterStockStatus === 'Low Stock' && i.isLowStock) || 
+                         (filterStockStatus === 'In Stock' && !i.isLowStock);
 
       return matchSearch && matchType && matchSupplier && matchStock;
     });
-  }, [inks, searchTerm, filterType, filterSupplier, filterStockStatus]);
+  }, [enrichedInks, searchTerm, filterType, filterSupplier, filterStockStatus]);
 
   const pagination = usePagination(filteredInks, 10);
 
   // Surface Inks vs Reverse Inks Division Lists
-  const surfaceInks = useMemo(() => (inks || []).filter(i => i.inkType === 'Surface Ink'), [inks]);
-  const reverseInks = useMemo(() => (inks || []).filter(i => i.inkType === 'Reverse Ink'), [inks]);
+  const surfaceInks = useMemo(() => (enrichedInks || []).filter(i => i.inkType === 'Surface Ink'), [enrichedInks]);
+  const reverseInks = useMemo(() => (enrichedInks || []).filter(i => i.inkType === 'Reverse Ink'), [enrichedInks]);
 
   const surfaceStockKg = useMemo(() => (surfaceInks || []).reduce((a, b) => a + (parseFloat(b.stockQtyKg) || 0), 0), [surfaceInks]);
   const surfaceValuation = useMemo(() => (surfaceInks || []).reduce((a, b) => a + ((parseFloat(b.stockQtyKg) || 0) * (parseFloat(b.pricePerKg) || 0)), 0), [surfaceInks]);
@@ -682,7 +737,7 @@ export default function InkManagement({
   const reverseValuation = useMemo(() => (reverseInks || []).reduce((a, b) => a + ((parseFloat(b.stockQtyKg) || 0) * (parseFloat(b.pricePerKg) || 0)), 0), [reverseInks]);
 
   const totalStockKg = surfaceStockKg + reverseStockKg;
-  const lowStockCount = useMemo(() => (inks || []).filter(i => (parseFloat(i.stockQtyKg) || 0) < (parseFloat(i.reorderLevelKg) || 0)).length, [inks]);
+  const lowStockCount = useMemo(() => (enrichedInks || []).filter(i => i.isLowStock).length, [enrichedInks]);
 
   // Overall Average 100% Solid Equivalent Cost calculation
   const overallAvgSolidEquivalentCost = useMemo(() => {
@@ -1112,6 +1167,15 @@ export default function InkManagement({
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <button
                               className="btn-secondary"
+                              style={{ padding: '4px 8px', fontSize: '0.75rem', color: '#4f46e5' }}
+                              onClick={() => setSelectedInkForHistory(ink)}
+                              title="View Inwards & Job Consumption Logs for this ink"
+                            >
+                              <FileText size={12} /> Logs
+                            </button>
+
+                            <button
+                              className="btn-secondary"
                               style={{ padding: '4px 8px', fontSize: '0.75rem' }}
                               onClick={() => openPriceUpdateModal(ink)}
                               title="Update Supplier Rate"
@@ -1365,11 +1429,51 @@ export default function InkManagement({
       )}
 
       {/* =================================================================== */}
-      {/* SUB-TAB 3: BIRD'S EYE VIEW STOCK OVERVIEW (SURFACE VS REVERSE INKS) */}
+      {/* SUB-TAB 3: LIVE INVENTORY STOCK & JOB CONSUMPTION AUDIT */}
       {/* =================================================================== */}
       {activeSubTab === 'stock' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           
+          {/* Centralized Inventory Sync Header Banner */}
+          <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '20px 24px', borderRadius: '12px', color: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', border: '1px solid #334155' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                <Layers style={{ color: '#818cf8' }} size={22} />
+                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: '800', color: '#ffffff' }}>Centralized Inventory & Production Traceability</h3>
+              </div>
+              <p style={{ margin: 0, fontSize: '0.82rem', color: '#94a3b8' }}>
+                All Inks are live-connected with the Inventory module. Inwards (GRN), Reserve Stock Levels, Purchase Orders (PO), Job Issuance/Return, and Physical Stock Reconciliations are managed in the Inventory section.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button 
+                type="button"
+                className="btn-primary" 
+                style={{ background: '#059669', borderColor: '#059669', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', padding: '8px 14px' }}
+                onClick={() => onNavigateTab && onNavigateTab('inventory')}
+              >
+                <Plus size={15} /> Inward Ink via GRN
+              </button>
+              <button 
+                type="button"
+                className="btn-primary" 
+                style={{ background: '#4f46e5', borderColor: '#4f46e5', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', padding: '8px 14px' }}
+                onClick={() => onNavigateTab && onNavigateTab('inventory')}
+              >
+                <ShoppingBag size={15} /> Issue Ink PO
+              </button>
+              <button 
+                type="button"
+                className="btn-secondary" 
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', padding: '8px 14px', background: '#ffffff', color: '#0f172a' }}
+                onClick={() => onNavigateTab && onNavigateTab('inventory')}
+              >
+                <ArrowRight size={15} /> Store Issue to Job
+              </button>
+            </div>
+          </div>
+
           {/* Surface Inks vs Reverse Inks Dual Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
             
@@ -1377,10 +1481,10 @@ export default function InkManagement({
             <div className="glass-panel" style={{ padding: '24px', borderLeft: '4px solid #0284c7' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                 <div>
-                  <h3 style={{ fontSize: '1.15rem', fontWeight: '800', color: '#0369a1' }}>
-                    🖼️ Surface Inks Stock
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: '800', color: '#0369a1', margin: 0 }}>
+                    🖼️ Surface Inks Live Stock
                   </h3>
-                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Used exclusively for surface printing jobs</p>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>Used exclusively for surface printing jobs</p>
                 </div>
                 <span className="badge badge-info" style={{ fontSize: '0.8rem', padding: '4px 10px' }}>
                   {(surfaceInks || []).length} Product Codes
@@ -1406,7 +1510,7 @@ export default function InkManagement({
               {/* Surface Inks List */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '350px', overflowY: 'auto' }}>
                 {surfaceInks.map(ink => {
-                  const isLow = (parseFloat(ink.stockQtyKg) || 0) < (parseFloat(ink.reorderLevelKg) || 0);
+                  const isLow = ink.isLowStock;
                   const pct = ink.reorderLevelKg > 0 ? Math.min(100, Math.round((ink.stockQtyKg / (ink.reorderLevelKg * 2)) * 100)) : 100;
 
                   return (
@@ -1424,9 +1528,9 @@ export default function InkManagement({
                           <button 
                             className="btn-secondary" 
                             style={{ padding: '2px 6px', fontSize: '0.7rem' }}
-                            onClick={() => { setStockAdjustInk(ink); setAdjustQtyKg(''); setAdjustRemarks(''); }}
+                            onClick={() => setSelectedInkForHistory(ink)}
                           >
-                            Adjust
+                            Logs
                           </button>
                         </div>
                       </div>
@@ -1445,10 +1549,10 @@ export default function InkManagement({
             <div className="glass-panel" style={{ padding: '24px', borderLeft: '4px solid #8b5cf6' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                 <div>
-                  <h3 style={{ fontSize: '1.15rem', fontWeight: '800', color: '#6d28d9' }}>
-                    🔄 Reverse Inks Stock
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: '800', color: '#6d28d9', margin: 0 }}>
+                    🔄 Reverse Inks Live Stock
                   </h3>
-                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Used exclusively for reverse printing jobs</p>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>Used exclusively for reverse printing jobs</p>
                 </div>
                 <span className="badge badge-purple" style={{ fontSize: '0.8rem', padding: '4px 10px' }}>
                   {(reverseInks || []).length} Product Codes
@@ -1474,7 +1578,7 @@ export default function InkManagement({
               {/* Reverse Inks List */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '350px', overflowY: 'auto' }}>
                 {reverseInks.map(ink => {
-                  const isLow = (parseFloat(ink.stockQtyKg) || 0) < (parseFloat(ink.reorderLevelKg) || 0);
+                  const isLow = ink.isLowStock;
                   const pct = ink.reorderLevelKg > 0 ? Math.min(100, Math.round((ink.stockQtyKg / (ink.reorderLevelKg * 2)) * 100)) : 100;
 
                   return (
@@ -1492,9 +1596,9 @@ export default function InkManagement({
                           <button 
                             className="btn-secondary" 
                             style={{ padding: '2px 6px', fontSize: '0.7rem' }}
-                            onClick={() => { setStockAdjustInk(ink); setAdjustQtyKg(''); setAdjustRemarks(''); }}
+                            onClick={() => setSelectedInkForHistory(ink)}
                           >
-                            Adjust
+                            Logs
                           </button>
                         </div>
                       </div>
@@ -1511,21 +1615,166 @@ export default function InkManagement({
 
           </div>
 
+          {/* SECTION: RECENT INK GRN INWARD RECEIPTS */}
+          <div className="glass-panel" style={{ padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: '800', color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Download size={18} style={{ color: '#059669' }} /> Recent GRN Inward Receipts (Inks)
+                </h3>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>Live inwards registered in Inventory & Quality Control</p>
+              </div>
+              <button className="btn-secondary" style={{ fontSize: '0.78rem', padding: '6px 12px' }} onClick={() => onNavigateTab && onNavigateTab('inventory')}>
+                View All GRNs in Inventory
+              </button>
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>GRN No.</th>
+                    <th>Inward Date</th>
+                    <th>Ink / Item Description</th>
+                    <th>Supplier / Vendor</th>
+                    <th>Batch / Lot No.</th>
+                    <th>Inward Qty (Kg)</th>
+                    <th>Purchase Rate</th>
+                    <th>Total Inward Value</th>
+                    <th>QC Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(grns || []).filter(g => 
+                    (g.category === 'Printing Inks & Toners' || g.category === 'Inks & Solvents') ||
+                    (g.itemName && g.itemName.toLowerCase().includes('ink'))
+                  ).length > 0 ? (
+                    (grns || []).filter(g => 
+                      (g.category === 'Printing Inks & Toners' || g.category === 'Inks & Solvents') ||
+                      (g.itemName && g.itemName.toLowerCase().includes('ink'))
+                    ).slice(0, 10).map(g => (
+                      <tr key={g.id || g.grnNo}>
+                        <td style={{ fontWeight: '800', fontFamily: 'monospace', color: 'var(--primary-brand)' }}>{g.grnNo}</td>
+                        <td>{g.inwardDate || g.date}</td>
+                        <td style={{ fontWeight: '700' }}>{g.itemName}</td>
+                        <td>{g.vendorName || g.supplierName}</td>
+                        <td style={{ fontFamily: 'monospace' }}>{g.batchNo || g.lotNo || '-'}</td>
+                        <td style={{ fontWeight: '700', color: '#059669' }}>{g.netWeightKg || g.quantityKg || g.inwardQtyKg} kg</td>
+                        <td>₹ {g.purchaseRatePerKg || g.unitPrice || 0} / kg</td>
+                        <td style={{ fontWeight: '800' }}>₹ {((Number(g.netWeightKg || g.quantityKg || 0)) * (Number(g.purchaseRatePerKg || g.unitPrice || 0))).toLocaleString()}</td>
+                        <td>
+                          <span className="badge badge-success" style={{ fontSize: '0.7rem' }}>
+                            {g.qcStatus || 'Approved'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="9" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
+                        No ink GRN inward receipts recorded yet. All GRN inwards made in Inventory will automatically appear here.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* SECTION: RECENT JOB MATERIAL CONSUMPTIONS & RETURNS (STORE ISSUE LEDGER) */}
+          <div className="glass-panel" style={{ padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: '800', color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <TrendingUp size={18} style={{ color: '#4f46e5' }} /> Job Ink Consumptions & Returns (Store Issue Ledger)
+                </h3>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>Live job-wise material issuance and returns logged in Store Issue</p>
+              </div>
+              <button className="btn-secondary" style={{ fontSize: '0.78rem', padding: '6px 12px' }} onClick={() => onNavigateTab && onNavigateTab('inventory')}>
+                Open Store Issue Ledger
+              </button>
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Date & Time</th>
+                    <th>Type</th>
+                    <th>Job Card / Order</th>
+                    <th>Ink Product / Shade</th>
+                    <th>Inward Batch / Heat No.</th>
+                    <th>Qty (Kg)</th>
+                    <th>Rate Applied</th>
+                    <th>Total Cost (₹)</th>
+                    <th>Operator / Issued By</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(storeIssueTransactions || []).filter(tx => 
+                    (tx.category === 'Printing Inks & Toners' || tx.category === 'Inks & Solvents') ||
+                    (tx.itemName && tx.itemName.toLowerCase().includes('ink')) ||
+                    (inks || []).some(k => k.productCode === tx.itemCode || k.shade === tx.itemName)
+                  ).length > 0 ? (
+                    (storeIssueTransactions || []).filter(tx => 
+                      (tx.category === 'Printing Inks & Toners' || tx.category === 'Inks & Solvents') ||
+                      (tx.itemName && tx.itemName.toLowerCase().includes('ink')) ||
+                      (inks || []).some(k => k.productCode === tx.itemCode || k.shade === tx.itemName)
+                    ).slice(0, 10).map(tx => (
+                      <tr key={tx.id || Math.random()}>
+                        <td style={{ fontSize: '0.8rem' }}>{new Date(tx.timestamp || tx.date).toLocaleString()}</td>
+                        <td>
+                          <span className={`badge ${tx.issueType === 'return' ? 'badge-info' : 'badge-purple'}`} style={{ fontSize: '0.7rem' }}>
+                            {tx.issueType === 'return' ? '↩️ Job Return' : '📤 Job Issue'}
+                          </span>
+                        </td>
+                        <td style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>{tx.jobCardNo || tx.orderNo || 'Job Press'}</td>
+                        <td style={{ fontWeight: '700' }}>{tx.itemName}</td>
+                        <td style={{ fontFamily: 'monospace' }}>{tx.batchNo || '-'}</td>
+                        <td style={{ fontWeight: '800', color: tx.issueType === 'return' ? '#0284c7' : '#dc2626' }}>
+                          {tx.issueType === 'return' ? `+${tx.qtyKg}` : `-${tx.qtyKg}`} kg
+                        </td>
+                        <td>₹ {tx.purchaseRatePerKg || tx.unitPrice || 0} / kg</td>
+                        <td style={{ fontWeight: '700' }}>₹ {((Number(tx.qtyKg || 0)) * (Number(tx.purchaseRatePerKg || tx.unitPrice || 0))).toLocaleString()}</td>
+                        <td>{tx.issuedBy || tx.operatorName || 'Press Operator'}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="9" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
+                        No job ink store issues recorded yet. Job issues made via "Raw Material Issue & Return to Store" will appear here in real time.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           {/* Reorder Alerts Action List */}
           {lowStockCount > 0 && (
             <div className="glass-panel" style={{ padding: '24px', background: '#fef2f2', border: '1px solid #fecaca' }}>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#dc2626', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                <AlertTriangle size={20} /> Low Stock Reorder Action Center ({lowStockCount} Items Below Reserve)
-              </h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#dc2626', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                  <AlertTriangle size={20} /> Low Stock Reserve Action Center ({lowStockCount} Items Below Reserve)
+                </h3>
+                <button 
+                  className="btn-primary" 
+                  style={{ background: '#dc2626', borderColor: '#dc2626', fontSize: '0.8rem', padding: '6px 14px' }}
+                  onClick={() => onNavigateTab && onNavigateTab('inventory')}
+                >
+                  <ShoppingBag size={14} /> Manage Reorders in Inventory
+                </button>
+              </div>
               
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
-                {inks.filter(i => (parseFloat(i.stockQtyKg) || 0) < (parseFloat(i.reorderLevelKg) || 0)).map(ink => (
+                {enrichedInks.filter(i => i.isLowStock).map(ink => (
                   <div key={ink.id} style={{ background: '#ffffff', padding: '14px', borderRadius: '8px', border: '1px solid #fca5a5', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
                       <div style={{ fontWeight: '800', color: '#b91c1c', fontFamily: 'monospace' }}>{ink.productCode}</div>
                       <div style={{ fontSize: '0.82rem', fontWeight: '600' }}>{ink.shade} ({ink.inkType})</div>
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                        Stock: <strong style={{ color: '#dc2626' }}>{ink.stockQtyKg} kg</strong> (Reserve: {ink.reorderLevelKg} kg)
+                        Live Stock: <strong style={{ color: '#dc2626' }}>{ink.stockQtyKg} kg</strong> (Reserve: {ink.reorderLevelKg} kg)
                       </div>
                     </div>
 
@@ -1538,6 +1787,180 @@ export default function InkManagement({
             </div>
           )}
 
+        </div>
+      )}
+
+      {/* =================================================================== */}
+      {/* MODAL: INK TRACEABILITY & TRANSACTION LOGS */}
+      {/* =================================================================== */}
+      {selectedInkForHistory && (
+        <div className="pdf-modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', zIndex: 1200 }}>
+          <div className="glass-panel" style={{ width: '850px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', borderRadius: '16px', background: '#ffffff', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', border: '1px solid #cbd5e1', padding: '0' }}>
+            
+            {/* Modal Header */}
+            <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '20px 24px', borderRadius: '16px 16px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#ffffff' }}>
+              <div>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '10px', color: '#ffffff', margin: 0 }}>
+                  <FileText size={22} style={{ color: '#818cf8' }} />
+                  Ink Audit & History: {selectedInkForHistory.productCode}
+                </h3>
+                <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '4px', margin: 0 }}>
+                  {selectedInkForHistory.shade} • {selectedInkForHistory.manufacturer || 'DIC Inks'} ({selectedInkForHistory.inkType})
+                </p>
+              </div>
+              <button 
+                type="button"
+                style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff', cursor: 'pointer', transition: 'all 0.2s' }} 
+                onClick={() => setSelectedInkForHistory(null)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              
+              {/* Summary Metric Cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '12px' }}>
+                <div style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', display: 'block' }}>LIVE INVENTORY STOCK</span>
+                  <div style={{ fontSize: '1.2rem', fontWeight: '800', color: selectedInkForHistory.isLowStock ? '#dc2626' : '#059669' }}>
+                    {selectedInkForHistory.stockQtyKg} kg
+                  </div>
+                </div>
+
+                <div style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', display: 'block' }}>REORDER RESERVE LEVEL</span>
+                  <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#4f46e5' }}>
+                    {selectedInkForHistory.reorderLevelKg} kg
+                  </div>
+                </div>
+
+                <div style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', display: 'block' }}>PURCHASE RATE</span>
+                  <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#0284c7' }}>
+                    ₹ {selectedInkForHistory.pricePerKg} / kg
+                  </div>
+                </div>
+
+                <div style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', display: 'block' }}>SOLID CONTENT %</span>
+                  <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#7c3aed' }}>
+                    {selectedInkForHistory.solidContentPct}% (±{selectedInkForHistory.solidVariationPct || 2}%)
+                  </div>
+                </div>
+              </div>
+
+              {/* Inward History */}
+              <div>
+                <h4 style={{ fontSize: '0.92rem', fontWeight: '800', color: '#1e293b', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Download size={16} style={{ color: '#059669' }} /> Inward GRN Receipts
+                </h4>
+                <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                  <table className="data-table" style={{ margin: 0 }}>
+                    <thead>
+                      <tr>
+                        <th>GRN No.</th>
+                        <th>Inward Date</th>
+                        <th>Supplier</th>
+                        <th>Batch / Lot No.</th>
+                        <th>Inward Qty</th>
+                        <th>Rate</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(selectedInkForHistory.matchingGRNs || []).length > 0 ? (
+                        selectedInkForHistory.matchingGRNs.map(g => (
+                          <tr key={g.id || g.grnNo}>
+                            <td style={{ fontWeight: '800', fontFamily: 'monospace', color: 'var(--primary-brand)' }}>{g.grnNo}</td>
+                            <td>{g.inwardDate || g.date}</td>
+                            <td>{g.vendorName || g.supplierName}</td>
+                            <td style={{ fontFamily: 'monospace' }}>{g.batchNo || '-'}</td>
+                            <td style={{ fontWeight: '700', color: '#059669' }}>{g.netWeightKg || g.quantityKg} kg</td>
+                            <td>₹ {g.purchaseRatePerKg || g.unitPrice || 0} / kg</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="6" style={{ textAlign: 'center', padding: '16px', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                            No inward GRN receipts recorded specifically for this ink code yet.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Job Consumptions */}
+              <div>
+                <h4 style={{ fontSize: '0.92rem', fontWeight: '800', color: '#1e293b', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <TrendingUp size={16} style={{ color: '#4f46e5' }} /> Job Production Store Issues & Returns
+                </h4>
+                <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                  <table className="data-table" style={{ margin: 0 }}>
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Job Card</th>
+                        <th>Batch #</th>
+                        <th>Qty (Kg)</th>
+                        <th>Operator</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(selectedInkForHistory.matchingJobIssues || []).length > 0 ? (
+                        selectedInkForHistory.matchingJobIssues.map(tx => (
+                          <tr key={tx.id || Math.random()}>
+                            <td>{new Date(tx.timestamp || tx.date).toLocaleDateString()}</td>
+                            <td>
+                              <span className={`badge ${tx.issueType === 'return' ? 'badge-info' : 'badge-purple'}`} style={{ fontSize: '0.7rem' }}>
+                                {tx.issueType === 'return' ? '↩️ Return' : '📤 Issue'}
+                              </span>
+                            </td>
+                            <td style={{ fontWeight: '700' }}>{tx.jobCardNo || tx.orderNo || 'Job Press'}</td>
+                            <td style={{ fontFamily: 'monospace' }}>{tx.batchNo || '-'}</td>
+                            <td style={{ fontWeight: '800', color: tx.issueType === 'return' ? '#0284c7' : '#dc2626' }}>
+                              {tx.issueType === 'return' ? `+${tx.qtyKg}` : `-${tx.qtyKg}`} kg
+                            </td>
+                            <td>{tx.issuedBy || tx.operatorName || 'Press Operator'}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="6" style={{ textAlign: 'center', padding: '16px', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                            No job consumptions recorded for this ink yet.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
+                <button 
+                  type="button" 
+                  className="btn-secondary" 
+                  onClick={() => { setSelectedInkForHistory(null); onNavigateTab && onNavigateTab('inventory'); }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <ArrowRight size={14} /> Open in Inventory Module
+                </button>
+
+                <button 
+                  type="button" 
+                  className="btn-primary" 
+                  onClick={() => setSelectedInkForHistory(null)}
+                >
+                  Close
+                </button>
+              </div>
+
+            </div>
+
+          </div>
         </div>
       )}
 
