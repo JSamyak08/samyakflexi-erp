@@ -262,6 +262,9 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
                 const totalAmt = taxable + cgstAmt + sgstAmt;
 
                 let rawName = item.itemDesc || item.description || item.itemName || item.name || item.item_name || item.filmType || "Material Item";
+                if (typeof rawName === 'string' && rawName.includes('|||')) {
+                  rawName = rawName.split('|||')[0].trim();
+                }
                 const itemNameText = rawName.replace(/\s*\([^)]*\)\s*$/, '').trim();
                 const itemSpecText = item.spec || (item.widthMm ? `Width: ${item.widthMm}mm` : '');
 

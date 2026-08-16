@@ -73,8 +73,8 @@ import { isSupabaseConfigured } from './services/supabaseClient';
 import { 
   fetchOrders, saveOrderToSupabase, deleteOrderFromSupabase,
   fetchVendors, saveVendorToSupabase, deleteVendorFromSupabase,
-  fetchInventory, saveInventoryItemToSupabase, saveInventoryBatchToSupabase, deleteInventoryItemFromSupabase,
-  fetchGRNs, saveGRNToSupabase, deleteGRNFromSupabase,
+  fetchInventory, saveInventoryItemToSupabase, saveInventoryBatchToSupabase, deleteInventoryItemFromSupabase, sanitizeInventoryItem,
+  fetchGRNs, saveGRNToSupabase, deleteGRNFromSupabase, sanitizeGRN,
   fetchCylinders, saveCylinderToSupabase, deleteCylinderFromSupabase,
   fetchProductionRecords, saveProductionRecordToSupabase, deleteProductionRecordFromSupabase,
   fetchUsers, saveUserToSupabase, deleteUserFromSupabase, updateUserPasswordInDB,
@@ -249,8 +249,8 @@ export default function App() {
   // stripDummyRecords ensures no legacy seed data from development ever enters production state.
   const [orders, setOrders] = useState(() => stripDummyRecords(loadLocalState('orders', [])));
   const [vendors, setVendors] = useState(() => stripDummyRecords(loadLocalState('vendors', [])));
-  const [inventory, setInventory] = useState(() => stripDummyRecords(loadLocalState('inventory', [])));
-  const [grns, setGrns] = useState(() => stripDummyRecords(loadLocalState('grns', [])));
+  const [inventory, setInventory] = useState(() => stripDummyRecords(loadLocalState('inventory', [])).map(sanitizeInventoryItem));
+  const [grns, setGrns] = useState(() => stripDummyRecords(loadLocalState('grns', [])).map(sanitizeGRN));
   const [users, setUsers] = useState(() => loadLocalState('users', initialUsers));
   const [jobDataSheets, setJobDataSheets] = useState(() => stripDummyRecords(loadLocalState('job_datasheets', [])));
   const [cylinders, setCylinders] = useState(() => stripDummyRecords(loadLocalState('cylinders', [])));
@@ -489,25 +489,33 @@ export default function App() {
       }
 
       if (Array.isArray(supaInv)) {
-        const cleanSupa = stripDummyRecords(supaInv);
+        const cleanSupa = stripDummyRecords(supaInv).map(sanitizeInventoryItem);
         setInventory(prev => {
           const map = new Map();
-          cleanSupa.forEach(i => { if (i && i.id) map.set(String(i.id), i); });
-          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(String(p.id))) map.set(String(p.id), p); });
-          const merged = Array.from(map.values());
+          cleanSupa.forEach(i => { if (i && i.id) map.set(String(i.id), sanitizeInventoryItem(i)); });
+          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(String(p.id))) map.set(String(p.id), sanitizeInventoryItem(p)); });
+          const merged = Array.from(map.values()).map(sanitizeInventoryItem);
           safeLocalStorageSet('samyak_erp_inventory', merged);
+
+          // Auto self-heal: If any item in Supabase has dirty envelope or JSON string in itemName, re-save with clean mapped payload
+          merged.forEach(item => {
+            if (item && item.itemName && (item.itemName.includes('|||') || item.itemName.startsWith('{'))) {
+              saveInventoryItemToSupabase(sanitizeInventoryItem(item)).catch(console.warn);
+            }
+          });
+
           return merged;
         });
         supaInv.filter(isDummyRecord).forEach(d => deleteInventoryItemFromSupabase(d.id).catch(console.warn));
       }
 
       if (Array.isArray(supaGRNs)) {
-        const cleanSupa = stripDummyRecords(supaGRNs);
+        const cleanSupa = stripDummyRecords(supaGRNs).map(sanitizeGRN);
         setGrns(prev => {
           const map = new Map();
-          cleanSupa.forEach(g => { const k = g.id || g.grnNo; if (k) map.set(k, g); });
-          (prev || []).forEach(p => { const k = p.id || p.grnNo; if (k && !isDummyRecord(p) && !map.has(k)) map.set(k, p); });
-          const merged = Array.from(map.values());
+          cleanSupa.forEach(g => { const k = g.id || g.grnNo; if (k) map.set(k, sanitizeGRN(g)); });
+          (prev || []).forEach(p => { const k = p.id || p.grnNo; if (k && !isDummyRecord(p) && !map.has(k)) map.set(k, sanitizeGRN(p)); });
+          const merged = Array.from(map.values()).map(sanitizeGRN);
           safeLocalStorageSet('samyak_erp_grns', merged);
           return merged;
         });

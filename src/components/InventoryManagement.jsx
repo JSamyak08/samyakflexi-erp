@@ -38,6 +38,7 @@ import BarcodePrinterModal from './BarcodePrinterModal';
 import DispatchPackingListPDF from './DispatchPackingListPDF';
 import TablePagination, { usePagination } from './TablePagination';
 import { getNextDocRefNumber, generateDocRefNumber } from '../services/settingsService';
+import { sanitizeInventoryItem, sanitizeGRN } from '../services/supabaseDataService';
 import { 
   isReconciliationDue, 
   FILM_DENSITIES, 
@@ -157,20 +158,24 @@ export default function InventoryManagement({
   const [activeTab, setActiveTab] = useState('stock'); // stock, grn_inward, qc_approval, issue_return, reconciliation
   const [searchTerm, setSearchTerm] = useState('');
 
+  // Sanitize all inventory and GRN records to guarantee zero envelope leakage into UI
+  const safeInventory = useMemo(() => (inventory || []).map(sanitizeInventoryItem), [inventory]);
+  const safeGrns = useMemo(() => (grns || []).map(sanitizeGRN), [grns]);
+
   // Auto-set tab and select item if urlParams is provided
   useEffect(() => {
     if (urlParams) {
       if (urlParams.tab) {
         setActiveTab(urlParams.tab);
       }
-      if (urlParams.id && inventory && inventory.length > 0) {
-        const match = inventory.find(i => i.id === urlParams.id || i.itemCode === urlParams.id);
+      if (urlParams.id && safeInventory && safeInventory.length > 0) {
+        const match = safeInventory.find(i => i.id === urlParams.id || i.itemCode === urlParams.id);
         if (match) {
           setSelectedItemForPurchaseHistory(match);
         }
       }
     }
-  }, [urlParams?.tab, urlParams?.id, inventory]);
+  }, [urlParams?.tab, urlParams?.id, safeInventory]);
 
   const handleTabClick = (tabKey) => {
     setActiveTab(tabKey);
@@ -886,7 +891,7 @@ export default function InventoryManagement({
     }
   };
 
-  const filteredStockItemsForGrn = (inventory || []).filter(item => {
+  const filteredStockItemsForGrn = (safeInventory || []).filter(item => {
     const term = (grnItemSearchTerm || '').toLowerCase().trim();
     const title = (item.itemName || `${item.filmType || ''} ${item.micron || ''} ${item.widthMm || ''}`).toLowerCase();
     const code = (item.itemCode || item.id || '').toLowerCase();
@@ -922,7 +927,7 @@ export default function InventoryManagement({
   const [editLastBatch, setEditLastBatch] = useState('');
 
   const openAddStockModal = () => {
-    const newId = generateInventoryId(inventory);
+    const newId = generateInventoryId(safeInventory);
     setEditingStockItem({ id: newId, isNew: true });
     setEditCategory('Film Substrates');
     setEditItemName('');
@@ -1547,9 +1552,9 @@ export default function InventoryManagement({
     reader.readAsText(file);
   };
 
-  const pendingQCGRNs = (grns || []).filter(g => g.status === 'Pending QC');
+  const pendingQCGRNs = (safeGrns || []).filter(g => g.status === 'Pending QC');
 
-  const filteredInventory = (inventory || []).filter(i => {
+  const filteredInventory = (safeInventory || []).filter(i => {
     // 1. Category Filter
     if (stockCategoryFilter && stockCategoryFilter !== 'ALL') {
       const itemCat = i.category || 'Film Substrates';
@@ -1602,7 +1607,7 @@ export default function InventoryManagement({
   });
 
   const stockPagination = usePagination(filteredInventory, 50);
-  const grnPagination = usePagination(grns, 50);
+  const grnPagination = usePagination(safeGrns, 50);
   const poPagination = usePagination(filteredPOs, 50);
   const dispatchPagination = usePagination(dispatchShipments || initialDispatchShipments, 50);
 
@@ -2057,7 +2062,7 @@ export default function InventoryManagement({
               <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginLeft: '12px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <span>Total Items: <b>{filteredInventory.length} Listed</b></span>
                 <span style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', padding: '4px 10px', borderRadius: '6px', fontWeight: '700', fontSize: '0.82rem' }}>
-                  💰 Total Stock Valuation: ₹ {inventory.reduce((sum, i) => sum + ((parseFloat(i.availableQtyKg) || 0) * (parseFloat(i.unitPrice || i.purchaseRatePerKg) || 0)), 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                  💰 Total Stock Valuation: ₹ {safeInventory.reduce((sum, i) => sum + ((parseFloat(i.availableQtyKg) || 0) * (parseFloat(i.unitPrice || i.purchaseRatePerKg) || 0)), 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                 </span>
               </div>
             </div>

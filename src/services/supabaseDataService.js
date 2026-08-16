@@ -311,13 +311,51 @@ export async function deleteClientFromSupabase(clientId) {
 // 3. INVENTORY & RAW MATERIALS / CONSUMABLES
 // ============================================================================
 
-export function mapInventoryItemToDbPayload(item) {
-  if (!item) return null;
-  const category = item.category || 'Film Substrates';
-  const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films' || Boolean(item.filmType && FILM_DENSITIES[item.filmType]);
-  const filmTypeStr = item.filmType || (isFilm ? (item.itemName ? item.itemName.split(' ')[0] : 'PET') : '');
-  const itemCodeStr = item.itemCode || item.id || 'INVT-0001';
-  const itemNameStr = item.itemName || (isFilm && filmTypeStr ? `${filmTypeStr} ${item.micron || 12}µ (${item.widthMm || 1000}mm)` : `Item ${itemCodeStr}`);
+export function sanitizeInventoryItem(rawItem) {
+  if (!rawItem || typeof rawItem !== 'object') return rawItem;
+
+  let rawName = String(rawItem.itemName || rawItem.item_name || '').trim();
+  let extractedMeta = {};
+
+  // Thoroughly unpack any ||| envelopes (single or nested)
+  while (rawName.includes('|||')) {
+    const idx = rawName.indexOf('|||');
+    const jsonStr = rawName.substring(idx + 3).trim();
+    rawName = rawName.substring(0, idx).trim();
+    if (jsonStr) {
+      try {
+        const parsed = JSON.parse(jsonStr);
+        if (parsed && typeof parsed === 'object') {
+          extractedMeta = { ...extractedMeta, ...parsed };
+        }
+      } catch (e) {
+        // Continue unpacking
+      }
+    }
+  }
+
+  // Handle case where rawName itself is a serialized JSON string
+  if (rawName.startsWith('{') && rawName.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(rawName);
+      if (parsed && typeof parsed === 'object') {
+        extractedMeta = { ...extractedMeta, ...parsed };
+        rawName = parsed.itemName || parsed.name || '';
+      }
+    } catch (e) {}
+  }
+
+  const category = rawItem.category || extractedMeta.category || 'Film Substrates';
+  const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films';
+
+  const filmType = extractedMeta.filmType || rawItem.filmType || (isFilm ? (rawName ? rawName.split(' ')[0] : 'PET') : '');
+  const micron = isFilm 
+    ? ((extractedMeta.micron !== undefined && extractedMeta.micron !== null && extractedMeta.micron !== '-') ? extractedMeta.micron : (rawItem.micron && rawItem.micron !== '-' ? rawItem.micron : 12)) 
+    : '-';
+  const widthMm = isFilm 
+    ? ((extractedMeta.widthMm !== undefined && extractedMeta.widthMm !== null && extractedMeta.widthMm !== '-') ? extractedMeta.widthMm : (rawItem.widthMm && rawItem.widthMm !== '-' ? rawItem.widthMm : 1000)) 
+    : '-';
+
   const fallbackUnit = isFilm ? 'Kg' : (
     category === 'Chemicals & Solvents' || category === 'Solvents' ? 'Litres' : 
     category === 'Doctor Blades & Wipers' ? 'Meters' : 
@@ -326,35 +364,72 @@ export function mapInventoryItemToDbPayload(item) {
     category === 'Machine Spare Parts' ? 'Nos' : 'Kg'
   );
 
-  // Pack all metadata properties into a single serializable object
+  const cleanItemName = rawName || (isFilm && filmType ? `${filmType} ${micron}µ (${widthMm}mm)` : `${category} Stock Item`);
+
+  return {
+    ...rawItem,
+    ...extractedMeta,
+    id: String(rawItem.id || rawItem.item_code || 'INVT-0001'),
+    itemCode: rawItem.itemCode || rawItem.item_code || String(rawItem.id),
+    itemName: cleanItemName,
+    category: category,
+    filmType: isFilm ? filmType : '',
+    micron: micron,
+    widthMm: widthMm,
+    unit: rawItem.unit || extractedMeta.unit || fallbackUnit,
+    availableQtyKg: Number(rawItem.availableQtyKg ?? rawItem.stock_qty_kg ?? extractedMeta.availableQtyKg ?? 0) || 0,
+    allocatedQtyKg: Number(rawItem.allocatedQtyKg ?? extractedMeta.allocatedQtyKg ?? 0) || 0,
+    reorderLevelKg: Number(rawItem.reorderLevelKg ?? extractedMeta.reorderLevelKg ?? 100) || 100,
+    unitPrice: Number(rawItem.unitPrice ?? rawItem.unit_price ?? extractedMeta.unitPrice ?? 0) || 0,
+    location: rawItem.location || extractedMeta.location || 'Store Bay',
+    lastVendor: rawItem.lastVendor || extractedMeta.lastVendor || '',
+    lastBatch: rawItem.lastBatch || extractedMeta.lastBatch || '',
+    density: extractedMeta.density !== undefined ? extractedMeta.density : (rawItem.density || (isFilm ? 1.4 : 1.0)),
+    grade: rawItem.grade || extractedMeta.grade || '',
+    subType: rawItem.subType || extractedMeta.subType || '',
+    shade: rawItem.shade || extractedMeta.shade || '',
+    dimensions: rawItem.dimensions || extractedMeta.dimensions || '',
+    lastUpdated: extractedMeta.lastUpdated || rawItem.lastUpdated || new Date().toISOString()
+  };
+}
+
+export function mapInventoryItemToDbPayload(item) {
+  if (!item) return null;
+  const clean = sanitizeInventoryItem(item);
+  const category = clean.category || 'Film Substrates';
+  const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films';
+  const filmTypeStr = isFilm ? (clean.filmType || (clean.itemName ? clean.itemName.split(' ')[0] : 'PET')) : '';
+  const itemCodeStr = clean.itemCode || clean.id || 'INVT-0001';
+  const itemNameStr = clean.itemName;
+
+  // Pack clean metadata properties into serializable object
   const meta = {
     category: category,
     filmType: filmTypeStr,
-    grade: item.grade || '',
-    subType: item.subType || '',
-    shade: item.shade || '',
-    dimensions: item.dimensions || '',
-    micron: isFilm ? ((item.micron !== undefined && item.micron !== null && item.micron !== '-') ? item.micron : 12) : '-',
-    widthMm: item.widthMm !== undefined && item.widthMm !== null && item.widthMm !== '-' ? item.widthMm : (isFilm ? 1000 : '-'),
-    allocatedQtyKg: item.allocatedQtyKg,
-    reorderLevelKg: item.reorderLevelKg,
-    unit: item.unit || fallbackUnit,
-    density: isFilm ? (item.density || 1.4) : 1.0,
-    location: item.location || 'Bay A',
-    lastVendor: item.lastVendor || '',
-    lastBatch: item.lastBatch || '',
+    grade: clean.grade || '',
+    subType: clean.subType || '',
+    shade: clean.shade || '',
+    dimensions: clean.dimensions || '',
+    micron: isFilm ? clean.micron : '-',
+    widthMm: isFilm ? clean.widthMm : '-',
+    allocatedQtyKg: clean.allocatedQtyKg,
+    reorderLevelKg: clean.reorderLevelKg,
+    unit: clean.unit,
+    density: clean.density,
+    location: clean.location,
+    lastVendor: clean.lastVendor,
+    lastBatch: clean.lastBatch,
     lastUpdated: new Date().toISOString()
   };
 
-  // Combine actual item name and metadata JSON string with ||| separator
   const combinedItemName = `${itemNameStr} ||| ${JSON.stringify(meta)}`;
 
   return {
-    id: String(item.id),
+    id: String(clean.id),
     item_code: itemCodeStr,
     item_name: combinedItemName,
-    stock_qty_kg: Number(item.availableQtyKg ?? item.stock_qty_kg ?? 0) || 0,
-    unit_price: Number(item.unitPrice ?? item.unit_price ?? 0) || 0
+    stock_qty_kg: Number(clean.availableQtyKg ?? 0) || 0,
+    unit_price: Number(clean.unitPrice ?? 0) || 0
   };
 }
 
@@ -368,55 +443,7 @@ export async function fetchInventory() {
     }
     if (!data) return [];
 
-    return data.map(i => {
-      let itemName = i.item_name || '';
-      let meta = {};
-      
-      if (itemName.includes(' ||| ')) {
-        const parts = itemName.split(' ||| ');
-        itemName = parts[0];
-        try {
-          meta = JSON.parse(parts[1]);
-        } catch (e) {
-          console.warn("Failed to parse metadata from item_name:", e.message);
-        }
-      }
-
-      const category = meta.category || i.category || 'Film Substrates';
-      const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films' || Boolean((meta.filmType || i.film_type) && FILM_DENSITIES[meta.filmType || i.film_type]);
-      const filmTypeVal = meta.filmType || i.film_type || (isFilm && itemName ? itemName.split(' ')[0] : '');
-      const fallbackUnit = isFilm ? 'Kg' : (
-        category === 'Chemicals & Solvents' || category === 'Solvents' ? 'Litres' : 
-        category === 'Doctor Blades & Wipers' ? 'Meters' : 
-        category === 'Tapes & Consumables' ? 'Rolls' : 
-        category === 'Safety Gear (PPE)' ? 'Boxes' : 
-        category === 'Machine Spare Parts' ? 'Nos' : 'Kg'
-      );
-
-      return {
-        id: String(i.id),
-        itemCode: i.item_code || String(i.id),
-        itemName: itemName,
-        category: category,
-        filmType: filmTypeVal || (isFilm ? 'PET' : ''),
-        grade: meta.grade || '',
-        subType: meta.subType || '',
-        shade: meta.shade || '',
-        dimensions: meta.dimensions || '',
-        micron: isFilm ? ((meta.micron !== undefined && meta.micron !== null && meta.micron !== '-') ? meta.micron : 12) : '-',
-        widthMm: meta.widthMm !== undefined && meta.widthMm !== null ? meta.widthMm : (isFilm ? 1000 : '-'),
-        availableQtyKg: Number(i.stock_qty_kg ?? 0) || 0,
-        allocatedQtyKg: Number(meta.allocatedQtyKg ?? 0) || 0,
-        reorderLevelKg: Number(meta.reorderLevelKg ?? 0) || 0,
-        unitPrice: Number(i.unit_price ?? 0) || 0,
-        unit: meta.unit || fallbackUnit,
-        density: meta.density !== undefined ? meta.density : (isFilm ? 1.4 : 1.0),
-        location: meta.location || 'Bay A',
-        lastVendor: meta.lastVendor || '',
-        lastBatch: meta.lastBatch || '',
-        lastUpdated: meta.lastUpdated || new Date().toISOString()
-      };
-    });
+    return data.map(i => sanitizeInventoryItem(i));
   } catch (err) {
     console.error("Error fetching inventory from Supabase:", err);
     return [];
@@ -469,6 +496,56 @@ export async function deleteInventoryItemFromSupabase(itemId) {
 // 4. GOODS RECEIPT NOTES (GRN)
 // ============================================================================
 
+export function sanitizeGRN(rawGRN) {
+  if (!rawGRN || typeof rawGRN !== 'object') return rawGRN;
+
+  let rawName = String(rawGRN.itemName || rawGRN.item_name || '').trim();
+  let meta = {};
+
+  while (rawName.includes('|||')) {
+    const idx = rawName.indexOf('|||');
+    const jsonStr = rawName.substring(idx + 3).trim();
+    rawName = rawName.substring(0, idx).trim();
+    if (jsonStr) {
+      try {
+        const parsed = JSON.parse(jsonStr);
+        if (parsed && typeof parsed === 'object') {
+          meta = { ...meta, ...parsed };
+        }
+      } catch (e) {}
+    }
+  }
+
+  return {
+    ...rawGRN,
+    ...meta,
+    id: rawGRN.id || rawGRN.grn_number || rawGRN.grnNo,
+    grnNo: rawGRN.grn_number || rawGRN.grnNo || rawGRN.id,
+    vendorId: rawGRN.vendor_id || rawGRN.vendorId || rawGRN.vendorName || 'General Vendor',
+    vendorName: rawGRN.vendorName || rawGRN.vendor_id || rawGRN.vendorId || 'General Vendor',
+    poNumber: rawGRN.po_number || rawGRN.poNumber || '',
+    invoiceNo: rawGRN.invoice_number || rawGRN.invoiceNo || '',
+    receivedDate: rawGRN.received_date || rawGRN.receivedDate || new Date().toISOString(),
+    itemName: rawName || 'Item',
+    filmType: meta.filmType || rawGRN.filmType || (rawName ? rawName.split(' ')[0] : 'PET'),
+    micron: meta.micron !== undefined ? meta.micron : (rawGRN.micron !== undefined ? rawGRN.micron : '-'),
+    widthMm: meta.widthMm !== undefined ? meta.widthMm : (rawGRN.widthMm !== undefined ? rawGRN.widthMm : '-'),
+    rollsReceived: Number(meta.rollsReceived ?? rawGRN.rollsReceived ?? 0) || 0,
+    purchaseRatePerKg: Number(meta.purchaseRatePerKg ?? meta.unitPrice ?? rawGRN.purchaseRatePerKg ?? rawGRN.unitPrice ?? 0) || 0,
+    unitPrice: Number(meta.purchaseRatePerKg ?? meta.unitPrice ?? rawGRN.purchaseRatePerKg ?? rawGRN.unitPrice ?? 0) || 0,
+    unit: meta.unit || rawGRN.unit || 'Kg',
+    batchNo: meta.batchNo || rawGRN.batchNo || '',
+    status: rawGRN.status || 'Pending QC',
+    qcNotes: rawGRN.qc_remarks || rawGRN.qcNotes || '',
+    inspectedBy: meta.inspectedBy || rawGRN.inspectedBy || '',
+    storeManager: meta.storeManager || rawGRN.storeManager || '',
+    receivedQtyKg: Number(rawGRN.received_qty_kg ?? rawGRN.receivedQtyKg ?? rawGRN.netWeightKg ?? 0) || 0,
+    netWeightKg: Number(rawGRN.received_qty_kg ?? rawGRN.receivedQtyKg ?? rawGRN.netWeightKg ?? 0) || 0,
+    packagingType: meta.packagingType || rawGRN.packagingType || 'Roll',
+    itemsBreakdown: meta.itemsBreakdown || rawGRN.itemsBreakdown || []
+  };
+}
+
 export async function fetchGRNs() {
   if (!isSupabaseConfigured()) return [];
   try {
@@ -476,43 +553,7 @@ export async function fetchGRNs() {
     if (error) throw error;
     if (!data) return [];
 
-    return data.map(g => {
-      let itemName = g.item_name || '';
-      let meta = {};
-
-      if (itemName.includes(' ||| ')) {
-        const parts = itemName.split(' ||| ');
-        itemName = parts[0];
-        try {
-          meta = JSON.parse(parts[1]);
-        } catch (e) {
-          console.warn("Failed to parse metadata from GRN item_name:", e.message);
-        }
-      }
-
-      return {
-        id: g.id || g.grn_number,
-        grnNo: g.grn_number || g.id,
-        vendorId: g.vendor_id,
-        vendorName: g.vendor_id,
-        poNumber: g.po_number,
-        invoiceNo: g.invoice_number,
-        receivedDate: g.received_date,
-        itemName: itemName,
-        filmType: meta.filmType || (itemName ? itemName.split(' ')[0] : 'PET'),
-        micron: meta.micron !== undefined ? meta.micron : '-',
-        widthMm: meta.widthMm !== undefined ? meta.widthMm : '-',
-        rollsReceived: Number(meta.rollsReceived ?? 0) || 0,
-        purchaseRatePerKg: Number(meta.purchaseRatePerKg ?? meta.unitPrice ?? meta.purchaseRate ?? 0) || 0,
-        unitPrice: Number(meta.purchaseRatePerKg ?? meta.unitPrice ?? meta.purchaseRate ?? 0) || 0,
-        unit: meta.unit || 'Kg',
-        batchNo: meta.batchNo || '',
-        status: g.status || 'Pending QC',
-        qcNotes: g.qc_remarks || '',
-        inspectedBy: meta.inspectedBy || '',
-        storeManager: meta.storeManager || ''
-      };
-    });
+    return data.map(g => sanitizeGRN(g));
   } catch (err) {
     console.error("Error fetching GRNs from Supabase:", err);
     return [];
@@ -522,37 +563,40 @@ export async function fetchGRNs() {
 export async function saveGRNToSupabase(grn) {
   if (!isSupabaseConfigured()) return;
   await ensureValidSession();
-  const grnId = grn.id || grn.grnNo || `GRN-2026-${Math.floor(100 + Math.random() * 900)}`;
-  const itemNameVal = grn.itemName || (grn.filmType ? `${grn.filmType} ${grn.micron || 12}µ (${grn.widthMm || 1000}mm)` : 'Raw Material Film');
-  const weightVal = Number(grn.receivedQtyKg || grn.netWeightKg) || 0;
+  const clean = sanitizeGRN(grn);
+  const grnId = clean.id || clean.grnNo || `GRN-2026-${Math.floor(100 + Math.random() * 900)}`;
+  const itemNameVal = clean.itemName;
+  const weightVal = Number(clean.receivedQtyKg || clean.netWeightKg) || 0;
 
   // Pack extra GRN properties into metadata
   const meta = {
-    filmType: grn.filmType || (grn.itemName ? grn.itemName.split(' ')[0] : 'PET'),
-    micron: grn.micron,
-    widthMm: grn.widthMm,
-    rollsReceived: grn.rollsReceived,
-    purchaseRatePerKg: Number(grn.purchaseRatePerKg ?? grn.purchaseRate ?? grn.unitPrice ?? 0) || 0,
-    unitPrice: Number(grn.purchaseRatePerKg ?? grn.purchaseRate ?? grn.unitPrice ?? 0) || 0,
-    unit: grn.unit || 'Kg',
-    batchNo: grn.batchNo,
-    inspectedBy: grn.inspectedBy,
-    storeManager: grn.storeManager
+    filmType: clean.filmType,
+    micron: clean.micron,
+    widthMm: clean.widthMm,
+    rollsReceived: clean.rollsReceived,
+    purchaseRatePerKg: Number(clean.purchaseRatePerKg ?? clean.unitPrice ?? 0) || 0,
+    unitPrice: Number(clean.purchaseRatePerKg ?? clean.unitPrice ?? 0) || 0,
+    unit: clean.unit || 'Kg',
+    batchNo: clean.batchNo,
+    inspectedBy: clean.inspectedBy,
+    storeManager: clean.storeManager,
+    packagingType: clean.packagingType || 'Roll',
+    itemsBreakdown: clean.itemsBreakdown || []
   };
 
   const combinedItemName = `${itemNameVal} ||| ${JSON.stringify(meta)}`;
 
   const payload = {
     id: grnId,
-    grn_number: grn.grnNo || grnId,
-    vendor_id: grn.vendorName || grn.vendorId || 'General Vendor',
-    po_number: grn.poNumber || '',
-    invoice_number: grn.invoiceNo || '',
-    received_date: grn.receivedDate || new Date().toISOString(),
+    grn_number: clean.grnNo || grnId,
+    vendor_id: clean.vendorName || clean.vendorId || 'General Vendor',
+    po_number: clean.poNumber || '',
+    invoice_number: clean.invoiceNo || '',
+    received_date: clean.receivedDate || new Date().toISOString(),
     item_name: combinedItemName,
     received_qty_kg: weightVal,
-    status: grn.status || 'Pending QC',
-    qc_remarks: grn.qcNotes || grn.qc_remarks || ''
+    status: clean.status || 'Pending QC',
+    qc_remarks: clean.qcNotes || ''
   };
 
   console.log('[GRNs] Saving GRN via schema-independent metadata envelope:', grnId);
