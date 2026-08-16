@@ -442,6 +442,8 @@ export default function InventoryManagement({
   const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
   const [issueType, setIssueType] = useState('issue'); // issue or return
   const [selectedInvItem, setSelectedInvItem] = useState(inventory[0] || null);
+  const [issueSelectedBatchId, setIssueSelectedBatchId] = useState('');
+  const [issueCustomBatchText, setIssueCustomBatchText] = useState('');
   const [issueQtyKg, setIssueQtyKg] = useState('');
   const [issueJobName, setIssueJobName] = useState('');
   const [stockSearchTerm, setStockSearchTerm] = useState('');
@@ -634,6 +636,87 @@ export default function InventoryManagement({
       totalNet: parseFloat(totalNet.toFixed(2))
     };
   }, [grnItemsList]);
+
+  // Aggregated available stock batches / inward GRNs for selected item in Store Issue modal
+  const availableBatchesForSelectedItem = useMemo(() => {
+    if (!selectedInvItem) return [];
+    
+    // Find all GRNs matching this item
+    const matchingGRNs = (safeGrns || []).filter(g => {
+      if (g.itemId && (g.itemId === selectedInvItem.id || g.itemId === selectedInvItem.itemCode)) return true;
+      const gName = (g.itemName || g.filmType || '').toLowerCase().trim();
+      const iName = (selectedInvItem.itemName || selectedInvItem.filmType || '').toLowerCase().trim();
+      if (gName && iName && (gName === iName || gName.includes(iName) || iName.includes(gName))) return true;
+      return false;
+    });
+
+    const batches = [];
+    const seenBatchKeys = new Set();
+
+    // 1. Add batches from individual inventory rolls
+    (inventoryRolls || []).forEach(r => {
+      if (r.itemId === selectedInvItem.id || (r.itemName && r.itemName.toLowerCase() === (selectedInvItem.itemName || '').toLowerCase())) {
+        const batchKey = `ROLL_${r.barcodeId || r.id}`;
+        if (!seenBatchKeys.has(batchKey)) {
+          seenBatchKeys.add(batchKey);
+          const rateVal = Number(r.purchaseRatePerKg || selectedInvItem.unitPrice || 0);
+          batches.push({
+            id: batchKey,
+            batchNo: r.batchNo || r.vendorRollNo || r.barcodeId,
+            grnNo: r.grnNo || '-',
+            vendorName: r.vendorName || selectedInvItem.lastVendor || 'General Vendor',
+            purchaseRate: rateVal,
+            availableQty: Number(r.availableWeightKg || r.netWeightKg || 0),
+            unit: r.unit || selectedInvItem.unit || 'Kg',
+            date: r.inwardDatetime || r.date || '',
+            barcode: r.barcodeId || r.batchNo,
+            label: `Roll ${r.barcodeId} • Batch: ${r.batchNo || r.vendorRollNo || 'N/A'} • Avail: ${r.availableWeightKg || r.netWeightKg || 0} ${r.unit || 'Kg'} • Rate: ₹${rateVal}/${r.unit || 'Kg'}`
+          });
+        }
+      }
+    });
+
+    // 2. Add batches from matching GRNs
+    matchingGRNs.forEach(g => {
+      const batchKey = `GRN_${g.grnNo || g.id}`;
+      if (!seenBatchKeys.has(batchKey)) {
+        seenBatchKeys.add(batchKey);
+        const rateVal = Number(g.purchaseRatePerKg || g.unitPrice || g.purchaseRate || selectedInvItem.unitPrice || 0);
+        batches.push({
+          id: batchKey,
+          batchNo: g.batchNo || `GRN-${g.grnNo}`,
+          grnNo: g.grnNo || g.id,
+          vendorName: g.vendorName || 'Supplier',
+          purchaseRate: rateVal,
+          availableQty: Number(g.netWeightKg || 0),
+          unit: g.unit || selectedInvItem.unit || 'Kg',
+          date: g.receivedDate || '',
+          barcode: g.batchNo || `BAR-GRN-${g.grnNo}`,
+          label: `GRN #${g.grnNo} • Batch: ${g.batchNo || 'Main Lot'} • Supplier: ${g.vendorName || 'Vendor'} • Inward Qty: ${g.netWeightKg || 0} ${g.unit || 'Kg'} • Rate: ₹${rateVal}/${g.unit || 'Kg'}`
+        });
+      }
+    });
+
+    // 3. Fallback Opening Stock / Master Balance
+    const masterBatchKey = `OPENING_${selectedInvItem.id}`;
+    if (!seenBatchKeys.has(masterBatchKey)) {
+      const masterRate = Number(selectedInvItem.unitPrice || selectedInvItem.purchaseRatePerKg || 0);
+      batches.push({
+        id: masterBatchKey,
+        batchNo: selectedInvItem.lastBatch || `LOT-${selectedInvItem.itemCode || selectedInvItem.id}`,
+        grnNo: 'Opening / Master Stock Balance',
+        vendorName: selectedInvItem.lastVendor || 'Onboarding Stock Balance',
+        purchaseRate: masterRate,
+        availableQty: Number(selectedInvItem.availableQtyKg || 0),
+        unit: selectedInvItem.unit || 'Kg',
+        date: selectedInvItem.lastUpdated || '',
+        barcode: selectedInvItem.lastBatch || `BAR-LOT-${selectedInvItem.id}`,
+        label: `Stock Balance: ${selectedInvItem.lastBatch || 'Lot ' + selectedInvItem.id} • Avail: ${selectedInvItem.availableQtyKg || 0} ${selectedInvItem.unit || 'Kg'} • Rate: ₹${masterRate}/${selectedInvItem.unit || 'Kg'}`
+      });
+    }
+
+    return batches;
+  }, [selectedInvItem, safeGrns, inventoryRolls]);
 
   // Ledger Modal Pagination State
   const [ledgerCurrentPage, setLedgerCurrentPage] = useState(1);
@@ -1340,6 +1423,14 @@ export default function InventoryManagement({
     const unitStr = selectedInvItem.unit || 'Kg';
     const itemNameStr = selectedInvItem.itemName || `${selectedInvItem.filmType || ''} ${selectedInvItem.micron && selectedInvItem.micron !== '-' ? `${selectedInvItem.micron}µ` : ''}`.trim() || `${selectedInvItem.category || 'Store'} Item`;
 
+    // Extract Batch Details
+    const selectedBatchObj = availableBatchesForSelectedItem.find(b => b.id === issueSelectedBatchId) || availableBatchesForSelectedItem[0] || null;
+    const finalBatchNo = issueSelectedBatchId === 'CUSTOM' ? (issueCustomBatchText.trim() || 'CUSTOM-BATCH') : (selectedBatchObj?.batchNo || selectedInvItem.lastBatch || 'BATCH-MAIN');
+    const finalRate = selectedBatchObj?.purchaseRate !== undefined ? selectedBatchObj.purchaseRate : Number(selectedInvItem.unitPrice || selectedInvItem.purchaseRatePerKg || 0);
+    const finalVendor = selectedBatchObj?.vendorName || selectedInvItem.lastVendor || 'Company Stock';
+    const finalGrnNo = selectedBatchObj?.grnNo || '';
+    const finalBarcode = selectedBatchObj?.barcode || finalBatchNo || `BAR-ISS-${selectedInvItem.id}`;
+
     if (issueType === 'issue' && (selectedInvItem.availableQtyKg || 0) < qty) {
       alert(`Insufficient available stock! Only ${selectedInvItem.availableQtyKg || 0} ${unitStr} available.`);
       return;
@@ -1352,10 +1443,14 @@ export default function InventoryManagement({
         qty: qty,
         jobName: chosenJobName,
         user: currentUser?.name || 'Store Manager',
+        unitPrice: finalRate,
+        batchNo: finalBatchNo,
+        vendorName: finalVendor,
+        grnNo: finalGrnNo,
+        barcode: finalBarcode,
         notes: issueType === 'issue'
-          ? `Issued ${qty} ${unitStr} to Job: ${chosenJobName}`
-          : `Returned ${qty} ${unitStr} from Job: ${chosenJobName} back to Store`,
-        barcode: selectedInvItem.lastBatch || `BAR-ISS-${selectedInvItem.id}`
+          ? `Issued ${qty} ${unitStr} from Batch [${finalBatchNo}] (Rate: ₹${finalRate}/${unitStr}) to Job: ${chosenJobName}`
+          : `Returned ${qty} ${unitStr} from Job: ${chosenJobName} back to Store`
       });
     } else {
       let updatedInv = [...inventory];
@@ -1373,9 +1468,11 @@ export default function InventoryManagement({
       }
     }
 
-    alert(`${issueType === 'issue' ? 'Issued' : 'Returned'} ${qty} ${unitStr} of ${itemNameStr} for Job "${chosenJobName}" successfully!\n\nProduction Record material consumed list and total costing have been updated.`);
+    alert(`${issueType === 'issue' ? 'Issued' : 'Returned'} ${qty} ${unitStr} of ${itemNameStr} (Batch: ${finalBatchNo}, Rate: ₹${finalRate}/${unitStr}) for Job "${chosenJobName}" successfully!\n\nProduction Record material consumed list and total costing have been updated.`);
     setIsIssueModalOpen(false);
     setIssueQtyKg('');
+    setIssueSelectedBatchId('');
+    setIssueCustomBatchText('');
   };
 
   // Download Physical Stock CSV Template
@@ -3618,14 +3715,22 @@ export default function InventoryManagement({
             <div className="form-group">
               <label>Search & Select Inventory Stock Item *</label>
               <input 
-                type="text"
-                className="form-control"
-                style={{ marginBottom: '8px' }}
-                placeholder="🔍 Search film, micron, width, bay or ID..."
-                value={stockSearchTerm}
-                onChange={e => setStockSearchTerm(e.target.value)}
+                type="text" 
+                className="form-control" 
+                style={{ marginBottom: '8px' }} 
+                placeholder="🔍 Search film, solvent, blade, ink or ID..." 
+                value={stockSearchTerm} 
+                onChange={e => setStockSearchTerm(e.target.value)} 
               />
-              <select className="form-control" value={selectedInvItem?.id} onChange={e => setSelectedInvItem(inventory.find(i => i.id === e.target.value))}>
+              <select 
+                className="form-control" 
+                value={selectedInvItem?.id} 
+                onChange={e => {
+                  const found = inventory.find(i => i.id === e.target.value);
+                  setSelectedInvItem(found);
+                  setIssueSelectedBatchId('');
+                }}
+              >
                 {inventory.filter(i => {
                   const s = (stockSearchTerm || '').toLowerCase();
                   const filmType = (i.filmType || '').toLowerCase();
@@ -3640,11 +3745,74 @@ export default function InventoryManagement({
                     loc.includes(s);
                 }).map(i => (
                   <option key={i.id} value={i.id}>
-                    {i.id} - {i.itemName || `${i.filmType} ${i.micron}µ (${i.widthMm}mm)`} | Location: {i.location} | Avail: {i.availableQtyKg}{i.unit || 'kg'}
+                    {i.id} - {i.itemName || `${i.filmType} ${i.micron}µ (${i.widthMm}mm)`} | Location: {i.location} | Avail: {i.availableQtyKg} {i.unit || 'Kg'} | Rate: ₹{i.unitPrice || i.purchaseRatePerKg || 0}
                   </option>
                 ))}
               </select>
             </div>
+
+            {/* Mandatory Batch / Roll / GRN Selection */}
+            {selectedInvItem && (
+              <div className="form-group" style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '8px', border: '1.5px solid #cbd5e1' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ margin: 0, fontWeight: '700', fontSize: '0.85rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Layers size={15} style={{ color: '#2563eb' }} />
+                    Mandatory Stock Batch / Inward Source *
+                  </label>
+                  {(() => {
+                    const selBatch = availableBatchesForSelectedItem.find(b => b.id === issueSelectedBatchId) || availableBatchesForSelectedItem[0];
+                    if (!selBatch) return null;
+                    return (
+                      <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#047857', background: '#dcfce7', padding: '2px 8px', borderRadius: '4px', border: '1px solid #86efac' }}>
+                        Purchase Rate: ₹{selBatch.purchaseRate} / {selBatch.unit}
+                      </span>
+                    );
+                  })()}
+                </div>
+
+                <select 
+                  className="form-control" 
+                  value={issueSelectedBatchId || (availableBatchesForSelectedItem[0]?.id || '')} 
+                  onChange={e => setIssueSelectedBatchId(e.target.value)}
+                  style={{ fontWeight: '600', fontSize: '0.85rem', background: '#ffffff' }}
+                  required
+                >
+                  {availableBatchesForSelectedItem.map(b => (
+                    <option key={b.id} value={b.id}>
+                      {b.label}
+                    </option>
+                  ))}
+                  <option value="CUSTOM">+ Specify Custom Batch / Heat #</option>
+                </select>
+
+                {issueSelectedBatchId === 'CUSTOM' && (
+                  <div style={{ marginTop: '8px' }}>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="Enter custom Batch / Heat / Roll #"
+                      value={issueCustomBatchText}
+                      onChange={e => setIssueCustomBatchText(e.target.value)}
+                      required
+                    />
+                  </div>
+                )}
+
+                {/* Selected Batch Details Metadata Card */}
+                {(() => {
+                  const selBatch = availableBatchesForSelectedItem.find(b => b.id === issueSelectedBatchId) || availableBatchesForSelectedItem[0];
+                  if (!selBatch) return null;
+                  return (
+                    <div style={{ marginTop: '10px', fontSize: '0.76rem', background: '#ffffff', padding: '8px 10px', borderRadius: '6px', border: '1px dashed #94a3b8', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                      <div>Batch / Heat Ref: <strong style={{ color: '#1e40af' }}>{selBatch.batchNo}</strong></div>
+                      <div>Purchase Rate: <strong style={{ color: '#047857' }}>₹{selBatch.purchaseRate} / {selBatch.unit}</strong></div>
+                      <div>Source Ref: <strong>{selBatch.grnNo}</strong></div>
+                      <div>Supplier / Origin: <strong>{selBatch.vendorName}</strong></div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
 
             <div className="form-group">
               <label>Production Job Name *</label>
@@ -4059,7 +4227,7 @@ export default function InventoryManagement({
         const matchingGRNs = (grns || []).filter(g => isItemMatch(g, item));
         const inwardTxLines = matchingGRNs.map(g => {
           const txId = `GRN_${g.grnNo || g.id}`;
-          const rate = g.purchaseRatePerKg || DEFAULT_DAILY_RATES[g.filmType] || 120;
+          const rate = Number(g.purchaseRatePerKg || g.purchaseRate || g.unitPrice || item.unitPrice || item.purchaseRatePerKg || (DEFAULT_DAILY_RATES[g.filmType] || 0));
           const qty = g.netWeightKg || 0;
           return {
             txId,
@@ -4068,14 +4236,17 @@ export default function InventoryManagement({
             date: g.receivedDate || '2026-07-24',
             refNo: g.grnNo,
             subRef: g.poNumber ? `PO: ${g.poNumber}` : 'Direct Receipt',
-            partyName: g.vendorName || 'Supplier',
+            partyName: g.vendorName || item.lastVendor || 'Supplier',
             subParty: g.invoiceNo ? `Inv: ${g.invoiceNo}` : 'Vendor Receipt',
             inwardQtyKg: qty,
             outwardQtyKg: 0,
             adjQtyKg: 0,
             ratePerKg: rate,
+            unitPrice: rate,
             totalValue: qty * rate,
             barcode: customBarcodesMap[txId] || g.batchNo || `BAR-GRN-${g.grnNo}`,
+            batchNo: g.batchNo || `GRN-${g.grnNo}`,
+            invoiceNo: g.invoiceNo || '',
             status: g.status || 'Approved',
             notes: `${g.rollsReceived || 1} pkg/roll(s) | Batch: ${g.batchNo || 'N/A'}`
           };
@@ -4088,7 +4259,7 @@ export default function InventoryManagement({
             if (isItemMatch(mat, item)) {
               const txId = `JOB_${rec.id}_${mat.id || idx}`;
               const qty = mat.netConsumedQtyKg || mat.issueQtyKg || 0;
-              const rate = mat.unitPricePerKg || DEFAULT_DAILY_RATES[item.filmType] || 120;
+              const rate = Number(mat.unitPricePerKg || mat.unitPrice || mat.purchaseRate || item.unitPrice || item.purchaseRatePerKg || (DEFAULT_DAILY_RATES[item.filmType] || 0));
               jobUsageLines.push({
                 txId,
                 category: 'usage',
@@ -4102,8 +4273,10 @@ export default function InventoryManagement({
                 outwardQtyKg: qty,
                 adjQtyKg: 0,
                 ratePerKg: rate,
+                unitPrice: rate,
                 totalValue: qty * rate,
                 barcode: customBarcodesMap[txId] || mat.barcode || `BAR-JOB-${(rec.orderId || '89').replace('ORD-2026-', '')}`,
+                batchNo: mat.batchNo || mat.barcode || item.lastBatch || '',
                 status: rec.status || 'Consumed in Production',
                 notes: `Gross Issued: ${mat.issueQtyKg || 0} ${unitStr} | Returned: ${mat.returnQtyKg || 0} ${unitStr} | Net: ${qty} ${unitStr}`
               });
@@ -4117,7 +4290,7 @@ export default function InventoryManagement({
           .map(tx => {
             const isIssue = tx.issueType === 'issue';
             const qty = tx.qtyKg || 0;
-            const rate = DEFAULT_DAILY_RATES[item.filmType] || 120;
+            const rate = Number(tx.unitPrice || tx.purchaseRatePerKg || tx.ratePerKg || item.unitPrice || item.purchaseRatePerKg || (DEFAULT_DAILY_RATES[item.filmType] || 0));
             return {
               txId: tx.id,
               category: isIssue ? 'usage' : 'inward',
@@ -4125,14 +4298,16 @@ export default function InventoryManagement({
               date: tx.date || '2026-07-25',
               refNo: tx.jobName || (isIssue ? 'Store Issue' : 'Store Return'),
               subRef: `Req: ${tx.id}`,
-              partyName: tx.issuedBy || 'Store Mgr Dilip Joshi',
+              partyName: tx.vendorName || tx.issuedBy || item.lastVendor || 'Store Mgr Dilip Joshi',
               subParty: isIssue ? 'Shopfloor Requisition' : 'Store Return',
               inwardQtyKg: isIssue ? 0 : qty,
               outwardQtyKg: isIssue ? qty : 0,
               adjQtyKg: 0,
               ratePerKg: rate,
+              unitPrice: rate,
               totalValue: qty * rate,
               barcode: customBarcodesMap[tx.id] || tx.barcode || `BAR-TX-${tx.id}`,
+              batchNo: tx.batchNo || tx.barcode || item.lastBatch || '',
               status: isIssue ? 'Issued' : 'Returned',
               notes: tx.notes || (isIssue ? 'Manual shopfloor issue' : 'Unused stock returned')
             };
@@ -4545,6 +4720,9 @@ export default function InventoryManagement({
                                       onClick={() => {
                                          const hasNumericSpecs = parseFloat(item.micron) > 0 && parseFloat(item.widthMm) > 0 && item.micron !== '-' && item.widthMm !== '-';
                                          const isFilm = (item.category === 'Film Substrates' || item.category === 'Film') && hasNumericSpecs;
+                                         const rateVal = Number(tx.ratePerKg || tx.unitPrice || item.unitPrice || item.purchaseRatePerKg || 0);
+                                         const batchVal = tx.batchNo || (tx.notes?.includes('Batch:') ? tx.notes.split('Batch:')[1].split('|')[0].replace(/[\[\]]/g, '').trim() : (tx.barcode || item.lastBatch || '-'));
+                                         const invoiceVal = tx.subParty?.includes('Inv:') ? tx.subParty.replace('Inv:', '').trim() : (tx.invoiceNo || '');
                                          setSelectedRollForBarcodeModal({
                                            barcodeId: tx.barcode,
                                            rollType: isFilm ? 'RAW_MATERIAL' : 'CONSUMABLE_ITEM',
@@ -4554,7 +4732,10 @@ export default function InventoryManagement({
                                            micron: isFilm ? (parseFloat(item.micron) || 0) : '-',
                                            widthMm: isFilm ? (parseFloat(item.widthMm) || 0) : '-',
                                            netWeightKg: tx.inwardQtyKg || tx.outwardQtyKg || 0,
-                                           vendorName: tx.partyName || item.lastVendor,
+                                           vendorName: tx.partyName || item.lastVendor || 'Company Stock',
+                                           batchNo: batchVal,
+                                           invoiceNo: invoiceVal,
+                                           purchaseRatePerKg: rateVal,
                                            stationId: 'SCALE_1_INWARD'
                                          });
                                        }}

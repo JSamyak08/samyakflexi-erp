@@ -1157,11 +1157,14 @@ export default function App() {
     }));
   };
 
-  const handleStoreIssueReturn = async ({ item, issueType, qty, jobName, user, notes, barcode }) => {
+  const handleStoreIssueReturn = async ({ item, issueType, qty, jobName, user, notes, barcode, unitPrice, batchNo, vendorName, grnNo }) => {
     if (!item || !qty || qty <= 0 || !jobName) return;
 
     const unitStr = item.unit || 'Kg';
     const itemNameStr = item.itemName || `${item.filmType || ''} ${item.micron && item.micron !== '-' ? `${item.micron}µ` : ''}`.trim() || `${item.category || 'Store'} Item`;
+    const rateVal = unitPrice !== undefined && unitPrice !== null && !isNaN(parseFloat(unitPrice)) 
+      ? Number(unitPrice) 
+      : Number(item.unitPrice || item.purchaseRatePerKg || 0);
 
     // 1. Update Inventory State and Supabase
     let updatedInv = inventory.map(i => {
@@ -1189,7 +1192,7 @@ export default function App() {
       saveInventoryItemToSupabase(updatedItem).catch(console.warn);
     }
 
-    // 2. Record Transaction in storeIssueTransactions
+    // 2. Record Transaction in storeIssueTransactions with exact batch and purchase rate
     const newTx = {
       id: `ISS-${Date.now()}`,
       itemId: item.id,
@@ -1203,13 +1206,17 @@ export default function App() {
       jobName: jobName,
       qtyKg: qty,
       unit: unitStr,
-      unitPrice: Number(item.unitPrice || item.purchaseRatePerKg || 0),
+      unitPrice: rateVal,
+      purchaseRatePerKg: rateVal,
+      batchNo: batchNo || item.lastBatch || '',
+      vendorName: vendorName || item.lastVendor || '',
+      grnNo: grnNo || '',
       date: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
       issuedBy: user || currentUser?.name || 'Store Manager',
       notes: notes || (issueType === 'issue'
-        ? `Issued ${qty} ${unitStr} to Job: ${jobName}`
+        ? `Issued ${qty} ${unitStr} from Batch [${batchNo || 'Main Lot'}] to Job: ${jobName}`
         : `Returned ${qty} ${unitStr} from Job: ${jobName} back to Store`),
-      barcode: barcode || item.lastBatch || `BAR-ISS-${item.id}`
+      barcode: barcode || batchNo || item.lastBatch || `BAR-ISS-${item.id}`
     };
 
     const newTxList = [newTx, ...storeIssueTransactions];
@@ -1275,7 +1282,7 @@ export default function App() {
         (m.filmType && m.filmType.toLowerCase().trim() === (item.filmType || item.itemName || '').toLowerCase().trim())
       );
 
-      const itemRate = parseFloat(item.unitPrice || item.purchaseRatePerKg) || 0;
+      const itemRate = rateVal > 0 ? rateVal : (parseFloat(item.unitPrice || item.purchaseRatePerKg) || 0);
 
       if (matIdx >= 0) {
         const existingMat = currentMaterials[matIdx];
@@ -1285,7 +1292,7 @@ export default function App() {
         const newIssued = issueType === 'issue' ? currIssued + qty : currIssued;
         const newReturned = issueType === 'return' ? currReturned + qty : currReturned;
         const netConsumed = Math.max(0, newIssued - newReturned);
-        const matRate = parseFloat(existingMat.unitPricePerKg) || itemRate;
+        const matRate = itemRate > 0 ? itemRate : (parseFloat(existingMat.unitPricePerKg) || 0);
 
         currentMaterials[matIdx] = {
           ...existingMat,
@@ -1297,7 +1304,9 @@ export default function App() {
           returnQtyKg: newReturned,
           netConsumedQtyKg: netConsumed,
           unitPricePerKg: matRate,
-          totalMaterialCost: netConsumed * matRate
+          totalMaterialCost: netConsumed * matRate,
+          batchNo: batchNo || existingMat.batchNo || item.lastBatch || '',
+          vendorName: vendorName || existingMat.vendorName || item.lastVendor || ''
         };
       } else {
         const issuedQty = issueType === 'issue' ? qty : 0;
@@ -1314,12 +1323,14 @@ export default function App() {
           micron: item.micron || '-',
           widthMm: item.widthMm || '-',
           unit: unitStr,
-          barcode: barcode || item.lastBatch || `BAR-ISS-${item.id}`,
+          barcode: barcode || batchNo || item.lastBatch || `BAR-ISS-${item.id}`,
           issueQtyKg: issuedQty,
           returnQtyKg: returnedQty,
           netConsumedQtyKg: netConsumed,
           unitPricePerKg: itemRate,
           totalMaterialCost: netConsumed * itemRate,
+          batchNo: batchNo || item.lastBatch || '',
+          vendorName: vendorName || item.lastVendor || '',
           jobMasterFilmType: item.filmType || item.itemName,
           jobMasterMicron: item.micron && item.micron !== '-' ? Number(item.micron) : 0,
           jobMasterWidthMm: item.widthMm && item.widthMm !== '-' ? Number(item.widthMm) : 0

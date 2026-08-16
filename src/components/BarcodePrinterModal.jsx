@@ -108,8 +108,8 @@ export default function BarcodePrinterModal({ roll, rolls, onClose }) {
 
     const displayUnit = r.unit || r.uom || (isFilmItem ? 'kg' : 'Pcs');
     const displayQty = r.netWeightKg ?? r.availableWeightKg ?? r.qty ?? 0;
-    const rateVal = r.purchaseRatePerKg || r.unitPrice || r.purchaseRate || r.rate || 0;
-    const vendorStr = r.vendorName || r.supplier || '-';
+    const rateVal = Number(r.purchaseRatePerKg || r.unitPrice || r.purchaseRate || r.rate || r.ratePerKg || 0);
+    const vendorStr = r.vendorName || r.supplier || r.partyName || '-';
     const batchStr = r.batchNo || r.heatNo || r.batch || '-';
 
     return (
