@@ -1925,7 +1925,13 @@ export default function InventoryManagement({
 
       {/* Barcode Thermal Label Printer Modal */}
       {selectedRollForBarcodeModal && (
-        <BarcodePrinterModal rolls={selectedRollForBarcodeModal} roll={selectedRollForBarcodeModal} onClose={() => setSelectedRollForBarcodeModal(null)} />
+        <BarcodePrinterModal 
+          rolls={selectedRollForBarcodeModal} 
+          roll={selectedRollForBarcodeModal} 
+          inventory={inventory}
+          inks={inks}
+          onClose={() => setSelectedRollForBarcodeModal(null)} 
+        />
       )}
 
       {/* Dispatch Packing List PDF Modal */}
@@ -4658,13 +4664,15 @@ export default function InventoryManagement({
             };
           });
 
+        const itemActualUnitPrice = Number(item.unitPrice || item.purchaseRatePerKg || item.pricePerKg || 0);
+
         // 4. Gather Physical Reconciliation & Quick Adjustments
         const adjLines = (stockLedgerAdjustments || [])
           .filter(a => isItemMatch(a, item))
           .map(a => {
             const txId = `ADJ_${a.id}`;
             const qty = a.qtyKg || 0;
-            const rate = DEFAULT_DAILY_RATES[item.filmType] || 120;
+            const rate = itemActualUnitPrice;
             return {
               txId,
               category: 'reconciliation',
@@ -4705,8 +4713,8 @@ export default function InventoryManagement({
           inwardQtyKg: openingStockQty,
           outwardQtyKg: 0,
           adjQtyKg: 0,
-          ratePerKg: DEFAULT_DAILY_RATES[item.filmType] || 120,
-          totalValue: openingStockQty * (DEFAULT_DAILY_RATES[item.filmType] || 120),
+          ratePerKg: itemActualUnitPrice,
+          totalValue: openingStockQty * itemActualUnitPrice,
           barcode: item.lastBatch || `BAR-OPN-${item.id}`,
           status: 'Opening Baseline',
           notes: `Verified onboarding stock balance for ${item.itemName || item.filmType}`
@@ -4756,8 +4764,8 @@ export default function InventoryManagement({
 
         // Summary Calculations
         const totalPurchasedQty = inwardTxLines.reduce((sum, tx) => sum + tx.inwardQtyKg, 0) + openingStockQty;
-        const totalSpendRs = inwardTxLines.reduce((sum, tx) => sum + tx.totalValue, 0) + (openingStockQty * (DEFAULT_DAILY_RATES[item.filmType] || 120));
-        const avgPurchaseRate = totalPurchasedQty > 0 ? (totalSpendRs / totalPurchasedQty) : (DEFAULT_DAILY_RATES[item.filmType] || 120);
+        const totalSpendRs = inwardTxLines.reduce((sum, tx) => sum + tx.totalValue, 0) + (openingStockQty * itemActualUnitPrice);
+        const avgPurchaseRate = totalPurchasedQty > 0 ? (totalSpendRs / totalPurchasedQty) : itemActualUnitPrice;
 
         const totalConsumedJobQty = jobUsageLines.reduce((sum, tx) => sum + tx.outwardQtyKg, 0) + storeIssueLines.filter(tx => tx.category === 'usage').reduce((sum, tx) => sum + tx.outwardQtyKg, 0);
         const totalReconciliationAdjQty = adjLines.reduce((sum, tx) => sum + tx.adjQtyKg, 0);

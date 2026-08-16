@@ -3,7 +3,7 @@ import { Printer, X, Tag, ChevronLeft, ChevronRight, QrCode } from 'lucide-react
 import { COMPANY_DETAILS } from '../factoryStore';
 import QRCode2D from './QRCode2D';
 
-export default function BarcodePrinterModal({ roll, rolls, onClose }) {
+export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks = [], onClose }) {
   const rollList = Array.isArray(rolls) 
     ? rolls 
     : (Array.isArray(roll) ? roll : (roll ? [roll] : []));
@@ -16,6 +16,49 @@ export default function BarcodePrinterModal({ roll, rolls, onClose }) {
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const resolveItemPurchaseRate = (r) => {
+    // 1. Check explicit rate on roll/sticker object
+    const directRate = Number(r.purchaseRatePerKg || r.purchaseRate || r.unitPrice || r.rate || r.ratePerKg || 0);
+    if (directRate > 0) return directRate;
+
+    // 2. Cross-reference with live inventory list
+    const cleanId = String(r.itemId || r.id || r.itemCode || r.barcodeId || '').toLowerCase().trim();
+    const strippedId = cleanId.replace(/^(lot|bc|bar-iss|bar|roll|inv|grn|item)[-_:]\s*/i, '').trim();
+
+    const matchedItem = (inventory || []).find(i => {
+      const iId = (i.id || '').toLowerCase();
+      const iCode = (i.itemCode || '').toLowerCase();
+      const pCode = (i.productCode || '').toLowerCase();
+      const lBatch = (i.lastBatch || '').toLowerCase();
+      const iName = (i.itemName || '').toLowerCase();
+      return iId === cleanId || iId === strippedId ||
+        iCode === cleanId || iCode === strippedId ||
+        pCode === cleanId || pCode === strippedCode ||
+        lBatch === cleanId || lBatch === strippedId ||
+        (iName && (iName === cleanId || cleanId.includes(iName)));
+    });
+
+    if (matchedItem) {
+      const invRate = Number(matchedItem.unitPrice || matchedItem.purchaseRatePerKg || matchedItem.pricePerKg || 0);
+      if (invRate > 0) return invRate;
+    }
+
+    // 3. Cross-reference with inks master
+    const matchedInk = (inks || []).find(ink => {
+      const pCode = (ink.productCode || '').toLowerCase();
+      const inkId = (ink.id || '').toLowerCase();
+      const shade = (ink.shade || '').toLowerCase();
+      return pCode === cleanId || pCode === strippedId || inkId === cleanId || (shade && (shade === cleanId || cleanId.includes(shade)));
+    });
+
+    if (matchedInk) {
+      const inkRate = Number(matchedInk.pricePerKg || matchedInk.unitPrice || 0);
+      if (inkRate > 0) return inkRate;
+    }
+
+    return directRate;
   };
 
   const renderSingleSticker = (r, isPrintView = false) => {
@@ -55,7 +98,7 @@ export default function BarcodePrinterModal({ roll, rolls, onClose }) {
 
     const displayUnit = r.unit || r.uom || (isFilmItem ? 'kg' : 'Pcs');
     const displayQty = r.netWeightKg ?? r.availableWeightKg ?? r.qty ?? 0;
-    const rateVal = Number(r.purchaseRatePerKg || r.unitPrice || r.purchaseRate || r.rate || r.ratePerKg || 0);
+    const rateVal = resolveItemPurchaseRate(r);
     const vendorStr = r.vendorName || r.supplier || r.partyName || '-';
     const batchStr = r.batchNo || r.heatNo || r.batch || '-';
     const barcodeCodeStr = r.barcodeId || r.id || 'BC-2026-0000';

@@ -2231,6 +2231,7 @@ export default function ProductionRecordManagement({
       {selectedRollForBarcodeModal && (
         <BarcodePrinterModal 
           roll={selectedRollForBarcodeModal} 
+          inventory={inventory}
           onClose={() => setSelectedRollForBarcodeModal(null)} 
         />
       )}
