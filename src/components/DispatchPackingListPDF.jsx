@@ -1,8 +1,9 @@
 import React from 'react';
 import { Printer, Download, ArrowLeft, Building2, PackageCheck } from 'lucide-react';
 import { COMPANY_DETAILS } from '../factoryStore';
+import QRCode2D from './QRCode2D';
 
-export default function DispatchPackingListPDF({ shipment, onClose }) {
+export default function DispatchPackingListPDF({ shipment, company, onClose }) {
   if (!shipment) return null;
 
   const handlePrint = () => {
@@ -117,8 +118,13 @@ export default function DispatchPackingListPDF({ shipment, onClose }) {
                   <td style={{ padding: '10px 12px', textAlign: 'center', border: '1px solid #e2e8f0', fontWeight: '700' }}>
                     {item.rollNo || idx + 1}
                   </td>
-                  <td style={{ padding: '10px 12px', border: '1px solid #e2e8f0', fontFamily: 'monospace', fontWeight: '700', color: '#2563eb' }}>
-                    {item.barcodeId}
+                  <td style={{ padding: '8px 12px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <QRCode2D value={item.barcodeId || 'ROLL-000'} size={32} showLabel={false} margin={0} />
+                      <span style={{ fontFamily: 'monospace', fontWeight: '800', color: '#2563eb' }}>
+                        {item.barcodeId}
+                      </span>
+                    </div>
                   </td>
                   <td style={{ padding: '10px 12px', border: '1px solid #e2e8f0' }}>
                     {item.substrateSpec || 'Laminated Film Reel'}

@@ -3,6 +3,7 @@ import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
 import { COMPANY_DETAILS } from '../factoryStore';
 import { numberToWords, formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
+import QRCode2D from './QRCode2D';
 
 export default function PurchaseOrderPDF({ poData, onClose }) {
   if (!poData) return null;
@@ -115,30 +116,35 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
               </p>
             </div>
 
-            <div className="letterhead-doc-title" style={{ textAlign: 'right' }}>
-              <div style={{ display: 'inline-block', background: '#0f172a', color: '#ffffff', padding: '4px 14px', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '900', fontSize: '18px', marginBottom: '6px' }}>
-                PURCHASE ORDER
+            <div className="letterhead-doc-title" style={{ display: 'flex', alignItems: 'center', gap: '14px', justifyContent: 'flex-end' }}>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ display: 'inline-block', background: '#0f172a', color: '#ffffff', padding: '4px 14px', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '900', fontSize: '18px', marginBottom: '6px' }}>
+                  PURCHASE ORDER
+                </div>
+                <div className="doc-ref-no" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px', fontSize: '13px', fontWeight: '800', color: '#1e293b' }}>
+                  Ref #: {isEditingRef ? (
+                    <input
+                      type="text"
+                      value={currentPoNumber}
+                      onChange={(e) => setCurrentPoNumber(e.target.value)}
+                      onBlur={() => setIsEditingRef(false)}
+                      autoFocus
+                      style={{ fontSize: '13px', fontWeight: 'bold', border: '1px solid #2563eb', padding: '2px 6px', borderRadius: '4px', textAlign: 'right' }}
+                    />
+                  ) : (
+                    <span 
+                      onClick={() => setIsEditingRef(true)}
+                      title="Click to edit reference number"
+                      style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#4f46e5', background: '#eef2ff', padding: '2px 8px', borderRadius: '4px' }}
+                    >
+                      {currentPoNumber}
+                      <Edit3 size={12} className="no-print" style={{ opacity: 0.8, color: '#4f46e5' }} />
+                    </span>
+                  )}
+                </div>
               </div>
-              <div className="doc-ref-no" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px', fontSize: '13px', fontWeight: '800', color: '#1e293b' }}>
-                Ref #: {isEditingRef ? (
-                  <input
-                    type="text"
-                    value={currentPoNumber}
-                    onChange={(e) => setCurrentPoNumber(e.target.value)}
-                    onBlur={() => setIsEditingRef(false)}
-                    autoFocus
-                    style={{ fontSize: '13px', fontWeight: 'bold', border: '1px solid #2563eb', padding: '2px 6px', borderRadius: '4px', textAlign: 'right' }}
-                  />
-                ) : (
-                  <span 
-                    onClick={() => setIsEditingRef(true)}
-                    title="Click to edit reference number"
-                    style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#4f46e5', background: '#eef2ff', padding: '2px 8px', borderRadius: '4px' }}
-                  >
-                    {currentPoNumber}
-                    <Edit3 size={12} className="no-print" style={{ opacity: 0.8, color: '#4f46e5' }} />
-                  </span>
-                )}
+              <div style={{ background: '#ffffff', padding: '2px', border: '1px solid #e2e8f0', borderRadius: '4px' }}>
+                <QRCode2D value={currentPoNumber || 'PO-000'} size={48} showLabel={false} margin={0} />
               </div>
             </div>
           </div>

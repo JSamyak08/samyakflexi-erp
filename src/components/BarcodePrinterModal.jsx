@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Printer, X, Tag, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Printer, X, Tag, ChevronLeft, ChevronRight, QrCode } from 'lucide-react';
 import { COMPANY_DETAILS } from '../factoryStore';
+import QRCode2D from './QRCode2D';
 
 export default function BarcodePrinterModal({ roll, rolls, onClose }) {
   const rollList = Array.isArray(rolls) 
@@ -15,60 +16,6 @@ export default function BarcodePrinterModal({ roll, rolls, onClose }) {
 
   const handlePrint = () => {
     window.print();
-  };
-
-  // Generate SVG Code128 Barcode Visual (Pure SVG Bars)
-  const renderBarcodeSVG = (text) => {
-    const str = text || 'BC-2026-0000';
-    const bars = [];
-    let x = 10;
-    const barHeight = 36;
-    const barStartY = 3;
-    const barEndY = barStartY + barHeight; // 39
-
-    // Start Pattern
-    bars.push(<rect key="start-1" x={x} y={barStartY} width="3" height={barHeight} fill="#000" />); x += 5;
-    bars.push(<rect key="start-2" x={x} y={barStartY} width="1.5" height={barHeight} fill="#000" />); x += 3.5;
-    bars.push(<rect key="start-3" x={x} y={barStartY} width="4.5" height={barHeight} fill="#000" />); x += 6.5;
-
-    for (let i = 0; i < str.length; i++) {
-      const charCode = str.charCodeAt(i);
-      const width1 = ((charCode % 3) + 1) * 1.4;
-      const width2 = (((charCode * 2) % 3) + 1) * 1.4;
-      const gap = ((charCode % 2) + 1) * 1.4;
-
-      bars.push(<rect key={`bar-${i}-1`} x={x} y={barStartY} width={width1} height={barHeight} fill="#000" />);
-      x += width1 + gap;
-      bars.push(<rect key={`bar-${i}-2`} x={x} y={barStartY} width={width2} height={barHeight} fill="#000" />);
-      x += width2 + gap;
-    }
-
-    // Stop Pattern
-    bars.push(<rect key="stop-1" x={x} y={barStartY} width="4.5" height={barHeight} fill="#000" />); x += 6.5;
-    bars.push(<rect key="stop-2" x={x} y={barStartY} width="1.5" height={barHeight} fill="#000" />); x += 3.5;
-    bars.push(<rect key="stop-3" x={x} y={barStartY} width="3" height={barHeight} fill="#000" />); x += 5;
-
-    const totalWidth = Math.ceil(x + 10);
-    const textY = barEndY + 15; // 54
-    const totalViewHeight = textY + 6; // 60
-
-    return (
-      <svg width="100%" height="52" viewBox={`0 0 ${totalWidth} ${totalViewHeight}`} style={{ overflow: 'visible' }}>
-        {bars}
-        <text 
-          x="50%" 
-          y={textY} 
-          textAnchor="middle" 
-          fontSize="12" 
-          fontFamily="Consolas, Monaco, 'Courier New', monospace" 
-          fontWeight="800" 
-          letterSpacing="1.2px"
-          fill="#000"
-        >
-          {str}
-        </text>
-      </svg>
-    );
   };
 
   const renderSingleSticker = (r, isPrintView = false) => {
@@ -111,6 +58,7 @@ export default function BarcodePrinterModal({ roll, rolls, onClose }) {
     const rateVal = Number(r.purchaseRatePerKg || r.unitPrice || r.purchaseRate || r.rate || r.ratePerKg || 0);
     const vendorStr = r.vendorName || r.supplier || r.partyName || '-';
     const batchStr = r.batchNo || r.heatNo || r.batch || '-';
+    const barcodeCodeStr = r.barcodeId || r.id || 'BC-2026-0000';
 
     return (
       <div 
@@ -164,9 +112,23 @@ export default function BarcodePrinterModal({ roll, rolls, onClose }) {
           </span>
         </div>
 
-        {/* Barcode SVG Visual */}
-        <div style={{ textAlign: 'center', background: '#f8fafc', padding: '3px 5px', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
-          {renderBarcodeSVG(r.barcodeId)}
+        {/* 2D Barcode (QR Code) Scanner Visual */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', padding: '6px 10px', borderRadius: '6px', border: '1.5px solid #0f172a', gap: '12px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+            <span style={{ fontSize: '0.62rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <QrCode size={12} style={{ color: '#047857' }} /> 2D BARCODE (ISO 18004)
+            </span>
+            <span style={{ fontFamily: "Consolas, Monaco, 'Courier New', monospace", fontWeight: '900', fontSize: '0.95rem', color: '#0f172a', letterSpacing: '0.04em', marginTop: '2px', wordBreak: 'break-all' }}>
+              {barcodeCodeStr}
+            </span>
+            <span style={{ fontSize: '0.65rem', color: '#047857', fontWeight: '700', marginTop: '2px' }}>
+              ✓ Handheld & Fixed Scanner Ready
+            </span>
+          </div>
+
+          <div style={{ background: '#ffffff', padding: '2px', borderRadius: '4px', border: '1px solid #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <QRCode2D value={barcodeCodeStr} size={84} showLabel={false} margin={1} />
+          </div>
         </div>
 
         {/* Core Specs Grid */}

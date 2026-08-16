@@ -3,6 +3,7 @@ import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
 import { COMPANY_DETAILS } from '../factoryStore';
 import { numberToWords, formatINR } from '../utils/pdfHelpers';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
+import QRCode2D from './QRCode2D';
 
 export default function GRNPDF({ grnData, onClose }) {
   if (!grnData) return null;
@@ -91,28 +92,33 @@ export default function GRNPDF({ grnData, onClose }) {
               </p>
             </div>
 
-            <div className="letterhead-doc-title">
-              <h2>Goods Receipt Note</h2>
-              <div className="doc-ref-no" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
-                {isEditingRef ? (
-                  <input
-                    type="text"
-                    value={currentGrnNo}
-                    onChange={(e) => setCurrentGrnNo(e.target.value)}
-                    onBlur={() => setIsEditingRef(false)}
-                    autoFocus
-                    style={{ fontSize: '13px', fontWeight: 'bold', border: '1px solid #2563eb', padding: '2px 6px', borderRadius: '4px', textAlign: 'right' }}
-                  />
-                ) : (
-                  <span 
-                    onClick={() => setIsEditingRef(true)}
-                    title="Click to edit reference number"
-                    style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                  >
-                    {currentGrnNo}
-                    <Edit3 size={12} className="no-print" style={{ opacity: 0.6, color: '#2563eb' }} />
-                  </span>
-                )}
+            <div className="letterhead-doc-title" style={{ display: 'flex', alignItems: 'center', gap: '14px', justifyContent: 'flex-end' }}>
+              <div style={{ textAlign: 'right' }}>
+                <h2>Goods Receipt Note</h2>
+                <div className="doc-ref-no" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+                  {isEditingRef ? (
+                    <input
+                      type="text"
+                      value={currentGrnNo}
+                      onChange={(e) => setCurrentGrnNo(e.target.value)}
+                      onBlur={() => setIsEditingRef(false)}
+                      autoFocus
+                      style={{ fontSize: '13px', fontWeight: 'bold', border: '1px solid #2563eb', padding: '2px 6px', borderRadius: '4px', textAlign: 'right' }}
+                    />
+                  ) : (
+                    <span 
+                      onClick={() => setIsEditingRef(true)}
+                      title="Click to edit reference number"
+                      style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                    >
+                      {currentGrnNo}
+                      <Edit3 size={12} className="no-print" style={{ opacity: 0.6, color: '#2563eb' }} />
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div style={{ background: '#ffffff', padding: '2px', border: '1px solid #e2e8f0', borderRadius: '4px' }}>
+                <QRCode2D value={currentGrnNo || 'GRN-000'} size={48} showLabel={false} margin={0} />
               </div>
             </div>
           </div>
