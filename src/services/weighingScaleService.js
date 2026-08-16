@@ -109,16 +109,34 @@ class WeighingScaleService {
 
     try {
       this.errorMessage = null;
+
+      // If previous connection/port is dangling or open, clean up first
+      if (this.port) {
+        try {
+          await this.disconnect();
+        } catch (e) {
+          console.warn('Cleanup previous port warning:', e);
+        }
+      }
+
       // Prompt user to pick USB-Serial / RS-232 COM port
       this.port = await navigator.serial.requestPort();
 
-      await this.port.open({
-        baudRate: parseInt(this.config.baudRate, 10) || 9600,
-        dataBits: parseInt(this.config.dataBits, 10) || 8,
-        stopBits: parseInt(this.config.stopBits, 10) || 1,
-        parity: this.config.parity || 'none',
-        flowControl: this.config.flowControl || 'none'
-      });
+      // Ensure port is not already opened
+      if (!this.port.readable) {
+        const baud = parseInt(this.config.baudRate, 10) || 9600;
+        const dataBits = parseInt(this.config.dataBits, 10) || 8;
+        const stopBits = parseInt(this.config.stopBits, 10) || 1;
+        const parity = this.config.parity || 'none';
+
+        await this.port.open({
+          baudRate: baud,
+          dataBits: dataBits,
+          stopBits: stopBits,
+          parity: parity,
+          bufferSize: 255
+        });
+      }
 
       this.isConnected = true;
       this.isSimulated = false;
@@ -132,12 +150,37 @@ class WeighingScaleService {
     } catch (err) {
       console.error('Failed to open RS-232 serial port:', err);
       this.isConnected = false;
-      this.errorMessage = err.name === 'NotFoundError' 
-        ? 'No serial port selected by user.' 
-        : `Connection failed: ${err.message || err}`;
+      
+      let humanMsg = err.message || String(err);
+      if (err.name === 'NotFoundError') {
+        humanMsg = 'No serial port selected by user.';
+      } else if (
+        humanMsg.toLowerCase().includes('failed to open serial port') || 
+        err.name === 'NetworkError' || 
+        err.name === 'InvalidStateError'
+      ) {
+        humanMsg = 'Windows COM Port is in use or locked. Please close any other browser tabs, PuTTY, or scale apps using this COM port, or unplug and re-insert the USB-to-RS232 adapter and try again.';
+      }
+
+      this.errorMessage = humanMsg;
       this.notify();
-      throw err;
+      
+      const customErr = new Error(humanMsg);
+      customErr.name = err.name;
+      throw customErr;
     }
+  }
+
+  /**
+   * Force reset / release all serial handles and locks
+   */
+  async forceReset() {
+    await this.disconnect().catch(() => {});
+    this.port = null;
+    this.reader = null;
+    this.readableStreamClosed = null;
+    this.errorMessage = null;
+    this.notify();
   }
 
   async readStream() {

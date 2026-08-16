@@ -60,6 +60,11 @@ export default function WeighingScaleWidget({ onCaptureWeight }) {
     showToast('🔌 Scale Disconnected.');
   };
 
+  const handleForceReset = async () => {
+    await weighingScaleService.forceReset();
+    showToast('🔄 Serial Port & Driver Lock Reset. You can now reconnect.');
+  };
+
   const handleSaveSettings = () => {
     weighingScaleService.saveConfig({ baudRate, dataBits, stopBits, parity });
     showToast('⚙️ RS-232 Communication Settings Saved!');
@@ -371,6 +376,33 @@ export default function WeighingScaleWidget({ onCaptureWeight }) {
                     )}
                   </div>
 
+                  {scaleState.errorMessage && (
+                    <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: '8px', padding: '12px', color: '#991b1b', fontSize: '0.78rem', lineHeight: '1.5' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '800', marginBottom: '4px' }}>
+                        <AlertCircle size={15} style={{ color: '#dc2626' }} />
+                        Windows COM Port Connection Issue:
+                      </div>
+                      <div>{scaleState.errorMessage}</div>
+                      <div style={{ marginTop: '8px', display: 'flex', gap: '8px' }}>
+                        <button 
+                          type="button" 
+                          onClick={handleForceReset}
+                          className="btn-secondary"
+                          style={{ padding: '4px 10px', fontSize: '0.72rem', fontWeight: '700', background: '#ffffff', color: '#b91c1c', borderColor: '#fca5a5' }}
+                        >
+                          🔄 Force Reset / Release Port
+                        </button>
+                        <button 
+                          type="button" 
+                          onClick={() => setActiveTab('troubleshoot')}
+                          style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: '0.72rem', fontWeight: '700', cursor: 'pointer', textDecoration: 'underline' }}
+                        >
+                          View Windows Steps
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Simulation / Offline Mode for Testing */}
                   <div style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '8px', border: '1px dashed #cbd5e1' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
@@ -508,6 +540,16 @@ export default function WeighingScaleWidget({ onCaptureWeight }) {
                       <strong>Indicator Mode:</strong> Ensure your weighing indicator is set to <strong>Continuous Send</strong> (or Stream output) in its internal calibration menu.
                     </li>
                   </ol>
+
+                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '10px 14px', borderRadius: '6px', color: '#991b1b', marginBottom: '14px' }}>
+                    <strong>⚠️ Windows "Failed to open serial port" Fix:</strong>
+                    <ul style={{ margin: '4px 0 0 0', paddingLeft: '18px', fontSize: '0.76rem' }}>
+                      <li><strong>1. Port in Use:</strong> Windows allows only ONE application to access a COM port at a time. Close any other tabs, PuTTY, Arduino, or indicator utilities.</li>
+                      <li><strong>2. Re-plug USB:</strong> Unplug the USB-RS232 converter cable from the PC and plug it back in.</li>
+                      <li><strong>3. Device Manager:</strong> Open Windows <em>Device Manager &rarr; Ports (COM &amp; LPT)</em> to confirm the driver is installed without a yellow exclamation icon.</li>
+                      <li><strong>4. Force Reset:</strong> Use the <strong>"Force Reset / Release Port"</strong> button in the Live tab before reconnecting.</li>
+                    </ul>
+                  </div>
 
                   <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', padding: '10px 14px', borderRadius: '6px', color: '#1e40af' }}>
                     💡 <strong>Auto Weight Capture:</strong> Once connected, you can click the <strong>⚡ Scale</strong> icon next to any Weight field across GRN Inward, Production records, and Dispatch to instantly populate the live weight!
