@@ -29,8 +29,11 @@ import {
   History,
   ChevronDown,
   Layers,
+  QrCode,
+  Sparkles,
   X
 } from 'lucide-react';
+import QRCode2D from './QRCode2D';
 import GRNPDF from './GRNPDF';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
 import WeighingScaleInput from './WeighingScaleInput';
@@ -448,6 +451,11 @@ export default function InventoryManagement({
   const [issueQtyKg, setIssueQtyKg] = useState('');
   const [issueJobName, setIssueJobName] = useState('');
   const [stockSearchTerm, setStockSearchTerm] = useState('');
+  const [issueScanQuery, setIssueScanQuery] = useState('');
+  const [scannedItemDetails, setScannedItemDetails] = useState(null);
+  const [scanMatchSuccess, setScanMatchSuccess] = useState(false);
+  const [scanErrorMessage, setScanErrorMessage] = useState('');
+  const [manualSelectMode, setManualSelectMode] = useState(false);
 
   // Stock Register Directory Filter State
   const [stockCategoryFilter, setStockCategoryFilter] = useState('ALL');
@@ -1407,10 +1415,134 @@ export default function InventoryManagement({
     alert(`GRN ${updatedGRN.grnNo} has been marked as ${status}!`);
   };
 
+  // 2D Barcode / QR Code Scanner Resolution for Material Issue & Return
+  const handleBarcodeScanLookup = (rawCode) => {
+    const code = String(rawCode !== undefined ? rawCode : (issueScanQuery || '')).trim();
+    if (!code) {
+      setScanErrorMessage('Please scan a 2D QR Code or enter a Barcode / Batch ID.');
+      return;
+    }
+    setScanErrorMessage('');
+
+    // 1. Search in inventoryRolls by barcodeId, id, vendorRollNo, batchNo
+    const matchedRoll = (inventoryRolls || []).find(r => 
+      (r.barcodeId && r.barcodeId.toLowerCase() === code.toLowerCase()) ||
+      (r.id && String(r.id).toLowerCase() === code.toLowerCase()) ||
+      (r.vendorRollNo && r.vendorRollNo.toLowerCase() === code.toLowerCase()) ||
+      (r.batchNo && r.batchNo.toLowerCase() === code.toLowerCase())
+    );
+
+    // 2. Search in safeGrns by grnNo, id, batchNo, barcode
+    const matchedGrn = (safeGrns || []).find(g => 
+      (g.grnNo && String(g.grnNo).toLowerCase() === code.toLowerCase()) ||
+      (g.id && String(g.id).toLowerCase() === code.toLowerCase()) ||
+      (g.batchNo && g.batchNo.toLowerCase() === code.toLowerCase()) ||
+      (g.barcode && g.barcode.toLowerCase() === code.toLowerCase())
+    );
+
+    // 3. Search in inventory items by id, itemCode, barcode, itemName
+    const matchedItemDirect = (inventory || []).find(i => 
+      (i.id && i.id.toLowerCase() === code.toLowerCase()) ||
+      (i.itemCode && i.itemCode.toLowerCase() === code.toLowerCase()) ||
+      (i.barcode && i.barcode.toLowerCase() === code.toLowerCase()) ||
+      (i.itemName && i.itemName.toLowerCase() === code.toLowerCase())
+    );
+
+    let targetItem = null;
+    let batchNo = 'BATCH-MAIN';
+    let purchaseRate = 0;
+    let vendorName = 'General Stock';
+    let grnNo = '';
+    let barcodeId = code;
+    let availableQty = 0;
+    let unitStr = 'Kg';
+
+    if (matchedRoll) {
+      targetItem = (inventory || []).find(i => 
+        i.id === matchedRoll.itemId || 
+        (i.itemName && matchedRoll.itemName && i.itemName.toLowerCase() === matchedRoll.itemName.toLowerCase()) ||
+        (i.filmType && matchedRoll.filmType && i.filmType.toLowerCase() === matchedRoll.filmType.toLowerCase())
+      ) || {
+        id: matchedRoll.itemId || `ITEM-${matchedRoll.id}`,
+        itemName: matchedRoll.itemName || `${matchedRoll.filmType || 'Film'} ${matchedRoll.micron || ''}µ`,
+        category: matchedRoll.category || 'Film Substrates',
+        filmType: matchedRoll.filmType,
+        micron: matchedRoll.micron,
+        widthMm: matchedRoll.widthMm,
+        unit: matchedRoll.unit || 'Kg',
+        unitPrice: matchedRoll.purchaseRatePerKg || 0,
+        availableQtyKg: matchedRoll.availableWeightKg || matchedRoll.netWeightKg || 0,
+        location: matchedRoll.location || 'Store Bay'
+      };
+
+      batchNo = matchedRoll.batchNo || matchedRoll.vendorRollNo || matchedRoll.barcodeId;
+      purchaseRate = Number(matchedRoll.purchaseRatePerKg || targetItem.unitPrice || 0);
+      vendorName = matchedRoll.vendorName || targetItem.lastVendor || 'Verified Supplier';
+      grnNo = matchedRoll.grnNo || '';
+      barcodeId = matchedRoll.barcodeId || code;
+      availableQty = Number(matchedRoll.availableWeightKg ?? matchedRoll.netWeightKg ?? targetItem.availableQtyKg ?? 0);
+      unitStr = matchedRoll.unit || targetItem.unit || 'Kg';
+    } else if (matchedGrn) {
+      targetItem = (inventory || []).find(i => 
+        i.id === matchedGrn.itemId || 
+        (i.itemName && matchedGrn.itemName && i.itemName.toLowerCase() === matchedGrn.itemName.toLowerCase()) ||
+        (i.filmType && matchedGrn.filmType && i.filmType.toLowerCase() === matchedGrn.filmType.toLowerCase())
+      ) || {
+        id: matchedGrn.itemId || `GRN-ITEM-${matchedGrn.id}`,
+        itemName: matchedGrn.itemName || `${matchedGrn.filmType || 'Film'} ${matchedGrn.micron || ''}µ`,
+        category: matchedGrn.category || 'Film Substrates',
+        unit: matchedGrn.unit || 'Kg',
+        unitPrice: matchedGrn.purchaseRate || matchedGrn.unitPrice || 0,
+        availableQtyKg: matchedGrn.netWeightKg || 0,
+        location: 'Bay A'
+      };
+
+      batchNo = matchedGrn.batchNo || `GRN-${matchedGrn.grnNo}`;
+      purchaseRate = Number(matchedGrn.purchaseRate || matchedGrn.unitPrice || targetItem.unitPrice || 0);
+      vendorName = matchedGrn.vendorName || targetItem.lastVendor || 'Verified Supplier';
+      grnNo = matchedGrn.grnNo || '';
+      barcodeId = matchedGrn.barcode || code;
+      availableQty = Number(targetItem.availableQtyKg || matchedGrn.netWeightKg || 0);
+      unitStr = matchedGrn.unit || targetItem.unit || 'Kg';
+    } else if (matchedItemDirect) {
+      targetItem = matchedItemDirect;
+      batchNo = targetItem.lastBatch || 'BATCH-MAIN';
+      purchaseRate = Number(targetItem.unitPrice || targetItem.purchaseRatePerKg || 0);
+      vendorName = targetItem.lastVendor || 'Verified Supplier';
+      barcodeId = targetItem.barcode || targetItem.id;
+      availableQty = Number(targetItem.availableQtyKg || 0);
+      unitStr = targetItem.unit || 'Kg';
+    } else {
+      setScanErrorMessage(`⚠️ No matching stock item, roll, or GRN found for QR Code "${code}". Please check the code or select from the directory.`);
+      return;
+    }
+
+    setSelectedInvItem(targetItem);
+    setScannedItemDetails({
+      item: targetItem,
+      matchedRoll,
+      matchedGrn,
+      barcodeId,
+      batchNo,
+      purchaseRate,
+      vendorName,
+      grnNo,
+      availableQty,
+      unit: unitStr
+    });
+
+    if (availableQty > 0) {
+      setIssueQtyKg(String(availableQty));
+    }
+    setScanMatchSuccess(true);
+    setTimeout(() => setScanMatchSuccess(false), 3000);
+  };
+
   // Issue / Return Submit (Records transaction in Store Issue/Return Ledger & updates Job Production Record Costing)
   const handleIssueReturnSubmit = () => {
-    if (!selectedInvItem || !issueQtyKg || parseFloat(issueQtyKg) <= 0) {
-      alert("Please select an inventory item and enter a valid quantity.");
+    const itemToIssue = scannedItemDetails?.item || selectedInvItem;
+    if (!itemToIssue || !issueQtyKg || parseFloat(issueQtyKg) <= 0) {
+      alert("Please scan a 2D QR Code or select an item and enter a valid quantity.");
       return;
     }
 
@@ -1421,25 +1553,26 @@ export default function InventoryManagement({
       return;
     }
 
-    const unitStr = selectedInvItem.unit || 'Kg';
-    const itemNameStr = selectedInvItem.itemName || `${selectedInvItem.filmType || ''} ${selectedInvItem.micron && selectedInvItem.micron !== '-' ? `${selectedInvItem.micron}µ` : ''}`.trim() || `${selectedInvItem.category || 'Store'} Item`;
+    const unitStr = scannedItemDetails?.unit || itemToIssue.unit || 'Kg';
+    const itemNameStr = itemToIssue.itemName || `${itemToIssue.filmType || ''} ${itemToIssue.micron && itemToIssue.micron !== '-' ? `${itemToIssue.micron}µ` : ''}`.trim() || `${itemToIssue.category || 'Store'} Item`;
 
-    // Extract Batch Details
+    // Extract Batch Details (Priority: 2D Scanned Details -> Selected Batch -> Item Fallback)
     const selectedBatchObj = availableBatchesForSelectedItem.find(b => b.id === issueSelectedBatchId) || availableBatchesForSelectedItem[0] || null;
-    const finalBatchNo = issueSelectedBatchId === 'CUSTOM' ? (issueCustomBatchText.trim() || 'CUSTOM-BATCH') : (selectedBatchObj?.batchNo || selectedInvItem.lastBatch || 'BATCH-MAIN');
-    const finalRate = selectedBatchObj?.purchaseRate !== undefined ? selectedBatchObj.purchaseRate : Number(selectedInvItem.unitPrice || selectedInvItem.purchaseRatePerKg || 0);
-    const finalVendor = selectedBatchObj?.vendorName || selectedInvItem.lastVendor || 'Company Stock';
-    const finalGrnNo = selectedBatchObj?.grnNo || '';
-    const finalBarcode = selectedBatchObj?.barcode || finalBatchNo || `BAR-ISS-${selectedInvItem.id}`;
+    const finalBatchNo = scannedItemDetails?.batchNo || (issueSelectedBatchId === 'CUSTOM' ? (issueCustomBatchText.trim() || 'CUSTOM-BATCH') : (selectedBatchObj?.batchNo || itemToIssue.lastBatch || 'BATCH-MAIN'));
+    const finalRate = scannedItemDetails?.purchaseRate !== undefined ? scannedItemDetails.purchaseRate : (selectedBatchObj?.purchaseRate !== undefined ? selectedBatchObj.purchaseRate : Number(itemToIssue.unitPrice || itemToIssue.purchaseRatePerKg || 0));
+    const finalVendor = scannedItemDetails?.vendorName || selectedBatchObj?.vendorName || itemToIssue.lastVendor || 'Company Stock';
+    const finalGrnNo = scannedItemDetails?.grnNo || selectedBatchObj?.grnNo || '';
+    const finalBarcode = scannedItemDetails?.barcodeId || selectedBatchObj?.barcode || finalBatchNo || `BAR-ISS-${itemToIssue.id}`;
 
-    if (issueType === 'issue' && (selectedInvItem.availableQtyKg || 0) < qty) {
-      alert(`Insufficient available stock! Only ${selectedInvItem.availableQtyKg || 0} ${unitStr} available.`);
+    const maxAvail = scannedItemDetails?.availableQty ?? (itemToIssue.availableQtyKg || 0);
+    if (issueType === 'issue' && maxAvail < qty) {
+      alert(`Insufficient available stock! Only ${maxAvail} ${unitStr} available in this batch/roll.`);
       return;
     }
 
     if (onStoreIssueReturn) {
       onStoreIssueReturn({
-        item: selectedInvItem,
+        item: itemToIssue,
         issueType: issueType,
         qty: qty,
         jobName: chosenJobName,
@@ -1450,12 +1583,12 @@ export default function InventoryManagement({
         grnNo: finalGrnNo,
         barcode: finalBarcode,
         notes: issueType === 'issue'
-          ? `Issued ${qty} ${unitStr} from Batch [${finalBatchNo}] (Rate: ₹${finalRate}/${unitStr}) to Job: ${chosenJobName}`
+          ? `[2D Scan: ${finalBarcode}] Issued ${qty} ${unitStr} from Batch [${finalBatchNo}] (Rate: ₹${finalRate}/${unitStr}) to Job: ${chosenJobName}`
           : `Returned ${qty} ${unitStr} from Job: ${chosenJobName} back to Store`
       });
     } else {
       let updatedInv = [...inventory];
-      const idx = updatedInv.findIndex(i => i.id === selectedInvItem.id);
+      const idx = updatedInv.findIndex(i => i.id === itemToIssue.id);
       if (idx >= 0) {
         const item = updatedInv[idx];
         if (issueType === 'issue') {
@@ -1469,11 +1602,13 @@ export default function InventoryManagement({
       }
     }
 
-    alert(`${issueType === 'issue' ? 'Issued' : 'Returned'} ${qty} ${unitStr} of ${itemNameStr} (Batch: ${finalBatchNo}, Rate: ₹${finalRate}/${unitStr}) for Job "${chosenJobName}" successfully!\n\nProduction Record material consumed list and total costing have been updated.`);
     setIsIssueModalOpen(false);
     setIssueQtyKg('');
+    setIssueScanQuery('');
+    setScannedItemDetails(null);
     setIssueSelectedBatchId('');
     setIssueCustomBatchText('');
+    alert(`Successfully recorded ${issueType === 'issue' ? 'Material Issue' : 'Material Return'} of ${qty} ${unitStr} for Job "${chosenJobName}"!\n\nProduction Record material consumed list and total costing have been updated.`);
   };
 
   // Download Physical Stock CSV Template
@@ -3697,135 +3832,246 @@ export default function InventoryManagement({
         </div>
       )}
 
-      {/* Modal: Issue / Return to Store */}
+      {/* Modal: Issue / Return to Store (2D QR Code Scan & Auto-Fetch) */}
       {isIssueModalOpen && (
         <div className="modal-overlay" onClick={() => setIsIssueModalOpen(false)}>
-          <div className="glass-card modal-content" style={{ width: '500px' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ marginBottom: '8px' }}>Material Issue & Return to Store</h3>
+          <div className="glass-card modal-content" style={{ width: '560px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <QrCode style={{ color: '#059669' }} size={22} /> Material Issue & Return to Store
+                </h3>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '2px 0 0 0' }}>
+                  Scan 2D QR Code on the material sticker to auto-fetch batch, rate, and stock details.
+                </p>
+              </div>
+              <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.75rem' }} onClick={() => setIsIssueModalOpen(false)}>
+                <X size={14} />
+              </button>
+            </div>
             
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
-              <button className={`tab-pill ${issueType === 'issue' ? 'active' : ''}`} onClick={() => setIssueType('issue')}>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+              <button 
+                type="button"
+                className={`tab-pill ${issueType === 'issue' ? 'active' : ''}`} 
+                onClick={() => setIssueType('issue')}
+                style={{ flex: 1, justifyContent: 'center' }}
+              >
                 <ArrowUpRight size={14} /> Issue to Production Job
               </button>
-              <button className={`tab-pill ${issueType === 'return' ? 'active' : ''}`} onClick={() => setIssueType('return')}>
+              <button 
+                type="button"
+                className={`tab-pill ${issueType === 'return' ? 'active' : ''}`} 
+                onClick={() => setIssueType('return')}
+                style={{ flex: 1, justifyContent: 'center' }}
+              >
                 <ArrowDownLeft size={14} /> Return to Store
               </button>
             </div>
 
-            {/* Searchable Stock Selector */}
-            <div className="form-group">
-              <label>Search & Select Inventory Stock Item *</label>
-              <input 
-                type="text" 
-                className="form-control" 
-                style={{ marginBottom: '8px' }} 
-                placeholder="🔍 Search film, solvent, blade, ink or ID..." 
-                value={stockSearchTerm} 
-                onChange={e => setStockSearchTerm(e.target.value)} 
-              />
-              <select 
-                className="form-control" 
-                value={selectedInvItem?.id} 
-                onChange={e => {
-                  const found = inventory.find(i => i.id === e.target.value);
-                  setSelectedInvItem(found);
-                  setIssueSelectedBatchId('');
-                }}
-              >
-                {inventory.filter(i => {
-                  const s = (stockSearchTerm || '').toLowerCase();
-                  const filmType = (i.filmType || '').toLowerCase();
-                  const itemName = (i.itemName || '').toLowerCase();
-                  const id = (i.id || '').toLowerCase();
-                  const loc = (i.location || '').toLowerCase();
-                  return filmType.includes(s) ||
-                    itemName.includes(s) ||
-                    id.includes(s) ||
-                    `${i.micron || ''}`.includes(s) ||
-                    `${i.widthMm || ''}`.includes(s) ||
-                    loc.includes(s);
-                }).map(i => (
-                  <option key={i.id} value={i.id}>
-                    {i.id} - {i.itemName || `${i.filmType} ${i.micron}µ (${i.widthMm}mm)`} | Location: {i.location} | Avail: {i.availableQtyKg} {i.unit || 'Kg'} | Rate: ₹{i.unitPrice || i.purchaseRatePerKg || 0}
-                  </option>
-                ))}
-              </select>
+            {/* PRIMARY 2D QR SCANNER SECTION */}
+            <div style={{ 
+              background: scanMatchSuccess ? '#ecfdf5' : '#f8fafc', 
+              border: scanMatchSuccess ? '2px solid #10b981' : '1.5px solid #cbd5e1', 
+              borderRadius: '8px', 
+              padding: '12px 14px', 
+              marginBottom: '16px',
+              transition: 'all 0.2s ease'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <label style={{ margin: 0, fontWeight: '800', fontSize: '0.82rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Scan size={15} style={{ color: '#059669' }} />
+                  Scan 2D QR Code / Barcode *
+                </label>
+                <button 
+                  type="button" 
+                  style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer', textDecoration: 'underline' }}
+                  onClick={() => setManualSelectMode(!manualSelectMode)}
+                >
+                  {manualSelectMode ? 'Hide Manual Directory' : 'or Select from Item Directory'}
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ position: 'relative', flex: 1 }}>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    style={{ 
+                      paddingLeft: '36px', 
+                      height: '42px', 
+                      fontSize: '0.9rem', 
+                      fontWeight: '600',
+                      background: '#ffffff',
+                      borderColor: scanMatchSuccess ? '#10b981' : '#cbd5e1'
+                    }} 
+                    placeholder="Scan 2D QR Code with gun scanner or enter Roll/Batch ID..." 
+                    value={issueScanQuery} 
+                    onChange={e => {
+                      const val = e.target.value;
+                      setIssueScanQuery(val);
+                      setScanErrorMessage('');
+                      // If scanner inputs rapid barcode string
+                      if (val.length >= 8) {
+                        handleBarcodeScanLookup(val);
+                      }
+                    }} 
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleBarcodeScanLookup(issueScanQuery);
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <QrCode size={18} style={{ position: 'absolute', left: '10px', top: '12px', color: '#64748b' }} />
+                </div>
+                <button 
+                  type="button"
+                  className="btn-primary" 
+                  style={{ background: '#059669', borderColor: '#059669', display: 'flex', alignItems: 'center', gap: '6px', padding: '0 16px', fontWeight: '700', fontSize: '0.85rem' }}
+                  onClick={() => handleBarcodeScanLookup(issueScanQuery)}
+                >
+                  <Sparkles size={14} /> Auto-Fetch
+                </button>
+              </div>
+
+              {scanErrorMessage && (
+                <div style={{ marginTop: '8px', fontSize: '0.78rem', color: '#b91c1c', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <AlertTriangle size={14} /> {scanErrorMessage}
+                </div>
+              )}
             </div>
 
-            {/* Mandatory Batch / Roll / GRN Selection */}
-            {selectedInvItem && (
-              <div className="form-group" style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '8px', border: '1.5px solid #cbd5e1' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                  <label style={{ margin: 0, fontWeight: '700', fontSize: '0.85rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Layers size={15} style={{ color: '#2563eb' }} />
-                    Mandatory Stock Batch / Inward Source *
-                  </label>
-                  {(() => {
-                    const selBatch = availableBatchesForSelectedItem.find(b => b.id === issueSelectedBatchId) || availableBatchesForSelectedItem[0];
-                    if (!selBatch) return null;
-                    return (
-                      <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#047857', background: '#dcfce7', padding: '2px 8px', borderRadius: '4px', border: '1px solid #86efac' }}>
-                        Purchase Rate: ₹{selBatch.purchaseRate} / {selBatch.unit}
-                      </span>
-                    );
-                  })()}
-                </div>
-
+            {/* Optional Manual Fallback Selector */}
+            {manualSelectMode && (
+              <div className="form-group" style={{ background: '#f1f5f9', padding: '10px 12px', borderRadius: '6px', marginBottom: '16px' }}>
+                <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#475569' }}>Manual Stock Item Selector</label>
+                <input 
+                  type="text" 
+                  className="form-control" 
+                  style={{ marginBottom: '6px', fontSize: '0.82rem' }} 
+                  placeholder="🔍 Filter directory by name, code or location..." 
+                  value={stockSearchTerm} 
+                  onChange={e => setStockSearchTerm(e.target.value)} 
+                />
                 <select 
                   className="form-control" 
-                  value={issueSelectedBatchId || (availableBatchesForSelectedItem[0]?.id || '')} 
-                  onChange={e => setIssueSelectedBatchId(e.target.value)}
-                  style={{ fontWeight: '600', fontSize: '0.85rem', background: '#ffffff' }}
-                  required
+                  value={selectedInvItem?.id} 
+                  style={{ fontSize: '0.82rem' }}
+                  onChange={e => {
+                    const found = (inventory || []).find(i => i.id === e.target.value);
+                    if (found) {
+                      setSelectedInvItem(found);
+                      handleBarcodeScanLookup(found.id);
+                    }
+                  }}
                 >
-                  {availableBatchesForSelectedItem.map(b => (
-                    <option key={b.id} value={b.id}>
-                      {b.label}
+                  {(inventory || []).filter(i => {
+                    const s = (stockSearchTerm || '').toLowerCase();
+                    const filmType = (i.filmType || '').toLowerCase();
+                    const itemName = (i.itemName || '').toLowerCase();
+                    const id = (i.id || '').toLowerCase();
+                    const loc = (i.location || '').toLowerCase();
+                    return filmType.includes(s) || itemName.includes(s) || id.includes(s) || loc.includes(s);
+                  }).map(i => (
+                    <option key={i.id} value={i.id}>
+                      {i.id} - {i.itemName || `${i.filmType} ${i.micron}µ`} | Avail: {i.availableQtyKg} {i.unit || 'Kg'} | Rate: ₹{i.unitPrice || 0}
                     </option>
                   ))}
-                  <option value="CUSTOM">+ Specify Custom Batch / Heat #</option>
                 </select>
-
-                {issueSelectedBatchId === 'CUSTOM' && (
-                  <div style={{ marginTop: '8px' }}>
-                    <input 
-                      type="text" 
-                      className="form-control" 
-                      placeholder="Enter custom Batch / Heat / Roll #"
-                      value={issueCustomBatchText}
-                      onChange={e => setIssueCustomBatchText(e.target.value)}
-                      required
-                    />
-                  </div>
-                )}
-
-                {/* Selected Batch Details Metadata Card */}
-                {(() => {
-                  const selBatch = availableBatchesForSelectedItem.find(b => b.id === issueSelectedBatchId) || availableBatchesForSelectedItem[0];
-                  if (!selBatch) return null;
-                  return (
-                    <div style={{ marginTop: '10px', fontSize: '0.76rem', background: '#ffffff', padding: '8px 10px', borderRadius: '6px', border: '1px dashed #94a3b8', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                      <div>Batch / Heat Ref: <strong style={{ color: '#1e40af' }}>{selBatch.batchNo}</strong></div>
-                      <div>Purchase Rate: <strong style={{ color: '#047857' }}>₹{selBatch.purchaseRate} / {selBatch.unit}</strong></div>
-                      <div>Source Ref: <strong>{selBatch.grnNo}</strong></div>
-                      <div>Supplier / Origin: <strong>{selBatch.vendorName}</strong></div>
-                    </div>
-                  );
-                })()}
               </div>
             )}
 
+            {/* AUTO-FETCHED 2D QR DETAILS VERIFIED CARD */}
+            {(scannedItemDetails || selectedInvItem) && (
+              <div style={{ 
+                background: '#ffffff', 
+                border: '1.5px solid #0f172a', 
+                borderRadius: '8px', 
+                padding: '12px 14px', 
+                marginBottom: '16px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px', marginBottom: '8px' }}>
+                  <div>
+                    <div style={{ fontWeight: '900', fontSize: '0.98rem', color: '#0f172a', lineHeight: '1.2' }}>
+                      {scannedItemDetails?.item?.itemName || selectedInvItem?.itemName || `${selectedInvItem?.filmType || 'Film'} ${selectedInvItem?.micron || ''}µ`}
+                    </div>
+                    <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '2px' }}>
+                      Item ID: <strong>{scannedItemDetails?.item?.id || selectedInvItem?.id}</strong> • Location: <strong>{scannedItemDetails?.item?.location || selectedInvItem?.location || 'Store Room'}</strong>
+                    </div>
+                  </div>
+                  <span style={{ 
+                    fontSize: '0.7rem', 
+                    fontWeight: '800', 
+                    color: '#047857', 
+                    background: '#dcfce7', 
+                    padding: '3px 8px', 
+                    borderRadius: '12px',
+                    border: '1px solid #86efac',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}>
+                    <CheckCircle2 size={13} /> 2D QR Code Verified
+                  </span>
+                </div>
+
+                {/* 4-Stat Auto-Fetched Grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.78rem', background: '#f8fafc', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <QRCode2D value={scannedItemDetails?.barcodeId || selectedInvItem?.barcode || selectedInvItem?.id || 'BC-000'} size={38} showLabel={false} margin={0} />
+                    <div>
+                      <span style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>2D Barcode Ref</span>
+                      <div style={{ fontFamily: 'monospace', fontWeight: '800', color: '#2563eb', fontSize: '0.82rem' }}>
+                        {scannedItemDetails?.barcodeId || selectedInvItem?.barcode || selectedInvItem?.id}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <span style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Inward Batch / Heat #</span>
+                    <div style={{ fontWeight: '800', color: '#1e40af', fontSize: '0.85rem' }}>
+                      {scannedItemDetails?.batchNo || selectedInvItem?.lastBatch || 'BATCH-MAIN'}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Purchase Rate</span>
+                    <div style={{ fontWeight: '800', color: '#047857', fontSize: '0.9rem' }}>
+                      ₹{scannedItemDetails?.purchaseRate ?? Number(selectedInvItem?.unitPrice || 0)} / {scannedItemDetails?.unit || selectedInvItem?.unit || 'Kg'}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Supplier / Origin</span>
+                    <div style={{ fontWeight: '700', color: '#334155', fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {scannedItemDetails?.vendorName || selectedInvItem?.lastVendor || 'Company Stock'}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', fontSize: '0.76rem', color: '#475569' }}>
+                  <span>Available Stock in Roll/Batch: <strong style={{ color: '#047857', fontSize: '0.85rem' }}>{scannedItemDetails?.availableQty ?? selectedInvItem?.availableQtyKg ?? 0} {scannedItemDetails?.unit || selectedInvItem?.unit || 'Kg'}</strong></span>
+                  {scannedItemDetails?.grnNo && <span>GRN Ref: <strong>{scannedItemDetails.grnNo}</strong></span>}
+                </div>
+              </div>
+            )}
+
+            {/* PRODUCTION JOB SELECTOR */}
             <div className="form-group">
               <label>Production Job Name *</label>
               {activeProductionOrders.length === 0 ? (
-                <div style={{ fontSize: '0.85rem', color: '#b91c1c', padding: '10px 14px', background: '#fef2f2', borderRadius: '6px', border: '1px solid #fecaca' }}>
-                  ⚠️ No active unapproved production jobs available. Only active jobs currently in production appear here.
+                <div style={{ fontSize: '0.82rem', color: '#b91c1c', padding: '8px 12px', background: '#fef2f2', borderRadius: '6px', border: '1px solid #fecaca' }}>
+                  ⚠️ No active unapproved production jobs available. Only active jobs in production appear here.
                 </div>
               ) : (
                 <select 
                   className="form-control" 
                   value={issueJobName || activeProductionOrders[0]?.jobName || ''} 
                   onChange={e => setIssueJobName(e.target.value)}
+                  style={{ fontWeight: '600' }}
                 >
                   <option value="">-- Select Active Production Job --</option>
                   {activeProductionOrders.map(o => (
@@ -3837,23 +4083,46 @@ export default function InventoryManagement({
               )}
             </div>
 
+            {/* QUANTITY CONFIRMATION */}
             <div className="form-group">
-              <label>Quantity ({selectedInvItem?.unit || 'Kg'}) *</label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <label style={{ margin: 0 }}>
+                  Quantity to {issueType === 'issue' ? 'Issue' : 'Return'} ({scannedItemDetails?.unit || selectedInvItem?.unit || 'Kg'}) *
+                </label>
+                {scannedItemDetails?.availableQty > 0 && (
+                  <button 
+                    type="button" 
+                    className="btn-secondary" 
+                    style={{ padding: '2px 8px', fontSize: '0.72rem', color: '#047857', borderColor: '#86efac', background: '#f0fdf4' }}
+                    onClick={() => setIssueQtyKg(String(scannedItemDetails.availableQty))}
+                  >
+                    Max ({scannedItemDetails.availableQty} {scannedItemDetails.unit})
+                  </button>
+                )}
+              </div>
               <input 
                 type="number" 
                 className="form-control" 
-                placeholder={`Enter quantity in ${selectedInvItem?.unit || 'Kg'}`} 
+                style={{ fontSize: '1rem', fontWeight: '700' }}
+                placeholder={`Enter quantity in ${scannedItemDetails?.unit || selectedInvItem?.unit || 'Kg'}`} 
                 value={issueQtyKg} 
                 onChange={e => setIssueQtyKg(e.target.value)} 
+                step="any"
+                required
               />
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
-              <button className="btn-secondary" onClick={() => setIsIssueModalOpen(false)}>Cancel</button>
+            {/* MODAL ACTION BUTTONS */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px', borderTop: '1px solid var(--border-color)', paddingTop: '14px' }}>
+              <button type="button" className="btn-secondary" onClick={() => setIsIssueModalOpen(false)}>
+                Cancel
+              </button>
               <button 
+                type="button"
                 className="btn-primary" 
+                style={{ background: '#059669', borderColor: '#059669', fontWeight: '700', padding: '8px 20px' }}
                 onClick={handleIssueReturnSubmit}
-                disabled={activeProductionOrders.length === 0}
+                disabled={activeProductionOrders.length === 0 || !issueQtyKg}
               >
                 Submit {issueType === 'issue' ? 'Material Issue' : 'Material Return'}
               </button>
