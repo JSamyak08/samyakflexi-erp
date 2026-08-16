@@ -118,11 +118,8 @@ export default function BarcodePrinterModal({ roll, rolls, onClose }) {
             <span style={{ fontSize: '0.62rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: '4px' }}>
               <QrCode size={12} style={{ color: '#047857' }} /> 2D BARCODE (ISO 18004)
             </span>
-            <span style={{ fontFamily: "Consolas, Monaco, 'Courier New', monospace", fontWeight: '900', fontSize: '0.95rem', color: '#0f172a', letterSpacing: '0.04em', marginTop: '2px', wordBreak: 'break-all' }}>
+            <span style={{ fontFamily: "Consolas, Monaco, 'Courier New', monospace", fontWeight: '900', fontSize: '1rem', color: '#0f172a', letterSpacing: '0.04em', marginTop: '3px', wordBreak: 'break-all' }}>
               {barcodeCodeStr}
-            </span>
-            <span style={{ fontSize: '0.65rem', color: '#047857', fontWeight: '700', marginTop: '2px' }}>
-              ✓ Handheld & Fixed Scanner Ready
             </span>
           </div>
 
