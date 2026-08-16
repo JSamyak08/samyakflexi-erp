@@ -3055,7 +3055,7 @@ export default function App() {
         {/* TAB 1: JOB PUNCHING & PRE-COSTING */}
         {activeTab === 'job_punching' && (
           <JobPunchingForm 
-            onSaveOrder={handleSaveOrder} 
+            onSaveOrder={handleAddOrder} 
             onNavigateToDashboard={() => handleTabChange('dashboard')} 
             initialJobMasterData={selectedJobMasterForPunch}
             clients={clients}
