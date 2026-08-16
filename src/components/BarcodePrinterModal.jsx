@@ -180,7 +180,12 @@ export default function BarcodePrinterModal({ roll, rolls, onClose }) {
             </div>
             {r.grossWeightKg && (
               <div style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: '600', marginTop: '1px' }}>
-                Gross: {r.grossWeightKg} kg
+                Gross: {r.grossWeightKg} kg {r.tareWeightKg ? `| Tare: ${r.tareWeightKg} kg` : ''}
+              </div>
+            )}
+            {r.lengthMeters && (
+              <div style={{ fontSize: '0.65rem', color: '#0369a1', fontWeight: '700', marginTop: '1px' }}>
+                Len: {r.lengthMeters} m
               </div>
             )}
           </div>
@@ -193,6 +198,9 @@ export default function BarcodePrinterModal({ roll, rolls, onClose }) {
           )}
           {r.clientName && (
             <div>Client: <strong>{r.clientName}</strong></div>
+          )}
+          {r.vendorRollNo && (
+            <div>Vendor {r.packagingType || 'Roll'} #: <strong style={{ color: '#0284c7' }}>{r.vendorRollNo}</strong></div>
           )}
           <div>
             Vendor: <strong>{vendorStr}</strong> {r.invoiceNo ? `| Inv: ${r.invoiceNo}` : ''}

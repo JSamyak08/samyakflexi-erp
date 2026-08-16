@@ -49,7 +49,9 @@ export default function GRNPDF({ grnData, onClose }) {
     inspectedBy = "Ramesh Kumar (Quality Chemist)",
     storeManager = "Dilip Joshi (Store Inward Manager)",
     freightAmount = 0,
-    transporterName = "Direct Dispatch / Self"
+    transporterName = "Direct Dispatch / Self",
+    packagingType = "Roll",
+    itemsBreakdown = []
   } = grnData;
 
   const totalTaxable = netWeightKg * unitPrice;
@@ -235,6 +237,39 @@ export default function GRNPDF({ grnData, onClose }) {
               </tr>
             </tfoot>
           </table>
+
+          {/* Individual Roll / Container Weight Log Breakdown Annexure (if available) */}
+          {Array.isArray(itemsBreakdown) && itemsBreakdown.length > 1 && (
+            <div style={{ marginTop: '14px', marginBottom: '14px' }}>
+              <div style={{ fontSize: '9px', fontWeight: '800', textTransform: 'uppercase', color: '#1e3a8a', borderBottom: '1px solid #93c5fd', paddingBottom: '3px', marginBottom: '6px' }}>
+                Annexure: Individual {packagingType} Scale Weight Log ({itemsBreakdown.length} Units)
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '8.5px' }} className="items-table">
+                <thead>
+                  <tr style={{ background: '#f1f5f9' }}>
+                    <th style={{ width: '8%', textAlign: 'center' }}>Unit #</th>
+                    <th style={{ width: '18%', textAlign: 'center' }}>Vendor Ref / Lot #</th>
+                    <th style={{ width: '18%', textAlign: 'right' }}>Gross Wt (Kg)</th>
+                    <th style={{ width: '18%', textAlign: 'right' }}>Tare / Core Wt (Kg)</th>
+                    <th style={{ width: '18%', textAlign: 'right' }}>Net Weight (Kg)</th>
+                    <th style={{ width: '20%', textAlign: 'right' }}>Est. Length (m)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {itemsBreakdown.map((item, idx) => (
+                    <tr key={idx}>
+                      <td style={{ textAlign: 'center', fontWeight: '700' }}>{packagingType} #{item.unitNo || (idx + 1)}</td>
+                      <td style={{ textAlign: 'center' }}>{item.vendorRollNo || '—'}</td>
+                      <td style={{ textAlign: 'right' }}>{item.grossWeightKg ? `${item.grossWeightKg} kg` : '—'}</td>
+                      <td style={{ textAlign: 'right' }}>{item.tareWeightKg ? `${item.tareWeightKg} kg` : '0 kg'}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#047857' }}>{(parseFloat(item.netWeightKg) || 0).toLocaleString()} kg</td>
+                      <td style={{ textAlign: 'right' }}>{item.lengthMeters ? `${item.lengthMeters.toLocaleString()} m` : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {/* Totals and Words */}
           <div className="totals-and-words-grid">

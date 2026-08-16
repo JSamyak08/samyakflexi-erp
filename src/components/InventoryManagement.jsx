@@ -465,6 +465,171 @@ export default function InventoryManagement({
   const [grnFreightAmount, setGrnFreightAmount] = useState('');
   const [grnTransporterName, setGrnTransporterName] = useState('');
 
+  // Individual Roll / Container Itemized Breakdown State (Each with distinct gross/tare/net weights)
+  const [grnItemsList, setGrnItemsList] = useState([
+    { id: 'item-1', grossWeightKg: '', tareWeightKg: 0, netWeightKg: '', lengthMeters: '', vendorRollNo: '', notes: '' }
+  ]);
+  const [grnDefaultTare, setGrnDefaultTare] = useState(0);
+
+  // Helper to calculate theoretical film roll length in meters based on width, micron, density, and net weight
+  const calculateFilmRollLength = (netWeight, width, micronVal, filmTypeVal) => {
+    const w = parseFloat(width || grnWidthMm);
+    const m = parseFloat(micronVal || grnMicron);
+    const wt = parseFloat(netWeight);
+    const density = FILM_DENSITIES[filmTypeVal || grnFilmType] || 1.40;
+    if (w > 0 && m > 0 && wt > 0 && density > 0) {
+      return Math.round((wt * 1000000) / (w * m * density));
+    }
+    return '';
+  };
+
+  // Add individual roll / container row
+  const handleAddGrnItemRow = (initialData = {}) => {
+    const newId = `item-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+    setGrnItemsList(prev => [
+      ...prev,
+      {
+        id: newId,
+        grossWeightKg: initialData.grossWeightKg ?? '',
+        tareWeightKg: initialData.tareWeightKg ?? (grnDefaultTare || 0),
+        netWeightKg: initialData.netWeightKg ?? '',
+        lengthMeters: initialData.lengthMeters ?? '',
+        vendorRollNo: initialData.vendorRollNo ?? '',
+        notes: ''
+      }
+    ]);
+  };
+
+  // Remove individual row (maintains at least 1)
+  const handleRemoveGrnItemRow = (id) => {
+    setGrnItemsList(prev => {
+      if (prev.length <= 1) return prev;
+      return prev.filter(item => item.id !== id);
+    });
+  };
+
+  // Update specific field in an item row with auto net weight and length calculations
+  const handleUpdateGrnItemRow = (id, field, value) => {
+    setGrnItemsList(prev => prev.map(item => {
+      if (item.id !== id) return item;
+      const updated = { ...item, [field]: value };
+      
+      if (field === 'grossWeightKg') {
+        const gross = parseFloat(value);
+        const tare = parseFloat(updated.tareWeightKg) || 0;
+        if (!isNaN(gross) && gross > 0) {
+          const net = Math.max(0, parseFloat((gross - tare).toFixed(2)));
+          updated.netWeightKg = net;
+          if (grnCategory === 'Film Substrates') {
+            updated.lengthMeters = calculateFilmRollLength(net, grnWidthMm, grnMicron, grnFilmType);
+          }
+        }
+      } else if (field === 'tareWeightKg') {
+        const tare = parseFloat(value) || 0;
+        const gross = parseFloat(updated.grossWeightKg);
+        if (!isNaN(gross) && gross > 0) {
+          const net = Math.max(0, parseFloat((gross - tare).toFixed(2)));
+          updated.netWeightKg = net;
+          if (grnCategory === 'Film Substrates') {
+            updated.lengthMeters = calculateFilmRollLength(net, grnWidthMm, grnMicron, grnFilmType);
+          }
+        }
+      } else if (field === 'netWeightKg') {
+        const net = parseFloat(value);
+        if (!isNaN(net) && net > 0 && grnCategory === 'Film Substrates') {
+          updated.lengthMeters = calculateFilmRollLength(net, grnWidthMm, grnMicron, grnFilmType);
+        }
+      }
+      return updated;
+    }));
+  };
+
+  // Sync count of rows when user edits number of rolls/units
+  const handleRollsCountChange = (countVal) => {
+    const count = parseInt(countVal, 10);
+    setGrnRolls(countVal);
+    if (!isNaN(count) && count > 0) {
+      setGrnItemsList(prev => {
+        if (prev.length === count) return prev;
+        if (count > prev.length) {
+          const added = [];
+          for (let i = prev.length; i < count; i++) {
+            added.push({
+              id: `item-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 3)}`,
+              grossWeightKg: '',
+              tareWeightKg: grnDefaultTare || 0,
+              netWeightKg: '',
+              lengthMeters: '',
+              vendorRollNo: '',
+              notes: ''
+            });
+          }
+          return [...prev, ...added];
+        } else {
+          return prev.slice(0, count);
+        }
+      });
+    }
+  };
+
+  // Quick helper to distribute total weight across all rows as a starting baseline
+  const handleDistributeTotalWeightEvenly = (targetTotalWeight) => {
+    const total = parseFloat(targetTotalWeight || grnWeightKg);
+    const count = grnItemsList.length;
+    if (!isNaN(total) && total > 0 && count > 0) {
+      const splitNet = parseFloat((total / count).toFixed(2));
+      setGrnItemsList(prev => prev.map(item => {
+        const tare = parseFloat(item.tareWeightKg) || 0;
+        const gross = parseFloat((splitNet + tare).toFixed(2));
+        return {
+          ...item,
+          grossWeightKg: gross,
+          netWeightKg: splitNet,
+          lengthMeters: grnCategory === 'Film Substrates' ? calculateFilmRollLength(splitNet, grnWidthMm, grnMicron, grnFilmType) : ''
+        };
+      }));
+    }
+  };
+
+  // Apply default core / container tare weight across all rows
+  const handleApplyDefaultTare = (newDefaultTare) => {
+    setGrnDefaultTare(newDefaultTare);
+    const tare = parseFloat(newDefaultTare) || 0;
+    setGrnItemsList(prev => prev.map(item => {
+      const gross = parseFloat(item.grossWeightKg);
+      const updated = { ...item, tareWeightKg: tare };
+      if (!isNaN(gross) && gross > 0) {
+        const net = Math.max(0, parseFloat((gross - tare).toFixed(2)));
+        updated.netWeightKg = net;
+        if (grnCategory === 'Film Substrates') {
+          updated.lengthMeters = calculateFilmRollLength(net, grnWidthMm, grnMicron, grnFilmType);
+        }
+      }
+      return updated;
+    }));
+  };
+
+  // Real-time Aggregated Totals from Itemized Breakdown
+  const grnCalculatedTotals = useMemo(() => {
+    let totalGross = 0;
+    let totalTare = 0;
+    let totalNet = 0;
+    grnItemsList.forEach(item => {
+      const g = parseFloat(item.grossWeightKg) || 0;
+      const t = parseFloat(item.tareWeightKg) || 0;
+      const n = parseFloat(item.netWeightKg) || 0;
+      totalGross += g;
+      totalTare += t;
+      totalNet += n;
+    });
+    return {
+      count: grnItemsList.length,
+      totalGross: parseFloat(totalGross.toFixed(2)),
+      totalTare: parseFloat(totalTare.toFixed(2)),
+      totalNet: parseFloat(totalNet.toFixed(2))
+    };
+  }, [grnItemsList]);
+
   // Ledger Modal Pagination State
   const [ledgerCurrentPage, setLedgerCurrentPage] = useState(1);
   const [ledgerPageSize, setLedgerPageSize] = useState(50);
@@ -634,16 +799,34 @@ export default function InventoryManagement({
   const handleCreateGRNFromPO = (po) => {
     if (!po) return;
     const firstItem = (po.items || [])[0] || {};
+    const poQty = po.pendingInwardQty > 0 ? po.pendingInwardQty : (firstItem.qtyKg || 1000);
+    const filmTypeVal = firstItem.filmType || 'PET';
+    const micronVal = firstItem.micron || 12;
+    const widthVal = firstItem.widthMm || 1000;
     
     setGrnPoNo(po.poNumber || '');
     setGrnVendor(po.vendor?.companyName || po.vendorName || po.vendor?.name || '');
     setGrnCategory(po.category || 'Film Substrates');
-    setGrnFilmType(firstItem.filmType || 'PET');
-    setGrnMicron(firstItem.micron || 12);
-    setGrnWidthMm(firstItem.widthMm || 1000);
-    setGrnWeightKg(po.pendingInwardQty > 0 ? po.pendingInwardQty : (firstItem.qtyKg || 1000));
+    setGrnFilmType(filmTypeVal);
+    setGrnMicron(micronVal);
+    setGrnWidthMm(widthVal);
+    setGrnWeightKg(poQty);
     setGrnPurchaseRate(firstItem.rate || 140);
     setGrnItemName(firstItem.itemDesc || firstItem.description || '');
+    setGrnRolls('1');
+    
+    const initialLen = calculateFilmRollLength(poQty, widthVal, micronVal, filmTypeVal);
+    setGrnItemsList([
+      {
+        id: `item-${Date.now()}-1`,
+        grossWeightKg: poQty,
+        tareWeightKg: grnDefaultTare || 0,
+        netWeightKg: poQty,
+        lengthMeters: initialLen,
+        vendorRollNo: '',
+        notes: ''
+      }
+    ]);
     
     setActiveTab('grn_inward');
     setIsNewGRNModalOpen(true);
@@ -681,6 +864,18 @@ export default function InventoryManagement({
 
   const openNewGRNModal = (preselectedItem = null) => {
     setIsNewGRNModalOpen(true);
+    setGrnRolls('1');
+    setGrnItemsList([
+      {
+        id: `item-${Date.now()}-1`,
+        grossWeightKg: '',
+        tareWeightKg: grnDefaultTare || 0,
+        netWeightKg: '',
+        lengthMeters: '',
+        vendorRollNo: '',
+        notes: ''
+      }
+    ]);
     if (preselectedItem) {
       handleSelectStockItemForGrn(preselectedItem);
     } else {
@@ -930,9 +1125,17 @@ export default function InventoryManagement({
       ? `${grnFilmType} ${grnMicron}µ (${grnWidthMm}mm)` 
       : `${grnCategory} Inward Item`);
 
-    const unitCount = Math.max(1, parseInt(grnRolls) || 1);
-    const totalQty = parseFloat(grnWeightKg) || 0;
-    const unitQty = Number((totalQty / unitCount).toFixed(2));
+    // Ensure we have valid items in grnItemsList
+    const itemsToSave = (grnItemsList && grnItemsList.length > 0) ? grnItemsList : [
+      { id: 'item-1', grossWeightKg: parseFloat(grnWeightKg) || 0, tareWeightKg: 0, netWeightKg: parseFloat(grnWeightKg) || 0 }
+    ];
+
+    const unitCount = itemsToSave.length;
+    const totalNetQty = grnCalculatedTotals.totalNet > 0 
+      ? grnCalculatedTotals.totalNet 
+      : (parseFloat(grnWeightKg) || 0);
+    const totalGrossQty = grnCalculatedTotals.totalGross > 0 ? grnCalculatedTotals.totalGross : totalNetQty;
+    const totalTareQty = grnCalculatedTotals.totalTare > 0 ? grnCalculatedTotals.totalTare : 0;
     const rateVal = parseFloat(grnPurchaseRate) || 0;
 
     const newGRN = {
@@ -950,7 +1153,17 @@ export default function InventoryManagement({
       unit: isFilm ? 'Kg' : grnUnit,
       packagingType: grnPackagingType,
       rollsReceived: unitCount,
-      netWeightKg: totalQty,
+      netWeightKg: totalNetQty,
+      grossWeightKg: totalGrossQty,
+      tareWeightKg: totalTareQty,
+      itemsBreakdown: itemsToSave.map((item, idx) => ({
+        unitNo: idx + 1,
+        grossWeightKg: parseFloat(item.grossWeightKg) || 0,
+        tareWeightKg: parseFloat(item.tareWeightKg) || 0,
+        netWeightKg: parseFloat(item.netWeightKg) || 0,
+        lengthMeters: parseFloat(item.lengthMeters) || 0,
+        vendorRollNo: item.vendorRollNo || ''
+      })),
       purchaseRatePerKg: rateVal,
       purchaseRate: rateVal,
       unitPrice: rateVal,
@@ -970,10 +1183,17 @@ export default function InventoryManagement({
       onAddGRN(newGRN);
     }
 
-    // Generate individual barcode stickers for each box / roll / unit received
+    // Generate individual barcode stickers for each box / roll / container unit received with its DISTINCT net weight!
     const newRolls = [];
     const grnCode = newGRN.grnNo.replace('GRN-', '');
-    for (let i = 1; i <= unitCount; i++) {
+    itemsToSave.forEach((item, index) => {
+      const i = index + 1;
+      const itemGross = parseFloat(item.grossWeightKg) || 0;
+      const itemTare = parseFloat(item.tareWeightKg) || 0;
+      const itemNet = parseFloat(item.netWeightKg) || (itemGross > 0 ? Math.max(0, itemGross - itemTare) : Number((totalNetQty / unitCount).toFixed(2)));
+      const itemLength = parseFloat(item.lengthMeters) || (isFilm ? calculateFilmRollLength(itemNet, grnWidthMm, grnMicron, grnFilmType) : null);
+      const itemVendorRoll = (item.vendorRollNo || '').trim();
+
       const barcodeId = unitCount > 1 
         ? `${isFilm ? 'RM-BC' : 'CON-BC'}-${grnCode}-${i}` 
         : generateBarcodeId(isFilm ? 'RM-BC' : 'CON-BC');
@@ -996,8 +1216,12 @@ export default function InventoryManagement({
         vendorName: grnVendor,
         invoiceNo: grnInvoiceNo,
         batchNo: grnBatchNo,
-        netWeightKg: unitQty,
-        availableWeightKg: unitQty,
+        vendorRollNo: itemVendorRoll || null,
+        grossWeightKg: itemGross > 0 ? itemGross : null,
+        tareWeightKg: itemTare > 0 ? itemTare : null,
+        netWeightKg: itemNet,
+        availableWeightKg: itemNet,
+        lengthMeters: itemLength > 0 ? itemLength : null,
         purchaseRatePerKg: rateVal,
         purchaseRate: rateVal,
         unitPrice: rateVal,
@@ -1010,11 +1234,11 @@ export default function InventoryManagement({
       if (onAddRoll) {
         onAddRoll(rollObj);
       }
-    }
+    });
 
     setIsNewGRNModalOpen(false);
     setSelectedRollForBarcodeModal(newRolls);
-    alert(`Inward GRN ${newGRN.grnNo} created for ${grnCategory}! ${unitCount} individual barcode sticker(s) generated.`);
+    alert(`✅ Inward GRN ${newGRN.grnNo} created for ${grnCategory}! ${unitCount} individual barcode sticker(s) generated with exact distinct weights.`);
   };
 
   // QC Approval / Rejection (Updates Stock for Films, Inks, Solvents, Adhesives, Spares, PPE)
@@ -2572,7 +2796,7 @@ export default function InventoryManagement({
         <div className="modal-overlay" onClick={() => setIsNewGRNModalOpen(false)}>
           <div 
             className="glass-card modal-content modal-content-clean" 
-            style={{ width: '740px', maxWidth: '94vw' }} 
+            style={{ width: '880px', maxWidth: '96vw' }} 
             onClick={e => e.stopPropagation()}
           >
             {/* Dark Executive Header */}
@@ -2863,13 +3087,21 @@ export default function InventoryManagement({
                 </div>
               </div>
 
-              {/* Section 3: Specifications & Quantity Parameters */}
+              {/* Section 3: Specifications & Quantity Parameters (Individual Roll & Container Breakdown) */}
               <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Scale size={14} style={{ color: '#0284c7' }} /> 3. Specifications & Quantity Parameters
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+                  <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Scale size={14} style={{ color: '#0284c7' }} /> 3. Specifications & Individual {grnPackagingType} Breakdown
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#0369a1', background: '#e0f2fe', padding: '2px 8px', borderRadius: '4px' }}>
+                      {grnItemsList.length} {grnPackagingType}{grnItemsList.length > 1 ? 's' : ''} in Breakdown
+                    </span>
+                  </div>
                 </div>
 
-                <div className="form-grid">
+                {/* Common Specifications Grid */}
+                <div className="form-grid" style={{ marginBottom: '16px' }}>
                   {grnCategory === 'Film Substrates' ? (
                     <>
                       <div className="form-group">
@@ -2881,29 +3113,12 @@ export default function InventoryManagement({
 
                       <div className="form-group">
                         <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>Micron Gauge (µ)</label>
-                        <input type="number" className="form-control" value={grnMicron} onChange={e => setGrnMicron(e.target.value)} />
+                        <input type="number" className="form-control" placeholder="e.g. 12" value={grnMicron} onChange={e => setGrnMicron(e.target.value)} />
                       </div>
 
                       <div className="form-group">
                         <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>Slit Width (mm)</label>
-                        <input type="number" className="form-control" value={grnWidthMm} onChange={e => setGrnWidthMm(e.target.value)} />
-                      </div>
-
-                      <div className="form-group">
-                        <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
-                          Number of {grnPackagingType}s Received <span style={{ color: '#ef4444' }}>*</span>
-                        </label>
-                        <input type="number" min="1" className="form-control" value={grnRolls} onChange={e => setGrnRolls(e.target.value)} />
-                      </div>
-
-                      <div className="form-group">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                          <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155', margin: 0 }}>
-                            Total Net Weight Inward (Kg) <span style={{ color: '#ef4444' }}>*</span>
-                          </label>
-                          <WeighingScaleCaptureButton onCapture={(weight) => setGrnWeightKg(weight)} />
-                        </div>
-                        <input type="number" step="any" className="form-control" required value={grnWeightKg} onChange={e => setGrnWeightKg(e.target.value)} />
+                        <input type="number" className="form-control" placeholder="e.g. 1000" value={grnWidthMm} onChange={e => setGrnWidthMm(e.target.value)} />
                       </div>
 
                       <div className="form-group">
@@ -2956,34 +3171,6 @@ export default function InventoryManagement({
 
                       <div className="form-group">
                         <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
-                          Number of {grnPackagingType}s Received <span style={{ color: '#ef4444' }}>*</span>
-                        </label>
-                        <input 
-                          type="number" 
-                          min="1"
-                          className="form-control" 
-                          placeholder={`e.g. 5 ${grnPackagingType}s (Default: 1)`} 
-                          value={grnRolls} 
-                          onChange={e => setGrnRolls(e.target.value)} 
-                        />
-                      </div>
-
-                      <div className="form-group">
-                        <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
-                          Total Inward Qty ({grnUnit}) <span style={{ color: '#ef4444' }}>*</span>
-                        </label>
-                        <input 
-                          type="number" 
-                          step="any"
-                          className="form-control" 
-                          required 
-                          value={grnWeightKg} 
-                          onChange={e => setGrnWeightKg(e.target.value)} 
-                        />
-                      </div>
-
-                      <div className="form-group">
-                        <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
                           Purchase Rate (₹ / {grnUnit}) <span style={{ color: '#ef4444' }}>*</span>
                         </label>
                         <input 
@@ -2998,6 +3185,298 @@ export default function InventoryManagement({
                       </div>
                     </>
                   )}
+                </div>
+
+                {/* Quick Roll Count & Default Core / Container Tare Helper Toolbar */}
+                <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '10px 14px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: '700', color: '#334155' }}>Number of {grnPackagingType}s:</span>
+                      <input 
+                        type="number" 
+                        min="1" 
+                        max="200"
+                        style={{ width: '65px', padding: '4px 8px', fontSize: '0.85rem', fontWeight: '700', borderRadius: '4px', border: '1px solid #94a3b8', textAlign: 'center' }}
+                        value={grnRolls || grnItemsList.length} 
+                        onChange={e => handleRollsCountChange(e.target.value)} 
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', borderLeft: '1px solid #e2e8f0', paddingLeft: '12px' }}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: '600', color: '#475569' }}>Default Tare / Core (kg):</span>
+                      <input 
+                        type="number" 
+                        step="0.1"
+                        min="0"
+                        style={{ width: '65px', padding: '4px 8px', fontSize: '0.82rem', borderRadius: '4px', border: '1px solid #cbd5e1', textAlign: 'center' }}
+                        value={grnDefaultTare}
+                        placeholder="0"
+                        onChange={e => setGrnDefaultTare(e.target.value)}
+                      />
+                      <button 
+                        type="button" 
+                        className="btn-secondary" 
+                        style={{ padding: '3px 8px', fontSize: '0.72rem', fontWeight: '700' }}
+                        onClick={() => handleApplyDefaultTare(grnDefaultTare)}
+                        title="Set this tare weight on all rows"
+                      >
+                        Apply All
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={() => handleAddGrnItemRow()}
+                      className="btn-secondary"
+                      style={{ padding: '5px 10px', fontSize: '0.78rem', color: '#0369a1', borderColor: '#bae6fd', fontWeight: '700' }}
+                    >
+                      <Plus size={14} style={{ marginRight: '4px' }} /> Add {grnPackagingType}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const total = prompt(`Enter total invoice ${grnCategory === 'Film Substrates' ? 'weight (kg)' : grnUnit} to distribute across ${grnItemsList.length} ${grnPackagingType}s:`, grnWeightKg || '1000');
+                        if (total) handleDistributeTotalWeightEvenly(total);
+                      }}
+                      className="btn-secondary"
+                      style={{ padding: '5px 10px', fontSize: '0.78rem', fontWeight: '600' }}
+                      title="Quick distribute total weight equally as a baseline"
+                    >
+                      Quick Distribute
+                    </button>
+                  </div>
+                </div>
+
+                {/* Individual Roll / Container Breakdown Table */}
+                <div style={{ 
+                  background: '#ffffff', 
+                  borderRadius: '8px', 
+                  border: '1px solid #cbd5e1', 
+                  overflow: 'hidden',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                  maxHeight: '360px',
+                  overflowY: 'auto'
+                }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                    <thead>
+                      <tr style={{ background: '#0f172a', color: '#ffffff', textAlign: 'left', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        <th style={{ padding: '8px 10px', width: '70px' }}>Unit #</th>
+                        <th style={{ padding: '8px 10px', width: '140px' }}>Gross Wt (kg)</th>
+                        <th style={{ padding: '8px 10px', width: '95px' }}>Tare / Core (kg)</th>
+                        <th style={{ padding: '8px 10px', width: '160px' }}>Net Weight ({grnCategory === 'Film Substrates' ? 'Kg' : grnUnit}) *</th>
+                        {grnCategory === 'Film Substrates' && (
+                          <th style={{ padding: '8px 10px', width: '110px' }}>Est. Length (m)</th>
+                        )}
+                        <th style={{ padding: '8px 10px' }}>Vendor {grnPackagingType} / Lot #</th>
+                        <th style={{ padding: '8px 8px', width: '45px', textAlign: 'center' }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {grnItemsList.map((item, index) => {
+                        const unitNumber = index + 1;
+                        const netVal = parseFloat(item.netWeightKg);
+                        const isNetValid = !isNaN(netVal) && netVal > 0;
+
+                        return (
+                          <tr 
+                            key={item.id || index}
+                            style={{ 
+                              borderBottom: '1px solid #e2e8f0', 
+                              background: index % 2 === 0 ? '#ffffff' : '#f8fafc' 
+                            }}
+                          >
+                            {/* Unit Label */}
+                            <td style={{ padding: '6px 10px', fontWeight: '800', color: '#1e40af', whiteSpace: 'nowrap' }}>
+                              {grnPackagingType} #{unitNumber}
+                            </td>
+
+                            {/* Gross Weight with Scale Button */}
+                            <td style={{ padding: '6px 10px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <input 
+                                  type="number"
+                                  step="any"
+                                  min="0"
+                                  style={{ 
+                                    width: '75px', 
+                                    padding: '4px 6px', 
+                                    fontSize: '0.82rem', 
+                                    borderRadius: '4px', 
+                                    border: '1px solid #cbd5e1', 
+                                    textAlign: 'right',
+                                    fontWeight: '600' 
+                                  }}
+                                  placeholder="0.0"
+                                  value={item.grossWeightKg}
+                                  onChange={e => handleUpdateGrnItemRow(item.id, 'grossWeightKg', e.target.value)}
+                                />
+                                <WeighingScaleCaptureButton 
+                                  label=""
+                                  style={{ padding: '3px 5px' }}
+                                  onCapture={(weight) => handleUpdateGrnItemRow(item.id, 'grossWeightKg', weight)} 
+                                />
+                              </div>
+                            </td>
+
+                            {/* Tare / Core Weight */}
+                            <td style={{ padding: '6px 10px' }}>
+                              <input 
+                                type="number"
+                                step="any"
+                                min="0"
+                                style={{ 
+                                  width: '65px', 
+                                  padding: '4px 6px', 
+                                  fontSize: '0.82rem', 
+                                  borderRadius: '4px', 
+                                  border: '1px solid #cbd5e1', 
+                                  textAlign: 'right',
+                                  color: '#64748b'
+                                }}
+                                placeholder="0"
+                                value={item.tareWeightKg}
+                                onChange={e => handleUpdateGrnItemRow(item.id, 'tareWeightKg', e.target.value)}
+                              />
+                            </td>
+
+                            {/* Net Weight with Scale Button */}
+                            <td style={{ padding: '6px 10px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <input 
+                                  type="number"
+                                  step="any"
+                                  min="0"
+                                  required
+                                  style={{ 
+                                    width: '85px', 
+                                    padding: '4px 6px', 
+                                    fontSize: '0.85rem', 
+                                    borderRadius: '4px', 
+                                    border: `1.5px solid ${isNetValid ? '#10b981' : '#f59e0b'}`, 
+                                    textAlign: 'right',
+                                    fontWeight: '800',
+                                    color: isNetValid ? '#047857' : '#b45309',
+                                    background: isNetValid ? '#ecfdf5' : '#fffbeb'
+                                  }}
+                                  placeholder="Net (kg) *"
+                                  value={item.netWeightKg}
+                                  onChange={e => handleUpdateGrnItemRow(item.id, 'netWeightKg', e.target.value)}
+                                />
+                                <WeighingScaleCaptureButton 
+                                  label=""
+                                  style={{ padding: '3px 5px' }}
+                                  onCapture={(weight) => handleUpdateGrnItemRow(item.id, 'netWeightKg', weight)} 
+                                />
+                              </div>
+                            </td>
+
+                            {/* Estimated Length in Meters for Film Substrates */}
+                            {grnCategory === 'Film Substrates' && (
+                              <td style={{ padding: '6px 10px' }}>
+                                <input 
+                                  type="number"
+                                  step="1"
+                                  style={{ 
+                                    width: '75px', 
+                                    padding: '4px 6px', 
+                                    fontSize: '0.8rem', 
+                                    borderRadius: '4px', 
+                                    border: '1px solid #cbd5e1', 
+                                    textAlign: 'right',
+                                    color: '#475569'
+                                  }}
+                                  placeholder="m"
+                                  value={item.lengthMeters}
+                                  onChange={e => handleUpdateGrnItemRow(item.id, 'lengthMeters', e.target.value)}
+                                  title="Calculated theoretical length based on width & gauge"
+                                />
+                              </td>
+                            )}
+
+                            {/* Vendor Roll / Container Lot Number */}
+                            <td style={{ padding: '6px 10px' }}>
+                              <input 
+                                type="text"
+                                style={{ 
+                                  width: '100%', 
+                                  padding: '4px 6px', 
+                                  fontSize: '0.8rem', 
+                                  borderRadius: '4px', 
+                                  border: '1px solid #cbd5e1' 
+                                }}
+                                placeholder={`e.g. VR-${unitNumber.toString().padStart(2, '0')}`}
+                                value={item.vendorRollNo}
+                                onChange={e => handleUpdateGrnItemRow(item.id, 'vendorRollNo', e.target.value)}
+                              />
+                            </td>
+
+                            {/* Delete Action */}
+                            <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                              {grnItemsList.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveGrnItemRow(item.id)}
+                                  style={{ 
+                                    background: 'none', 
+                                    border: 'none', 
+                                    color: '#ef4444', 
+                                    cursor: 'pointer', 
+                                    padding: '2px 4px',
+                                    borderRadius: '4px'
+                                  }}
+                                  title={`Remove ${grnPackagingType} #${unitNumber}`}
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Aggregated Totals & Summary Strip */}
+                <div style={{
+                  marginTop: '12px',
+                  background: '#0f172a',
+                  color: '#ffffff',
+                  padding: '10px 16px',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '12px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '0.8rem', color: '#94a3b8' }}>
+                    <span>Total {grnPackagingType}s: <strong style={{ color: '#ffffff' }}>{grnCalculatedTotals.count}</strong></span>
+                    {grnCalculatedTotals.totalGross > 0 && (
+                      <span>Gross: <strong style={{ color: '#ffffff' }}>{grnCalculatedTotals.totalGross.toFixed(2)} kg</strong></span>
+                    )}
+                    {grnCalculatedTotals.totalTare > 0 && (
+                      <span>Tare: <strong style={{ color: '#ffffff' }}>{grnCalculatedTotals.totalTare.toFixed(2)} kg</strong></span>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    <div style={{ fontSize: '0.85rem' }}>
+                      <span style={{ color: '#94a3b8', marginRight: '6px' }}>Total Inward Net Weight:</span>
+                      <strong style={{ color: '#34d399', fontSize: '1.05rem', fontFamily: 'monospace' }}>
+                        {grnCalculatedTotals.totalNet.toFixed(2)} {grnCategory === 'Film Substrates' ? 'Kg' : grnUnit}
+                      </strong>
+                    </div>
+
+                    {parseFloat(grnPurchaseRate) > 0 && (
+                      <div style={{ fontSize: '0.82rem', borderLeft: '1px solid #334155', paddingLeft: '14px', color: '#38bdf8' }}>
+                        Inward Value: <strong>₹{((grnCalculatedTotals.totalNet || 0) * (parseFloat(grnPurchaseRate) || 0)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
