@@ -25,6 +25,7 @@ import {
   X
 } from 'lucide-react';
 import WeighingScaleInput from './WeighingScaleInput';
+import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import CylinderJobCardForm from '../CylinderJobCardForm';
 import { DEFAULT_DAILY_RATES, generateBarcodeId } from '../factoryStore';
@@ -1707,9 +1708,12 @@ export default function ProductionRecordManagement({
                 <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1.1fr 1.9fr', gap: '24px' }}>
                   {/* Left Column: Stage Output */}
                   <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                    <label style={{ fontSize: '0.78rem', fontWeight: '800', color: '#0369a1', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
-                      🟢 First Pass L1 Output (kg) *
-                    </label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <label style={{ fontSize: '0.78rem', fontWeight: '800', color: '#0369a1', textTransform: 'uppercase', margin: 0 }}>
+                        🟢 First Pass L1 Output (kg) *
+                      </label>
+                      <WeighingScaleCaptureButton onCapture={(weight) => setQtyFirstPassL1(weight)} />
+                    </div>
                     <input 
                       type="number" 
                       step="0.1" 
@@ -1775,9 +1779,12 @@ export default function ProductionRecordManagement({
 
                 <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1.1fr 1.9fr', gap: '24px' }}>
                   <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                    <label style={{ fontSize: '0.78rem', fontWeight: '800', color: '#86198f', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
-                      🟢 Second Pass L2 Output (kg)
-                    </label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <label style={{ fontSize: '0.78rem', fontWeight: '800', color: '#86198f', textTransform: 'uppercase', margin: 0 }}>
+                        🟢 Second Pass L2 Output (kg)
+                      </label>
+                      <WeighingScaleCaptureButton onCapture={(weight) => setQtySecondPassL2(weight)} />
+                    </div>
                     <input 
                       type="number" 
                       step="0.1" 
@@ -1826,9 +1833,12 @@ export default function ProductionRecordManagement({
 
                 <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1.1fr 1.9fr', gap: '24px' }}>
                   <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                    <label style={{ fontSize: '0.78rem', fontWeight: '800', color: '#b45309', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
-                      🟢 Inspected Roll Qty (kg)
-                    </label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <label style={{ fontSize: '0.78rem', fontWeight: '800', color: '#b45309', textTransform: 'uppercase', margin: 0 }}>
+                        🟢 Inspected Roll Qty (kg)
+                      </label>
+                      <WeighingScaleCaptureButton onCapture={(weight) => setQtyInspection(weight)} />
+                    </div>
                     <input 
                       type="number" 
                       step="0.1" 
@@ -1877,9 +1887,12 @@ export default function ProductionRecordManagement({
 
                 <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1.1fr 1.9fr', gap: '24px' }}>
                   <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                    <label style={{ fontSize: '0.78rem', fontWeight: '800', color: '#047857', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
-                      🟢 Slitting Finished Output (kg)
-                    </label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <label style={{ fontSize: '0.78rem', fontWeight: '800', color: '#047857', textTransform: 'uppercase', margin: 0 }}>
+                        🟢 Slitting Finished Output (kg)
+                      </label>
+                      <WeighingScaleCaptureButton onCapture={(weight) => setQtySlitting(weight)} />
+                    </div>
                     <input 
                       type="number" 
                       step="0.1" 
@@ -1943,9 +1956,12 @@ export default function ProductionRecordManagement({
 
                 <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '20px', alignItems: 'center' }}>
                   <div style={{ background: '#f0fdf4', padding: '16px', borderRadius: '8px', border: '1.5px solid #86efac' }}>
-                    <label style={{ fontSize: '0.8rem', fontWeight: '900', color: '#166534', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
-                      🎯 Dispatch Ready Quantity (kg) *
-                    </label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <label style={{ fontSize: '0.8rem', fontWeight: '900', color: '#166534', textTransform: 'uppercase', margin: 0 }}>
+                        🎯 Dispatch Ready Quantity (kg) *
+                      </label>
+                      <WeighingScaleCaptureButton onCapture={(weight) => setQtyDispatch(weight)} />
+                    </div>
                     <input 
                       type="number" 
                       step="0.1" 

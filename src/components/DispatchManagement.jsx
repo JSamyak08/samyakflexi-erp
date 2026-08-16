@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import TablePagination, { usePagination } from './TablePagination';
 import DeliveryChallanPDF from './DeliveryChallanPDF';
+import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import CertificateOfAnalysisPDF, { DEFAULT_COA_PARAMETERS } from './CertificateOfAnalysisPDF';
 import { generateDocRefNumber, getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import { formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
@@ -1184,7 +1185,10 @@ export default function DispatchManagement({
                     <input type="text" className="form-control" value={coaFilmType} onChange={e => setCoaFilmType(e.target.value)} />
                   </div>
                   <div>
-                    <label className="form-label">NET WEIGHT</label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                      <label className="form-label" style={{ margin: 0 }}>NET WEIGHT</label>
+                      <WeighingScaleCaptureButton onCapture={(weight) => setCoaNetWeight(`${weight.toFixed(2)} kg`)} />
+                    </div>
                     <input type="text" className="form-control" value={coaNetWeight} onChange={e => setCoaNetWeight(e.target.value)} />
                   </div>
                   <div>

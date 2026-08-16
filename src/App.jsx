@@ -66,6 +66,7 @@ import ScrapWastageAnalysis from './components/ScrapWastageAnalysis';
 import AuditLogsManagement from './components/AuditLogsManagement';
 import InkManagement from './components/InkManagement';
 import DispatchManagement from './components/DispatchManagement';
+import WeighingScaleWidget from './components/WeighingScaleWidget';
 import { fetchAuditLogsFromSupabase, saveAuditLogToSupabase, createAuditEntry, pruneOldAuditLogs } from './services/auditLogger';
 import { getRouteFromUrl, getTabFromUrl, pushSlugState } from './utils/slugRouter';
 import { isSupabaseConfigured } from './services/supabaseClient';
@@ -2198,7 +2199,8 @@ export default function App() {
           </div>
 
           {/* Top Bar Active User & Logout Controls (ACCOUNT / ROLE SWITCHER) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <WeighingScaleWidget />
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#ffffff', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem' }}>
               <UserCheck size={16} style={{ color: 'var(--primary-brand)' }} />
               <span style={{ color: 'var(--text-muted)', fontWeight: '500' }}>Active User:</span>

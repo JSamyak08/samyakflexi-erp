@@ -33,6 +33,7 @@ import {
 import GRNPDF from './GRNPDF';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
 import WeighingScaleInput from './WeighingScaleInput';
+import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import DispatchPackingListPDF from './DispatchPackingListPDF';
 import TablePagination, { usePagination } from './TablePagination';
@@ -2896,9 +2897,12 @@ export default function InventoryManagement({
                       </div>
 
                       <div className="form-group">
-                        <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
-                          Total Net Weight Inward (Kg) <span style={{ color: '#ef4444' }}>*</span>
-                        </label>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                          <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155', margin: 0 }}>
+                            Total Net Weight Inward (Kg) <span style={{ color: '#ef4444' }}>*</span>
+                          </label>
+                          <WeighingScaleCaptureButton onCapture={(weight) => setGrnWeightKg(weight)} />
+                        </div>
                         <input type="number" step="any" className="form-control" required value={grnWeightKg} onChange={e => setGrnWeightKg(e.target.value)} />
                       </div>
 
