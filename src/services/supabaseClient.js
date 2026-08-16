@@ -27,8 +27,12 @@ const removeCookie = (name) => {
   } catch (e) {}
 };
 
+// Production default credentials for SamyakFlexi ERP (Guarantees all computers connect seamlessly)
+export const DEFAULT_SUPABASE_URL = 'https://eamstsaqkbeiywfaanhi.supabase.co';
+export const DEFAULT_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVhbXN0c2Fxa2JlaXl3ZmFhbmhpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwNTg1NTYsImV4cCI6MjEwMDYzNDU1Nn0.qLcMES3SvNut2zS1wZqqT_NDefXlreGEyVr_I9FInaU';
+
 /**
- * Multi-layer credential retrieval (LocalStorage -> SessionStorage -> Cookie -> Env)
+ * Multi-layer credential retrieval (LocalStorage -> SessionStorage -> Cookie -> Env -> Production Default)
  */
 export const getSupabaseCredentials = () => {
   let url = '';
@@ -54,11 +58,13 @@ export const getSupabaseCredentials = () => {
   if (!url) try { url = cleanVal(sessionStorage.getItem('samyak_supabase_url')); } catch (e) {}
   if (!url) url = cleanVal(getCookie('samyak_supabase_url'));
   if (!url) url = cleanVal(import.meta.env.VITE_SUPABASE_URL || '');
+  if (!url) url = DEFAULT_SUPABASE_URL;
 
   try { key = cleanVal(localStorage.getItem('samyak_supabase_key')); } catch (e) {}
   if (!key) try { key = cleanVal(sessionStorage.getItem('samyak_supabase_key')); } catch (e) {}
   if (!key) key = cleanVal(getCookie('samyak_supabase_key'));
   if (!key) key = cleanVal(import.meta.env.VITE_SUPABASE_ANON_KEY || '');
+  if (!key) key = DEFAULT_SUPABASE_KEY;
 
   return { url, key };
 };
