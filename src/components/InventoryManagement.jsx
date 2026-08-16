@@ -4612,7 +4612,7 @@ export default function InventoryManagement({
 
       {/* Modal: Quick Vendor Onboarding (from GRN Modal) */}
       {isVendorModalOpen && (
-        <div className="modal-overlay" style={{ zIndex: 110 }} onClick={() => setIsVendorModalOpen(false)}>
+        <div className="modal-overlay" style={{ zIndex: 2100 }} onClick={() => setIsVendorModalOpen(false)}>
           <div className="glass-card modal-content" style={{ width: '620px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
               <div>
@@ -4760,7 +4760,7 @@ export default function InventoryManagement({
 
       {/* Modal: Create New Dispatch Shipment (Scale #4 Station) */}
       {isNewDispatchModalOpen && (
-        <div className="modal-overlay" style={{ zIndex: 115 }} onClick={() => setIsNewDispatchModalOpen(false)}>
+        <div className="modal-overlay" style={{ zIndex: 2100 }} onClick={() => setIsNewDispatchModalOpen(false)}>
           <div className="glass-card modal-content" style={{ width: '650px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
               <div>

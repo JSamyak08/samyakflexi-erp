@@ -13,7 +13,7 @@ export default function DispatchPackingListPDF({ shipment, onClose }) {
   const totalGross = shipment.items?.reduce((sum, item) => sum + (item.grossWeightKg || 0), 0) || shipment.totalGrossWeightKg || 0;
 
   return (
-    <div className="modal-overlay" style={{ zIndex: 120, background: 'rgba(15, 23, 42, 0.75)' }}>
+    <div className="modal-overlay" style={{ zIndex: 3000, background: 'rgba(15, 23, 42, 0.75)' }}>
       <div className="modal-content" style={{ width: '900px', maxWidth: '95vw', background: '#f8fafc', padding: '24px' }}>
         
         {/* Action Header Controls */}

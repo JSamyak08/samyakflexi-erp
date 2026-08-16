@@ -226,7 +226,7 @@ export default function BarcodePrinterModal({ roll, rolls, onClose }) {
   };
 
   return (
-    <div className="modal-overlay" style={{ zIndex: 120 }} onClick={onClose}>
+    <div className="modal-overlay" style={{ zIndex: 3000 }} onClick={onClose}>
       <style>{`
         @media print {
           @page {
