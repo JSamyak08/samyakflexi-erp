@@ -179,7 +179,7 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, 
                 <td className="label-cell">Engraver Name</td><td className="value-cell" style={{ fontWeight: '700', color: '#1e293b' }}>{data.engravure || data.engravuresName || '—'}</td>
               </tr>
               <tr>
-                <td className="label-cell">Cost Borne By</td><td className="value-cell">{isAdmin ? (data.costBorneBy || '—') : '🔒 Restricted (Admin Only)'}</td>
+                <td className="label-cell">Cost Borne By</td><td className="value-cell">{data.costBorneBy || '—'}</td>
                 <td className="label-cell">Utilisation Limit</td><td className="value-cell">{data.utilisationLimit ? `${Number(data.utilisationLimit).toLocaleString()} Kg` : '10,000 Kg'}</td>
               </tr>
             </tbody>
@@ -1158,8 +1158,21 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
             <input className="form-control" name="variant" value={formData.variant} onChange={handleChange} />
           </div>
           <div className="form-group">
-            <label>Printing (Reverse/Surface)</label>
-            <input className="form-control" name="printing" value={formData.printing} onChange={handleChange} />
+            <label style={{ fontWeight: '700', color: '#0f172a' }}>Printing Type (Reverse / Surface)*</label>
+            <select 
+              className="form-control" 
+              name="printing" 
+              value={formData.printing || 'Reverse'} 
+              onChange={handleChange}
+              style={{ fontWeight: '700', background: '#ffffff' }}
+            >
+              <option value="Reverse">Reverse (Standard Flexible Packaging)</option>
+              <option value="Surface">Surface</option>
+              <option value="Surface Gloss">Surface Gloss</option>
+              <option value="Surface Matt">Surface Matt</option>
+              <option value="Reverse Printing">Reverse Printing</option>
+              <option value="Surface Printing">Surface Printing</option>
+            </select>
           </div>
           <div className="form-group">
             <label>Individual Pouch Size (Width)</label>
@@ -1201,12 +1214,10 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
             <label>Engraver Name</label>
             <input className="form-control" name="engravure" value={formData.engravure} onChange={handleChange} />
           </div>
-          {isAdmin && (
-            <div className="form-group">
-              <label>Cost Borne By</label>
-              <input className="form-control" name="costBorneBy" value={formData.costBorneBy} onChange={handleChange} />
-            </div>
-          )}
+          <div className="form-group">
+            <label>Cost Borne By</label>
+            <input className="form-control" name="costBorneBy" value={formData.costBorneBy || ''} onChange={handleChange} placeholder="e.g. Samyak / Client / Shared" />
+          </div>
           <div className="form-group">
             <label>Approved By</label>
             <input className="form-control" name="approvedBy" value={formData.approvedBy} onChange={handleChange} />
