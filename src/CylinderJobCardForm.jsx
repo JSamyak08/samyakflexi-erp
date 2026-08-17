@@ -36,11 +36,22 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, 
           body * {
             visibility: hidden !important;
           }
+          .printable-jobcard-host,
+          .printable-jobcard-host *,
           .printable-landscape-card,
           .printable-landscape-card * {
             visibility: visible !important;
           }
-          .no-print, button {
+          .printable-jobcard-host {
+            position: static !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            opacity: 1 !important;
+            pointer-events: auto !important;
+            display: block !important;
+          }
+          .no-print, button, .modal-overlay {
             display: none !important;
           }
           .printable-landscape-card {
@@ -421,7 +432,23 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
     }
   }, [layers]);
 
-  const handlePrint = useReactToPrint({ contentRef: componentRef, documentTitle: `Job_Card_${formData.jobName || 'Draft'}` });
+  const handleReactToPrint = useReactToPrint({ 
+    contentRef: componentRef,
+    documentTitle: `Job_Card_${(formData.jobName || 'Draft').replace(/[^a-zA-Z0-9_-]/g, '_')}` 
+  });
+
+  const handlePrint = () => {
+    try {
+      if (typeof handleReactToPrint === 'function') {
+        handleReactToPrint();
+      } else {
+        window.print();
+      }
+    } catch (err) {
+      console.warn('ReactToPrint error, falling back to window.print():', err);
+      window.print();
+    }
+  };
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -1256,6 +1283,26 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         artworkUrl={activeArtworkModal.url}
         title={activeArtworkModal.title}
       />
+
+      {/* Printable Job Card Render Host (Rendered in DOM for react-to-print & native print) */}
+      <div 
+        className="printable-jobcard-host"
+        style={{
+          position: 'absolute',
+          left: '-9999px',
+          top: '-9999px',
+          width: '297mm',
+          opacity: 0,
+          pointerEvents: 'none'
+        }}
+      >
+        <PrintableJobCard
+          ref={componentRef}
+          data={{ ...formData, layers }}
+          imagePreview={imagePreview || formData.artworkUrl}
+          currentUser={currentUser}
+        />
+      </div>
     </div>
   );
 }
