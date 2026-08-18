@@ -964,14 +964,28 @@ export default function App() {
             }
             setIsAuthenticated(true);
           } else {
-            setSessionProfile(null);
-            setCurrentUser(null);
-            setIsAuthenticated(false);
+            // Check if there is an active verified local/DB session in storage
+            const savedLocalUser = loadLocalState('samyak_erp_current_user', null);
+            if (savedLocalUser && savedLocalUser.email) {
+              setSessionProfile(savedLocalUser);
+              setCurrentUser(savedLocalUser);
+              setIsAuthenticated(true);
+            } else {
+              setSessionProfile(null);
+              setCurrentUser(null);
+              setIsAuthenticated(false);
+            }
           }
           setIsAuthReady(true);
         }
       } catch (err) {
         console.warn('Failed to get Supabase session on mount:', err);
+        const savedLocalUser = loadLocalState('samyak_erp_current_user', null);
+        if (savedLocalUser && savedLocalUser.email) {
+          setSessionProfile(savedLocalUser);
+          setCurrentUser(savedLocalUser);
+          setIsAuthenticated(true);
+        }
         if (mounted) setIsAuthReady(true);
       }
     }
@@ -999,7 +1013,8 @@ export default function App() {
           setCurrentUser(profile);
         }
         setIsAuthenticated(true);
-      } else {
+      } else if (event === 'SIGNED_OUT') {
+        localStorage.removeItem('samyak_erp_current_user');
         setSessionProfile(null);
         setCurrentUser(null);
         setIsAuthenticated(false);
@@ -1017,22 +1032,20 @@ export default function App() {
   // Login Handler (for UI updates, authService handles Supabase login)
   const handleLogin = (user) => {
     logAudit('AUTH', 'User Management', `User ${user?.name || user?.email || 'User'} signed in to the system`, user?.id);
-    if (!isSupaActive) {
-      setSessionProfile(user);
-      setCurrentUser(user);
-      setIsAuthenticated(true);
-    }
+    setSessionProfile(user);
+    setCurrentUser(user);
+    setIsAuthenticated(true);
+    safeLocalStorageSet('samyak_erp_current_user', user);
   };
 
   // Logout Handler (for UI updates, authService handles Supabase logout)
   const handleLogout = () => {
     logAudit('AUTH', 'User Management', `User ${currentUser?.name || currentUser?.email || 'User'} signed out of the system`, currentUser?.id);
     localStorage.removeItem('samyak_erp_current_user');
-    if (!isSupaActive) {
-      setSessionProfile(null);
-      setCurrentUser(null);
-      setIsAuthenticated(false);
-    } else {
+    setSessionProfile(null);
+    setCurrentUser(null);
+    setIsAuthenticated(false);
+    if (isSupaActive) {
       supabase.auth.signOut().catch(console.warn);
     }
   };

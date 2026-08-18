@@ -1097,6 +1097,7 @@ export async function saveUserToSupabase(user) {
       email: user.email || '',
       role: user.role || 'Shop Floor Operator',
       department: user.department || 'Operations',
+      password_hash: user.password || user.password_hash || '',
       active: user.status !== 'Inactive',
       status: user.status || 'Active'
     };

@@ -308,6 +308,15 @@ export const initialUsers = [
     role: "Sales Manager",
     department: "Sales & Commercial",
     status: "Active"
+  },
+  {
+    id: "USR-009",
+    name: "Mohit Namdev",
+    email: "mohit.namdev@samyakinternational.in",
+    password: "SIL#31Mohit",
+    role: "Production Manager",
+    department: "Operations & Plant",
+    status: "Active"
   }
 ];
 
