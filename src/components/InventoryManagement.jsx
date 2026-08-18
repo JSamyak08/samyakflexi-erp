@@ -1906,10 +1906,44 @@ export default function InventoryManagement({
     return poNo.includes(term) || vendorName.includes(term) || source.includes(term) || itemDescs.includes(term);
   });
 
+  const filteredRecItems = useMemo(() => {
+    return (safeInventory || []).filter(item => {
+      const physicalVal = physicalCounts[item.id] !== undefined ? physicalCounts[item.id] : item.availableQtyKg;
+      const diff = physicalVal - item.availableQtyKg;
+
+      // 1. Search Filter
+      if (recSearchTerm && recSearchTerm.trim()) {
+        const q = recSearchTerm.toLowerCase().trim();
+        const matchId = (item.id || '').toLowerCase().includes(q);
+        const matchFilm = (item.filmType || '').toLowerCase().includes(q);
+        const matchName = (item.itemName || '').toLowerCase().includes(q);
+        const matchCategory = (item.category || '').toLowerCase().includes(q);
+        const matchSpec = `${item.micron || ''} ${item.widthMm || ''}`.toLowerCase().includes(q);
+        const matchLoc = (item.location || '').toLowerCase().includes(q);
+        const matchBatch = (item.lastBatch || '').toLowerCase().includes(q);
+        if (!matchId && !matchFilm && !matchName && !matchCategory && !matchSpec && !matchLoc && !matchBatch) return false;
+      }
+
+      // 2. Status Filter
+      if (recStatusFilter === 'DISCREPANCY' && diff === 0) return false;
+      if (recStatusFilter === 'SHORTAGE' && diff >= 0) return false;
+      if (recStatusFilter === 'SURPLUS' && diff <= 0) return false;
+      if (recStatusFilter === 'MATCHED' && diff !== 0) return false;
+
+      // 3. Substrate Filter
+      if (recSubstrateFilter !== 'ALL') {
+        if ((item.filmType || '').toLowerCase() !== recSubstrateFilter.toLowerCase()) return false;
+      }
+
+      return true;
+    });
+  }, [safeInventory, physicalCounts, recSearchTerm, recStatusFilter, recSubstrateFilter]);
+
   const stockPagination = usePagination(filteredInventory, 50);
   const grnPagination = usePagination(safeGrns, 50);
   const poPagination = usePagination(filteredPOs, 50);
   const dispatchPagination = usePagination(dispatchShipments || initialDispatchShipments, 50);
+  const recPagination = usePagination(filteredRecItems, 50);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -2769,36 +2803,6 @@ export default function InventoryManagement({
           }
         });
 
-        // Filter inventory list based on Search & Filter state
-        const filteredRecItems = inventory.filter(item => {
-          const physicalVal = physicalCounts[item.id] !== undefined ? physicalCounts[item.id] : item.availableQtyKg;
-          const diff = physicalVal - item.availableQtyKg;
-
-          // 1. Search Filter
-          if (recSearchTerm.trim()) {
-            const q = recSearchTerm.toLowerCase();
-            const matchId = (item.id || '').toLowerCase().includes(q);
-            const matchFilm = (item.filmType || '').toLowerCase().includes(q);
-            const matchSpec = `${item.micron || ''} ${item.widthMm || ''}`.toLowerCase().includes(q);
-            const matchLoc = (item.location || '').toLowerCase().includes(q);
-            const matchBatch = (item.lastBatch || '').toLowerCase().includes(q);
-            if (!matchId && !matchFilm && !matchSpec && !matchLoc && !matchBatch) return false;
-          }
-
-          // 2. Status Filter
-          if (recStatusFilter === 'DISCREPANCY' && diff === 0) return false;
-          if (recStatusFilter === 'SHORTAGE' && diff >= 0) return false;
-          if (recStatusFilter === 'SURPLUS' && diff <= 0) return false;
-          if (recStatusFilter === 'MATCHED' && diff !== 0) return false;
-
-          // 3. Substrate Filter
-          if (recSubstrateFilter !== 'ALL') {
-            if ((item.filmType || '').toLowerCase() !== recSubstrateFilter.toLowerCase()) return false;
-          }
-
-          return true;
-        });
-
         return (
           <div className="glass-panel" style={{ padding: '24px' }}>
             {/* Header Action Bar */}
@@ -3095,9 +3099,17 @@ export default function InventoryManagement({
               </table>
             </div>
 
+            <TablePagination
+              currentPage={recPagination.currentPage}
+              totalItems={recPagination.totalItems}
+              pageSize={recPagination.pageSize}
+              onPageChange={recPagination.setCurrentPage}
+              onPageSizeChange={recPagination.setPageSize}
+            />
+
             <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                Showing <strong>{(filteredRecItems || []).length}</strong> of <strong>{(inventory || []).length}</strong> stock items
+                Showing <strong>{recPagination.paginatedItems.length}</strong> of <strong>{(filteredRecItems || []).length}</strong> filtered items (Total Stock Items: {(inventory || []).length})
               </div>
               <button className="btn-primary" style={{ padding: '12px 24px', fontSize: '1rem' }} onClick={handleCommitReconciliation}>
                 <CheckCircle2 size={18} /> Commit Reconciliation & Update System Stock
