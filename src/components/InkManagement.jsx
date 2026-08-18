@@ -70,6 +70,7 @@ export default function InkManagement({
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingInk, setEditingInk] = useState(null);
   const [priceUpdateInk, setPriceUpdateInk] = useState(null);
+  const [stockAdjustInk, setStockAdjustInk] = useState(null);
   const [deleteConfirmInk, setDeleteConfirmInk] = useState(null);
   const [activePoPdfData, setActivePoPdfData] = useState(null);
   const [selectedInkForHistory, setSelectedInkForHistory] = useState(null);
@@ -171,6 +172,14 @@ export default function InkManagement({
     setNewPrice(ink.pricePerKg || '');
     setPriceEffectiveDate(new Date().toISOString().split('T')[0]);
     setPriceReason('Supplier price revision');
+  };
+
+  // Open Stock Adjustment Modal
+  const openStockAdjustModal = (ink) => {
+    setStockAdjustInk(ink);
+    setAdjustType('Inward');
+    setAdjustQtyKg('');
+    setAdjustRemarks('');
   };
 
   // Save Add / Edit Ink
@@ -1172,6 +1181,15 @@ export default function InkManagement({
                               title="View Inwards & Job Consumption Logs for this ink"
                             >
                               <FileText size={12} /> Logs
+                            </button>
+
+                            <button
+                              className="btn-secondary"
+                              style={{ padding: '4px 8px', fontSize: '0.75rem', color: '#0284c7' }}
+                              onClick={() => openStockAdjustModal(ink)}
+                              title="Adjust Stock Quantity (Inward / Physical Correction)"
+                            >
+                              <RefreshCw size={12} /> Adjust
                             </button>
 
                             <button

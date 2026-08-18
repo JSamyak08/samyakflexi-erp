@@ -376,6 +376,26 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
             </div>
           </div>
 
+          {/* Rate Discrepancy / Resolution Audit Callout if present */}
+          {poData.priceDiscrepancyResolution && (
+            <div style={{ margin: '12px 0', padding: '8px 12px', background: '#f0fdf4', border: '1.5px solid #86efac', borderRadius: '4px', fontSize: '8.5pt' }}>
+              <div style={{ fontWeight: '800', color: '#047857', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span>⚖️ INWARD RATE MISMATCH & RESOLUTION AUDIT NOTICE</span>
+              </div>
+              <div style={{ color: '#0f172a', fontWeight: '600', marginTop: '3px' }}>
+                {poData.priceDiscrepancyResolution.summary}
+              </div>
+              {poData.priceDiscrepancyResolution.notes && (
+                <div style={{ color: '#334155', fontStyle: 'italic', marginTop: '2px', fontSize: '8pt' }}>
+                  Admin Notes: "{poData.priceDiscrepancyResolution.notes}"
+                </div>
+              )}
+              <div style={{ fontSize: '7.5pt', color: '#64748b', marginTop: '3px' }}>
+                Authorized by: <strong>{poData.priceDiscrepancyResolution.resolvedBy}</strong> on {poData.priceDiscrepancyResolution.resolvedAt} • Linked GRN: <strong>{poData.priceDiscrepancyResolution.grnNo || 'Inward GRN'}</strong>
+              </div>
+            </div>
+          )}
+
           {/* Terms & Conditions */}
           <div className="letterhead-terms-box" style={{ border: '1px solid #cbd5e1', borderRadius: '4px', padding: '10px 12px', marginBottom: '14px', background: '#fafafa' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', borderBottom: '1px solid #e2e8f0', paddingBottom: '4px' }}>

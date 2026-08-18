@@ -744,10 +744,25 @@ export default function InventoryManagement({
   const [ledgerCurrentPage, setLedgerCurrentPage] = useState(1);
   const [ledgerPageSize, setLedgerPageSize] = useState(50);
 
+  const isAdmin = !currentUser || currentUser.role === 'Admin' || currentUser.role === 'admin' || currentUser.role === 'SuperAdmin';
+
   // PO Directory State
   const [selectedPOForPDF, setSelectedPOForPDF] = useState(null);
   const [poSearchTerm, setPoSearchTerm] = useState('');
   const [poStatusFilter, setPoStatusFilter] = useState('ALL');
+
+  // Discrepancy Resolution Modal State (Admin Only)
+  const [resolvingPoDiscrepancy, setResolvingPoDiscrepancy] = useState(null);
+  const [resolutionAction, setResolutionAction] = useState('UPDATE_PO_RATE'); // 'UPDATE_PO_RATE' or 'ENFORCE_PO_RATE'
+  const [resolutionNotes, setResolutionNotes] = useState('');
+  const [poResolutions, setPoResolutions] = useState(() => {
+    try {
+      const saved = localStorage.getItem('samyak_po_discrepancy_resolutions');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
 
   // Unified Platform-wide Issued Purchase Orders Aggregator
   const unifiedIssuedPOs = React.useMemo(() => {
@@ -874,18 +889,27 @@ export default function InventoryManagement({
       }
 
       let priceDiscrepancy = null;
+      let historicalMismatch = null;
+      const resolvedInfo = poResolutions[po.poNumber] || po.priceDiscrepancyResolution || null;
+
       matchingGRNs.forEach(g => {
         const grnRate = parseFloat(g.purchaseRatePerKg || g.purchaseRate || g.unitPrice) || 0;
         (po.items || []).forEach(it => {
           const poRate = parseFloat(it.rate) || 0;
           if (grnRate > 0 && poRate > 0 && Math.abs(grnRate - poRate) > 0.5) {
-            priceDiscrepancy = {
+            const mismatchData = {
               poRate,
               grnRate,
               variance: grnRate - poRate,
               grnNo: g.grnNo,
+              itemId: it.itemId || it.id,
+              itemName: it.itemDesc || it.description || it.itemName || 'Material Item',
               message: `⚠️ Rate Mismatch: PO Rate ₹${poRate}/kg vs Inward GRN Rate ₹${grnRate}/kg (₹${(grnRate - poRate).toFixed(2)} variance)`
             };
+            historicalMismatch = mismatchData;
+            if (!resolvedInfo) {
+              priceDiscrepancy = mismatchData;
+            }
           }
         });
       });
@@ -901,10 +925,77 @@ export default function InventoryManagement({
         pendingInwardQty,
         deliveryStatus,
         matchingGRNs,
-        priceDiscrepancy
+        priceDiscrepancy,
+        historicalMismatch,
+        priceDiscrepancyResolution: resolvedInfo
       };
     });
-  }, [orders, indents, grns, vendors]);
+  }, [orders, indents, grns, vendors, poResolutions]);
+
+  const handleConfirmResolveDiscrepancy = () => {
+    if (!resolvingPoDiscrepancy) return;
+    const po = resolvingPoDiscrepancy;
+    const mismatch = po.priceDiscrepancy || po.historicalMismatch || {};
+    const adminUser = currentUser?.name || 'Administrator';
+    const resolvedAt = new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+
+    const resolutionObj = {
+      poNumber: po.poNumber,
+      grnNo: mismatch.grnNo || '',
+      poRate: mismatch.poRate || 0,
+      grnRate: mismatch.grnRate || 0,
+      variance: mismatch.variance || 0,
+      actionType: resolutionAction, // 'UPDATE_PO_RATE' or 'ENFORCE_PO_RATE'
+      summary: resolutionAction === 'UPDATE_PO_RATE'
+        ? `Rate Discrepancy Resolved: Accepted Inward GRN rate of ₹${mismatch.grnRate}/kg (Original PO rate: ₹${mismatch.poRate}/kg). PO line item rate updated to match GRN.`
+        : `Rate Discrepancy Resolved: Enforced agreed PO contract rate of ₹${mismatch.poRate}/kg (Invoiced GRN: ₹${mismatch.grnRate}/kg). Inward GRN rate adjusted & ₹${Math.abs(mismatch.variance || 0).toFixed(2)}/kg flagged for Vendor Debit Note / Adjustment.`,
+      notes: resolutionNotes.trim() || 'Approved by Administration.',
+      resolvedBy: adminUser,
+      resolvedAt
+    };
+
+    // 1. Update poResolutions state & localStorage
+    const updatedResolutions = {
+      ...poResolutions,
+      [po.poNumber]: resolutionObj
+    };
+    setPoResolutions(updatedResolutions);
+    try {
+      localStorage.setItem('samyak_po_discrepancy_resolutions', JSON.stringify(updatedResolutions));
+    } catch (e) {
+      console.error(e);
+    }
+
+    // 2. If Option 2 (Enforce PO Rate): update matching GRN in safeGrns / grns
+    if (mismatch.grnNo && grns && Array.isArray(grns)) {
+      const targetGrn = grns.find(g => g.grnNo === mismatch.grnNo);
+      if (targetGrn && onUpdateGRN) {
+        onUpdateGRN({
+          ...targetGrn,
+          purchaseRatePerKg: resolutionAction === 'ENFORCE_PO_RATE' ? mismatch.poRate : targetGrn.purchaseRatePerKg,
+          purchaseRate: resolutionAction === 'ENFORCE_PO_RATE' ? mismatch.poRate : targetGrn.purchaseRate,
+          unitPrice: resolutionAction === 'ENFORCE_PO_RATE' ? mismatch.poRate : targetGrn.unitPrice,
+          priceDiscrepancyResolution: resolutionObj,
+          qcNotes: `${targetGrn.qcNotes || ''} [Rate Audit: ${resolutionObj.summary}]`.trim()
+        });
+      }
+    }
+
+    // 3. Update active PDF state if open
+    if (selectedPOForPDF && selectedPOForPDF.poNumber === po.poNumber) {
+      setSelectedPOForPDF({
+        ...selectedPOForPDF,
+        priceDiscrepancyResolution: resolutionObj,
+        items: resolutionAction === 'UPDATE_PO_RATE'
+          ? (selectedPOForPDF.items || []).map(it => ({ ...it, rate: mismatch.grnRate }))
+          : selectedPOForPDF.items
+      });
+    }
+
+    setResolvingPoDiscrepancy(null);
+    setResolutionNotes('');
+    alert(`✅ Rate discrepancy on PO ${po.poNumber} has been successfully resolved!\n\nAction: ${resolutionObj.summary}\nResolution note has been permanently attached to both PO and GRN.`);
+  };
 
   const handleCreateGRNFromPO = (po) => {
     if (!po) return;
@@ -2028,6 +2119,170 @@ export default function InventoryManagement({
         <PurchaseOrderPDF poData={selectedPOForPDF} onClose={() => setSelectedPOForPDF(null)} />
       )}
 
+      {/* Modal: Resolve Rate Discrepancy (Admin Only) */}
+      {resolvingPoDiscrepancy && (
+        <div className="modal-overlay" onClick={() => setResolvingPoDiscrepancy(null)}>
+          <div 
+            className="glass-card modal-content" 
+            style={{ width: '640px', maxWidth: '95vw', padding: '24px', borderRadius: '12px' }} 
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px', color: '#0f172a' }}>
+                  <Scale style={{ color: '#dc2626' }} size={22} /> Resolve Purchase Rate Discrepancy
+                </h3>
+                <p style={{ fontSize: '0.78rem', color: '#64748b', margin: '3px 0 0 0' }}>
+                  Admin Authorization Required • Choose a resolution path to align PO and Inward GRN rates.
+                </p>
+              </div>
+              <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.75rem' }} onClick={() => setResolvingPoDiscrepancy(null)}>
+                <X size={14} />
+              </button>
+            </div>
+
+            {/* Mismatch Context Info Card */}
+            {(() => {
+              const mismatch = resolvingPoDiscrepancy.priceDiscrepancy || resolvingPoDiscrepancy.historicalMismatch || {};
+              const diff = (mismatch.grnRate || 0) - (mismatch.poRate || 0);
+              const pctDiff = mismatch.poRate ? ((diff / mismatch.poRate) * 100).toFixed(1) : 0;
+
+              return (
+                <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: '8px', padding: '14px', marginBottom: '18px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px dashed #fca5a5', paddingBottom: '8px', marginBottom: '10px' }}>
+                    <div>
+                      <span style={{ fontSize: '0.72rem', color: '#991b1b', fontWeight: '700', textTransform: 'uppercase' }}>Purchase Order</span>
+                      <div style={{ fontWeight: '800', color: '#7f1d1d', fontFamily: 'monospace' }}>{resolvingPoDiscrepancy.poNumber}</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <span style={{ fontSize: '0.72rem', color: '#991b1b', fontWeight: '700', textTransform: 'uppercase' }}>Supplier / Vendor</span>
+                      <div style={{ fontWeight: '800', color: '#7f1d1d' }}>{resolvingPoDiscrepancy.vendor?.companyName || resolvingPoDiscrepancy.vendorName || 'Supplier'}</div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', fontSize: '0.82rem', background: '#ffffff', padding: '10px 12px', borderRadius: '6px', border: '1px solid #fee2e2' }}>
+                    <div>
+                      <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Agreed PO Rate</span>
+                      <div style={{ fontWeight: '800', color: '#2563eb', fontSize: '1.05rem' }}>₹{mismatch.poRate} / kg</div>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Inward GRN Rate</span>
+                      <div style={{ fontWeight: '800', color: '#dc2626', fontSize: '1.05rem' }}>₹{mismatch.grnRate} / kg</div>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Variance / Gap</span>
+                      <div style={{ fontWeight: '800', color: '#b91c1c', fontSize: '1.05rem' }}>
+                        {diff > 0 ? `+₹${diff.toFixed(2)}` : `₹${diff.toFixed(2)}`} ({pctDiff}%)
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Resolution Options (2 Ways) */}
+            <div style={{ marginBottom: '18px' }}>
+              <label style={{ fontWeight: '800', fontSize: '0.85rem', color: '#0f172a', display: 'block', marginBottom: '8px' }}>
+                Select Resolution Method *
+              </label>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {/* Method 1: Accept Inward GRN Rate */}
+                <label style={{ 
+                  display: 'flex', 
+                  alignItems: 'flex-start', 
+                  gap: '10px', 
+                  padding: '12px', 
+                  background: resolutionAction === 'UPDATE_PO_RATE' ? '#eff6ff' : '#f8fafc', 
+                  border: resolutionAction === 'UPDATE_PO_RATE' ? '2px solid #3b82f6' : '1px solid #cbd5e1', 
+                  borderRadius: '8px', 
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}>
+                  <input 
+                    type="radio" 
+                    name="resolutionMethod" 
+                    value="UPDATE_PO_RATE" 
+                    checked={resolutionAction === 'UPDATE_PO_RATE'} 
+                    onChange={() => setResolutionAction('UPDATE_PO_RATE')} 
+                    style={{ marginTop: '3px' }}
+                  />
+                  <div>
+                    <div style={{ fontWeight: '800', fontSize: '0.88rem', color: '#1e3a8a' }}>
+                      Option 1: Accept Inward GRN Rate (Update Purchase Order Rate)
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#475569', marginTop: '2px', lineHeight: '1.4' }}>
+                      Approve and accept the vendor's invoiced rate. The PO item rate will be updated to match the actual Inward GRN rate. Clears active price alert and attaches resolution audit note to both PO & GRN.
+                    </div>
+                  </div>
+                </label>
+
+                {/* Method 2: Enforce Agreed PO Rate */}
+                <label style={{ 
+                  display: 'flex', 
+                  alignItems: 'flex-start', 
+                  gap: '10px', 
+                  padding: '12px', 
+                  background: resolutionAction === 'ENFORCE_PO_RATE' ? '#eff6ff' : '#f8fafc', 
+                  border: resolutionAction === 'ENFORCE_PO_RATE' ? '2px solid #3b82f6' : '1px solid #cbd5e1', 
+                  borderRadius: '8px', 
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}>
+                  <input 
+                    type="radio" 
+                    name="resolutionMethod" 
+                    value="ENFORCE_PO_RATE" 
+                    checked={resolutionAction === 'ENFORCE_PO_RATE'} 
+                    onChange={() => setResolutionAction('ENFORCE_PO_RATE')} 
+                    style={{ marginTop: '3px' }}
+                  />
+                  <div>
+                    <div style={{ fontWeight: '800', fontSize: '0.88rem', color: '#1e3a8a' }}>
+                      Option 2: Enforce Agreed PO Rate (Adjust GRN / Vendor Debit Note)
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#475569', marginTop: '2px', lineHeight: '1.4' }}>
+                      Enforce original contract PO rate for stock valuation. Adjusts the Inward GRN rate back to the agreed PO price, and flags the excess amount for vendor debit note / credit adjustment.
+                    </div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {/* Resolution Remarks */}
+            <div className="form-group" style={{ marginBottom: '18px' }}>
+              <label style={{ fontWeight: '700', fontSize: '0.82rem' }}>
+                Admin Resolution Remarks & Approval Notes
+              </label>
+              <textarea 
+                className="form-control" 
+                rows={2} 
+                style={{ fontSize: '0.85rem' }} 
+                placeholder="Enter justification (e.g. Approved price revision due to raw material index / Vendor agreed to issue credit note)..." 
+                value={resolutionNotes} 
+                onChange={e => setResolutionNotes(e.target.value)} 
+              />
+            </div>
+
+            {/* Modal Actions */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '14px' }}>
+              <button type="button" className="btn-secondary" onClick={() => setResolvingPoDiscrepancy(null)}>
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                className="btn-primary" 
+                style={{ background: '#059669', borderColor: '#059669', fontWeight: '700', padding: '8px 20px' }}
+                onClick={handleConfirmResolveDiscrepancy}
+              >
+                ✓ Confirm & Apply Resolution
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Barcode Thermal Label Printer Modal */}
       {selectedRollForBarcodeModal && (
         <BarcodePrinterModal 
@@ -2353,12 +2608,41 @@ export default function InventoryManagement({
 
                       <td>
                         {po.priceDiscrepancy ? (
-                          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '4px 8px', borderRadius: '6px' }}>
-                            <span style={{ fontSize: '0.75rem', fontWeight: '800', color: '#dc2626', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <AlertTriangle size={12} /> Rate Mismatch
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '4px 8px', borderRadius: '6px' }}>
+                              <span style={{ fontSize: '0.75rem', fontWeight: '800', color: '#dc2626', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <AlertTriangle size={12} /> Rate Mismatch
+                              </span>
+                              <div style={{ fontSize: '0.7rem', color: '#991b1b', marginTop: '2px', fontWeight: '600' }}>
+                                PO: ₹{po.priceDiscrepancy.poRate} vs GRN: ₹{po.priceDiscrepancy.grnRate}
+                              </div>
+                            </div>
+                            {isAdmin ? (
+                              <button 
+                                className="btn-primary" 
+                                style={{ padding: '3px 8px', fontSize: '0.72rem', background: '#dc2626', borderColor: '#dc2626', fontWeight: '700', borderRadius: '4px' }}
+                                onClick={() => {
+                                  setResolvingPoDiscrepancy(po);
+                                  setResolutionAction('UPDATE_PO_RATE');
+                                  setResolutionNotes('');
+                                }}
+                              >
+                                ⚡ Resolve (Admin)
+                              </button>
+                            ) : (
+                              <span style={{ fontSize: '0.68rem', color: '#64748b', fontStyle: 'italic' }}>🔒 Admin Resolution Required</span>
+                            )}
+                          </div>
+                        ) : po.priceDiscrepancyResolution ? (
+                          <div style={{ background: '#f0fdf4', border: '1px solid #86efac', padding: '4px 8px', borderRadius: '6px' }}>
+                            <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#047857', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <CheckCircle2 size={12} /> Mismatch Resolved
                             </span>
-                            <div style={{ fontSize: '0.7rem', color: '#991b1b', marginTop: '2px' }}>
-                              PO: ₹{po.priceDiscrepancy.poRate} vs GRN: ₹{po.priceDiscrepancy.grnRate}
+                            <div style={{ fontSize: '0.68rem', color: '#0f766e', marginTop: '2px', fontWeight: '600' }}>
+                              {po.priceDiscrepancyResolution.actionType === 'UPDATE_PO_RATE' ? 'Accepted GRN Rate' : 'Enforced PO Rate'}
+                            </div>
+                            <div style={{ fontSize: '0.65rem', color: '#64748b', marginTop: '1px' }}>
+                              By {po.priceDiscrepancyResolution.resolvedBy}
                             </div>
                           </div>
                         ) : (

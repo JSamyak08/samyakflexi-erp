@@ -346,6 +346,26 @@ export default function GRNPDF({ grnData, onClose }) {
             </div>
           </div>
 
+          {/* PO Rate Discrepancy / Resolution Audit Callout if present */}
+          {grnData.priceDiscrepancyResolution && (
+            <div style={{ margin: '12px 0', padding: '8px 12px', background: '#f0fdf4', border: '1.5px solid #86efac', borderRadius: '4px', fontSize: '8.5pt' }}>
+              <div style={{ fontWeight: '800', color: '#047857', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span>⚖️ PO CONTRACT RATE MISMATCH & RESOLUTION AUDIT NOTICE</span>
+              </div>
+              <div style={{ color: '#0f172a', fontWeight: '600', marginTop: '3px' }}>
+                {grnData.priceDiscrepancyResolution.summary}
+              </div>
+              {grnData.priceDiscrepancyResolution.notes && (
+                <div style={{ color: '#334155', fontStyle: 'italic', marginTop: '2px', fontSize: '8pt' }}>
+                  Admin Remarks: "{grnData.priceDiscrepancyResolution.notes}"
+                </div>
+              )}
+              <div style={{ fontSize: '7.5pt', color: '#64748b', marginTop: '3px' }}>
+                Resolved by: <strong>{grnData.priceDiscrepancyResolution.resolvedBy}</strong> on {grnData.priceDiscrepancyResolution.resolvedAt} • PO Contract Ref: <strong>{grnData.priceDiscrepancyResolution.poNumber || grnData.poNumber}</strong>
+              </div>
+            </div>
+          )}
+
           {/* QC Inspection & Terms */}
           <div className="letterhead-terms-box">
             <div style={{ display: 'flex', items: 'center', justify: 'space-between', marginBottom: '4px' }}>
