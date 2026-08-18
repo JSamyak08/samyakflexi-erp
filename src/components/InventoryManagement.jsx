@@ -445,7 +445,7 @@ export default function InventoryManagement({
   // Issue / Return Modal state
   const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
   const [issueType, setIssueType] = useState('issue'); // issue or return
-  const [selectedInvItem, setSelectedInvItem] = useState(inventory[0] || null);
+  const [selectedInvItem, setSelectedInvItem] = useState(null);
   const [issueSelectedBatchId, setIssueSelectedBatchId] = useState('');
   const [issueCustomBatchText, setIssueCustomBatchText] = useState('');
   const [issueQtyKg, setIssueQtyKg] = useState('');
@@ -456,6 +456,19 @@ export default function InventoryManagement({
   const [scanMatchSuccess, setScanMatchSuccess] = useState(false);
   const [scanErrorMessage, setScanErrorMessage] = useState('');
   const [manualSelectMode, setManualSelectMode] = useState(false);
+
+  const openIssueReturnModal = (type = 'issue') => {
+    setIssueType(type);
+    setSelectedInvItem(null);
+    setScannedItemDetails(null);
+    setIssueScanQuery('');
+    setScanMatchSuccess(false);
+    setScanErrorMessage('');
+    setIssueQtyKg('');
+    setManualSelectMode(false);
+    setStockSearchTerm('');
+    setIsIssueModalOpen(true);
+  };
 
   // Stock Register Directory Filter State
   const [stockCategoryFilter, setStockCategoryFilter] = useState('ALL');
@@ -1419,6 +1432,8 @@ export default function InventoryManagement({
   const handleBarcodeScanLookup = (rawCode) => {
     const code = String(rawCode !== undefined ? rawCode : (issueScanQuery || '')).trim();
     if (!code) {
+      setSelectedInvItem(null);
+      setScannedItemDetails(null);
       setScanErrorMessage('Please scan a 2D QR Code or enter a Barcode / Batch ID.');
       return;
     }
@@ -1580,8 +1595,50 @@ export default function InventoryManagement({
       availableQty = Number(targetItem.availableQtyKg ?? matchedInk.stockQtyKg ?? 0);
       unitStr = targetItem.unit || matchedInk.unit || 'Kg';
     } else {
+      setSelectedInvItem(null);
+      setScannedItemDetails(null);
       setScanErrorMessage(`⚠️ No matching stock item, roll, or GRN found for QR Code "${code}". Please check the code or select from the directory.`);
       return;
+    }
+
+    // Determine QC Approval Status of this scanned batch / roll / item
+    let qcStatus = 'Approved';
+    let isQCPending = false;
+    let isQCRejected = false;
+
+    if (matchedGrn) {
+      qcStatus = matchedGrn.status || matchedGrn.qcStatus || 'Approved';
+    } else if (matchedRoll) {
+      if (matchedRoll.status === 'Pending QC' || matchedRoll.qcStatus === 'Pending QC') {
+        qcStatus = 'Pending QC';
+      } else if (matchedRoll.status === 'Rejected' || matchedRoll.qcStatus === 'Rejected') {
+        qcStatus = 'Rejected';
+      } else {
+        // Check associated GRN by GRN No or Batch No
+        const linkedGrn = (safeGrns || []).find(g => (matchedRoll.grnNo && g.grnNo === matchedRoll.grnNo) || (matchedRoll.batchNo && g.batchNo === matchedRoll.batchNo));
+        if (linkedGrn && (linkedGrn.status === 'Pending QC' || linkedGrn.status === 'Pending')) {
+          qcStatus = 'Pending QC';
+        } else if (linkedGrn && linkedGrn.status === 'Rejected') {
+          qcStatus = 'Rejected';
+        }
+      }
+    } else if (targetItem) {
+      if (targetItem.status === 'Pending QC' || targetItem.qcStatus === 'Pending QC') {
+        qcStatus = 'Pending QC';
+      } else if (targetItem.status === 'Rejected' || targetItem.qcStatus === 'Rejected') {
+        qcStatus = 'Rejected';
+      } else {
+        const linkedGrn = (safeGrns || []).find(g => (batchNo && g.batchNo === batchNo) || (g.itemId && g.itemId === targetItem.id && (g.status === 'Pending QC' || g.status === 'Pending')));
+        if (linkedGrn && (linkedGrn.status === 'Pending QC' || linkedGrn.status === 'Pending')) {
+          qcStatus = 'Pending QC';
+        }
+      }
+    }
+
+    if (qcStatus === 'Pending QC' || qcStatus === 'Pending') {
+      isQCPending = true;
+    } else if (qcStatus === 'Rejected') {
+      isQCRejected = true;
     }
 
     setSelectedInvItem(targetItem);
@@ -1595,11 +1652,16 @@ export default function InventoryManagement({
       vendorName,
       grnNo,
       availableQty,
-      unit: unitStr
+      unit: unitStr,
+      qcStatus,
+      isQCPending,
+      isQCRejected
     });
 
-    if (availableQty > 0) {
+    if (availableQty > 0 && !isQCPending && !isQCRejected) {
       setIssueQtyKg(String(availableQty));
+    } else {
+      setIssueQtyKg('');
     }
     setScanMatchSuccess(true);
     setTimeout(() => setScanMatchSuccess(false), 3000);
@@ -1608,6 +1670,15 @@ export default function InventoryManagement({
   // Issue / Return Submit (Records transaction in Store Issue/Return Ledger & updates Job Production Record Costing)
   const handleIssueReturnSubmit = () => {
     const itemToIssue = scannedItemDetails?.item || selectedInvItem;
+    if (scannedItemDetails?.isQCPending) {
+      alert("❌ Blocked by Quality Control: This batch is currently PENDING QC APPROVAL and cannot be issued or returned to production until cleared by the QC Chemist.");
+      return;
+    }
+    if (scannedItemDetails?.isQCRejected) {
+      alert("❌ Blocked by Quality Control: This batch has been REJECTED during QC inspection and cannot be issued to production.");
+      return;
+    }
+
     if (!itemToIssue || !issueQtyKg || parseFloat(issueQtyKg) <= 0) {
       alert("Please scan a 2D QR Code or select an item and enter a valid quantity.");
       return;
@@ -2008,7 +2079,7 @@ export default function InventoryManagement({
           </div>
 
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <button className="btn-secondary" onClick={() => setIsIssueModalOpen(true)}>
+            <button className="btn-secondary" onClick={() => openIssueReturnModal('issue')}>
               <ArrowUpRight size={16} /> Issue / Return to Store
             </button>
             <button className="btn-primary" style={{ background: '#2563eb', borderColor: '#2563eb' }} onClick={() => openAddStockModal()}>
@@ -4055,16 +4126,17 @@ export default function InventoryManagement({
                 />
                 <select 
                   className="form-control" 
-                  value={selectedInvItem?.id} 
+                  value={scannedItemDetails?.item?.id || ''} 
                   style={{ fontSize: '0.82rem' }}
                   onChange={e => {
                     const found = (inventory || []).find(i => i.id === e.target.value);
                     if (found) {
-                      setSelectedInvItem(found);
+                      setIssueScanQuery(found.id);
                       handleBarcodeScanLookup(found.id);
                     }
                   }}
                 >
+                  <option value="">-- Choose Item from Inventory Directory --</option>
                   {(inventory || []).filter(i => {
                     const s = (stockSearchTerm || '').toLowerCase();
                     const filmType = (i.filmType || '').toLowerCase();
@@ -4081,8 +4153,8 @@ export default function InventoryManagement({
               </div>
             )}
 
-            {/* AUTO-FETCHED 2D QR DETAILS VERIFIED CARD */}
-            {(scannedItemDetails || selectedInvItem) && (
+            {/* AUTO-FETCHED 2D QR DETAILS VERIFIED CARD OR BLANK SCAN PROMPT */}
+            {scannedItemDetails ? (
               <div style={{ 
                 background: '#ffffff', 
                 border: '1.5px solid #0f172a', 
@@ -4094,36 +4166,68 @@ export default function InventoryManagement({
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px', marginBottom: '8px' }}>
                   <div>
                     <div style={{ fontWeight: '900', fontSize: '0.98rem', color: '#0f172a', lineHeight: '1.2' }}>
-                      {scannedItemDetails?.item?.itemName || selectedInvItem?.itemName || `${selectedInvItem?.filmType || 'Film'} ${selectedInvItem?.micron || ''}µ`}
+                      {scannedItemDetails.item?.itemName || (scannedItemDetails.item?.category === 'Film Substrates' ? `${scannedItemDetails.item?.filmType} (${scannedItemDetails.item?.micron}µ x ${scannedItemDetails.item?.widthMm}mm)` : (scannedItemDetails.item?.filmType || scannedItemDetails.item?.category || 'Stock Item'))}
                     </div>
                     <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '2px' }}>
-                      Item ID: <strong>{scannedItemDetails?.item?.id || selectedInvItem?.id}</strong> • Location: <strong>{scannedItemDetails?.item?.location || selectedInvItem?.location || 'Store Room'}</strong>
+                      Item ID: <strong>{scannedItemDetails.item?.id || scannedItemDetails.barcodeId}</strong> • Category: <strong>{scannedItemDetails.item?.category || 'Film Substrates'}</strong> • Location: <strong>{scannedItemDetails.item?.location || 'Store Room'}</strong>
                     </div>
                   </div>
-                  <span style={{ 
-                    fontSize: '0.7rem', 
-                    fontWeight: '800', 
-                    color: '#047857', 
-                    background: '#dcfce7', 
-                    padding: '3px 8px', 
-                    borderRadius: '12px',
-                    border: '1px solid #86efac',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px'
-                  }}>
-                    <CheckCircle2 size={13} /> 2D QR Code Verified
-                  </span>
+                  {scannedItemDetails.isQCPending ? (
+                    <span style={{ 
+                      fontSize: '0.7rem', 
+                      fontWeight: '800', 
+                      color: '#b45309', 
+                      background: '#fef3c7', 
+                      padding: '3px 8px', 
+                      borderRadius: '12px',
+                      border: '1px solid #fde68a',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}>
+                      <AlertTriangle size={13} /> ⏳ PENDING QC APPROVAL
+                    </span>
+                  ) : scannedItemDetails.isQCRejected ? (
+                    <span style={{ 
+                      fontSize: '0.7rem', 
+                      fontWeight: '800', 
+                      color: '#b91c1c', 
+                      background: '#fee2e2', 
+                      padding: '3px 8px', 
+                      borderRadius: '12px',
+                      border: '1px solid #fca5a5',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}>
+                      <XCircle size={13} /> 🚫 REJECTED BY QC
+                    </span>
+                  ) : (
+                    <span style={{ 
+                      fontSize: '0.7rem', 
+                      fontWeight: '800', 
+                      color: '#047857', 
+                      background: '#dcfce7', 
+                      padding: '3px 8px', 
+                      borderRadius: '12px',
+                      border: '1px solid #86efac',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}>
+                      <CheckCircle2 size={13} /> 2D QR Code Verified (QC Cleared)
+                    </span>
+                  )}
                 </div>
 
                 {/* 4-Stat Auto-Fetched Grid */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.78rem', background: '#f8fafc', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <QRCode2D value={scannedItemDetails?.barcodeId || selectedInvItem?.barcode || selectedInvItem?.id || 'BC-000'} size={38} showLabel={false} margin={0} />
+                    <QRCode2D value={scannedItemDetails.barcodeId || scannedItemDetails.item?.id || 'BC-000'} size={38} showLabel={false} margin={0} />
                     <div>
                       <span style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>2D Barcode Ref</span>
                       <div style={{ fontFamily: 'monospace', fontWeight: '800', color: '#2563eb', fontSize: '0.82rem' }}>
-                        {scannedItemDetails?.barcodeId || selectedInvItem?.barcode || selectedInvItem?.id}
+                        {scannedItemDetails.barcodeId || scannedItemDetails.item?.id}
                       </div>
                     </div>
                   </div>
@@ -4131,28 +4235,93 @@ export default function InventoryManagement({
                   <div>
                     <span style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Inward Batch / Heat #</span>
                     <div style={{ fontWeight: '800', color: '#1e40af', fontSize: '0.85rem' }}>
-                      {scannedItemDetails?.batchNo || selectedInvItem?.lastBatch || 'BATCH-MAIN'}
+                      {scannedItemDetails.batchNo || 'BATCH-MAIN'}
                     </div>
                   </div>
 
                   <div>
                     <span style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Purchase Rate</span>
                     <div style={{ fontWeight: '800', color: '#047857', fontSize: '0.9rem' }}>
-                      ₹{scannedItemDetails?.purchaseRate ?? Number(selectedInvItem?.unitPrice || 0)} / {scannedItemDetails?.unit || selectedInvItem?.unit || 'Kg'}
+                      ₹{scannedItemDetails.purchaseRate} / {scannedItemDetails.unit || 'Kg'}
                     </div>
                   </div>
 
                   <div>
                     <span style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Supplier / Origin</span>
                     <div style={{ fontWeight: '700', color: '#334155', fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {scannedItemDetails?.vendorName || selectedInvItem?.lastVendor || 'Company Stock'}
+                      {scannedItemDetails.vendorName || 'Company Stock'}
                     </div>
                   </div>
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', fontSize: '0.76rem', color: '#475569' }}>
-                  <span>Available Stock in Roll/Batch: <strong style={{ color: '#047857', fontSize: '0.85rem' }}>{scannedItemDetails?.availableQty ?? selectedInvItem?.availableQtyKg ?? 0} {scannedItemDetails?.unit || selectedInvItem?.unit || 'Kg'}</strong></span>
-                  {scannedItemDetails?.grnNo && <span>GRN Ref: <strong>{scannedItemDetails.grnNo}</strong></span>}
+                  <span>Available Stock in Roll/Batch: <strong style={{ color: '#047857', fontSize: '0.85rem' }}>{scannedItemDetails.availableQty} {scannedItemDetails.unit || 'Kg'}</strong></span>
+                  {scannedItemDetails.grnNo && <span>GRN Ref: <strong>{scannedItemDetails.grnNo}</strong></span>}
+                </div>
+
+                {scannedItemDetails.isQCPending && (
+                  <div style={{
+                    marginTop: '10px',
+                    padding: '8px 12px',
+                    background: '#fffbeb',
+                    border: '1.5px solid #f59e0b',
+                    borderRadius: '6px',
+                    color: '#92400e',
+                    fontSize: '0.78rem',
+                    fontWeight: '700',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '8px'
+                  }}>
+                    <AlertTriangle size={17} style={{ color: '#d97706', flexShrink: 0, marginTop: '2px' }} />
+                    <div>
+                      <div style={{ fontWeight: '800' }}>🔒 QC APPROVAL PENDING — ISSUE / RETURN RESTRICTED</div>
+                      <div style={{ fontSize: '0.73rem', fontWeight: '500', marginTop: '2px', color: '#b45309' }}>
+                        This batch (<code>{scannedItemDetails.batchNo}</code>) is currently awaiting Quality Control testing & clearance in Store QC. It cannot be issued to production machines or returned until approved.
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {scannedItemDetails.isQCRejected && (
+                  <div style={{
+                    marginTop: '10px',
+                    padding: '8px 12px',
+                    background: '#fef2f2',
+                    border: '1.5px solid #ef4444',
+                    borderRadius: '6px',
+                    color: '#991b1b',
+                    fontSize: '0.78rem',
+                    fontWeight: '700',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '8px'
+                  }}>
+                    <XCircle size={17} style={{ color: '#dc2626', flexShrink: 0, marginTop: '2px' }} />
+                    <div>
+                      <div style={{ fontWeight: '800' }}>🚫 QC REJECTED — MATERIAL BLOCKED</div>
+                      <div style={{ fontSize: '0.73rem', fontWeight: '500', marginTop: '2px', color: '#b91c1c' }}>
+                        This batch (<code>{scannedItemDetails.batchNo}</code>) was rejected during QC inspection and is quarantined.
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{ 
+                background: '#f8fafc', 
+                border: '1.5px dashed #cbd5e1', 
+                borderRadius: '8px', 
+                padding: '22px 16px', 
+                textAlign: 'center',
+                marginBottom: '16px' 
+              }}>
+                <Scan size={30} style={{ color: '#94a3b8', margin: '0 auto 6px auto', display: 'block' }} />
+                <div style={{ fontWeight: '700', fontSize: '0.88rem', color: '#334155' }}>
+                  Product Details Blank (Waiting for Scan)
+                </div>
+                <div style={{ fontSize: '0.76rem', color: '#64748b', marginTop: '3px' }}>
+                  Scan a 2D QR Code sticker or type the Batch / Item ID above to fetch verified details from actual inventory.
                 </div>
               </div>
             )}
@@ -4185,9 +4354,9 @@ export default function InventoryManagement({
             <div className="form-group">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                 <label style={{ margin: 0 }}>
-                  Quantity to {issueType === 'issue' ? 'Issue' : 'Return'} ({scannedItemDetails?.unit || selectedInvItem?.unit || 'Kg'}) *
+                  Quantity to {issueType === 'issue' ? 'Issue' : 'Return'} ({scannedItemDetails?.unit || 'Kg'}) *
                 </label>
-                {scannedItemDetails?.availableQty > 0 && (
+                {scannedItemDetails && scannedItemDetails.availableQty > 0 && !scannedItemDetails.isQCPending && !scannedItemDetails.isQCRejected && (
                   <button 
                     type="button" 
                     className="btn-secondary" 
@@ -4201,10 +4370,23 @@ export default function InventoryManagement({
               <input 
                 type="number" 
                 className="form-control" 
-                style={{ fontSize: '1rem', fontWeight: '700' }}
-                placeholder={`Enter quantity in ${scannedItemDetails?.unit || selectedInvItem?.unit || 'Kg'}`} 
+                style={{ 
+                  fontSize: '1rem', 
+                  fontWeight: '700',
+                  background: (scannedItemDetails?.isQCPending || scannedItemDetails?.isQCRejected) ? '#f1f5f9' : '#ffffff' 
+                }}
+                placeholder={
+                  scannedItemDetails?.isQCPending 
+                    ? '🔒 Disabled - Batch is Pending QC Approval'
+                    : scannedItemDetails?.isQCRejected
+                    ? '🚫 Disabled - Batch is Rejected by QC'
+                    : scannedItemDetails 
+                    ? `Enter quantity in ${scannedItemDetails.unit || 'Kg'}` 
+                    : 'Scan code first to confirm quantity'
+                } 
                 value={issueQtyKg} 
                 onChange={e => setIssueQtyKg(e.target.value)} 
+                disabled={scannedItemDetails?.isQCPending || scannedItemDetails?.isQCRejected || !scannedItemDetails}
                 step="any"
                 required
               />
@@ -4218,11 +4400,21 @@ export default function InventoryManagement({
               <button 
                 type="button"
                 className="btn-primary" 
-                style={{ background: '#059669', borderColor: '#059669', fontWeight: '700', padding: '8px 20px' }}
+                style={{ 
+                  background: (scannedItemDetails?.isQCPending || scannedItemDetails?.isQCRejected) ? '#94a3b8' : '#059669', 
+                  borderColor: (scannedItemDetails?.isQCPending || scannedItemDetails?.isQCRejected) ? '#94a3b8' : '#059669', 
+                  fontWeight: '700', 
+                  padding: '8px 20px',
+                  cursor: (scannedItemDetails?.isQCPending || scannedItemDetails?.isQCRejected) ? 'not-allowed' : 'pointer'
+                }}
                 onClick={handleIssueReturnSubmit}
-                disabled={activeProductionOrders.length === 0 || !issueQtyKg}
+                disabled={activeProductionOrders.length === 0 || !issueQtyKg || !scannedItemDetails || scannedItemDetails.isQCPending || scannedItemDetails.isQCRejected}
               >
-                Submit {issueType === 'issue' ? 'Material Issue' : 'Material Return'}
+                {scannedItemDetails?.isQCPending 
+                  ? '🔒 Blocked (Pending QC Approval)' 
+                  : scannedItemDetails?.isQCRejected 
+                  ? '🚫 Blocked (QC Rejected)' 
+                  : (issueType === 'issue' ? 'Submit Material Issue' : 'Submit Material Return')}
               </button>
             </div>
           </div>
