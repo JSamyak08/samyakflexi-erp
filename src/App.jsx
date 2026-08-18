@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from './services/supabaseClient';
 import { 
   initialOrders, 
@@ -219,7 +219,8 @@ export default function App() {
   // Helper to load state safely from localStorage or fallback
   const loadLocalState = (key, fallbackDefault) => {
     try {
-      const parsed = safeLocalStorageGet(`samyak_erp_${key}`, null);
+      const storageKey = key.startsWith('samyak_erp_') ? key : `samyak_erp_${key}`;
+      const parsed = safeLocalStorageGet(storageKey, null);
       if (parsed !== null && parsed !== undefined) {
         if (Array.isArray(fallbackDefault)) {
           if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -230,7 +231,7 @@ export default function App() {
         }
       }
     } catch (e) {
-      console.warn(`Failed to parse localStorage key samyak_erp_${key}`, e);
+      console.warn(`Failed to parse localStorage key ${key}`, e);
     }
     return fallbackDefault;
   };
@@ -925,17 +926,31 @@ export default function App() {
     deleteProductionScheduleFromSupabase(scheduleId);
   };
 
+  const usersRef = useRef(users);
+  useEffect(() => {
+    usersRef.current = users;
+  }, [users]);
+
   const findUserProfile = (email) => {
     if (!email) return null;
     const cleanEmail = email.toLowerCase().trim();
-    let matched = (users || []).find(u => u.email && u.email.toLowerCase().trim() === cleanEmail);
+    let matched = (usersRef.current || []).find(u => u && u.email && u.email.toLowerCase().trim() === cleanEmail);
     if (matched) return matched;
-    return initialUsers.find(u => u.email && u.email.toLowerCase().trim() === cleanEmail);
+    return initialUsers.find(u => u && u.email && u.email.toLowerCase().trim() === cleanEmail);
   };
 
   // Initialize Supabase Auth state
   useEffect(() => {
-    if (!isSupaActive) return;
+    if (!isSupaActive) {
+      const savedUser = safeLocalStorageGet('samyak_erp_current_user', null);
+      if (savedUser && savedUser.email) {
+        setSessionProfile(savedUser);
+        setCurrentUser(savedUser);
+        setIsAuthenticated(true);
+      }
+      setIsAuthReady(true);
+      return;
+    }
 
     let mounted = true;
 
@@ -956,7 +971,7 @@ export default function App() {
             setSessionProfile(profile);
 
             // Admin is allowed to load a switched user from local storage
-            const savedSwitchedUser = loadLocalState('samyak_erp_current_user', null);
+            const savedSwitchedUser = safeLocalStorageGet('samyak_erp_current_user', null);
             if (savedSwitchedUser && profile.role === 'Admin') {
               setCurrentUser(savedSwitchedUser);
             } else {
@@ -965,7 +980,7 @@ export default function App() {
             setIsAuthenticated(true);
           } else {
             // Check if there is an active verified local/DB session in storage
-            const savedLocalUser = loadLocalState('samyak_erp_current_user', null);
+            const savedLocalUser = safeLocalStorageGet('samyak_erp_current_user', null);
             if (savedLocalUser && savedLocalUser.email) {
               setSessionProfile(savedLocalUser);
               setCurrentUser(savedLocalUser);
@@ -980,7 +995,7 @@ export default function App() {
         }
       } catch (err) {
         console.warn('Failed to get Supabase session on mount:', err);
-        const savedLocalUser = loadLocalState('samyak_erp_current_user', null);
+        const savedLocalUser = safeLocalStorageGet('samyak_erp_current_user', null);
         if (savedLocalUser && savedLocalUser.email) {
           setSessionProfile(savedLocalUser);
           setCurrentUser(savedLocalUser);
@@ -1006,7 +1021,7 @@ export default function App() {
         };
         setSessionProfile(profile);
 
-        const savedSwitchedUser = loadLocalState('samyak_erp_current_user', null);
+        const savedSwitchedUser = safeLocalStorageGet('samyak_erp_current_user', null);
         if (savedSwitchedUser && profile.role === 'Admin') {
           setCurrentUser(savedSwitchedUser);
         } else {
@@ -1027,7 +1042,7 @@ export default function App() {
         authListener.subscription.unsubscribe();
       }
     };
-  }, [isSupaActive, users]);
+  }, [isSupaActive]);
 
   // Login Handler (for UI updates, authService handles Supabase login)
   const handleLogin = (user) => {
