@@ -35,7 +35,7 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
       const iName = (i.itemName || '').toLowerCase();
       return iId === cleanId || iId === strippedId ||
         iCode === cleanId || iCode === strippedId ||
-        pCode === cleanId || pCode === strippedCode ||
+        pCode === cleanId || pCode === strippedId ||
         lBatch === cleanId || lBatch === strippedId ||
         (iName && (iName === cleanId || cleanId.includes(iName)));
     });
