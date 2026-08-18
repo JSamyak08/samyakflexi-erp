@@ -1160,66 +1160,236 @@ export default function ProductionRecordManagement({
           {/* SFG / FG Output Production Barcode Tags & Traceability */}
           {(() => {
             const inputBarcodes = (selectedRecord.materialsList || []).map(m => m.barcode).filter(Boolean);
+            
+            // Gather all linked SFG and FG rolls for this production record
+            const rollMap = new Map();
+            (selectedRecord.outputRolls || []).forEach(r => {
+              if (r && r.barcodeId) rollMap.set(r.barcodeId, r);
+            });
+
+            (inventoryRolls || []).forEach(r => {
+              const matchJob = (r.orderId && String(r.orderId) === String(selectedRecord.orderId)) ||
+                               (r.jobCode && String(r.jobCode).toUpperCase() === String(selectedRecord.jobCode || '').toUpperCase()) ||
+                               (r.jobName && (r.jobName || '').toLowerCase().trim() === (selectedRecord.jobName || '').toLowerCase().trim());
+              
+              const matchType = r.rollType === 'SFG' || r.rollType === 'FG' || (r.category || '').includes('Semi-Finished') || (r.category || '').includes('Finished');
+
+              if (matchJob && matchType && r.barcodeId && !rollMap.has(r.barcodeId)) {
+                rollMap.set(r.barcodeId, r);
+              }
+            });
+
+            const allLinkedRolls = Array.from(rollMap.values());
+            const sfgRolls = allLinkedRolls.filter(r => r.rollType === 'SFG' || (r.category || '').includes('Semi-Finished'));
+            const fgRolls = allLinkedRolls.filter(r => r.rollType === 'FG' || (r.category || '').includes('Finished'));
+            
+            const totalSfgKg = sfgRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
+            const totalFgKg = fgRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
+            const totalOutputKg = totalSfgKg + totalFgKg;
+
             return (
-              <div style={{ marginTop: '20px', padding: '16px 20px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', marginBottom: '24px' }}>
-                <h4 style={{ fontSize: '0.95rem', fontWeight: '800', color: '#0f172a', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Barcode size={18} style={{ color: '#4f46e5' }} /> SFG / FG Production Output Barcodes & Traceability
-                </h4>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
-                  <div style={{ padding: '12px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
-                    <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#475569' }}>SEMI-FINISHED (SFG - PRINTED REEL)</div>
-                    <div style={{ fontWeight: '800', fontFamily: 'monospace', color: '#3730a3', marginTop: '2px' }}>
-                      SFG-PRINT-{(selectedRecord.id || 'REC').replace('REC-', '')}
-                    </div>
-                    <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '4px' }}>
-                      Input RM Ref: {inputBarcodes.length > 0 ? inputBarcodes.join(', ') : 'Direct Issue'}
-                    </div>
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      style={{ marginTop: '8px', padding: '4px 10px', fontSize: '0.78rem', color: '#4338ca', borderColor: '#c7d2fe' }}
-                      onClick={() => setSelectedRollForBarcodeModal({
-                        barcodeId: `SFG-PRINT-${(selectedRecord.id || 'REC').replace('REC-', '')}`,
-                        rollType: 'SFG_PRINTED',
-                        itemName: `${selectedRecord.jobName} (Printed Reel SFG)`,
-                        netWeightKg: selectedRecord.qtyFirstPassL1 || selectedRecord.totalProductionQtyKg || 0,
-                        jobName: selectedRecord.jobName,
-                        clientName: selectedRecord.clientName,
-                        inputBarcodeIds: inputBarcodes,
-                        stationId: 'SCALE_2_PRINTING'
-                      })}
-                    >
-                      <Printer size={13} /> Print SFG Barcode
-                    </button>
+              <div style={{ marginTop: '20px', padding: '18px 20px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', marginBottom: '24px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '14px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
+                  <div>
+                    <h4 style={{ fontSize: '1.05rem', fontWeight: '800', color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Barcode size={20} style={{ color: '#4f46e5' }} /> SFG / FG Production Output Barcodes & Traceability ({allLinkedRolls.length} Rolls)
+                    </h4>
+                    <p style={{ fontSize: '0.78rem', color: '#64748b', margin: '3px 0 0 0' }}>
+                      Individual master rolls weighed on the digital scale with unique 2D ISO 18004 barcodes linked to this job.
+                    </p>
                   </div>
 
-                  <div style={{ padding: '12px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
-                    <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#475569' }}>FINISHED GOODS (FG - DISPATCH REEL / CARTON)</div>
-                    <div style={{ fontWeight: '800', fontFamily: 'monospace', color: '#047857', marginTop: '2px' }}>
-                      FG-PROD-{(selectedRecord.id || 'REC').replace('REC-', '')}
-                    </div>
-                    <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '4px' }}>
-                      Traceability: Linked to {inputBarcodes.length} Input Barcode(s)
-                    </div>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     <button
                       type="button"
-                      className="btn-secondary"
-                      style={{ marginTop: '8px', padding: '4px 10px', fontSize: '0.78rem', color: '#047857', borderColor: '#a7f3d0' }}
-                      onClick={() => setSelectedRollForBarcodeModal({
-                        barcodeId: `FG-PROD-${(selectedRecord.id || 'REC').replace('REC-', '')}`,
-                        rollType: 'FG_DISPATCH',
-                        itemName: selectedRecord.jobName,
-                        netWeightKg: selectedRecord.totalProductionQtyKg || selectedRecord.qtyDispatch || 0,
-                        jobName: selectedRecord.jobName,
-                        clientName: selectedRecord.clientName,
-                        inputBarcodeIds: inputBarcodes,
-                        stationId: 'SCALE_4_DISPATCH'
-                      })}
+                      className="btn-primary"
+                      style={{ background: '#6d28d9', borderColor: '#6d28d9', padding: '5px 12px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '5px' }}
+                      onClick={() => {
+                        setSfgFgModalMode('SFG');
+                        setIsSfgFgModalOpen(true);
+                      }}
                     >
-                      <Printer size={13} /> Print FG Barcode
+                      <Plus size={13} /> + Add SFG Roll
                     </button>
+
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      style={{ background: '#059669', borderColor: '#059669', padding: '5px 12px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '5px' }}
+                      onClick={() => {
+                        setSfgFgModalMode('FG');
+                        setIsSfgFgModalOpen(true);
+                      }}
+                    >
+                      <Plus size={13} /> + Add FG Roll
+                    </button>
+
+                    {allLinkedRolls.length > 0 && (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        style={{ padding: '5px 12px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '5px' }}
+                        onClick={() => setSelectedRollForBarcodeModal(allLinkedRolls)}
+                      >
+                        <Printer size={13} /> Print All Roll Labels ({allLinkedRolls.length})
+                      </button>
+                    )}
                   </div>
                 </div>
+
+                {/* Stat Badges */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '14px' }}>
+                  <div style={{ background: '#ede9fe', border: '1px solid #c4b5fd', borderRadius: '8px', padding: '10px 14px' }}>
+                    <div style={{ fontSize: '0.72rem', fontWeight: '800', color: '#6d28d9', textTransform: 'uppercase' }}>
+                      📦 Semi-Finished Goods (SFG)
+                    </div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: '900', color: '#4c1d95', marginTop: '2px' }}>
+                      {totalSfgKg.toFixed(2)} kg <span style={{ fontSize: '0.8rem', fontWeight: '600' }}>({sfgRolls.length} rolls)</span>
+                    </div>
+                  </div>
+
+                  <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '8px', padding: '10px 14px' }}>
+                    <div style={{ fontSize: '0.72rem', fontWeight: '800', color: '#059669', textTransform: 'uppercase' }}>
+                      🏆 Finished Goods (FG)
+                    </div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: '900', color: '#064e3b', marginTop: '2px' }}>
+                      {totalFgKg.toFixed(2)} kg <span style={{ fontSize: '0.8rem', fontWeight: '600' }}>({fgRolls.length} rolls)</span>
+                    </div>
+                  </div>
+
+                  <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '10px 14px' }}>
+                    <div style={{ fontSize: '0.72rem', fontWeight: '800', color: '#475569', textTransform: 'uppercase' }}>
+                      ⚡ RM Input Traceability
+                    </div>
+                    <div style={{ fontSize: '0.82rem', fontWeight: '700', color: '#1e293b', marginTop: '4px' }}>
+                      {inputBarcodes.length > 0 ? `${inputBarcodes.length} Input RM Barcode(s)` : 'Direct RM Issue'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Table of all entered SFG & FG Master Rolls */}
+                {allLinkedRolls.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '24px', background: '#ffffff', border: '1px dashed #cbd5e1', borderRadius: '8px' }}>
+                    <div style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: '600' }}>
+                      No SFG or FG master rolls recorded yet for this job.
+                    </div>
+                    <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: '4px 0 12px 0' }}>
+                      Weigh master rolls on digital scale and issue barcodes to track stage recovery.
+                    </p>
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: '10px' }}>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        style={{ background: '#6d28d9', borderColor: '#6d28d9', padding: '5px 14px', fontSize: '0.8rem' }}
+                        onClick={() => { setSfgFgModalMode('SFG'); setIsSfgFgModalOpen(true); }}
+                      >
+                        + Add SFG Roll
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        style={{ background: '#059669', borderColor: '#059669', padding: '5px 14px', fontSize: '0.8rem' }}
+                        onClick={() => { setSfgFgModalMode('FG'); setIsSfgFgModalOpen(true); }}
+                      >
+                        + Add FG Roll
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#ffffff' }}>
+                    <table className="data-table" style={{ margin: 0, fontSize: '0.8rem', minWidth: '780px', width: '100%' }}>
+                      <thead>
+                        <tr style={{ background: '#f1f5f9' }}>
+                          <th style={{ width: '5%', textAlign: 'center' }}>#</th>
+                          <th style={{ width: '15%' }}>Category / Type</th>
+                          <th style={{ width: '22%' }}>2D Barcode (ISO 18004)</th>
+                          <th style={{ width: '10%', textAlign: 'right' }}>Gross (kg)</th>
+                          <th style={{ width: '8%', textAlign: 'right' }}>Core (kg)</th>
+                          <th style={{ width: '11%', textAlign: 'right' }}>Net Wt (kg)</th>
+                          <th style={{ width: '11%', textAlign: 'right' }}>Est. Length</th>
+                          <th style={{ width: '10%', textAlign: 'center' }}>QC Status</th>
+                          <th style={{ width: '8%', textAlign: 'center' }}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allLinkedRolls.map((r, idx) => {
+                          const isRollSFG = r.rollType === 'SFG' || (r.category || '').includes('Semi-Finished');
+                          return (
+                            <tr key={r.barcodeId || idx}>
+                              <td style={{ textAlign: 'center', fontWeight: '800', color: '#4f46e5' }}>
+                                #{idx + 1}
+                              </td>
+
+                              <td>
+                                <span 
+                                  className="badge" 
+                                  style={{ 
+                                    fontSize: '0.7rem', 
+                                    padding: '2px 6px',
+                                    background: isRollSFG ? '#ede9fe' : '#ecfdf5',
+                                    color: isRollSFG ? '#6d28d9' : '#059669',
+                                    border: `1px solid ${isRollSFG ? '#c4b5fd' : '#a7f3d0'}`,
+                                    fontWeight: '700'
+                                  }}
+                                >
+                                  {isRollSFG ? 'SFG' : 'FG'}: {r.subType || r.sfgType || r.fgType || 'Master Roll'}
+                                </span>
+                              </td>
+
+                              <td>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <QrCode size={14} style={{ color: '#4f46e5', flexShrink: 0 }} />
+                                  <code style={{ fontSize: '0.78rem', fontWeight: '800', color: '#0f172a' }}>
+                                    {r.barcodeId}
+                                  </code>
+                                </div>
+                                {(r.machine || r.machineName) && (
+                                  <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '2px' }}>
+                                    {r.machine || r.machineName} {r.shift ? `• ${r.shift}` : ''}
+                                  </div>
+                                )}
+                              </td>
+
+                              <td style={{ textAlign: 'right', fontWeight: '600' }}>
+                                {parseFloat(r.grossWeightKg || 0).toFixed(2)} kg
+                              </td>
+
+                              <td style={{ textAlign: 'right', color: '#64748b' }}>
+                                {parseFloat(r.tareWeightKg || 0).toFixed(1)} kg
+                              </td>
+
+                              <td style={{ textAlign: 'right', fontWeight: '900', color: '#047857', fontSize: '0.85rem' }}>
+                                {parseFloat(r.netWeightKg || 0).toFixed(2)} kg
+                              </td>
+
+                              <td style={{ textAlign: 'right', color: '#1e3a8a', fontWeight: '700' }}>
+                                {r.lengthMeters ? `${parseInt(r.lengthMeters).toLocaleString()} m` : '—'}
+                              </td>
+
+                              <td style={{ textAlign: 'center' }}>
+                                <span className="badge badge-us" style={{ fontSize: '0.68rem', padding: '2px 6px', background: '#dcfce7', color: '#15803d' }}>
+                                  <CheckCircle2 size={11} /> {r.qcStatus || 'Passed'}
+                                </span>
+                              </td>
+
+                              <td style={{ textAlign: 'center' }}>
+                                <button
+                                  type="button"
+                                  className="btn-secondary"
+                                  style={{ padding: '3px 8px', fontSize: '0.72rem', color: '#2563eb', borderColor: '#bfdbfe' }}
+                                  onClick={() => setSelectedRollForBarcodeModal(r)}
+                                  title="Print 2D Barcode Thermal Label"
+                                >
+                                  <Printer size={12} /> Print
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             );
           })()}
@@ -1761,6 +1931,78 @@ export default function ProductionRecordManagement({
               })}
             </tbody>
           </table>
+
+          {/* SFG & FG Master Rolls Output Banner for Selected Order */}
+          {(() => {
+            const formLinkedRolls = (inventoryRolls || []).filter(r => {
+              if (!selectedOrder) return false;
+              const matchJob = (r.orderId && String(r.orderId) === String(selectedOrder.id)) ||
+                               (r.jobCode && String(r.jobCode).toUpperCase() === String(selectedOrder.jobCode || '').toUpperCase()) ||
+                               (r.jobName && (r.jobName || '').toLowerCase().trim() === (selectedOrder.jobName || '').toLowerCase().trim());
+              return matchJob && (r.rollType === 'SFG' || r.rollType === 'FG' || (r.category || '').includes('Semi-Finished') || (r.category || '').includes('Finished'));
+            });
+
+            const sfgRolls = formLinkedRolls.filter(r => r.rollType === 'SFG' || (r.category || '').includes('Semi-Finished'));
+            const fgRolls = formLinkedRolls.filter(r => r.rollType === 'FG' || (r.category || '').includes('Finished'));
+            const totalSfgKg = sfgRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
+            const totalFgKg = fgRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
+
+            return (
+              <div style={{ marginBottom: '24px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', padding: '16px 20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '10px' }}>
+                  <div>
+                    <h4 style={{ fontSize: '0.98rem', fontWeight: '800', color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Barcode size={18} style={{ color: '#4f46e5' }} /> SFG / FG Output Barcode Master Rolls ({formLinkedRolls.length} Rolls Weighed)
+                    </h4>
+                    <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '2px 0 0 0' }}>
+                      Weigh master rolls on digital scale and issue barcodes linked to <strong>{selectedOrder?.jobName || 'this job'}</strong>.
+                    </p>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      style={{ background: '#6d28d9', borderColor: '#6d28d9', padding: '4px 10px', fontSize: '0.76rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                      onClick={() => { setSfgFgModalMode('SFG'); setIsSfgFgModalOpen(true); }}
+                    >
+                      <Plus size={12} /> + Add SFG
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      style={{ background: '#059669', borderColor: '#059669', padding: '4px 10px', fontSize: '0.76rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                      onClick={() => { setSfgFgModalMode('FG'); setIsSfgFgModalOpen(true); }}
+                    >
+                      <Plus size={12} /> + Add FG
+                    </button>
+                    {formLinkedRolls.length > 0 && (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        style={{ padding: '4px 10px', fontSize: '0.76rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                        onClick={() => setSelectedRollForBarcodeModal(formLinkedRolls)}
+                      >
+                        <Printer size={12} /> Print Barcodes ({formLinkedRolls.length})
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', fontSize: '0.78rem' }}>
+                  <div style={{ background: '#ede9fe', border: '1px solid #c4b5fd', borderRadius: '6px', padding: '6px 12px', color: '#6d28d9', fontWeight: '700' }}>
+                    SFG Output: <strong>{totalSfgKg.toFixed(1)} kg</strong> ({sfgRolls.length} rolls)
+                  </div>
+                  <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '6px', padding: '6px 12px', color: '#059669', fontWeight: '700' }}>
+                    FG Output: <strong>{totalFgKg.toFixed(1)} kg</strong> ({fgRolls.length} rolls)
+                  </div>
+                  <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '6px 12px', color: '#334155', fontWeight: '700' }}>
+                    Cumulative Production Recovery: <strong>{(totalSfgKg + totalFgKg).toFixed(1)} kg</strong>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* STAGE-WISE PRODUCTION QUANTITIES & PROCESS SCRAP INPUTS */}
           <div style={{ marginBottom: '28px' }}>
