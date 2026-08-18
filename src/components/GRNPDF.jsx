@@ -38,11 +38,14 @@ export default function GRNPDF({ grnData, onClose }) {
     vendorName = "FlexiPoly Films Ltd",
     invoiceNo = "INV-FP-9904",
     receivedDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+    category = "Film Substrates",
+    itemName = "",
     filmType = "PET",
     micron = 12,
     widthMm = 1000,
     rollsReceived = 12,
     netWeightKg = 1850,
+    unit = "Kg",
     unitPrice = 125,
     batchNo = "BATCH-PET-991",
     status = "Approved",
@@ -54,6 +57,9 @@ export default function GRNPDF({ grnData, onClose }) {
     packagingType = "Roll",
     itemsBreakdown = []
   } = grnData;
+
+  const isFilm = category === 'Film Substrates' || (!category && micron !== '-' && parseFloat(micron) > 0);
+  const displayItemName = itemName || (isFilm ? `${filmType}` : (category || filmType || 'Chemicals & Solvents'));
 
   const totalTaxable = netWeightKg * unitPrice;
   const cgstAmt = totalTaxable * 0.09;
@@ -223,7 +229,7 @@ export default function GRNPDF({ grnData, onClose }) {
               <tr>
                 <td className="center">1</td>
                 <td>
-                  <div className="item-name">{filmType} Film</div>
+                  <div className="item-name">{displayItemName}</div>
                   <div className="item-meta">Batch Ref: {batchNo}</div>
                 </td>
                 <td className="center">3920</td>

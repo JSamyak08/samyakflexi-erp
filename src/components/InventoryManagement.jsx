@@ -2396,7 +2396,7 @@ export default function InventoryManagement({
                 {stockPagination.paginatedItems.map(item => {
                   const isLow = (item.availableQtyKg ?? 0) <= (item.reorderLevelKg ?? 100);
                   const isFilm = (item.category || 'Film Substrates') === 'Film Substrates';
-                  const title = item.itemName || `${item.filmType} Film (${item.micron}µ x ${item.widthMm}mm)`;
+                  const title = item.itemName || (isFilm ? `${item.filmType} (${item.micron}µ x ${item.widthMm}mm)` : (item.category || item.filmType || 'Stock Item'));
                   const unitStr = item.unit || 'kg';
                   const rate = parseFloat(item.unitPrice || item.purchaseRatePerKg) || 0;
                   const availQty = parseFloat(item.availableQtyKg) || 0;
@@ -2645,12 +2645,16 @@ export default function InventoryManagement({
 
                   <div className="calc-summary-box" style={{ marginBottom: '16px' }}>
                     <div className="calc-summary-row">
-                      <span>Material Substrate:</span>
-                      <span className="bold-val">{g.filmType} Film ({g.micron}µ / {g.widthMm}mm)</span>
+                      <span>{g.category === 'Film Substrates' ? 'Material Substrate:' : 'Material Item / Category:'}</span>
+                      <span className="bold-val">
+                        {g.category === 'Film Substrates' || (g.micron && g.micron !== '-' && parseFloat(g.micron) > 0)
+                          ? `${g.filmType} (${g.micron}µ / ${g.widthMm}mm)`
+                          : (g.itemName || g.category || g.filmType || 'Chemicals & Solvents')}
+                      </span>
                     </div>
                     <div className="calc-summary-row">
                       <span>Inward Net Weight:</span>
-                      <span className="bold-val" style={{ color: '#60a5fa' }}>{g.netWeightKg} kg ({g.rollsReceived} rolls)</span>
+                      <span className="bold-val" style={{ color: '#60a5fa' }}>{g.netWeightKg} {g.unit || 'kg'} ({g.rollsReceived || 1} {g.packagingType || 'units'})</span>
                     </div>
                     <div className="calc-summary-row">
                       <span>Manufacturer Batch #:</span>
@@ -3051,13 +3055,14 @@ export default function InventoryManagement({
                     recPagination.paginatedItems.map(item => {
                       const physicalVal = physicalCounts[item.id] !== undefined ? physicalCounts[item.id] : item.availableQtyKg;
                       const diff = physicalVal - item.availableQtyKg;
+                      const isFilm = (item.category || 'Film Substrates') === 'Film Substrates';
 
                       return (
                         <tr key={item.id} style={{ background: diff < 0 ? '#fff5f5' : (diff > 0 ? '#f0fdf4' : 'transparent') }}>
                           <td style={{ fontWeight: '700', color: 'var(--accent-color)' }}>{item.id}</td>
-                          <td style={{ fontWeight: '600' }}>{item.filmType} Film</td>
-                          <td>{item.micron}µ / {item.widthMm}mm</td>
-                          <td style={{ fontWeight: '700' }}>{(item.availableQtyKg ?? 0).toLocaleString()} kg</td>
+                          <td style={{ fontWeight: '600' }}>{item.itemName || (isFilm ? `${item.filmType}` : (item.category || item.filmType || 'Stock Item'))}</td>
+                          <td>{isFilm && item.micron && item.micron !== '-' ? `${item.micron}µ / ${item.widthMm}mm` : '—'}</td>
+                          <td style={{ fontWeight: '700' }}>{(item.availableQtyKg ?? 0).toLocaleString()} {item.unit || 'kg'}</td>
                           <td style={{ width: '170px' }}>
                             <input 
                               type="number" 
@@ -4782,7 +4787,7 @@ export default function InventoryManagement({
                     <History style={{ color: '#2563eb' }} /> Raw Material Stock Ledger & Barcode History
                   </h3>
                   <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                    Item: <strong>{item.itemName || `${item.filmType} Film`} {item.micron && item.micron !== '-' ? `(${item.micron}µ x ${item.widthMm}mm)` : ''}</strong> | Code: <code>{item.itemCode || item.id}</code> | Category: <span className="badge badge-neutral" style={{ fontSize: '0.75rem' }}>{item.category || 'Film Substrates'}</span> | Location: {item.location || 'Store Bay'} | Unit: {unitStr}
+                    Item: <strong>{item.itemName || ((item.category || 'Film Substrates') === 'Film Substrates' ? `${item.filmType}` : (item.category || item.filmType || 'Stock Item'))} {((item.category || 'Film Substrates') === 'Film Substrates') && item.micron && item.micron !== '-' ? `(${item.micron}µ x ${item.widthMm}mm)` : ''}</strong> | Code: <code>{item.itemCode || item.id}</code> | Category: <span className="badge badge-neutral" style={{ fontSize: '0.75rem' }}>{item.category || 'Film Substrates'}</span> | Location: {item.location || 'Store Bay'} | Unit: {unitStr}
                   </p>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
