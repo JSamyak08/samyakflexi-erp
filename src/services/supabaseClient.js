@@ -255,10 +255,26 @@ export const saveSupabaseCredentials = (supabaseUrl, supabaseAnonKey) => {
   currentClientKey = '';
 
   // Notify the entire application of credential update (without broadcasting raw secrets)
-  if (typeof window !== 'undefined' && typeof window.CustomEvent === 'function') {
-    window.dispatchEvent(new window.CustomEvent('supabase-credentials-changed', {
-      detail: { configured: isSupabaseConfigured() }
-    }));
+  try {
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      let evt;
+      if (typeof CustomEvent === 'function') {
+        try {
+          evt = new CustomEvent('supabase-credentials-changed', {
+            detail: { configured: isSupabaseConfigured() }
+          });
+        } catch (e) {}
+      }
+      if (!evt && typeof document !== 'undefined' && typeof document.createEvent === 'function') {
+        try {
+          evt = document.createEvent('CustomEvent');
+          evt.initCustomEvent('supabase-credentials-changed', false, false, { configured: isSupabaseConfigured() });
+        } catch (e) {}
+      }
+      if (evt) window.dispatchEvent(evt);
+    }
+  } catch (err) {
+    console.warn('Dispatch event notice:', err);
   }
 };
 
@@ -276,9 +292,25 @@ export const clearSupabaseCredentials = () => {
   currentClientInstance = null;
   currentClientKey = '';
 
-  if (typeof window !== 'undefined' && typeof window.CustomEvent === 'function') {
-    window.dispatchEvent(new window.CustomEvent('supabase-credentials-changed', {
-      detail: { configured: false }
-    }));
+  try {
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      let evt;
+      if (typeof CustomEvent === 'function') {
+        try {
+          evt = new CustomEvent('supabase-credentials-changed', {
+            detail: { configured: false }
+          });
+        } catch (e) {}
+      }
+      if (!evt && typeof document !== 'undefined' && typeof document.createEvent === 'function') {
+        try {
+          evt = document.createEvent('CustomEvent');
+          evt.initCustomEvent('supabase-credentials-changed', false, false, { configured: false });
+        } catch (e) {}
+      }
+      if (evt) window.dispatchEvent(evt);
+    }
+  } catch (err) {
+    console.warn('Dispatch event notice:', err);
   }
 };
