@@ -10,7 +10,6 @@ import {
   QrCode, 
   X, 
   AlertTriangle, 
-  Sparkles, 
   Building2, 
   User, 
   Clock,
@@ -63,22 +62,21 @@ export default function SFGFGEntryModal({
   const title = isSFG ? 'Create Semi-Finished Goods (SFG)' : 'Create Finished Goods (FG)';
   const categoryName = isSFG ? 'Semi-Finished Goods (SFG)' : 'Finished Goods (FG)';
 
-  // Active Job Selector
+  // All fields start empty - NO pre-filled dummy data
   const [selectedJobId, setSelectedJobId] = useState('');
-
-  // SFG/FG Specifics
-  const [selectedType, setSelectedType] = useState(isSFG ? SFG_TYPES[0] : FG_TYPES[0]);
-  const [machineName, setMachineName] = useState(isSFG ? MACHINE_OPTIONS[0] : MACHINE_OPTIONS[2]);
-  const [operatorName, setOperatorName] = useState(currentUser?.name || 'Production Operator');
-  const [shift, setShift] = useState('Day Shift (8 AM - 8 PM)');
-  const [storageBay, setStorageBay] = useState(isSFG ? 'WIP Curing Bay A1' : 'FG Warehouse Dispatch Bay 1');
+  const [selectedType, setSelectedType] = useState('');
+  const [machineName, setMachineName] = useState('');
+  const [operatorName, setOperatorName] = useState('');
+  const [shift, setShift] = useState('');
+  const [storageBay, setStorageBay] = useState('');
   const [productionDate, setProductionDate] = useState(new Date().toISOString().split('T')[0]);
-  const [defaultTareKg, setDefaultTareKg] = useState(5.0); // 5kg standard 3" paper core
+  const [defaultTareKg, setDefaultTareKg] = useState('');
   const [coreDia, setCoreDia] = useState('3 Inch (76mm)');
-  const [valuationRatePerKg, setValuationRatePerKg] = useState(isSFG ? 195 : 235);
+  const [valuationRatePerKg, setValuationRatePerKg] = useState('');
   const [batchRemarks, setBatchRemarks] = useState('');
+  const [formErrors, setFormErrors] = useState({});
 
-  // Filtered Job List
+  // Filtered Job List from Orders & Job Masters
   const activeJobsList = useMemo(() => {
     const jobs = [];
     const seen = new Set();
@@ -127,19 +125,15 @@ export default function SFGFGEntryModal({
     return jobs;
   }, [orders, jobMasters]);
 
-  // Selected Job Object
+  // Selected Job Object (Null when not selected)
   const currentJob = useMemo(() => {
-    return activeJobsList.find(j => String(j.id) === String(selectedJobId)) || activeJobsList[0] || null;
-  }, [activeJobsList, selectedJobId]);
-
-  useEffect(() => {
-    if (!selectedJobId && activeJobsList.length > 0) {
-      setSelectedJobId(activeJobsList[0].id);
-    }
+    if (!selectedJobId) return null;
+    return activeJobsList.find(j => String(j.id) === String(selectedJobId)) || null;
   }, [activeJobsList, selectedJobId]);
 
   // Subtype Code Helper for Barcodes
   const getSubtypeShortCode = (typeStr) => {
+    if (!typeStr) return isSFG ? 'SFG' : 'FG';
     if (typeStr.includes('Printed')) return 'PRN';
     if (typeStr.includes('First Pass') && typeStr.includes('Roll')) return 'LAM1-R';
     if (typeStr.includes('First Pass') && typeStr.includes('Pouch')) return 'LAM1-P';
@@ -148,10 +142,10 @@ export default function SFGFGEntryModal({
     return isSFG ? 'SFG' : 'FG';
   };
 
-  // Helper to calculate roll length
+  // Helper to calculate roll length in meters
   const calculateLength = (netKg, width, micron, filmType) => {
-    const w = parseFloat(width || currentJob?.widthMm || 800);
-    const m = parseFloat(micron || currentJob?.micron || 12);
+    const w = parseFloat(width || currentJob?.widthMm || 0);
+    const m = parseFloat(micron || currentJob?.micron || 0);
     const wt = parseFloat(netKg);
     const density = FILM_DENSITIES[filmType || currentJob?.filmType] || 1.40;
     if (w > 0 && m > 0 && wt > 0 && density > 0) {
@@ -160,17 +154,17 @@ export default function SFGFGEntryModal({
     return 0;
   };
 
-  // Master Rolls State (Multi-Roll Scale Entry)
+  // Master Rolls State (Starts with 1 blank row)
   const [masterRolls, setMasterRolls] = useState([
     {
       id: `roll-${Date.now()}-1`,
       rollIndex: 1,
       barcodeId: '',
-      grossWeightKg: 125,
-      tareWeightKg: 5,
-      netWeightKg: 120,
-      widthMm: 800,
-      micron: 12,
+      grossWeightKg: '',
+      tareWeightKg: '',
+      netWeightKg: 0,
+      widthMm: '',
+      micron: '',
       lengthMeters: 0,
       jointCount: 0,
       qcStatus: 'Passed',
@@ -187,26 +181,23 @@ export default function SFGFGEntryModal({
     return `${prefix}-${subCode}-${cleanJobCode}-R${rollNumStr}`;
   };
 
-  // Sync / Initialize Roll Barcodes when Job or Type changes
+  // Sync Roll Barcodes & dimensions when Job or Type changes
   useEffect(() => {
     if (!currentJob) return;
     setMasterRolls(prev => prev.map((r, i) => {
       const gross = parseFloat(r.grossWeightKg) || 0;
-      const tare = parseFloat(r.tareWeightKg) || defaultTareKg;
+      const tare = r.tareWeightKg !== '' ? parseFloat(r.tareWeightKg) : (parseFloat(defaultTareKg) || 0);
       const net = Math.max(0, gross - tare);
-      const width = parseFloat(currentJob.widthMm) || 800;
-      const micron = parseFloat(currentJob.micron) || 12;
+      const width = parseFloat(currentJob.widthMm) || 0;
+      const micron = parseFloat(currentJob.micron) || 0;
       const len = calculateLength(net, width, micron, currentJob.filmType);
-      const autoBarcode = r.barcodeId && !r.barcodeId.startsWith('SFG-') && !r.barcodeId.startsWith('FG-') 
-        ? r.barcodeId 
-        : generateRollBarcode(i + 1, currentJob.jobCode, selectedType);
+      const autoBarcode = generateRollBarcode(i + 1, currentJob.jobCode, selectedType);
 
       return {
         ...r,
         rollIndex: i + 1,
         barcodeId: r.isBarcodeCustom ? r.barcodeId : autoBarcode,
-        tareWeightKg: tare,
-        netWeightKg: net,
+        netWeightKg: gross > 0 ? parseFloat(net.toFixed(2)) : 0,
         widthMm: width,
         micron: micron,
         lengthMeters: len
@@ -222,9 +213,16 @@ export default function SFGFGEntryModal({
 
       if (field === 'grossWeightKg' || field === 'tareWeightKg') {
         const gross = parseFloat(field === 'grossWeightKg' ? value : roll.grossWeightKg) || 0;
-        const tare = parseFloat(field === 'tareWeightKg' ? value : roll.tareWeightKg) || 0;
-        roll.netWeightKg = Math.max(0, parseFloat((gross - tare).toFixed(2)));
-        roll.lengthMeters = calculateLength(roll.netWeightKg, roll.widthMm, roll.micron, currentJob?.filmType);
+        const tareVal = field === 'tareWeightKg' ? value : roll.tareWeightKg;
+        const tare = tareVal !== '' ? (parseFloat(tareVal) || 0) : (parseFloat(defaultTareKg) || 0);
+        
+        if (gross > 0) {
+          roll.netWeightKg = Math.max(0, parseFloat((gross - tare).toFixed(2)));
+          roll.lengthMeters = calculateLength(roll.netWeightKg, roll.widthMm, roll.micron, currentJob?.filmType);
+        } else {
+          roll.netWeightKg = 0;
+          roll.lengthMeters = 0;
+        }
       }
 
       if (field === 'barcodeId') {
@@ -239,12 +237,10 @@ export default function SFGFGEntryModal({
   // Add Another Master Roll Row
   const handleAddRollRow = () => {
     const nextIdx = masterRolls.length + 1;
-    const autoBarcode = generateRollBarcode(nextIdx, currentJob?.jobCode, selectedType);
-    const defaultGross = 120;
-    const net = Math.max(0, defaultGross - defaultTareKg);
-    const width = parseFloat(currentJob?.widthMm) || 800;
-    const micron = parseFloat(currentJob?.micron) || 12;
-    const len = calculateLength(net, width, micron, currentJob?.filmType);
+    const autoBarcode = currentJob ? generateRollBarcode(nextIdx, currentJob.jobCode, selectedType) : '';
+    const width = parseFloat(currentJob?.widthMm) || '';
+    const micron = parseFloat(currentJob?.micron) || '';
+    const tare = defaultTareKg !== '' ? defaultTareKg : '';
 
     setMasterRolls(prev => [
       ...prev,
@@ -252,12 +248,12 @@ export default function SFGFGEntryModal({
         id: `roll-${Date.now()}-${nextIdx}`,
         rollIndex: nextIdx,
         barcodeId: autoBarcode,
-        grossWeightKg: defaultGross,
-        tareWeightKg: defaultTareKg,
-        netWeightKg: net,
+        grossWeightKg: '',
+        tareWeightKg: tare,
+        netWeightKg: 0,
         widthMm: width,
         micron: micron,
-        lengthMeters: len,
+        lengthMeters: 0,
         jointCount: 0,
         qcStatus: 'Passed',
         notes: ''
@@ -274,7 +270,7 @@ export default function SFGFGEntryModal({
     setMasterRolls(prev => prev.filter((_, i) => i !== index).map((r, idx) => ({
       ...r,
       rollIndex: idx + 1,
-      barcodeId: r.isBarcodeCustom ? r.barcodeId : generateRollBarcode(idx + 1, currentJob?.jobCode, selectedType)
+      barcodeId: r.isBarcodeCustom ? r.barcodeId : (currentJob ? generateRollBarcode(idx + 1, currentJob.jobCode, selectedType) : '')
     })));
   };
 
@@ -282,18 +278,51 @@ export default function SFGFGEntryModal({
   const totalGrossKg = masterRolls.reduce((sum, r) => sum + (parseFloat(r.grossWeightKg) || 0), 0);
   const totalNetKg = masterRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
   const totalMeters = masterRolls.reduce((sum, r) => sum + (parseFloat(r.lengthMeters) || 0), 0);
-  const totalEstimatedValuation = totalNetKg * valuationRatePerKg;
+  const parsedValuationRate = parseFloat(valuationRatePerKg) || 0;
+  const totalEstimatedValuation = totalNetKg * parsedValuationRate;
+
+  // Validate all fields before submission
+  const validateForm = () => {
+    const errors = {};
+
+    if (!selectedJobId) {
+      errors.selectedJobId = "Please select an active production job.";
+    }
+    if (!selectedType) {
+      errors.selectedType = "Please select the process type.";
+    }
+    if (!machineName) {
+      errors.machineName = "Please select the production machine.";
+    }
+    if (!operatorName || !operatorName.trim()) {
+      errors.operatorName = "Machine operator name is required.";
+    }
+    if (!shift) {
+      errors.shift = "Please select the shift.";
+    }
+    if (!storageBay || !storageBay.trim()) {
+      errors.storageBay = "Storage bay / location is required.";
+    }
+    if (!valuationRatePerKg || parseFloat(valuationRatePerKg) <= 0) {
+      errors.valuationRatePerKg = "Please enter a valid inventory valuation rate per kg (> 0).";
+    }
+
+    // Roll validation
+    const invalidRolls = masterRolls.some(r => !r.grossWeightKg || parseFloat(r.grossWeightKg) <= 0 || parseFloat(r.netWeightKg) <= 0);
+    if (invalidRolls) {
+      errors.rolls = "All master rolls must have valid gross and net weights entered on the scale.";
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
 
   // Submit Handler
   const handleSaveAndSubmit = (e) => {
     e.preventDefault();
-    if (!currentJob) {
-      alert("Please select an active production job.");
-      return;
-    }
 
-    if (masterRolls.length === 0 || totalNetKg <= 0) {
-      alert("Please enter at least one valid master roll with positive net weight.");
+    if (!validateForm()) {
+      alert("Please fill in all required fields accurately before submitting.");
       return;
     }
 
@@ -317,13 +346,13 @@ export default function SFGFGEntryModal({
       widthMm: currentJob.widthMm,
       availableQtyKg: totalNetKg,
       totalQtyKg: totalNetKg,
-      unitPrice: valuationRatePerKg,
-      purchaseRatePerKg: valuationRatePerKg,
+      unitPrice: parsedValuationRate,
+      purchaseRatePerKg: parsedValuationRate,
       unit: 'Kg',
       rollsCount: masterRolls.length,
       storageBay,
       machineName,
-      operatorName,
+      operatorName: operatorName.trim(),
       shift,
       productionDate,
       lastBatch: batchCode,
@@ -352,24 +381,24 @@ export default function SFGFGEntryModal({
         filmType: currentJob.filmType,
         widthMm: r.widthMm,
         micron: r.micron,
-        grossWeightKg: r.grossWeightKg,
-        tareWeightKg: r.tareWeightKg,
-        netWeightKg: r.netWeightKg,
-        availableWeightKg: r.netWeightKg,
+        grossWeightKg: parseFloat(r.grossWeightKg) || 0,
+        tareWeightKg: parseFloat(r.tareWeightKg) || 0,
+        netWeightKg: parseFloat(r.netWeightKg) || 0,
+        availableWeightKg: parseFloat(r.netWeightKg) || 0,
         lengthMeters: r.lengthMeters,
         coreDia,
         jointCount: r.jointCount || 0,
         qcStatus: r.qcStatus || 'Passed',
         stationId: machineName,
         machine: machineName,
-        operator: operatorName,
+        operator: operatorName.trim(),
         shift,
         locationBay: storageBay,
         batchNo: batchCode,
         inwardDatetime: new Date().toISOString(),
         productionDate,
-        purchaseRatePerKg: valuationRatePerKg,
-        unitPrice: valuationRatePerKg,
+        purchaseRatePerKg: parsedValuationRate,
+        unitPrice: parsedValuationRate,
         unit: 'Kg',
         status: isSFG ? 'In Stock (WIP)' : 'In Stock (Ready for Dispatch)'
       };
@@ -387,7 +416,7 @@ export default function SFGFGEntryModal({
       outputRollsCount: masterRolls.length,
       rolls: formattedRolls,
       machineName,
-      operatorName,
+      operatorName: operatorName.trim(),
       shift,
       productionDate,
       storageBay
@@ -457,7 +486,7 @@ export default function SFGFGEntryModal({
               </h3>
             </div>
             <p style={{ fontSize: '0.78rem', color: '#64748b', margin: '4px 0 0 0' }}>
-              Weigh master rolls on digital scale, generate 2D barcodes, and automatically link output to active Job & Production Records.
+              Enter production details and weigh master rolls on the scale. All inputs must be entered by operator.
             </p>
           </div>
 
@@ -468,7 +497,7 @@ export default function SFGFGEntryModal({
 
         <form onSubmit={handleSaveAndSubmit}>
           {/* Section 1: Active Job & Classification */}
-          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '14px', marginBottom: '14px' }}>
+          <div style={{ background: '#f8fafc', border: formErrors.selectedJobId || formErrors.selectedType ? '1.5px solid #ef4444' : '1px solid #e2e8f0', borderRadius: '8px', padding: '14px', marginBottom: '14px' }}>
             <div style={{ fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', color: '#475569', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Building2 size={15} style={{ color: '#4f46e5' }} /> 1. Active Production Job & Stage Classification
             </div>
@@ -477,15 +506,19 @@ export default function SFGFGEntryModal({
               {/* Job Selector */}
               <div>
                 <label className="form-label" style={{ fontWeight: '700', fontSize: '0.82rem', marginBottom: '4px', display: 'block' }}>
-                  Select Active Production Job / Order *
+                  Select Active Production Job / Order <span style={{ color: '#dc2626' }}>*</span>
                 </label>
                 <select 
                   className="form-control" 
-                  style={{ fontWeight: '700', fontSize: '0.88rem', color: '#0f172a', width: '100%' }}
+                  style={{ fontWeight: selectedJobId ? '700' : '400', fontSize: '0.88rem', color: selectedJobId ? '#0f172a' : '#94a3b8', width: '100%', borderColor: formErrors.selectedJobId ? '#ef4444' : undefined }}
                   value={selectedJobId} 
-                  onChange={e => setSelectedJobId(e.target.value)}
+                  onChange={e => {
+                    setSelectedJobId(e.target.value);
+                    if (formErrors.selectedJobId) setFormErrors(prev => ({ ...prev, selectedJobId: null }));
+                  }}
                   required
                 >
+                  <option value="">-- Select Active Production Job / Order * --</option>
                   {activeJobsList.map(j => (
                     <option key={j.id} value={j.id}>
                       {j.jobName} ({j.clientName}) • {j.structure} • Code: {j.jobCode}
@@ -493,12 +526,21 @@ export default function SFGFGEntryModal({
                   ))}
                 </select>
 
-                {currentJob && (
+                {currentJob ? (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 12px', fontSize: '0.75rem', color: '#475569', marginTop: '6px', background: '#ffffff', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                     <span>Client: <strong>{currentJob.clientName}</strong></span>
                     <span>Structure: <strong>{currentJob.structure}</strong></span>
                     <span>Width: <strong>{currentJob.widthMm} mm</strong></span>
                     <span>Micron: <strong>{currentJob.micron} µ</strong></span>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '0.73rem', color: '#94a3b8', marginTop: '4px' }}>
+                    ⚠️ Select a job to load structure and auto-configure roll barcodes
+                  </div>
+                )}
+                {formErrors.selectedJobId && (
+                  <div style={{ fontSize: '0.72rem', color: '#dc2626', marginTop: '2px', fontWeight: '600' }}>
+                    {formErrors.selectedJobId}
                   </div>
                 )}
               </div>
@@ -506,19 +548,28 @@ export default function SFGFGEntryModal({
               {/* SFG / FG Type */}
               <div>
                 <label className="form-label" style={{ fontWeight: '700', fontSize: '0.82rem', marginBottom: '4px', display: 'block' }}>
-                  {isSFG ? 'SFG Process Type *' : 'FG Process Type *'}
+                  {isSFG ? 'SFG Process Type' : 'FG Process Type'} <span style={{ color: '#dc2626' }}>*</span>
                 </label>
                 <select 
                   className="form-control" 
-                  style={{ fontWeight: '700', fontSize: '0.88rem', color: isSFG ? '#6d28d9' : '#b45309', width: '100%' }}
+                  style={{ fontWeight: selectedType ? '700' : '400', fontSize: '0.88rem', color: selectedType ? (isSFG ? '#6d28d9' : '#b45309') : '#94a3b8', width: '100%', borderColor: formErrors.selectedType ? '#ef4444' : undefined }}
                   value={selectedType} 
-                  onChange={e => setSelectedType(e.target.value)}
+                  onChange={e => {
+                    setSelectedType(e.target.value);
+                    if (formErrors.selectedType) setFormErrors(prev => ({ ...prev, selectedType: null }));
+                  }}
                   required
                 >
+                  <option value="">-- Select {isSFG ? 'SFG' : 'FG'} Stage Classification * --</option>
                   {(isSFG ? SFG_TYPES : FG_TYPES).map(t => (
                     <option key={t} value={t}>{t}</option>
                   ))}
                 </select>
+                {formErrors.selectedType && (
+                  <div style={{ fontSize: '0.72rem', color: '#dc2626', marginTop: '2px', fontWeight: '600' }}>
+                    {formErrors.selectedType}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -526,60 +577,99 @@ export default function SFGFGEntryModal({
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginTop: '12px' }}>
               <div>
                 <label className="form-label" style={{ fontWeight: '600', fontSize: '0.78rem', marginBottom: '4px', display: 'block' }}>
-                  Production Machine / Press
+                  Production Machine / Press <span style={{ color: '#dc2626' }}>*</span>
                 </label>
                 <select 
                   className="form-control" 
-                  style={{ fontSize: '0.8rem', width: '100%' }}
+                  style={{ fontSize: '0.8rem', width: '100%', borderColor: formErrors.machineName ? '#ef4444' : undefined }}
                   value={machineName} 
-                  onChange={e => setMachineName(e.target.value)}
+                  onChange={e => {
+                    setMachineName(e.target.value);
+                    if (formErrors.machineName) setFormErrors(prev => ({ ...prev, machineName: null }));
+                  }}
+                  required
                 >
+                  <option value="">-- Select Machine * --</option>
                   {MACHINE_OPTIONS.map(m => (
                     <option key={m} value={m}>{m}</option>
                   ))}
                 </select>
+                {formErrors.machineName && (
+                  <div style={{ fontSize: '0.72rem', color: '#dc2626', marginTop: '2px', fontWeight: '600' }}>
+                    {formErrors.machineName}
+                  </div>
+                )}
               </div>
 
               <div>
                 <label className="form-label" style={{ fontWeight: '600', fontSize: '0.78rem', marginBottom: '4px', display: 'block' }}>
-                  Machine Operator
+                  Machine Operator <span style={{ color: '#dc2626' }}>*</span>
                 </label>
                 <input 
                   type="text" 
                   className="form-control" 
-                  style={{ fontSize: '0.8rem', width: '100%' }}
-                  placeholder="Operator Name" 
+                  style={{ fontSize: '0.8rem', width: '100%', borderColor: formErrors.operatorName ? '#ef4444' : undefined }}
+                  placeholder="Enter Operator Name *" 
                   value={operatorName} 
-                  onChange={e => setOperatorName(e.target.value)}
+                  onChange={e => {
+                    setOperatorName(e.target.value);
+                    if (formErrors.operatorName) setFormErrors(prev => ({ ...prev, operatorName: null }));
+                  }}
+                  required
                 />
+                {formErrors.operatorName && (
+                  <div style={{ fontSize: '0.72rem', color: '#dc2626', marginTop: '2px', fontWeight: '600' }}>
+                    {formErrors.operatorName}
+                  </div>
+                )}
               </div>
 
               <div>
                 <label className="form-label" style={{ fontWeight: '600', fontSize: '0.78rem', marginBottom: '4px', display: 'block' }}>
-                  Shift
+                  Shift <span style={{ color: '#dc2626' }}>*</span>
                 </label>
                 <select 
                   className="form-control" 
-                  style={{ fontSize: '0.8rem', width: '100%' }}
+                  style={{ fontSize: '0.8rem', width: '100%', borderColor: formErrors.shift ? '#ef4444' : undefined }}
                   value={shift} 
-                  onChange={e => setShift(e.target.value)}
+                  onChange={e => {
+                    setShift(e.target.value);
+                    if (formErrors.shift) setFormErrors(prev => ({ ...prev, shift: null }));
+                  }}
+                  required
                 >
+                  <option value="">-- Select Shift * --</option>
                   <option value="Day Shift (8 AM - 8 PM)">☀️ Day Shift (8 AM - 8 PM)</option>
                   <option value="Night Shift (8 PM - 8 AM)">🌙 Night Shift (8 PM - 8 AM)</option>
                 </select>
+                {formErrors.shift && (
+                  <div style={{ fontSize: '0.72rem', color: '#dc2626', marginTop: '2px', fontWeight: '600' }}>
+                    {formErrors.shift}
+                  </div>
+                )}
               </div>
 
               <div>
                 <label className="form-label" style={{ fontWeight: '600', fontSize: '0.78rem', marginBottom: '4px', display: 'block' }}>
-                  Storage Bay / Location
+                  Storage Bay / Location <span style={{ color: '#dc2626' }}>*</span>
                 </label>
                 <input 
                   type="text" 
                   className="form-control" 
-                  style={{ fontSize: '0.8rem', width: '100%' }}
+                  style={{ fontSize: '0.8rem', width: '100%', borderColor: formErrors.storageBay ? '#ef4444' : undefined }}
+                  placeholder="e.g. Curing Bay A1, Bay 2 *"
                   value={storageBay} 
-                  onChange={e => setStorageBay(e.target.value)}
+                  onChange={e => {
+                    setStorageBay(e.target.value);
+                    if (formErrors.storageBay) setFormErrors(prev => ({ ...prev, storageBay: null }));
+                  }}
+                  required
                 />
+                {formErrors.storageBay && (
+                  <div style={{ fontSize: '0.72rem', color: '#dc2626', marginTop: '2px', fontWeight: '600' }}>
+                    {formErrors.storageBay}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -592,7 +682,7 @@ export default function SFGFGEntryModal({
                   <Scale size={16} style={{ color: '#059669' }} /> 2. Master Rolls Scale Weighing & 2D Barcodes ({masterRolls.length} Rolls)
                 </h4>
                 <span style={{ fontSize: '0.73rem', color: '#64748b' }}>
-                  Capture live scale gross weight; net weight and length are calculated automatically.
+                  Place roll on digital scale and enter gross weight; net weight is computed after core deduction.
                 </span>
               </div>
 
@@ -602,9 +692,10 @@ export default function SFGFGEntryModal({
                   <input 
                     type="number" 
                     step="0.1" 
-                    style={{ width: '50px', padding: '2px 4px', fontSize: '0.75rem', fontWeight: '700', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                    placeholder="e.g. 5"
+                    style={{ width: '60px', padding: '2px 4px', fontSize: '0.75rem', fontWeight: '700', borderRadius: '4px', border: '1px solid #cbd5e1' }}
                     value={defaultTareKg}
-                    onChange={e => setDefaultTareKg(parseFloat(e.target.value) || 0)}
+                    onChange={e => setDefaultTareKg(e.target.value)}
                   />
                   <span>kg</span>
                 </div>
@@ -621,13 +712,13 @@ export default function SFGFGEntryModal({
             </div>
 
             {/* Rolls Entry Table Container */}
-            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#ffffff' }}>
+            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', border: formErrors.rolls ? '1.5px solid #ef4444' : '1px solid #e2e8f0', borderRadius: '8px', background: '#ffffff' }}>
               <table className="data-table" style={{ margin: 0, fontSize: '0.8rem', minWidth: '660px', width: '100%' }}>
                 <thead>
                   <tr style={{ background: '#f1f5f9' }}>
                     <th style={{ width: '6%', textAlign: 'center' }}>Roll #</th>
                     <th style={{ width: '25%' }}>2D Barcode (ISO 18004)</th>
-                    <th style={{ width: '18%', textAlign: 'right' }}>Scale Gross (kg)</th>
+                    <th style={{ width: '18%', textAlign: 'right' }}>Scale Gross (kg) *</th>
                     <th style={{ width: '11%', textAlign: 'right' }}>Core (kg)</th>
                     <th style={{ width: '14%', textAlign: 'right' }}>Net Wt (kg)</th>
                     <th style={{ width: '13%', textAlign: 'right' }}>Est. Length (m)</th>
@@ -646,6 +737,7 @@ export default function SFGFGEntryModal({
                         <input 
                           type="text" 
                           className="form-control" 
+                          placeholder="Auto Barcode"
                           style={{ fontFamily: 'monospace', fontSize: '0.78rem', fontWeight: '700', padding: '3px 6px', width: '100%' }}
                           value={roll.barcodeId}
                           onChange={e => handleUpdateRoll(idx, 'barcodeId', e.target.value)}
@@ -658,8 +750,9 @@ export default function SFGFGEntryModal({
                           <input 
                             type="number" 
                             step="0.01" 
+                            placeholder="0.00"
                             className="form-control" 
-                            style={{ width: '75px', textAlign: 'right', fontWeight: '700', padding: '3px 5px', fontSize: '0.8rem' }}
+                            style={{ width: '85px', textAlign: 'right', fontWeight: '700', padding: '3px 5px', fontSize: '0.82rem', borderColor: !roll.grossWeightKg && formErrors.rolls ? '#ef4444' : undefined }}
                             value={roll.grossWeightKg}
                             onChange={e => handleUpdateRoll(idx, 'grossWeightKg', e.target.value)}
                             required
@@ -675,6 +768,7 @@ export default function SFGFGEntryModal({
                         <input 
                           type="number" 
                           step="0.1" 
+                          placeholder="0.0"
                           className="form-control" 
                           style={{ width: '55px', textAlign: 'right', padding: '3px 5px', fontSize: '0.8rem' }}
                           value={roll.tareWeightKg}
@@ -683,13 +777,13 @@ export default function SFGFGEntryModal({
                       </td>
 
                       {/* Calculated Net */}
-                      <td style={{ textAlign: 'right', fontWeight: '900', color: '#047857', fontSize: '0.88rem' }}>
-                        {roll.netWeightKg.toFixed(2)} kg
+                      <td style={{ textAlign: 'right', fontWeight: '900', color: roll.netWeightKg > 0 ? '#047857' : '#94a3b8', fontSize: '0.88rem' }}>
+                        {roll.netWeightKg > 0 ? `${roll.netWeightKg.toFixed(2)} kg` : '—'}
                       </td>
 
                       {/* Length */}
-                      <td style={{ textAlign: 'right', color: '#1e3a8a', fontWeight: '700', fontSize: '0.8rem' }}>
-                        {roll.lengthMeters.toLocaleString()} m
+                      <td style={{ textAlign: 'right', color: roll.lengthMeters > 0 ? '#1e3a8a' : '#94a3b8', fontWeight: '700', fontSize: '0.8rem' }}>
+                        {roll.lengthMeters > 0 ? `${roll.lengthMeters.toLocaleString()} m` : '—'}
                       </td>
 
                       {/* Splice / Joints */}
@@ -724,36 +818,41 @@ export default function SFGFGEntryModal({
                 </tbody>
               </table>
             </div>
+            {formErrors.rolls && (
+              <div style={{ fontSize: '0.72rem', color: '#dc2626', marginTop: '4px', fontWeight: '600' }}>
+                {formErrors.rolls}
+              </div>
+            )}
           </div>
 
-          {/* Section 3: Summary Totals & Valuation Banner */}
-          <div style={{ background: '#f0fdf4', border: '1.5px solid #86efac', borderRadius: '8px', padding: '12px', marginBottom: '14px' }}>
+          {/* Section 3: Summary Totals Banner */}
+          <div style={{ background: totalNetKg > 0 ? '#f0fdf4' : '#f8fafc', border: totalNetKg > 0 ? '1.5px solid #86efac' : '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '14px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', textAlign: 'center' }}>
               <div>
-                <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#065f46', textTransform: 'uppercase' }}>Total Master Rolls</span>
+                <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Total Master Rolls</span>
                 <div style={{ fontSize: '1.15rem', fontWeight: '900', color: '#047857' }}>
-                  {masterRolls.length} Rolls
+                  {masterRolls.filter(r => parseFloat(r.grossWeightKg) > 0).length} / {masterRolls.length} Weighed
                 </div>
               </div>
 
               <div>
-                <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#065f46', textTransform: 'uppercase' }}>Total Gross Weight</span>
-                <div style={{ fontSize: '1.15rem', fontWeight: '900', color: '#1e293b' }}>
-                  {totalGrossKg.toFixed(2)} kg
+                <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Total Gross Weight</span>
+                <div style={{ fontSize: '1.15rem', fontWeight: '900', color: totalGrossKg > 0 ? '#1e293b' : '#94a3b8' }}>
+                  {totalGrossKg > 0 ? `${totalGrossKg.toFixed(2)} kg` : '0.00 kg'}
                 </div>
               </div>
 
               <div>
-                <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#065f46', textTransform: 'uppercase' }}>Total Net Output</span>
-                <div style={{ fontSize: '1.25rem', fontWeight: '900', color: '#047857' }}>
-                  {totalNetKg.toFixed(2)} kg
+                <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Total Net Output</span>
+                <div style={{ fontSize: '1.25rem', fontWeight: '900', color: totalNetKg > 0 ? '#047857' : '#94a3b8' }}>
+                  {totalNetKg > 0 ? `${totalNetKg.toFixed(2)} kg` : '0.00 kg'}
                 </div>
               </div>
 
               <div>
-                <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#065f46', textTransform: 'uppercase' }}>Est. Total Length</span>
-                <div style={{ fontSize: '1.15rem', fontWeight: '900', color: '#0284c7' }}>
-                  {totalMeters.toLocaleString()} m
+                <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Est. Total Length</span>
+                <div style={{ fontSize: '1.15rem', fontWeight: '900', color: totalMeters > 0 ? '#0284c7' : '#94a3b8' }}>
+                  {totalMeters > 0 ? `${totalMeters.toLocaleString()} m` : '0 m'}
                 </div>
               </div>
             </div>
@@ -763,18 +862,34 @@ export default function SFGFGEntryModal({
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginBottom: '16px' }}>
             <div>
               <label className="form-label" style={{ fontWeight: '600', fontSize: '0.78rem', marginBottom: '4px', display: 'block' }}>
-                Inventory Valuation Rate (₹/kg)
+                Inventory Valuation Rate (₹/kg) <span style={{ color: '#dc2626' }}>*</span>
               </label>
               <input 
                 type="number" 
+                placeholder="Enter Valuation Rate (₹/kg) *"
                 className="form-control" 
-                style={{ fontWeight: '700', fontSize: '0.82rem', width: '100%' }}
+                style={{ fontWeight: '700', fontSize: '0.82rem', width: '100%', borderColor: formErrors.valuationRatePerKg ? '#ef4444' : undefined }}
                 value={valuationRatePerKg}
-                onChange={e => setValuationRatePerKg(parseFloat(e.target.value) || 0)}
+                onChange={e => {
+                  setValuationRatePerKg(e.target.value);
+                  if (formErrors.valuationRatePerKg) setFormErrors(prev => ({ ...prev, valuationRatePerKg: null }));
+                }}
+                required
               />
-              <span style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '2px', display: 'block' }}>
-                Est Total Batch Value: ₹{Math.round(totalEstimatedValuation).toLocaleString('en-IN')}
-              </span>
+              {parsedValuationRate > 0 && totalNetKg > 0 ? (
+                <span style={{ fontSize: '0.7rem', color: '#047857', marginTop: '2px', display: 'block', fontWeight: '600' }}>
+                  Est Total Batch Value: ₹{Math.round(totalEstimatedValuation).toLocaleString('en-IN')}
+                </span>
+              ) : (
+                <span style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '2px', display: 'block' }}>
+                  Required for inventory asset valuation
+                </span>
+              )}
+              {formErrors.valuationRatePerKg && (
+                <div style={{ fontSize: '0.72rem', color: '#dc2626', marginTop: '2px', fontWeight: '600' }}>
+                  {formErrors.valuationRatePerKg}
+                </div>
+              )}
             </div>
 
             <div>
@@ -785,7 +900,7 @@ export default function SFGFGEntryModal({
                 type="text" 
                 className="form-control" 
                 style={{ fontSize: '0.82rem', width: '100%' }}
-                placeholder="e.g. Master rolls cleared visual inspection, corona treatment verified..."
+                placeholder="Enter remarks e.g. Corona tested, approved by QA..."
                 value={batchRemarks}
                 onChange={e => setBatchRemarks(e.target.value)}
               />
