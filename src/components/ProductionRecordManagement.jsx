@@ -28,6 +28,7 @@ import WeighingScaleInput from './WeighingScaleInput';
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import CylinderJobCardForm from '../CylinderJobCardForm';
+import SFGFGEntryModal from './SFGFGEntryModal';
 import { DEFAULT_DAILY_RATES, generateBarcodeId } from '../factoryStore';
 import { notifyProductionRecordSubmitted, notifyProductionRecordApproved, notifyOverWastageAlert } from '../services/emailService';
 
@@ -85,6 +86,10 @@ export default function ProductionRecordManagement({
   const [materialsList, setMaterialsList] = useState([]);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [selectedRollForBarcodeModal, setSelectedRollForBarcodeModal] = useState(null);
+
+  // SFG & FG Master Rolls Modal State
+  const [isSfgFgModalOpen, setIsSfgFgModalOpen] = useState(false);
+  const [sfgFgModalMode, setSfgFgModalMode] = useState('SFG'); // 'SFG' | 'FG'
 
   // Processing Cost Per Kg (Default from Settings: ₹ 25/kg)
   const [processingCostPerKg, setProcessingCostPerKg] = useState(25);
@@ -505,8 +510,70 @@ export default function ProductionRecordManagement({
            o.clientName.toLowerCase().includes(searchTerm.toLowerCase());
   });
 
+  const handleSaveSFGFG = (inventoryItem, rolls, prodLink) => {
+    if (Array.isArray(rolls)) {
+      rolls.forEach(r => {
+        if (onAddRoll) onAddRoll(r);
+      });
+    }
+
+    if (prodLink && prodLink.orderId && onSaveProductionRecord) {
+      const existingRecord = (productionRecords || []).find(pr => String(pr.orderId) === String(prodLink.orderId) || String(pr.id) === String(prodLink.orderId));
+      const existingRolls = existingRecord?.outputRolls || [];
+      const updatedRolls = [...existingRolls, ...(rolls || [])];
+      const totalOutputKg = updatedRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
+
+      const updatedRecord = {
+        ...(existingRecord || {
+          id: `PROD-${prodLink.orderId}-${Date.now().toString().slice(-4)}`,
+          orderId: prodLink.orderId,
+          jobName: prodLink.jobName,
+          jobCode: prodLink.jobCode,
+          operatorName: prodLink.operatorName,
+          shift: prodLink.shift,
+          productionDate: prodLink.productionDate,
+          status: 'In Progress',
+          machineName: prodLink.machineName
+        }),
+        outputRolls: updatedRolls,
+        actualOutputKg: totalOutputKg,
+        netUsableKg: totalOutputKg,
+        lastUpdated: new Date().toISOString()
+      };
+
+      onSaveProductionRecord(updatedRecord);
+    }
+
+    setSelectedRollForBarcodeModal(rolls);
+    setIsSfgFgModalOpen(false);
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {/* SFG & FG Master Rolls Modal */}
+      {isSfgFgModalOpen && (
+        <SFGFGEntryModal 
+          mode={sfgFgModalMode}
+          orders={orders}
+          jobMasters={jobMasters}
+          inventory={inventory}
+          currentUser={currentUser}
+          onClose={() => setIsSfgFgModalOpen(false)}
+          onSave={handleSaveSFGFG}
+          onPrintRolls={(rolls) => setSelectedRollForBarcodeModal(rolls)}
+        />
+      )}
+
+      {/* Barcode Thermal Label Printer Modal */}
+      {selectedRollForBarcodeModal && (
+        <BarcodePrinterModal 
+          rolls={selectedRollForBarcodeModal} 
+          roll={selectedRollForBarcodeModal} 
+          inventory={inventory}
+          onClose={() => setSelectedRollForBarcodeModal(null)} 
+        />
+      )}
+
       {/* Header Banner & Approval Flow Notice */}
       <div className="glass-panel" style={{ padding: '20px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
@@ -518,7 +585,25 @@ export default function ProductionRecordManagement({
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button 
+            className="btn-primary" 
+            style={{ background: '#6d28d9', borderColor: '#6d28d9', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }} 
+            onClick={() => { setSfgFgModalMode('SFG'); setIsSfgFgModalOpen(true); }}
+            title="Weigh and register Semi-Finished Goods (SFG) master rolls"
+          >
+            + Add SFG
+          </button>
+
+          <button 
+            className="btn-primary" 
+            style={{ background: '#059669', borderColor: '#059669', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }} 
+            onClick={() => { setSfgFgModalMode('FG'); setIsSfgFgModalOpen(true); }}
+            title="Weigh and register Finished Goods (FG) master rolls"
+          >
+            + Add FG
+          </button>
+
           <button 
             className={`tab-pill ${activeTab === 'punched_jobs' ? 'active' : ''}`}
             onClick={() => { setActiveTab('punched_jobs'); setSelectedRecord(null); }}

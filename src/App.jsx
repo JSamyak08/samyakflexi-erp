@@ -3095,6 +3095,7 @@ export default function App() {
             orders={orders}
             indents={indents}
             inks={inks}
+            jobMasters={jobMasters}
             currentUser={currentUser}
             productionRecords={productionRecords}
             storeIssueTransactions={storeIssueTransactions}
@@ -3109,6 +3110,7 @@ export default function App() {
             dispatchShipments={dispatchShipments}
             onAddRoll={handleAddRoll}
             onAddDispatchShipment={handleAddDispatchShipment}
+            onSaveProductionRecord={handleSaveProductionRecord}
           />
         )}
 

@@ -41,6 +41,7 @@ import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import DispatchPackingListPDF from './DispatchPackingListPDF';
 import TablePagination, { usePagination } from './TablePagination';
+import SFGFGEntryModal, { SFG_TYPES, FG_TYPES } from './SFGFGEntryModal';
 import { getNextDocRefNumber, generateDocRefNumber } from '../services/settingsService';
 import { sanitizeInventoryItem, sanitizeGRN } from '../services/supabaseDataService';
 import { 
@@ -58,6 +59,8 @@ import {
 
 export const INVENTORY_CATEGORIES = [
   "Film Substrates",
+  "Semi-Finished Goods (SFG)",
+  "Finished Goods (FG)",
   "Printing Inks & Toners",
   "Chemicals & Solvents",
   "Adhesives & Hardener",
@@ -146,6 +149,7 @@ export default function InventoryManagement({
   orders = [], 
   indents = [],
   inks = [],
+  jobMasters = [],
   currentUser = null,
   productionRecords = [],
   storeIssueTransactions = [],
@@ -153,6 +157,8 @@ export default function InventoryManagement({
   onAddGRN, 
   onUpdateGRN, 
   onUpdateInventory,
+  onSaveInventoryItem,
+  onSaveProductionRecord,
   onAddVendor,
   inventoryRolls = initialInventoryRolls,
   dispatchShipments = initialDispatchShipments,
@@ -161,6 +167,10 @@ export default function InventoryManagement({
 }) {
   const [activeTab, setActiveTab] = useState('stock'); // stock, grn_inward, qc_approval, issue_return, reconciliation
   const [searchTerm, setSearchTerm] = useState('');
+
+  // SFG & FG Creation Modal State
+  const [isSfgFgModalOpen, setIsSfgFgModalOpen] = useState(false);
+  const [sfgFgModalMode, setSfgFgModalMode] = useState('SFG'); // 'SFG' | 'FG'
 
   // Sanitize all inventory and GRN records to guarantee zero envelope leakage into UI
   const safeInventory = useMemo(() => (inventory || []).map(sanitizeInventoryItem), [inventory]);
@@ -995,6 +1005,57 @@ export default function InventoryManagement({
     setResolvingPoDiscrepancy(null);
     setResolutionNotes('');
     alert(`✅ Rate discrepancy on PO ${po.poNumber} has been successfully resolved!\n\nAction: ${resolutionObj.summary}\nResolution note has been permanently attached to both PO and GRN.`);
+  };
+
+  const handleSaveSFGFG = (inventoryItem, rolls, prodLink) => {
+    // 1. Add / Update Inventory item
+    if (onSaveInventoryItem) {
+      onSaveInventoryItem(inventoryItem);
+    } else if (onUpdateInventory) {
+      onUpdateInventory([inventoryItem, ...(inventory || [])]);
+    }
+
+    // 2. Add each roll to inventoryRolls (and sync to Supabase)
+    if (Array.isArray(rolls)) {
+      rolls.forEach(r => {
+        if (onAddRoll) {
+          onAddRoll(r);
+        }
+      });
+    }
+
+    // 3. Link to Production Record
+    if (prodLink && prodLink.orderId && onSaveProductionRecord) {
+      const existingRecord = (productionRecords || []).find(pr => String(pr.orderId) === String(prodLink.orderId) || String(pr.id) === String(prodLink.orderId));
+      
+      const existingRolls = existingRecord?.outputRolls || [];
+      const updatedRolls = [...existingRolls, ...(rolls || [])];
+      const totalOutputKg = updatedRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
+
+      const updatedRecord = {
+        ...(existingRecord || {
+          id: `PROD-${prodLink.orderId}-${Date.now().toString().slice(-4)}`,
+          orderId: prodLink.orderId,
+          jobName: prodLink.jobName,
+          jobCode: prodLink.jobCode,
+          operatorName: prodLink.operatorName,
+          shift: prodLink.shift,
+          productionDate: prodLink.productionDate,
+          status: 'In Progress',
+          machineName: prodLink.machineName
+        }),
+        outputRolls: updatedRolls,
+        actualOutputKg: totalOutputKg,
+        netUsableKg: totalOutputKg,
+        lastUpdated: new Date().toISOString()
+      };
+
+      onSaveProductionRecord(updatedRecord);
+    }
+
+    // 4. Open Barcode Printer Modal for all rolls
+    setSelectedRollForBarcodeModal(rolls);
+    setIsSfgFgModalOpen(false);
   };
 
   const handleCreateGRNFromPO = (po) => {
@@ -2294,6 +2355,20 @@ export default function InventoryManagement({
         />
       )}
 
+      {/* SFG & FG Master Rolls Entry Modal */}
+      {isSfgFgModalOpen && (
+        <SFGFGEntryModal 
+          mode={sfgFgModalMode}
+          orders={orders}
+          jobMasters={jobMasters}
+          inventory={inventory}
+          currentUser={currentUser}
+          onClose={() => setIsSfgFgModalOpen(false)}
+          onSave={handleSaveSFGFG}
+          onPrintRolls={(rolls) => setSelectedRollForBarcodeModal(rolls)}
+        />
+      )}
+
       {/* Dispatch Packing List PDF Modal */}
       {selectedDispatchForPackingList && (
         <DispatchPackingListPDF shipment={selectedDispatchForPackingList} onClose={() => setSelectedDispatchForPackingList(null)} />
@@ -2334,6 +2409,22 @@ export default function InventoryManagement({
           </div>
 
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <button 
+              className="btn-primary" 
+              style={{ background: '#6d28d9', borderColor: '#6d28d9', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }} 
+              onClick={() => { setSfgFgModalMode('SFG'); setIsSfgFgModalOpen(true); }}
+              title="Create Semi-Finished Goods (SFG) master rolls linked to active job"
+            >
+              <Layers size={16} /> + Add SFG
+            </button>
+            <button 
+              className="btn-primary" 
+              style={{ background: '#059669', borderColor: '#059669', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }} 
+              onClick={() => { setSfgFgModalMode('FG'); setIsSfgFgModalOpen(true); }}
+              title="Create Finished Goods (FG) master rolls ready for slitting / dispatch"
+            >
+              <Package size={16} /> + Add FG
+            </button>
             <button className="btn-secondary" onClick={() => openIssueReturnModal('issue')}>
               <ArrowUpRight size={16} /> Issue / Return to Store
             </button>
