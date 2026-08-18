@@ -65,7 +65,6 @@ export default function SFGFGEntryModal({
 
   // Active Job Selector
   const [selectedJobId, setSelectedJobId] = useState('');
-  const [jobSearchTerm, setJobSearchTerm] = useState('');
 
   // SFG/FG Specifics
   const [selectedType, setSelectedType] = useState(isSFG ? SFG_TYPES[0] : FG_TYPES[0]);
@@ -184,7 +183,6 @@ export default function SFGFGEntryModal({
     const prefix = isSFG ? 'SFG' : 'FG';
     const subCode = getSubtypeShortCode(typeStr);
     const cleanJobCode = (jobCode || 'JOB').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-    const datePart = new Date().toISOString().slice(2, 10).replace(/-/g, '');
     const rollNumStr = String(rollIdx).padStart(2, '0');
     return `${prefix}-${subCode}-${cleanJobCode}-R${rollNumStr}`;
   };
@@ -407,16 +405,43 @@ export default function SFGFGEntryModal({
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose} style={{ zIndex: 1100 }}>
+    <div 
+      className="modal-overlay" 
+      onClick={onClose} 
+      style={{ 
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 1200,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '16px',
+        background: 'rgba(15, 23, 42, 0.7)',
+        backdropFilter: 'blur(6px)'
+      }}
+    >
       <div 
-        className="glass-card modal-content" 
-        style={{ width: '920px', maxWidth: '96vw', maxHeight: '92vh', overflowY: 'auto', padding: '24px', borderRadius: '12px' }} 
+        className="modal-content" 
+        style={{ 
+          width: '100%', 
+          maxWidth: '960px', 
+          maxHeight: '90vh', 
+          overflowY: 'auto', 
+          padding: 'clamp(16px, 2.5vw, 24px)', 
+          borderRadius: '12px',
+          background: '#ffffff',
+          boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.35)',
+          margin: 'auto'
+        }} 
         onClick={e => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', borderBottom: '1px solid var(--border-color)', paddingBottom: '14px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <span className="badge" style={{ 
                 background: isSFG ? '#ede9fe' : '#fef3c7', 
                 color: isSFG ? '#6d28d9' : '#b45309', 
@@ -427,11 +452,11 @@ export default function SFGFGEntryModal({
               }}>
                 {isSFG ? '📦 SEMI-FINISHED (SFG)' : '🏆 FINISHED GOODS (FG)'}
               </span>
-              <h3 style={{ margin: 0, fontSize: '1.3rem', fontWeight: '800', color: '#0f172a' }}>
+              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800', color: '#0f172a' }}>
                 {title}
               </h3>
             </div>
-            <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '4px 0 0 0' }}>
+            <p style={{ fontSize: '0.78rem', color: '#64748b', margin: '4px 0 0 0' }}>
               Weigh master rolls on digital scale, generate 2D barcodes, and automatically link output to active Job & Production Records.
             </p>
           </div>
@@ -443,12 +468,12 @@ export default function SFGFGEntryModal({
 
         <form onSubmit={handleSaveAndSubmit}>
           {/* Section 1: Active Job & Classification */}
-          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
-            <div style={{ fontSize: '0.82rem', fontWeight: '800', textTransform: 'uppercase', color: '#475569', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '14px', marginBottom: '14px' }}>
+            <div style={{ fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', color: '#475569', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Building2 size={15} style={{ color: '#4f46e5' }} /> 1. Active Production Job & Stage Classification
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '14px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
               {/* Job Selector */}
               <div>
                 <label className="form-label" style={{ fontWeight: '700', fontSize: '0.82rem', marginBottom: '4px', display: 'block' }}>
@@ -456,7 +481,7 @@ export default function SFGFGEntryModal({
                 </label>
                 <select 
                   className="form-control" 
-                  style={{ fontWeight: '700', fontSize: '0.9rem', color: '#0f172a' }}
+                  style={{ fontWeight: '700', fontSize: '0.88rem', color: '#0f172a', width: '100%' }}
                   value={selectedJobId} 
                   onChange={e => setSelectedJobId(e.target.value)}
                   required
@@ -469,7 +494,7 @@ export default function SFGFGEntryModal({
                 </select>
 
                 {currentJob && (
-                  <div style={{ display: 'flex', gap: '12px', fontSize: '0.75rem', color: '#475569', marginTop: '6px', background: '#ffffff', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 12px', fontSize: '0.75rem', color: '#475569', marginTop: '6px', background: '#ffffff', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                     <span>Client: <strong>{currentJob.clientName}</strong></span>
                     <span>Structure: <strong>{currentJob.structure}</strong></span>
                     <span>Width: <strong>{currentJob.widthMm} mm</strong></span>
@@ -485,7 +510,7 @@ export default function SFGFGEntryModal({
                 </label>
                 <select 
                   className="form-control" 
-                  style={{ fontWeight: '700', fontSize: '0.88rem', color: isSFG ? '#6d28d9' : '#b45309' }}
+                  style={{ fontWeight: '700', fontSize: '0.88rem', color: isSFG ? '#6d28d9' : '#b45309', width: '100%' }}
                   value={selectedType} 
                   onChange={e => setSelectedType(e.target.value)}
                   required
@@ -498,14 +523,14 @@ export default function SFGFGEntryModal({
             </div>
 
             {/* Plant Machine, Operator & Shift */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1fr', gap: '12px', marginTop: '12px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginTop: '12px' }}>
               <div>
-                <label className="form-label" style={{ fontWeight: '600', fontSize: '0.8rem', marginBottom: '4px', display: 'block' }}>
+                <label className="form-label" style={{ fontWeight: '600', fontSize: '0.78rem', marginBottom: '4px', display: 'block' }}>
                   Production Machine / Press
                 </label>
                 <select 
                   className="form-control" 
-                  style={{ fontSize: '0.82rem' }}
+                  style={{ fontSize: '0.8rem', width: '100%' }}
                   value={machineName} 
                   onChange={e => setMachineName(e.target.value)}
                 >
@@ -516,13 +541,13 @@ export default function SFGFGEntryModal({
               </div>
 
               <div>
-                <label className="form-label" style={{ fontWeight: '600', fontSize: '0.8rem', marginBottom: '4px', display: 'block' }}>
+                <label className="form-label" style={{ fontWeight: '600', fontSize: '0.78rem', marginBottom: '4px', display: 'block' }}>
                   Machine Operator
                 </label>
                 <input 
                   type="text" 
                   className="form-control" 
-                  style={{ fontSize: '0.82rem' }}
+                  style={{ fontSize: '0.8rem', width: '100%' }}
                   placeholder="Operator Name" 
                   value={operatorName} 
                   onChange={e => setOperatorName(e.target.value)}
@@ -530,12 +555,12 @@ export default function SFGFGEntryModal({
               </div>
 
               <div>
-                <label className="form-label" style={{ fontWeight: '600', fontSize: '0.8rem', marginBottom: '4px', display: 'block' }}>
+                <label className="form-label" style={{ fontWeight: '600', fontSize: '0.78rem', marginBottom: '4px', display: 'block' }}>
                   Shift
                 </label>
                 <select 
                   className="form-control" 
-                  style={{ fontSize: '0.82rem' }}
+                  style={{ fontSize: '0.8rem', width: '100%' }}
                   value={shift} 
                   onChange={e => setShift(e.target.value)}
                 >
@@ -545,13 +570,13 @@ export default function SFGFGEntryModal({
               </div>
 
               <div>
-                <label className="form-label" style={{ fontWeight: '600', fontSize: '0.8rem', marginBottom: '4px', display: 'block' }}>
+                <label className="form-label" style={{ fontWeight: '600', fontSize: '0.78rem', marginBottom: '4px', display: 'block' }}>
                   Storage Bay / Location
                 </label>
                 <input 
                   type="text" 
                   className="form-control" 
-                  style={{ fontSize: '0.82rem' }}
+                  style={{ fontSize: '0.8rem', width: '100%' }}
                   value={storageBay} 
                   onChange={e => setStorageBay(e.target.value)}
                 />
@@ -560,24 +585,24 @@ export default function SFGFGEntryModal({
           </div>
 
           {/* Section 2: Master Rolls Multi-Weighing Table */}
-          <div style={{ marginBottom: '18px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+          <div style={{ marginBottom: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
               <div>
-                <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Scale size={16} style={{ color: '#059669' }} /> 2. Master Rolls Scale Weighing & Individual 2D Barcodes ({masterRolls.length} Rolls)
+                <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Scale size={16} style={{ color: '#059669' }} /> 2. Master Rolls Scale Weighing & 2D Barcodes ({masterRolls.length} Rolls)
                 </h4>
-                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                  Each master roll is assigned a unique barcode and can be captured directly from the RS232 digital scale.
+                <span style={{ fontSize: '0.73rem', color: '#64748b' }}>
+                  Capture live scale gross weight; net weight and length are calculated automatically.
                 </span>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.78rem', color: '#475569', background: '#f1f5f9', padding: '4px 8px', borderRadius: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: '#475569', background: '#f1f5f9', padding: '4px 8px', borderRadius: '4px' }}>
                   <span>Default Core Tare:</span>
                   <input 
                     type="number" 
                     step="0.1" 
-                    style={{ width: '55px', padding: '2px 4px', fontSize: '0.78rem', fontWeight: '700', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                    style={{ width: '50px', padding: '2px 4px', fontSize: '0.75rem', fontWeight: '700', borderRadius: '4px', border: '1px solid #cbd5e1' }}
                     value={defaultTareKg}
                     onChange={e => setDefaultTareKg(parseFloat(e.target.value) || 0)}
                   />
@@ -587,7 +612,7 @@ export default function SFGFGEntryModal({
                 <button 
                   type="button" 
                   className="btn-primary" 
-                  style={{ padding: '6px 12px', fontSize: '0.78rem', background: '#047857', borderColor: '#047857' }}
+                  style={{ padding: '5px 12px', fontSize: '0.75rem', background: '#047857', borderColor: '#047857', display: 'flex', alignItems: 'center', gap: '4px' }}
                   onClick={handleAddRollRow}
                 >
                   <Plus size={13} /> Add Master Roll
@@ -595,17 +620,17 @@ export default function SFGFGEntryModal({
               </div>
             </div>
 
-            {/* Rolls Entry Table */}
-            <div style={{ overflowX: 'auto', border: '1.5px solid #e2e8f0', borderRadius: '8px' }}>
-              <table className="data-table" style={{ margin: 0, fontSize: '0.82rem' }}>
+            {/* Rolls Entry Table Container */}
+            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#ffffff' }}>
+              <table className="data-table" style={{ margin: 0, fontSize: '0.8rem', minWidth: '660px', width: '100%' }}>
                 <thead>
                   <tr style={{ background: '#f1f5f9' }}>
                     <th style={{ width: '6%', textAlign: 'center' }}>Roll #</th>
-                    <th style={{ width: '22%' }}>2D Barcode (ISO 18004)</th>
+                    <th style={{ width: '25%' }}>2D Barcode (ISO 18004)</th>
                     <th style={{ width: '18%', textAlign: 'right' }}>Scale Gross (kg)</th>
-                    <th style={{ width: '12%', textAlign: 'right' }}>Core Tare (kg)</th>
-                    <th style={{ width: '15%', textAlign: 'right' }}>Net Wt (kg)</th>
-                    <th style={{ width: '14%', textAlign: 'right' }}>Est. Length (m)</th>
+                    <th style={{ width: '11%', textAlign: 'right' }}>Core (kg)</th>
+                    <th style={{ width: '14%', textAlign: 'right' }}>Net Wt (kg)</th>
+                    <th style={{ width: '13%', textAlign: 'right' }}>Est. Length (m)</th>
                     <th style={{ width: '8%', textAlign: 'center' }}>Joints</th>
                     <th style={{ width: '5%', textAlign: 'center' }}>Action</th>
                   </tr>
@@ -621,7 +646,7 @@ export default function SFGFGEntryModal({
                         <input 
                           type="text" 
                           className="form-control" 
-                          style={{ fontFamily: 'monospace', fontSize: '0.8rem', fontWeight: '700', padding: '4px 8px' }}
+                          style={{ fontFamily: 'monospace', fontSize: '0.78rem', fontWeight: '700', padding: '3px 6px', width: '100%' }}
                           value={roll.barcodeId}
                           onChange={e => handleUpdateRoll(idx, 'barcodeId', e.target.value)}
                         />
@@ -634,7 +659,7 @@ export default function SFGFGEntryModal({
                             type="number" 
                             step="0.01" 
                             className="form-control" 
-                            style={{ width: '80px', textAlign: 'right', fontWeight: '700', padding: '4px 6px', fontSize: '0.82rem' }}
+                            style={{ width: '75px', textAlign: 'right', fontWeight: '700', padding: '3px 5px', fontSize: '0.8rem' }}
                             value={roll.grossWeightKg}
                             onChange={e => handleUpdateRoll(idx, 'grossWeightKg', e.target.value)}
                             required
@@ -651,19 +676,19 @@ export default function SFGFGEntryModal({
                           type="number" 
                           step="0.1" 
                           className="form-control" 
-                          style={{ width: '65px', textAlign: 'right', padding: '4px 6px', fontSize: '0.82rem' }}
+                          style={{ width: '55px', textAlign: 'right', padding: '3px 5px', fontSize: '0.8rem' }}
                           value={roll.tareWeightKg}
                           onChange={e => handleUpdateRoll(idx, 'tareWeightKg', e.target.value)}
                         />
                       </td>
 
                       {/* Calculated Net */}
-                      <td style={{ textAlign: 'right', fontWeight: '900', color: '#047857', fontSize: '0.9rem' }}>
+                      <td style={{ textAlign: 'right', fontWeight: '900', color: '#047857', fontSize: '0.88rem' }}>
                         {roll.netWeightKg.toFixed(2)} kg
                       </td>
 
                       {/* Length */}
-                      <td style={{ textAlign: 'right', color: '#1e3a8a', fontWeight: '700', fontSize: '0.82rem' }}>
+                      <td style={{ textAlign: 'right', color: '#1e3a8a', fontWeight: '700', fontSize: '0.8rem' }}>
                         {roll.lengthMeters.toLocaleString()} m
                       </td>
 
@@ -671,7 +696,7 @@ export default function SFGFGEntryModal({
                       <td style={{ textAlign: 'center' }}>
                         <select 
                           className="form-control" 
-                          style={{ width: '55px', padding: '3px 4px', fontSize: '0.78rem' }}
+                          style={{ width: '50px', padding: '2px 4px', fontSize: '0.75rem' }}
                           value={roll.jointCount}
                           onChange={e => handleUpdateRoll(idx, 'jointCount', parseInt(e.target.value) || 0)}
                         >
@@ -687,7 +712,7 @@ export default function SFGFGEntryModal({
                         <button 
                           type="button" 
                           className="btn-danger-action" 
-                          style={{ padding: '4px 6px' }}
+                          style={{ padding: '3px 5px' }}
                           onClick={() => handleRemoveRollRow(idx)}
                           disabled={masterRolls.length <= 1}
                         >
@@ -702,32 +727,32 @@ export default function SFGFGEntryModal({
           </div>
 
           {/* Section 3: Summary Totals & Valuation Banner */}
-          <div style={{ background: '#f0fdf4', border: '1.5px solid #86efac', borderRadius: '8px', padding: '14px', marginBottom: '18px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '14px', textAlign: 'center' }}>
+          <div style={{ background: '#f0fdf4', border: '1.5px solid #86efac', borderRadius: '8px', padding: '12px', marginBottom: '14px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', textAlign: 'center' }}>
               <div>
-                <span style={{ fontSize: '0.72rem', fontWeight: '700', color: '#065f46', textTransform: 'uppercase' }}>Total Master Rolls</span>
-                <div style={{ fontSize: '1.25rem', fontWeight: '900', color: '#047857' }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#065f46', textTransform: 'uppercase' }}>Total Master Rolls</span>
+                <div style={{ fontSize: '1.15rem', fontWeight: '900', color: '#047857' }}>
                   {masterRolls.length} Rolls
                 </div>
               </div>
 
               <div>
-                <span style={{ fontSize: '0.72rem', fontWeight: '700', color: '#065f46', textTransform: 'uppercase' }}>Total Gross Weight</span>
-                <div style={{ fontSize: '1.25rem', fontWeight: '900', color: '#1e293b' }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#065f46', textTransform: 'uppercase' }}>Total Gross Weight</span>
+                <div style={{ fontSize: '1.15rem', fontWeight: '900', color: '#1e293b' }}>
                   {totalGrossKg.toFixed(2)} kg
                 </div>
               </div>
 
               <div>
-                <span style={{ fontSize: '0.72rem', fontWeight: '700', color: '#065f46', textTransform: 'uppercase' }}>Total Net Stock Output</span>
-                <div style={{ fontSize: '1.35rem', fontWeight: '900', color: '#047857' }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#065f46', textTransform: 'uppercase' }}>Total Net Output</span>
+                <div style={{ fontSize: '1.25rem', fontWeight: '900', color: '#047857' }}>
                   {totalNetKg.toFixed(2)} kg
                 </div>
               </div>
 
               <div>
-                <span style={{ fontSize: '0.72rem', fontWeight: '700', color: '#065f46', textTransform: 'uppercase' }}>Est. Total Length</span>
-                <div style={{ fontSize: '1.25rem', fontWeight: '900', color: '#0284c7' }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#065f46', textTransform: 'uppercase' }}>Est. Total Length</span>
+                <div style={{ fontSize: '1.15rem', fontWeight: '900', color: '#0284c7' }}>
                   {totalMeters.toLocaleString()} m
                 </div>
               </div>
@@ -735,15 +760,15 @@ export default function SFGFGEntryModal({
           </div>
 
           {/* Section 4: Remarks & Valuation Rate */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '12px', marginBottom: '18px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginBottom: '16px' }}>
             <div>
-              <label className="form-label" style={{ fontWeight: '600', fontSize: '0.8rem', marginBottom: '4px', display: 'block' }}>
+              <label className="form-label" style={{ fontWeight: '600', fontSize: '0.78rem', marginBottom: '4px', display: 'block' }}>
                 Inventory Valuation Rate (₹/kg)
               </label>
               <input 
                 type="number" 
                 className="form-control" 
-                style={{ fontWeight: '700', fontSize: '0.85rem' }}
+                style={{ fontWeight: '700', fontSize: '0.82rem', width: '100%' }}
                 value={valuationRatePerKg}
                 onChange={e => setValuationRatePerKg(parseFloat(e.target.value) || 0)}
               />
@@ -753,13 +778,13 @@ export default function SFGFGEntryModal({
             </div>
 
             <div>
-              <label className="form-label" style={{ fontWeight: '600', fontSize: '0.8rem', marginBottom: '4px', display: 'block' }}>
+              <label className="form-label" style={{ fontWeight: '600', fontSize: '0.78rem', marginBottom: '4px', display: 'block' }}>
                 Batch Production Notes & Remarks
               </label>
               <input 
                 type="text" 
                 className="form-control" 
-                style={{ fontSize: '0.85rem' }}
+                style={{ fontSize: '0.82rem', width: '100%' }}
                 placeholder="e.g. Master rolls cleared visual inspection, corona treatment verified..."
                 value={batchRemarks}
                 onChange={e => setBatchRemarks(e.target.value)}
@@ -768,8 +793,8 @@ export default function SFGFGEntryModal({
           </div>
 
           {/* Modal Actions */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '14px' }}>
-            <button type="button" className="btn-secondary" onClick={onClose}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+            <button type="button" className="btn-secondary" onClick={onClose} style={{ padding: '8px 16px' }}>
               Cancel
             </button>
 
@@ -781,10 +806,11 @@ export default function SFGFGEntryModal({
                   background: isSFG ? '#6d28d9' : '#059669', 
                   borderColor: isSFG ? '#6d28d9' : '#059669', 
                   fontWeight: '800', 
-                  padding: '9px 24px',
+                  padding: '8px 20px',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '8px'
+                  gap: '8px',
+                  fontSize: '0.85rem'
                 }}
               >
                 <Printer size={15} /> Save & Print Roll Barcode Stickers ({masterRolls.length})
