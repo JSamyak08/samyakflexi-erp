@@ -17,7 +17,8 @@ import {
   Search,
   Check,
   RefreshCw,
-  Sliders
+  Sliders,
+  Ruler
 } from 'lucide-react';
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import { FILM_DENSITIES, COMPANY_DETAILS } from '../factoryStore';
@@ -48,6 +49,20 @@ export const MACHINE_OPTIONS = [
   'Pouch Making Machine #2 (Stand-Up Zipper)'
 ];
 
+export const FILM_TYPE_OPTIONS = [
+  'PET (Polyester)',
+  'BOPP (Plain / Matt)',
+  'BOPP (Met)',
+  'MET PET',
+  'CPP (Cast Polypropylene)',
+  'MET CPP',
+  'Natural LDPE',
+  'White LDPE / Milk Film',
+  'Aluminum Foil',
+  'Nylon / OPA',
+  'Paper'
+];
+
 export default function SFGFGEntryModal({
   mode = 'SFG', // 'SFG' | 'FG'
   orders = [],
@@ -62,8 +77,13 @@ export default function SFGFGEntryModal({
   const title = isSFG ? 'Create Semi-Finished Goods (SFG)' : 'Create Finished Goods (FG)';
   const categoryName = isSFG ? 'Semi-Finished Goods (SFG)' : 'Finished Goods (FG)';
 
-  // All fields start empty - NO pre-filled dummy data
+  // All inputs start blank - ZERO pre-filled dummy/seed data
   const [selectedJobId, setSelectedJobId] = useState('');
+  const [jobWidthMm, setJobWidthMm] = useState('');
+  const [jobMicron, setJobMicron] = useState('');
+  const [jobStructure, setJobStructure] = useState('');
+  const [jobFilmType, setJobFilmType] = useState('');
+  
   const [selectedType, setSelectedType] = useState('');
   const [machineName, setMachineName] = useState('');
   const [operatorName, setOperatorName] = useState('');
@@ -76,7 +96,7 @@ export default function SFGFGEntryModal({
   const [batchRemarks, setBatchRemarks] = useState('');
   const [formErrors, setFormErrors] = useState({});
 
-  // Filtered Job List from Orders & Job Masters
+  // Filtered Job List from Orders & Job Masters (Strictly real data only, zero dummy fallbacks)
   const activeJobsList = useMemo(() => {
     const jobs = [];
     const seen = new Set();
@@ -86,17 +106,23 @@ export default function SFGFGEntryModal({
       if (!seen.has(jKey)) {
         seen.add(jKey);
         const jm = (jobMasters || []).find(j => (j.jobName || '').toLowerCase().trim() === (ord.jobName || '').toLowerCase().trim());
+        
+        const realWidth = ord.printWidthMm || ord.widthMm || ord.width || ord.pouchWidthMm || ord.sizeMm || jm?.printWidthMm || jm?.pouchWidthMm || jm?.widthMm || jm?.width || '';
+        const realMicron = ord.micron || jm?.micron || jm?.totalMicron || (jm?.layers ? jm.layers.reduce((sum, l) => sum + (parseFloat(l.micron) || 0), 0) : '') || '';
+        const realStructure = ord.structure || jm?.structure || '';
+        const realFilmType = ord.filmType || jm?.filmType || jm?.layers?.[0]?.filmType || '';
+
         jobs.push({
           id: ord.id,
           orderId: ord.id,
           jobName: ord.jobName || `Job #${ord.id}`,
           jobCode: jm?.jobCode || ord.jobCode || `JOB-${ord.id}`,
-          clientName: ord.clientName || jm?.clientName || 'Client',
-          structure: jm?.structure || ord.structure || 'PET / PE',
-          plannedQtyKg: parseFloat(ord.targetQtyKg || ord.qtyKg || 1000),
-          widthMm: parseFloat(ord.widthMm || jm?.widthMm || 800),
-          micron: parseFloat(ord.micron || jm?.micron || 12),
-          filmType: ord.filmType || jm?.layers?.[0]?.filmType || 'PET'
+          clientName: ord.clientName || jm?.clientName || '',
+          structure: realStructure,
+          plannedQtyKg: parseFloat(ord.targetQtyKg || ord.qtyKg || 0),
+          widthMm: realWidth ? String(realWidth) : '',
+          micron: realMicron ? String(realMicron) : '',
+          filmType: realFilmType
         });
       }
     });
@@ -106,17 +132,20 @@ export default function SFGFGEntryModal({
         const jKey = `JM-${jm.id}-${jm.jobName}`;
         if (!seen.has(jKey)) {
           seen.add(jKey);
+          const realWidth = jm.printWidthMm || jm.pouchWidthMm || jm.widthMm || jm.width || '';
+          const realMicron = jm.micron || jm.totalMicron || (jm.layers ? jm.layers.reduce((sum, l) => sum + (parseFloat(l.micron) || 0), 0) : '') || '';
+
           jobs.push({
             id: jm.id,
             orderId: jm.id,
-            jobName: jm.jobName || 'Master Job',
+            jobName: jm.jobName || '',
             jobCode: jm.jobCode || `JOB-${jm.id}`,
-            clientName: jm.clientName || 'Client',
-            structure: jm.structure || 'PET / PE',
-            plannedQtyKg: 1000,
-            widthMm: parseFloat(jm.widthMm || 800),
-            micron: parseFloat(jm.micron || 12),
-            filmType: jm.layers?.[0]?.filmType || 'PET'
+            clientName: jm.clientName || '',
+            structure: jm.structure || '',
+            plannedQtyKg: 0,
+            widthMm: realWidth ? String(realWidth) : '',
+            micron: realMicron ? String(realMicron) : '',
+            filmType: jm.filmType || jm.layers?.[0]?.filmType || ''
           });
         }
       });
@@ -125,11 +154,32 @@ export default function SFGFGEntryModal({
     return jobs;
   }, [orders, jobMasters]);
 
-  // Selected Job Object (Null when not selected)
+  // Selected Job Object
   const currentJob = useMemo(() => {
     if (!selectedJobId) return null;
     return activeJobsList.find(j => String(j.id) === String(selectedJobId)) || null;
   }, [activeJobsList, selectedJobId]);
+
+  // When a job is selected, sync its dimensions into editable state
+  const handleJobSelect = (jobId) => {
+    setSelectedJobId(jobId);
+    if (formErrors.selectedJobId) {
+      setFormErrors(prev => ({ ...prev, selectedJobId: null }));
+    }
+
+    const job = activeJobsList.find(j => String(j.id) === String(jobId));
+    if (job) {
+      setJobWidthMm(job.widthMm || '');
+      setJobMicron(job.micron || '');
+      setJobStructure(job.structure || '');
+      setJobFilmType(job.filmType || '');
+    } else {
+      setJobWidthMm('');
+      setJobMicron('');
+      setJobStructure('');
+      setJobFilmType('');
+    }
+  };
 
   // Subtype Code Helper for Barcodes
   const getSubtypeShortCode = (typeStr) => {
@@ -142,12 +192,13 @@ export default function SFGFGEntryModal({
     return isSFG ? 'SFG' : 'FG';
   };
 
-  // Helper to calculate roll length in meters
+  // Helper to calculate roll length in meters based on user's actual entered width & micron
   const calculateLength = (netKg, width, micron, filmType) => {
-    const w = parseFloat(width || currentJob?.widthMm || 0);
-    const m = parseFloat(micron || currentJob?.micron || 0);
+    const w = parseFloat(width || jobWidthMm || 0);
+    const m = parseFloat(micron || jobMicron || 0);
     const wt = parseFloat(netKg);
-    const density = FILM_DENSITIES[filmType || currentJob?.filmType] || 1.40;
+    const densityKey = filmType || jobFilmType || 'PET';
+    const density = FILM_DENSITIES[densityKey] || 1.40;
     if (w > 0 && m > 0 && wt > 0 && density > 0) {
       return Math.round((wt * 1000000) / (w * m * density));
     }
@@ -181,16 +232,16 @@ export default function SFGFGEntryModal({
     return `${prefix}-${subCode}-${cleanJobCode}-R${rollNumStr}`;
   };
 
-  // Sync Roll Barcodes & dimensions when Job or Type changes
+  // Sync Roll Barcodes & dimensions when Job, dimensions or Type changes
   useEffect(() => {
     if (!currentJob) return;
     setMasterRolls(prev => prev.map((r, i) => {
       const gross = parseFloat(r.grossWeightKg) || 0;
       const tare = r.tareWeightKg !== '' ? parseFloat(r.tareWeightKg) : (parseFloat(defaultTareKg) || 0);
       const net = Math.max(0, gross - tare);
-      const width = parseFloat(currentJob.widthMm) || 0;
-      const micron = parseFloat(currentJob.micron) || 0;
-      const len = calculateLength(net, width, micron, currentJob.filmType);
+      const width = parseFloat(jobWidthMm) || 0;
+      const micron = parseFloat(jobMicron) || 0;
+      const len = calculateLength(net, width, micron, jobFilmType);
       const autoBarcode = generateRollBarcode(i + 1, currentJob.jobCode, selectedType);
 
       return {
@@ -198,12 +249,12 @@ export default function SFGFGEntryModal({
         rollIndex: i + 1,
         barcodeId: r.isBarcodeCustom ? r.barcodeId : autoBarcode,
         netWeightKg: gross > 0 ? parseFloat(net.toFixed(2)) : 0,
-        widthMm: width,
-        micron: micron,
+        widthMm: width || '',
+        micron: micron || '',
         lengthMeters: len
       };
     }));
-  }, [currentJob, selectedType, defaultTareKg]);
+  }, [currentJob, selectedType, defaultTareKg, jobWidthMm, jobMicron, jobFilmType]);
 
   // Roll Modification Handlers
   const handleUpdateRoll = (index, field, value) => {
@@ -218,7 +269,7 @@ export default function SFGFGEntryModal({
         
         if (gross > 0) {
           roll.netWeightKg = Math.max(0, parseFloat((gross - tare).toFixed(2)));
-          roll.lengthMeters = calculateLength(roll.netWeightKg, roll.widthMm, roll.micron, currentJob?.filmType);
+          roll.lengthMeters = calculateLength(roll.netWeightKg, jobWidthMm, jobMicron, jobFilmType);
         } else {
           roll.netWeightKg = 0;
           roll.lengthMeters = 0;
@@ -238,8 +289,6 @@ export default function SFGFGEntryModal({
   const handleAddRollRow = () => {
     const nextIdx = masterRolls.length + 1;
     const autoBarcode = currentJob ? generateRollBarcode(nextIdx, currentJob.jobCode, selectedType) : '';
-    const width = parseFloat(currentJob?.widthMm) || '';
-    const micron = parseFloat(currentJob?.micron) || '';
     const tare = defaultTareKg !== '' ? defaultTareKg : '';
 
     setMasterRolls(prev => [
@@ -251,8 +300,8 @@ export default function SFGFGEntryModal({
         grossWeightKg: '',
         tareWeightKg: tare,
         netWeightKg: 0,
-        widthMm: width,
-        micron: micron,
+        widthMm: jobWidthMm || '',
+        micron: jobMicron || '',
         lengthMeters: 0,
         jointCount: 0,
         qcStatus: 'Passed',
@@ -288,8 +337,14 @@ export default function SFGFGEntryModal({
     if (!selectedJobId) {
       errors.selectedJobId = "Please select an active production job.";
     }
+    if (!jobWidthMm || parseFloat(jobWidthMm) <= 0) {
+      errors.jobWidthMm = "Please enter valid roll width in mm (> 0).";
+    }
+    if (!jobMicron || parseFloat(jobMicron) <= 0) {
+      errors.jobMicron = "Please enter valid film micron (> 0).";
+    }
     if (!selectedType) {
-      errors.selectedType = "Please select the process type.";
+      errors.selectedType = "Please select the process stage type.";
     }
     if (!machineName) {
       errors.machineName = "Please select the production machine.";
@@ -340,10 +395,10 @@ export default function SFGFGEntryModal({
       jobCode: currentJob.jobCode,
       orderId: currentJob.orderId,
       clientName: currentJob.clientName,
-      structure: currentJob.structure,
-      filmType: currentJob.filmType,
-      micron: currentJob.micron,
-      widthMm: currentJob.widthMm,
+      structure: jobStructure || currentJob.structure,
+      filmType: jobFilmType || currentJob.filmType,
+      micron: parseFloat(jobMicron) || 0,
+      widthMm: parseFloat(jobWidthMm) || 0,
       availableQtyKg: totalNetKg,
       totalQtyKg: totalNetKg,
       unitPrice: parsedValuationRate,
@@ -377,10 +432,10 @@ export default function SFGFGEntryModal({
         jobCode: currentJob.jobCode,
         orderId: currentJob.orderId,
         clientName: currentJob.clientName,
-        structure: currentJob.structure,
-        filmType: currentJob.filmType,
-        widthMm: r.widthMm,
-        micron: r.micron,
+        structure: jobStructure || currentJob.structure,
+        filmType: jobFilmType || currentJob.filmType,
+        widthMm: parseFloat(jobWidthMm) || 0,
+        micron: parseFloat(jobMicron) || 0,
         grossWeightKg: parseFloat(r.grossWeightKg) || 0,
         tareWeightKg: parseFloat(r.tareWeightKg) || 0,
         netWeightKg: parseFloat(r.netWeightKg) || 0,
@@ -419,7 +474,9 @@ export default function SFGFGEntryModal({
       operatorName: operatorName.trim(),
       shift,
       productionDate,
-      storageBay
+      storageBay,
+      widthMm: parseFloat(jobWidthMm) || 0,
+      micron: parseFloat(jobMicron) || 0
     };
 
     if (onSave) {
@@ -486,7 +543,7 @@ export default function SFGFGEntryModal({
               </h3>
             </div>
             <p style={{ fontSize: '0.78rem', color: '#64748b', margin: '4px 0 0 0' }}>
-              Enter production details and weigh master rolls on the scale. All inputs must be entered by operator.
+              Select production job, verify exact physical dimensions, and capture master rolls from the digital scale.
             </p>
           </div>
 
@@ -512,30 +569,21 @@ export default function SFGFGEntryModal({
                   className="form-control" 
                   style={{ fontWeight: selectedJobId ? '700' : '400', fontSize: '0.88rem', color: selectedJobId ? '#0f172a' : '#94a3b8', width: '100%', borderColor: formErrors.selectedJobId ? '#ef4444' : undefined }}
                   value={selectedJobId} 
-                  onChange={e => {
-                    setSelectedJobId(e.target.value);
-                    if (formErrors.selectedJobId) setFormErrors(prev => ({ ...prev, selectedJobId: null }));
-                  }}
+                  onChange={e => handleJobSelect(e.target.value)}
                   required
                 >
                   <option value="">-- Select Active Production Job / Order * --</option>
                   {activeJobsList.map(j => (
                     <option key={j.id} value={j.id}>
-                      {j.jobName} ({j.clientName}) • {j.structure} • Code: {j.jobCode}
+                      {j.jobName} {j.clientName ? `(${j.clientName})` : ''} {j.structure ? `• ${j.structure}` : ''} • Code: {j.jobCode}
                     </option>
                   ))}
                 </select>
 
-                {currentJob ? (
+                {currentJob && (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 12px', fontSize: '0.75rem', color: '#475569', marginTop: '6px', background: '#ffffff', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                    <span>Client: <strong>{currentJob.clientName}</strong></span>
-                    <span>Structure: <strong>{currentJob.structure}</strong></span>
-                    <span>Width: <strong>{currentJob.widthMm} mm</strong></span>
-                    <span>Micron: <strong>{currentJob.micron} µ</strong></span>
-                  </div>
-                ) : (
-                  <div style={{ fontSize: '0.73rem', color: '#94a3b8', marginTop: '4px' }}>
-                    ⚠️ Select a job to load structure and auto-configure roll barcodes
+                    <span>Client: <strong>{currentJob.clientName || '—'}</strong></span>
+                    <span>Structure: <strong>{currentJob.structure || '—'}</strong></span>
                   </div>
                 )}
                 {formErrors.selectedJobId && (
@@ -573,7 +621,80 @@ export default function SFGFGEntryModal({
               </div>
             </div>
 
-            {/* Plant Machine, Operator & Shift */}
+            {/* Technical Job Specifications: Real Width, Micron & Film Type */}
+            <div style={{ marginTop: '12px', background: '#ffffff', padding: '12px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+              <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#1e293b', marginBottom: '8px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Ruler size={14} style={{ color: '#0284c7' }} /> Technical Roll Dimensions (Used for Meter Calculation)
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px' }}>
+                <div>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.76rem', marginBottom: '3px', display: 'block' }}>
+                    Roll Width (mm) <span style={{ color: '#dc2626' }}>*</span>
+                  </label>
+                  <input 
+                    type="number" 
+                    step="1"
+                    className="form-control" 
+                    style={{ fontSize: '0.82rem', fontWeight: '700', width: '100%', borderColor: formErrors.jobWidthMm ? '#ef4444' : undefined }}
+                    placeholder="Enter Width mm *"
+                    value={jobWidthMm} 
+                    onChange={e => {
+                      setJobWidthMm(e.target.value);
+                      if (formErrors.jobWidthMm) setFormErrors(prev => ({ ...prev, jobWidthMm: null }));
+                    }}
+                    required
+                  />
+                  {formErrors.jobWidthMm && (
+                    <div style={{ fontSize: '0.7rem', color: '#dc2626', marginTop: '2px' }}>
+                      {formErrors.jobWidthMm}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.76rem', marginBottom: '3px', display: 'block' }}>
+                    Total Micron (µ) <span style={{ color: '#dc2626' }}>*</span>
+                  </label>
+                  <input 
+                    type="number" 
+                    step="0.1"
+                    className="form-control" 
+                    style={{ fontSize: '0.82rem', fontWeight: '700', width: '100%', borderColor: formErrors.jobMicron ? '#ef4444' : undefined }}
+                    placeholder="Enter Micron µ *"
+                    value={jobMicron} 
+                    onChange={e => {
+                      setJobMicron(e.target.value);
+                      if (formErrors.jobMicron) setFormErrors(prev => ({ ...prev, jobMicron: null }));
+                    }}
+                    required
+                  />
+                  {formErrors.jobMicron && (
+                    <div style={{ fontSize: '0.7rem', color: '#dc2626', marginTop: '2px' }}>
+                      {formErrors.jobMicron}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.76rem', marginBottom: '3px', display: 'block' }}>
+                    Film Substrate Density
+                  </label>
+                  <select 
+                    className="form-control" 
+                    style={{ fontSize: '0.82rem', width: '100%' }}
+                    value={jobFilmType} 
+                    onChange={e => setJobFilmType(e.target.value)}
+                  >
+                    <option value="">-- Select Film Density --</option>
+                    {Object.keys(FILM_DENSITIES).map(f => (
+                      <option key={f} value={f}>{f} (Density: {FILM_DENSITIES[f]})</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Plant Machine, Operator, Shift & Bay */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginTop: '12px' }}>
               <div>
                 <label className="form-label" style={{ fontWeight: '600', fontSize: '0.78rem', marginBottom: '4px', display: 'block' }}>
@@ -692,8 +813,8 @@ export default function SFGFGEntryModal({
                   <input 
                     type="number" 
                     step="0.1" 
-                    placeholder="e.g. 5"
-                    style={{ width: '60px', padding: '2px 4px', fontSize: '0.75rem', fontWeight: '700', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                    placeholder="Tare kg"
+                    style={{ width: '65px', padding: '2px 4px', fontSize: '0.75rem', fontWeight: '700', borderRadius: '4px', border: '1px solid #cbd5e1' }}
                     value={defaultTareKg}
                     onChange={e => setDefaultTareKg(e.target.value)}
                   />
