@@ -102,14 +102,25 @@ export function getRouteFromUrl() {
         params[key] = val;
       });
 
-      // Parse hash params if hash exists e.g. #/job-masters?id=JOB-001 or #job-masters?id=JOB-001
+      // Parse hash params if hash exists e.g. #/production-records?id=REC-001 or #production-records/REC-001
       const rawHash = window.location.hash ? window.location.hash.replace(/^#\/?/, '') : '';
       if (rawHash) {
         const hashParts = rawHash.split('?');
-        const hashSlug = hashParts[0].replace(/\/$/, '');
-        if (SLUG_TAB_MAP[hashSlug] || SLUG_TAB_MAP['/' + hashSlug]) {
-          tab = SLUG_TAB_MAP[hashSlug] || SLUG_TAB_MAP['/' + hashSlug];
+        const hashPath = hashParts[0].replace(/\/$/, '');
+        const hashSegments = hashPath.split('/').filter(Boolean);
+
+        if (hashSegments.length > 0) {
+          const rootSlug = '/' + hashSegments[0].toLowerCase();
+          if (SLUG_TAB_MAP[rootSlug] || SLUG_TAB_MAP[hashSegments[0]]) {
+            tab = SLUG_TAB_MAP[rootSlug] || SLUG_TAB_MAP[hashSegments[0]];
+            if (hashSegments[1] && !params.id) {
+              params.id = decodeURIComponent(hashSegments[1]);
+            }
+          }
+        } else if (SLUG_TAB_MAP[hashPath] || SLUG_TAB_MAP['/' + hashPath]) {
+          tab = SLUG_TAB_MAP[hashPath] || SLUG_TAB_MAP['/' + hashPath];
         }
+
         if (hashParts[1]) {
           const hashSearchParams = new URLSearchParams(hashParts[1]);
           hashSearchParams.forEach((val, key) => {
@@ -124,11 +135,23 @@ export function getRouteFromUrl() {
       } else if (params.page && SLUG_TAB_MAP[params.page]) {
         tab = SLUG_TAB_MAP[params.page];
       } else if (!window.location.hash) {
-        // Check pathname e.g. /job-masters or /orders
+        // Check pathname e.g. /production-records/REC-2026-001 or /job-masters/JOB-001
         const rawPath = window.location.pathname ? window.location.pathname.toLowerCase() : '/';
-        const path = rawPath.length > 1 ? rawPath.replace(/\/$/, '') : rawPath;
-        if (SLUG_TAB_MAP[path]) {
-          tab = SLUG_TAB_MAP[path];
+        const pathSegments = rawPath.split('/').filter(Boolean);
+
+        if (pathSegments.length > 0) {
+          const rootSlug = '/' + pathSegments[0];
+          if (SLUG_TAB_MAP[rootSlug] || SLUG_TAB_MAP[pathSegments[0]]) {
+            tab = SLUG_TAB_MAP[rootSlug] || SLUG_TAB_MAP[pathSegments[0]];
+            if (pathSegments[1] && !params.id) {
+              params.id = decodeURIComponent(pathSegments[1]);
+            }
+          }
+        } else {
+          const path = rawPath.length > 1 ? rawPath.replace(/\/$/, '') : rawPath;
+          if (SLUG_TAB_MAP[path]) {
+            tab = SLUG_TAB_MAP[path];
+          }
         }
       }
     }
@@ -149,11 +172,12 @@ export function getSlugForTab(tabKey) {
 }
 
 /**
- * Update browser URL path & query string with history.pushState
- * @param {string} tabKey - Page tab key e.g. 'job_masters'
- * @param {Object} queryParams - Optional query params e.g. { id: 'JOB-001', tab: 'grn_inward' }
+ * Update browser URL path & query string with history.pushState or history.replaceState
+ * @param {string} tabKey - Page tab key e.g. 'production_records'
+ * @param {Object} queryParams - Optional query params e.g. { id: 'REC-001', tab: 'list' }
+ * @param {boolean} replace - Use replaceState instead of pushState if true
  */
-export function pushSlugState(tabKey, queryParams = {}) {
+export function pushSlugState(tabKey, queryParams = {}, replace = false) {
   try {
     const targetSlug = getSlugForTab(tabKey);
     const searchParams = new URLSearchParams();
@@ -167,8 +191,12 @@ export function pushSlugState(tabKey, queryParams = {}) {
     const searchStr = searchParams.toString();
     const finalUrl = targetSlug + (searchStr ? `?${searchStr}` : '');
 
-    if (typeof window !== 'undefined' && window.history && window.history.pushState) {
-      window.history.pushState({ tab: tabKey, params: queryParams }, '', finalUrl);
+    if (typeof window !== 'undefined' && window.history) {
+      if (replace && window.history.replaceState) {
+        window.history.replaceState({ tab: tabKey, params: queryParams }, '', finalUrl);
+      } else if (window.history.pushState) {
+        window.history.pushState({ tab: tabKey, params: queryParams }, '', finalUrl);
+      }
     }
   } catch (e) {
     console.warn("Failed to push state to history", e);

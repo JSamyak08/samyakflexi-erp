@@ -31,6 +31,7 @@ import CylinderJobCardForm from '../CylinderJobCardForm';
 import SFGFGEntryModal from './SFGFGEntryModal';
 import { DEFAULT_DAILY_RATES, generateBarcodeId } from '../factoryStore';
 import { notifyProductionRecordSubmitted, notifyProductionRecordApproved, notifyOverWastageAlert } from '../services/emailService';
+import { pushSlugState } from '../utils/slugRouter';
 
 export default function ProductionRecordManagement({
   urlParams = {},
@@ -49,29 +50,6 @@ export default function ProductionRecordManagement({
   onAddRoll
 }) {
   const [searchTerm, setSearchTerm] = useState('');
-
-  React.useEffect(() => {
-    if (urlParams && urlParams.id) {
-      setSearchTerm(urlParams.id);
-    }
-  }, [urlParams?.id]);
-  // Helper: derive substrate structure from Job Master layers (authoritative source)
-  const getSubstrateStructure = (order) => {
-    if (!order) return '—';
-    const jm = jobMasters.find(j =>
-      (j.jobName || '').toLowerCase().trim() === (order.jobName || '').toLowerCase().trim()
-    );
-    if (jm && jm.layers && jm.layers.length > 0) {
-      return jm.layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
-    }
-    if (jm && jm.structure && jm.structure !== 'PET / PE' && jm.structure !== '—') {
-      return jm.structure;
-    }
-    if (order.structure && order.structure !== 'PET / PE' && order.structure !== '—') {
-      return order.structure;
-    }
-    return jm?.structure || order.structure || '—';
-  };
   const isPlantManager = currentUser?.role === 'Plant Manager' || currentUser?.role === 'Admin' || currentUser?.role === 'Production Manager';
   const isAdmin = currentUser?.role === 'Admin';
 
@@ -109,25 +87,6 @@ export default function ProductionRecordManagement({
   const [laminateWastageKg, setLaminateWastageKg] = useState(0);
   const [trimWastageKg, setTrimWastageKg] = useState(0);
 
-  // Scrap Disposal Transactions State
-  const [scrapDisposals, setScrapDisposals] = useState(() => {
-    try {
-      const saved = localStorage.getItem('samyak_erp_scrap_disposals');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
-  });
-
-  const [isDisposeModalOpen, setIsDisposeModalOpen] = useState(false);
-  const [disposeCategory, setDisposeCategory] = useState('Printing Plain Setting (kg)');
-  const [disposeQtyKg, setDisposeQtyKg] = useState('');
-  const [disposeVendor, setDisposeVendor] = useState('');
-  const [disposeRefNo, setDisposeRefNo] = useState('');
-  const [disposeNotes, setDisposeNotes] = useState('');
-
-  const [recordNotes, setRecordNotes] = useState('');
-
   // Helper to open 'Start Production' for a specific punched job/order — pulls actual store issues & Job Master
   const handleStartProductionForOrder = (ord) => {
     setSelectedOrder(ord);
@@ -154,6 +113,7 @@ export default function ProductionRecordManagement({
       setTrimWastageKg(existingRec.trimWastageKg || 0);
       setRecordNotes(existingRec.notes || '');
       setActiveTab('new_record');
+      pushSlugState('production_records', { id: existingRec.id, tab: 'list' });
       return;
     }
 
@@ -165,7 +125,6 @@ export default function ProductionRecordManagement({
     );
 
     if (jobTxList.length > 0) {
-      // Group by item to create material list from actual store issues
       const matMap = new Map();
       jobTxList.forEach(tx => {
         const key = tx.itemId || tx.itemName || tx.filmType;
@@ -198,42 +157,43 @@ export default function ProductionRecordManagement({
             netConsumedQtyKg: net,
             unitPricePerKg: rate,
             totalMaterialCost: net * rate,
-            jobMasterFilmType: tx.filmType || tx.itemName,
-            jobMasterMicron: tx.micron && tx.micron !== '-' ? Number(tx.micron) : 0,
-            jobMasterWidthMm: tx.widthMm && tx.widthMm !== '-' ? Number(tx.widthMm) : 0
+            wastagePct: 0
           });
         }
       });
       setMaterialsList(Array.from(matMap.values()));
     } else {
-      // Check Job Master layers for structure benchmark, with clean 0 initial quantities
-      const matchedJM = jobMasters.find(j => 
-        (j.jobName || '').toLowerCase().trim() === (ord.jobName || '').toLowerCase().trim() ||
-        (j.skuCode || '').toLowerCase().trim() === (ord.id || '').toLowerCase().trim()
+      const jm = (jobMasters || []).find(j => 
+        (j.jobName || '').toLowerCase().trim() === (ord.jobName || '').toLowerCase().trim()
       );
-
-      if (matchedJM && matchedJM.layers && matchedJM.layers.length > 0) {
-        const targetWidth = matchedJM.printWidthMm ? String(matchedJM.printWidthMm) : (ord.printWidthMm ? String(ord.printWidthMm) : '');
-        const initialMaterials = matchedJM.layers.map((l, idx) => ({
-          id: String(idx + 1),
-          filmType: l.filmType || 'PET Film',
-          micron: l.micron ? String(l.micron) : '',
-          widthMm: targetWidth,
-          barcode: '',
-          issueQtyKg: 0,
-          returnQtyKg: 0,
-          unitPricePerKg: parseFloat(l.rate) || DEFAULT_DAILY_RATES[l.filmType] || 125,
-          jobMasterFilmType: l.filmType || 'PET Film',
-          jobMasterMicron: l.micron ? Number(l.micron) : 0,
-          jobMasterWidthMm: Number(targetWidth) || 0
-        }));
-        setMaterialsList(initialMaterials);
+      if (jm && jm.layers && jm.layers.length > 0) {
+        const generatedList = jm.layers.map((layer, idx) => {
+          const estimatedRollWeightKg = Math.round((ord.orderQtyKg || 1000) / jm.layers.length);
+          const defaultRate = DEFAULT_DAILY_RATES[layer.filmType] || 140;
+          return {
+            id: `mat-${Date.now()}-${idx + 1}`,
+            itemId: `RM-${layer.filmType.substring(0, 3).toUpperCase()}-${idx + 1}`,
+            itemCode: `RM-${layer.filmType.substring(0, 3).toUpperCase()}-${idx + 1}`,
+            itemName: `${layer.filmType} ${layer.micron}µ (${layer.widthMm || '800'}mm)`,
+            filmType: layer.filmType,
+            micron: layer.micron,
+            widthMm: layer.widthMm || '800',
+            unit: 'Kg',
+            barcode: '',
+            issueQtyKg: estimatedRollWeightKg,
+            returnQtyKg: 0,
+            netConsumedQtyKg: estimatedRollWeightKg,
+            unitPricePerKg: defaultRate,
+            totalMaterialCost: estimatedRollWeightKg * defaultRate,
+            wastagePct: 0
+          };
+        });
+        setMaterialsList(generatedList);
       } else {
         setMaterialsList([]);
       }
     }
 
-    // Initialize Stage Production Quantities cleanly (zeroed)
     setQtyFirstPassL1(0);
     setQtySecondPassL2(0);
     setQtyInspection(0);
@@ -246,9 +206,184 @@ export default function ProductionRecordManagement({
     setLaminateWastageKg(0);
     setTrimWastageKg(0);
     setRecordNotes('');
-
     setActiveTab('new_record');
+    pushSlugState('production_records', { orderId: ord.id, tab: 'new_record' });
   };
+
+  const handleSelectRecord = (rec) => {
+    setSelectedRecord(rec);
+    pushSlugState('production_records', { id: rec.id, tab: 'list' });
+  };
+
+  const handleCloseRecord = () => {
+    setSelectedRecord(null);
+    pushSlugState('production_records', { tab: activeTab === 'new_record' ? 'punched_jobs' : activeTab });
+  };
+
+  const handleTabSwitch = (newTab) => {
+    setActiveTab(newTab);
+    setSelectedRecord(null);
+    pushSlugState('production_records', { tab: newTab });
+  };
+
+  const handleOpenSfgModal = () => {
+    setSfgFgModalMode('SFG');
+    setIsSfgFgModalOpen(true);
+    pushSlugState('production_records', { 
+      tab: activeTab, 
+      action: 'add_sfg', 
+      ...(selectedRecord ? { id: selectedRecord.id } : (selectedOrder ? { orderId: selectedOrder.id } : {})) 
+    });
+  };
+
+  const handleOpenFgModal = () => {
+    setSfgFgModalMode('FG');
+    setIsSfgFgModalOpen(true);
+    pushSlugState('production_records', { 
+      tab: activeTab, 
+      action: 'add_fg', 
+      ...(selectedRecord ? { id: selectedRecord.id } : (selectedOrder ? { orderId: selectedOrder.id } : {})) 
+    });
+  };
+
+  const handleCloseSfgFgModal = () => {
+    setIsSfgFgModalOpen(false);
+    pushSlugState('production_records', { 
+      tab: activeTab, 
+      ...(selectedRecord ? { id: selectedRecord.id } : (selectedOrder ? { orderId: selectedOrder.id } : {})) 
+    });
+  };
+
+  const handleReviewJobCard = (cardData) => {
+    setActiveJobCardData(cardData);
+    pushSlugState('production_records', { tab: 'job_cards', jobCardId: cardData.skuCode || cardData.jobMasterId });
+  };
+
+  const handleCloseJobCard = () => {
+    setActiveJobCardData(null);
+    pushSlugState('production_records', { tab: 'job_cards' });
+  };
+
+  // Comprehensive Deep-Link Synchronization on mount & URL changes
+  React.useEffect(() => {
+    if (!urlParams || Object.keys(urlParams).length === 0) return;
+
+    // 1. Sub-tab resolution
+    if (urlParams.tab) {
+      if (['punched_jobs', 'list', 'new_record', 'job_cards', 'scrap_inventory'].includes(urlParams.tab)) {
+        setActiveTab(urlParams.tab);
+      }
+    }
+
+    // 2. Direct Record Deep Link (e.g. /production-records?id=REC-001 or /production-records/REC-001 or ?recordId=...)
+    const targetId = urlParams.id || urlParams.recordId;
+    if (targetId && productionRecords && productionRecords.length > 0) {
+      const match = productionRecords.find(r => 
+        String(r.id).toLowerCase() === String(targetId).toLowerCase() ||
+        String(r.orderId || '').toLowerCase() === String(targetId).toLowerCase() ||
+        String(r.jobCode || '').toLowerCase() === String(targetId).toLowerCase() ||
+        (r.jobName && r.jobName.toLowerCase().includes(String(targetId).toLowerCase()))
+      );
+      if (match) {
+        setSelectedRecord(match);
+        setActiveTab('list');
+        setSearchTerm(match.jobName || match.id);
+      }
+    }
+
+    // 3. Order ID / Start Production Deep Link (e.g. ?orderId=ORD-101 or ?job=JOB-001)
+    const targetOrderId = urlParams.orderId || urlParams.jobId || urlParams.job;
+    if (targetOrderId && orders && orders.length > 0) {
+      const matchOrder = orders.find(o => 
+        String(o.id).toLowerCase() === String(targetOrderId).toLowerCase() ||
+        String(o.jobCode || '').toLowerCase() === String(targetOrderId).toLowerCase() ||
+        (o.jobName && o.jobName.toLowerCase().includes(String(targetOrderId).toLowerCase()))
+      );
+      if (matchOrder) {
+        const existingRecord = (productionRecords || []).find(r => r.orderId === matchOrder.id);
+        if (existingRecord) {
+          setSelectedRecord(existingRecord);
+          setActiveTab('list');
+        } else {
+          handleStartProductionForOrder(matchOrder);
+        }
+      }
+    }
+
+    // 4. Job Card Deep Link (e.g. ?jobCardId=SKU-001 or ?sku=SKU-001)
+    const targetJobCard = urlParams.jobCardId || urlParams.sku;
+    if (targetJobCard && jobMasters && jobMasters.length > 0) {
+      const matchJm = jobMasters.find(j => 
+        String(j.id).toLowerCase() === String(targetJobCard).toLowerCase() ||
+        String(j.skuCode || '').toLowerCase() === String(targetJobCard).toLowerCase() ||
+        (j.jobName && j.jobName.toLowerCase().includes(String(targetJobCard).toLowerCase()))
+      );
+      if (matchJm) {
+        setActiveTab('job_cards');
+        setActiveJobCardData({
+          jobMasterId: matchJm.id,
+          skuCode: matchJm.skuCode,
+          jobName: matchJm.jobName,
+          clientName: matchJm.clientName,
+          clientGroup: matchJm.clientName,
+          structure: matchJm.structure,
+          layers: matchJm.layers || [],
+          colorsCount: matchJm.colorsCount || 6,
+          chkEyemark: matchJm.chkEyemark,
+          chkBarcode: matchJm.chkBarcode,
+          chkOrientation: matchJm.chkOrientation,
+          chkClientApproval: matchJm.chkClientApproval,
+          approvedByHead: matchJm.approvedByHead || matchJm.productionApproved,
+          approvedHeadName: matchJm.approvedHeadName,
+          approvedHeadDate: matchJm.approvedHeadDate
+        });
+      }
+    }
+
+    // 5. Action Deep Link: add_sfg or add_fg
+    if (urlParams.action === 'add_sfg') {
+      setSfgFgModalMode('SFG');
+      setIsSfgFgModalOpen(true);
+    } else if (urlParams.action === 'add_fg') {
+      setSfgFgModalMode('FG');
+      setIsSfgFgModalOpen(true);
+    }
+  }, [urlParams, productionRecords, orders, jobMasters]);
+
+  // Helper: derive substrate structure from Job Master layers (authoritative source)
+  const getSubstrateStructure = (order) => {
+    if (!order) return '—';
+    const jm = jobMasters.find(j =>
+      (j.jobName || '').toLowerCase().trim() === (order.jobName || '').toLowerCase().trim()
+    );
+    if (jm && jm.layers && jm.layers.length > 0) {
+      return jm.layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
+    }
+    if (jm && jm.structure && jm.structure !== 'PET / PE' && jm.structure !== '—') {
+      return jm.structure;
+    }
+    if (order.structure && order.structure !== 'PET / PE' && order.structure !== '—') {
+      return order.structure;
+    }
+    return jm?.structure || order.structure || '—';
+  };
+
+  const [scrapDisposals, setScrapDisposals] = useState(() => {
+    try {
+      const saved = localStorage.getItem('samyak_erp_scrap_disposals');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const [isDisposeModalOpen, setIsDisposeModalOpen] = useState(false);
+  const [disposeCategory, setDisposeCategory] = useState('Printing Plain Setting (kg)');
+  const [disposeQtyKg, setDisposeQtyKg] = useState('');
+  const [disposeVendor, setDisposeVendor] = useState('');
+  const [disposeRefNo, setDisposeRefNo] = useState('');
+  const [disposeNotes, setDisposeNotes] = useState('');
+  const [recordNotes, setRecordNotes] = useState('');
 
   // Helper to open order details for dropdown selection
   const handleSelectOrderForRecord = (orderId) => {
@@ -550,17 +685,18 @@ export default function ProductionRecordManagement({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {/* SFG & FG Master Rolls Modal */}
+      {/* SFG / FG Digital Scale Barcode Entry Modal */}
       {isSfgFgModalOpen && (
         <SFGFGEntryModal 
+          isOpen={isSfgFgModalOpen}
           mode={sfgFgModalMode}
-          orders={orders}
           jobMasters={jobMasters}
-          inventory={inventory}
+          orders={orders}
           inventoryRolls={inventoryRolls}
           productionRecords={productionRecords}
           currentUser={currentUser}
-          onClose={() => setIsSfgFgModalOpen(false)}
+          initialJobId={selectedRecord?.orderId || selectedRecord?.id || selectedOrder?.id || ''}
+          onClose={handleCloseSfgFgModal}
           onSave={handleSaveSFGFG}
           onPrintRolls={(rolls) => setSelectedRollForBarcodeModal(rolls)}
         />
@@ -591,7 +727,7 @@ export default function ProductionRecordManagement({
           <button 
             className="btn-primary" 
             style={{ background: '#6d28d9', borderColor: '#6d28d9', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }} 
-            onClick={() => { setSfgFgModalMode('SFG'); setIsSfgFgModalOpen(true); }}
+            onClick={handleOpenSfgModal}
             title="Weigh and register Semi-Finished Goods (SFG) master rolls"
           >
             + Add SFG
@@ -600,7 +736,7 @@ export default function ProductionRecordManagement({
           <button 
             className="btn-primary" 
             style={{ background: '#059669', borderColor: '#059669', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }} 
-            onClick={() => { setSfgFgModalMode('FG'); setIsSfgFgModalOpen(true); }}
+            onClick={handleOpenFgModal}
             title="Weigh and register Finished Goods (FG) master rolls"
           >
             + Add FG
@@ -608,28 +744,28 @@ export default function ProductionRecordManagement({
 
           <button 
             className={`tab-pill ${activeTab === 'punched_jobs' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('punched_jobs'); setSelectedRecord(null); }}
+            onClick={() => handleTabSwitch('punched_jobs')}
           >
             📦 Punched Jobs ({(orders || []).length})
           </button>
 
           <button 
             className={`tab-pill ${activeTab === 'list' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('list'); setSelectedRecord(null); }}
+            onClick={() => handleTabSwitch('list')}
           >
             📑 Submitted Records ({(productionRecords || []).length})
           </button>
 
           <button 
             className={`tab-pill ${activeTab === 'job_cards' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('job_cards'); setSelectedRecord(null); }}
+            onClick={() => handleTabSwitch('job_cards')}
           >
             📋 Job Cards Sign-Off ({(jobMasters || []).length})
           </button>
 
           <button 
             className={`tab-pill ${activeTab === 'scrap_inventory' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('scrap_inventory'); setSelectedRecord(null); }}
+            onClick={() => handleTabSwitch('scrap_inventory')}
           >
             ♻️ Scrap Inventory ({totalScrapStockInPlantKg.toFixed(0)} kg)
           </button>
@@ -639,8 +775,7 @@ export default function ProductionRecordManagement({
               className="btn-primary"
               onClick={() => { 
                 if ((orders || []).length > 0) handleStartProductionForOrder(orders[0]);
-                else setActiveTab('new_record');
-                setSelectedRecord(null); 
+                else handleTabSwitch('new_record');
               }}
             >
               <Plus size={16} /> Fill New Production Record
@@ -653,7 +788,7 @@ export default function ProductionRecordManagement({
       {activeJobCardData && (
         <div className="pdf-modal-overlay">
           <div className="pdf-modal-toolbar no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 24px', background: '#0f172a' }}>
-            <button className="btn-secondary" style={{ background: '#ffffff', color: '#0f172a' }} onClick={() => setActiveJobCardData(null)}>
+            <button className="btn-secondary" style={{ background: '#ffffff', color: '#0f172a' }} onClick={handleCloseJobCard}>
               <X size={16} /> Close Job Card View
             </button>
             <div style={{ color: '#ffffff', fontWeight: '700', fontSize: '1rem' }}>
@@ -775,7 +910,7 @@ export default function ProductionRecordManagement({
                               className="btn-primary" 
                               style={{ padding: '6px 14px', fontSize: '0.82rem', background: '#059669', borderColor: '#059669' }}
                               onClick={() => {
-                                setActiveJobCardData({
+                                handleReviewJobCard({
                                   jobMasterId: jm.id,
                                   skuCode: jm.skuCode,
                                   jobName: jm.jobName,
@@ -894,7 +1029,7 @@ export default function ProductionRecordManagement({
                             }}
                             onClick={() => {
                               if (existingRecord) {
-                                setSelectedRecord(existingRecord);
+                                handleSelectRecord(existingRecord);
                               } else {
                                 handleStartProductionForOrder(ord);
                               }
@@ -1019,7 +1154,7 @@ export default function ProductionRecordManagement({
                           <button 
                             className="btn-secondary" 
                             style={{ padding: '4px 10px', fontSize: '0.75rem' }}
-                            onClick={() => setSelectedRecord(rec)}
+                            onClick={() => handleSelectRecord(rec)}
                           >
                             View Record
                           </button>
@@ -1039,7 +1174,7 @@ export default function ProductionRecordManagement({
         <div className="glass-panel" style={{ padding: '28px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
             <div>
-              <button className="btn-secondary" style={{ marginBottom: '12px', padding: '5px 12px', fontSize: '0.8rem' }} onClick={() => setSelectedRecord(null)}>
+              <button className="btn-secondary" style={{ marginBottom: '12px', padding: '5px 12px', fontSize: '0.8rem' }} onClick={handleCloseRecord}>
                 ← Back to Records List
               </button>
               <h3 style={{ fontSize: '1.4rem', fontWeight: '800', color: 'var(--text-primary)' }}>
@@ -1204,10 +1339,7 @@ export default function ProductionRecordManagement({
                       type="button"
                       className="btn-primary"
                       style={{ background: '#6d28d9', borderColor: '#6d28d9', padding: '5px 12px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '5px' }}
-                      onClick={() => {
-                        setSfgFgModalMode('SFG');
-                        setIsSfgFgModalOpen(true);
-                      }}
+                      onClick={handleOpenSfgModal}
                     >
                       <Plus size={13} /> + Add SFG Roll
                     </button>
@@ -1216,10 +1348,7 @@ export default function ProductionRecordManagement({
                       type="button"
                       className="btn-primary"
                       style={{ background: '#059669', borderColor: '#059669', padding: '5px 12px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '5px' }}
-                      onClick={() => {
-                        setSfgFgModalMode('FG');
-                        setIsSfgFgModalOpen(true);
-                      }}
+                      onClick={handleOpenFgModal}
                     >
                       <Plus size={13} /> + Add FG Roll
                     </button>
@@ -1281,7 +1410,7 @@ export default function ProductionRecordManagement({
                         type="button"
                         className="btn-primary"
                         style={{ background: '#6d28d9', borderColor: '#6d28d9', padding: '5px 14px', fontSize: '0.8rem' }}
-                        onClick={() => { setSfgFgModalMode('SFG'); setIsSfgFgModalOpen(true); }}
+                        onClick={handleOpenSfgModal}
                       >
                         + Add SFG Roll
                       </button>
@@ -1289,7 +1418,7 @@ export default function ProductionRecordManagement({
                         type="button"
                         className="btn-primary"
                         style={{ background: '#059669', borderColor: '#059669', padding: '5px 14px', fontSize: '0.8rem' }}
-                        onClick={() => { setSfgFgModalMode('FG'); setIsSfgFgModalOpen(true); }}
+                        onClick={handleOpenFgModal}
                       >
                         + Add FG Roll
                       </button>
@@ -1989,7 +2118,7 @@ export default function ProductionRecordManagement({
                       type="button"
                       className="btn-primary"
                       style={{ background: '#6d28d9', borderColor: '#6d28d9', padding: '4px 10px', fontSize: '0.76rem', display: 'flex', alignItems: 'center', gap: '4px' }}
-                      onClick={() => { setSfgFgModalMode('SFG'); setIsSfgFgModalOpen(true); }}
+                      onClick={handleOpenSfgModal}
                     >
                       <Plus size={12} /> + Add SFG
                     </button>
@@ -1997,7 +2126,7 @@ export default function ProductionRecordManagement({
                       type="button"
                       className="btn-primary"
                       style={{ background: '#059669', borderColor: '#059669', padding: '4px 10px', fontSize: '0.76rem', display: 'flex', alignItems: 'center', gap: '4px' }}
-                      onClick={() => { setSfgFgModalMode('FG'); setIsSfgFgModalOpen(true); }}
+                      onClick={handleOpenFgModal}
                     >
                       <Plus size={12} /> + Add FG
                     </button>
