@@ -20,8 +20,7 @@ import {
   Sliders,
   Ruler,
   Lock,
-  ShieldAlert,
-  History
+  ShieldAlert
 } from 'lucide-react';
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import { FILM_DENSITIES, COMPANY_DETAILS } from '../factoryStore';

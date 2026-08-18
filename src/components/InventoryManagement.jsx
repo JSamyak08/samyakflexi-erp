@@ -22,11 +22,11 @@ import {
   Tag,
   Truck,
   Scale,
-  Barcode,
+  ScanBarcode as BarcodeIcon,
   Scan,
   FileText,
   Check,
-  History,
+  History as HistoryIcon,
   ChevronDown,
   Layers,
   QrCode,
@@ -4302,7 +4302,7 @@ export default function InventoryManagement({
                 gap: '10px'
               }}>
                 <div style={{ background: '#d1fae5', padding: '6px', borderRadius: '8px', color: '#047857', marginTop: '2px' }}>
-                  <Barcode size={18} />
+                  <BarcodeIcon size={18} />
                 </div>
                 <div>
                   <strong style={{ color: '#047857', display: 'block', marginBottom: '2px' }}>Inward Package Breakdown & Barcode Generation:</strong>
@@ -5365,7 +5365,7 @@ export default function InventoryManagement({
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid var(--border-color)' }}>
                 <div>
                   <h3 style={{ fontSize: '1.3rem', fontWeight: '800', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <History style={{ color: '#2563eb' }} /> Raw Material Stock Ledger & Barcode History
+                    <HistoryIcon style={{ color: '#2563eb' }} /> Raw Material Stock Ledger & Barcode History
                   </h3>
                   <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
                     Item: <strong>{item.itemName || ((item.category || 'Film Substrates') === 'Film Substrates' ? `${item.filmType}` : (item.category || item.filmType || 'Stock Item'))} {((item.category || 'Film Substrates') === 'Film Substrates') && item.micron && item.micron !== '-' ? `(${item.micron}µ x ${item.widthMm}mm)` : ''}</strong> | Code: <code>{item.itemCode || item.id}</code> | Category: <span className="badge badge-neutral" style={{ fontSize: '0.75rem' }}>{item.category || 'Film Substrates'}</span> | Location: {item.location || 'Store Bay'} | Unit: {unitStr}
