@@ -92,7 +92,6 @@ export default function SFGFGEntryModal({
   const [productionDate, setProductionDate] = useState(new Date().toISOString().split('T')[0]);
   const [defaultTareKg, setDefaultTareKg] = useState('');
   const [coreDia, setCoreDia] = useState('3 Inch (76mm)');
-  const [valuationRatePerKg, setValuationRatePerKg] = useState('');
   const [batchRemarks, setBatchRemarks] = useState('');
   const [formErrors, setFormErrors] = useState({});
 
@@ -327,8 +326,7 @@ export default function SFGFGEntryModal({
   const totalGrossKg = masterRolls.reduce((sum, r) => sum + (parseFloat(r.grossWeightKg) || 0), 0);
   const totalNetKg = masterRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
   const totalMeters = masterRolls.reduce((sum, r) => sum + (parseFloat(r.lengthMeters) || 0), 0);
-  const parsedValuationRate = parseFloat(valuationRatePerKg) || 0;
-  const totalEstimatedValuation = totalNetKg * parsedValuationRate;
+  const internalValuationRate = parseFloat(currentJob?.unitPrice || currentJob?.ratePerKg || 0);
 
   // Validate all fields before submission
   const validateForm = () => {
@@ -357,9 +355,6 @@ export default function SFGFGEntryModal({
     }
     if (!storageBay || !storageBay.trim()) {
       errors.storageBay = "Storage bay / location is required.";
-    }
-    if (!valuationRatePerKg || parseFloat(valuationRatePerKg) <= 0) {
-      errors.valuationRatePerKg = "Please enter a valid inventory valuation rate per kg (> 0).";
     }
 
     // Roll validation
@@ -401,8 +396,8 @@ export default function SFGFGEntryModal({
       widthMm: parseFloat(jobWidthMm) || 0,
       availableQtyKg: totalNetKg,
       totalQtyKg: totalNetKg,
-      unitPrice: parsedValuationRate,
-      purchaseRatePerKg: parsedValuationRate,
+      unitPrice: internalValuationRate,
+      purchaseRatePerKg: internalValuationRate,
       unit: 'Kg',
       rollsCount: masterRolls.length,
       storageBay,
@@ -452,8 +447,8 @@ export default function SFGFGEntryModal({
         batchNo: batchCode,
         inwardDatetime: new Date().toISOString(),
         productionDate,
-        purchaseRatePerKg: parsedValuationRate,
-        unitPrice: parsedValuationRate,
+        purchaseRatePerKg: internalValuationRate,
+        unitPrice: internalValuationRate,
         unit: 'Kg',
         status: isSFG ? 'In Stock (WIP)' : 'In Stock (Ready for Dispatch)'
       };
@@ -979,53 +974,19 @@ export default function SFGFGEntryModal({
             </div>
           </div>
 
-          {/* Section 4: Remarks & Valuation Rate */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginBottom: '16px' }}>
-            <div>
-              <label className="form-label" style={{ fontWeight: '600', fontSize: '0.78rem', marginBottom: '4px', display: 'block' }}>
-                Inventory Valuation Rate (₹/kg) <span style={{ color: '#dc2626' }}>*</span>
-              </label>
-              <input 
-                type="number" 
-                placeholder="Enter Valuation Rate (₹/kg) *"
-                className="form-control" 
-                style={{ fontWeight: '700', fontSize: '0.82rem', width: '100%', borderColor: formErrors.valuationRatePerKg ? '#ef4444' : undefined }}
-                value={valuationRatePerKg}
-                onChange={e => {
-                  setValuationRatePerKg(e.target.value);
-                  if (formErrors.valuationRatePerKg) setFormErrors(prev => ({ ...prev, valuationRatePerKg: null }));
-                }}
-                required
-              />
-              {parsedValuationRate > 0 && totalNetKg > 0 ? (
-                <span style={{ fontSize: '0.7rem', color: '#047857', marginTop: '2px', display: 'block', fontWeight: '600' }}>
-                  Est Total Batch Value: ₹{Math.round(totalEstimatedValuation).toLocaleString('en-IN')}
-                </span>
-              ) : (
-                <span style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '2px', display: 'block' }}>
-                  Required for inventory asset valuation
-                </span>
-              )}
-              {formErrors.valuationRatePerKg && (
-                <div style={{ fontSize: '0.72rem', color: '#dc2626', marginTop: '2px', fontWeight: '600' }}>
-                  {formErrors.valuationRatePerKg}
-                </div>
-              )}
-            </div>
-
-            <div>
-              <label className="form-label" style={{ fontWeight: '600', fontSize: '0.78rem', marginBottom: '4px', display: 'block' }}>
-                Batch Production Notes & Remarks
-              </label>
-              <input 
-                type="text" 
-                className="form-control" 
-                style={{ fontSize: '0.82rem', width: '100%' }}
-                placeholder="Enter remarks e.g. Corona tested, approved by QA..."
-                value={batchRemarks}
-                onChange={e => setBatchRemarks(e.target.value)}
-              />
-            </div>
+          {/* Section 4: Batch Production Notes & Remarks */}
+          <div style={{ marginBottom: '16px' }}>
+            <label className="form-label" style={{ fontWeight: '600', fontSize: '0.78rem', marginBottom: '4px', display: 'block' }}>
+              Batch Production Notes & Remarks
+            </label>
+            <input 
+              type="text" 
+              className="form-control" 
+              style={{ fontSize: '0.82rem', width: '100%' }}
+              placeholder="Enter remarks e.g. Corona tested, approved by QA, master roll batch notes..."
+              value={batchRemarks}
+              onChange={e => setBatchRemarks(e.target.value)}
+            />
           </div>
 
           {/* Modal Actions */}
