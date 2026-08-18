@@ -1414,74 +1414,94 @@ export default function ProductionRecordManagement({
               </div>
 
               {(() => {
-                // Calculate Profitability & Variances for this job
-                const linkedOrder = orders.find(o => o.id === selectedRecord.orderId || o.jobName === selectedRecord.jobName) || orders[0] || {};
-                const preCosting = linkedOrder.calculationDetails || {};
+                // Calculate Profitability & Variances strictly from REAL data
+                const linkedOrder = orders.find(o => 
+                  (selectedRecord.orderId && String(o.id) === String(selectedRecord.orderId)) ||
+                  (selectedRecord.jobCode && String(o.jobCode || '').toUpperCase() === String(selectedRecord.jobCode).toUpperCase()) ||
+                  (selectedRecord.jobName && (o.jobName || '').toLowerCase().trim() === (selectedRecord.jobName || '').toLowerCase().trim())
+                ) || null;
 
-                const sellingPricePerKg = linkedOrder.sellingPricePerKg || 245;
-                const actualQtyKg = selectedRecord.totalProductionQtyKg || 1000;
-                const targetOrderQtyKg = linkedOrder.quantityKg || linkedOrder.jobQuantityKg || actualQtyKg;
+                const preCosting = linkedOrder?.calculationDetails || linkedOrder?.preCosting || null;
+                const sellingPricePerKg = Number(linkedOrder?.sellingPricePerKg || linkedOrder?.pricePerKg || linkedOrder?.unitPrice || linkedOrder?.rate || selectedRecord?.sellingPricePerKg || 0);
+                const actualQtyKg = Number(selectedRecord.totalProductionQtyKg || selectedRecord.qtyDispatch || selectedRecord.qtySecondPassL2 || selectedRecord.qtyFirstPassL1 || 0);
+                const targetOrderQtyKg = Number(linkedOrder?.orderQtyKg || linkedOrder?.quantityKg || linkedOrder?.jobQuantityKg || actualQtyKg || 0);
 
-                const totalGrossRevenue = Math.round(actualQtyKg * sellingPricePerKg);
-                const actualProductionCost = selectedRecord.finalProductionCostRs || 0;
-                const netProfitRs = totalGrossRevenue - actualProductionCost;
+                const materials = selectedRecord.materialsList || [];
+                const actualMaterialCost = materials.reduce((sum, m) => sum + (parseFloat(m.totalMaterialCost) || 0), 0);
+                const actualProcCost = parseFloat(selectedRecord.processingCostRs) || 0;
+                const actualProductionCost = Number(selectedRecord.finalProductionCostRs || selectedRecord.totalProductionCostRs || 0) || (actualMaterialCost + actualProcCost);
+
+                const totalGrossRevenue = actualQtyKg > 0 && sellingPricePerKg > 0 ? Math.round(actualQtyKg * sellingPricePerKg) : 0;
+                const netProfitRs = totalGrossRevenue > 0 ? totalGrossRevenue - actualProductionCost : 0;
                 const profitMarginPct = totalGrossRevenue > 0 ? ((netProfitRs / totalGrossRevenue) * 100).toFixed(1) : 0;
 
-                // Quoted Pre-Costing Target
-                const estRawMaterialCost = preCosting.summary?.totalRawMaterialCost || (targetOrderQtyKg * 140);
-                const estProcessingCost = targetOrderQtyKg * (selectedRecord.processingCostRs ? (selectedRecord.processingCostRs / actualQtyKg) : 25);
-                const estTotalCost = estRawMaterialCost + estProcessingCost;
+                // Quoted Pre-Costing Target (strictly from linked order pre-costing, zero dummy data)
+                const hasPreCosting = Boolean(preCosting && (preCosting.summary || preCosting.totalRawMaterialCost || preCosting.grandTotalCost || preCosting.estimatedCost));
+                const estRawMaterialCost = hasPreCosting ? Number(preCosting.summary?.totalRawMaterialCost || preCosting.totalRawMaterialCost || preCosting.rawMaterialCost || 0) : 0;
+                const estProcessingCost = hasPreCosting ? Number(preCosting.summary?.totalProcessingCost || preCosting.totalProcessingCost || preCosting.processingCost || 0) : 0;
+                const estTotalCost = hasPreCosting ? (estRawMaterialCost + estProcessingCost || Number(preCosting.summary?.grandTotalCost || preCosting.grandTotalCost || 0)) : 0;
 
-                const costVarianceRs = actualProductionCost - estTotalCost;
-                const costVariancePct = estTotalCost > 0 ? ((costVarianceRs / estTotalCost) * 100).toFixed(1) : 0;
+                const costVarianceRs = hasPreCosting && estTotalCost > 0 ? actualProductionCost - estTotalCost : 0;
+                const costVariancePct = hasPreCosting && estTotalCost > 0 ? ((costVarianceRs / estTotalCost) * 100).toFixed(1) : null;
 
-                const isHighProfit = profitMarginPct >= 20;
-                const isModerateProfit = profitMarginPct >= 10 && profitMarginPct < 20;
-                const isLowProfit = profitMarginPct >= 0 && profitMarginPct < 10;
+                const isHighProfit = totalGrossRevenue > 0 && profitMarginPct >= 20;
+                const isModerateProfit = totalGrossRevenue > 0 && profitMarginPct >= 10 && profitMarginPct < 20;
+                const isLowProfit = totalGrossRevenue > 0 && profitMarginPct >= 0 && profitMarginPct < 10;
+                const isLoss = totalGrossRevenue > 0 && profitMarginPct < 0;
 
                 return (
                   <div>
                     {/* Key Metric KPI Cards */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
                       <div className="glass-card" style={{ padding: '16px', background: '#ffffff' }}>
                         <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: '700' }}>CONTRACT REVENUE</div>
                         <div style={{ fontSize: '1.3rem', fontWeight: '900', color: '#0284c7', marginTop: '4px' }}>
-                          ₹ {totalGrossRevenue.toLocaleString('en-IN')}
+                          {totalGrossRevenue > 0 ? `₹ ${totalGrossRevenue.toLocaleString('en-IN')}` : '— (No Selling Price)'}
                         </div>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                          Selling Rate: ₹ {sellingPricePerKg}/kg
+                          Selling Rate: {sellingPricePerKg > 0 ? `₹ ${sellingPricePerKg}/kg` : 'Not Set'} {actualQtyKg > 0 ? `• ${actualQtyKg.toFixed(1)} kg` : ''}
                         </div>
                       </div>
 
                       <div className="glass-card" style={{ padding: '16px', background: '#ffffff' }}>
                         <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: '700' }}>QUOTED TARGET COST</div>
                         <div style={{ fontSize: '1.3rem', fontWeight: '800', color: 'var(--text-primary)', marginTop: '4px' }}>
-                          ₹ {Math.round(estTotalCost).toLocaleString('en-IN')}
+                          {hasPreCosting && estTotalCost > 0 ? `₹ ${Math.round(estTotalCost).toLocaleString('en-IN')}` : '— (No Pre-Costing)'}
                         </div>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                          Pre-Cost Rate: ₹ {(estTotalCost / (targetOrderQtyKg || 1)).toFixed(2)}/kg
+                          {hasPreCosting && targetOrderQtyKg > 0 ? `Pre-Cost Rate: ₹ ${(estTotalCost / targetOrderQtyKg).toFixed(2)}/kg` : 'Quotation pre-costing not attached'}
                         </div>
                       </div>
 
                       <div className="glass-card" style={{ padding: '16px', background: '#ffffff' }}>
                         <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: '700' }}>ACTUAL PRODUCTION COST</div>
-                        <div style={{ fontSize: '1.3rem', fontWeight: '900', color: costVarianceRs > 0 ? '#b91c1c' : '#047857', marginTop: '4px' }}>
+                        <div style={{ fontSize: '1.3rem', fontWeight: '900', color: hasPreCosting && costVarianceRs > 0 ? '#b91c1c' : '#047857', marginTop: '4px' }}>
                           ₹ {Math.round(actualProductionCost).toLocaleString('en-IN')}
                         </div>
-                        <div style={{ fontSize: '0.75rem', color: costVarianceRs > 0 ? '#dc2626' : '#059669', marginTop: '2px', fontWeight: '700' }}>
-                          Variance: {costVarianceRs > 0 ? `+₹ ${Math.round(costVarianceRs).toLocaleString()} (+${costVariancePct}%)` : `-₹ ${Math.abs(Math.round(costVarianceRs)).toLocaleString()} (${costVariancePct}%)`}
+                        <div style={{ fontSize: '0.75rem', color: hasPreCosting ? (costVarianceRs > 0 ? '#dc2626' : '#059669') : 'var(--text-muted)', marginTop: '2px', fontWeight: '700' }}>
+                          {hasPreCosting && estTotalCost > 0 ? (
+                            costVarianceRs > 0 ? `Variance: +₹ ${Math.round(costVarianceRs).toLocaleString()} (+${costVariancePct}%)` : `Variance: -₹ ${Math.abs(Math.round(costVarianceRs)).toLocaleString()} (${costVariancePct}%)`
+                          ) : (
+                            `Actual Cost Rate: ₹ ${actualQtyKg > 0 ? (actualProductionCost / actualQtyKg).toFixed(2) : '0'}/kg`
+                          )}
                         </div>
                       </div>
 
-                      <div className="glass-card" style={{ padding: '16px', background: isHighProfit ? '#ecfdf5' : isModerateProfit ? '#f0f9ff' : isLowProfit ? '#fffbeb' : '#fef2f2', border: `1px solid ${isHighProfit ? '#a7f3d0' : isModerateProfit ? '#bae6fd' : isLowProfit ? '#fde68a' : '#fca5a5'}` }}>
-                        <div style={{ fontSize: '0.78rem', color: isHighProfit ? '#065f46' : isModerateProfit ? '#0369a1' : isLowProfit ? '#92400e' : '#991b1b', fontWeight: '800' }}>NET PROFIT / MARGIN</div>
-                        <div style={{ fontSize: '1.3rem', fontWeight: '900', color: isHighProfit ? '#047857' : isModerateProfit ? '#0284c7' : isLowProfit ? '#b45309' : '#dc2626', marginTop: '4px' }}>
-                          ₹ {Math.round(netProfitRs).toLocaleString('en-IN')} ({profitMarginPct}%)
+                      <div className="glass-card" style={{ padding: '16px', background: isHighProfit ? '#ecfdf5' : isModerateProfit ? '#f0f9ff' : isLowProfit ? '#fffbeb' : isLoss ? '#fef2f2' : '#f8fafc', border: `1px solid ${isHighProfit ? '#a7f3d0' : isModerateProfit ? '#bae6fd' : isLowProfit ? '#fde68a' : isLoss ? '#fca5a5' : '#cbd5e1'}` }}>
+                        <div style={{ fontSize: '0.78rem', color: isHighProfit ? '#065f46' : isModerateProfit ? '#0369a1' : isLowProfit ? '#92400e' : isLoss ? '#991b1b' : '#475569', fontWeight: '800' }}>NET PROFIT / MARGIN</div>
+                        <div style={{ fontSize: '1.3rem', fontWeight: '900', color: isHighProfit ? '#047857' : isModerateProfit ? '#0284c7' : isLowProfit ? '#b45309' : isLoss ? '#dc2626' : '#1e293b', marginTop: '4px' }}>
+                          {totalGrossRevenue > 0 ? `₹ ${Math.round(netProfitRs).toLocaleString('en-IN')} (${profitMarginPct}%)` : '—'}
                         </div>
                         <div style={{ marginTop: '4px' }}>
-                          <span className={`badge ${isHighProfit ? 'badge-success' : isModerateProfit ? 'badge-info' : isLowProfit ? 'badge-warning' : 'badge-danger'}`} style={{ fontSize: '0.72rem', padding: '2px 8px' }}>
-                            {isHighProfit ? '🟢 HIGH PROFIT (+20%+)' : isModerateProfit ? '🔵 GOOD MARGIN (10-20%)' : isLowProfit ? '🟡 THIN MARGIN (<10%)' : '🔴 COST OVERRUN / LOSS'}
-                          </span>
+                          {totalGrossRevenue > 0 ? (
+                            <span className={`badge ${isHighProfit ? 'badge-success' : isModerateProfit ? 'badge-info' : isLowProfit ? 'badge-warning' : 'badge-danger'}`} style={{ fontSize: '0.72rem', padding: '2px 8px' }}>
+                              {isHighProfit ? '🟢 HIGH PROFIT (+20%+)' : isModerateProfit ? '🔵 GOOD MARGIN (10-20%)' : isLowProfit ? '🟡 THIN MARGIN (<10%)' : '🔴 COST OVERRUN / LOSS'}
+                            </span>
+                          ) : (
+                            <span className="badge badge-secondary" style={{ fontSize: '0.72rem', padding: '2px 8px' }}>
+                              Set selling price to compute margin
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1502,16 +1522,14 @@ export default function ProductionRecordManagement({
                       </thead>
                       <tbody>
                         {(() => {
-                          const materials = selectedRecord.materialsList || [];
-                          const filmsCost = materials.filter(m => (m.filmType || '').includes('Film')).reduce((a, b) => a + (b.totalMaterialCost || 0), 0);
-                          const inksSolventsCost = materials.filter(m => (m.filmType || '').includes('Ink') || (m.filmType || '').includes('Solvent')).reduce((a, b) => a + (b.totalMaterialCost || 0), 0);
-                          const adhesiveCost = materials.filter(m => (m.filmType || '').includes('Adhesive') || (m.filmType || '').includes('Hardener')).reduce((a, b) => a + (b.totalMaterialCost || 0), 0);
+                          const filmsCost = materials.filter(m => (m.filmType || m.category || '').toLowerCase().includes('film') || (m.filmType || '').match(/pet|bopp|ldpe|poly|cpp|foil|met/i)).reduce((a, b) => a + (b.totalMaterialCost || 0), 0);
+                          const inksSolventsCost = materials.filter(m => (m.filmType || m.category || '').toLowerCase().includes('ink') || (m.filmType || m.category || '').toLowerCase().includes('solvent') || (m.filmType || '').match(/ea|cy|mg|ye|bl|wh|reducer|retarder|ethyl/i)).reduce((a, b) => a + (b.totalMaterialCost || 0), 0);
+                          const adhesiveCost = materials.filter(m => (m.filmType || m.category || '').toLowerCase().includes('adhesive') || (m.filmType || m.category || '').toLowerCase().includes('hardener') || (m.filmType || '').match(/adh|hard|polyurethane/i)).reduce((a, b) => a + (b.totalMaterialCost || 0), 0);
 
-                          const estFilmCost = preCosting.summary?.totalFilmGrossKg ? (preCosting.summary.totalFilmGrossKg * 130) : (filmsCost * 0.95);
-                          const estInkCost = preCosting.inkDetails?.grossKg ? (preCosting.inkDetails.grossKg * 1500) : (inksSolventsCost * 0.95);
-                          const estAdhesiveCost = preCosting.adhesiveDetails?.grossKg ? (preCosting.adhesiveDetails.grossKg * 270) : (adhesiveCost * 0.95);
-                          const estProcCost = targetOrderQtyKg * 25;
-                          const actualProcCost = selectedRecord.processingCostRs || (actualQtyKg * 25);
+                          const estFilmCost = hasPreCosting ? Number(preCosting.summary?.totalFilmCost || (preCosting.summary?.totalFilmGrossKg && preCosting.summary?.avgFilmRate ? preCosting.summary.totalFilmGrossKg * preCosting.summary.avgFilmRate : (preCosting.filmDetails?.totalCost || 0))) : 0;
+                          const estInkCost = hasPreCosting ? Number(preCosting.summary?.totalInkCost || (preCosting.inkDetails?.grossKg && preCosting.inkDetails?.ratePerKg ? preCosting.inkDetails.grossKg * preCosting.inkDetails.ratePerKg : (preCosting.inkDetails?.totalCost || 0))) : 0;
+                          const estAdhesiveCost = hasPreCosting ? Number(preCosting.summary?.totalAdhesiveCost || (preCosting.adhesiveDetails?.grossKg && preCosting.adhesiveDetails?.ratePerKg ? preCosting.adhesiveDetails.grossKg * preCosting.adhesiveDetails.ratePerKg : (preCosting.adhesiveDetails?.totalCost || 0))) : 0;
+                          const estProcCost = hasPreCosting ? Number(preCosting.summary?.totalProcessingCost || preCosting.totalProcessingCost || preCosting.processingCost || 0) : 0;
 
                           const rows = [
                             { label: "Film Substrates (PET / LDPE / BOPP)", est: Math.round(estFilmCost), act: Math.round(filmsCost) },
@@ -1521,22 +1539,29 @@ export default function ProductionRecordManagement({
                           ];
 
                           return rows.map((r, idx) => {
-                            const delta = r.act - r.est;
-                            const deltaPct = r.est > 0 ? ((delta / r.est) * 100).toFixed(1) : 0;
+                            const hasEst = hasPreCosting && r.est > 0;
+                            const delta = hasEst ? r.act - r.est : 0;
+                            const deltaPct = hasEst ? ((delta / r.est) * 100).toFixed(1) : 0;
                             const isOver = delta > 0;
 
                             return (
                               <tr key={idx}>
                                 <td style={{ fontWeight: '700' }}>{r.label}</td>
-                                <td>₹ {r.est.toLocaleString()}</td>
+                                <td>{hasEst ? `₹ ${r.est.toLocaleString()}` : '— (No Target)'}</td>
                                 <td style={{ fontWeight: '700' }}>₹ {r.act.toLocaleString()}</td>
-                                <td style={{ fontWeight: '800', color: isOver ? '#dc2626' : '#059669' }}>
-                                  {isOver ? `+₹ ${delta.toLocaleString()} (+${deltaPct}%)` : `${delta.toLocaleString()} (${deltaPct}%)`}
+                                <td style={{ fontWeight: '800', color: hasEst ? (isOver ? '#dc2626' : '#059669') : 'var(--text-muted)' }}>
+                                  {hasEst ? (isOver ? `+₹ ${delta.toLocaleString()} (+${deltaPct}%)` : `${delta.toLocaleString()} (${deltaPct}%)`) : '—'}
                                 </td>
                                 <td>
-                                  <span className={`badge ${isOver ? 'badge-danger' : 'badge-success'}`} style={{ fontSize: '0.72rem' }}>
-                                    {isOver ? '🔺 COST OVERRUN' : '🟢 SAVING / WITHIN BUDGET'}
-                                  </span>
+                                  {hasEst ? (
+                                    <span className={`badge ${isOver ? 'badge-danger' : 'badge-success'}`} style={{ fontSize: '0.72rem' }}>
+                                      {isOver ? '🔺 COST OVERRUN' : '🟢 SAVING / WITHIN BUDGET'}
+                                    </span>
+                                  ) : (
+                                    <span className="badge badge-secondary" style={{ fontSize: '0.72rem' }}>
+                                      Actual Logged
+                                    </span>
+                                  )}
                                 </td>
                               </tr>
                             );
