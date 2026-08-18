@@ -2362,6 +2362,8 @@ export default function InventoryManagement({
           orders={orders}
           jobMasters={jobMasters}
           inventory={inventory}
+          inventoryRolls={inventoryRolls}
+          productionRecords={productionRecords}
           currentUser={currentUser}
           onClose={() => setIsSfgFgModalOpen(false)}
           onSave={handleSaveSFGFG}

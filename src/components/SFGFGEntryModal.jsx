@@ -18,7 +18,10 @@ import {
   Check,
   RefreshCw,
   Sliders,
-  Ruler
+  Ruler,
+  Lock,
+  ShieldAlert,
+  History
 } from 'lucide-react';
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import { FILM_DENSITIES, COMPANY_DETAILS } from '../factoryStore';
@@ -68,6 +71,8 @@ export default function SFGFGEntryModal({
   orders = [],
   jobMasters = [],
   inventory = [],
+  inventoryRolls = [],
+  productionRecords = [],
   currentUser,
   onClose,
   onSave, // (inventoryItem, rolls, productionRecordLink) => void
@@ -76,6 +81,7 @@ export default function SFGFGEntryModal({
   const isSFG = mode === 'SFG';
   const title = isSFG ? 'Create Semi-Finished Goods (SFG)' : 'Create Finished Goods (FG)';
   const categoryName = isSFG ? 'Semi-Finished Goods (SFG)' : 'Finished Goods (FG)';
+  const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'SuperAdmin';
 
   // All inputs start blank - ZERO pre-filled dummy/seed data
   const [selectedJobId, setSelectedJobId] = useState('');
@@ -121,7 +127,8 @@ export default function SFGFGEntryModal({
           plannedQtyKg: parseFloat(ord.targetQtyKg || ord.qtyKg || 0),
           widthMm: realWidth ? String(realWidth) : '',
           micron: realMicron ? String(realMicron) : '',
-          filmType: realFilmType
+          filmType: realFilmType,
+          unitPrice: parseFloat(ord.ratePerKg || ord.sellingPricePerKg || jm?.unitPrice || 0)
         });
       }
     });
@@ -144,7 +151,8 @@ export default function SFGFGEntryModal({
             plannedQtyKg: 0,
             widthMm: realWidth ? String(realWidth) : '',
             micron: realMicron ? String(realMicron) : '',
-            filmType: jm.filmType || jm.layers?.[0]?.filmType || ''
+            filmType: jm.filmType || jm.layers?.[0]?.filmType || '',
+            unitPrice: parseFloat(jm.unitPrice || 0)
           });
         }
       });
@@ -158,27 +166,6 @@ export default function SFGFGEntryModal({
     if (!selectedJobId) return null;
     return activeJobsList.find(j => String(j.id) === String(selectedJobId)) || null;
   }, [activeJobsList, selectedJobId]);
-
-  // When a job is selected, sync its dimensions into editable state
-  const handleJobSelect = (jobId) => {
-    setSelectedJobId(jobId);
-    if (formErrors.selectedJobId) {
-      setFormErrors(prev => ({ ...prev, selectedJobId: null }));
-    }
-
-    const job = activeJobsList.find(j => String(j.id) === String(jobId));
-    if (job) {
-      setJobWidthMm(job.widthMm || '');
-      setJobMicron(job.micron || '');
-      setJobStructure(job.structure || '');
-      setJobFilmType(job.filmType || '');
-    } else {
-      setJobWidthMm('');
-      setJobMicron('');
-      setJobStructure('');
-      setJobFilmType('');
-    }
-  };
 
   // Subtype Code Helper for Barcodes
   const getSubtypeShortCode = (typeStr) => {
@@ -204,25 +191,7 @@ export default function SFGFGEntryModal({
     return 0;
   };
 
-  // Master Rolls State (Starts with 1 blank row)
-  const [masterRolls, setMasterRolls] = useState([
-    {
-      id: `roll-${Date.now()}-1`,
-      rollIndex: 1,
-      barcodeId: '',
-      grossWeightKg: '',
-      tareWeightKg: '',
-      netWeightKg: 0,
-      widthMm: '',
-      micron: '',
-      lengthMeters: 0,
-      jointCount: 0,
-      qcStatus: 'Passed',
-      notes: ''
-    }
-  ]);
-
-  // Generate Roll Barcode Helper
+  // Helper to generate next roll barcode
   const generateRollBarcode = (rollIdx, jobCode, typeStr) => {
     const prefix = isSFG ? 'SFG' : 'FG';
     const subCode = getSubtypeShortCode(typeStr);
@@ -231,10 +200,166 @@ export default function SFGFGEntryModal({
     return `${prefix}-${subCode}-${cleanJobCode}-R${rollNumStr}`;
   };
 
-  // Sync Roll Barcodes & dimensions when Job, dimensions or Type changes
+  // Fetch Existing Rolls for the selected Job and Stage from Inventory & Production Records
+  const existingJobRolls = useMemo(() => {
+    if (!currentJob) return [];
+
+    const existingList = [];
+    const seenBarcodes = new Set();
+
+    // 1. Check inventoryRolls
+    (inventoryRolls || []).forEach(r => {
+      const matchJob = (r.orderId && String(r.orderId) === String(currentJob.orderId)) ||
+                       (r.jobCode && String(r.jobCode).toUpperCase() === String(currentJob.jobCode).toUpperCase()) ||
+                       (r.jobName && (r.jobName || '').toLowerCase().trim() === (currentJob.jobName || '').toLowerCase().trim());
+      
+      const matchType = (r.rollType === (isSFG ? 'SFG' : 'FG')) || 
+                        ((r.category || '').includes(isSFG ? 'Semi-Finished' : 'Finished'));
+
+      if (matchJob && matchType && r.barcodeId && !seenBarcodes.has(r.barcodeId)) {
+        seenBarcodes.add(r.barcodeId);
+        existingList.push({
+          id: r.id || r.barcodeId,
+          barcodeId: r.barcodeId,
+          grossWeightKg: parseFloat(r.grossWeightKg || r.netWeightKg || 0),
+          tareWeightKg: parseFloat(r.tareWeightKg || 0),
+          netWeightKg: parseFloat(r.netWeightKg || 0),
+          widthMm: r.widthMm || currentJob.widthMm || '',
+          micron: r.micron || currentJob.micron || '',
+          lengthMeters: r.lengthMeters || 0,
+          jointCount: r.jointCount || 0,
+          qcStatus: r.qcStatus || 'Passed',
+          machineName: r.machine || r.stationId || '',
+          operatorName: r.operator || '',
+          shift: r.shift || '',
+          productionDate: r.productionDate || (r.inwardDatetime ? r.inwardDatetime.split('T')[0] : ''),
+          isExisting: true,
+          isLocked: true
+        });
+      }
+    });
+
+    // 2. Check productionRecords outputRolls
+    (productionRecords || []).forEach(pr => {
+      const matchJob = (pr.orderId && String(pr.orderId) === String(currentJob.orderId)) ||
+                       (pr.jobCode && String(pr.jobCode).toUpperCase() === String(currentJob.jobCode).toUpperCase()) ||
+                       (pr.jobName && (pr.jobName || '').toLowerCase().trim() === (currentJob.jobName || '').toLowerCase().trim());
+
+      if (matchJob && Array.isArray(pr.outputRolls)) {
+        pr.outputRolls.forEach(r => {
+          const matchType = (r.rollType === (isSFG ? 'SFG' : 'FG')) || 
+                            ((r.category || '').includes(isSFG ? 'Semi-Finished' : 'Finished'));
+
+          if (matchType && r.barcodeId && !seenBarcodes.has(r.barcodeId)) {
+            seenBarcodes.add(r.barcodeId);
+            existingList.push({
+              id: r.id || r.barcodeId,
+              barcodeId: r.barcodeId,
+              grossWeightKg: parseFloat(r.grossWeightKg || r.netWeightKg || 0),
+              tareWeightKg: parseFloat(r.tareWeightKg || 0),
+              netWeightKg: parseFloat(r.netWeightKg || 0),
+              widthMm: r.widthMm || currentJob.widthMm || '',
+              micron: r.micron || currentJob.micron || '',
+              lengthMeters: r.lengthMeters || 0,
+              jointCount: r.jointCount || 0,
+              qcStatus: r.qcStatus || 'Passed',
+              machineName: r.machine || r.stationId || '',
+              operatorName: r.operator || '',
+              shift: r.shift || '',
+              productionDate: r.productionDate || '',
+              isExisting: true,
+              isLocked: true
+            });
+          }
+        });
+      }
+    });
+
+    return existingList;
+  }, [currentJob, inventoryRolls, productionRecords, isSFG]);
+
+  // Master Rolls State (Combines existing locked rolls + newly added rolls)
+  const [masterRolls, setMasterRolls] = useState([]);
+
+  // When currentJob, selectedType, or existingJobRolls changes, populate the table
+  useEffect(() => {
+    if (!currentJob) {
+      setMasterRolls([
+        {
+          id: `new-roll-${Date.now()}-1`,
+          rollIndex: 1,
+          barcodeId: '',
+          grossWeightKg: '',
+          tareWeightKg: '',
+          netWeightKg: 0,
+          widthMm: '',
+          micron: '',
+          lengthMeters: 0,
+          jointCount: 0,
+          qcStatus: 'Passed',
+          notes: '',
+          isExisting: false,
+          isLocked: false
+        }
+      ]);
+      return;
+    }
+
+    const lockedList = existingJobRolls.map((r, i) => ({
+      ...r,
+      rollIndex: i + 1,
+      isExisting: true,
+      isLocked: true
+    }));
+
+    const nextRollIdx = lockedList.length + 1;
+    const initialNewRoll = {
+      id: `new-roll-${Date.now()}-${nextRollIdx}`,
+      rollIndex: nextRollIdx,
+      barcodeId: generateRollBarcode(nextRollIdx, currentJob.jobCode, selectedType),
+      grossWeightKg: '',
+      tareWeightKg: defaultTareKg !== '' ? defaultTareKg : '',
+      netWeightKg: 0,
+      widthMm: jobWidthMm || '',
+      micron: jobMicron || '',
+      lengthMeters: 0,
+      jointCount: 0,
+      qcStatus: 'Passed',
+      notes: '',
+      isExisting: false,
+      isLocked: false
+    };
+
+    setMasterRolls([...lockedList, initialNewRoll]);
+  }, [currentJob?.id, selectedType, existingJobRolls.length]);
+
+  // When a job is selected, sync its dimensions into editable state
+  const handleJobSelect = (jobId) => {
+    setSelectedJobId(jobId);
+    if (formErrors.selectedJobId) {
+      setFormErrors(prev => ({ ...prev, selectedJobId: null }));
+    }
+
+    const job = activeJobsList.find(j => String(j.id) === String(jobId));
+    if (job) {
+      setJobWidthMm(job.widthMm || '');
+      setJobMicron(job.micron || '');
+      setJobStructure(job.structure || '');
+      setJobFilmType(job.filmType || '');
+    } else {
+      setJobWidthMm('');
+      setJobMicron('');
+      setJobStructure('');
+      setJobFilmType('');
+    }
+  };
+
+  // Sync new rolls dimensions/barcodes when dimensions or Tare changes
   useEffect(() => {
     if (!currentJob) return;
     setMasterRolls(prev => prev.map((r, i) => {
+      if (r.isExisting) return r; // DO NOT mutate previous locked rolls
+
       const gross = parseFloat(r.grossWeightKg) || 0;
       const tare = r.tareWeightKg !== '' ? parseFloat(r.tareWeightKg) : (parseFloat(defaultTareKg) || 0);
       const net = Math.max(0, gross - tare);
@@ -253,33 +378,36 @@ export default function SFGFGEntryModal({
         lengthMeters: len
       };
     }));
-  }, [currentJob, selectedType, defaultTareKg, jobWidthMm, jobMicron, jobFilmType]);
+  }, [jobWidthMm, jobMicron, jobFilmType, defaultTareKg, selectedType]);
 
-  // Roll Modification Handlers
+  // Roll Modification Handlers (Only allowed for new rolls)
   const handleUpdateRoll = (index, field, value) => {
     setMasterRolls(prev => {
       const updated = [...prev];
-      const roll = { ...updated[index], [field]: value };
+      const roll = updated[index];
+      if (roll.isLocked) return prev; // Cannot edit locked rolls
+
+      const modRoll = { ...roll, [field]: value };
 
       if (field === 'grossWeightKg' || field === 'tareWeightKg') {
-        const gross = parseFloat(field === 'grossWeightKg' ? value : roll.grossWeightKg) || 0;
-        const tareVal = field === 'tareWeightKg' ? value : roll.tareWeightKg;
+        const gross = parseFloat(field === 'grossWeightKg' ? value : modRoll.grossWeightKg) || 0;
+        const tareVal = field === 'tareWeightKg' ? value : modRoll.tareWeightKg;
         const tare = tareVal !== '' ? (parseFloat(tareVal) || 0) : (parseFloat(defaultTareKg) || 0);
         
         if (gross > 0) {
-          roll.netWeightKg = Math.max(0, parseFloat((gross - tare).toFixed(2)));
-          roll.lengthMeters = calculateLength(roll.netWeightKg, jobWidthMm, jobMicron, jobFilmType);
+          modRoll.netWeightKg = Math.max(0, parseFloat((gross - tare).toFixed(2)));
+          modRoll.lengthMeters = calculateLength(modRoll.netWeightKg, jobWidthMm, jobMicron, jobFilmType);
         } else {
-          roll.netWeightKg = 0;
-          roll.lengthMeters = 0;
+          modRoll.netWeightKg = 0;
+          modRoll.lengthMeters = 0;
         }
       }
 
       if (field === 'barcodeId') {
-        roll.isBarcodeCustom = true;
+        modRoll.isBarcodeCustom = true;
       }
 
-      updated[index] = roll;
+      updated[index] = modRoll;
       return updated;
     });
   };
@@ -293,7 +421,7 @@ export default function SFGFGEntryModal({
     setMasterRolls(prev => [
       ...prev,
       {
-        id: `roll-${Date.now()}-${nextIdx}`,
+        id: `new-roll-${Date.now()}-${nextIdx}`,
         rollIndex: nextIdx,
         barcodeId: autoBarcode,
         grossWeightKg: '',
@@ -304,29 +432,55 @@ export default function SFGFGEntryModal({
         lengthMeters: 0,
         jointCount: 0,
         qcStatus: 'Passed',
-        notes: ''
+        notes: '',
+        isExisting: false,
+        isLocked: false
       }
     ]);
   };
 
-  // Remove Roll Row
+  // Remove Roll Row (Only allowed for new rolls)
   const handleRemoveRollRow = (index) => {
-    if (masterRolls.length <= 1) {
-      alert("At least 1 master roll is required.");
+    const target = masterRolls[index];
+    if (target && target.isLocked) {
+      alert("⚠️ Previously entered roll with generated barcode is locked. It can only be modified/deleted from the inventory by an Admin.");
       return;
     }
-    setMasterRolls(prev => prev.filter((_, i) => i !== index).map((r, idx) => ({
-      ...r,
-      rollIndex: idx + 1,
-      barcodeId: r.isBarcodeCustom ? r.barcodeId : (currentJob ? generateRollBarcode(idx + 1, currentJob.jobCode, selectedType) : '')
-    })));
+
+    const newRollsCount = masterRolls.filter(r => !r.isExisting).length;
+    if (newRollsCount <= 1) {
+      alert("At least 1 new master roll is required to submit.");
+      return;
+    }
+
+    setMasterRolls(prev => prev.filter((_, i) => i !== index).map((r, idx) => {
+      if (r.isExisting) return r;
+      return {
+        ...r,
+        rollIndex: idx + 1,
+        barcodeId: r.isBarcodeCustom ? r.barcodeId : (currentJob ? generateRollBarcode(idx + 1, currentJob.jobCode, selectedType) : '')
+      };
+    }));
   };
 
-  // Aggregated Totals
-  const totalGrossKg = masterRolls.reduce((sum, r) => sum + (parseFloat(r.grossWeightKg) || 0), 0);
-  const totalNetKg = masterRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
-  const totalMeters = masterRolls.reduce((sum, r) => sum + (parseFloat(r.lengthMeters) || 0), 0);
-  const internalValuationRate = parseFloat(currentJob?.unitPrice || currentJob?.ratePerKg || 0);
+  // Newly Added Rolls Only
+  const newRollsToSave = useMemo(() => {
+    return masterRolls.filter(r => !r.isExisting);
+  }, [masterRolls]);
+
+  // Existing Rolls
+  const existingLockedRolls = useMemo(() => {
+    return masterRolls.filter(r => r.isExisting);
+  }, [masterRolls]);
+
+  // Aggregated Totals for NEW rolls
+  const newGrossKg = newRollsToSave.reduce((sum, r) => sum + (parseFloat(r.grossWeightKg) || 0), 0);
+  const newNetKg = newRollsToSave.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
+  const newMeters = newRollsToSave.reduce((sum, r) => sum + (parseFloat(r.lengthMeters) || 0), 0);
+
+  // Cumulative Totals (Existing + New)
+  const cumulativeNetKg = masterRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
+  const internalValuationRate = parseFloat(currentJob?.unitPrice || 0);
 
   // Validate all fields before submission
   const validateForm = () => {
@@ -357,10 +511,14 @@ export default function SFGFGEntryModal({
       errors.storageBay = "Storage bay / location is required.";
     }
 
-    // Roll validation
-    const invalidRolls = masterRolls.some(r => !r.grossWeightKg || parseFloat(r.grossWeightKg) <= 0 || parseFloat(r.netWeightKg) <= 0);
-    if (invalidRolls) {
-      errors.rolls = "All master rolls must have valid gross and net weights entered on the scale.";
+    // Roll validation for new rolls
+    if (newRollsToSave.length === 0) {
+      errors.rolls = "Please add at least 1 new master roll.";
+    } else {
+      const invalidRolls = newRollsToSave.some(r => !r.grossWeightKg || parseFloat(r.grossWeightKg) <= 0 || parseFloat(r.netWeightKg) <= 0);
+      if (invalidRolls) {
+        errors.rolls = "All new master rolls must have valid gross and net weights entered on the scale.";
+      }
     }
 
     setFormErrors(errors);
@@ -379,7 +537,7 @@ export default function SFGFGEntryModal({
     const batchCode = `${isSFG ? 'SFG' : 'FG'}-${currentJob.jobCode || currentJob.id}-${Date.now().toString().slice(-4)}`;
     const batchId = `inv-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
 
-    // 1. Construct Inventory Summary Item
+    // 1. Construct Inventory Summary Item (For the new batch)
     const inventoryItem = {
       id: batchId,
       itemCode: batchCode,
@@ -394,12 +552,12 @@ export default function SFGFGEntryModal({
       filmType: jobFilmType || currentJob.filmType,
       micron: parseFloat(jobMicron) || 0,
       widthMm: parseFloat(jobWidthMm) || 0,
-      availableQtyKg: totalNetKg,
-      totalQtyKg: totalNetKg,
+      availableQtyKg: newNetKg,
+      totalQtyKg: newNetKg,
       unitPrice: internalValuationRate,
       purchaseRatePerKg: internalValuationRate,
       unit: 'Kg',
-      rollsCount: masterRolls.length,
+      rollsCount: newRollsToSave.length,
       storageBay,
       machineName,
       operatorName: operatorName.trim(),
@@ -410,11 +568,11 @@ export default function SFGFGEntryModal({
       notes: batchRemarks || `${selectedType} generated from ${machineName}`
     };
 
-    // 2. Construct Child Inventory Roll Objects (for inventoryRolls & Supabase)
-    const formattedRolls = masterRolls.map((r, idx) => {
-      const rollBarcode = r.barcodeId || generateRollBarcode(idx + 1, currentJob.jobCode, selectedType);
+    // 2. Construct Child Inventory Roll Objects (for new rolls ONLY)
+    const formattedNewRolls = newRollsToSave.map((r) => {
+      const rollBarcode = r.barcodeId || generateRollBarcode(r.rollIndex, currentJob.jobCode, selectedType);
       return {
-        id: `roll-${Date.now()}-${idx + 1}`,
+        id: `roll-${Date.now()}-${r.rollIndex}`,
         barcodeId: rollBarcode,
         rollType: isSFG ? 'SFG' : 'FG',
         category: categoryName,
@@ -422,7 +580,7 @@ export default function SFGFGEntryModal({
         sfgType: isSFG ? selectedType : undefined,
         fgType: !isSFG ? selectedType : undefined,
         itemId: batchId,
-        itemName: `${selectedType} - ${currentJob.jobName} (Roll #${idx + 1})`,
+        itemName: `${selectedType} - ${currentJob.jobName} (Roll #${r.rollIndex})`,
         jobName: currentJob.jobName,
         jobCode: currentJob.jobCode,
         orderId: currentJob.orderId,
@@ -462,9 +620,9 @@ export default function SFGFGEntryModal({
       stageType: selectedType,
       isSFG,
       isFG: !isSFG,
-      outputNetKg: totalNetKg,
-      outputRollsCount: masterRolls.length,
-      rolls: formattedRolls,
+      outputNetKg: newNetKg,
+      outputRollsCount: newRollsToSave.length,
+      rolls: formattedNewRolls,
       machineName,
       operatorName: operatorName.trim(),
       shift,
@@ -475,11 +633,11 @@ export default function SFGFGEntryModal({
     };
 
     if (onSave) {
-      onSave(inventoryItem, formattedRolls, productionRecordLink);
+      onSave(inventoryItem, formattedNewRolls, productionRecordLink);
     }
 
     if (onPrintRolls) {
-      onPrintRolls(formattedRolls);
+      onPrintRolls(formattedNewRolls);
     }
 
     onClose();
@@ -508,8 +666,8 @@ export default function SFGFGEntryModal({
         className="modal-content" 
         style={{ 
           width: '100%', 
-          maxWidth: '960px', 
-          maxHeight: '90vh', 
+          maxWidth: '980px', 
+          maxHeight: '92vh', 
           overflowY: 'auto', 
           padding: 'clamp(16px, 2.5vw, 24px)', 
           borderRadius: '12px',
@@ -538,7 +696,7 @@ export default function SFGFGEntryModal({
               </h3>
             </div>
             <p style={{ fontSize: '0.78rem', color: '#64748b', margin: '4px 0 0 0' }}>
-              Select production job, verify exact physical dimensions, and capture master rolls from the digital scale.
+              Weigh master rolls on digital scale and generate individual 2D barcodes linked to the active job record.
             </p>
           </div>
 
@@ -579,6 +737,11 @@ export default function SFGFGEntryModal({
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 12px', fontSize: '0.75rem', color: '#475569', marginTop: '6px', background: '#ffffff', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                     <span>Client: <strong>{currentJob.clientName || '—'}</strong></span>
                     <span>Structure: <strong>{currentJob.structure || '—'}</strong></span>
+                    {existingLockedRolls.length > 0 && (
+                      <span className="badge badge-info" style={{ fontSize: '0.7rem', padding: '2px 6px', background: '#e0e7ff', color: '#3730a3' }}>
+                        🔗 {existingLockedRolls.length} Previous Roll(s) Recorded
+                      </span>
+                    )}
                   </div>
                 )}
                 {formErrors.selectedJobId && (
@@ -619,7 +782,7 @@ export default function SFGFGEntryModal({
             {/* Technical Job Specifications: Real Width, Micron & Film Type */}
             <div style={{ marginTop: '12px', background: '#ffffff', padding: '12px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
               <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#1e293b', marginBottom: '8px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Ruler size={14} style={{ color: '#0284c7' }} /> Technical Roll Dimensions (Used for Meter Calculation)
+                <Ruler size={14} style={{ color: '#0284c7' }} /> Technical Roll Dimensions (Used for Length & Meter Calculations)
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px' }}>
                 <div>
@@ -795,10 +958,10 @@ export default function SFGFGEntryModal({
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
               <div>
                 <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Scale size={16} style={{ color: '#059669' }} /> 2. Master Rolls Scale Weighing & 2D Barcodes ({masterRolls.length} Rolls)
+                  <Scale size={16} style={{ color: '#059669' }} /> 2. Master Rolls Scale Weighing & 2D Barcodes ({masterRolls.length} Total Rolls)
                 </h4>
                 <span style={{ fontSize: '0.73rem', color: '#64748b' }}>
-                  Place roll on digital scale and enter gross weight; net weight is computed after core deduction.
+                  Previously entered rolls with generated barcodes are locked. Add new rolls below to weigh on the scale.
                 </span>
               </div>
 
@@ -822,10 +985,25 @@ export default function SFGFGEntryModal({
                   style={{ padding: '5px 12px', fontSize: '0.75rem', background: '#047857', borderColor: '#047857', display: 'flex', alignItems: 'center', gap: '4px' }}
                   onClick={handleAddRollRow}
                 >
-                  <Plus size={13} /> Add Master Roll
+                  <Plus size={13} /> + Add Next Master Roll
                 </button>
               </div>
             </div>
+
+            {/* Lock Notice if previous rolls exist */}
+            {existingLockedRolls.length > 0 && (
+              <div style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '8px 12px', borderRadius: '6px', marginBottom: '8px', fontSize: '0.75rem', color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Lock size={14} style={{ color: '#64748b' }} />
+                  <span>
+                    <strong>{existingLockedRolls.length} previous master roll(s)</strong> already have barcodes generated and are locked against accidental modification.
+                  </span>
+                </div>
+                <span style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                  {isAdmin ? '🛡️ Admin can edit/delete from Inventory Stock Register' : '🔒 Editing/Deleting restricted to Admin'}
+                </span>
+              </div>
+            )}
 
             {/* Rolls Entry Table Container */}
             <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', border: formErrors.rolls ? '1.5px solid #ef4444' : '1px solid #e2e8f0', borderRadius: '8px', background: '#ffffff' }}>
@@ -833,104 +1011,159 @@ export default function SFGFGEntryModal({
                 <thead>
                   <tr style={{ background: '#f1f5f9' }}>
                     <th style={{ width: '6%', textAlign: 'center' }}>Roll #</th>
-                    <th style={{ width: '25%' }}>2D Barcode (ISO 18004)</th>
+                    <th style={{ width: '26%' }}>2D Barcode (ISO 18004)</th>
                     <th style={{ width: '18%', textAlign: 'right' }}>Scale Gross (kg) *</th>
-                    <th style={{ width: '11%', textAlign: 'right' }}>Core (kg)</th>
+                    <th style={{ width: '10%', textAlign: 'right' }}>Core (kg)</th>
                     <th style={{ width: '14%', textAlign: 'right' }}>Net Wt (kg)</th>
                     <th style={{ width: '13%', textAlign: 'right' }}>Est. Length (m)</th>
-                    <th style={{ width: '8%', textAlign: 'center' }}>Joints</th>
-                    <th style={{ width: '5%', textAlign: 'center' }}>Action</th>
+                    <th style={{ width: '6%', textAlign: 'center' }}>Joints</th>
+                    <th style={{ width: '7%', textAlign: 'center' }}>Status / Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {masterRolls.map((roll, idx) => (
-                    <tr key={roll.id}>
-                      <td style={{ textAlign: 'center', fontWeight: '800', color: '#4f46e5' }}>
-                        #{idx + 1}
-                      </td>
+                  {masterRolls.map((roll, idx) => {
+                    const isLocked = roll.isLocked;
 
-                      <td>
-                        <input 
-                          type="text" 
-                          className="form-control" 
-                          placeholder="Auto Barcode"
-                          style={{ fontFamily: 'monospace', fontSize: '0.78rem', fontWeight: '700', padding: '3px 6px', width: '100%' }}
-                          value={roll.barcodeId}
-                          onChange={e => handleUpdateRoll(idx, 'barcodeId', e.target.value)}
-                        />
-                      </td>
+                    return (
+                      <tr 
+                        key={roll.id} 
+                        style={{ 
+                          background: isLocked ? '#f8fafc' : '#ffffff',
+                          opacity: isLocked ? 0.88 : 1
+                        }}
+                      >
+                        <td style={{ textAlign: 'center', fontWeight: '800', color: isLocked ? '#64748b' : '#4f46e5' }}>
+                          #{roll.rollIndex || idx + 1}
+                        </td>
 
-                      {/* Scale Gross Input & Button */}
-                      <td style={{ textAlign: 'right' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <input 
+                              type="text" 
+                              className="form-control" 
+                              placeholder="Auto Barcode"
+                              disabled={isLocked}
+                              style={{ 
+                                fontFamily: 'monospace', 
+                                fontSize: '0.78rem', 
+                                fontWeight: '700', 
+                                padding: '3px 6px', 
+                                width: '100%',
+                                background: isLocked ? '#e2e8f0' : '#ffffff',
+                                color: isLocked ? '#475569' : '#0f172a'
+                              }}
+                              value={roll.barcodeId}
+                              onChange={e => handleUpdateRoll(idx, 'barcodeId', e.target.value)}
+                            />
+                            {isLocked && (
+                              <span title="Barcode already generated - Locked" style={{ display: 'inline-flex', color: '#64748b' }}>
+                                <Lock size={13} />
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Scale Gross Input & Button */}
+                        <td style={{ textAlign: 'right' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+                            <input 
+                              type="number" 
+                              step="0.01" 
+                              placeholder="0.00"
+                              disabled={isLocked}
+                              className="form-control" 
+                              style={{ 
+                                width: '85px', 
+                                textAlign: 'right', 
+                                fontWeight: '700', 
+                                padding: '3px 5px', 
+                                fontSize: '0.82rem', 
+                                background: isLocked ? '#e2e8f0' : '#ffffff',
+                                borderColor: !isLocked && !roll.grossWeightKg && formErrors.rolls ? '#ef4444' : undefined 
+                              }}
+                              value={roll.grossWeightKg}
+                              onChange={e => handleUpdateRoll(idx, 'grossWeightKg', e.target.value)}
+                              required={!isLocked}
+                            />
+                            {!isLocked && (
+                              <WeighingScaleCaptureButton 
+                                onWeightCapture={(captured) => handleUpdateRoll(idx, 'grossWeightKg', captured)}
+                              />
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Tare */}
+                        <td style={{ textAlign: 'right' }}>
                           <input 
                             type="number" 
-                            step="0.01" 
-                            placeholder="0.00"
+                            step="0.1" 
+                            placeholder="0.0"
+                            disabled={isLocked}
                             className="form-control" 
-                            style={{ width: '85px', textAlign: 'right', fontWeight: '700', padding: '3px 5px', fontSize: '0.82rem', borderColor: !roll.grossWeightKg && formErrors.rolls ? '#ef4444' : undefined }}
-                            value={roll.grossWeightKg}
-                            onChange={e => handleUpdateRoll(idx, 'grossWeightKg', e.target.value)}
-                            required
+                            style={{ 
+                              width: '55px', 
+                              textAlign: 'right', 
+                              padding: '3px 5px', 
+                              fontSize: '0.8rem',
+                              background: isLocked ? '#e2e8f0' : '#ffffff'
+                            }}
+                            value={roll.tareWeightKg}
+                            onChange={e => handleUpdateRoll(idx, 'tareWeightKg', e.target.value)}
                           />
-                          <WeighingScaleCaptureButton 
-                            onWeightCapture={(captured) => handleUpdateRoll(idx, 'grossWeightKg', captured)}
-                          />
-                        </div>
-                      </td>
+                        </td>
 
-                      {/* Tare */}
-                      <td style={{ textAlign: 'right' }}>
-                        <input 
-                          type="number" 
-                          step="0.1" 
-                          placeholder="0.0"
-                          className="form-control" 
-                          style={{ width: '55px', textAlign: 'right', padding: '3px 5px', fontSize: '0.8rem' }}
-                          value={roll.tareWeightKg}
-                          onChange={e => handleUpdateRoll(idx, 'tareWeightKg', e.target.value)}
-                        />
-                      </td>
+                        {/* Calculated Net */}
+                        <td style={{ textAlign: 'right', fontWeight: '900', color: roll.netWeightKg > 0 ? (isLocked ? '#475569' : '#047857') : '#94a3b8', fontSize: '0.88rem' }}>
+                          {roll.netWeightKg > 0 ? `${roll.netWeightKg.toFixed(2)} kg` : '—'}
+                        </td>
 
-                      {/* Calculated Net */}
-                      <td style={{ textAlign: 'right', fontWeight: '900', color: roll.netWeightKg > 0 ? '#047857' : '#94a3b8', fontSize: '0.88rem' }}>
-                        {roll.netWeightKg > 0 ? `${roll.netWeightKg.toFixed(2)} kg` : '—'}
-                      </td>
+                        {/* Length */}
+                        <td style={{ textAlign: 'right', color: roll.lengthMeters > 0 ? (isLocked ? '#475569' : '#1e3a8a') : '#94a3b8', fontWeight: '700', fontSize: '0.8rem' }}>
+                          {roll.lengthMeters > 0 ? `${roll.lengthMeters.toLocaleString()} m` : '—'}
+                        </td>
 
-                      {/* Length */}
-                      <td style={{ textAlign: 'right', color: roll.lengthMeters > 0 ? '#1e3a8a' : '#94a3b8', fontWeight: '700', fontSize: '0.8rem' }}>
-                        {roll.lengthMeters > 0 ? `${roll.lengthMeters.toLocaleString()} m` : '—'}
-                      </td>
+                        {/* Splice / Joints */}
+                        <td style={{ textAlign: 'center' }}>
+                          <select 
+                            className="form-control" 
+                            disabled={isLocked}
+                            style={{ width: '50px', padding: '2px 4px', fontSize: '0.75rem', background: isLocked ? '#e2e8f0' : '#ffffff' }}
+                            value={roll.jointCount}
+                            onChange={e => handleUpdateRoll(idx, 'jointCount', parseInt(e.target.value) || 0)}
+                          >
+                            <option value="0">0</option>
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                          </select>
+                        </td>
 
-                      {/* Splice / Joints */}
-                      <td style={{ textAlign: 'center' }}>
-                        <select 
-                          className="form-control" 
-                          style={{ width: '50px', padding: '2px 4px', fontSize: '0.75rem' }}
-                          value={roll.jointCount}
-                          onChange={e => handleUpdateRoll(idx, 'jointCount', parseInt(e.target.value) || 0)}
-                        >
-                          <option value="0">0</option>
-                          <option value="1">1</option>
-                          <option value="2">2</option>
-                          <option value="3">3</option>
-                        </select>
-                      </td>
-
-                      {/* Delete */}
-                      <td style={{ textAlign: 'center' }}>
-                        <button 
-                          type="button" 
-                          className="btn-danger-action" 
-                          style={{ padding: '3px 5px' }}
-                          onClick={() => handleRemoveRollRow(idx)}
-                          disabled={masterRolls.length <= 1}
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                        {/* Status / Delete */}
+                        <td style={{ textAlign: 'center' }}>
+                          {isLocked ? (
+                            <span 
+                              className="badge badge-neutral" 
+                              style={{ fontSize: '0.68rem', padding: '2px 5px', background: '#e2e8f0', color: '#475569', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                              title="Generated barcode locked. Only Admin can modify/delete from Inventory."
+                            >
+                              <Lock size={10} /> Saved
+                            </span>
+                          ) : (
+                            <button 
+                              type="button" 
+                              className="btn-danger-action" 
+                              style={{ padding: '3px 5px' }}
+                              onClick={() => handleRemoveRollRow(idx)}
+                              title="Remove this new roll"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -942,33 +1175,41 @@ export default function SFGFGEntryModal({
           </div>
 
           {/* Section 3: Summary Totals Banner */}
-          <div style={{ background: totalNetKg > 0 ? '#f0fdf4' : '#f8fafc', border: totalNetKg > 0 ? '1.5px solid #86efac' : '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '14px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', textAlign: 'center' }}>
+          <div style={{ background: newNetKg > 0 ? '#f0fdf4' : '#f8fafc', border: newNetKg > 0 ? '1.5px solid #86efac' : '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '14px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', textAlign: 'center' }}>
               <div>
-                <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Total Master Rolls</span>
+                <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>New Rolls to Weigh</span>
                 <div style={{ fontSize: '1.15rem', fontWeight: '900', color: '#047857' }}>
-                  {masterRolls.filter(r => parseFloat(r.grossWeightKg) > 0).length} / {masterRolls.length} Weighed
+                  +{newRollsToSave.filter(r => parseFloat(r.grossWeightKg) > 0).length} / {newRollsToSave.length} Rolls
+                </div>
+                {existingLockedRolls.length > 0 && (
+                  <span style={{ fontSize: '0.68rem', color: '#64748b' }}>({existingLockedRolls.length} previously saved)</span>
+                )}
+              </div>
+
+              <div>
+                <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>This Batch Gross</span>
+                <div style={{ fontSize: '1.15rem', fontWeight: '900', color: newGrossKg > 0 ? '#1e293b' : '#94a3b8' }}>
+                  {newGrossKg > 0 ? `+${newGrossKg.toFixed(2)} kg` : '0.00 kg'}
                 </div>
               </div>
 
               <div>
-                <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Total Gross Weight</span>
-                <div style={{ fontSize: '1.15rem', fontWeight: '900', color: totalGrossKg > 0 ? '#1e293b' : '#94a3b8' }}>
-                  {totalGrossKg > 0 ? `${totalGrossKg.toFixed(2)} kg` : '0.00 kg'}
+                <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>This Batch Net Output</span>
+                <div style={{ fontSize: '1.25rem', fontWeight: '900', color: newNetKg > 0 ? '#047857' : '#94a3b8' }}>
+                  {newNetKg > 0 ? `+${newNetKg.toFixed(2)} kg` : '0.00 kg'}
                 </div>
+                {existingLockedRolls.length > 0 && (
+                  <span style={{ fontSize: '0.68rem', color: '#047857', fontWeight: '600' }}>
+                    (Cumulative Job: {cumulativeNetKg.toFixed(1)} kg)
+                  </span>
+                )}
               </div>
 
               <div>
-                <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Total Net Output</span>
-                <div style={{ fontSize: '1.25rem', fontWeight: '900', color: totalNetKg > 0 ? '#047857' : '#94a3b8' }}>
-                  {totalNetKg > 0 ? `${totalNetKg.toFixed(2)} kg` : '0.00 kg'}
-                </div>
-              </div>
-
-              <div>
-                <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Est. Total Length</span>
-                <div style={{ fontSize: '1.15rem', fontWeight: '900', color: totalMeters > 0 ? '#0284c7' : '#94a3b8' }}>
-                  {totalMeters > 0 ? `${totalMeters.toLocaleString()} m` : '0 m'}
+                <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>This Batch Est. Length</span>
+                <div style={{ fontSize: '1.15rem', fontWeight: '900', color: newMeters > 0 ? '#0284c7' : '#94a3b8' }}>
+                  {newMeters > 0 ? `+${newMeters.toLocaleString()} m` : '0 m'}
                 </div>
               </div>
             </div>
@@ -983,7 +1224,7 @@ export default function SFGFGEntryModal({
               type="text" 
               className="form-control" 
               style={{ fontSize: '0.82rem', width: '100%' }}
-              placeholder="Enter remarks e.g. Corona tested, approved by QA, master roll batch notes..."
+              placeholder="Enter remarks e.g. Master roll added to job, visual inspection verified..."
               value={batchRemarks}
               onChange={e => setBatchRemarks(e.target.value)}
             />
@@ -1010,7 +1251,7 @@ export default function SFGFGEntryModal({
                   fontSize: '0.85rem'
                 }}
               >
-                <Printer size={15} /> Save & Print Roll Barcode Stickers ({masterRolls.length})
+                <Printer size={15} /> Save & Print New Roll Barcode Stickers ({newRollsToSave.length})
               </button>
             </div>
           </div>
