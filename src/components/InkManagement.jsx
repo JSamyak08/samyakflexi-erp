@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Droplet, 
   Plus, 
@@ -36,6 +36,7 @@ import { generateDocRefNumber, getNextDocRefNumber } from '../services/settingsS
 import { notifyPurchaseOrderIssued } from '../services/emailService';
 
 export default function InkManagement({
+  urlParams = {},
   inks = [],
   inventory = [],
   grns = [],
@@ -59,6 +60,23 @@ export default function InkManagement({
 
   // Sub-tabs: 'directory' | 'calculator' | 'stock'
   const [activeSubTab, setActiveSubTab] = useState('directory');
+
+  // Deep linking sync with urlParams
+  useEffect(() => {
+    if (urlParams?.subTab || urlParams?.tab) {
+      const targetSubTab = urlParams.subTab || urlParams.tab;
+      if (['directory', 'calculator', 'stock'].includes(targetSubTab)) {
+        setActiveSubTab(targetSubTab);
+      }
+    }
+    if (urlParams?.id || urlParams?.code) {
+      const targetId = urlParams.id || urlParams.code;
+      const match = (inks || []).find(i => i.id === targetId || i.productCode === targetId);
+      if (match) {
+        setSelectedInkForHistory(match);
+      }
+    }
+  }, [urlParams, inks]);
 
   // Search & Filter State for Directory
   const [searchTerm, setSearchTerm] = useState('');

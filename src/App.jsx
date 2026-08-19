@@ -3069,6 +3069,26 @@ export default function App() {
           />
         )}
 
+        {/* TAB: INK MASTER & COSTING */}
+        {activeTab === 'ink_management' && (
+          <InkManagement 
+            urlParams={urlParams}
+            inks={inks}
+            inventory={inventory}
+            grns={grns}
+            storeIssueTransactions={storeIssueTransactions}
+            productionRecords={productionRecords}
+            vendors={vendors}
+            currentUser={currentUser}
+            onAddInk={handleAddInk}
+            onUpdateInk={handleUpdateInk}
+            onDeleteInk={handleDeleteInk}
+            onUpdateInkPrice={handleUpdateInkPrice}
+            onSaveOrder={handleAddOrder}
+            onNavigateTab={handleTabChange}
+          />
+        )}
+
         {/* TAB: MATERIAL INDENTS & CONSUMABLE STORE */}
         {activeTab === 'material_indents' && (
           <ConsumablesAndIndents 

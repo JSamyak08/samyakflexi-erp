@@ -61,6 +61,12 @@ export const SLUG_TAB_MAP = {
 
   '/ink-management': 'ink_management',
   'ink-management': 'ink_management',
+  '/ink-master': 'ink_management',
+  'ink-master': 'ink_management',
+  '/ink-costing': 'ink_management',
+  'ink-costing': 'ink_management',
+  '/inks': 'ink_management',
+  'inks': 'ink_management',
 
   '/material-indents': 'material_indents',
   'material-indents': 'material_indents',
