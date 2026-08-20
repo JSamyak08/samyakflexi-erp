@@ -191,6 +191,17 @@ initSafeStorage();
 
 
 export default function App() {
+  // Shared Global State with dual-persistence (Supabase Authoritative + localStorage fallback)
+  const isSupaConfigured = isSupabaseConfigured();
+  const [isSupaActive, setIsSupaActive] = useState(isSupaConfigured);
+
+  // Authentication & Active User Session State
+  const [currentUser, setCurrentUser] = useState(null);
+  const [sessionProfile, setSessionProfile] = useState(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthReady, setIsAuthReady] = useState(!isSupaConfigured);
+
+  // Route & Navigation State
   const [routeInfo, setRouteInfo] = useState(() => getRouteFromUrl());
   const activeTab = routeInfo.tab;
   const urlParams = routeInfo.params || {};
@@ -201,7 +212,6 @@ export default function App() {
     pushSlugState(tabKey, params);
     setIsMobileMenuOpen(false);
   };
-
 
   // Sync state when user uses browser Back / Forward buttons
   useEffect(() => {
@@ -250,16 +260,6 @@ export default function App() {
     }
     return fallbackDefault;
   };
-
-  // Shared Global State with dual-persistence (Supabase Authoritative + localStorage fallback)
-  const isSupaConfigured = isSupabaseConfigured();
-  const [isSupaActive, setIsSupaActive] = useState(isSupaConfigured);
-
-  // Authentication & Active User Session State
-  const [currentUser, setCurrentUser] = useState(null);
-  const [sessionProfile, setSessionProfile] = useState(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isAuthReady, setIsAuthReady] = useState(!isSupaConfigured);
 
   // Hydrate initial state safely from localStorage (if present), or empty array default.
   // stripDummyRecords ensures no legacy seed data from development ever enters production state.
