@@ -146,50 +146,148 @@ export default function UniversalBarcodeScannerModal({
     const query = (activeBarcode || '').trim().toLowerCase();
     if (!query) return null;
 
-    // 1. Inventory Rolls Search (Highest Priority for Barcodes)
+    // Extract potential GRN code if barcode is formatted as (CON|RM)-BC-YYYYMMDD-XXX or similar
+    const grnExtract = query.replace(/^(con|rm)-bc-/, '').replace(/-\d+$/, '');
+
+    // 1. Inventory Rolls & Inward Packages Search (Highest Priority for Barcodes)
     const matchedRoll = (inventoryRolls || []).find(r => {
       const bId = (r.barcodeId || r.id || '').toLowerCase();
-      const bNo = (r.batchNo || '').toLowerCase();
+      const bNo = (r.batchNo || r.lotNo || '').toLowerCase();
       const invNo = (r.invoiceNo || '').toLowerCase();
-      return bId === query || bId.includes(query) || (bNo && bNo === query) || (invNo && invNo === query);
+      const rGrn = (r.grnNo || r.grn_no || '').toLowerCase();
+      return bId === query || bId.includes(query) || (bNo && bNo === query) || (invNo && invNo === query) || (rGrn && rGrn === query);
     });
 
     if (matchedRoll) {
+      // Find linked GRN across grns list to backfill any missing inward metadata
+      const linkedGrn = (grns || []).find(g => {
+        const gNum = (g.grn_number || g.grnNumber || g.grnNo || g.id || '').toLowerCase();
+        const gCode = gNum.replace(/^grn-/, '');
+        const rollGrn = (matchedRoll.grnNo || matchedRoll.grn_no || '').toLowerCase();
+        return (rollGrn && (gNum === rollGrn || gNum.includes(rollGrn) || rollGrn.includes(gNum))) ||
+               (grnExtract && (gCode === grnExtract || gNum.includes(grnExtract))) ||
+               (matchedRoll.invoiceNo && (String(g.invoice_number || g.invoiceNumber || g.invoiceNo || '').toLowerCase() === String(matchedRoll.invoiceNo).toLowerCase())) ||
+               (matchedRoll.batchNo && (String(g.batch_no || g.batchNo || '').toLowerCase() === String(matchedRoll.batchNo).toLowerCase()));
+      });
+
+      // Find linked Inventory Item across inventory list
+      const linkedItem = (inventory || []).find(item => {
+        const iId = (item.id || '').toLowerCase();
+        const iCode = (item.item_code || item.itemCode || '').toLowerCase();
+        const iName = (item.item_name || item.itemName || '').toLowerCase();
+        const rollItemId = (matchedRoll.itemId || matchedRoll.stockItemId || '').toLowerCase();
+        const rollItemName = (matchedRoll.itemName || '').toLowerCase();
+        return (rollItemId && (iId === rollItemId || iCode === rollItemId)) ||
+               (rollItemName && (iName === rollItemName || iCode === rollItemName));
+      });
+
+      const resolvedCategory = matchedRoll.category || linkedGrn?.category || linkedItem?.category || (matchedRoll.barcodeId?.startsWith('CON-BC') ? 'Chemicals & Solvents' : '');
+      const resolvedItemName = matchedRoll.itemName || linkedGrn?.itemName || linkedItem?.item_name || linkedItem?.itemName || (resolvedCategory ? `${resolvedCategory} Material` : 'Inward Stock Material');
+      const resolvedVendor = matchedRoll.vendorName || matchedRoll.vendor || linkedGrn?.vendor_name || linkedGrn?.vendorName || linkedGrn?.supplier || linkedItem?.vendor || linkedItem?.vendor_name || 'N/A';
+      const resolvedBatch = matchedRoll.batchNo || matchedRoll.lotNo || linkedGrn?.batch_no || linkedGrn?.batchNo || 'N/A';
+      const resolvedInvoice = matchedRoll.invoiceNo || matchedRoll.invoice_no || linkedGrn?.invoice_number || linkedGrn?.invoiceNumber || linkedGrn?.invoiceNo || 'N/A';
+      const resolvedPO = matchedRoll.poNumber || matchedRoll.po_number || linkedGrn?.po_number || linkedGrn?.poNumber || 'N/A';
+      const resolvedGRN = matchedRoll.grnNo || matchedRoll.grn_no || linkedGrn?.grn_number || linkedGrn?.grnNumber || linkedGrn?.grnNo || (grnExtract && grnExtract.length > 3 ? `GRN-${grnExtract.toUpperCase()}` : 'N/A');
+      const resolvedPackaging = matchedRoll.packagingType || linkedGrn?.packagingType || (resolvedCategory.includes('Chemical') || resolvedCategory.includes('Solvent') ? 'Drum / Container' : (resolvedCategory.includes('Ink') ? 'Ink Container / Bucket' : 'Roll / Pack'));
+
+      const isSFG = matchedRoll.rollType === 'SFG' || (resolvedCategory && resolvedCategory.includes('Semi-Finished')) || (matchedRoll.rollType || '').includes('SFG');
+      const isFG = matchedRoll.rollType === 'FG' || (resolvedCategory && resolvedCategory.includes('Finished')) || (matchedRoll.rollType || '').includes('FG');
+      const isFilm = resolvedCategory === 'Film Substrates' || (!resolvedCategory && (matchedRoll.rollType === 'RAW_MATERIAL' || (matchedRoll.barcodeId || '').startsWith('RM-BC') || Number(matchedRoll.micron) > 0));
+
+      let entityCatTitle = 'Raw Material (RM) Substrate Roll';
+      let badgeCol = '#d97706';
+      let badgeBackground = '#fffbeb';
+
+      if (isSFG) {
+        entityCatTitle = 'Semi-Finished Goods (SFG) Roll';
+        badgeCol = '#2563eb';
+        badgeBackground = '#eff6ff';
+      } else if (isFG) {
+        entityCatTitle = 'Finished Goods (FG) Roll';
+        badgeCol = '#059669';
+        badgeBackground = '#ecfdf5';
+      } else if (resolvedCategory === 'Chemicals & Solvents' || (matchedRoll.barcodeId || '').startsWith('CON-BC')) {
+        entityCatTitle = 'Chemicals & Solvents Inward Unit';
+        badgeCol = '#0284c7';
+        badgeBackground = '#f0f9ff';
+      } else if (resolvedCategory === 'Inks & Solvents') {
+        entityCatTitle = 'Inks & Solvents Inward Unit';
+        badgeCol = '#db2777';
+        badgeBackground = '#fdf2f8';
+      } else if (resolvedCategory === 'Adhesives & Resins') {
+        entityCatTitle = 'Adhesives & Resins Inward Unit';
+        badgeCol = '#ea580c';
+        badgeBackground = '#fff7ed';
+      } else if (resolvedCategory) {
+        entityCatTitle = `${resolvedCategory} Inward Unit`;
+        badgeCol = '#0891b2';
+        badgeBackground = '#ecfeff';
+      }
+
+      const rollProps = [
+        { label: 'Barcode ID', value: matchedRoll.barcodeId || matchedRoll.id || 'N/A', isCode: true },
+        { label: 'Item Name', value: resolvedItemName },
+        { label: 'Material Category', value: resolvedCategory || (isFilm ? 'Film Substrates' : 'General Inventory') },
+        { label: 'Packaging Unit', value: resolvedPackaging },
+        { label: 'Net Usable Qty / Weight', value: matchedRoll.netWeightKg !== undefined && matchedRoll.netWeightKg !== null ? `${matchedRoll.netWeightKg} ${matchedRoll.unit || 'kg'}` : (matchedRoll.weightKg !== undefined && matchedRoll.weightKg !== null ? `${matchedRoll.weightKg} ${matchedRoll.unit || 'kg'}` : 'N/A'), isHighlight: true },
+        { label: 'Gross Scale Weight', value: matchedRoll.grossWeightKg !== undefined && matchedRoll.grossWeightKg !== null ? `${matchedRoll.grossWeightKg} ${matchedRoll.unit || 'kg'}` : 'N/A' },
+        { label: 'Tare Weight', value: matchedRoll.tareWeightKg !== undefined && matchedRoll.tareWeightKg !== null ? `${matchedRoll.tareWeightKg} ${matchedRoll.unit || 'kg'}` : 'N/A' },
+        { label: 'Vendor / Manufacturer', value: resolvedVendor },
+        { label: 'Batch / Lot Number', value: resolvedBatch },
+        { label: 'Vendor Invoice No', value: resolvedInvoice },
+        { label: 'Purchase Order No', value: resolvedPO },
+        { label: 'Linked GRN No', value: resolvedGRN },
+        { label: 'QC Quality Status', value: matchedRoll.qcStatus || matchedRoll.qc_status || linkedGrn?.qc_status || linkedGrn?.status || 'N/A', isStatus: true },
+        { label: 'Storage Bay / Location', value: matchedRoll.locationBay || matchedRoll.location || (resolvedCategory === 'Chemicals & Solvents' ? 'Solvent Storage Yard' : (resolvedCategory === 'Inks & Solvents' ? 'Ink Mixing Room' : 'N/A')) },
+        { label: 'Inward / Production Date', value: matchedRoll.productionDate || (matchedRoll.inwardDatetime ? String(matchedRoll.inwardDatetime).split('T')[0] : (matchedRoll.date || linkedGrn?.receivedDate || 'N/A')) }
+      ];
+
+      // If film roll, include technical film geometry
+      if (isFilm) {
+        if (matchedRoll.micron || linkedItem?.micron) {
+          rollProps.push({ label: 'Film Thickness', value: `${matchedRoll.micron || linkedItem?.micron} µ` });
+        }
+        if (matchedRoll.widthMm || linkedItem?.width_mm || linkedItem?.widthMm) {
+          rollProps.push({ label: 'Film / Slit Width', value: `${matchedRoll.widthMm || linkedItem?.width_mm || linkedItem?.widthMm} mm` });
+        }
+        if (matchedRoll.lengthMeters) {
+          rollProps.push({ label: 'Calculated Length', value: `${matchedRoll.lengthMeters} m` });
+        }
+        if (matchedRoll.coreDia || matchedRoll.core_dia) {
+          rollProps.push({ label: 'Core Diameter', value: matchedRoll.coreDia || matchedRoll.core_dia });
+        }
+        if (matchedRoll.jointCount !== undefined && matchedRoll.jointCount !== null && matchedRoll.jointCount !== '') {
+          rollProps.push({ label: 'Joints / Splices', value: `${matchedRoll.jointCount} Joints` });
+        }
+      }
+
+      if (matchedRoll.jobName) {
+        rollProps.push({ label: 'Linked Job Name', value: matchedRoll.jobName });
+      }
+      if (matchedRoll.orderId || matchedRoll.orderNo) {
+        rollProps.push({ label: 'Order OCN Reference', value: matchedRoll.orderId || matchedRoll.orderNo });
+      }
+      if (matchedRoll.machineName || matchedRoll.stationId) {
+        rollProps.push({ label: 'Machine / Press', value: matchedRoll.machineName || matchedRoll.stationId });
+      }
+      if (matchedRoll.operatorName || matchedRoll.operator) {
+        rollProps.push({ label: 'Operator Name', value: matchedRoll.operatorName || matchedRoll.operator });
+      }
+      if (matchedRoll.shift) {
+        rollProps.push({ label: 'Shift Allocation', value: matchedRoll.shift });
+      }
+
+      rollProps.push({ label: 'Current Status', value: matchedRoll.status || 'In Stock' });
+
       return {
         type: 'ROLL',
-        entityCategory: matchedRoll.rollType === 'SFG' || (matchedRoll.category || '').includes('Semi-Finished') 
-          ? 'Semi-Finished Goods (SFG) Roll' 
-          : (matchedRoll.rollType === 'FG' || (matchedRoll.category || '').includes('Finished') 
-            ? 'Finished Goods (FG) Roll' 
-            : 'Raw Material (RM) Substrate Roll'),
-        badgeColor: matchedRoll.rollType === 'SFG' ? '#2563eb' : (matchedRoll.rollType === 'FG' ? '#059669' : '#d97706'),
-        badgeBg: matchedRoll.rollType === 'SFG' ? '#eff6ff' : (matchedRoll.rollType === 'FG' ? '#ecfdf5' : '#fffbeb'),
-        title: matchedRoll.itemName || 'Roll Substrate',
+        entityCategory: entityCatTitle,
+        badgeColor: badgeCol,
+        badgeBg: badgeBackground,
+        title: resolvedItemName,
         code: matchedRoll.barcodeId || matchedRoll.id,
         raw: matchedRoll,
-        properties: [
-          { label: 'Barcode ID', value: matchedRoll.barcodeId || matchedRoll.id || 'N/A', isCode: true },
-          { label: 'Roll Stage / Type', value: matchedRoll.rollType || matchedRoll.category || 'N/A' },
-          { label: 'Net Usable Weight', value: matchedRoll.netWeightKg !== undefined && matchedRoll.netWeightKg !== null ? `${matchedRoll.netWeightKg} kg` : (matchedRoll.weightKg !== undefined && matchedRoll.weightKg !== null ? `${matchedRoll.weightKg} kg` : 'N/A'), isHighlight: true },
-          { label: 'Gross Scale Weight', value: matchedRoll.grossWeightKg !== undefined && matchedRoll.grossWeightKg !== null ? `${matchedRoll.grossWeightKg} kg` : 'N/A' },
-          { label: 'Tare Weight', value: matchedRoll.tareWeightKg !== undefined && matchedRoll.tareWeightKg !== null ? `${matchedRoll.tareWeightKg} kg` : 'N/A' },
-          { label: 'Calculated Length', value: matchedRoll.lengthMeters ? `${matchedRoll.lengthMeters} m` : (matchedRoll.length ? `${matchedRoll.length} m` : 'N/A') },
-          { label: 'Film Thickness', value: matchedRoll.micron ? `${matchedRoll.micron} µ` : 'N/A' },
-          { label: 'Slit / Web Width', value: matchedRoll.widthMm ? `${matchedRoll.widthMm} mm` : (matchedRoll.width ? `${matchedRoll.width} mm` : 'N/A') },
-          { label: 'Core Diameter', value: matchedRoll.coreDia || matchedRoll.core_dia || 'N/A' },
-          { label: 'Joints / Splices', value: matchedRoll.jointCount !== undefined && matchedRoll.jointCount !== null && matchedRoll.jointCount !== '' ? `${matchedRoll.jointCount} Joints` : 'N/A' },
-          { label: 'QC Quality Status', value: matchedRoll.qcStatus || matchedRoll.qc_status || matchedRoll.status || 'N/A', isStatus: true },
-          { label: 'Machine / Press', value: matchedRoll.machineName || matchedRoll.stationId || 'N/A' },
-          { label: 'Operator Name', value: matchedRoll.operatorName || matchedRoll.operator || 'N/A' },
-          { label: 'Shift Allocation', value: matchedRoll.shift || 'N/A' },
-          { label: 'Inward / Production Date', value: matchedRoll.productionDate || (matchedRoll.inwardDatetime ? matchedRoll.inwardDatetime.split('T')[0] : (matchedRoll.date || 'N/A')) },
-          { label: 'Storage Bay / Rack', value: matchedRoll.locationBay || matchedRoll.location || 'N/A' },
-          { label: 'Linked Job Name', value: matchedRoll.jobName || 'N/A' },
-          { label: 'Order OCN Reference', value: matchedRoll.orderId || matchedRoll.orderNo || 'N/A' },
-          { label: 'Vendor / Manufacturer', value: matchedRoll.vendorName || matchedRoll.vendor || 'N/A' },
-          { label: 'Batch / Lot Number', value: matchedRoll.batchNo || matchedRoll.lotNo || 'N/A' },
-          { label: 'Status', value: matchedRoll.status || 'N/A' }
-        ],
+        properties: rollProps,
         parentGenealogy: matchedRoll.inputBarcodeIds || []
       };
     }
@@ -294,30 +392,38 @@ export default function UniversalBarcodeScannerModal({
 
     // 5. Goods Receipt Note (GRN) Search
     const matchedGrn = (grns || []).find(g => {
-      const gNum = (g.grn_number || g.grnNumber || g.id || '').toLowerCase();
+      const gNum = (g.grn_number || g.grnNumber || g.grnNo || g.id || '').toLowerCase();
+      const gCode = gNum.replace(/^grn-/, '');
       const po = (g.po_number || g.poNumber || '').toLowerCase();
-      const inv = (g.invoice_number || g.invoiceNumber || '').toLowerCase();
-      return gNum === query || gNum.includes(query) || (po && po === query) || (inv && inv === query);
+      const inv = (g.invoice_number || g.invoiceNumber || g.invoiceNo || '').toLowerCase();
+      const bNo = (g.batch_no || g.batchNo || '').toLowerCase();
+      return gNum === query || gNum.includes(query) || (po && po === query) || (inv && inv === query) || (bNo && bNo === query) ||
+             (grnExtract && (gCode === grnExtract || gNum.includes(grnExtract)));
     });
 
     if (matchedGrn) {
+      const grnCat = matchedGrn.category || 'General Material';
       return {
         type: 'GRN',
-        entityCategory: 'Goods Receipt Note (GRN) Inward QC',
+        entityCategory: `Goods Receipt Note (GRN) - ${grnCat}`,
         badgeColor: '#ea580c',
         badgeBg: '#fff7ed',
-        title: `GRN: ${matchedGrn.grn_number || matchedGrn.grnNumber || matchedGrn.id}`,
-        code: matchedGrn.grn_number || matchedGrn.grnNumber || matchedGrn.id,
+        title: `${matchedGrn.itemName || matchedGrn.item_name || 'GRN Inward'} (${matchedGrn.grn_number || matchedGrn.grnNumber || matchedGrn.grnNo || matchedGrn.id})`,
+        code: matchedGrn.grn_number || matchedGrn.grnNumber || matchedGrn.grnNo || matchedGrn.id,
         raw: matchedGrn,
         properties: [
-          { label: 'GRN Number', value: matchedGrn.grn_number || matchedGrn.grnNumber || matchedGrn.id, isCode: true },
-          { label: 'Vendor / Supplier', value: matchedGrn.vendor_name || matchedGrn.vendorName || 'N/A' },
+          { label: 'GRN Number', value: matchedGrn.grn_number || matchedGrn.grnNumber || matchedGrn.grnNo || matchedGrn.id, isCode: true },
+          { label: 'Item Name', value: matchedGrn.itemName || matchedGrn.item_name || 'N/A' },
+          { label: 'Material Category', value: grnCat },
+          { label: 'Vendor / Supplier', value: matchedGrn.vendor_name || matchedGrn.vendorName || matchedGrn.supplier || 'N/A' },
           { label: 'Purchase Order No', value: matchedGrn.po_number || matchedGrn.poNumber || 'N/A' },
-          { label: 'Vendor Invoice No', value: matchedGrn.invoice_number || matchedGrn.invoiceNumber || 'N/A' },
+          { label: 'Vendor Invoice No', value: matchedGrn.invoice_number || matchedGrn.invoiceNumber || matchedGrn.invoiceNo || 'N/A' },
+          { label: 'Batch / Lot Number', value: matchedGrn.batch_no || matchedGrn.batchNo || 'N/A' },
           { label: 'Received Date', value: matchedGrn.received_date || matchedGrn.receivedDate || 'N/A' },
-          { label: 'Received Qty', value: matchedGrn.received_qty_kg || matchedGrn.receivedQtyKg ? `${matchedGrn.received_qty_kg || matchedGrn.receivedQtyKg} kg` : 'N/A', isHighlight: true },
-          { label: 'QC Inspection Status', value: matchedGrn.qc_status || matchedGrn.qcStatus || matchedGrn.status || 'N/A', isStatus: true },
-          { label: 'Remarks / Notes', value: matchedGrn.qc_remarks || matchedGrn.remarks || 'N/A' }
+          { label: 'Received Quantity', value: matchedGrn.received_qty_kg || matchedGrn.receivedQtyKg || matchedGrn.netWeightKg ? `${matchedGrn.received_qty_kg || matchedGrn.receivedQtyKg || matchedGrn.netWeightKg} ${matchedGrn.unit || 'kg'}` : 'N/A', isHighlight: true },
+          { label: 'Packaging Units', value: matchedGrn.rollsReceived || matchedGrn.unitsReceived ? `${matchedGrn.rollsReceived || matchedGrn.unitsReceived} ${matchedGrn.packagingType || 'Units'}` : 'N/A' },
+          { label: 'QC Inspection Status', value: matchedGrn.qc_status || matchedGrn.qcStatus || matchedGrn.status || 'Pending QC', isStatus: true },
+          { label: 'Remarks / Notes', value: matchedGrn.qc_remarks || matchedGrn.remarks || matchedGrn.qcNotes || 'N/A' }
         ]
       };
     }
