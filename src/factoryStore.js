@@ -525,9 +525,10 @@ export const initialDispatchShipments = [];
  */
 export const generateBarcodeId = (prefix = 'BC') => {
   const today = new Date();
-  const dateStr = today.toISOString().slice(0,10).replace(/-/g, '');
-  const randomSuffix = Math.floor(100 + Math.random() * 900);
-  return `${prefix}-${dateStr}-${randomSuffix}`;
+  const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+  const timeMs = String(today.getTime()).slice(-4);
+  const randomHex = Math.random().toString(36).substring(2, 6).toUpperCase();
+  return `${prefix}-${dateStr}-${timeMs}${randomHex}`;
 };
 
 export const generateInventoryId = (inventory = []) => {

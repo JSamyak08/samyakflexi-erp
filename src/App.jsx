@@ -3101,6 +3101,7 @@ export default function App() {
             inventoryRolls={inventoryRolls}
             jobMasters={jobMasters}
             cylinders={cylinders}
+            machines={machines}
             currentUser={currentUser}
             storeIssueTransactions={storeIssueTransactions}
             onSaveProductionRecord={handleSaveProductionRecord}
@@ -3145,18 +3146,6 @@ export default function App() {
           />
         )}
 
-        {/* TAB: CYLINDERS */}
-        {activeTab === 'cylinders' && (
-          <CylinderManagement 
-            urlParams={urlParams}
-            cylinders={cylinders}
-            orders={orders}
-            jobMasters={jobMasters}
-            onAddCylinder={handleAddCylinder}
-            onUpdateCylinder={handleUpdateCylinder}
-            onDeleteCylinder={handleDeleteCylinder}
-          />
-        )}
 
         {/* TAB 1: JOB PUNCHING & PRE-COSTING */}
         {activeTab === 'job_punching' && (
@@ -3202,6 +3191,7 @@ export default function App() {
             indents={indents}
             inks={inks}
             jobMasters={jobMasters}
+            machines={machines}
             currentUser={currentUser}
             productionRecords={productionRecords}
             storeIssueTransactions={storeIssueTransactions}

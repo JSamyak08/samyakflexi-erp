@@ -41,6 +41,7 @@ export default function ProductionRecordManagement({
   inventoryRolls = [],
   jobMasters = [],
   cylinders = [],
+  machines = [],
   currentUser,
   storeIssueTransactions = [],
   onSaveProductionRecord,
@@ -694,6 +695,7 @@ export default function ProductionRecordManagement({
           orders={orders}
           inventoryRolls={inventoryRolls}
           productionRecords={productionRecords}
+          machines={machines}
           currentUser={currentUser}
           initialJobId={selectedRecord?.orderId || selectedRecord?.id || selectedOrder?.id || ''}
           onClose={handleCloseSfgFgModal}

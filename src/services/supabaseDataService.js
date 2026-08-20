@@ -1295,6 +1295,7 @@ export async function fetchInventoryRolls() {
     if (!data) return [];
 
     return data.map(r => ({
+      id: r.barcode_id,
       barcodeId: r.barcode_id,
       rollType: r.roll_type || 'RAW_MATERIAL',
       itemId: r.item_id,
@@ -1305,11 +1306,22 @@ export async function fetchInventoryRolls() {
       micron: Number(r.micron) || 0,
       widthMm: Number(r.width_mm) || 0,
       inwardDatetime: r.inward_datetime,
+      productionDate: r.production_date || (r.inward_datetime ? r.inward_datetime.split('T')[0] : ''),
       vendorName: r.vendor_name,
       invoiceNo: r.invoice_no,
       batchNo: r.batch_no,
+      grossWeightKg: Number(r.gross_weight_kg ?? r.net_weight_kg) || 0,
+      tareWeightKg: Number(r.tare_weight_kg ?? 0) || 0,
       netWeightKg: Number(r.net_weight_kg) || 0,
-      availableWeightKg: Number(r.available_weight_kg) || 0,
+      availableWeightKg: Number(r.available_weight_kg ?? r.net_weight_kg) || 0,
+      lengthMeters: Number(r.length_meters ?? 0) || 0,
+      jointCount: Number(r.joint_count ?? 0) || 0,
+      qcStatus: r.qc_status || 'Passed',
+      machineName: r.machine_name || r.station_id || '',
+      operatorName: r.operator_name || '',
+      shift: r.shift || '',
+      remarks: r.remarks || '',
+      coreDia: r.core_dia || '3 Inch (76mm)',
       purchaseRatePerKg: Number(r.purchase_rate_per_kg ?? r.unit_price ?? 0) || 0,
       unitPrice: Number(r.purchase_rate_per_kg ?? r.unit_price ?? 0) || 0,
       unit: r.unit || (r.category === 'Film Substrates' ? 'Kg' : 'Pcs'),
@@ -1328,7 +1340,7 @@ export async function saveInventoryRollToSupabase(roll) {
   if (!isSupabaseConfigured()) return;
   await ensureValidSession();
   const fullPayload = {
-    barcode_id: roll.barcodeId,
+    barcode_id: roll.barcodeId || roll.id,
     roll_type: roll.rollType || 'RAW_MATERIAL',
     item_id: roll.itemId,
     item_name: roll.itemName || 'Roll',
@@ -1338,11 +1350,22 @@ export async function saveInventoryRollToSupabase(roll) {
     micron: Number(roll.micron) || 0,
     width_mm: Number(roll.widthMm) || 0,
     inward_datetime: roll.inwardDatetime || new Date().toISOString(),
+    production_date: roll.productionDate || (roll.inwardDatetime ? roll.inwardDatetime.split('T')[0] : new Date().toISOString().split('T')[0]),
     vendor_name: roll.vendorName || '',
     invoice_no: roll.invoiceNo || '',
     batch_no: roll.batchNo || '',
+    gross_weight_kg: Number(roll.grossWeightKg ?? roll.netWeightKg ?? 0) || 0,
+    tare_weight_kg: Number(roll.tareWeightKg ?? 0) || 0,
     net_weight_kg: Number(roll.netWeightKg) || 0,
-    available_weight_kg: Number(roll.availableWeightKg) || 0,
+    available_weight_kg: Number(roll.availableWeightKg ?? roll.netWeightKg ?? 0) || 0,
+    length_meters: Number(roll.lengthMeters ?? 0) || 0,
+    joint_count: Number(roll.jointCount ?? 0) || 0,
+    qc_status: roll.qcStatus || 'Passed',
+    machine_name: roll.machineName || roll.machine || roll.stationId || '',
+    operator_name: roll.operatorName || roll.operator || '',
+    shift: roll.shift || '',
+    remarks: roll.remarks || roll.notes || '',
+    core_dia: roll.coreDia || '3 Inch (76mm)',
     purchase_rate_per_kg: Number(roll.purchaseRatePerKg ?? roll.unitPrice ?? roll.purchaseRate ?? 0) || 0,
     unit_price: Number(roll.purchaseRatePerKg ?? roll.unitPrice ?? roll.purchaseRate ?? 0) || 0,
     unit: roll.unit || 'Kg',
@@ -1351,14 +1374,26 @@ export async function saveInventoryRollToSupabase(roll) {
     location_bay: roll.locationBay || 'Bay A',
     status: roll.status || 'In Stock'
   };
-  console.log('[inventory_rolls] Saving:', roll.barcodeId);
+  console.log('[inventory_rolls] Saving barcode:', roll.barcodeId || roll.id);
   const { error: fullErr } = await supabase.from('inventory_rolls').upsert(fullPayload, { onConflict: 'barcode_id' });
   if (fullErr) {
     console.warn('[inventory_rolls] Full payload failed, trying minimal:', fullErr.message);
-    const { error: minErr } = await supabase.from('inventory_rolls').upsert({ barcode_id: roll.barcodeId, item_name: roll.itemName || 'Roll', roll_type: roll.rollType || 'RAW_MATERIAL', net_weight_kg: Number(roll.netWeightKg) || 0, status: roll.status || 'In Stock' }, { onConflict: 'barcode_id' });
-    if (minErr) { console.error('[inventory_rolls] Minimal payload failed:', minErr.message); handleSupabaseError(minErr, 'inventory_rolls'); }
-    else { console.log('[inventory_rolls] Saved with minimal payload.'); }
-  } else { console.log('[inventory_rolls] Saved successfully.'); }
+    const { error: minErr } = await supabase.from('inventory_rolls').upsert({ 
+      barcode_id: roll.barcodeId || roll.id, 
+      item_name: roll.itemName || 'Roll', 
+      roll_type: roll.rollType || 'RAW_MATERIAL', 
+      net_weight_kg: Number(roll.netWeightKg) || 0, 
+      status: roll.status || 'In Stock' 
+    }, { onConflict: 'barcode_id' });
+    if (minErr) { 
+      console.error('[inventory_rolls] Minimal payload failed:', minErr.message); 
+      handleSupabaseError(minErr, 'inventory_rolls'); 
+    } else { 
+      console.log('[inventory_rolls] Saved with minimal payload.'); 
+    }
+  } else { 
+    console.log('[inventory_rolls] Saved successfully.'); 
+  }
 }
 
 // ============================================================================

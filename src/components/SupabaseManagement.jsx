@@ -675,6 +675,27 @@ ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS approval_date TEX
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS notes TEXT;
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS materials_list JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS process_logs JSONB;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS printing_start_time TIMESTAMPTZ;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS printing_end_time TIMESTAMPTZ;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS printing_status TEXT DEFAULT 'Pending';
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS printing_duration_minutes NUMERIC;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS printing_duration_formatted TEXT;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS actual_meters_printed NUMERIC;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS ink_gsm_in_speed NUMERIC;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS qty_first_pass_l1 NUMERIC;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS stages JSONB DEFAULT '{}'::jsonb;
+
+-- Printing execution parameters on orders
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS printing_start_time TIMESTAMPTZ;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS printing_end_time TIMESTAMPTZ;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS printing_status TEXT DEFAULT 'Pending';
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS printing_duration_minutes NUMERIC;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS printing_duration_formatted TEXT;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS actual_meters_printed NUMERIC;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS ink_gsm_in_speed NUMERIC;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS printed_output_kg NUMERIC;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS printing_notes TEXT;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS machine_id TEXT;
 
 -- VIEW: HIGH SCRAP & WASTAGE AUDIT REGISTRY (threshold >= 5.0%)
 CREATE OR REPLACE VIEW public.high_scrap_audit_registry AS

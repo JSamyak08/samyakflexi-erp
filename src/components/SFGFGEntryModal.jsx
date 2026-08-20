@@ -37,20 +37,6 @@ export const FG_TYPES = [
   'Laminated Rolls (Second Pass) for Roll Form'
 ];
 
-export const MACHINE_OPTIONS = [
-  'Rotogravure Printing Press #1 (8-Color)',
-  'Rotogravure Printing Press #2 (9-Color High Speed)',
-  'Solventless Lamination Machine #1 (Nordmeccanica)',
-  'Solventless Lamination Machine #2',
-  'Solvent-Based Lamination Machine',
-  'Slitter Rewinder Machine #1 (High Speed)',
-  'Slitter Rewinder Machine #2',
-  'Doctoring / Inspection Rewinder #1',
-  'Doctoring / Inspection Rewinder #2',
-  'Pouch Making Machine #1 (Center Seal / 3-Side)',
-  'Pouch Making Machine #2 (Stand-Up Zipper)'
-];
-
 export const FILM_TYPE_OPTIONS = [
   'PET (Polyester)',
   'BOPP (Plain / Matt)',
@@ -72,6 +58,7 @@ export default function SFGFGEntryModal({
   inventory = [],
   inventoryRolls = [],
   productionRecords = [],
+  machines = [],
   currentUser,
   onClose,
   onSave, // (inventoryItem, rolls, productionRecordLink) => void
@@ -81,6 +68,14 @@ export default function SFGFGEntryModal({
   const title = isSFG ? 'Create Semi-Finished Goods (SFG)' : 'Create Finished Goods (FG)';
   const categoryName = isSFG ? 'Semi-Finished Goods (SFG)' : 'Finished Goods (FG)';
   const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'SuperAdmin';
+
+  // Sourced directly from machines stored in settings (Printing Presses / Machine Settings in Supabase)
+  const availableMachines = useMemo(() => {
+    if (Array.isArray(machines) && machines.length > 0) {
+      return machines.filter(m => (m.status || 'Active').toLowerCase() !== 'inactive');
+    }
+    return [];
+  }, [machines]);
 
   // All inputs start blank - ZERO pre-filled dummy/seed data
   const [selectedJobId, setSelectedJobId] = useState('');
@@ -306,12 +301,23 @@ export default function SFGFGEntryModal({
 
     const lockedList = existingJobRolls.map((r, i) => ({
       ...r,
-      rollIndex: i + 1,
+      rollIndex: r.rollIndex || (i + 1),
       isExisting: true,
       isLocked: true
     }));
 
-    const nextRollIdx = lockedList.length + 1;
+    // Find highest roll index among all existing rolls for this job & stage
+    let maxExistingIdx = 0;
+    existingJobRolls.forEach(r => {
+      if (r.rollIndex && Number(r.rollIndex) > maxExistingIdx) maxExistingIdx = Number(r.rollIndex);
+      const match = (r.barcodeId || '').match(/-R0*(\d+)$/i);
+      if (match && match[1]) {
+        const num = parseInt(match[1], 10);
+        if (num > maxExistingIdx) maxExistingIdx = num;
+      }
+    });
+
+    const nextRollIdx = Math.max(lockedList.length + 1, maxExistingIdx + 1);
     const initialNewRoll = {
       id: `new-roll-${Date.now()}-${nextRollIdx}`,
       rollIndex: nextRollIdx,
@@ -353,7 +359,7 @@ export default function SFGFGEntryModal({
     }
   };
 
-  // Sync new rolls dimensions/barcodes when dimensions or Tare changes
+  // Sync new rolls dimensions/weights without altering previously assigned barcodes
   useEffect(() => {
     if (!currentJob) return;
     setMasterRolls(prev => prev.map((r, i) => {
@@ -365,12 +371,10 @@ export default function SFGFGEntryModal({
       const width = parseFloat(jobWidthMm) || 0;
       const micron = parseFloat(jobMicron) || 0;
       const len = calculateLength(net, width, micron, jobFilmType);
-      const autoBarcode = generateRollBarcode(i + 1, currentJob.jobCode, selectedType);
 
       return {
         ...r,
-        rollIndex: i + 1,
-        barcodeId: r.isBarcodeCustom ? r.barcodeId : autoBarcode,
+        barcodeId: r.barcodeId || generateRollBarcode(r.rollIndex || (i + 1), currentJob.jobCode, selectedType),
         netWeightKg: gross > 0 ? parseFloat(net.toFixed(2)) : 0,
         widthMm: width || '',
         micron: micron || '',
@@ -390,16 +394,10 @@ export default function SFGFGEntryModal({
 
       if (field === 'grossWeightKg' || field === 'tareWeightKg') {
         const gross = parseFloat(field === 'grossWeightKg' ? value : modRoll.grossWeightKg) || 0;
-        const tareVal = field === 'tareWeightKg' ? value : modRoll.tareWeightKg;
-        const tare = tareVal !== '' ? (parseFloat(tareVal) || 0) : (parseFloat(defaultTareKg) || 0);
-        
-        if (gross > 0) {
-          modRoll.netWeightKg = Math.max(0, parseFloat((gross - tare).toFixed(2)));
-          modRoll.lengthMeters = calculateLength(modRoll.netWeightKg, jobWidthMm, jobMicron, jobFilmType);
-        } else {
-          modRoll.netWeightKg = 0;
-          modRoll.lengthMeters = 0;
-        }
+        const tare = parseFloat(field === 'tareWeightKg' ? value : (modRoll.tareWeightKg || defaultTareKg)) || 0;
+        const net = Math.max(0, gross - tare);
+        modRoll.netWeightKg = parseFloat(net.toFixed(2));
+        modRoll.lengthMeters = calculateLength(net, modRoll.widthMm, modRoll.micron, jobFilmType);
       }
 
       if (field === 'barcodeId') {
@@ -413,7 +411,17 @@ export default function SFGFGEntryModal({
 
   // Add Another Master Roll Row
   const handleAddRollRow = () => {
-    const nextIdx = masterRolls.length + 1;
+    let maxIdx = 0;
+    masterRolls.forEach(r => {
+      if (r.rollIndex && Number(r.rollIndex) > maxIdx) maxIdx = Number(r.rollIndex);
+      const match = (r.barcodeId || '').match(/-R0*(\d+)$/i);
+      if (match && match[1]) {
+        const num = parseInt(match[1], 10);
+        if (num > maxIdx) maxIdx = num;
+      }
+    });
+
+    const nextIdx = maxIdx + 1;
     const autoBarcode = currentJob ? generateRollBarcode(nextIdx, currentJob.jobCode, selectedType) : '';
     const tare = defaultTareKg !== '' ? defaultTareKg : '';
 
@@ -867,11 +875,22 @@ export default function SFGFGEntryModal({
                   }}
                   required
                 >
-                  <option value="">-- Select Machine * --</option>
-                  {MACHINE_OPTIONS.map(m => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
+                  <option value="">-- Select Machine from Settings * --</option>
+                  {availableMachines.map(m => {
+                    const mName = typeof m === 'string' ? m : (m.name || m.id);
+                    const mDetails = typeof m === 'object' && m.type ? ` (${m.type}${m.location ? ' • ' + m.location : ''})` : '';
+                    return (
+                      <option key={typeof m === 'object' ? m.id : m} value={mName}>
+                        {mName}{mDetails}
+                      </option>
+                    );
+                  })}
                 </select>
+                {availableMachines.length === 0 && (
+                  <div style={{ fontSize: '0.72rem', color: '#d97706', marginTop: '3px', fontWeight: '600' }}>
+                    ⚠️ No active machines found in Settings. Please add machines in Printing Presses / Settings.
+                  </div>
+                )}
                 {formErrors.machineName && (
                   <div style={{ fontSize: '0.72rem', color: '#dc2626', marginTop: '2px', fontWeight: '600' }}>
                     {formErrors.machineName}

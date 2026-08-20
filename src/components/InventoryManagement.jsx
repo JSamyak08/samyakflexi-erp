@@ -150,6 +150,7 @@ export default function InventoryManagement({
   indents = [],
   inks = [],
   jobMasters = [],
+  machines = [],
   currentUser = null,
   productionRecords = [],
   storeIssueTransactions = [],
@@ -2364,6 +2365,7 @@ export default function InventoryManagement({
           inventory={inventory}
           inventoryRolls={inventoryRolls}
           productionRecords={productionRecords}
+          machines={machines}
           currentUser={currentUser}
           onClose={() => setIsSfgFgModalOpen(false)}
           onSave={handleSaveSFGFG}
