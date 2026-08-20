@@ -2092,6 +2092,42 @@ export default function App() {
           </div>
         </div>
 
+        {/* Quick Action: Scan Barcode & 2D QR Inspector */}
+        <div style={{ padding: '4px 12px 10px 12px' }}>
+          <button
+            type="button"
+            onClick={() => setIsBarcodeScannerOpen(true)}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '8px',
+              background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '10px',
+              padding: '9px 12px',
+              fontSize: '0.84rem',
+              fontWeight: '700',
+              cursor: 'pointer',
+              boxShadow: '0 4px 6px -1px rgba(2, 132, 199, 0.25), 0 2px 4px -2px rgba(2, 132, 199, 0.25)',
+              transition: 'all 0.15s ease'
+            }}
+            title="Universal Barcode & 2D QR Inspector (Alt+B)"
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ background: 'rgba(255, 255, 255, 0.2)', padding: '4px', borderRadius: '6px', display: 'flex' }}>
+                <ScanBarcode size={16} />
+              </div>
+              <span>Scan Barcode</span>
+            </div>
+            <span style={{ fontSize: '0.68rem', background: 'rgba(255, 255, 255, 0.2)', padding: '2px 6px', borderRadius: '4px', opacity: 0.9 }}>
+              Alt+B
+            </span>
+          </button>
+        </div>
+
         <div className="nav-links">
           {/* Group 1: Analytics & Executive */}
           {(isTabAllowed('dashboard') || isTabAllowed('sales') || isTabAllowed('scrap_analytics')) && (
@@ -2454,31 +2490,6 @@ export default function App() {
 
           {/* Top Bar Active User & Logout Controls (ACCOUNT / ROLE SWITCHER) */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            {/* Universal Barcode & 2D QR Inspector Button */}
-            <button
-              type="button"
-              onClick={() => setIsBarcodeScannerOpen(true)}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '7px',
-                background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '7px 14px',
-                fontSize: '0.82rem',
-                fontWeight: '700',
-                cursor: 'pointer',
-                boxShadow: '0 2px 4px rgba(2, 132, 199, 0.25)',
-                transition: 'all 0.15s ease'
-              }}
-              title="Universal Barcode & 2D QR Inspector (Alt+B)"
-            >
-              <ScanBarcode size={16} />
-              <span>Scan Barcode</span>
-            </button>
-
             <WeighingScaleWidget />
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#ffffff', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem' }}>
               <UserCheck size={16} style={{ color: 'var(--primary-brand)' }} />
