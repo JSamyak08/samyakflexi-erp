@@ -1523,16 +1523,40 @@ export default function App() {
     logAudit('UPDATE', 'Printing Scheduler', `Started printing job for "${order.jobName}" (${order.id}) on machine ${machineId || 'Rotogravure Press'}`, order.id);
   };
 
-  const handleEndPrintingJob = async (order, endTime, durationMinutes) => {
-    const endIso = endTime || new Date().toISOString();
-    const durationFormatted = durationMinutes ? (durationMinutes >= 60 ? `${Math.floor(durationMinutes / 60)}h ${durationMinutes % 60}m` : `${durationMinutes}m`) : 'Completed';
+  const handleEndPrintingJob = async (order, endParam1, endParam2, endParam3) => {
+    let endData = {};
+    let endTime = null;
+    let durationMinutes = null;
+
+    if (typeof endParam1 === 'object' && endParam1 !== null) {
+      endData = endParam1;
+      endTime = endData.endTime;
+      durationMinutes = endData.durationMinutes;
+    } else {
+      endTime = endParam1;
+      durationMinutes = endParam2;
+      endData = endParam3 || {};
+    }
+
+    const endIso = endTime || endData.endTime || new Date().toISOString();
+    const computedDurationMinutes = durationMinutes || endData.durationMinutes || (order.printingStartTime ? Math.max(1, Math.round((new Date(endIso).getTime() - new Date(order.printingStartTime).getTime()) / 60000)) : null);
+    const durationFormatted = computedDurationMinutes ? (computedDurationMinutes >= 60 ? `${Math.floor(computedDurationMinutes / 60)}h ${computedDurationMinutes % 60}m` : `${computedDurationMinutes}m`) : 'Completed';
+    
+    const actualMetersPrinted = parseFloat(endData.actualMetersPrinted) || parseFloat(order.targetMeters) || 0;
+    const inkGsmInSpeed = parseFloat(endData.inkGsmInSpeed) || parseFloat(order.inkGsm) || 1.5;
+    const printedOutputKg = parseFloat(endData.printedOutputKg) || parseFloat(order.printLayerNetKg || order.quantityKg || order.quantity || order.orderQtyKg || 0);
+
     const updatedOrder = {
       ...order,
       status: 'In Production',
       printingStatus: 'Completed',
       printingEndTime: endIso,
-      printingDurationMinutes: durationMinutes,
-      printingDurationFormatted: durationFormatted
+      printingDurationMinutes: computedDurationMinutes,
+      printingDurationFormatted: durationFormatted,
+      actualMetersPrinted,
+      inkGsmInSpeed,
+      printedOutputKg,
+      printingNotes: endData.notes || ''
     };
     await handleUpdateOrder(updatedOrder);
 
@@ -1544,22 +1568,28 @@ export default function App() {
         status: 'In Production',
         printingStatus: 'Completed',
         printingEndTime: endIso,
-        printingDurationMinutes: durationMinutes,
+        printingDurationMinutes: computedDurationMinutes,
         printingDurationFormatted: durationFormatted,
+        qtyFirstPassL1: printedOutputKg > 0 ? printedOutputKg : (existingRec.qtyFirstPassL1 || 0),
+        actualMetersPrinted,
+        inkGsmInSpeed,
         stages: {
           ...(existingRec.stages || {}),
           printing: {
             ...(existingRec.stages?.printing || {}),
             status: 'Completed',
             endTime: endIso,
-            durationMinutes: durationMinutes,
-            durationFormatted: durationFormatted
+            durationMinutes: computedDurationMinutes,
+            durationFormatted: durationFormatted,
+            actualMetersPrinted,
+            inkGsmInSpeed,
+            printedOutputKg
           }
         }
       };
       handleSaveProductionRecord(updatedRecord);
     }
-    logAudit('UPDATE', 'Printing Scheduler', `Ended printing job for "${order.jobName}" (${order.id}). Duration: ${durationFormatted}`, order.id);
+    logAudit('UPDATE', 'Printing Scheduler', `Ended printing job for "${order.jobName}" (${order.id}). Meters: ${actualMetersPrinted}m, Ink GSM: ${inkGsmInSpeed}, Output: ${printedOutputKg}kg, Duration: ${durationFormatted}`, order.id);
   };
 
   const handleDeleteOrder = async (orderId) => {

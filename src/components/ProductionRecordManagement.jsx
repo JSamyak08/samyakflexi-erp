@@ -2190,16 +2190,32 @@ export default function ProductionRecordManagement({
 
                 {/* Printing Job Run Duration & Timestamps from Scheduler */}
                 {(selectedRecord?.printingStartTime || selectedOrder?.printingStartTime) && (
-                  <div style={{ background: '#f0fdf4', borderBottom: '1px solid #bbf7d0', padding: '10px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', color: '#166534', fontWeight: '700' }}>
-                      <Clock size={15} style={{ color: '#16a34a' }} />
-                      <span>
-                        Press Execution: Started at {new Date(selectedRecord?.printingStartTime || selectedOrder?.printingStartTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        {(selectedRecord?.printingEndTime || selectedOrder?.printingEndTime) && ` • Ended at ${new Date(selectedRecord?.printingEndTime || selectedOrder?.printingEndTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
-                      </span>
+                  <div style={{ background: '#f0fdf4', borderBottom: '1px solid #bbf7d0', padding: '12px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', color: '#166534', fontWeight: '700' }}>
+                        <Clock size={15} style={{ color: '#16a34a' }} />
+                        <span>
+                          Press Execution: Started at {new Date(selectedRecord?.printingStartTime || selectedOrder?.printingStartTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {(selectedRecord?.printingEndTime || selectedOrder?.printingEndTime) && ` • Ended at ${new Date(selectedRecord?.printingEndTime || selectedOrder?.printingEndTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                        </span>
+                      </div>
+                      {(selectedRecord?.actualMetersPrinted || selectedOrder?.actualMetersPrinted || selectedRecord?.inkGsmInSpeed || selectedOrder?.inkGsmInSpeed) && (
+                        <div style={{ fontSize: '0.78rem', color: '#047857', fontWeight: '600' }}>
+                          {(selectedRecord?.actualMetersPrinted || selectedOrder?.actualMetersPrinted) && (
+                            <span style={{ marginRight: '12px' }}>
+                              📏 Actual Meters: <strong>{Number(selectedRecord?.actualMetersPrinted || selectedOrder?.actualMetersPrinted).toLocaleString()} m</strong>
+                            </span>
+                          )}
+                          {(selectedRecord?.inkGsmInSpeed || selectedOrder?.inkGsmInSpeed) && (
+                            <span>
+                              🎨 Ink GSM (In Speed): <strong>{Number(selectedRecord?.inkGsmInSpeed || selectedOrder?.inkGsmInSpeed).toFixed(2)} GSM</strong>
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                     {(selectedRecord?.printingDurationFormatted || selectedOrder?.printingDurationFormatted) && (
-                      <span className="badge badge-success" style={{ background: '#dcfce7', color: '#15803d', fontWeight: '800', fontSize: '0.78rem' }}>
+                      <span className="badge badge-success" style={{ background: '#dcfce7', color: '#15803d', fontWeight: '800', fontSize: '0.78rem', padding: '6px 12px' }}>
                         ⏱ Duration: {selectedRecord?.printingDurationFormatted || selectedOrder?.printingDurationFormatted}
                       </span>
                     )}
