@@ -44,7 +44,8 @@ import {
   Droplet,
   Truck,
   FlaskConical,
-  ArrowRight
+  ArrowRight,
+  ScanBarcode
 } from 'lucide-react';
 
 import AuthScreen from './components/AuthScreen';
@@ -67,6 +68,7 @@ import AuditLogsManagement from './components/AuditLogsManagement';
 import InkManagement from './components/InkManagement';
 import DispatchManagement from './components/DispatchManagement';
 import WeighingScaleWidget from './components/WeighingScaleWidget';
+import UniversalBarcodeScannerModal from './components/UniversalBarcodeScannerModal';
 import { fetchAuditLogsFromSupabase, saveAuditLogToSupabase, createAuditEntry, pruneOldAuditLogs } from './services/auditLogger';
 import { getRouteFromUrl, getTabFromUrl, pushSlugState } from './utils/slugRouter';
 import { isSupabaseConfigured } from './services/supabaseClient';
@@ -303,6 +305,20 @@ export default function App() {
     if (!rolePerm) return true;
     return rolePerm[tabKey] !== false;
   };
+
+  const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
+
+  // Global Keyboard Shortcut: Alt+B or Ctrl+B to trigger Universal Barcode Scanner
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.altKey || e.ctrlKey) && (e.key === 'b' || e.key === 'B')) {
+        e.preventDefault();
+        setIsBarcodeScannerOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Reactive listener for Supabase credential updates
   useEffect(() => {
@@ -2438,6 +2454,31 @@ export default function App() {
 
           {/* Top Bar Active User & Logout Controls (ACCOUNT / ROLE SWITCHER) */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {/* Universal Barcode & 2D QR Inspector Button */}
+            <button
+              type="button"
+              onClick={() => setIsBarcodeScannerOpen(true)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '7px',
+                background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '7px 14px',
+                fontSize: '0.82rem',
+                fontWeight: '700',
+                cursor: 'pointer',
+                boxShadow: '0 2px 4px rgba(2, 132, 199, 0.25)',
+                transition: 'all 0.15s ease'
+              }}
+              title="Universal Barcode & 2D QR Inspector (Alt+B)"
+            >
+              <ScanBarcode size={16} />
+              <span>Scan Barcode</span>
+            </button>
+
             <WeighingScaleWidget />
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#ffffff', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem' }}>
               <UserCheck size={16} style={{ color: 'var(--primary-brand)' }} />
@@ -3354,6 +3395,22 @@ export default function App() {
           />
         )}
       </div>
+
+      {/* Universal Barcode & 2D QR Inspector Modal */}
+      <UniversalBarcodeScannerModal 
+        isOpen={isBarcodeScannerOpen}
+        onClose={() => setIsBarcodeScannerOpen(false)}
+        inventoryRolls={inventoryRolls}
+        orders={orders}
+        cylinders={cylinders}
+        jobMasters={jobMasters}
+        grns={grns}
+        inks={inks}
+        inventory={inventory}
+        dispatchShipments={dispatchShipments}
+        deliveryChallans={deliveryChallans}
+        productionRecords={productionRecords}
+      />
     </div>
   );
 
