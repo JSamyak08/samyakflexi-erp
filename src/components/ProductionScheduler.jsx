@@ -310,6 +310,39 @@ export default function ProductionScheduler({
         ? parseFloat(((totalAreaSqm * printLayerGsm) / 1000).toFixed(2))
         : 0;
 
+      // Check material readiness from inventory & requirements
+      let isMaterialReady = true;
+      if (reqs.length > 0) {
+        isMaterialReady = reqs.every(req => {
+          const match = (inventory || []).find(inv => 
+            inv.filmType === req.filmType && (inv.availableQtyKg || 0) >= (req.qtyKg || 0)
+          );
+          return !!match || req.poIssued || order.status === 'In Production' || order.status === 'Scheduled';
+        });
+      } else if (printFilmType) {
+        const match = (inventory || []).find(inv => 
+          inv.filmType === printFilmType && (inv.availableQtyKg || 0) >= (printLayerNetKg || 0)
+        );
+        isMaterialReady = !!match || order.status === 'In Production' || order.status === 'Scheduled';
+      }
+
+      // Check if job is actively In Production on the Printing Press
+      const matchingProdRecord = (productionRecords || []).find(r => 
+        (order.id && (r.orderId === order.id || r.id === order.id)) || 
+        (order.jobCode && r.jobCode === order.jobCode)
+      );
+
+      const printingStartTime = order.printingStartTime || matchingProdRecord?.printingStartTime || null;
+      const printingEndTime = order.printingEndTime || matchingProdRecord?.printingEndTime || null;
+      const printingDurationFormatted = order.printingDurationFormatted || matchingProdRecord?.printingDurationFormatted || null;
+
+      // STRICT CHECK: Only a job with an active press run (started and not yet ended) is 'In Production'
+      const isCurrentlyInProduction = Boolean(
+        order.printingStatus === 'In Production' || 
+        matchingProdRecord?.printingStatus === 'In Production' || 
+        (printingStartTime && !printingEndTime)
+      );
+
       return {
         ...order,
         widthMm,
