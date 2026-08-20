@@ -208,12 +208,22 @@ export default function ProductionScheduler({
         });
       }
 
-      // Check if job is actively In Production
-      const matchingProdRecord = (productionRecords || []).find(r => r.orderId === order.id || r.id === order.id || r.jobCode === order.jobCode);
-      const isCurrentlyInProduction = order.status === 'In Production' || matchingProdRecord?.status === 'In Production';
+      // Check if job is actively In Production on the Printing Press
+      const matchingProdRecord = (productionRecords || []).find(r => 
+        (order.id && (r.orderId === order.id || r.id === order.id)) || 
+        (order.jobCode && r.jobCode === order.jobCode)
+      );
+
       const printingStartTime = order.printingStartTime || matchingProdRecord?.printingStartTime || null;
       const printingEndTime = order.printingEndTime || matchingProdRecord?.printingEndTime || null;
       const printingDurationFormatted = order.printingDurationFormatted || matchingProdRecord?.printingDurationFormatted || null;
+
+      // STRICT CHECK: Only a job with an active press run (started and not yet ended) is 'In Production'
+      const isCurrentlyInProduction = Boolean(
+        order.printingStatus === 'In Production' || 
+        matchingProdRecord?.printingStatus === 'In Production' || 
+        (printingStartTime && !printingEndTime)
+      );
 
       // Target printing meters calculation
       const printQtyKg = parseFloat(order.quantityKg || order.quantity || order.orderQtyKg || 1000);
@@ -235,7 +245,15 @@ export default function ProductionScheduler({
         printingDurationFormatted,
         targetMeters,
         printQtyKg,
-        priorityTag: isOverdue ? 'OVERDUE' : isCurrentlyInProduction ? 'IN PRODUCTION' : isMaterialReady ? 'READY' : 'MATERIAL PENDING'
+        priorityTag: isCurrentlyInProduction 
+          ? 'IN PRODUCTION' 
+          : isOverdue 
+          ? 'OVERDUE' 
+          : !isMaterialReady 
+          ? 'MATERIAL PENDING' 
+          : printingEndTime 
+          ? 'COMPLETED PRINTING' 
+          : 'READY'
       };
     });
   }, [orders, inventory, jobMasters, cylinders, productionRecords, queueOrderIds]);
@@ -312,8 +330,10 @@ export default function ProductionScheduler({
     const startedOrder = {
       ...order,
       status: 'In Production',
+      printingStatus: 'In Production',
       machineId: assignedMachineId,
-      printingStartTime: startTime
+      printingStartTime: startTime,
+      printingEndTime: null
     };
 
     if (onStartJob) {
@@ -338,6 +358,7 @@ export default function ProductionScheduler({
     const completedOrder = {
       ...order,
       status: 'In Production',
+      printingStatus: 'Completed',
       printingEndTime: endTime,
       printingDurationMinutes: durationMinutes,
       printingDurationFormatted: durationFormatted
@@ -659,6 +680,14 @@ export default function ProductionScheduler({
                           ) : order.isOverdue ? (
                             <span className="badge badge-danger" style={{ fontSize: '0.7rem', fontWeight: '800' }}>
                               OVERDUE
+                            </span>
+                          ) : !order.isMaterialReady ? (
+                            <span className="badge badge-warning" style={{ fontSize: '0.7rem', fontWeight: '800' }}>
+                              MATERIAL PENDING
+                            </span>
+                          ) : order.printingEndTime ? (
+                            <span className="badge badge-neutral" style={{ fontSize: '0.7rem', fontWeight: '800', background: '#e2e8f0', color: '#334155' }}>
+                              PRINTING COMPLETED
                             </span>
                           ) : (
                             <span className="badge badge-success" style={{ fontSize: '0.7rem', fontWeight: '800' }}>

@@ -1479,8 +1479,10 @@ export default function App() {
     const updatedOrder = {
       ...order,
       status: 'In Production',
+      printingStatus: 'In Production',
       machineId: machineId || order.machineId,
-      printingStartTime: startIso
+      printingStartTime: startIso,
+      printingEndTime: null
     };
     await handleUpdateOrder(updatedOrder);
 
@@ -1489,13 +1491,16 @@ export default function App() {
     const updatedRecord = existingRec ? {
       ...existingRec,
       status: 'In Production',
+      printingStatus: 'In Production',
       printingStartTime: startIso,
+      printingEndTime: null,
       stages: {
         ...(existingRec.stages || {}),
         printing: {
           ...(existingRec.stages?.printing || {}),
           status: 'In Production',
-          startTime: startIso
+          startTime: startIso,
+          endTime: null
         }
       }
     } : {
@@ -1506,9 +1511,11 @@ export default function App() {
       clientName: order.clientName,
       targetQtyKg: order.quantityKg || order.quantity || order.orderQtyKg || 0,
       status: 'In Production',
+      printingStatus: 'In Production',
       printingStartTime: startIso,
+      printingEndTime: null,
       stages: {
-        printing: { status: 'In Production', startTime: startIso }
+        printing: { status: 'In Production', startTime: startIso, endTime: null }
       },
       createdAt: startIso
     };
@@ -1522,6 +1529,7 @@ export default function App() {
     const updatedOrder = {
       ...order,
       status: 'In Production',
+      printingStatus: 'Completed',
       printingEndTime: endIso,
       printingDurationMinutes: durationMinutes,
       printingDurationFormatted: durationFormatted
@@ -1534,6 +1542,7 @@ export default function App() {
       const updatedRecord = {
         ...existingRec,
         status: 'In Production',
+        printingStatus: 'Completed',
         printingEndTime: endIso,
         printingDurationMinutes: durationMinutes,
         printingDurationFormatted: durationFormatted,
