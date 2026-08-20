@@ -100,50 +100,52 @@ export default function WeighingScaleWidget({ onCaptureWeight }) {
 
   return (
     <>
-      {/* Navbar Scale Quick Status Badge */}
+      {/* Navbar Scale Quick Status Badge (Minimized with Red/Green Indicator) */}
       <button 
         type="button"
         onClick={() => setIsModalOpen(true)}
         className="scale-badge-btn"
         style={{
-          display: 'flex',
+          display: 'inline-flex',
           alignItems: 'center',
-          gap: '8px',
+          gap: '6px',
           background: scaleState.isConnected 
             ? (scaleState.isSimulated ? '#fef3c7' : '#ecfdf5') 
-            : '#f1f5f9',
-          border: `1px solid ${scaleState.isConnected ? (scaleState.isSimulated ? '#fde68a' : '#a7f3d0') : '#cbd5e1'}`,
-          padding: '5px 12px',
+            : '#fef2f2',
+          border: `1px solid ${scaleState.isConnected ? (scaleState.isSimulated ? '#fde68a' : '#a7f3d0') : '#fecaca'}`,
+          padding: '6px 10px',
           borderRadius: '8px',
-          fontSize: '0.82rem',
+          fontSize: '0.8rem',
           fontWeight: '700',
           color: scaleState.isConnected 
             ? (scaleState.isSimulated ? '#b45309' : '#047857') 
-            : '#475569',
+            : '#dc2626',
           cursor: 'pointer',
-          transition: 'all 0.2s ease',
-          boxShadow: scaleState.isConnected ? '0 1px 3px rgba(4,120,87,0.1)' : 'none'
+          transition: 'all 0.15s ease',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+          whiteSpace: 'nowrap'
         }}
-        title="Click to view RS-232 Digital Weighing Scale Monitor"
+        title={scaleState.isConnected 
+          ? `RS-232 Scale Connected: ${scaleState.netWeight.toFixed(2)} kg (Click for Terminal)` 
+          : 'RS-232 Scale Disconnected (Click to Connect)'}
       >
-        <Scale size={15} style={{ color: scaleState.isConnected ? (scaleState.isSimulated ? '#d97706' : '#10b981') : '#64748b' }} />
-        <span>
-          {scaleState.isConnected ? (
-            <>
-              Scale: <strong style={{ fontFamily: 'monospace', fontSize: '0.9rem' }}>{scaleState.netWeight.toFixed(2)} kg</strong>
-              {scaleState.isSimulated && <span style={{ fontSize: '0.68rem', marginLeft: '4px', opacity: 0.8 }}>(SIM)</span>}
-            </>
-          ) : (
-            'RS232 Scale: Disconnected'
-          )}
-        </span>
+        <Scale size={16} style={{ color: scaleState.isConnected ? (scaleState.isSimulated ? '#d97706' : '#059669') : '#dc2626' }} />
+        
+        {scaleState.isConnected && (
+          <span style={{ fontFamily: 'monospace', fontWeight: '800', fontSize: '0.84rem' }}>
+            {scaleState.netWeight.toFixed(2)} kg
+          </span>
+        )}
+
         <span 
           style={{ 
             width: '8px', 
             height: '8px', 
             borderRadius: '50%', 
-            background: scaleState.isConnected ? (scaleState.isSimulated ? '#f59e0b' : '#10b981') : '#94a3b8',
-            boxShadow: scaleState.isConnected ? '0 0 6px rgba(16,185,129,0.6)' : 'none',
+            background: scaleState.isConnected ? (scaleState.isSimulated ? '#f59e0b' : '#10b981') : '#ef4444',
+            boxShadow: scaleState.isConnected 
+              ? '0 0 6px rgba(16,185,129,0.7)' 
+              : '0 0 6px rgba(239,68,68,0.6)',
             display: 'inline-block' 
           }} 
         />
