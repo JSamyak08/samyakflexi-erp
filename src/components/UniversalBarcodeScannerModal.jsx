@@ -168,27 +168,27 @@ export default function UniversalBarcodeScannerModal({
         code: matchedRoll.barcodeId || matchedRoll.id,
         raw: matchedRoll,
         properties: [
-          { label: 'Barcode ID', value: matchedRoll.barcodeId || matchedRoll.id, isCode: true },
-          { label: 'Roll Stage / Type', value: matchedRoll.rollType || 'RAW_MATERIAL' },
-          { label: 'Net Usable Weight', value: `${matchedRoll.netWeightKg || 0} kg`, isHighlight: true },
-          { label: 'Gross Scale Weight', value: `${matchedRoll.grossWeightKg || matchedRoll.netWeightKg || 0} kg` },
-          { label: 'Tare Weight', value: `${matchedRoll.tareWeightKg || 0} kg` },
-          { label: 'Calculated Length', value: `${matchedRoll.lengthMeters ? matchedRoll.lengthMeters + ' meters' : 'N/A'}` },
-          { label: 'Film Thickness', value: matchedRoll.micron ? `${matchedRoll.micron} Micron (µ)` : 'N/A' },
-          { label: 'Slit / Web Width', value: matchedRoll.widthMm ? `${matchedRoll.widthMm} mm` : 'N/A' },
-          { label: 'Core Diameter', value: matchedRoll.coreDia || '3 Inch (76mm)' },
-          { label: 'Joints / Splices', value: `${matchedRoll.jointCount || 0} Joints` },
-          { label: 'QC Quality Status', value: matchedRoll.qcStatus || 'Passed', isStatus: true },
-          { label: 'Machine / Press', value: matchedRoll.machineName || matchedRoll.stationId || 'Scale 1' },
-          { label: 'Operator Name', value: matchedRoll.operatorName || 'Shop Floor Operator' },
-          { label: 'Shift Allocation', value: matchedRoll.shift || 'General Shift' },
-          { label: 'Inward / Production Date', value: matchedRoll.productionDate || (matchedRoll.inwardDatetime ? matchedRoll.inwardDatetime.split('T')[0] : 'N/A') },
-          { label: 'Storage Bay / Rack', value: matchedRoll.locationBay || 'Bay A' },
-          { label: 'Linked Job Name', value: matchedRoll.jobName || 'Stock Material' },
-          { label: 'Order OCN Reference', value: matchedRoll.orderId || 'N/A' },
-          { label: 'Vendor / Manufacturer', value: matchedRoll.vendorName || 'N/A' },
-          { label: 'Batch / Lot Number', value: matchedRoll.batchNo || 'N/A' },
-          { label: 'Status', value: matchedRoll.status || 'In Stock' }
+          { label: 'Barcode ID', value: matchedRoll.barcodeId || matchedRoll.id || 'N/A', isCode: true },
+          { label: 'Roll Stage / Type', value: matchedRoll.rollType || matchedRoll.category || 'N/A' },
+          { label: 'Net Usable Weight', value: matchedRoll.netWeightKg !== undefined && matchedRoll.netWeightKg !== null ? `${matchedRoll.netWeightKg} kg` : (matchedRoll.weightKg !== undefined && matchedRoll.weightKg !== null ? `${matchedRoll.weightKg} kg` : 'N/A'), isHighlight: true },
+          { label: 'Gross Scale Weight', value: matchedRoll.grossWeightKg !== undefined && matchedRoll.grossWeightKg !== null ? `${matchedRoll.grossWeightKg} kg` : 'N/A' },
+          { label: 'Tare Weight', value: matchedRoll.tareWeightKg !== undefined && matchedRoll.tareWeightKg !== null ? `${matchedRoll.tareWeightKg} kg` : 'N/A' },
+          { label: 'Calculated Length', value: matchedRoll.lengthMeters ? `${matchedRoll.lengthMeters} m` : (matchedRoll.length ? `${matchedRoll.length} m` : 'N/A') },
+          { label: 'Film Thickness', value: matchedRoll.micron ? `${matchedRoll.micron} µ` : 'N/A' },
+          { label: 'Slit / Web Width', value: matchedRoll.widthMm ? `${matchedRoll.widthMm} mm` : (matchedRoll.width ? `${matchedRoll.width} mm` : 'N/A') },
+          { label: 'Core Diameter', value: matchedRoll.coreDia || matchedRoll.core_dia || 'N/A' },
+          { label: 'Joints / Splices', value: matchedRoll.jointCount !== undefined && matchedRoll.jointCount !== null && matchedRoll.jointCount !== '' ? `${matchedRoll.jointCount} Joints` : 'N/A' },
+          { label: 'QC Quality Status', value: matchedRoll.qcStatus || matchedRoll.qc_status || matchedRoll.status || 'N/A', isStatus: true },
+          { label: 'Machine / Press', value: matchedRoll.machineName || matchedRoll.stationId || 'N/A' },
+          { label: 'Operator Name', value: matchedRoll.operatorName || matchedRoll.operator || 'N/A' },
+          { label: 'Shift Allocation', value: matchedRoll.shift || 'N/A' },
+          { label: 'Inward / Production Date', value: matchedRoll.productionDate || (matchedRoll.inwardDatetime ? matchedRoll.inwardDatetime.split('T')[0] : (matchedRoll.date || 'N/A')) },
+          { label: 'Storage Bay / Rack', value: matchedRoll.locationBay || matchedRoll.location || 'N/A' },
+          { label: 'Linked Job Name', value: matchedRoll.jobName || 'N/A' },
+          { label: 'Order OCN Reference', value: matchedRoll.orderId || matchedRoll.orderNo || 'N/A' },
+          { label: 'Vendor / Manufacturer', value: matchedRoll.vendorName || matchedRoll.vendor || 'N/A' },
+          { label: 'Batch / Lot Number', value: matchedRoll.batchNo || matchedRoll.lotNo || 'N/A' },
+          { label: 'Status', value: matchedRoll.status || 'N/A' }
         ],
         parentGenealogy: matchedRoll.inputBarcodeIds || []
       };
@@ -213,14 +213,14 @@ export default function UniversalBarcodeScannerModal({
         raw: matchedOrder,
         properties: [
           { label: 'Order ID / OCN', value: matchedOrder.id, isCode: true },
-          { label: 'Job Name', value: matchedOrder.jobName },
-          { label: 'Client Name', value: matchedOrder.clientName },
-          { label: 'Order Quantity', value: `${matchedOrder.orderQtyKg || 0} kg`, isHighlight: true },
-          { label: 'Order Type', value: matchedOrder.orderType || 'Reel Form' },
+          { label: 'Job Name', value: matchedOrder.jobName || 'N/A' },
+          { label: 'Client Name', value: matchedOrder.clientName || 'N/A' },
+          { label: 'Order Quantity', value: matchedOrder.orderQtyKg ? `${matchedOrder.orderQtyKg} kg` : 'N/A', isHighlight: true },
+          { label: 'Order Type', value: matchedOrder.orderType || 'N/A' },
           { label: 'Target Delivery Date', value: matchedOrder.targetDeliveryDate || matchedOrder.deliveryDate || 'N/A' },
-          { label: 'Production Status', value: matchedOrder.status || 'Scheduled', isStatus: true },
-          { label: 'Printing Execution', value: matchedOrder.printing_status || 'Pending' },
-          { label: 'Actual Meters Printed', value: matchedOrder.actual_meters_printed ? `${matchedOrder.actual_meters_printed} m` : 'Pending' },
+          { label: 'Production Status', value: matchedOrder.status || 'N/A', isStatus: true },
+          { label: 'Printing Execution', value: matchedOrder.printing_status || 'N/A' },
+          { label: 'Actual Meters Printed', value: matchedOrder.actual_meters_printed ? `${matchedOrder.actual_meters_printed} m` : 'N/A' },
           { label: 'Ink GSM (In Speed)', value: matchedOrder.ink_gsm_in_speed ? `${matchedOrder.ink_gsm_in_speed} GSM` : 'N/A' },
           { label: 'Printed Output Weight', value: matchedOrder.printed_output_kg ? `${matchedOrder.printed_output_kg} kg` : 'N/A' }
         ]
@@ -246,18 +246,18 @@ export default function UniversalBarcodeScannerModal({
         raw: matchedCylinder,
         properties: [
           { label: 'Cylinder SKU', value: matchedCylinder.cylinderSku || matchedCylinder.sku || matchedCylinder.id, isCode: true },
-          { label: 'Job Name', value: matchedCylinder.jobName },
+          { label: 'Job Name', value: matchedCylinder.jobName || 'N/A' },
           { label: 'Client Name', value: matchedCylinder.clientName || matchedCylinder.clientGroup || 'N/A' },
-          { label: 'Color Stations', value: `${matchedCylinder.colors_count || matchedCylinder.colorsCount || 8} Colors` },
-          { label: 'Circumference', value: `${matchedCylinder.circumference_mm || matchedCylinder.circumferenceMm || 0} mm` },
-          { label: 'Face Length', value: `${matchedCylinder.face_length_mm || matchedCylinder.faceLengthMm || 0} mm` },
-          { label: 'Print Width', value: `${matchedCylinder.print_width_mm || matchedCylinder.printWidthMm || 0} mm` },
-          { label: 'Repeat Length', value: `${matchedCylinder.repeat_length_mm || matchedCylinder.repeatLengthMm || 0} mm` },
-          { label: 'Rack Location', value: matchedCylinder.rack_location || matchedCylinder.rackLocation || 'Rack Section' },
-          { label: 'Total Impressions', value: `${matchedCylinder.total_impressions_run || matchedCylinder.totalImpressionsRun || 0} revs` },
-          { label: 'Utilisation Limit', value: `${matchedCylinder.utilisation_limit || 10000} kg`, isHighlight: true },
+          { label: 'Color Stations', value: matchedCylinder.colors_count || matchedCylinder.colorsCount ? `${matchedCylinder.colors_count || matchedCylinder.colorsCount} Colors` : 'N/A' },
+          { label: 'Circumference', value: matchedCylinder.circumference_mm || matchedCylinder.circumferenceMm ? `${matchedCylinder.circumference_mm || matchedCylinder.circumferenceMm} mm` : 'N/A' },
+          { label: 'Face Length', value: matchedCylinder.face_length_mm || matchedCylinder.faceLengthMm ? `${matchedCylinder.face_length_mm || matchedCylinder.faceLengthMm} mm` : 'N/A' },
+          { label: 'Print Width', value: matchedCylinder.print_width_mm || matchedCylinder.printWidthMm ? `${matchedCylinder.print_width_mm || matchedCylinder.printWidthMm} mm` : 'N/A' },
+          { label: 'Repeat Length', value: matchedCylinder.repeat_length_mm || matchedCylinder.repeatLengthMm ? `${matchedCylinder.repeat_length_mm || matchedCylinder.repeatLengthMm} mm` : 'N/A' },
+          { label: 'Rack Location', value: matchedCylinder.rack_location || matchedCylinder.rackLocation || 'N/A' },
+          { label: 'Total Impressions', value: matchedCylinder.total_impressions_run !== undefined && matchedCylinder.total_impressions_run !== null ? `${matchedCylinder.total_impressions_run} revs` : 'N/A' },
+          { label: 'Utilisation Limit', value: matchedCylinder.utilisation_limit ? `${matchedCylinder.utilisation_limit} kg` : 'N/A', isHighlight: true },
           { label: 'Engraver / Supplier', value: matchedCylinder.engravures_name || matchedCylinder.engraverName || 'N/A' },
-          { label: 'Operational Status', value: matchedCylinder.status || 'Active In-Use', isStatus: true }
+          { label: 'Operational Status', value: matchedCylinder.status || 'N/A', isStatus: true }
         ]
       };
     }
@@ -280,14 +280,14 @@ export default function UniversalBarcodeScannerModal({
         code: matchedJobMaster.sku_code || matchedJobMaster.skuCode || matchedJobMaster.id,
         raw: matchedJobMaster,
         properties: [
-          { label: 'Job SKU Code', value: matchedJobMaster.sku_code || matchedJobMaster.skuCode, isCode: true },
-          { label: 'Job Name', value: matchedJobMaster.job_name || matchedJobMaster.jobName },
-          { label: 'Client Name', value: matchedJobMaster.client_name || matchedJobMaster.clientName },
-          { label: 'Structure', value: matchedJobMaster.structure || matchedJobMaster.film_structure || 'Multi-layer' },
-          { label: 'Print Width', value: `${matchedJobMaster.print_width_mm || matchedJobMaster.printWidthMm || 0} mm` },
-          { label: 'Face Length', value: `${matchedJobMaster.face_length_mm || matchedJobMaster.faceLengthMm || 0} mm` },
-          { label: 'Repeat Length', value: `${matchedJobMaster.repeat_length_mm || matchedJobMaster.repeatLengthMm || 0} mm` },
-          { label: 'Colors Count', value: `${matchedJobMaster.colors_count || matchedJobMaster.colorsCount || 8} Colors` }
+          { label: 'Job SKU Code', value: matchedJobMaster.sku_code || matchedJobMaster.skuCode || 'N/A', isCode: true },
+          { label: 'Job Name', value: matchedJobMaster.job_name || matchedJobMaster.jobName || 'N/A' },
+          { label: 'Client Name', value: matchedJobMaster.client_name || matchedJobMaster.clientName || 'N/A' },
+          { label: 'Structure', value: matchedJobMaster.structure || matchedJobMaster.film_structure || 'N/A' },
+          { label: 'Print Width', value: matchedJobMaster.print_width_mm || matchedJobMaster.printWidthMm ? `${matchedJobMaster.print_width_mm || matchedJobMaster.printWidthMm} mm` : 'N/A' },
+          { label: 'Face Length', value: matchedJobMaster.face_length_mm || matchedJobMaster.faceLengthMm ? `${matchedJobMaster.face_length_mm || matchedJobMaster.faceLengthMm} mm` : 'N/A' },
+          { label: 'Repeat Length', value: matchedJobMaster.repeat_length_mm || matchedJobMaster.repeatLengthMm ? `${matchedJobMaster.repeat_length_mm || matchedJobMaster.repeatLengthMm} mm` : 'N/A' },
+          { label: 'Colors Count', value: matchedJobMaster.colors_count || matchedJobMaster.colorsCount ? `${matchedJobMaster.colors_count || matchedJobMaster.colorsCount} Colors` : 'N/A' }
         ]
       };
     }
@@ -311,13 +311,13 @@ export default function UniversalBarcodeScannerModal({
         raw: matchedGrn,
         properties: [
           { label: 'GRN Number', value: matchedGrn.grn_number || matchedGrn.grnNumber || matchedGrn.id, isCode: true },
-          { label: 'Vendor / Supplier', value: matchedGrn.vendor_name || matchedGrn.vendorName || 'Supplier' },
+          { label: 'Vendor / Supplier', value: matchedGrn.vendor_name || matchedGrn.vendorName || 'N/A' },
           { label: 'Purchase Order No', value: matchedGrn.po_number || matchedGrn.poNumber || 'N/A' },
           { label: 'Vendor Invoice No', value: matchedGrn.invoice_number || matchedGrn.invoiceNumber || 'N/A' },
           { label: 'Received Date', value: matchedGrn.received_date || matchedGrn.receivedDate || 'N/A' },
-          { label: 'Received Qty', value: `${matchedGrn.received_qty_kg || matchedGrn.receivedQtyKg || 0} kg`, isHighlight: true },
-          { label: 'QC Inspection Status', value: matchedGrn.qc_status || matchedGrn.qcStatus || matchedGrn.status || 'Pending QC', isStatus: true },
-          { label: 'Remarks / Notes', value: matchedGrn.qc_remarks || matchedGrn.remarks || 'Standard inward inspection' }
+          { label: 'Received Qty', value: matchedGrn.received_qty_kg || matchedGrn.receivedQtyKg ? `${matchedGrn.received_qty_kg || matchedGrn.receivedQtyKg} kg` : 'N/A', isHighlight: true },
+          { label: 'QC Inspection Status', value: matchedGrn.qc_status || matchedGrn.qcStatus || matchedGrn.status || 'N/A', isStatus: true },
+          { label: 'Remarks / Notes', value: matchedGrn.qc_remarks || matchedGrn.remarks || 'N/A' }
         ]
       };
     }
@@ -340,13 +340,13 @@ export default function UniversalBarcodeScannerModal({
         raw: matchedInk,
         properties: [
           { label: 'Product Code', value: matchedInk.product_code || matchedInk.productCode, isCode: true },
-          { label: 'Shade / Color', value: matchedInk.shade },
-          { label: 'Ink Type', value: matchedInk.ink_type || matchedInk.inkType || 'Reverse Printing' },
+          { label: 'Shade / Color', value: matchedInk.shade || 'N/A' },
+          { label: 'Ink Type', value: matchedInk.ink_type || matchedInk.inkType || 'N/A' },
           { label: 'Manufacturer / Brand', value: matchedInk.manufacturer || 'N/A' },
           { label: 'Supplier Name', value: matchedInk.supplier_name || matchedInk.supplierName || 'N/A' },
-          { label: 'Solid Content', value: `${matchedInk.solid_content_pct || matchedInk.solidContentPct || 40}%` },
-          { label: 'Current In-Stock', value: `${matchedInk.stock_qty_kg || matchedInk.stockQtyKg || 0} kg`, isHighlight: true },
-          { label: 'Unit Price', value: `₹ ${matchedInk.price_per_kg || matchedInk.pricePerKg || 0} / kg` }
+          { label: 'Solid Content', value: matchedInk.solid_content_pct || matchedInk.solidContentPct ? `${matchedInk.solid_content_pct || matchedInk.solidContentPct}%` : 'N/A' },
+          { label: 'Current In-Stock', value: matchedInk.stock_qty_kg || matchedInk.stockQtyKg ? `${matchedInk.stock_qty_kg || matchedInk.stockQtyKg} kg` : 'N/A', isHighlight: true },
+          { label: 'Unit Price', value: matchedInk.price_per_kg || matchedInk.pricePerKg ? `₹ ${matchedInk.price_per_kg || matchedInk.pricePerKg} / kg` : 'N/A' }
         ]
       };
     }
@@ -370,13 +370,13 @@ export default function UniversalBarcodeScannerModal({
         raw: matchedDispatch,
         properties: [
           { label: 'Dispatch Shipment ID', value: matchedDispatch.dispatch_id || matchedDispatch.dispatchId, isCode: true },
-          { label: 'Client Consignee', value: matchedDispatch.client_name || matchedDispatch.clientName },
-          { label: 'Job Name', value: matchedDispatch.job_name || matchedDispatch.jobName },
+          { label: 'Client Consignee', value: matchedDispatch.client_name || matchedDispatch.clientName || 'N/A' },
+          { label: 'Job Name', value: matchedDispatch.job_name || matchedDispatch.jobName || 'N/A' },
           { label: 'Vehicle Number', value: matchedDispatch.vehicle_no || matchedDispatch.vehicleNo || matchedDispatch.vehicle_number || 'N/A' },
           { label: 'LR / Waybill Number', value: matchedDispatch.lr_no || matchedDispatch.lrNo || matchedDispatch.lr_number || 'N/A' },
-          { label: 'Transporter', value: matchedDispatch.transporter || 'Direct Cargo' },
-          { label: 'Total Rolls Dispatched', value: `${matchedDispatch.total_rolls || matchedDispatch.totalRolls || 0} Rolls` },
-          { label: 'Total Net Weight', value: `${matchedDispatch.total_net_weight_kg || matchedDispatch.totalNetWeightKg || 0} kg`, isHighlight: true },
+          { label: 'Transporter', value: matchedDispatch.transporter || 'N/A' },
+          { label: 'Total Rolls Dispatched', value: matchedDispatch.total_rolls || matchedDispatch.totalRolls ? `${matchedDispatch.total_rolls || matchedDispatch.totalRolls} Rolls` : 'N/A' },
+          { label: 'Total Net Weight', value: matchedDispatch.total_net_weight_kg || matchedDispatch.totalNetWeightKg ? `${matchedDispatch.total_net_weight_kg || matchedDispatch.totalNetWeightKg} kg` : 'N/A', isHighlight: true },
           { label: 'Dispatch Date', value: matchedDispatch.dispatch_date || matchedDispatch.dispatchDate ? String(matchedDispatch.dispatch_date || matchedDispatch.dispatchDate).split('T')[0] : 'N/A' }
         ]
       };
@@ -401,15 +401,15 @@ export default function UniversalBarcodeScannerModal({
         raw: matchedItem,
         properties: [
           { label: 'Item Code', value: matchedItem.item_code || matchedItem.itemCode || matchedItem.id, isCode: true },
-          { label: 'Item Name', value: matchedItem.item_name || matchedItem.itemName },
-          { label: 'Category', value: matchedItem.category || 'Film Substrates' },
+          { label: 'Item Name', value: matchedItem.item_name || matchedItem.itemName || 'N/A' },
+          { label: 'Category', value: matchedItem.category || 'N/A' },
           { label: 'Film Type', value: matchedItem.film_type || matchedItem.filmType || 'N/A' },
           { label: 'Thickness', value: matchedItem.micron ? `${matchedItem.micron} µ` : 'N/A' },
           { label: 'Width', value: matchedItem.width_mm || matchedItem.widthMm ? `${matchedItem.width_mm || matchedItem.widthMm} mm` : 'N/A' },
-          { label: 'Current In-Stock Qty', value: `${matchedItem.current_stock_kg || matchedItem.stock_qty_kg || matchedItem.currentStockKg || 0} kg`, isHighlight: true },
-          { label: 'Allocated To Jobs', value: `${matchedItem.allocated_qty_kg || matchedItem.allocatedQtyKg || 0} kg` },
-          { label: 'Available Stock', value: `${matchedItem.available_qty_kg || matchedItem.availableQtyKg || 0} kg` },
-          { label: 'Reorder Threshold', value: `${matchedItem.min_reorder_level_kg || matchedItem.reorder_level_kg || matchedItem.minReorderLevelKg || 0} kg` }
+          { label: 'Current In-Stock Qty', value: matchedItem.current_stock_kg || matchedItem.stock_qty_kg || matchedItem.currentStockKg ? `${matchedItem.current_stock_kg || matchedItem.stock_qty_kg || matchedItem.currentStockKg} kg` : 'N/A', isHighlight: true },
+          { label: 'Allocated To Jobs', value: matchedItem.allocated_qty_kg || matchedItem.allocatedQtyKg ? `${matchedItem.allocated_qty_kg || matchedItem.allocatedQtyKg} kg` : 'N/A' },
+          { label: 'Available Stock', value: matchedItem.available_qty_kg || matchedItem.availableQtyKg ? `${matchedItem.available_qty_kg || matchedItem.availableQtyKg} kg` : 'N/A' },
+          { label: 'Reorder Threshold', value: matchedItem.min_reorder_level_kg || matchedItem.reorder_level_kg || matchedItem.minReorderLevelKg ? `${matchedItem.min_reorder_level_kg || matchedItem.reorder_level_kg || matchedItem.minReorderLevelKg} kg` : 'N/A' }
         ]
       };
     }
@@ -448,71 +448,66 @@ export default function UniversalBarcodeScannerModal({
         bottom: 0,
         backgroundColor: 'rgba(15, 23, 42, 0.75)',
         backdropFilter: 'blur(6px)',
-        zIndex: 99999,
+        zIndex: 9999,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         padding: '16px'
       }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
     >
       <div 
-        className="glass-panel"
         style={{
-          width: '100%',
-          maxWidth: '860px',
-          maxHeight: '90vh',
-          backgroundColor: '#ffffff',
+          background: '#ffffff',
           borderRadius: '16px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+          width: '100%',
+          maxWidth: '840px',
+          maxHeight: '92vh',
           display: 'flex',
           flexDirection: 'column',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
           overflow: 'hidden',
-          animation: 'fadeIn 0.2s ease-out'
+          border: '1px solid #e2e8f0'
         }}
       >
-        {/* Header Bar */}
+        {/* Modal Header */}
         <div 
           style={{
             padding: '18px 24px',
-            borderBottom: '1px solid #e2e8f0',
+            background: '#0f172a',
+            color: '#ffffff',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
-            color: '#ffffff'
+            borderBottom: '1px solid #334155'
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div 
               style={{
-                width: '42px',
-                height: '42px',
+                width: '40px',
+                height: '40px',
                 borderRadius: '10px',
-                background: 'rgba(56, 189, 248, 0.15)',
-                border: '1px solid rgba(56, 189, 248, 0.3)',
+                background: 'rgba(37, 99, 235, 0.2)',
+                color: '#60a5fa',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: '#38bdf8'
+                border: '1px solid rgba(96, 165, 250, 0.3)'
               }}
             >
-              <ScanBarcode size={24} />
+              <ScanBarcode size={22} />
             </div>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <h2 style={{ fontSize: '1.25rem', fontWeight: '700', margin: 0, color: '#ffffff' }}>
+                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: '800', color: '#ffffff' }}>
                   Universal Barcode & 2D QR Inspector
-                </h2>
+                </h3>
                 <span 
                   style={{
+                    background: '#fef3c7',
+                    color: '#92400e',
                     fontSize: '0.68rem',
-                    fontWeight: '700',
-                    background: 'rgba(234, 179, 8, 0.2)',
-                    color: '#fef08a',
-                    border: '1px solid rgba(234, 179, 8, 0.4)',
+                    fontWeight: '800',
                     padding: '2px 8px',
                     borderRadius: '999px',
                     display: 'inline-flex',
@@ -523,7 +518,7 @@ export default function UniversalBarcodeScannerModal({
                   <Lock size={10} /> READ-ONLY CHECK
                 </span>
               </div>
-              <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0 0' }}>
+              <p style={{ margin: 0, fontSize: '0.8rem', color: '#94a3b8', marginTop: '2px' }}>
                 Scan with handheld scanner gun, mobile camera, or paste barcode to inspect linked record details.
               </p>
             </div>
@@ -532,58 +527,51 @@ export default function UniversalBarcodeScannerModal({
           <button
             onClick={onClose}
             style={{
-              background: 'rgba(255, 255, 255, 0.1)',
+              background: 'transparent',
               border: 'none',
+              color: '#94a3b8',
+              cursor: 'pointer',
+              padding: '6px',
               borderRadius: '8px',
-              width: '34px',
-              height: '34px',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              color: '#cbd5e1',
-              cursor: 'pointer',
-              transition: 'all 0.15s ease'
+              justifyContent: 'center'
             }}
-            onMouseOver={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'}
-            onMouseOut={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'}
           >
-            <X size={18} />
+            <X size={20} />
           </button>
         </div>
 
-        {/* Search & Scanner Input Bar */}
+        {/* Search & Camera Input Bar */}
         <div style={{ padding: '16px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
           <form onSubmit={handleSearchSubmit} style={{ display: 'flex', gap: '10px' }}>
             <div style={{ position: 'relative', flex: 1 }}>
-              <div 
-                style={{
-                  position: 'absolute',
-                  left: '12px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  color: '#64748b',
-                  pointerEvents: 'none'
-                }}
-              >
-                <Search size={18} />
-              </div>
-              <input 
+              <Search 
+                size={18} 
+                style={{ 
+                  position: 'absolute', 
+                  left: '14px', 
+                  top: '50%', 
+                  transform: 'translateY(-50%)', 
+                  color: '#64748b' 
+                }} 
+              />
+              <input
                 ref={inputRef}
                 type="text"
-                className="form-control"
-                placeholder="Scan barcode gun or enter Barcode ID / SKU / Roll / Job Code..."
                 value={barcodeInput}
                 onChange={e => setBarcodeInput(e.target.value)}
+                placeholder="Scan / Type Barcode ID, Batch No, OCN, Cylinder SKU, GRN, Item Code..."
                 style={{
-                  paddingLeft: '38px',
-                  paddingRight: barcodeInput ? '34px' : '12px',
+                  width: '100%',
+                  padding: '12px 40px 12px 42px',
+                  borderRadius: '10px',
+                  border: '2px solid #cbd5e1',
                   fontSize: '0.95rem',
                   fontWeight: '600',
-                  height: '44px',
-                  borderRadius: '8px',
-                  border: '2px solid #0284c7',
-                  backgroundColor: '#ffffff',
-                  boxShadow: '0 0 0 3px rgba(2, 132, 199, 0.12)'
+                  color: '#0f172a',
+                  outline: 'none',
+                  fontFamily: 'JetBrains Mono, monospace'
                 }}
               />
               {barcodeInput && (
@@ -592,14 +580,13 @@ export default function UniversalBarcodeScannerModal({
                   onClick={handleClear}
                   style={{
                     position: 'absolute',
-                    right: '10px',
+                    right: '12px',
                     top: '50%',
                     transform: 'translateY(-50%)',
-                    background: 'none',
+                    background: 'transparent',
                     border: 'none',
                     color: '#94a3b8',
-                    cursor: 'pointer',
-                    padding: '4px'
+                    cursor: 'pointer'
                   }}
                 >
                   <X size={16} />
@@ -607,90 +594,75 @@ export default function UniversalBarcodeScannerModal({
               )}
             </div>
 
-            <button 
-              type="submit" 
+            <button
+              type="submit"
               className="btn-primary"
               style={{
-                display: 'inline-flex',
+                padding: '0 20px',
+                borderRadius: '10px',
+                display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
-                padding: '0 20px',
-                height: '44px',
-                fontSize: '0.9rem',
                 fontWeight: '700',
-                borderRadius: '8px',
-                background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
-                color: '#ffffff',
-                border: 'none',
-                cursor: 'pointer'
+                fontSize: '0.9rem'
               }}
             >
               <Search size={16} /> Inspect
             </button>
 
-            <button 
+            <button
               type="button"
-              onClick={() => {
-                if (cameraActive) stopCamera();
-                else startCamera();
-              }}
+              onClick={cameraActive ? stopCamera : startCamera}
+              className="btn-secondary"
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
                 padding: '0 16px',
-                height: '44px',
-                fontSize: '0.85rem',
+                borderRadius: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
                 fontWeight: '600',
-                borderRadius: '8px',
-                background: cameraActive ? '#fee2e2' : '#f1f5f9',
-                color: cameraActive ? '#dc2626' : '#334155',
-                border: cameraActive ? '1px solid #fca5a5' : '1px solid #cbd5e1',
-                cursor: 'pointer'
+                fontSize: '0.88rem'
               }}
-              title={cameraActive ? 'Stop Camera' : 'Scan with Device Camera'}
             >
               {cameraActive ? <CameraOff size={16} /> : <Camera size={16} />}
-              <span>{cameraActive ? 'Stop' : 'Camera'}</span>
+              {cameraActive ? 'Stop' : 'Camera'}
             </button>
           </form>
 
-          {/* Live Camera Viewport when Active */}
+          {/* Camera Viewport (if active) */}
           {cameraActive && (
             <div 
               style={{ 
                 marginTop: '12px', 
-                background: '#000000', 
+                position: 'relative', 
                 borderRadius: '10px', 
                 overflow: 'hidden', 
-                position: 'relative',
-                maxHeight: '200px',
+                background: '#000', 
+                maxHeight: '220px',
                 display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
+                justifyContent: 'center',
+                alignItems: 'center'
               }}
             >
               <video 
                 ref={videoRef} 
-                style={{ width: '100%', maxHeight: '200px', objectFit: 'cover' }} 
-                playsInline 
-                muted 
+                style={{ width: '100%', height: '220px', objectFit: 'cover' }} 
               />
               <div 
                 style={{
                   position: 'absolute',
-                  width: '200px',
-                  height: '100px',
-                  border: '2px dashed #38bdf8',
-                  borderRadius: '8px',
-                  boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.45)',
+                  border: '2px dashed #22c55e',
+                  borderRadius: '12px',
+                  width: '60%',
+                  height: '60%',
                   pointerEvents: 'none',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: '#38bdf8',
+                  color: '#22c55e',
                   fontSize: '0.75rem',
-                  fontWeight: '700'
+                  fontWeight: '700',
+                  textShadow: '0 1px 2px rgba(0,0,0,0.8)'
                 }}
               >
                 Target Barcode / QR
@@ -703,70 +675,6 @@ export default function UniversalBarcodeScannerModal({
               ⚠️ {cameraError}
             </div>
           )}
-
-          {/* Quick Barcode Category Guide & Sample Chips */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '600' }}>
-              Instant Examples in Database:
-            </span>
-            {(inventoryRolls || []).slice(0, 2).map((r, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => handleQuickChipClick(r.barcodeId || r.id)}
-                style={{
-                  background: '#ffffff',
-                  border: '1px solid #cbd5e1',
-                  borderRadius: '999px',
-                  padding: '2px 10px',
-                  fontSize: '0.72rem',
-                  fontWeight: '600',
-                  color: '#0369a1',
-                  cursor: 'pointer'
-                }}
-              >
-                📦 {r.barcodeId || r.id}
-              </button>
-            ))}
-            {(orders || []).slice(0, 1).map((o, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => handleQuickChipClick(o.id)}
-                style={{
-                  background: '#ffffff',
-                  border: '1px solid #cbd5e1',
-                  borderRadius: '999px',
-                  padding: '2px 10px',
-                  fontSize: '0.72rem',
-                  fontWeight: '600',
-                  color: '#7c3aed',
-                  cursor: 'pointer'
-                }}
-              >
-                📑 Order: {o.id}
-              </button>
-            ))}
-            {(cylinders || []).slice(0, 1).map((c, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => handleQuickChipClick(c.cylinderSku || c.sku || c.id)}
-                style={{
-                  background: '#ffffff',
-                  border: '1px solid #cbd5e1',
-                  borderRadius: '999px',
-                  padding: '2px 10px',
-                  fontSize: '0.72rem',
-                  fontWeight: '600',
-                  color: '#0891b2',
-                  cursor: 'pointer'
-                }}
-              >
-                ⚙️ Cyl: {c.cylinderSku || c.sku || c.id}
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* Modal Body / Results Inspector Area */}

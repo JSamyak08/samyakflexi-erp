@@ -234,7 +234,7 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
             </div>
           )}
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px', fontSize: '0.65rem', color: '#64748b', borderTop: '1px solid #e2e8f0', paddingTop: '2px' }}>
-            <span>Station: <strong>{r.stationId || 'SCALE_1_INWARD'}</strong></span>
+            <span>Station: <strong>{r.stationId || r.station_id || 'N/A'}</strong></span>
             <span>Date: <strong>{r.inwardDatetime || r.date || new Date().toLocaleString()}</strong></span>
           </div>
         </div>

@@ -1321,13 +1321,13 @@ export async function fetchInventoryRolls() {
       operatorName: r.operator_name || '',
       shift: r.shift || '',
       remarks: r.remarks || '',
-      coreDia: r.core_dia || '3 Inch (76mm)',
+      coreDia: r.core_dia || '',
       purchaseRatePerKg: Number(r.purchase_rate_per_kg ?? r.unit_price ?? 0) || 0,
       unitPrice: Number(r.purchase_rate_per_kg ?? r.unit_price ?? 0) || 0,
       unit: r.unit || (r.category === 'Film Substrates' ? 'Kg' : 'Pcs'),
       inputBarcodeIds: Array.isArray(r.input_barcode_ids) ? r.input_barcode_ids : [],
-      stationId: r.station_id || 'SCALE_1_INWARD',
-      locationBay: r.location_bay || 'Bay A',
+      stationId: r.station_id || '',
+      locationBay: r.location_bay || '',
       status: r.status || 'In Stock'
     }));
   } catch (err) {
@@ -1360,18 +1360,18 @@ export async function saveInventoryRollToSupabase(roll) {
     available_weight_kg: Number(roll.availableWeightKg ?? roll.netWeightKg ?? 0) || 0,
     length_meters: Number(roll.lengthMeters ?? 0) || 0,
     joint_count: Number(roll.jointCount ?? 0) || 0,
-    qc_status: roll.qcStatus || 'Passed',
+    qc_status: roll.qcStatus || 'Pending QC',
     machine_name: roll.machineName || roll.machine || roll.stationId || '',
     operator_name: roll.operatorName || roll.operator || '',
     shift: roll.shift || '',
     remarks: roll.remarks || roll.notes || '',
-    core_dia: roll.coreDia || '3 Inch (76mm)',
+    core_dia: roll.coreDia || '',
     purchase_rate_per_kg: Number(roll.purchaseRatePerKg ?? roll.unitPrice ?? roll.purchaseRate ?? 0) || 0,
     unit_price: Number(roll.purchaseRatePerKg ?? roll.unitPrice ?? roll.purchaseRate ?? 0) || 0,
     unit: roll.unit || 'Kg',
     input_barcode_ids: roll.inputBarcodeIds || [],
-    station_id: roll.stationId || 'SCALE_1_INWARD',
-    location_bay: roll.locationBay || 'Bay A',
+    station_id: roll.stationId || '',
+    location_bay: roll.locationBay || '',
     status: roll.status || 'In Stock'
   };
   console.log('[inventory_rolls] Saving barcode:', roll.barcodeId || roll.id);
