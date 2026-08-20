@@ -148,7 +148,7 @@ export default function ProductionScheduler({
   const [endJobTargetOrder, setEndJobTargetOrder] = useState(null);
   const [endJobStep, setEndJobStep] = useState('input'); // 'input' | 'confirm'
   const [inputActualMeters, setInputActualMeters] = useState('');
-  const [inputInkGsm, setInputInkGsm] = useState('1.5');
+  const [inputInkGsm, setInputInkGsm] = useState('');
   const [inputPrintedOutputKg, setInputPrintedOutputKg] = useState('');
   const [inputOperatorNotes, setInputOperatorNotes] = useState('');
   const [isSubmittingEndJob, setIsSubmittingEndJob] = useState(false);
@@ -564,7 +564,7 @@ export default function ProductionScheduler({
   const handleInitiateEndJob = (order) => {
     setEndJobTargetOrder(order);
     setInputActualMeters(order.targetMeters ? String(order.targetMeters) : '');
-    setInputInkGsm(order.inkGsm ? String(order.inkGsm) : '1.5');
+    setInputInkGsm(order.inkGsm ? String(order.inkGsm) : '');
     setInputPrintedOutputKg(order.printLayerNetKg ? String(order.printLayerNetKg) : (order.printQtyKg ? String(order.printQtyKg) : ''));
     setInputOperatorNotes('');
     setEndJobStep('input');
@@ -1837,9 +1837,6 @@ export default function ProductionScheduler({
                     <label style={{ fontSize: '0.85rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
                       🎨 Ink GSM (In Speed) (g/m²) *
                     </label>
-                    <span style={{ fontSize: '0.75rem', color: '#7c3aed', fontWeight: '700' }}>
-                      Standard: 1.50 GSM
-                    </span>
                   </div>
                   <input 
                     type="number"
@@ -2007,11 +2004,11 @@ export default function ProductionScheduler({
                   >
                     {isSubmittingEndJob ? (
                       <>
-                        <RefreshCw size={16} className="animate-spin" /> Saving to Database...
+                        <RefreshCw size={16} className="animate-spin" /> Saving...
                       </>
                     ) : (
                       <>
-                        <CheckCheck size={18} /> Confirm & Save to Database
+                        <CheckCheck size={18} /> Confirm and Save
                       </>
                     )}
                   </button>
