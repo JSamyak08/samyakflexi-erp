@@ -34,8 +34,40 @@ import {
 import { 
   initialMachines, 
   calculatePrintingScheduleMetrics,
-  isOrderOverdue
+  isOrderOverdue,
+  FILM_DENSITIES
 } from '../factoryStore';
+
+// Helper: Resolve Film Density for flexible packaging substrates
+const getFilmDensity = (filmType = '') => {
+  if (!filmType) return 1.40;
+  if (FILM_DENSITIES && FILM_DENSITIES[filmType]) return FILM_DENSITIES[filmType];
+  const lower = String(filmType).toLowerCase().trim();
+  if (lower.includes('pet') || lower.includes('polyester')) return 1.40;
+  if (lower.includes('pearlised')) return 0.70;
+  if (lower.includes('bopp') || lower.includes('opp')) return 0.91;
+  if (lower.includes('metpet')) return 1.40;
+  if (lower.includes('cpp')) return 0.91;
+  if (lower.includes('ld') || lower.includes('pe') || lower.includes('poly') || lower.includes('lldpe')) return 0.93;
+  if (lower.includes('paper')) return 0.80;
+  if (lower.includes('alu') || lower.includes('foil')) return 2.70;
+  return 1.40;
+};
+
+// Helper: Parse substrate structure string into individual film layers with GSM
+const parseStructureLayers = (structureStr = '') => {
+  if (!structureStr || typeof structureStr !== 'string') return [];
+  const parts = structureStr.split(/[\/\+]/).map(p => p.trim()).filter(Boolean);
+  return parts.map(part => {
+    const micronMatch = part.match(/(\d+(\.\d+)?)\s*(µ|mic|micron)?/i);
+    const micron = micronMatch ? parseFloat(micronMatch[1]) : 12;
+    let filmType = part.replace(/(\d+(\.\d+)?)\s*(µ|mic|micron)?/gi, '').replace(/[^\w\s-]/g, '').trim();
+    if (!filmType) filmType = 'PET';
+    const density = getFilmDensity(filmType);
+    const gsm = parseFloat((micron * density).toFixed(2));
+    return { filmType, micron, density, gsm };
+  });
+};
 
 export default function ProductionScheduler({
   orders = [],
@@ -188,51 +220,93 @@ export default function ProductionScheduler({
                              matchedCylinder?.colorsList ||
                              [];
 
-      // Substrate structure
-      const jmLayers = matchedJM?.layers || [];
-      const structure = (jmLayers.length > 0 ? jmLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ') : null) ||
-        (matchedJM?.structure && matchedJM.structure !== 'PET / PE' && matchedJM.structure !== '—' ? matchedJM.structure : null) ||
-        (order.structure && order.structure !== 'PET / PE' && order.structure !== '—' ? order.structure : null) ||
-        (layers.length > 0 ? layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ') : null) ||
-        (reqs.filter(r => r.micron && r.micron !== '-').map(r => `${r.filmType} ${r.micron}µ`).join(' / ')) ||
-        'PET 12µ / PE 40µ';
-
-      // Check material readiness
-      let isMaterialReady = true;
-      if (reqs.length > 0) {
-        isMaterialReady = reqs.every(req => {
-          const match = inventory.find(inv => 
-            inv.filmType === req.filmType && (inv.availableQtyKg || 0) >= (req.qtyKg || 0)
-          );
-          return !!match || req.poIssued || order.status === 'In Production' || order.status === 'Scheduled';
+      // Resolve layers from jobMasters, order.jobDetails, order.layers, or parsed structure
+      let resolvedLayers = [];
+      if (matchedJM?.layers && matchedJM.layers.length > 0) {
+        resolvedLayers = matchedJM.layers.map(l => {
+          const filmType = l.filmType || 'PET';
+          const micron = parseFloat(l.micron) || 12;
+          const density = getFilmDensity(filmType);
+          const gsm = parseFloat((micron * density).toFixed(2));
+          return { ...l, filmType, micron, density, gsm };
         });
+      } else if (order.jobDetails?.layers && order.jobDetails.layers.length > 0) {
+        resolvedLayers = order.jobDetails.layers.map(l => {
+          const filmType = l.filmType || 'PET';
+          const micron = parseFloat(l.micron) || 12;
+          const density = getFilmDensity(filmType);
+          const gsm = parseFloat((micron * density).toFixed(2));
+          return { ...l, filmType, micron, density, gsm };
+        });
+      } else if (order.layers && order.layers.length > 0) {
+        resolvedLayers = order.layers.map(l => {
+          const filmType = l.filmType || 'PET';
+          const micron = parseFloat(l.micron) || 12;
+          const density = getFilmDensity(filmType);
+          const gsm = parseFloat((micron * density).toFixed(2));
+          return { ...l, filmType, micron, density, gsm };
+        });
+      } else if (structure) {
+        resolvedLayers = parseStructureLayers(structure);
       }
 
-      // Check if job is actively In Production on the Printing Press
-      const matchingProdRecord = (productionRecords || []).find(r => 
-        (order.id && (r.orderId === order.id || r.id === order.id)) || 
-        (order.jobCode && r.jobCode === order.jobCode)
-      );
+      // Layer 1 is the Print Layer (printing substrate)
+      const printLayer = resolvedLayers[0] || {
+        filmType: order.filmType || firstFilmReq.filmType || 'PET',
+        micron: parseFloat(order.micron || firstLayer.micron || firstFilmReq.micron) || 12,
+        density: getFilmDensity(order.filmType || firstFilmReq.filmType || 'PET'),
+        gsm: (parseFloat(order.micron || firstLayer.micron || firstFilmReq.micron) || 12) * getFilmDensity(order.filmType || firstFilmReq.filmType || 'PET')
+      };
 
-      const printingStartTime = order.printingStartTime || matchingProdRecord?.printingStartTime || null;
-      const printingEndTime = order.printingEndTime || matchingProdRecord?.printingEndTime || null;
-      const printingDurationFormatted = order.printingDurationFormatted || matchingProdRecord?.printingDurationFormatted || null;
+      const printFilmType = printLayer.filmType || 'PET';
+      const printMicron = parseFloat(printLayer.micron) || 12;
+      const printDensity = printLayer.density || getFilmDensity(printFilmType);
+      const printLayerGsm = parseFloat((printMicron * printDensity).toFixed(2));
 
-      // STRICT CHECK: Only a job with an active press run (started and not yet ended) is 'In Production'
-      const isCurrentlyInProduction = Boolean(
-        order.printingStatus === 'In Production' || 
-        matchingProdRecord?.printingStatus === 'In Production' || 
-        (printingStartTime && !printingEndTime)
-      );
+      // Calculate Total Films GSM & Laminate GSM
+      const totalFilmsGsm = resolvedLayers.length > 0
+        ? resolvedLayers.reduce((sum, l) => sum + (l.gsm || 0), 0)
+        : printLayerGsm;
 
-      // Target printing meters calculation
-      const printQtyKg = parseFloat(order.quantityKg || order.quantity || order.orderQtyKg || 1000);
-      const targetMeters = Math.round((printQtyKg * 1000) / ((widthMm / 1000) * (micron || 12) * 1.4 * 0.001) || (printQtyKg * 60));
+      const inkGsm = parseFloat(order.inkGsm || matchedJM?.inkGsm) || 1.5;
+      const adhesiveGsm = (resolvedLayers.length > 1) 
+        ? (parseFloat(order.adhesiveGsm || matchedJM?.adhesiveGsm) || 1.5) 
+        : 0;
+
+      const totalLaminateGsm = parseFloat((totalFilmsGsm + inkGsm + adhesiveGsm).toFixed(2));
+
+      // Order Weight in KG
+      const printQtyKg = parseFloat(order.quantityKg || order.quantity || order.orderQtyKg || 0);
+
+      // Width in meters
+      const widthM = widthMm > 0 ? widthMm / 1000 : 1.0;
+
+      // Surface Area in m² based on Total Laminate GSM
+      const totalAreaSqm = (totalLaminateGsm > 0 && printQtyKg > 0)
+        ? (printQtyKg * 1000) / totalLaminateGsm
+        : (printLayerGsm > 0 && printQtyKg > 0)
+        ? (printQtyKg * 1000) / printLayerGsm
+        : 0;
+
+      // Exact Target Running Meters for the Print Layer
+      const targetMeters = (totalAreaSqm > 0 && widthM > 0)
+        ? Math.round(totalAreaSqm / widthM)
+        : 0;
+
+      // Print Layer Net KG
+      const printLayerNetKg = totalAreaSqm > 0
+        ? parseFloat(((totalAreaSqm * printLayerGsm) / 1000).toFixed(2))
+        : 0;
 
       return {
         ...order,
         widthMm,
-        micron,
+        micron: printMicron,
+        printFilmType,
+        printLayerGsm,
+        totalLaminateGsm,
+        totalAreaSqm: Math.round(totalAreaSqm),
+        printLayerNetKg,
         structure,
         artworkUrl,
         colorsCount,
@@ -715,11 +789,17 @@ export default function ProductionScheduler({
                       <div>
                         <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Order Qty</span>
                         <strong style={{ fontSize: '0.92rem', color: '#0f172a' }}>{order.printQtyKg} kg</strong>
+                        {order.printLayerNetKg > 0 && (
+                          <span style={{ fontSize: '0.68rem', color: '#64748b', display: 'block' }}>({order.printLayerNetKg} kg film)</span>
+                        )}
                       </div>
 
                       <div>
-                        <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Print Length</span>
+                        <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Target Print Length</span>
                         <strong style={{ fontSize: '0.92rem', color: '#0284c7' }}>{order.targetMeters.toLocaleString()} m</strong>
+                        <span style={{ fontSize: '0.68rem', color: '#0369a1', fontWeight: '600', display: 'block' }}>
+                          {order.printLayerGsm} GSM ({order.printFilmType} {order.micron}µ)
+                        </span>
                       </div>
 
                       <div>
@@ -1015,6 +1095,9 @@ export default function ProductionScheduler({
                       <div style={{ fontSize: '1.3rem', fontWeight: '900', color: '#059669', marginTop: '2px' }}>
                         {activeRunningJob.targetMeters.toLocaleString()} m
                       </div>
+                      <span style={{ fontSize: '0.72rem', color: '#0369a1', fontWeight: '700', display: 'block', marginTop: '2px' }}>
+                        {activeRunningJob.printLayerGsm} GSM ({activeRunningJob.printFilmType} {activeRunningJob.micron}µ)
+                      </span>
                     </div>
 
                     <div style={{ background: '#ffffff', padding: '12px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
