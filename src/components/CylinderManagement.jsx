@@ -214,9 +214,57 @@ export default function CylinderManagement({
     }
   }, [circumferenceMm, faceLengthMm, rate, colorsCount, autoCalculateCost, calculatedCostPerCylinder, calculatedTotalSetCost]);
 
+  const getNextCylinderSku = () => {
+    let maxNum = 0;
+
+    const checkValue = (val) => {
+      if (!val) return;
+      const str = String(val).trim();
+      if (!str) return;
+
+      const matches = str.match(/\d+/g);
+      if (matches && matches.length > 0) {
+        let numToConsider = parseInt(matches[matches.length - 1], 10);
+        if (matches.length > 1 && numToConsider >= 2020 && numToConsider <= 2035) {
+          numToConsider = parseInt(matches[0], 10);
+        } else if (matches.length === 1 && numToConsider >= 2020 && numToConsider <= 2035) {
+          numToConsider = 0;
+        }
+
+        if (!isNaN(numToConsider) && numToConsider > maxNum) {
+          maxNum = numToConsider;
+        }
+      }
+    };
+
+    (cylinders || []).forEach(c => {
+      checkValue(c.sku);
+      checkValue(c.skuCode);
+      checkValue(c.cylinderSku);
+    });
+
+    (jobMasters || []).forEach(j => {
+      checkValue(j.cylinderSku);
+      checkValue(j.sku);
+      checkValue(j.skuCode);
+    });
+
+    const nextIndex = maxNum + 1;
+    return `SKU-CYL-${String(nextIndex).padStart(3, '0')}`;
+  };
+
+  const isSkuDuplicate = useMemo(() => {
+    const code = (sku || '').trim().toLowerCase();
+    if (!code) return false;
+    return (cylinders || []).some(c => 
+      c.id !== editingCylinder?.id && 
+      ((c.sku || c.skuCode || '').toLowerCase() === code)
+    );
+  }, [sku, cylinders, editingCylinder]);
+
   const openAddModal = () => {
     setEditingCylinder(null);
-    setSku(`SKU-CYL-00${(cylinders || []).length + 1}`);
+    setSku(getNextCylinderSku());
     setJobName('');
     setClientGroup('');
     setColorsCount(6);
@@ -687,8 +735,33 @@ export default function CylinderManagement({
                 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                   <div className="form-group">
-                    <label style={{ fontWeight: '700' }}>Cylinder SKU Code *</label>
-                    <input type="text" className="form-control" required value={sku} onChange={e => setSku(e.target.value)} />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                      <label style={{ margin: 0, fontWeight: '700' }}>Cylinder SKU Code *</label>
+                      {!editingCylinder && (
+                        <button 
+                          type="button" 
+                          onClick={() => setSku(getNextCylinderSku())}
+                          style={{ background: 'none', border: 'none', color: 'var(--primary-brand)', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer', padding: 0 }}
+                          title="Generate Next Sequence Number"
+                        >
+                          ⚡ Auto Next Serial
+                        </button>
+                      )}
+                    </div>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      required 
+                      value={sku} 
+                      onChange={e => setSku(e.target.value)} 
+                      style={isSkuDuplicate ? { borderColor: '#ef4444', background: '#fef2f2' } : {}}
+                      placeholder="e.g. SKU-CYL-001"
+                    />
+                    {isSkuDuplicate && (
+                      <div style={{ fontSize: '0.72rem', color: '#dc2626', fontWeight: '700', marginTop: '2px' }}>
+                        ⚠️ SKU Code "{sku}" already exists for another cylinder set.
+                      </div>
+                    )}
                   </div>
 
                   <div className="form-group">
