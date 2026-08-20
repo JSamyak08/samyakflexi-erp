@@ -2937,6 +2937,16 @@ export default function InventoryManagement({
                   const availQty = parseFloat(item.availableQtyKg) || 0;
                   const itemValuation = availQty * rate;
 
+                  // Pending QC matching for this item
+                  const pendingGRNs = (safeGrns || []).filter(g => 
+                    (g.status === 'Pending QC' || g.status === 'Pending') && 
+                    ((g.stockItemId && String(g.stockItemId) === String(item.id)) || 
+                     (g.itemId && String(g.itemId) === String(item.id)) || 
+                     (g.itemName && item.itemName && g.itemName.trim().toLowerCase() === item.itemName.trim().toLowerCase()) ||
+                     (isFilm && g.filmType === item.filmType && Number(g.micron) === Number(item.micron) && Number(g.widthMm) === Number(item.widthMm)))
+                  );
+                  const pendingQcQty = pendingGRNs.reduce((sum, g) => sum + (Number(g.netWeightKg) || 0), 0);
+
                   return (
                     <tr key={item.id}>
                       <td style={{ fontWeight: '700', color: 'var(--accent-color)' }}>{item.id}</td>
@@ -2971,8 +2981,13 @@ export default function InventoryManagement({
                       <td style={{ fontSize: '0.85rem' }}>
                         {isFilm ? `${item.micron}µ × ${item.widthMm}mm` : (item.widthMm && item.widthMm !== '-' ? `${item.widthMm}mm` : '-')}
                       </td>
-                      <td style={{ fontSize: '1.1rem', fontWeight: '800', color: isLow ? '#ef4444' : '#047857' }}>
+                      <td style={{ fontSize: '1.1rem', fontWeight: '800', color: isLow ? (availQty === 0 && pendingQcQty > 0 ? '#d97706' : '#ef4444') : '#047857' }}>
                         {(item.availableQtyKg ?? 0).toLocaleString()} {unitStr}
+                        {pendingQcQty > 0 && (
+                          <div style={{ fontSize: '0.7rem', color: '#92400e', fontWeight: '700', marginTop: '2px', background: '#fef3c7', padding: '1px 5px', borderRadius: '4px', border: '1px solid #fde68a', display: 'inline-block' }}>
+                            ⏳ +{pendingQcQty.toLocaleString()} {unitStr} Pending QC
+                          </div>
+                        )}
                       </td>
                       <td style={{ fontWeight: '700', color: '#1e293b' }}>
                         ₹{rate > 0 ? rate.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '-'} / {unitStr}
@@ -2987,12 +3002,46 @@ export default function InventoryManagement({
                         <code style={{ color: 'var(--accent-color)' }}>{item.lastBatch}</code>
                       </td>
                       <td>
-                        {isLow ? (
-                          <span className="badge badge-warning" style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444' }}>
-                            LOW STOCK
+                        {availQty === 0 && pendingQcQty > 0 ? (
+                          <span 
+                            className="badge" 
+                            style={{ 
+                              background: '#fef3c7', 
+                              color: '#92400e', 
+                              border: '1.5px solid #fde68a', 
+                              fontSize: '0.72rem', 
+                              fontWeight: '700', 
+                              padding: '3px 8px', 
+                              borderRadius: '6px',
+                              whiteSpace: 'nowrap' 
+                            }}
+                          >
+                            📥 GRN Inward (Pending QC)
                           </span>
+                        ) : isLow ? (
+                          <div>
+                            <span className="badge badge-warning" style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444' }}>
+                              LOW STOCK
+                            </span>
+                            {pendingQcQty > 0 && (
+                              <div style={{ marginTop: '3px' }}>
+                                <span className="badge" style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', fontSize: '0.65rem', fontWeight: '700' }}>
+                                  📥 GRN Inward (Pending QC)
+                                </span>
+                              </div>
+                            )}
+                          </div>
                         ) : (
-                          <span className="badge badge-us">IN STOCK</span>
+                          <div>
+                            <span className="badge badge-us">IN STOCK</span>
+                            {pendingQcQty > 0 && (
+                              <div style={{ marginTop: '3px' }}>
+                                <span className="badge" style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', fontSize: '0.65rem', fontWeight: '700' }}>
+                                  📥 GRN Inward (Pending QC)
+                                </span>
+                              </div>
+                            )}
+                          </div>
                         )}
                       </td>
                       <td>
@@ -5224,12 +5273,15 @@ export default function InventoryManagement({
         const matchingGRNs = (grns || []).filter(g => isItemMatch(g, item));
         const inwardTxLines = matchingGRNs.map(g => {
           const txId = `GRN_${g.grnNo || g.id}`;
+          const isApproved = g.status === 'Approved';
+          const isPending = !isApproved && (g.status === 'Pending QC' || g.status === 'Pending' || !g.status);
           const rate = Number(g.purchaseRatePerKg || g.purchaseRate || g.unitPrice || item.unitPrice || item.purchaseRatePerKg || (DEFAULT_DAILY_RATES[g.filmType] || 0));
           const qty = g.netWeightKg || 0;
           return {
             txId,
             category: 'inward',
-            type: g.status === 'Approved' ? '📥 GRN Inward (Approved)' : '📥 GRN Inward (Pending QC)',
+            type: isApproved ? '📥 GRN Inward (Approved)' : '📥 GRN Inward (Pending QC)',
+            isPendingQC: isPending,
             date: g.receivedDate || '2026-07-24',
             refNo: g.grnNo,
             subRef: g.poNumber ? `PO: ${g.poNumber}` : 'Direct Receipt',
@@ -5244,7 +5296,7 @@ export default function InventoryManagement({
             barcode: customBarcodesMap[txId] || g.batchNo || `BAR-GRN-${g.grnNo}`,
             batchNo: g.batchNo || `GRN-${g.grnNo}`,
             invoiceNo: g.invoiceNo || '',
-            status: g.status || 'Approved',
+            status: g.status || 'Pending QC',
             notes: `${g.rollsReceived || 1} pkg/roll(s) | Batch: ${g.batchNo || 'N/A'}`
           };
         });
@@ -5339,11 +5391,11 @@ export default function InventoryManagement({
             };
           });
 
-        // 5. Calculate Opening Stock Baseline
-        const totalTxInwards = inwardTxLines.reduce((sum, tx) => sum + tx.inwardQtyKg, 0) + storeIssueLines.filter(tx => tx.category === 'inward').reduce((sum, tx) => sum + tx.inwardQtyKg, 0);
+        // 5. Calculate Opening Stock Baseline (Excluding Pending QC from movement so net matches usable stock)
+        const totalApprovedInwards = inwardTxLines.filter(tx => !tx.isPendingQC).reduce((sum, tx) => sum + tx.inwardQtyKg, 0) + storeIssueLines.filter(tx => tx.category === 'inward').reduce((sum, tx) => sum + tx.inwardQtyKg, 0);
         const totalTxOutwards = jobUsageLines.reduce((sum, tx) => sum + tx.outwardQtyKg, 0) + storeIssueLines.filter(tx => tx.category === 'usage').reduce((sum, tx) => sum + tx.outwardQtyKg, 0);
         const totalTxAdj = adjLines.reduce((sum, tx) => sum + tx.adjQtyKg, 0);
-        const netMovement = totalTxInwards - totalTxOutwards + totalTxAdj;
+        const netMovement = totalApprovedInwards - totalTxOutwards + totalTxAdj;
         const currentTargetQty = item.availableQtyKg || 0;
         const openingStockQty = Math.max(0, currentTargetQty - netMovement);
 
@@ -5377,17 +5429,24 @@ export default function InventoryManagement({
         const allTxLines = [...openingStockLine, ...inwardTxLines, ...jobUsageLines, ...storeIssueLines, ...adjLines];
         allTxLines.sort((a, b) => parseTxDate(a.date) - parseTxDate(b.date));
 
-        // 7. Calculate Chronological Running Balance
+        // 7. Calculate Chronological Running Balance (Pending QC does NOT add to usable stock!)
         let runningStock = 0;
         const ledgerWithBalance = allTxLines.map(tx => {
+          const isPending = tx.isPendingQC || tx.status === 'Pending QC' || (tx.type && tx.type.includes('Pending QC'));
           if (tx.category === 'inward') {
-            runningStock += tx.inwardQtyKg;
+            if (!isPending) {
+              runningStock += tx.inwardQtyKg;
+            }
           } else if (tx.category === 'usage') {
             runningStock -= tx.outwardQtyKg;
           } else if (tx.category === 'reconciliation') {
             runningStock += tx.adjQtyKg;
           }
-          return { ...tx, runningBalance: Math.max(0, runningStock) };
+          return { 
+            ...tx, 
+            isPendingQC: isPending,
+            runningBalance: Math.max(0, runningStock) 
+          };
         });
 
         // 8. Reverse to Newest First for Display & Apply Filters
@@ -5409,9 +5468,12 @@ export default function InventoryManagement({
         const paginatedLedgerItems = displayLines.slice((ledgerCurrentPage - 1) * ledgerPageSize, ledgerCurrentPage * ledgerPageSize);
 
         // Summary Calculations
-        const totalPurchasedQty = inwardTxLines.reduce((sum, tx) => sum + tx.inwardQtyKg, 0) + openingStockQty;
-        const totalSpendRs = inwardTxLines.reduce((sum, tx) => sum + tx.totalValue, 0) + (openingStockQty * itemActualUnitPrice);
-        const avgPurchaseRate = totalPurchasedQty > 0 ? (totalSpendRs / totalPurchasedQty) : itemActualUnitPrice;
+        const approvedInwardLines = inwardTxLines.filter(tx => !tx.isPendingQC);
+        const pendingInwardLines = inwardTxLines.filter(tx => tx.isPendingQC);
+        const totalApprovedPurchasedQty = approvedInwardLines.reduce((sum, tx) => sum + tx.inwardQtyKg, 0) + openingStockQty;
+        const totalPendingQcQty = pendingInwardLines.reduce((sum, tx) => sum + tx.inwardQtyKg, 0);
+        const totalSpendRs = approvedInwardLines.reduce((sum, tx) => sum + tx.totalValue, 0) + (openingStockQty * itemActualUnitPrice);
+        const avgPurchaseRate = totalApprovedPurchasedQty > 0 ? (totalSpendRs / totalApprovedPurchasedQty) : itemActualUnitPrice;
 
         const totalConsumedJobQty = jobUsageLines.reduce((sum, tx) => sum + tx.outwardQtyKg, 0) + storeIssueLines.filter(tx => tx.category === 'usage').reduce((sum, tx) => sum + tx.outwardQtyKg, 0);
         const totalReconciliationAdjQty = adjLines.reduce((sum, tx) => sum + tx.adjQtyKg, 0);
@@ -5512,11 +5574,18 @@ export default function InventoryManagement({
               {/* 4 Summary Ledger KPI Cards */}
               <div className="glass-card" style={{ background: '#f8fafc', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', padding: '16px', marginBottom: '20px' }}>
                 <div>
-                  <span className="stats-title" style={{ fontSize: '0.75rem' }}>Total Inwards (Receipts)</span>
+                  <span className="stats-title" style={{ fontSize: '0.75rem' }}>Total Inwards (Approved)</span>
                   <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#047857', marginTop: '4px' }}>
-                    + {(totalPurchasedQty ?? 0).toLocaleString()} {unitStr}
+                    + {(totalApprovedPurchasedQty ?? 0).toLocaleString()} {unitStr}
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{inwardTxLines.length + (openingStockQty > 0 ? 1 : 0)} inward entries</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    {approvedInwardLines.length + (openingStockQty > 0 ? 1 : 0)} approved inwards
+                  </div>
+                  {totalPendingQcQty > 0 && (
+                    <div style={{ fontSize: '0.72rem', color: '#92400e', fontWeight: '700', marginTop: '4px', background: '#fef3c7', padding: '2px 6px', borderRadius: '4px', border: '1px solid #fde68a' }}>
+                      ⏳ +{totalPendingQcQty.toLocaleString()} {unitStr} Pending QC (Not in stock)
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -5536,7 +5605,7 @@ export default function InventoryManagement({
                 </div>
 
                 <div>
-                  <span className="stats-title" style={{ fontSize: '0.75rem' }}>Current Net Stock Balance</span>
+                  <span className="stats-title" style={{ fontSize: '0.75rem' }}>Current Net Usable Stock</span>
                   <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#0f172a', marginTop: '4px' }}>
                     {(netAvailableBalance ?? 0).toLocaleString()} {unitStr}
                   </div>
@@ -5627,14 +5696,28 @@ export default function InventoryManagement({
                       paginatedLedgerItems.map((tx, idx) => {
                         const isEditingThisBarcode = editingTxId === tx.txId;
                         return (
-                          <tr key={tx.txId || idx} style={{ background: tx.category === 'reconciliation' ? '#f0f9ff' : (tx.category === 'usage' ? '#fff5f5' : 'transparent') }}>
+                          <tr key={tx.txId || idx} style={{ background: tx.isPendingQC ? '#fffbeb' : (tx.category === 'reconciliation' ? '#f0f9ff' : (tx.category === 'usage' ? '#fff5f5' : 'transparent')) }}>
                             <td style={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>{tx.date}</td>
                             
                             {/* Category Badge */}
                             <td>
                               {tx.category === 'inward' && (
-                                <span className="badge badge-us" style={{ fontSize: '0.72rem', background: '#dcfce7', color: '#15803d' }}>
-                                  {tx.type || '📥 GRN Inward'}
+                                <span 
+                                  className="badge" 
+                                  style={{ 
+                                    fontSize: '0.72rem', 
+                                    background: tx.isPendingQC ? '#fef3c7' : '#dcfce7', 
+                                    color: tx.isPendingQC ? '#92400e' : '#15803d',
+                                    border: tx.isPendingQC ? '1.5px solid #fde68a' : '1px solid #86efac',
+                                    fontWeight: '700',
+                                    padding: '3px 8px',
+                                    borderRadius: '6px',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                  }}
+                                >
+                                  {tx.type || (tx.isPendingQC ? '📥 GRN Inward (Pending QC)' : '📥 GRN Inward (Approved)')}
                                 </span>
                               )}
                               {tx.category === 'usage' && (
@@ -5748,8 +5831,17 @@ export default function InventoryManagement({
                             </td>
 
                             {/* Inward Qty */}
-                            <td style={{ fontWeight: '700', color: tx.inwardQtyKg > 0 ? '#047857' : 'var(--text-muted)' }}>
-                              {tx.inwardQtyKg > 0 ? `+ ${(tx.inwardQtyKg ?? 0).toLocaleString()} ${unitStr}` : '-'}
+                            <td>
+                              {tx.inwardQtyKg > 0 ? (
+                                tx.isPendingQC ? (
+                                  <div>
+                                    <span style={{ fontWeight: '700', color: '#d97706' }}>+ {(tx.inwardQtyKg ?? 0).toLocaleString()} {unitStr}</span>
+                                    <span style={{ display: 'block', fontSize: '0.68rem', color: '#b45309', fontWeight: '600' }}>🔒 Pending QC</span>
+                                  </div>
+                                ) : (
+                                  <span style={{ fontWeight: '700', color: '#047857' }}>+ {(tx.inwardQtyKg ?? 0).toLocaleString()} {unitStr}</span>
+                                )
+                              ) : '-'}
                             </td>
 
                             {/* Job Usage Qty */}
@@ -5763,13 +5855,16 @@ export default function InventoryManagement({
                             </td>
 
                             {/* Running Balance */}
-                            <td style={{ fontWeight: '800', color: '#0f172a', background: '#f8fafc' }}>
+                            <td style={{ fontWeight: '800', color: '#0f172a', background: tx.isPendingQC ? '#fefce8' : '#f8fafc' }}>
                               {(tx.runningBalance ?? 0).toLocaleString()} {unitStr}
+                              {tx.isPendingQC && (
+                                <span style={{ display: 'block', fontSize: '0.68rem', color: '#92400e', fontWeight: '600' }}>(Not Added: QC Hold)</span>
+                              )}
                             </td>
 
                             {/* Rate & Total Value */}
                             <td>
-                              <div style={{ fontWeight: '700', color: '#047857' }}>₹ {tx.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                              <div style={{ fontWeight: '700', color: tx.isPendingQC ? '#b45309' : '#047857' }}>₹ {tx.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
                               <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>₹ {tx.ratePerKg.toFixed(2)}/{unitStr}</div>
                             </td>
                           </tr>
