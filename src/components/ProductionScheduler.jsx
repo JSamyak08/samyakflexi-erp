@@ -414,8 +414,12 @@ export default function ProductionScheduler({
   }, [orders, inventory, jobMasters, cylinders, productionRecords, queueOrderIds]);
 
   // 1. Ready Queue Orders (Active & Unfinished Jobs Only)
+  // Active/Running jobs ('In Production') are locked at the top of the press execution queue
   const readyQueueOrders = useMemo(() => {
-    return allEnrichedOrders.filter(order => !order.isPrintingCompleted);
+    const unfinished = allEnrichedOrders.filter(order => !order.isPrintingCompleted);
+    const inProduction = unfinished.filter(order => order.isCurrentlyInProduction);
+    const waiting = unfinished.filter(order => !order.isCurrentlyInProduction);
+    return [...inProduction, ...waiting];
   }, [allEnrichedOrders]);
 
   // 2. Completed Printing Orders (Finished Press Jobs Only)
@@ -514,20 +518,33 @@ export default function ProductionScheduler({
     return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
-  // Re-ordering queue item handler
+  // Re-ordering queue item handler: running jobs are locked in execution; jobs below them can be rearranged
   const handleMoveQueueItem = (orderId, direction) => {
     if (!canRearrangeQueue) return;
 
+    // Find the item in filteredQueue
+    const currentIdx = filteredQueue.findIndex(o => o.id === orderId);
+    if (currentIdx === -1) return;
+
+    const currentOrder = filteredQueue[currentIdx];
+    // If the job itself is currently in production, it cannot be re-arranged
+    if (currentOrder.isCurrentlyInProduction) return;
+
+    const targetIdx = direction === 'up' ? currentIdx - 1 : currentIdx + 1;
+    if (targetIdx < 0 || targetIdx >= filteredQueue.length) return;
+
+    const targetOrder = filteredQueue[targetIdx];
+    // Cannot displace or move above a job that is currently in production
+    if (targetOrder.isCurrentlyInProduction) return;
+
     setQueueOrderIds(prev => {
-      const idx = prev.indexOf(orderId);
-      if (idx === -1) return prev;
-      const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
-      if (targetIdx < 0 || targetIdx >= prev.length) return prev;
+      const idxA = prev.indexOf(orderId);
+      const idxB = prev.indexOf(targetOrder.id);
+      if (idxA === -1 || idxB === -1) return prev;
 
       const updated = [...prev];
-      const temp = updated[idx];
-      updated[idx] = updated[targetIdx];
-      updated[targetIdx] = temp;
+      updated[idxA] = targetOrder.id;
+      updated[idxB] = orderId;
 
       if (onReorderQueue) {
         onReorderQueue(updated);
@@ -549,6 +566,14 @@ export default function ProductionScheduler({
       printingStartTime: startTime,
       printingEndTime: null
     };
+
+    // Pin started job to the front of queueOrderIds so it stays locked at #1
+    setQueueOrderIds(prev => {
+      const remaining = prev.filter(id => id !== order.id);
+      const updated = [order.id, ...remaining];
+      if (onReorderQueue) onReorderQueue(updated);
+      return updated;
+    });
 
     if (onStartJob) {
       onStartJob(startedOrder, assignedMachineId, startTime);
@@ -874,7 +899,7 @@ export default function ProductionScheduler({
             <div>
               {canRearrangeQueue ? (
                 <span className="badge badge-success" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', padding: '6px 12px', background: '#dcfce7', color: '#15803d', fontWeight: '800' }}>
-                  <Move size={14} /> Queue Re-arrangement Enabled ({currentUser?.role || 'Manager'})
+                  <Move size={14} /> Queue Re-arrangement Active (Running Jobs Locked)
                 </span>
               ) : (
                 <span className="badge badge-neutral" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', padding: '6px 12px', background: '#f1f5f9', color: '#64748b', fontWeight: '700' }}>
@@ -893,7 +918,7 @@ export default function ProductionScheduler({
                 </div>
                 <div>
                   <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#93c5fd', fontWeight: '800' }}>
-                    Active Press Job Running
+                    Active Press Job Running (Position #1 Locked)
                   </span>
                   <div style={{ fontSize: '1.1rem', fontWeight: '900' }}>
                     {readyQueueOrders.find(o => o.isCurrentlyInProduction)?.jobName}
@@ -935,6 +960,13 @@ export default function ProductionScheduler({
                 const assignedMachineId = activeMachineSelection[order.id] || order.machineId || rotogravureMachines[0]?.id || 'MAC-ROTO-1';
                 const assignedMachine = rotogravureMachines.find(m => m.id === assignedMachineId) || rotogravureMachines[0];
 
+                const isSelfRunning = Boolean(order.isCurrentlyInProduction);
+                const prevOrder = idx > 0 ? filteredQueue[idx - 1] : null;
+                const nextOrder = idx < filteredQueue.length - 1 ? filteredQueue[idx + 1] : null;
+
+                const isUpDisabled = isSelfRunning || idx === 0 || Boolean(prevOrder?.isCurrentlyInProduction);
+                const isDownDisabled = isSelfRunning || idx === filteredQueue.length - 1 || Boolean(nextOrder?.isCurrentlyInProduction);
+
                 return (
                   <div 
                     key={order.id} 
@@ -948,7 +980,7 @@ export default function ProductionScheduler({
                         ? '6px solid #dc2626' 
                         : '6px solid #059669',
                       display: 'grid',
-                      gridTemplateColumns: canRearrangeQueue ? '45px 1.4fr 1.6fr 1.2fr' : '1.4fr 1.6fr 1.2fr',
+                      gridTemplateColumns: canRearrangeQueue ? '56px 1.4fr 1.6fr 1.2fr' : '1.4fr 1.6fr 1.2fr',
                       gap: '18px',
                       alignItems: 'center',
                       background: order.isCurrentlyInProduction ? '#f8fafc' : '#ffffff',
@@ -958,26 +990,77 @@ export default function ProductionScheduler({
                   >
                     {/* Move Up / Move Down Priority Controls (Managers Only) */}
                     {canRearrangeQueue && (
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-                        <button 
-                          className="btn-secondary" 
-                          style={{ padding: '4px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                          title="Move Priority Up"
-                          disabled={idx === 0}
-                          onClick={() => handleMoveQueueItem(order.id, 'up')}
-                        >
-                          <ArrowUp size={14} />
-                        </button>
-                        <span style={{ fontSize: '0.75rem', fontWeight: '800', color: '#64748b' }}>#{idx + 1}</span>
-                        <button 
-                          className="btn-secondary" 
-                          style={{ padding: '4px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                          title="Move Priority Down"
-                          disabled={idx === filteredQueue.length - 1}
-                          onClick={() => handleMoveQueueItem(order.id, 'down')}
-                        >
-                          <ArrowDown size={14} />
-                        </button>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
+                        {isSelfRunning ? (
+                          <div 
+                            style={{ 
+                              display: 'flex', 
+                              flexDirection: 'column', 
+                              alignItems: 'center', 
+                              gap: '2px', 
+                              padding: '5px 6px', 
+                              background: '#eff6ff', 
+                              border: '1.5px solid #93c5fd', 
+                              borderRadius: '8px',
+                              boxShadow: '0 1px 3px rgba(37, 99, 235, 0.1)'
+                            }}
+                            title="Job is actively running on press - locked in execution at #1 until ended."
+                          >
+                            <Lock size={13} style={{ color: '#2563eb' }} />
+                            <span style={{ fontSize: '0.62rem', fontWeight: '900', color: '#1d4ed8', letterSpacing: '0.3px', lineHeight: 1 }}>RUNNING</span>
+                            <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#3b82f6', marginTop: '1px' }}>#{idx + 1}</span>
+                          </div>
+                        ) : (
+                          <>
+                            <button 
+                              className="btn-secondary" 
+                              style={{ 
+                                padding: '4px', 
+                                width: '28px', 
+                                height: '28px', 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                justifyContent: 'center',
+                                opacity: isUpDisabled ? 0.35 : 1,
+                                cursor: isUpDisabled ? 'not-allowed' : 'pointer'
+                              }}
+                              title={
+                                prevOrder?.isCurrentlyInProduction 
+                                  ? "Cannot move above actively running job" 
+                                  : idx === 0 
+                                  ? "Top of queue" 
+                                  : "Move Priority Up"
+                              }
+                              disabled={isUpDisabled}
+                              onClick={() => handleMoveQueueItem(order.id, 'up')}
+                            >
+                              <ArrowUp size={14} />
+                            </button>
+                            <span style={{ fontSize: '0.75rem', fontWeight: '800', color: '#64748b' }}>#{idx + 1}</span>
+                            <button 
+                              className="btn-secondary" 
+                              style={{ 
+                                padding: '4px', 
+                                width: '28px', 
+                                height: '28px', 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                justifyContent: 'center',
+                                opacity: isDownDisabled ? 0.35 : 1,
+                                cursor: isDownDisabled ? 'not-allowed' : 'pointer'
+                              }}
+                              title={
+                                idx === filteredQueue.length - 1 
+                                  ? "Bottom of queue" 
+                                  : "Move Priority Down"
+                              }
+                              disabled={isDownDisabled}
+                              onClick={() => handleMoveQueueItem(order.id, 'down')}
+                            >
+                              <ArrowDown size={14} />
+                            </button>
+                          </>
+                        )}
                       </div>
                     )}
 

@@ -21,6 +21,7 @@ export default function WeighingScaleWidget({ onCaptureWeight }) {
   const [activeTab, setActiveTab] = useState('live'); // 'live' | 'settings' | 'troubleshoot'
   const [isConnecting, setIsConnecting] = useState(false);
   const [customSimWeight, setCustomSimWeight] = useState('245.5');
+  const [isSimExpanded, setIsSimExpanded] = useState(false);
   const [toastMsg, setToastMsg] = useState(null);
 
   const [baudRate, setBaudRate] = useState(scaleState.config.baudRate || 9600);
@@ -405,20 +406,70 @@ export default function WeighingScaleWidget({ onCaptureWeight }) {
                     </div>
                   )}
 
-                  {/* Simulation / Offline Mode for Testing */}
-                  <div style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '8px', border: '1px dashed #cbd5e1' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                      <div>
-                        <strong style={{ fontSize: '0.82rem', color: '#334155' }}>Test / Simulation Mode</strong>
-                        <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                          Simulate live digital weight without a physical RS-232 scale attached.
-                        </div>
-                      </div>
+                  {/* Minimized Simulation / Test Section */}
+                  <div 
+                    style={{ 
+                      background: scaleState.isSimulated ? '#fef3c7' : '#f8fafc', 
+                      border: `1px solid ${scaleState.isSimulated ? '#fde68a' : '#e2e8f0'}`, 
+                      borderRadius: '8px', 
+                      padding: '8px 12px',
+                      marginTop: '12px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setIsSimExpanded(prev => !prev)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          padding: 0,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          cursor: 'pointer',
+                          fontSize: '0.76rem',
+                          fontWeight: '700',
+                          color: scaleState.isSimulated ? '#92400e' : '#64748b'
+                        }}
+                      >
+                        <Zap size={13} style={{ color: scaleState.isSimulated ? '#d97706' : '#94a3b8' }} />
+                        <span>Simulation Mode {scaleState.isSimulated ? '(Active)' : ''}</span>
+                        <span style={{ fontSize: '0.68rem', color: '#94a3b8' }}>{isSimExpanded ? '▲' : '▼'}</span>
+                      </button>
+
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {scaleState.isSimulated && (
+                          <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#b45309', fontFamily: 'monospace' }}>
+                            {parseFloat(customSimWeight) || 0} kg
+                          </span>
+                        )}
+                        <button 
+                          type="button"
+                          onClick={handleToggleSimulation}
+                          style={{ 
+                            padding: '3px 8px', 
+                            fontSize: '0.72rem', 
+                            fontWeight: '700',
+                            borderRadius: '4px',
+                            background: scaleState.isSimulated ? '#fee2e2' : '#ffffff',
+                            color: scaleState.isSimulated ? '#b91c1c' : '#334155',
+                            border: scaleState.isSimulated ? '1px solid #fca5a5' : '1px solid #cbd5e1',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {scaleState.isSimulated ? 'Stop' : 'Start'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {isSimExpanded && (
+                      <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                        <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Custom Simulated Weight (kg):</span>
                         <input 
                           type="number" 
                           step="0.1"
-                          style={{ width: '80px', padding: '4px 8px', fontSize: '0.82rem', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                          style={{ width: '80px', padding: '3px 6px', fontSize: '0.75rem', borderRadius: '4px', border: '1px solid #cbd5e1', fontWeight: '700' }}
                           value={customSimWeight}
                           onChange={e => {
                             setCustomSimWeight(e.target.value);
@@ -427,16 +478,8 @@ export default function WeighingScaleWidget({ onCaptureWeight }) {
                             }
                           }}
                         />
-                        <button 
-                          type="button"
-                          onClick={handleToggleSimulation}
-                          className="btn-secondary"
-                          style={{ padding: '4px 10px', fontSize: '0.75rem', fontWeight: '700' }}
-                        >
-                          {scaleState.isSimulated ? 'Stop Sim' : 'Start Sim'}
-                        </button>
                       </div>
-                    </div>
+                    )}
                   </div>
                 </div>
               )}
