@@ -171,12 +171,11 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, 
                 <td className="label-cell">Face Length (Shell)</td><td className="value-cell" style={{ fontWeight: '700', color: '#2563eb' }}>{data.faceLength || (data.faceLengthMm ? `${data.faceLengthMm} mm` : (data.totalWidth || '—'))}</td>
               </tr>
               <tr>
-                <td className="label-cell">Shell Size</td><td className="value-cell">{data.shellSize || '—'}</td>
                 <td className="label-cell">Engraver Name</td><td className="value-cell" style={{ fontWeight: '700', color: '#1e293b' }}>{data.engravure || data.engravuresName || '—'}</td>
+                <td className="label-cell">Cost Borne By</td><td className="value-cell">{data.costBorneBy || '—'}</td>
               </tr>
               <tr>
-                <td className="label-cell">Cost Borne By</td><td className="value-cell">{data.costBorneBy || '—'}</td>
-                <td className="label-cell">Utilisation Limit</td><td className="value-cell">{data.utilisationLimit ? `${Number(data.utilisationLimit).toLocaleString()} Kg` : '10,000 Kg'}</td>
+                <td className="label-cell">Utilisation Limit</td><td colSpan="3" className="value-cell">{data.utilisationLimit ? `${Number(data.utilisationLimit).toLocaleString()} Kg` : '10,000 Kg'}</td>
               </tr>
             </tbody>
           </table>
@@ -1197,10 +1196,6 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
           <div className="form-group">
             <label>Total Height (Circumference)</label>
             <input className="form-control" name="totalHeight" value={formData.totalHeight} onChange={handleChange} onBlur={handleDimensionBlur} placeholder="e.g. 400 mm" />
-          </div>
-          <div className="form-group">
-            <label>Shell Size</label>
-            <input className="form-control" name="shellSize" value={formData.shellSize} onChange={handleChange} onBlur={handleDimensionBlur} placeholder="e.g. 1050 mm" />
           </div>
           <div className="form-group">
             <label>Engraver Name</label>
