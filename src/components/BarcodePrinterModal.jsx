@@ -96,8 +96,14 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
       (r.rollType === 'RAW_MATERIAL' || r.category === 'Film Substrates') && 
       hasValidFilmSpecs;
 
-    const displayUnit = r.unit || r.uom || (isFilmItem ? 'kg' : 'Pcs');
-    const displayQty = r.netWeightKg ?? r.availableWeightKg ?? r.qty ?? 0;
+    const catStr = (r.category || '').toLowerCase();
+    const isChemicalOrInk = catStr.includes('chemical') || catStr.includes('solvent') || catStr.includes('ink') || catStr.includes('adhesive') || catStr.includes('resin') || (r.barcodeId || '').startsWith('CON-BC') || (r.barcodeId || '').startsWith('RM-BC');
+    const displayUnit = (r.unit && r.unit !== 'Pcs') ? r.unit : (isFilmItem || isChemicalOrInk ? 'Kg' : (r.unit || r.uom || 'Pcs'));
+    const displayQty = (r.netWeightKg !== undefined && r.netWeightKg !== null && Number(r.netWeightKg) > 0)
+      ? Number(r.netWeightKg)
+      : ((r.availableWeightKg !== undefined && r.availableWeightKg !== null && Number(r.availableWeightKg) > 0)
+        ? Number(r.availableWeightKg)
+        : (Number(r.qty ?? r.weightKg ?? r.receivedQtyKg ?? 0)));
     const rateVal = resolveItemPurchaseRate(r);
     const vendorStr = r.vendorName || r.supplier || r.partyName || '-';
     const batchStr = r.batchNo || r.heatNo || r.batch || '-';

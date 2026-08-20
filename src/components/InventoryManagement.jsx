@@ -1594,40 +1594,47 @@ export default function InventoryManagement({
 
     const cleanCode = code.toLowerCase().trim();
     const strippedCode = cleanCode.replace(/^(lot|bc|bar-iss|bar|roll|inv|grn|item)[-_:]\s*/i, '').trim();
+    const grnExtract = strippedCode.replace(/^(con|rm)-bc-/, '').replace(/-\d+$/, '');
 
     // 1. Search in inventoryRolls by barcodeId, id, vendorRollNo, batchNo, barcode
     const matchedRoll = (inventoryRolls || []).find(r => {
       const bId = (r.barcodeId || '').toLowerCase();
       const rId = String(r.id || '').toLowerCase();
       const vRoll = (r.vendorRollNo || '').toLowerCase();
-      const bNo = (r.batchNo || '').toLowerCase();
+      const bNo = (r.batchNo || r.lotNo || '').toLowerCase();
+      const rGrn = (r.grnNo || r.grn_no || '').toLowerCase();
       return bId === cleanCode || bId === strippedCode || cleanCode.includes(bId) ||
         rId === cleanCode || rId === strippedCode ||
         vRoll === cleanCode || vRoll === strippedCode || (vRoll && cleanCode.includes(vRoll)) ||
-        bNo === cleanCode || bNo === strippedCode || (bNo && cleanCode.includes(bNo));
+        bNo === cleanCode || bNo === strippedCode || (bNo && cleanCode.includes(bNo)) ||
+        (rGrn && (rGrn === cleanCode || rGrn === strippedCode || cleanCode.includes(rGrn)));
     });
 
     // 2. Search in safeGrns by grnNo, id, batchNo, barcode, invoiceNo, poNumber
     const matchedGrn = (safeGrns || []).find(g => {
-      const gNo = String(g.grnNo || '').toLowerCase();
+      const gNo = String(g.grnNo || g.grn_number || g.grnNumber || '').toLowerCase();
+      const gCode = gNo.replace(/^grn-/, '');
       const gId = String(g.id || '').toLowerCase();
-      const bNo = (g.batchNo || '').toLowerCase();
+      const bNo = (g.batchNo || g.batch_no || '').toLowerCase();
       const bCode = (g.barcode || '').toLowerCase();
+      const invNo = (g.invoiceNo || g.invoice_number || g.invoiceNumber || '').toLowerCase();
       return gNo === cleanCode || gNo === strippedCode || cleanCode.includes(gNo) ||
         gId === cleanCode || gId === strippedCode ||
         bNo === cleanCode || bNo === strippedCode || (bNo && cleanCode.includes(bNo)) ||
-        bCode === cleanCode || bCode === strippedCode || (bCode && cleanCode.includes(bCode));
+        bCode === cleanCode || bCode === strippedCode || (bCode && cleanCode.includes(bCode)) ||
+        invNo === cleanCode || invNo === strippedCode ||
+        (grnExtract && (gCode === grnExtract || gNo.includes(grnExtract)));
     });
 
     // 3. Search in inventory items by id, itemCode, productCode, lastBatch, batchNo, barcode, itemName, shade
     const matchedItemDirect = (inventory || []).find(i => {
       const iId = (i.id || '').toLowerCase();
-      const iCode = (i.itemCode || '').toLowerCase();
-      const pCode = (i.productCode || '').toLowerCase();
+      const iCode = (i.itemCode || i.item_code || '').toLowerCase();
+      const pCode = (i.productCode || i.product_code || '').toLowerCase();
       const lBatch = (i.lastBatch || '').toLowerCase();
-      const bNo = (i.batchNo || '').toLowerCase();
+      const bNo = (i.batchNo || i.batch_no || '').toLowerCase();
       const bCode = (i.barcode || i.barcodeId || '').toLowerCase();
-      const iName = (i.itemName || '').toLowerCase();
+      const iName = (i.itemName || i.item_name || '').toLowerCase();
       const shade = (i.shade || '').toLowerCase();
 
       return (
@@ -1644,7 +1651,7 @@ export default function InventoryManagement({
 
     // 4. Search in inks master list by productCode, id, shade
     const matchedInk = (inks || []).find(ink => {
-      const pCode = (ink.productCode || '').toLowerCase();
+      const pCode = (ink.productCode || ink.product_code || '').toLowerCase();
       const inkId = (ink.id || '').toLowerCase();
       const shade = (ink.shade || '').toLowerCase();
       const lBatch = (ink.lastBatch || `lot-${pCode}`).toLowerCase();
@@ -1656,6 +1663,29 @@ export default function InventoryManagement({
       );
     });
 
+    // Helpers to resolve positive number and exact product UOM
+    const resolveQuantity = (...candidates) => {
+      for (const c of candidates) {
+        const num = Number(c);
+        if (!isNaN(num) && num > 0) return num;
+      }
+      for (const c of candidates) {
+        const num = Number(c);
+        if (!isNaN(num) && num >= 0) return num;
+      }
+      return 0;
+    };
+
+    const resolveUOM = (item, roll, grn) => {
+      const cat = (item?.category || roll?.category || grn?.category || '').toLowerCase();
+      const explicit = roll?.unit || item?.unit || grn?.unit;
+      if (explicit && explicit !== 'Pcs') return explicit;
+      if (cat.includes('film') || cat.includes('chemical') || cat.includes('solvent') || cat.includes('ink') || cat.includes('adhesive') || cat.includes('resin') || (roll?.barcodeId || '').startsWith('RM-BC') || (roll?.barcodeId || '').startsWith('CON-BC')) {
+        return (explicit === 'Ltr' || explicit === 'Kg') ? explicit : 'Kg';
+      }
+      return explicit || 'Kg';
+    };
+
     let targetItem = null;
     let batchNo = 'BATCH-MAIN';
     let purchaseRate = 0;
@@ -1666,6 +1696,13 @@ export default function InventoryManagement({
     let unitStr = 'Kg';
 
     if (matchedRoll) {
+      const linkedGrnForRoll = (safeGrns || []).find(g => 
+        (matchedRoll.grnNo && (g.grnNo === matchedRoll.grnNo || g.grn_number === matchedRoll.grnNo)) ||
+        (matchedRoll.invoiceNo && (g.invoiceNo === matchedRoll.invoiceNo || g.invoice_number === matchedRoll.invoiceNo)) ||
+        (matchedRoll.batchNo && (g.batchNo === matchedRoll.batchNo || g.batch_no === matchedRoll.batchNo)) ||
+        (grnExtract && String(g.grnNo || g.grn_number || '').includes(grnExtract))
+      );
+
       targetItem = (inventory || []).find(i => 
         i.id === matchedRoll.itemId || 
         (i.itemCode && matchedRoll.itemId && i.itemCode.toLowerCase() === matchedRoll.itemId.toLowerCase()) ||
@@ -1674,56 +1711,71 @@ export default function InventoryManagement({
       ) || {
         id: matchedRoll.itemId || `ITEM-${matchedRoll.id}`,
         itemName: matchedRoll.itemName || `${matchedRoll.filmType || 'Film'} ${matchedRoll.micron || ''}µ`,
-        category: matchedRoll.category || 'Film Substrates',
+        category: matchedRoll.category || linkedGrnForRoll?.category || 'Film Substrates',
         filmType: matchedRoll.filmType,
         micron: matchedRoll.micron,
         widthMm: matchedRoll.widthMm,
-        unit: matchedRoll.unit || 'Kg',
+        unit: matchedRoll.unit || linkedGrnForRoll?.unit || 'Kg',
         unitPrice: matchedRoll.purchaseRatePerKg || 0,
         availableQtyKg: matchedRoll.availableWeightKg || matchedRoll.netWeightKg || 0,
         location: matchedRoll.location || 'Store Bay'
       };
 
-      batchNo = matchedRoll.batchNo || matchedRoll.vendorRollNo || matchedRoll.barcodeId;
-      purchaseRate = Number(matchedRoll.purchaseRatePerKg || targetItem.unitPrice || 0);
-      vendorName = matchedRoll.vendorName || targetItem.lastVendor || 'Verified Supplier';
-      grnNo = matchedRoll.grnNo || '';
+      unitStr = resolveUOM(targetItem, matchedRoll, linkedGrnForRoll);
+      batchNo = matchedRoll.batchNo || matchedRoll.lotNo || matchedRoll.vendorRollNo || linkedGrnForRoll?.batchNo || matchedRoll.barcodeId;
+      purchaseRate = resolveQuantity(matchedRoll.purchaseRatePerKg, matchedRoll.purchaseRate, matchedRoll.unitPrice, targetItem.unitPrice, targetItem.purchaseRatePerKg, linkedGrnForRoll?.purchaseRate);
+      vendorName = matchedRoll.vendorName || matchedRoll.vendor || linkedGrnForRoll?.vendorName || linkedGrnForRoll?.vendor_name || targetItem.lastVendor || 'Verified Supplier';
+      grnNo = matchedRoll.grnNo || matchedRoll.grn_no || linkedGrnForRoll?.grnNo || linkedGrnForRoll?.grn_number || (grnExtract && grnExtract.length > 3 ? `GRN-${grnExtract.toUpperCase()}` : '');
       barcodeId = matchedRoll.barcodeId || code;
-      availableQty = Number(matchedRoll.availableWeightKg ?? matchedRoll.netWeightKg ?? targetItem.availableQtyKg ?? 0);
-      unitStr = matchedRoll.unit || targetItem.unit || 'Kg';
+      availableQty = resolveQuantity(
+        matchedRoll.availableWeightKg,
+        matchedRoll.available_weight_kg,
+        matchedRoll.availableQty,
+        matchedRoll.netWeightKg,
+        matchedRoll.net_weight_kg,
+        matchedRoll.grossWeightKg,
+        targetItem.availableQtyKg,
+        targetItem.available_qty_kg,
+        targetItem.currentStockKg,
+        targetItem.current_stock_kg,
+        targetItem.stockQtyKg,
+        targetItem.stock_qty_kg,
+        linkedGrnForRoll?.receivedQtyKg,
+        linkedGrnForRoll?.netWeightKg
+      );
     } else if (matchedGrn) {
       targetItem = (inventory || []).find(i => 
         i.id === matchedGrn.itemId || 
+        i.id === matchedGrn.stockItemId ||
         (i.itemCode && matchedGrn.itemId && i.itemCode.toLowerCase() === matchedGrn.itemId.toLowerCase()) ||
         (i.itemName && matchedGrn.itemName && i.itemName.toLowerCase() === matchedGrn.itemName.toLowerCase()) ||
         (i.filmType && matchedGrn.filmType && i.filmType.toLowerCase() === matchedGrn.filmType.toLowerCase())
       ) || {
-        id: matchedGrn.itemId || `GRN-ITEM-${matchedGrn.id}`,
+        id: matchedGrn.itemId || matchedGrn.stockItemId || `GRN-ITEM-${matchedGrn.id}`,
         itemName: matchedGrn.itemName || `${matchedGrn.filmType || 'Film'} ${matchedGrn.micron || ''}µ`,
         category: matchedGrn.category || 'Film Substrates',
         unit: matchedGrn.unit || 'Kg',
         unitPrice: matchedGrn.purchaseRate || matchedGrn.unitPrice || 0,
-        availableQtyKg: matchedGrn.netWeightKg || 0,
-        location: 'Bay A'
+        availableQtyKg: matchedGrn.netWeightKg || matchedGrn.receivedQtyKg || 0,
+        location: 'Store Room'
       };
 
-      batchNo = matchedGrn.batchNo || `GRN-${matchedGrn.grnNo}`;
-      purchaseRate = Number(matchedGrn.purchaseRate || matchedGrn.unitPrice || targetItem.unitPrice || 0);
-      vendorName = matchedGrn.vendorName || targetItem.lastVendor || 'Verified Supplier';
-      grnNo = matchedGrn.grnNo || '';
+      unitStr = resolveUOM(targetItem, null, matchedGrn);
+      batchNo = matchedGrn.batchNo || matchedGrn.batch_no || `GRN-${matchedGrn.grnNo || matchedGrn.grn_number}`;
+      purchaseRate = resolveQuantity(matchedGrn.purchaseRate, matchedGrn.purchaseRatePerKg, matchedGrn.unitPrice, targetItem.unitPrice);
+      vendorName = matchedGrn.vendorName || matchedGrn.vendor_name || matchedGrn.supplier || targetItem.lastVendor || 'Verified Supplier';
+      grnNo = matchedGrn.grnNo || matchedGrn.grn_number || '';
       barcodeId = matchedGrn.barcode || code;
-      availableQty = Number(targetItem.availableQtyKg || matchedGrn.netWeightKg || 0);
-      unitStr = matchedGrn.unit || targetItem.unit || 'Kg';
+      availableQty = resolveQuantity(targetItem.availableQtyKg, targetItem.currentStockKg, targetItem.stockQtyKg, matchedGrn.netWeightKg, matchedGrn.receivedQtyKg);
     } else if (matchedItemDirect) {
       targetItem = matchedItemDirect;
+      unitStr = resolveUOM(targetItem, null, null);
       batchNo = targetItem.lastBatch || targetItem.batchNo || (targetItem.itemCode ? `LOT-${targetItem.itemCode}` : `LOT-${targetItem.id}`);
-      purchaseRate = Number(targetItem.unitPrice || targetItem.purchaseRatePerKg || targetItem.pricePerKg || 0);
+      purchaseRate = resolveQuantity(targetItem.unitPrice, targetItem.purchaseRatePerKg, targetItem.pricePerKg);
       vendorName = targetItem.lastVendor || targetItem.supplierName || targetItem.lastSupplier || targetItem.manufacturer || 'Verified Supplier';
       barcodeId = targetItem.barcode || (code.toUpperCase().startsWith('LOT-') ? code : (targetItem.lastBatch || targetItem.id));
-      availableQty = Number(targetItem.availableQtyKg ?? targetItem.stockQtyKg ?? 0);
-      unitStr = targetItem.unit || 'Kg';
+      availableQty = resolveQuantity(targetItem.availableQtyKg, targetItem.available_qty_kg, targetItem.currentStockKg, targetItem.current_stock_kg, targetItem.stockQtyKg, targetItem.stock_qty_kg, targetItem.quantity, targetItem.qty);
     } else if (matchedInk) {
-      // Find corresponding item in inventory or fallback to ink specs
       targetItem = (inventory || []).find(i => 
         (i.itemCode && i.itemCode.toLowerCase() === (matchedInk.productCode || '').toLowerCase()) ||
         (i.id && i.id.toLowerCase() === (matchedInk.productCode || '').toLowerCase()) ||
@@ -1741,12 +1793,12 @@ export default function InventoryManagement({
         lastVendor: matchedInk.supplierName || matchedInk.manufacturer || 'DIC Inks'
       };
 
+      unitStr = resolveUOM(targetItem, null, null);
       batchNo = matchedInk.lastBatch || `LOT-${matchedInk.productCode}`;
-      purchaseRate = Number(targetItem.unitPrice || matchedInk.pricePerKg || 0);
+      purchaseRate = resolveQuantity(targetItem.unitPrice, matchedInk.pricePerKg, matchedInk.unitPrice);
       vendorName = targetItem.lastVendor || matchedInk.supplierName || matchedInk.manufacturer || 'DIC Inks';
       barcodeId = code.toUpperCase().startsWith('LOT-') ? code : `LOT-${matchedInk.productCode}`;
-      availableQty = Number(targetItem.availableQtyKg ?? matchedInk.stockQtyKg ?? 0);
-      unitStr = targetItem.unit || matchedInk.unit || 'Kg';
+      availableQty = resolveQuantity(targetItem.availableQtyKg, targetItem.currentStockKg, targetItem.stockQtyKg, matchedInk.stockQtyKg);
     } else {
       setSelectedInvItem(null);
       setScannedItemDetails(null);
@@ -1767,7 +1819,6 @@ export default function InventoryManagement({
       } else if (matchedRoll.status === 'Rejected' || matchedRoll.qcStatus === 'Rejected') {
         qcStatus = 'Rejected';
       } else {
-        // Check associated GRN by GRN No or Batch No
         const linkedGrn = (safeGrns || []).find(g => (matchedRoll.grnNo && g.grnNo === matchedRoll.grnNo) || (matchedRoll.batchNo && g.batchNo === matchedRoll.batchNo));
         if (linkedGrn && (linkedGrn.status === 'Pending QC' || linkedGrn.status === 'Pending')) {
           qcStatus = 'Pending QC';
@@ -4633,8 +4684,15 @@ export default function InventoryManagement({
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', fontSize: '0.76rem', color: '#475569' }}>
-                  <span>Available Stock in Roll/Batch: <strong style={{ color: '#047857', fontSize: '0.85rem' }}>{scannedItemDetails.availableQty} {scannedItemDetails.unit || 'Kg'}</strong></span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', fontSize: '0.76rem', color: '#475569', flexWrap: 'wrap', gap: '6px' }}>
+                  <span>
+                    Available in Scanned Roll/Batch: <strong style={{ color: '#047857', fontSize: '0.85rem' }}>{scannedItemDetails.availableQty} {scannedItemDetails.unit || 'Kg'}</strong>
+                    {scannedItemDetails.item && (Number(scannedItemDetails.item.availableQtyKg || scannedItemDetails.item.currentStockKg) > 0) && (
+                      <span style={{ color: '#64748b', marginLeft: '6px' }}>
+                        (Total Item Stock: <strong>{scannedItemDetails.item.availableQtyKg || scannedItemDetails.item.currentStockKg} {scannedItemDetails.unit || 'Kg'}</strong>)
+                      </span>
+                    )}
+                  </span>
                   {scannedItemDetails.grnNo && <span>GRN Ref: <strong>{scannedItemDetails.grnNo}</strong></span>}
                 </div>
 
