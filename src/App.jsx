@@ -1051,6 +1051,9 @@ export default function App() {
     setCurrentUser(user);
     setIsAuthenticated(true);
     safeLocalStorageSet('samyak_erp_current_user', user);
+    if (user?.role === 'Printing Operator') {
+      setActiveTab('printing_scheduler');
+    }
   };
 
   // Logout Handler (for UI updates, authService handles Supabase logout)
@@ -1469,6 +1472,86 @@ export default function App() {
     }
   };
   const handleUpdateOrderStatus = handleUpdateOrder;
+
+  // Handlers for Starting and Ending Printing Jobs from Scheduler
+  const handleStartPrintingJob = async (order, machineId, startTime) => {
+    const startIso = startTime || new Date().toISOString();
+    const updatedOrder = {
+      ...order,
+      status: 'In Production',
+      machineId: machineId || order.machineId,
+      printingStartTime: startIso
+    };
+    await handleUpdateOrder(updatedOrder);
+
+    // Update or create corresponding Production Record
+    const existingRec = productionRecords.find(r => r.orderId === order.id || r.id === order.id || r.jobCode === order.jobCode);
+    const updatedRecord = existingRec ? {
+      ...existingRec,
+      status: 'In Production',
+      printingStartTime: startIso,
+      stages: {
+        ...(existingRec.stages || {}),
+        printing: {
+          ...(existingRec.stages?.printing || {}),
+          status: 'In Production',
+          startTime: startIso
+        }
+      }
+    } : {
+      id: `PR-${order.jobCode || order.id || Date.now()}`,
+      orderId: order.id,
+      jobCode: order.jobCode || order.id,
+      jobName: order.jobName,
+      clientName: order.clientName,
+      targetQtyKg: order.quantityKg || order.quantity || order.orderQtyKg || 0,
+      status: 'In Production',
+      printingStartTime: startIso,
+      stages: {
+        printing: { status: 'In Production', startTime: startIso }
+      },
+      createdAt: startIso
+    };
+    handleSaveProductionRecord(updatedRecord);
+    logAudit('UPDATE', 'Printing Scheduler', `Started printing job for "${order.jobName}" (${order.id}) on machine ${machineId || 'Rotogravure Press'}`, order.id);
+  };
+
+  const handleEndPrintingJob = async (order, endTime, durationMinutes) => {
+    const endIso = endTime || new Date().toISOString();
+    const durationFormatted = durationMinutes ? (durationMinutes >= 60 ? `${Math.floor(durationMinutes / 60)}h ${durationMinutes % 60}m` : `${durationMinutes}m`) : 'Completed';
+    const updatedOrder = {
+      ...order,
+      status: 'In Production',
+      printingEndTime: endIso,
+      printingDurationMinutes: durationMinutes,
+      printingDurationFormatted: durationFormatted
+    };
+    await handleUpdateOrder(updatedOrder);
+
+    // Update corresponding Production Record
+    const existingRec = productionRecords.find(r => r.orderId === order.id || r.id === order.id || r.jobCode === order.jobCode);
+    if (existingRec) {
+      const updatedRecord = {
+        ...existingRec,
+        status: 'In Production',
+        printingEndTime: endIso,
+        printingDurationMinutes: durationMinutes,
+        printingDurationFormatted: durationFormatted,
+        stages: {
+          ...(existingRec.stages || {}),
+          printing: {
+            ...(existingRec.stages?.printing || {}),
+            status: 'Completed',
+            endTime: endIso,
+            durationMinutes: durationMinutes,
+            durationFormatted: durationFormatted
+          }
+        }
+      };
+      handleSaveProductionRecord(updatedRecord);
+    }
+    logAudit('UPDATE', 'Printing Scheduler', `Ended printing job for "${order.jobName}" (${order.id}). Duration: ${durationFormatted}`, order.id);
+  };
 
   const handleDeleteOrder = async (orderId) => {
     setOrders(prev => prev.filter(o => o.id !== orderId));
@@ -2375,8 +2458,37 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 1: EXECUTIVE DASHBOARD */}
-        {activeTab === 'dashboard' && (
+        {/* TAB 1: EXECUTIVE DASHBOARD / OPERATOR DASHBOARD */}
+        {activeTab === 'dashboard' && currentUser?.role === 'Printing Operator' ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div className="glass-panel" style={{ padding: '20px', background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', color: '#ffffff', borderRadius: '12px' }}>
+              <h2 style={{ fontSize: '1.35rem', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Printer size={24} /> Printing Operator Station & Ready Queue
+              </h2>
+              <p style={{ opacity: 0.9, fontSize: '0.88rem', marginTop: '4px' }}>
+                Welcome, {currentUser?.name || 'Printing Operator'}. Live press jobs, specifications, and execution queue.
+              </p>
+            </div>
+            <ProductionScheduler 
+              orders={orders}
+              inventory={inventory}
+              machines={machines}
+              schedules={schedules}
+              jobMasters={jobMasters}
+              cylinders={cylinders}
+              productionRecords={productionRecords}
+              currentUser={currentUser}
+              onSaveMachine={handleSaveMachine}
+              onUpdateMachine={handleUpdateMachine}
+              onDeleteMachine={handleDeleteMachine}
+              onSaveSchedule={handleSaveSchedule}
+              onDeleteSchedule={handleDeleteSchedule}
+              onUpdateOrder={handleUpdateOrder}
+              onStartJob={handleStartPrintingJob}
+              onEndJob={handleEndPrintingJob}
+            />
+          </div>
+        ) : activeTab === 'dashboard' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
             {/* Redesigned Executive Operational Alerts Hub */}
             {(delayedOrdersCount > 0 || (lowStockInks || []).length > 0) && (
@@ -3161,11 +3273,17 @@ export default function App() {
             machines={machines}
             schedules={schedules}
             jobMasters={jobMasters}
+            cylinders={cylinders}
+            productionRecords={productionRecords}
+            currentUser={currentUser}
             onSaveMachine={handleSaveMachine}
             onUpdateMachine={handleUpdateMachine}
             onDeleteMachine={handleDeleteMachine}
             onSaveSchedule={handleSaveSchedule}
             onDeleteSchedule={handleDeleteSchedule}
+            onUpdateOrder={handleUpdateOrder}
+            onStartJob={handleStartPrintingJob}
+            onEndJob={handleEndPrintingJob}
           />
         )}
 

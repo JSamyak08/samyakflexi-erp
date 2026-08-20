@@ -669,6 +669,7 @@ export const SYSTEM_ROLES = [
   "QC Chemist",
   "Purchase Manager",
   "Sales Manager",
+  "Printing Operator",
   "Shop Floor Operator"
 ];
 
@@ -835,18 +836,36 @@ export const ALL_MODULES = [
   { key: "scrap_analytics", label: "Scrap & Wastage Analysis", category: "Core Operations" }
 ];
 
-export const generateFullRolePermissions = (allowAll = true) => {
+export const generateFullRolePermissions = (allowAll = false) => {
   const perm = {};
   SYSTEM_ROLES.forEach(r => {
     perm[r] = {};
     ALL_MODULES.forEach(m => {
-      perm[r][m.key] = allowAll ? true : (r === "Admin" || r === "Plant Manager" || r === "Store Manager" || r === "Purchase Manager" || r === "QC Chemist");
+      if (r === "Printing Operator") {
+        perm[r][m.key] = (m.key === "printing_scheduler" || m.key === "dashboard");
+      } else if (r === "Admin" || r === "Plant Manager") {
+        perm[r][m.key] = true;
+      } else if (r === "Production Manager") {
+        perm[r][m.key] = (m.key === "dashboard" || m.key === "production_records" || m.key === "printing_scheduler" || m.key === "cylinders" || m.key === "orders" || m.key === "job_masters" || m.key === "inventory" || m.key === "scrap_analytics");
+      } else if (r === "Store Manager") {
+        perm[r][m.key] = (m.key === "dashboard" || m.key === "inventory" || m.key === "material_indents" || m.key === "vendors" || m.key === "ink_management" || m.key === "dispatch");
+      } else if (r === "QC Chemist") {
+        perm[r][m.key] = (m.key === "dashboard" || m.key === "production_records" || m.key === "inventory" || m.key === "ink_management" || m.key === "dispatch");
+      } else if (r === "Purchase Manager") {
+        perm[r][m.key] = (m.key === "dashboard" || m.key === "vendors" || m.key === "inventory" || m.key === "material_indents" || m.key === "ink_management");
+      } else if (r === "Sales Manager") {
+        perm[r][m.key] = (m.key === "dashboard" || m.key === "sales" || m.key === "job_punching" || m.key === "orders" || m.key === "clients" || m.key === "dispatch");
+      } else if (r === "Shop Floor Operator") {
+        perm[r][m.key] = (m.key === "dashboard" || m.key === "production_records" || m.key === "printing_scheduler");
+      } else {
+        perm[r][m.key] = allowAll;
+      }
     });
   });
   return perm;
 };
 
-export const DEFAULT_ROLE_PERMISSIONS = generateFullRolePermissions(true);
+export const DEFAULT_ROLE_PERMISSIONS = generateFullRolePermissions(false);
 
 
 

@@ -2188,6 +2188,24 @@ export default function ProductionRecordManagement({
                   </span>
                 </div>
 
+                {/* Printing Job Run Duration & Timestamps from Scheduler */}
+                {(selectedRecord?.printingStartTime || selectedOrder?.printingStartTime) && (
+                  <div style={{ background: '#f0fdf4', borderBottom: '1px solid #bbf7d0', padding: '10px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', color: '#166534', fontWeight: '700' }}>
+                      <Clock size={15} style={{ color: '#16a34a' }} />
+                      <span>
+                        Press Execution: Started at {new Date(selectedRecord?.printingStartTime || selectedOrder?.printingStartTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {(selectedRecord?.printingEndTime || selectedOrder?.printingEndTime) && ` • Ended at ${new Date(selectedRecord?.printingEndTime || selectedOrder?.printingEndTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                      </span>
+                    </div>
+                    {(selectedRecord?.printingDurationFormatted || selectedOrder?.printingDurationFormatted) && (
+                      <span className="badge badge-success" style={{ background: '#dcfce7', color: '#15803d', fontWeight: '800', fontSize: '0.78rem' }}>
+                        ⏱ Duration: {selectedRecord?.printingDurationFormatted || selectedOrder?.printingDurationFormatted}
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1.1fr 1.9fr', gap: '24px' }}>
                   {/* Left Column: Stage Output */}
                   <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
