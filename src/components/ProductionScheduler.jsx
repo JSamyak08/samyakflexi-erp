@@ -166,40 +166,49 @@ export default function ProductionScheduler({
     return orderedList.map(order => {
       const isOverdue = isOrderOverdue(order);
       const reqs = order.materialRequirements || order.rawMaterialRequirements || [];
-
-      const layers = order.jobDetails?.layers || order.layers || [];
-      const firstLayer = layers[0] || {};
       const firstFilmReq = reqs.find(r => r.micron && r.micron !== '-') || {};
-      
-      const widthMm = parseFloat(
-        order.printWidthMm ||
-        order.jobDetails?.printWidthMm ||
-        order.widthMm ||
-        firstFilmReq.widthMm ||
-        1000
-      );
-      
-      const micron = parseFloat(
-        order.micron ||
-        firstLayer.micron ||
-        firstFilmReq.micron ||
-        12
-      );
 
-      // Match Job Master & Cylinder for Artwork, Colors, and Repeat
+      // Match Job Master & Rotogravure Cylinder record for Artwork, Structure, Layers, Colors, Repeat, and Width
       const matchedJM = (jobMasters || []).find(j => 
-        (j.id && j.id === order.jobMasterId) ||
-        (j.jobCode && j.jobCode === order.jobCode) ||
+        (j.id && (j.id === order.jobMasterId || j.id === order.id)) || 
+        (j.jobCode && (j.jobCode === order.jobCode || j.jobCode === order.id)) || 
         (j.jobName && (j.jobName || '').toLowerCase().trim() === (order.jobName || '').toLowerCase().trim())
       );
 
       const matchedCylinder = (cylinders || []).find(c => 
-        (c.id && c.id === order.cylinderId) ||
-        (c.jobCode && c.jobCode === order.jobCode) ||
+        (c.id && (c.id === order.cylinderId || c.id === order.id)) || 
+        (c.jobCode && (c.jobCode === order.jobCode || c.jobCode === order.id)) || 
         (c.jobName && (c.jobName || '').toLowerCase().trim() === (order.jobName || '').toLowerCase().trim())
       );
 
-      // Artwork resolution
+      // Substrate structure resolution from Job Master / Cylinder / Order
+      const jmLayers = matchedJM?.layers || [];
+      const cylinderLayers = matchedCylinder?.layers || [];
+      const orderLayers = order.jobDetails?.layers || order.layers || [];
+
+      const structure = (jmLayers.length > 0 ? jmLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ') : null) ||
+        (matchedJM?.structure && matchedJM.structure !== 'PET / PE' && matchedJM.structure !== '—' ? matchedJM.structure : null) ||
+        (cylinderLayers.length > 0 ? cylinderLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ') : null) ||
+        (matchedCylinder?.structure && matchedCylinder.structure !== 'PET / PE' && matchedCylinder.structure !== '—' ? matchedCylinder.structure : null) ||
+        (order.structure && order.structure !== 'PET / PE' && order.structure !== '—' ? order.structure : null) ||
+        (orderLayers.length > 0 ? orderLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ') : null) ||
+        (reqs.filter(r => r.micron && r.micron !== '-').map(r => `${r.filmType} ${r.micron}µ`).join(' / ')) ||
+        'PET 12µ / PE 40µ';
+
+      // Width resolution linked to Job Master / Cylinder / Order
+      const widthMm = parseFloat(
+        order.printWidthMm ||
+        order.jobDetails?.printWidthMm ||
+        matchedJM?.printWidthMm ||
+        matchedJM?.cylinderData?.widthMm ||
+        matchedCylinder?.widthMm ||
+        matchedCylinder?.printingWidthMm ||
+        order.widthMm ||
+        firstFilmReq.widthMm ||
+        1000
+      );
+
+      // Artwork resolution linked to Job Master / Cylinder / Order
       const artworkUrl = order.artworkUrl ||
                          order.jobDetails?.artworkUrl ||
                          matchedJM?.artworkUrl ||
@@ -207,39 +216,41 @@ export default function ProductionScheduler({
                          matchedCylinder?.artworkUrl ||
                          '';
 
-      // Colors resolution
+      // Colors resolution linked to Job Master / Cylinder / Order
       const colorsCount = order.colors ||
                           order.jobDetails?.cylinderColors?.length ||
                           matchedJM?.cylinderColors?.length ||
                           matchedJM?.colors ||
                           matchedCylinder?.colors ||
+                          matchedCylinder?.colorsList?.length ||
                           8;
 
       const cylinderColors = order.jobDetails?.cylinderColors ||
                              matchedJM?.cylinderColors ||
                              matchedCylinder?.colorsList ||
+                             matchedCylinder?.cylinderColors ||
                              [];
 
-      // Resolve layers from jobMasters, order.jobDetails, order.layers, or parsed structure
+      // Resolve layers from jobMasters, cylinder, order.jobDetails, order.layers, or parsed structure
       let resolvedLayers = [];
-      if (matchedJM?.layers && matchedJM.layers.length > 0) {
-        resolvedLayers = matchedJM.layers.map(l => {
+      if (jmLayers.length > 0) {
+        resolvedLayers = jmLayers.map(l => {
           const filmType = l.filmType || 'PET';
           const micron = parseFloat(l.micron) || 12;
           const density = getFilmDensity(filmType);
           const gsm = parseFloat((micron * density).toFixed(2));
           return { ...l, filmType, micron, density, gsm };
         });
-      } else if (order.jobDetails?.layers && order.jobDetails.layers.length > 0) {
-        resolvedLayers = order.jobDetails.layers.map(l => {
+      } else if (cylinderLayers.length > 0) {
+        resolvedLayers = cylinderLayers.map(l => {
           const filmType = l.filmType || 'PET';
           const micron = parseFloat(l.micron) || 12;
           const density = getFilmDensity(filmType);
           const gsm = parseFloat((micron * density).toFixed(2));
           return { ...l, filmType, micron, density, gsm };
         });
-      } else if (order.layers && order.layers.length > 0) {
-        resolvedLayers = order.layers.map(l => {
+      } else if (orderLayers.length > 0) {
+        resolvedLayers = orderLayers.map(l => {
           const filmType = l.filmType || 'PET';
           const micron = parseFloat(l.micron) || 12;
           const density = getFilmDensity(filmType);
@@ -251,6 +262,7 @@ export default function ProductionScheduler({
       }
 
       // Layer 1 is the Print Layer (printing substrate)
+      const firstLayer = orderLayers[0] || {};
       const printLayer = resolvedLayers[0] || {
         filmType: order.filmType || firstFilmReq.filmType || 'PET',
         micron: parseFloat(order.micron || firstLayer.micron || firstFilmReq.micron) || 12,
