@@ -686,7 +686,7 @@ export async function fetchCylinders() {
         pouchHeight: Number(c.pouch_height || pm.pouchHeight) || 0,
         jobMasterId: c.job_master_id || pm.jobMasterId || '',
         assignedPress: c.assigned_press || pm.assignedPress || '',
-        silLogo: c.sil_logo || pm.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+        silLogo: c.sil_logo !== undefined && c.sil_logo !== null ? c.sil_logo : (pm.silLogo !== undefined && pm.silLogo !== null ? pm.silLogo : ''),
         arcMark: c.arc_mark || pm.arcMark || 'Yes',
         slittingMark: c.slitting_mark || pm.slittingMark || 'Yes',
         trackerLine: c.tracker_line || pm.trackerLine || 'Yes',
@@ -727,7 +727,7 @@ export async function saveCylinderToSupabase(cyl) {
   const fileName = cyl.jobCardFileName || (fileUrl ? 'Artwork_KLD_Proof.pdf' : '');
 
   const pressMarks = {
-    silLogo: cyl.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+    silLogo: cyl.silLogo !== undefined && cyl.silLogo !== null ? cyl.silLogo : '',
     arcMark: cyl.arcMark || 'Yes',
     slittingMark: cyl.slittingMark || 'Yes',
     trackerLine: cyl.trackerLine || 'Yes',
@@ -1669,7 +1669,7 @@ export async function fetchJobMasters() {
         jobCardFileName: j.job_card_file_name || (j.job_card_file_url || j.artwork_url ? 'Artwork_KLD_Proof.pdf' : ''),
         jobCardFileUrl: j.job_card_file_url || j.artwork_url || '',
         artworkUrl: j.artwork_url || j.job_card_file_url || '',
-        silLogo: j.sil_logo || pm.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+        silLogo: j.sil_logo !== undefined && j.sil_logo !== null ? j.sil_logo : (pm.silLogo !== undefined && pm.silLogo !== null ? pm.silLogo : ''),
         arcMark: j.arc_mark || pm.arcMark || 'Yes',
         slittingMark: j.slitting_mark || pm.slittingMark || 'Yes',
         trackerLine: j.tracker_line || pm.trackerLine || 'Yes',
@@ -1722,7 +1722,7 @@ export async function saveJobMasterToSupabase(jobMaster) {
   const fileName = jobMaster.jobCardFileName || (fileUrl ? 'Artwork_KLD_Proof.pdf' : '');
 
   const pressMarks = {
-    silLogo: jobMaster.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+    silLogo: jobMaster.silLogo !== undefined && jobMaster.silLogo !== null ? jobMaster.silLogo : '',
     arcMark: jobMaster.arcMark || 'Yes',
     slittingMark: jobMaster.slittingMark || 'Yes',
     trackerLine: jobMaster.trackerLine || 'Yes',

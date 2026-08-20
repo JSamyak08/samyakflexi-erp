@@ -164,15 +164,11 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, 
                   {data.pouchHeight ? `${data.pouchHeight}` : ''}
                   {!data.pouchOpenWidth && !data.pouchHeight ? '—' : ''}
                 </td>
-                <td className="label-cell">PET Substrate Size</td><td className="value-cell">{data.petSize || '—'}</td>
-              </tr>
-              <tr>
                 <td className="label-cell">Print Width (PET Size)</td><td className="value-cell" style={{ fontWeight: '800', color: '#047857' }}>{data.printWidth || (data.printWidthMm ? `${data.printWidthMm} mm` : (data.totalWidth || '—'))}</td>
-                <td className="label-cell">Face Length (Shell)</td><td className="value-cell" style={{ fontWeight: '700', color: '#2563eb' }}>{data.faceLength || (data.faceLengthMm ? `${data.faceLengthMm} mm` : (data.totalWidth || '—'))}</td>
               </tr>
               <tr>
                 <td className="label-cell">Total Repeat (Circum.)</td><td className="value-cell">{data.totalHeight || '—'}</td>
-                <td className="label-cell">PET Substrate Size</td><td className="value-cell">{data.petSize || '—'}</td>
+                <td className="label-cell">Face Length (Shell)</td><td className="value-cell" style={{ fontWeight: '700', color: '#2563eb' }}>{data.faceLength || (data.faceLengthMm ? `${data.faceLengthMm} mm` : (data.totalWidth || '—'))}</td>
               </tr>
               <tr>
                 <td className="label-cell">Shell Size</td><td className="value-cell">{data.shellSize || '—'}</td>
@@ -189,7 +185,7 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, 
             <thead><tr><th colSpan="4">3. Press Marks & Quality Guidelines</th></tr></thead>
             <tbody>
               <tr>
-                <td className="label-cell">SIL Logo / Press Line</td><td className="value-cell">{data.silLogo || 'Yes'}</td>
+                <td className="label-cell">SIL Logo / Press Line</td><td className="value-cell">{data.silLogo !== undefined && data.silLogo !== null && data.silLogo !== '' ? data.silLogo : '—'}</td>
                 <td className="label-cell">ARC Mark</td><td className="value-cell">{data.arcMark || 'Yes'}</td>
               </tr>
               <tr>
@@ -318,7 +314,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
     totalHeight: '',
     shellSize: '',
     petSize: '',
-    silLogo: "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+    silLogo: '',
     arcMark: 'Yes',
     slittingMark: 'Yes',
     trackerLine: 'Yes',
@@ -395,7 +391,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         totalHeight: repeatHeightVal,
         shellSize: src.shellSize || faceLengthVal,
         petSize: src.petSize || (src.faceLengthMm ? `${src.faceLengthMm + 10} mm` : ''),
-        silLogo: src.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+        silLogo: (src.silLogo !== undefined && src.silLogo !== null) ? src.silLogo : '',
         arcMark: src.arcMark || 'Yes',
         slittingMark: src.slittingMark || 'Yes',
         trackerLine: src.trackerLine || 'Yes',
@@ -506,7 +502,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         engravure: jm.engravuresName || jm.engraverName || prev.engravure,
         costBorneBy: jm.costBorneBy || prev.costBorneBy,
         utilisationLimit: `${jm.utilisationLimit || prev.utilisationLimit}`,
-        silLogo: jm.silLogo || prev.silLogo,
+        silLogo: (jm.silLogo !== undefined && jm.silLogo !== null) ? jm.silLogo : (prev.silLogo || ''),
         arcMark: jm.arcMark || prev.arcMark,
         slittingMark: jm.slittingMark || prev.slittingMark,
         trackerLine: jm.trackerLine || prev.trackerLine,
@@ -618,7 +614,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
           jobCardFileUrl: fileUrl,
           jobCardFileName: fileName,
           artworkUrl: fileUrl,
-          silLogo: customData.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+          silLogo: (customData.silLogo !== undefined && customData.silLogo !== null) ? customData.silLogo : (existingJM.silLogo || ''),
           arcMark: customData.arcMark || 'Yes',
           slittingMark: customData.slittingMark || 'Yes',
           trackerLine: customData.trackerLine || 'Yes',
@@ -662,7 +658,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
           jobCardFileUrl: fileUrl,
           jobCardFileName: fileName,
           artworkUrl: fileUrl,
-          silLogo: customData.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+          silLogo: (customData.silLogo !== undefined && customData.silLogo !== null) ? customData.silLogo : '',
           arcMark: customData.arcMark || 'Yes',
           slittingMark: customData.slittingMark || 'Yes',
           trackerLine: customData.trackerLine || 'Yes',
@@ -735,7 +731,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         jobCardFileUrl: fileUrl,
         jobCardFileName: fileName,
         jobMasterId: targetJobMaster.id,
-        silLogo: customData.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+        silLogo: (customData.silLogo !== undefined && customData.silLogo !== null) ? customData.silLogo : (existingCylinder?.silLogo || ''),
         arcMark: customData.arcMark || 'Yes',
         slittingMark: customData.slittingMark || 'Yes',
         trackerLine: customData.trackerLine || 'Yes',
@@ -1205,10 +1201,6 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
           <div className="form-group">
             <label>Shell Size</label>
             <input className="form-control" name="shellSize" value={formData.shellSize} onChange={handleChange} onBlur={handleDimensionBlur} placeholder="e.g. 1050 mm" />
-          </div>
-          <div className="form-group">
-            <label>PET Size</label>
-            <input className="form-control" name="petSize" value={formData.petSize} onChange={handleChange} onBlur={handleDimensionBlur} placeholder="e.g. 1060 mm" />
           </div>
           <div className="form-group">
             <label>Engraver Name</label>

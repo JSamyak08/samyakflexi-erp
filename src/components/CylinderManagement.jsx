@@ -111,7 +111,7 @@ export default function CylinderManagement({
   const [pouchHeight, setPouchHeight] = useState(0);
 
   // Press Marks & Quality Guidelines State
-  const [silLogo, setSilLogo] = useState("Yes - 'Pkg Material Mfg by - Samyak International Ltd'");
+  const [silLogo, setSilLogo] = useState('');
   const [arcMark, setArcMark] = useState('Yes');
   const [slittingMark, setSlittingMark] = useState('Yes');
   const [trackerLine, setTrackerLine] = useState('Yes');
@@ -290,7 +290,7 @@ export default function CylinderManagement({
     setCreateJobMaster(true);
     setPouchOpenWidth(0);
     setPouchHeight(0);
-    setSilLogo("Yes - 'Pkg Material Mfg by - Samyak International Ltd'");
+    setSilLogo('');
     setArcMark('Yes');
     setSlittingMark('Yes');
     setTrackerLine('Yes');
@@ -342,7 +342,7 @@ export default function CylinderManagement({
     setCreateJobMaster(false);
     setPouchOpenWidth(cyl.pouchOpenWidth || 0);
     setPouchHeight(cyl.pouchHeight || 0);
-    setSilLogo(cyl.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'");
+    setSilLogo((cyl.silLogo !== undefined && cyl.silLogo !== null) ? cyl.silLogo : '');
     setArcMark(cyl.arcMark || 'Yes');
     setSlittingMark(cyl.slittingMark || 'Yes');
     setTrackerLine(cyl.trackerLine || 'Yes');
@@ -409,7 +409,7 @@ export default function CylinderManagement({
       status,
       assignedPress: assignedPress || '',
       artworkUrl: artworkUrl || null,
-      silLogo: silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+      silLogo: silLogo || '',
       arcMark: arcMark || 'Yes',
       slittingMark: slittingMark || 'Yes',
       trackerLine: trackerLine || 'Yes',
@@ -442,7 +442,7 @@ export default function CylinderManagement({
           costBorneBy,
           utilisationLimit: parseFloat(utilisationLimit) || 10000,
           artworkUrl: artworkUrl || null,
-          silLogo: silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+          silLogo: silLogo || '',
           arcMark: arcMark || 'Yes',
           slittingMark: slittingMark || 'Yes',
           trackerLine: trackerLine || 'Yes',

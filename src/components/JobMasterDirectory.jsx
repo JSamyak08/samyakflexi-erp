@@ -97,7 +97,7 @@ export default function JobMasterDirectory({
   const [isClientDropdownOpen, setIsClientDropdownOpen] = useState(false);
 
   // Press Marks & Quality Guidelines Form State
-  const [silLogo, setSilLogo] = useState("Yes - 'Pkg Material Mfg by - Samyak International Ltd'");
+  const [silLogo, setSilLogo] = useState('');
   const [arcMark, setArcMark] = useState('Yes');
   const [slittingMark, setSlittingMark] = useState('Yes');
   const [trackerLine, setTrackerLine] = useState('Yes');
@@ -570,7 +570,7 @@ export default function JobMasterDirectory({
     setCylinderCost('35000');
     setCostBorneBy('Client (100%)');
     setUtilisationLimit(10000);
-    setSilLogo("Yes - 'Pkg Material Mfg by - Samyak International Ltd'");
+    setSilLogo('');
     setArcMark('Yes');
     setSlittingMark('Yes');
     setTrackerLine('Yes');
@@ -638,7 +638,7 @@ export default function JobMasterDirectory({
     setCostBorneBy(job.costBorneBy || 'Client (100%)');
     setEngravuresName(job.engravuresName || '');
     setUtilisationLimit(job.utilisationLimit || 10000);
-    setSilLogo(job.silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'");
+    setSilLogo((job.silLogo !== undefined && job.silLogo !== null) ? job.silLogo : '');
     setArcMark(job.arcMark || 'Yes');
     setSlittingMark(job.slittingMark || 'Yes');
     setTrackerLine(job.trackerLine || 'Yes');
@@ -704,7 +704,7 @@ export default function JobMasterDirectory({
         engravuresName,
         costBorneBy,
         utilisationLimit: parseFloat(utilisationLimit) || 10000,
-        silLogo: silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+        silLogo: silLogo || '',
         arcMark: arcMark || 'Yes',
         slittingMark: slittingMark || 'Yes',
         trackerLine: trackerLine || 'Yes',
@@ -739,7 +739,7 @@ export default function JobMasterDirectory({
       engravuresName,
       costBorneBy,
       utilisationLimit: parseFloat(utilisationLimit) || 10000,
-      silLogo: silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+      silLogo: silLogo || '',
       arcMark: arcMark || 'Yes',
       slittingMark: slittingMark || 'Yes',
       trackerLine: trackerLine || 'Yes',
@@ -767,7 +767,7 @@ export default function JobMasterDirectory({
         dispatchedQty: 0,
         utilisationLimit: parseFloat(utilisationLimit) || 10000,
         status: 'Active In-Use',
-        silLogo: silLogo || "Yes - 'Pkg Material Mfg by - Samyak International Ltd'",
+        silLogo: silLogo || '',
         arcMark: arcMark || 'Yes',
         slittingMark: slittingMark || 'Yes',
         trackerLine: trackerLine || 'Yes',
