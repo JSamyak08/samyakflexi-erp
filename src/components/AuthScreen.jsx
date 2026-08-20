@@ -152,9 +152,9 @@ export default function AuthScreen({ users = [], onLogin, onUpdatePassword }) {
                 className="auth-logo-img" 
               />
             </div>
-            <h2 className="auth-brand-heading">SamyakFlexi ERP</h2>
+            <h2 className="auth-brand-heading">Samyak International Ltd</h2>
             <p className="auth-brand-sub">
-              Flexible Packaging Manufacturing Division
+              Flexible Packaging Operations Center
             </p>
           </div>
 
@@ -188,17 +188,8 @@ export default function AuthScreen({ users = [], onLogin, onUpdatePassword }) {
           {viewMode === 'signin' && (
             <>
               <div className="auth-form-header">
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <h3>Sign In to ERP System</h3>
-                  {isSupabaseActive ? (
-                    <span style={{ fontSize: '0.75rem', background: '#064e3b', color: '#34d399', border: '1px solid #059669', padding: '3px 8px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '600' }}>
-                      <Database size={12} /> Supabase Auth Connected
-                    </span>
-                  ) : (
-                    <span style={{ fontSize: '0.75rem', background: '#1e293b', color: '#94a3b8', border: '1px solid #334155', padding: '3px 8px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      ⚡ Local Auth
-                    </span>
-                  )}
+                <div>
+                  <h3>Sign In to Operations Center</h3>
                 </div>
                 <p>Enter your authorized work email and password</p>
               </div>

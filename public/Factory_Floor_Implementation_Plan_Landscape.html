@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Samyak International Ltd - Factory Floor Implementation Plan (Landscape A4)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    /* ==========================================================================
+       A4 LANDSCAPE PRINT CONFIGURATION (297mm x 210mm)
+       ========================================================================== */
+    @page {
+      size: A4 landscape;
+      margin: 8mm 10mm 8mm 10mm;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: #0f172a;
+      background: #f1f5f9;
+      font-size: 8.5pt;
+      line-height: 1.35;
+    }
+
+    /* Print Screen Tool Bar */
+    .no-print-toolbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: #0f172a;
+      color: #ffffff;
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+      z-index: 9999;
+    }
+
+    .btn-print {
+      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+      color: #ffffff;
+      border: none;
+      padding: 10px 22px;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 2px 10px rgba(37, 99, 235, 0.4);
+      transition: all 0.2s ease;
+    }
+
+    .btn-print:hover {
+      background: #1e40af;
+      transform: translateY(-1px);
+    }
+
+    .print-container {
+      width: 297mm;
+      margin: 64px auto 30px auto;
+    }
+
+    /* ==========================================================================
+       PAGE CONTAINER ARCHITECTURE (A4 LANDSCAPE: 297mm x 210mm)
+       ========================================================================== */
+    .landscape-page {
+      width: 277mm; /* 297mm - 20mm margins */
+      min-height: 194mm; /* 210mm - 16mm margins */
+      max-height: 194mm;
+      background: #ffffff;
+      margin: 0 auto 20px auto;
+      padding: 10mm 12mm;
+      border-radius: 4px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+      position: relative;
+      page-break-after: always;
+      break-after: page;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    @media print {
+      body {
+        background: #ffffff;
+      }
+      .no-print-toolbar {
+        display: none !important;
+      }
+      .print-container {
+        width: 100%;
+        margin: 0;
+      }
+      .landscape-page {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        min-height: 194mm;
+        max-height: 194mm;
+        box-shadow: none;
+        border-radius: 0;
+        page-break-after: always;
+        break-after: page;
+      }
+    }
+
+    /* Header Bar */
+    .doc-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid #0f172a;
+      padding-bottom: 8px;
+      margin-bottom: 10px;
+    }
+
+    .brand-title {
+      font-size: 13pt;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-subtitle {
+      font-size: 7.5pt;
+      font-weight: 600;
+      color: #2563eb;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .meta-box {
+      display: flex;
+      gap: 12px;
+      font-size: 7.5pt;
+      background: #f8fafc;
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid #e2e8f0;
+    }
+
+    .meta-item {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .meta-label {
+      font-size: 6pt;
+      font-weight: 800;
+      color: #64748b;
+      text-transform: uppercase;
+    }
+
+    .meta-val {
+      font-weight: 700;
+      color: #0f172a;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Page Titles */
+    .section-title-bar {
+      background: linear-gradient(90deg, #0f172a 0%, #1e293b 100%);
+      color: #ffffff;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 8.5pt;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .section-subtitle {
+      font-size: 7pt;
+      font-weight: 500;
+      color: #94a3b8;
+    }
+
+    /* Grids & Cards */
+    .grid-2col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .grid-3col {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+    }
+
+    .grid-4col {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
+      gap: 8px;
+    }
+
+    .card {
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      padding: 7px 9px;
+      background: #ffffff;
+    }
+
+    .card-header {
+      font-size: 7.8pt;
+      font-weight: 800;
+      color: #0f172a;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 4px;
+      margin-bottom: 6px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 6.5pt;
+      font-weight: 800;
+      text-transform: uppercase;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .badge-blue { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
+    .badge-green { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+    .badge-amber { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+    .badge-purple { background: #f3e8ff; color: #6b21a8; border: 1px solid #e9d5ff; }
+
+    /* Checklist Items */
+    .checklist {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 4.5px;
+    }
+
+    .check-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      font-size: 7.2pt;
+      line-height: 1.25;
+      color: #334155;
+    }
+
+    .checkbox-box {
+      width: 10px;
+      height: 10px;
+      border: 1.5px solid #64748b;
+      border-radius: 2px;
+      margin-top: 1px;
+      flex-shrink: 0;
+    }
+
+    .check-title {
+      font-weight: 700;
+      color: #0f172a;
+    }
+
+    /* Structured Tables */
+    .doc-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 7pt;
+      margin-bottom: 6px;
+    }
+
+    .doc-table th {
+      background: #f1f5f9;
+      color: #334155;
+      font-weight: 800;
+      text-transform: uppercase;
+      font-size: 6.2pt;
+      letter-spacing: 0.05em;
+      border: 1px solid #cbd5e1;
+      padding: 4px 6px;
+      text-align: left;
+    }
+
+    .doc-table td {
+      border: 1px solid #cbd5e1;
+      padding: 4.5px 6px;
+      vertical-align: top;
+    }
+
+    .doc-table tr:nth-child(even) td {
+      background: #fafafa;
+    }
+
+    /* Footers */
+    .doc-footer {
+      border-top: 1px solid #cbd5e1;
+      padding-top: 5px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 6.5pt;
+      color: #64748b;
+      margin-top: auto;
+    }
+
+    .flow-step {
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      padding: 5px 8px;
+      font-size: 6.8pt;
+      text-align: center;
+      position: relative;
+    }
+
+    .flow-step strong {
+      display: block;
+      color: #0f172a;
+      font-size: 7.2pt;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Screen Toolbar -->
+  <div class="no-print-toolbar">
+    <div>
+      <strong style="font-size: 15px; display: block;">Samyak International Ltd — Operations Center</strong>
+      <span style="font-size: 12px; color: #94a3b8;">Factory Floor Implementation Plan & Initial Data Checklist (A4 Landscape)</span>
+    </div>
+    <div style="display: flex; gap: 12px; align-items: center;">
+      <span style="font-size: 12px; color: #cbd5e1;">Paper Size: <strong>A4 Landscape (297mm × 210mm)</strong></span>
+      <button class="btn-print" onclick="window.print()">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>
+        Print / Save to PDF
+      </button>
+    </div>
+  </div>
+
+  <div class="print-container">
+
+    <!-- ==========================================================================
+         PAGE 1: ROADMAP & PHASE 1 & 2 MASTER DATA SETUP
+         ========================================================================== -->
+    <div class="landscape-page">
+      <div>
+        <div class="doc-header">
+          <div>
+            <div class="brand-title">SAMYAK INTERNATIONAL LTD</div>
+            <div class="brand-subtitle">Flexible Packaging Manufacturing OS — Factory Floor Implementation Plan</div>
+          </div>
+          <div class="meta-box">
+            <div class="meta-item"><span class="meta-label">Doc Ref:</span><span class="meta-val">SOP/IMP/2026/01</span></div>
+            <div class="meta-item"><span class="meta-label">Version:</span><span class="meta-val">1.0 (Live Ready)</span></div>
+            <div class="meta-item"><span class="meta-label">Effective Date:</span><span class="meta-val">20-AUG-2026</span></div>
+            <div class="meta-item"><span class="meta-label">Classification:</span><span class="meta-val">Operations SOP</span></div>
+          </div>
+        </div>
+
+        <div class="section-title-bar">
+          <span>Executive Rollout Framework & Initial Data Checklist</span>
+          <span class="section-subtitle">Sequential Master Data Ingestion Pipeline (Phase 1 to Phase 2)</span>
+        </div>
+
+        <!-- 6-Stage Process Flow Ribbon -->
+        <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin-bottom: 10px;">
+          <div class="flow-step" style="border-top: 3px solid #2563eb;">
+            <span class="badge badge-blue">PHASE 1</span>
+            <strong>Plant Config & Users</strong>
+            <span>Company, Presses, RBAC</span>
+          </div>
+          <div class="flow-step" style="border-top: 3px solid #059669;">
+            <span class="badge badge-green">PHASE 2</span>
+            <strong>Commercial Masters</strong>
+            <span>Vendors & Client CRM</span>
+          </div>
+          <div class="flow-step" style="border-top: 3px solid #9333ea;">
+            <span class="badge badge-purple">PHASE 3</span>
+            <strong>Pre-Press & Tooling</strong>
+            <span>Cylinders, Inks, Job Masters</span>
+          </div>
+          <div class="flow-step" style="border-top: 3px solid #d97706;">
+            <span class="badge badge-amber">PHASE 4</span>
+            <strong>Warehouse Opening</strong>
+            <span>Roll Barcodes, Scales, Stock</span>
+          </div>
+          <div class="flow-step" style="border-top: 3px solid #2563eb;">
+            <span class="badge badge-blue">PHASE 5</span>
+            <strong>Work Orders & BOM</strong>
+            <span>Punching, Pre-Costing, POs</span>
+          </div>
+          <div class="flow-step" style="border-top: 3px solid #059669;">
+            <span class="badge badge-green">PHASE 6</span>
+            <strong>Live Floor Cutover</strong>
+            <span>Scheduler Queue & Execution</span>
+          </div>
+        </div>
+
+        <!-- Two Columns of Cards for Phase 1 and Phase 2 -->
+        <div class="grid-2col">
+          
+          <!-- Phase 1 Card -->
+          <div class="card">
+            <div class="card-header">
+              <span class="badge badge-blue">PHASE 1</span>
+              <span>Plant Configuration, Legal Profile & User Roles (Day 1)</span>
+            </div>
+            <ul class="checklist">
+              <li class="check-item">
+                <div class="checkbox-box"></div>
+                <div>
+                  <span class="check-title">Company Profile & Letterhead Series (`Letterhead & Signatures`)</span><br>
+                  Verify legal name (*Samyak International Ltd*), GSTIN, CIN, Plant Unit address, upload high-res header/footer artwork, and configure doc prefixes (`QUO-`, `ORD-`, `PO-`, `GRN-`, `DC-`).
+                </div>
+              </li>
+              <li class="check-item">
+                <div class="checkbox-box"></div>
+                <div>
+                  <span class="check-title">Digital Signature Authorizations (`Letterhead & Signatures`)</span><br>
+                  Upload high-contrast transparent signatures for Plant Head, Sales Manager, QC Chemist, and Authorized Dispatch Officer.
+                </div>
+              </li>
+              <li class="check-item">
+                <div class="checkbox-box"></div>
+                <div>
+                  <span class="check-title">Printing Press Master Directory (`Printing Presses`)</span><br>
+                  Register all Rotogravure Presses (e.g. *Press 1 - 8 Color*, *Press 2 - 9 Color*), mechanical speeds (m/min), max web width (mm), color decks, and assigned shift bays.
+                </div>
+              </li>
+              <li class="check-item">
+                <div class="checkbox-box"></div>
+                <div>
+                  <span class="check-title">Departmental User Provisioning & RBAC (`User Management`)</span><br>
+                  Provision user credentials for all roles (Admin, Plant Manager, Production Manager, Printing Operators, Store Manager, QC Chemist, Sales Manager, Purchase Manager).
+                </div>
+              </li>
+            </ul>
+          </div>
+
+          <!-- Phase 2 Card -->
+          <div class="card">
+            <div class="card-header">
+              <span class="badge badge-green">PHASE 2</span>
+              <span>Commercial Master Directories (Day 1 - Day 2)</span>
+            </div>
+            <ul class="checklist">
+              <li class="check-item">
+                <div class="checkbox-box"></div>
+                <div>
+                  <span class="check-title">Vendor Master Ingestion (`Vendors`)</span><br>
+                  Register raw material film manufacturers (e.g. *Chiripal, Polyplex, Cosmo*), Ink makers (*Hubergroup, DIC, Toyo*), Adhesive suppliers (*Henkel, Bostik*), and Cylinder engravers. Input GSTIN, contact emails, credit days, and plant locations.
+                </div>
+              </li>
+              <li class="check-item">
+                <div class="checkbox-box"></div>
+                <div>
+                  <span class="check-title">Client Master Directory (`Clients`)</span><br>
+                  Input client company names, brand divisions, GSTIN, registered billing address, default consignee delivery destinations, credit terms (e.g. 30 Days Net), and transport preferences.
+                </div>
+              </li>
+              <li class="check-item">
+                <div class="checkbox-box"></div>
+                <div>
+                  <span class="check-title">Standard Terms & Conditions Presets (`Document Settings`)</span><br>
+                  Pre-populate legal payment terms, freight clauses, tolerance margins (±10%), and cylinder maintenance clauses for Quotation, PO, and Delivery Challan PDFs.
+                </div>
+              </li>
+            </ul>
+          </div>
+
+        </div>
+
+      </div>
+
+      <div class="doc-footer">
+        <span>Samyak International Ltd — Operations Operating System</span>
+        <span>Confidential — For Internal Factory Implementation Only</span>
+        <span>Page 1 of 4</span>
+      </div>
+    </div>
+
+
+    <!-- ==========================================================================
+         PAGE 2: PHASE 3 TO 6 (PRE-PRESS, WAREHOUSE, ORDERS & CUTOVER)
+         ========================================================================== -->
+    <div class="landscape-page">
+      <div>
+        <div class="doc-header">
+          <div>
+            <div class="brand-title">SAMYAK INTERNATIONAL LTD</div>
+            <div class="brand-subtitle">Technical Master Specs, Tooling & Warehouse Inward Verification</div>
+          </div>
+          <div class="meta-box">
+            <div class="meta-item"><span class="meta-label">Doc Ref:</span><span class="meta-val">SOP/IMP/2026/01</span></div>
+            <div class="meta-item"><span class="meta-label">Target Go-Live:</span><span class="meta-val">Phase 3 to 6</span></div>
+            <div class="meta-item"><span class="meta-label">Hardware:</span><span class="meta-val">Scale + Zebra Barcode</span></div>
+          </div>
+        </div>
+
+        <div class="section-title-bar">
+          <span>Sequential Master Data Ingestion Pipeline (Phase 3 to Phase 6)</span>
+          <span class="section-subtitle">Technical Pre-Press, Inventory Barcoding & Live Shop Floor Execution</span>
+        </div>
+
+        <div class="grid-2col" style="margin-bottom: 8px;">
+          
+          <!-- Phase 3 Card -->
+          <div class="card">
+            <div class="card-header">
+              <span class="badge badge-purple">PHASE 3</span>
+              <span>Pre-Press Technical Specs & Tooling Master (Day 2 - Day 3)</span>
+            </div>
+            <ul class="checklist">
+              <li class="check-item">
+                <div class="checkbox-box"></div>
+                <div>
+                  <span class="check-title">Ink Master & Solid Content Library (`Ink Management`)</span><br>
+                  Input product codes, ink shades (Process & Spot Pantone), ink type (Reverse/Surface/NTNK), solid content %, solid tolerance (±2%), and base rates (₹/kg).
+                </div>
+              </li>
+              <li class="check-item">
+                <div class="checkbox-box"></div>
+                <div>
+                  <span class="check-title">Rotogravure Cylinder Master Database (`Cylinders`)</span><br>
+                  Log SKU codes, total colors, cylinder repeat circumference (mm), print width (mm), face length, engraver name, physical rack location (e.g. *Rack C-04*), and cylinder proof PDFs.
+                </div>
+              </li>
+              <li class="check-item">
+                <div class="checkbox-box"></div>
+                <div>
+                  <span class="check-title">Job Master Technical Directory (`Job Masters`)</span><br>
+                  Input multi-layer substrate structure (e.g. *PET 12µ / METPET 12µ / Poly 40µ*), individual layer GSM, ink/adhesive GSM targets, cylinder repeat, pouch dimensions, and process routing.
+                </div>
+              </li>
+            </ul>
+          </div>
+
+          <!-- Phase 4 Card -->
+          <div class="card">
+            <div class="card-header">
+              <span class="badge badge-amber">PHASE 4</span>
+              <span>Warehouse Opening Stock & Barcode Labeling (Day 3 - Day 4)</span>
+            </div>
+            <ul class="checklist">
+              <li class="check-item">
+                <div class="checkbox-box"></div>
+                <div>
+                  <span class="check-title">Substrate Film Stock Items (`Inventory`)</span><br>
+                  Configure master film categories: Plain PET, METPET, BOPP, Poly/PE, CPP, Alu Foil. Set widths (mm), micron (µ), density, and reorder levels.
+                </div>
+              </li>
+              <li class="check-item">
+                <div class="checkbox-box"></div>
+                <div>
+                  <span class="check-title">Master Roll Physical Weighing & Barcode Tagging (`Store`)</span><br>
+                  Connect digital scale, weigh all physical master film rolls in raw material warehouse, generate unique Roll Barcodes (`Alt+B`), and affix barcode tags to roll cores.
+                </div>
+              </li>
+              <li class="check-item">
+                <div class="checkbox-box"></div>
+                <div>
+                  <span class="check-title">Ink Kitchen & Solvent Opening Inventory (`Ink Management`)</span><br>
+                  Weigh all sealed and return ink drums, log opening stock (kg), and assign to designated Ink Room racks.
+                </div>
+              </li>
+            </ul>
+          </div>
+
+        </div>
+
+        <div class="grid-2col">
+          
+          <!-- Phase 5 Card -->
+          <div class="card">
+            <div class="card-header">
+              <span class="badge badge-blue">PHASE 5</span>
+              <span>Work Order Punching & Commercial Orders (Day 4 - Day 5)</span>
+            </div>
+            <ul class="checklist">
+              <li class="check-item">
+                <div class="checkbox-box"></div>
+                <div>
+                  <span class="check-title">Punch Active Manufacturing Work Orders (`Job Punching / Orders`)</span><br>
+                  Input all pending and in-progress customer orders, link to approved Job Master SKUs, verify target order qty (kg), delivery dates, and auto-generated Bill of Materials (BOM).
+                </div>
+              </li>
+              <li class="check-item">
+                <div class="checkbox-box"></div>
+                <div>
+                  <span class="check-title">Pending Purchase Orders (`Issued POs`)</span><br>
+                  Enter ongoing raw material substrate, ink, or cylinder POs currently placed with vendors for live inward tracking.
+                </div>
+              </li>
+            </ul>
+          </div>
+
+          <!-- Phase 6 Card -->
+          <div class="card">
+            <div class="card-header">
+              <span class="badge badge-green">PHASE 6</span>
+              <span>Printing Scheduler Live Floor Cutover (Day 5)</span>
+            </div>
+            <ul class="checklist">
+              <li class="check-item">
+                <div class="checkbox-box"></div>
+                <div>
+                  <span class="check-title">Load Ready Queue Sequence (`Printing Scheduler`)</span><br>
+                  Sequence jobs by shade families (light to dark) and cylinder repeat width. Verify green readiness indicators for substrate and cylinder availability.
+                </div>
+              </li>
+              <li class="check-item">
+                <div class="checkbox-box"></div>
+                <div>
+                  <span class="check-title">Lock Live Running Job & Begin Shop Floor Logging (`Printing Scheduler`)</span><br>
+                  Operator clicks *Start Job* on mounted machine to activate real-time digital timer. Capture actual meters, ink GSM, and net kg output upon completion.
+                </div>
+              </li>
+            </ul>
+          </div>
+
+        </div>
+
+      </div>
+
+      <div class="doc-footer">
+        <span>Samyak International Ltd — Operations Operating System</span>
+        <span>Confidential — For Internal Factory Implementation Only</span>
+        <span>Page 2 of 4</span>
+      </div>
+    </div>
+
+
+    <!-- ==========================================================================
+         PAGE 3: DEPARTMENTAL ROLES & RESPONSIBILITIES MATRIX
+         ========================================================================== -->
+    <div class="landscape-page">
+      <div>
+        <div class="doc-header">
+          <div>
+            <div class="brand-title">SAMYAK INTERNATIONAL LTD</div>
+            <div class="brand-subtitle">Departmental Roles & Operational Responsibilities Matrix (RACI)</div>
+          </div>
+          <div class="meta-box">
+            <div class="meta-item"><span class="meta-label">Scope:</span><span class="meta-val">All Plant Personnel</span></div>
+            <div class="meta-item"><span class="meta-label">Governance:</span><span class="meta-val">Daily SOP Compliance</span></div>
+            <div class="meta-item"><span class="meta-label">Audit:</span><span class="meta-val">Weekly Management Review</span></div>
+          </div>
+        </div>
+
+        <div class="section-title-bar">
+          <span>Factory Floor Role Execution Matrix</span>
+          <span class="section-subtitle">Module Permissions, Daily Data Inputs, Key Deliverables & Inter-Departmental Handoffs</span>
+        </div>
+
+        <table class="doc-table">
+          <thead>
+            <tr>
+              <th style="width: 14%;">User Role</th>
+              <th style="width: 15%;">System Module Access</th>
+              <th style="width: 25%;">Mandatory Daily Floor Inputs</th>
+              <th style="width: 25%;">Core Operational Responsibilities</th>
+              <th style="width: 21%;">Key Deliverables / Handoff</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Plant Manager & Admin</strong></td>
+              <td>Full Access (All 16 Modules)</td>
+              <td>Daily OEE review, priority overrides, monthly scrap reconciliation approvals.</td>
+              <td>Plant-wide operational governance, machine utilization, bottleneck resolution, scrap reduction, and master setting audits.</td>
+              <td>Daily Executive Production Summary & Scrap Sign-Off.</td>
+            </tr>
+            <tr>
+              <td><strong>Production Manager</strong></td>
+              <td>Dashboard, Scheduler, Production Records, Cylinders, Orders, Job Masters, Scrap Analytics</td>
+              <td>Machine queue reordering, shift handover logs, downtime incident notes, stage approval sign-offs.</td>
+              <td>Optimize printing & lamination schedules, group jobs by repeat & shade family, ensure shift target output, track operator efficiency.</td>
+              <td>Shift Completion Reports & Verified Production Logs.</td>
+            </tr>
+            <tr>
+              <td><strong>Printing Press Operator</strong></td>
+              <td>Printing Scheduler Station, Operations Dashboard</td>
+              <td>Job Start Timestamp, Job End Timestamp, Actual Meters Printed, Net Printed Output (kg) via Scale, Ink GSM.</td>
+              <td>Operate rotogravure press, inspect cylinder condition, monitor web tension/viscosity, execute color registration, capture accurate run metrics.</td>
+              <td>Printed Master Rolls with Digital Scale Output Log.</td>
+            </tr>
+            <tr>
+              <td><strong>Store Manager & Warehouse</strong></td>
+              <td>Inventory, GRN & QC, Material Indents, Ink Management, Vendors, Dispatch</td>
+              <td>Inward GRN entry, roll gross/tare scale capture, barcode generation (`Alt+B`), material issue against work order barcodes.</td>
+              <td>100% material traceability, zero inventory leakage, barcode tagging of all incoming film/ink/solvent, timely issuing to machine floor.</td>
+              <td>Approved GRN Records & Barcoded Stock Rolls.</td>
+            </tr>
+            <tr>
+              <td><strong>QC Chemist & QA Head</strong></td>
+              <td>Production Records, Inventory, Ink Management, Dispatch (CoA)</td>
+              <td>Inward substrate QC (micron, dyne level), ink solid content verification, hourly press inspection, final CoA generation.</td>
+              <td>Approve inward raw materials, check shade match against approved proof, test bond strength & heat seal, certify finished goods.</td>
+              <td>Inward QC Pass Clearance & Signed PDF Certificates of Analysis (CoA).</td>
+            </tr>
+            <tr>
+              <td><strong>Sales Manager & Estimation</strong></td>
+              <td>Sales & Quotations, Job Punching, Orders, Clients, Dispatch</td>
+              <td>Punch customer enquiries, generate sales quotations, punch approved work orders linked to Job Masters.</td>
+              <td>Accurate layer cost estimation, client artwork coordination, commercial price confirmation, order delivery date commitments.</td>
+              <td>Official PDF Sales Quotations & Confirmed Job Punch Cards.</td>
+            </tr>
+            <tr>
+              <td><strong>Purchase Manager</strong></td>
+              <td>Vendors, Inventory, Material Indents, Ink Management</td>
+              <td>Generate substrate & ink Purchase Orders, update vendor rate cards, track PO delivery fulfillment status.</td>
+              <td>Procure raw materials at optimum rates, prevent machine downtime via reorder alert monitoring, audit supplier delivery timelines.</td>
+              <td>Authorized PDF Purchase Orders & Vendor Rate Records.</td>
+            </tr>
+          </tbody>
+        </table>
+
+      </div>
+
+      <div class="doc-footer">
+        <span>Samyak International Ltd — Operations Operating System</span>
+        <span>Confidential — For Internal Factory Implementation Only</span>
+        <span>Page 3 of 4</span>
+      </div>
+    </div>
+
+
+    <!-- ==========================================================================
+         PAGE 4: HARDWARE INTEGRATION, TIMETABLE & SIGN-OFF AUTHORIZATION
+         ========================================================================== -->
+    <div class="landscape-page">
+      <div>
+        <div class="doc-header">
+          <div>
+            <div class="brand-title">SAMYAK INTERNATIONAL LTD</div>
+            <div class="brand-subtitle">Hardware Setup, Rollout Timetable & Commissioning Sign-Off</div>
+          </div>
+          <div class="meta-box">
+            <div class="meta-item"><span class="meta-label">Commissioning:</span><span class="meta-val">Full Plant Cutover</span></div>
+            <div class="meta-item"><span class="meta-label">Scale Interface:</span><span class="meta-val">RS-232 / WebUSB</span></div>
+            <div class="meta-item"><span class="meta-label">Barcode Standard:</span><span class="meta-val">Code128 / QR 2D</span></div>
+          </div>
+        </div>
+
+        <div class="section-title-bar">
+          <span>Factory Hardware Architecture & Implementation Timeline</span>
+          <span class="section-subtitle">Physical Device Setup & Formal Go-Live Sign-Off Authorization</span>
+        </div>
+
+        <div class="grid-2col" style="margin-bottom: 8px;">
+          
+          <!-- Hardware Workstations -->
+          <div class="card">
+            <div class="card-header">
+              <span class="badge badge-blue">HARDWARE SETUP</span>
+              <span>Shop Floor Physical Workstation Configurations</span>
+            </div>
+            <table class="doc-table" style="margin-bottom: 0;">
+              <thead>
+                <tr>
+                  <th>Station Location</th>
+                  <th>Hardware Required</th>
+                  <th>System Functionality</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Store Inward Gate</strong></td>
+                  <td>PC + Scale Interface + Zebra Barcode Printer</td>
+                  <td>Weigh master rolls, log GRN, print barcode tags.</td>
+                </tr>
+                <tr>
+                  <td><strong>Rotogravure Press 1 & 2</strong></td>
+                  <td>10" Touch Tablet / PC + Digital Floor Scale</td>
+                  <td>Live Scheduler screen, Start/End job, weigh printed roll.</td>
+                </tr>
+                <tr>
+                  <td><strong>Lamination & Slitting</strong></td>
+                  <td>Mobile Handheld Scanner + Weighing Scale</td>
+                  <td>Scan substrate barcode, log adhesive mix, record output kg.</td>
+                </tr>
+                <tr>
+                  <td><strong>Dispatch Bay & QA</strong></td>
+                  <td>Workstation + Laser Printer + Barcode Gun</td>
+                  <td>Scan finished rolls/boxes, generate Delivery Challan & CoA.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- 3-Week Timetable -->
+          <div class="card">
+            <div class="card-header">
+              <span class="badge badge-green">3-WEEK ROLLOUT</span>
+              <span>Phased Implementation Milestones</span>
+            </div>
+            <table class="doc-table" style="margin-bottom: 0;">
+              <thead>
+                <tr>
+                  <th>Timeframe</th>
+                  <th>Milestone & Key Activities</th>
+                  <th>Exit Criteria Gate</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Week 1</strong></td>
+                  <td>Master Data Ingestion (Phases 1-4), user accounts setup, physical scale & barcode printer calibration.</td>
+                  <td>100% Opening Rolls Barcoded & Logged.</td>
+                </tr>
+                <tr>
+                  <td><strong>Week 2</strong></td>
+                  <td>Job Masters & Work Orders punched. Parallel run on Press 1 (Paper Log + Digital Scheduler).</td>
+                  <td>Operators trained on Start/End runs.</td>
+                </tr>
+                <tr>
+                  <td><strong>Week 3</strong></td>
+                  <td>Full Plant Cutover. All presses, lamination, slitting, and dispatch operate exclusively via ERP.</td>
+                  <td>Zero paper logbooks on shop floor.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+        </div>
+
+        <!-- Formal Commissioning Authorization Table -->
+        <div class="card" style="margin-top: 4px;">
+          <div class="card-header">
+            <span class="badge badge-purple">GO-LIVE AUTHORIZATION</span>
+            <span>Formal Plant Commissioning & Departmental Sign-Off</span>
+          </div>
+          <table class="doc-table" style="margin-bottom: 0;">
+            <thead>
+              <tr>
+                <th style="width: 20%;">Department Authority</th>
+                <th style="width: 20%;">Designated Officer Name</th>
+                <th style="width: 20%;">Sign-Off Date</th>
+                <th style="width: 20%;">Status Clearance</th>
+                <th style="width: 20%;">Authorized Signature</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Plant Operations Head</strong></td>
+                <td>___________________________</td>
+                <td>____ / ____ / 2026</td>
+                <td><span class="badge badge-green">APPROVED</span></td>
+                <td style="height: 22px;"></td>
+              </tr>
+              <tr>
+                <td><strong>Production & Maintenance Head</strong></td>
+                <td>___________________________</td>
+                <td>____ / ____ / 2026</td>
+                <td><span class="badge badge-green">APPROVED</span></td>
+                <td style="height: 22px;"></td>
+              </tr>
+              <tr>
+                <td><strong>Quality Assurance & QC Head</strong></td>
+                <td>___________________________</td>
+                <td>____ / ____ / 2026</td>
+                <td><span class="badge badge-green">APPROVED</span></td>
+                <td style="height: 22px;"></td>
+              </tr>
+              <tr>
+                <td><strong>Store & Warehouse Head</strong></td>
+                <td>___________________________</td>
+                <td>____ / ____ / 2026</td>
+                <td><span class="badge badge-green">APPROVED</span></td>
+                <td style="height: 22px;"></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+
+      <div class="doc-footer">
+        <span>Samyak International Ltd — Operations Operating System</span>
+        <span>Confidential — For Internal Factory Implementation Only</span>
+        <span>Page 4 of 4</span>
+      </div>
+    </div>
+
+  </div>
+
+</body>
+</html>

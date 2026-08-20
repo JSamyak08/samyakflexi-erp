@@ -970,7 +970,7 @@ export default function ProductionScheduler({
                 return (
                   <div 
                     key={order.id} 
-                    className="glass-card" 
+                    className={`glass-card scheduler-queue-card ${canRearrangeQueue ? 'with-reorder' : ''}`} 
                     style={{ 
                       padding: '18px 22px', 
                       borderRadius: '14px',
@@ -979,9 +979,6 @@ export default function ProductionScheduler({
                         : order.isOverdue 
                         ? '6px solid #dc2626' 
                         : '6px solid #059669',
-                      display: 'grid',
-                      gridTemplateColumns: canRearrangeQueue ? '56px 1.4fr 1.6fr 1.2fr' : '1.4fr 1.6fr 1.2fr',
-                      gap: '18px',
                       alignItems: 'center',
                       background: order.isCurrentlyInProduction ? '#f8fafc' : '#ffffff',
                       boxShadow: order.isCurrentlyInProduction ? '0 4px 16px rgba(37, 99, 235, 0.12)' : '0 2px 8px rgba(0,0,0,0.04)',
@@ -1141,7 +1138,7 @@ export default function ProductionScheduler({
                     </div>
 
                     {/* Technical Specifications Grid */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', background: '#f8fafc', padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                    <div className="scheduler-specs-grid" style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
                       <div>
                         <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase', display: 'block' }}>Printing Width</span>
                         <strong style={{ fontSize: '0.92rem', color: '#0f172a' }}>{order.widthMm} mm</strong>
@@ -1336,14 +1333,11 @@ export default function ProductionScheduler({
                 return (
                   <div 
                     key={order.id} 
-                    className="glass-card" 
+                    className="glass-card scheduler-completed-card" 
                     style={{ 
                       padding: '18px 22px', 
                       borderRadius: '14px',
                       borderLeft: '6px solid #059669',
-                      display: 'grid',
-                      gridTemplateColumns: '1.4fr 1.6fr 1.2fr',
-                      gap: '18px',
                       alignItems: 'center',
                       background: '#ffffff',
                       boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
@@ -1411,7 +1405,7 @@ export default function ProductionScheduler({
                     </div>
 
                     {/* Technical Output Specifications Grid */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', background: '#f8fafc', padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                    <div className="scheduler-specs-grid" style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
                       <div>
                         <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase', display: 'block' }}>Actual Meters</span>
                         <strong style={{ fontSize: '0.95rem', color: '#059669' }}>{(parseFloat(order.actualMetersPrinted) || order.targetMeters || 0).toLocaleString()} m</strong>

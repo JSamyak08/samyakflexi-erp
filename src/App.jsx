@@ -2489,7 +2489,7 @@ export default function App() {
           </div>
 
           {/* Top Bar Active User & Logout Controls (ACCOUNT / ROLE SWITCHER) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
             <WeighingScaleWidget />
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#ffffff', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem' }}>
               <UserCheck size={16} style={{ color: 'var(--primary-brand)' }} />
