@@ -4,6 +4,7 @@
  */
 
 export const TAB_SLUG_MAP = {
+  login: '/login',
   dashboard: '/dashboard',
   sales: '/sales-management',
   production_records: '/production-records',
@@ -29,6 +30,9 @@ export const SLUG_TAB_MAP = {
   '': 'dashboard',
   '/index.html': 'dashboard',
   
+  '/login': 'login',
+  'login': 'login',
+
   '/dashboard': 'dashboard',
   'dashboard': 'dashboard',
 

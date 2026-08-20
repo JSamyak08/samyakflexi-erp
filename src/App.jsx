@@ -213,10 +213,23 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Sync initial URL path if opened directly at root or deep link
+  // Sync URL path with auth state and deep links
   useEffect(() => {
-    pushSlugState(activeTab, urlParams);
-  }, []);
+    if (isAuthReady) {
+      if (!isAuthenticated || !currentUser) {
+        if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+          window.history.replaceState({ tab: 'login' }, '', '/login');
+        }
+      } else {
+        if (activeTab === 'login' || (typeof window !== 'undefined' && window.location.pathname === '/login')) {
+          const defaultTab = currentUser?.role === 'Printing Operator' ? 'printing_scheduler' : 'dashboard';
+          handleTabChange(defaultTab);
+        } else {
+          pushSlugState(activeTab, urlParams, true);
+        }
+      }
+    }
+  }, [isAuthenticated, currentUser, isAuthReady, activeTab]);
 
   // Helper to load state safely from localStorage or fallback
   const loadLocalState = (key, fallbackDefault) => {
@@ -1067,9 +1080,10 @@ export default function App() {
     setCurrentUser(user);
     setIsAuthenticated(true);
     safeLocalStorageSet('samyak_erp_current_user', user);
-    if (user?.role === 'Printing Operator') {
-      setActiveTab('printing_scheduler');
-    }
+    const targetTab = user?.role === 'Printing Operator'
+      ? 'printing_scheduler'
+      : (activeTab === 'login' ? 'dashboard' : (activeTab || 'dashboard'));
+    handleTabChange(targetTab);
   };
 
   // Logout Handler (for UI updates, authService handles Supabase logout)
@@ -1079,6 +1093,9 @@ export default function App() {
     setSessionProfile(null);
     setCurrentUser(null);
     setIsAuthenticated(false);
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({ tab: 'login' }, '', '/login');
+    }
     if (isSupaActive) {
       supabase.auth.signOut().catch(console.warn);
     }

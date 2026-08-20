@@ -152,10 +152,7 @@ export default function AuthScreen({ users = [], onLogin, onUpdatePassword }) {
                 className="auth-logo-img" 
               />
             </div>
-            <h2 className="auth-brand-heading">Samyak International Ltd</h2>
-            <p className="auth-brand-sub">
-              Flexible Packaging Operations Center
-            </p>
+            <h2 className="auth-brand-heading">Flexible Packaging Operations Center</h2>
           </div>
 
           <div className="auth-features-list">
