@@ -2480,7 +2480,7 @@ export default function App() {
           <div>
             <h1 style={{ fontSize: '1.6rem', fontWeight: '700' }}>
               {activeTab === 'dashboard' && 'Executive Operations Dashboard'}
-              {activeTab === 'sales' && 'Sales Management & Professional Quotation Engine'}
+              {activeTab === 'sales' && 'Sales Management Engine'}
               {activeTab === 'production_records' && 'Job Production Records & Approval Workflow'}
               {activeTab === 'job_punching' && 'Order Confirmation & Job Punching'}
               {activeTab === 'orders' && 'Order Management & PO Issuance'}
