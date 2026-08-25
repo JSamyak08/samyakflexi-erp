@@ -715,6 +715,7 @@ body {
   color: #000000;
   width: 210mm;
   min-height: 297mm;
+  height: auto;
   padding: 12mm 15mm;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
   box-sizing: border-box;
@@ -727,9 +728,11 @@ body {
 .printable-document {
   display: flex;
   flex-direction: column;
+  background: #ffffff;
   border: 1px solid #000000;
   padding: 15px;
   min-height: calc(297mm - 24mm);
+  height: auto;
   box-sizing: border-box;
 }
 
@@ -940,6 +943,7 @@ body {
   display: grid;
   grid-template-columns: 1.3fr 1fr;
   gap: 16px;
+  background: #ffffff;
   border: 1px solid #000000;
   padding: 12px;
   margin-bottom: 12px;
@@ -1009,6 +1013,7 @@ body {
 
 /* Terms & Signatures */
 .letterhead-terms-box {
+  background: #ffffff;
   border: 1px solid #000000;
   padding: 10px 14px;
   margin-bottom: 16px;
@@ -1034,6 +1039,7 @@ body {
 }
 
 .letterhead-signatory-block {
+  background: #ffffff;
   display: flex;
   flex-direction: column;
   align-items: flex-end;

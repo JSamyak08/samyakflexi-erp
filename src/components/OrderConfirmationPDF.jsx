@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
-import { COMPANY_DETAILS, initialClients } from '../factoryStore';
+import { COMPANY_DETAILS, initialClients, isLDFilm, getFilmSlitWidth } from '../factoryStore';
 import { numberToWords, formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 
@@ -104,8 +104,8 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
         </button>
       </div>
 
-      <div className="pdf-paper-container">
-        <div className="printable-document" id="printable-ocn">
+      <div className="pdf-paper-container" style={{ background: '#ffffff', minHeight: '297mm', height: 'auto', boxSizing: 'border-box' }}>
+        <div className="printable-document" id="printable-ocn" style={{ background: '#ffffff', minHeight: 'calc(297mm - 24mm)', height: 'auto', boxSizing: 'border-box' }}>
           {/* Header */}
           <div className="letterhead-header">
             <div className="letterhead-brand">
@@ -235,22 +235,28 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
               </tr>
             </thead>
             <tbody>
-              {layersList.map((layer, index) => (
-                <tr key={index}>
-                  <td className="center">{index + 1}</td>
-                  <td>
-                    <div className="item-name">{layer.filmType}</div>
-                    <div className="item-meta">Substrate Density: {layer.density} g/cm³</div>
-                  </td>
-                  <td className="center">{layer.micron} µ</td>
-                  <td className="center">{layer.gsm.toFixed(1)}</td>
-                  <td className="right">{layer.netKg} Kg</td>
-                  <td className="center">{wastagePct}%</td>
-                  <td className="right" style={{ fontWeight: 'bold' }}>{layer.grossKg} Kg</td>
-                  <td className="right">₹{layer.pricePerKg}</td>
-                  <td className="right">{formatINR(layer.totalCost)}</td>
-                </tr>
-              ))}
+              {layersList.map((layer, index) => {
+                const filmSize = layer.widthMm || layer.filmSize || layer.size || layer.slitWidth || (printWidthMm ? getFilmSlitWidth(layer.filmType, printWidthMm) : null);
+                return (
+                  <tr key={index}>
+                    <td className="center">{index + 1}</td>
+                    <td>
+                      <div className="item-name">{layer.filmType}</div>
+                      <div className="item-meta">
+                        Substrate Density: {layer.density} g/cm³
+                        {filmSize ? ` • Film Size: ${filmSize} mm` : ''}
+                      </div>
+                    </td>
+                    <td className="center">{layer.micron} µ</td>
+                    <td className="center">{layer.gsm.toFixed(1)}</td>
+                    <td className="right">{layer.netKg} Kg</td>
+                    <td className="center">{wastagePct}%</td>
+                    <td className="right" style={{ fontWeight: 'bold' }}>{layer.grossKg} Kg</td>
+                    <td className="right">₹{layer.pricePerKg}</td>
+                    <td className="right">{formatINR(layer.totalCost)}</td>
+                  </tr>
+                );
+              })}
               {/* Ink Row */}
               <tr>
                 <td className="center">{layersList.length + 1}</td>
