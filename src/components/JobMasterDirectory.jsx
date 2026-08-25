@@ -398,6 +398,18 @@ export default function JobMasterDirectory({
     setProcessRouting(prev => prev.map(s => {
       if (s.id !== stepId) return s;
       const updated = { ...s, [field]: value };
+      if (field === 'operation') {
+        if (value === 'Final Inspection & Dispatch') {
+          updated.stageOutput = 'Finished Goods (FG)';
+          updated.stageDescription = 'Finished Goods (FG) - Ready for Dispatch';
+          updated.pass = 'Final Stage';
+          updated.machineId = 'MANUAL-PACKING';
+          updated.machineName = 'Dispatch Bay';
+        } else if (updated.stageOutput === 'Finished Goods (FG)') {
+          updated.stageOutput = 'Semi-Finished Goods (SFG)';
+          updated.stageDescription = '';
+        }
+      }
       if (field === 'machineId') {
         const found = (machines || []).find(m => m.id === value);
         if (found) {
@@ -657,7 +669,14 @@ export default function JobMasterDirectory({
     }
 
     if (job.processRouting && job.processRouting.length > 0) {
-      setProcessRouting(job.processRouting.map((s, idx) => ({ ...s, id: s.id || `step-${Date.now()}-${idx}` })));
+      setProcessRouting(job.processRouting.map((s, idx, arr) => {
+        const isFinalStep = s.operation === 'Final Inspection & Dispatch' || idx === arr.length - 1;
+        return {
+          ...s,
+          id: s.id || `step-${Date.now()}-${idx}`,
+          stageOutput: isFinalStep ? 'Finished Goods (FG)' : (s.stageOutput || 'Semi-Finished Goods (SFG)')
+        };
+      }));
     } else {
       setProcessRouting(generateDefaultRouting(currentLayers, machines));
     }
@@ -683,6 +702,17 @@ export default function JobMasterDirectory({
 
     const structureSummary = layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
     
+    const sanitizedRouting = (Array.isArray(processRouting) && processRouting.length > 0 
+      ? processRouting 
+      : generateDefaultRouting(layers, machines)
+    ).map((s, idx, arr) => {
+      const isFinalStep = s.operation === 'Final Inspection & Dispatch' || idx === arr.length - 1;
+      return {
+        ...s,
+        stageOutput: isFinalStep ? 'Finished Goods (FG)' : (s.stageOutput || 'Semi-Finished Goods (SFG)')
+      };
+    });
+
     if (editingJobId) {
       const existingJob = jobMasters.find(j => j.id === editingJobId) || {};
       const updatedJobMaster = {
@@ -697,7 +727,7 @@ export default function JobMasterDirectory({
         pouchOpenWidth: parseFloat(pouchOpenWidth) || 0,
         pouchHeight: parseFloat(pouchHeight) || 0,
         layers,
-        processRouting: Array.isArray(processRouting) && processRouting.length > 0 ? processRouting : generateDefaultRouting(layers, machines),
+        processRouting: sanitizedRouting,
         cylinderSku: skuCode.trim(),
         cylinderCost: `₹ ${parseInt(cylinderCost || 0).toLocaleString()}`,
         colorsCount: parseInt(colorsCount) || 6,
@@ -732,7 +762,7 @@ export default function JobMasterDirectory({
       pouchOpenWidth: parseFloat(pouchOpenWidth) || 0,
       pouchHeight: parseFloat(pouchHeight) || 0,
       layers,
-      processRouting: Array.isArray(processRouting) && processRouting.length > 0 ? processRouting : generateDefaultRouting(layers, machines),
+      processRouting: sanitizedRouting,
       cylinderSku: skuCode.trim(),
       cylinderCost: `₹ ${parseInt(cylinderCost || 0).toLocaleString()}`,
       colorsCount: parseInt(colorsCount) || 6,
@@ -1206,7 +1236,9 @@ export default function JobMasterDirectory({
                       <tbody>
                         {processRouting.map((step, idx) => {
                           const isLast = idx === processRouting.length - 1;
-                          const isFG = step.stageOutput === 'Finished Goods (FG)' || isLast;
+                          const isFG = step.stageOutput === 'Finished Goods (FG)' || 
+                                       step.operation === 'Final Inspection & Dispatch' || 
+                                       isLast;
                           return (
                             <tr key={step.id || idx} style={{ background: idx % 2 === 0 ? '#ffffff' : '#fafafa' }}>
                               <td style={{ textAlign: 'center', fontWeight: '800', color: 'var(--text-muted)' }}>
@@ -1609,33 +1641,39 @@ export default function JobMasterDirectory({
               </div>
 
               {(() => {
-                const routingList = (selectedJob.processRouting && selectedJob.processRouting.length > 0)
+                const routing = (selectedJob.processRouting && selectedJob.processRouting.length > 0)
                   ? selectedJob.processRouting
                   : generateDefaultRouting(selectedJob.layers, machines);
 
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {routingList.map((step, idx) => (
+                    {routing.map((step, idx) => {
+                      const isLast = idx === routing.length - 1;
+                      const isFG = step.stageOutput === 'Finished Goods (FG)' || 
+                                   step.operation === 'Final Inspection & Dispatch' ||
+                                   (step.stageOutput && String(step.stageOutput).toUpperCase().includes('FG') && !String(step.stageOutput).toUpperCase().includes('SFG')) ||
+                                   isLast;
+                      return (
                       <div 
                         key={step.id || idx}
                         style={{
                           background: '#f8fafc',
-                          border: '1px solid var(--border-color)',
-                          borderLeft: step.stageOutput === 'Finished Goods (FG)' ? '4px solid #047857' : '4px solid var(--primary-brand)',
-                          borderRadius: '8px',
-                          padding: '12px 14px',
+                          border: '1px solid #e2e8f0',
+                          borderLeft: isFG ? '4px solid #047857' : '4px solid var(--primary-brand)',
+                          borderRadius: '6px',
+                          padding: '8px 12px',
                           display: 'flex',
                           flexDirection: 'column',
-                          gap: '6px'
+                          gap: '4px'
                         }}
                       >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <span style={{
-                              width: '22px',
-                              height: '22px',
+                              width: '20px',
+                              height: '20px',
                               borderRadius: '50%',
-                              background: step.stageOutput === 'Finished Goods (FG)' ? '#047857' : 'var(--primary-brand)',
+                              background: isFG ? '#047857' : 'var(--primary-brand)',
                               color: '#ffffff',
                               fontSize: '0.72rem',
                               fontWeight: '800',
@@ -1656,13 +1694,13 @@ export default function JobMasterDirectory({
                             fontWeight: '800',
                             padding: '2px 8px',
                             borderRadius: '9999px',
-                            background: step.stageOutput === 'Finished Goods (FG)' ? '#ecfdf5' : '#e0f2fe',
-                            color: step.stageOutput === 'Finished Goods (FG)' ? '#047857' : '#0369a1',
-                            border: step.stageOutput === 'Finished Goods (FG)' ? '1px solid #a7f3d0' : '1px solid #bae6fd',
+                            background: isFG ? '#ecfdf5' : '#e0f2fe',
+                            color: isFG ? '#047857' : '#0369a1',
+                            border: isFG ? '1px solid #a7f3d0' : '1px solid #bae6fd',
                             textTransform: 'uppercase',
                             letterSpacing: '0.03em'
                           }}>
-                            {step.stageOutput === 'Finished Goods (FG)' ? 'FG (Finished Goods)' : 'SFG (Semi-Finished Goods)'}
+                            {isFG ? 'FG (Finished Goods)' : 'SFG (Semi-Finished Goods)'}
                           </span>
                         </div>
 
@@ -1684,7 +1722,8 @@ export default function JobMasterDirectory({
                           </div>
                         )}
                       </div>
-                    ))}
+                    );
+                  })}
                   </div>
                 );
               })()}
