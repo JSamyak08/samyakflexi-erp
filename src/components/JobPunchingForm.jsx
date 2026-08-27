@@ -216,6 +216,8 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       id: `ORD-2026-${Math.floor(1000 + Math.random() * 9000)}`,
       jobName,
       clientName,
+      orderType: orderType || 'Pouching',
+      materialFormat: orderType === 'Pouching' ? 'Pouching' : 'Reel',
       orderDate: new Date().toISOString().split('T')[0],
       targetDeliveryDate: targetDate.toISOString().split('T')[0],
       orderQtyKg: parseFloat(orderQtyKg),
