@@ -86,7 +86,7 @@ export default function EmployeeManagement({
 
   const isAdmin = useMemo(() => {
     const roleStr = String(currentUser?.role || userRole || '').toLowerCase().trim();
-    return roleStr === 'admin';
+    return roleStr === 'admin' || roleStr.includes('admin') || roleStr.includes('director') || roleStr.includes('owner');
   }, [currentUser, userRole]);
 
   // Sub-Tab Navigation: 'directory', 'attendance', 'overtime', 'advances', 'payroll'
