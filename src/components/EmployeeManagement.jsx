@@ -1075,7 +1075,7 @@ export default function EmployeeManagement({
                   <th>Standard Shift</th>
                   <th>Overtime Hours</th>
                   <th>Reason / Machine Extension</th>
-                  <th>Est. OT Payout (1.5x)</th>
+                  <th>Est. OT Payout (1x)</th>
                   <th>Status</th>
                   <th style={{ textAlign: 'center' }}>Approval Action</th>
                 </tr>
@@ -1094,7 +1094,7 @@ export default function EmployeeManagement({
                     const fixedGross = (struct.basicSalary || 0) + (struct.hra || 0) + (struct.otherAllowance || 0);
                     const shiftHrs = emp?.shiftDurationHours || att.shiftHours || 12;
                     const hourly = fixedGross / (26 * shiftHrs);
-                    const estPayout = Math.round(hourly * 1.5 * att.overtimeHours);
+                    const estPayout = Math.round(hourly * att.overtimeHours);
 
                     return (
                       <tr key={att.id}>
@@ -1121,7 +1121,7 @@ export default function EmployeeManagement({
                         </td>
                         <td>
                           <div style={{ fontWeight: '800', color: '#0f172a' }}>₹ {estPayout.toLocaleString()}</div>
-                          <div style={{ fontSize: '0.68rem', color: '#64748b' }}>@ ₹{Math.round(hourly * 1.5)}/hr</div>
+                          <div style={{ fontSize: '0.68rem', color: '#64748b' }}>@ ₹{Math.round(hourly)}/hr</div>
                         </td>
                         <td>
                           <span style={{ 

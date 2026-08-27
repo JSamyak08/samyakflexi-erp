@@ -1482,8 +1482,8 @@ export function calculateEmployeeMonthlySalary(emp, monthKey, attendanceList = [
   // Hourly Base Rate = Fixed Gross / (Working Days * Shift Hours)
   const totalStandardMonthHours = totalWorkingDays * shiftHours;
   const hourlyRate = totalStandardMonthHours > 0 ? (fixedGross / totalStandardMonthHours) : 0;
-  // Overtime rate standard multiplier: 1.5x of hourly rate for flexible packaging manufacturing
-  const otRatePerHr = hourlyRate * 1.5;
+  // Overtime rate standard multiplier: 1x of normal hourly rate
+  const otRatePerHr = Math.round(hourlyRate);
   const earnedOtPay = Math.round(approvedOtHours * otRatePerHr);
 
   // Total Gross Earned
