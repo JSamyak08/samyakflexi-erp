@@ -14,6 +14,9 @@ import {
   initialClients,
   initialJobMasters,
   initialInks,
+  initialEmployees,
+  initialAttendanceRecords,
+  initialSalaryAdvances,
   DEFAULT_ROLE_PERMISSIONS,
   isOrderOverdue,
   isOrderNearingDeadline,
@@ -47,7 +50,9 @@ import {
   Truck,
   FlaskConical,
   ArrowRight,
-  ScanBarcode
+  ScanBarcode,
+  Coins,
+  Clock
 } from 'lucide-react';
 
 import AuthScreen from './components/AuthScreen';
@@ -57,6 +62,7 @@ import VendorManagement from './components/VendorManagement';
 import InventoryManagement from './components/InventoryManagement';
 import JobDataSheet from './components/JobDataSheet';
 import UserManagement from './components/UserManagement';
+import EmployeeManagement from './components/EmployeeManagement';
 import CylinderManagement from './components/CylinderManagement';
 import ProductionRecordManagement from './components/ProductionRecordManagement';
 import ProductionScheduler from './components/ProductionScheduler';
@@ -90,6 +96,9 @@ import {
   fetchClients, saveClientToSupabase, deleteClientFromSupabase,
   fetchJobMasters, saveJobMasterToSupabase, deleteJobMasterFromSupabase,
   fetchInks, saveInkToSupabase, deleteInkFromSupabase,
+  fetchEmployeesFromSupabase, saveEmployeeToSupabase, deleteEmployeeFromSupabase,
+  fetchEmployeeAttendanceFromSupabase, saveEmployeeAttendanceToSupabase,
+  fetchSalaryAdvancesFromSupabase, saveSalaryAdvanceToSupabase,
   fetchRolePermissionsFromSupabase, saveRolePermissionsToSupabase,
   fetchSystemSetting, saveSystemSetting
 } from './services/supabaseDataService';
@@ -289,6 +298,9 @@ export default function App() {
   const [consumables, setConsumables] = useState(() => stripDummyRecords(loadLocalState('consumables', [])));
   const [storeIssueTransactions, setStoreIssueTransactions] = useState(() => stripDummyRecords(loadLocalState('store_issue_transactions', [])));
   const [auditLogs, setAuditLogs] = useState(() => pruneOldAuditLogs(loadLocalState('audit_logs', [])));
+  const [employees, setEmployees] = useState(() => loadLocalState('employees', initialEmployees));
+  const [employeeAttendance, setEmployeeAttendance] = useState(() => loadLocalState('employee_attendance', initialAttendanceRecords));
+  const [salaryAdvances, setSalaryAdvances] = useState(() => loadLocalState('salary_advances', initialSalaryAdvances));
 
 
   const logAudit = async (actionType, moduleName, details, targetId = null) => {
@@ -370,6 +382,9 @@ export default function App() {
   useEffect(() => { safeLocalStorageSet('samyak_erp_machine_issues', machineIssues); }, [machineIssues]);
   useEffect(() => { safeLocalStorageSet('samyak_erp_consumables', consumables); }, [consumables]);
   useEffect(() => { safeLocalStorageSet('samyak_erp_store_issue_transactions', storeIssueTransactions); }, [storeIssueTransactions]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_employees', employees); }, [employees]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_employee_attendance', employeeAttendance); }, [employeeAttendance]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_salary_advances', salaryAdvances); }, [salaryAdvances]);
 
 
   // Asynchronously hydrate any full artwork assets from IndexedDB if needed on mount
@@ -429,7 +444,8 @@ export default function App() {
         supaOrders, supaVendors, supaInv, supaGRNs, supaCyls, 
         supaProd, supaUsers, supaSheets, supaRolls, supaShipments,
         supaMachines, supaSchedules, supaClients, supaJobMasters,
-        supaInks, supaRolePerms, supaAuditLogs
+        supaInks, supaEmployees, supaAttendance, supaAdvances,
+        supaRolePerms, supaAuditLogs
       ] = await Promise.all([
         fetchSafe(fetchOrders, 'Orders'),
         fetchSafe(fetchVendors, 'Vendors'),
@@ -446,6 +462,9 @@ export default function App() {
         fetchSafe(fetchClients, 'Clients'),
         fetchSafe(fetchJobMasters, 'Job Masters'),
         fetchSafe(fetchInks, 'Inks'),
+        fetchSafe(fetchEmployeesFromSupabase, 'Employees'),
+        fetchSafe(fetchEmployeeAttendanceFromSupabase, 'Attendance'),
+        fetchSafe(fetchSalaryAdvancesFromSupabase, 'Salary Advances'),
         fetchSafe(fetchRolePermissionsFromSupabase, 'Role Permissions'),
         fetchSafe(fetchAuditLogsFromSupabase, 'Audit Logs')
       ]);
@@ -803,8 +822,40 @@ export default function App() {
         });
       }
 
-      if (supaRolePerms && typeof supaRolePerms === 'object' && Object.keys(supaRolePerms).length > 0) {
+      if (Array.isArray(supaEmployees) && supaEmployees.length > 0) {
+        setEmployees(prev => {
+          const map = new Map();
+          supaEmployees.forEach(e => { if (e && e.id) map.set(e.id, e); });
+          (prev || []).forEach(p => { if (p && p.id && !map.has(p.id)) map.set(p.id, p); });
+          const merged = Array.from(map.values());
+          safeLocalStorageSet('samyak_erp_employees', merged);
+          return merged;
+        });
+      }
 
+      if (Array.isArray(supaAttendance) && supaAttendance.length > 0) {
+        setEmployeeAttendance(prev => {
+          const map = new Map();
+          supaAttendance.forEach(a => { if (a && a.id) map.set(a.id, a); });
+          (prev || []).forEach(p => { if (p && p.id && !map.has(p.id)) map.set(p.id, p); });
+          const merged = Array.from(map.values());
+          safeLocalStorageSet('samyak_erp_employee_attendance', merged);
+          return merged;
+        });
+      }
+
+      if (Array.isArray(supaAdvances) && supaAdvances.length > 0) {
+        setSalaryAdvances(prev => {
+          const map = new Map();
+          supaAdvances.forEach(adv => { if (adv && adv.id) map.set(adv.id, adv); });
+          (prev || []).forEach(p => { if (p && p.id && !map.has(p.id)) map.set(p.id, p); });
+          const merged = Array.from(map.values());
+          safeLocalStorageSet('samyak_erp_salary_advances', merged);
+          return merged;
+        });
+      }
+
+      if (supaRolePerms && typeof supaRolePerms === 'object' && Object.keys(supaRolePerms).length > 0) {
         setRolePermissions(supaRolePerms);
         safeLocalStorageSet('samyak_erp_role_permissions', supaRolePerms);
       }
@@ -1761,6 +1812,96 @@ export default function App() {
     }
   };
 
+  const handleAddEmployee = async (newEmp) => {
+    setEmployees(prev => {
+      const updated = [newEmp, ...prev.filter(e => e.id !== newEmp.id)];
+      safeLocalStorageSet('samyak_erp_employees', updated);
+      return updated;
+    });
+    logAudit('CREATE', 'Employee Management', `Onboarded employee ${newEmp.fullName} (${newEmp.empCode || newEmp.id}) in ${newEmp.department}`, newEmp.id);
+    try {
+      await saveEmployeeToSupabase(newEmp);
+    } catch (err) {
+      console.warn("[Sync Notice] Employee saved locally. Supabase notice:", err);
+    }
+  };
+
+  const handleUpdateEmployee = async (updatedEmp) => {
+    setEmployees(prev => {
+      const updated = prev.map(e => e.id === updatedEmp.id ? updatedEmp : e);
+      safeLocalStorageSet('samyak_erp_employees', updated);
+      return updated;
+    });
+    logAudit('UPDATE', 'Employee Management', `Updated employee ${updatedEmp.fullName} (${updatedEmp.empCode || updatedEmp.id})`, updatedEmp.id);
+    try {
+      await saveEmployeeToSupabase(updatedEmp);
+    } catch (err) {
+      console.warn("[Sync Notice] Employee updated locally. Supabase notice:", err);
+    }
+  };
+
+  const handleDeleteEmployee = async (empId) => {
+    setEmployees(prev => {
+      const updated = prev.filter(e => e.id !== empId);
+      safeLocalStorageSet('samyak_erp_employees', updated);
+      return updated;
+    });
+    logAudit('DELETE', 'Employee Management', `Deleted employee record ${empId}`, empId);
+    try {
+      await deleteEmployeeFromSupabase(empId);
+    } catch (err) {
+      console.warn("[Sync Notice] Employee deleted locally. Supabase notice:", err);
+    }
+  };
+
+  const handleSaveAttendance = async (record) => {
+    setEmployeeAttendance(prev => {
+      const idx = prev.findIndex(a => a.id === record.id || (a.employeeId === record.employeeId && a.date === record.date));
+      let updated;
+      if (idx >= 0) {
+        updated = [...prev];
+        updated[idx] = record;
+      } else {
+        updated = [record, ...prev];
+      }
+      safeLocalStorageSet('samyak_erp_employee_attendance', updated);
+      return updated;
+    });
+    try {
+      await saveEmployeeAttendanceToSupabase(record);
+    } catch (err) {
+      console.warn("[Sync Notice] Attendance saved locally. Supabase notice:", err);
+    }
+  };
+
+  const handleSaveSalaryAdvance = async (newAdv) => {
+    setSalaryAdvances(prev => {
+      const updated = [newAdv, ...prev.filter(a => a.id !== newAdv.id)];
+      safeLocalStorageSet('samyak_erp_salary_advances', updated);
+      return updated;
+    });
+    logAudit('CREATE', 'Employee Management', `Requested advance of ₹${newAdv.advanceAmount} for ${newAdv.employeeName}`, newAdv.id);
+    try {
+      await saveSalaryAdvanceToSupabase(newAdv);
+    } catch (err) {
+      console.warn("[Sync Notice] Salary Advance saved locally. Supabase notice:", err);
+    }
+  };
+
+  const handleUpdateSalaryAdvance = async (updatedAdv) => {
+    setSalaryAdvances(prev => {
+      const updated = prev.map(a => a.id === updatedAdv.id ? updatedAdv : a);
+      safeLocalStorageSet('samyak_erp_salary_advances', updated);
+      return updated;
+    });
+    logAudit('UPDATE', 'Employee Management', `Updated advance status for ${updatedAdv.employeeName} to ${updatedAdv.status}`, updatedAdv.id);
+    try {
+      await saveSalaryAdvanceToSupabase(updatedAdv);
+    } catch (err) {
+      console.warn("[Sync Notice] Salary Advance updated locally. Supabase notice:", err);
+    }
+  };
+
   const handleAddJobDataSheet = async (newSheet) => {
     setJobDataSheets(prev => [newSheet, ...prev.filter(s => s.id !== newSheet.id)]);
     logAudit('CREATE', 'Job Data Sheets', `Created job datasheet ${newSheet.id} for "${newSheet.jobName}"`, newSheet.id);
@@ -2392,6 +2533,28 @@ export default function App() {
                     <Truck size={18} />
                   </span>
                   <span>Dispatch & Challans</span>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Group: Human Resources & Payroll */}
+          {(isTabAllowed('employees') || currentUser?.role === 'Admin' || currentUser?.role === 'Plant Manager' || currentUser?.role === 'HR & Payroll Manager') && (
+            <>
+              <div className="sidebar-section-header">Workforce & HR</div>
+
+              {isTabAllowed('employees') && (
+                <div 
+                  className={`nav-item ${activeTab === 'employees' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('employees')}
+                >
+                  <span className="nav-icon-box" style={{ color: '#059669' }}>
+                    <UserCheck size={18} />
+                  </span>
+                  <span>Employee Management</span>
+                  <span className="nav-badge-pill nav-badge-neutral">
+                    {(employees || []).length}
+                  </span>
                 </div>
               )}
             </>
@@ -3351,6 +3514,24 @@ export default function App() {
             onUpdateUser={handleUpdateUser}
             onDeleteUser={handleDeleteUser}
             onUpdateRolePermissions={setRolePermissions}
+          />
+        )}
+
+        {/* TAB: EMPLOYEE MANAGEMENT & PAYROLL HR */}
+        {activeTab === 'employees' && (
+          <EmployeeManagement 
+            urlParams={urlParams}
+            employees={employees}
+            attendanceRecords={employeeAttendance}
+            salaryAdvances={salaryAdvances}
+            currentUser={currentUser}
+            userRole={currentUser?.role}
+            onAddEmployee={handleAddEmployee}
+            onUpdateEmployee={handleUpdateEmployee}
+            onDeleteEmployee={handleDeleteEmployee}
+            onSaveAttendance={handleSaveAttendance}
+            onSaveSalaryAdvance={handleSaveSalaryAdvance}
+            onUpdateSalaryAdvance={handleUpdateSalaryAdvance}
           />
         )}
 

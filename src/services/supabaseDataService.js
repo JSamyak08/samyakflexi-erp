@@ -2240,6 +2240,214 @@ export async function fetchEmailTemplatesFromSupabase() {
   return await fetchSystemSetting('email_templates');
 }
 
+// ==========================================
+// EMPLOYEES & PAYROLL SUPABASE INTEGRATION
+// ==========================================
+
+export async function fetchEmployeesFromSupabase() {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const { data, error } = await supabase.from('employees').select('*').order('created_at', { ascending: false });
+    if (error) {
+      console.warn('[employees] Table fetch fallback to system_settings:', error.message);
+      return await fetchSystemSetting('employees');
+    }
+    if (data && data.length > 0) {
+      return data.map(r => ({
+        id: r.id,
+        empCode: r.emp_code || r.empCode,
+        fullName: r.full_name || r.fullName,
+        gender: r.gender,
+        dob: r.dob,
+        phone: r.phone,
+        email: r.email,
+        department: r.department,
+        designation: r.designation,
+        joiningDate: r.joining_date || r.joiningDate,
+        status: r.status,
+        shiftDurationHours: Number(r.shift_duration_hours || r.shiftDurationHours) || 12,
+        defaultShift: r.default_shift || r.defaultShift,
+        address: r.address,
+        aadharNo: r.aadhar_no || r.aadharNo,
+        panNo: r.pan_no || r.panNo,
+        uanNo: r.uan_no || r.uanNo,
+        esicNo: r.esic_no || r.esicNo,
+        emergencyContact: r.emergency_contact || r.emergencyContact,
+        bankDetails: r.bank_details || r.bankDetails || {},
+        salaryStructure: r.salary_structure || r.salaryStructure || {},
+        offboarding: r.offboarding || {}
+      }));
+    }
+  } catch (e) {
+    console.warn('[employees] Exception, falling back to system_settings:', e.message);
+  }
+  return await fetchSystemSetting('employees');
+}
+
+export async function saveEmployeeToSupabase(employee) {
+  if (!isSupabaseConfigured() || !employee) return;
+  try {
+    const row = {
+      id: employee.id,
+      emp_code: employee.empCode || employee.id,
+      full_name: employee.fullName,
+      gender: employee.gender,
+      dob: employee.dob,
+      phone: employee.phone,
+      email: employee.email,
+      department: employee.department,
+      designation: employee.designation,
+      joining_date: employee.joiningDate,
+      status: employee.status,
+      shift_duration_hours: employee.shiftDurationHours || 12,
+      default_shift: employee.defaultShift,
+      address: employee.address,
+      aadhar_no: employee.aadharNo,
+      pan_no: employee.panNo,
+      uan_no: employee.uanNo,
+      esic_no: employee.esicNo,
+      emergency_contact: employee.emergencyContact,
+      bank_details: employee.bankDetails || {},
+      salary_structure: employee.salaryStructure || {},
+      offboarding: employee.offboarding || {},
+      updated_at: new Date().toISOString()
+    };
+    const { error } = await supabase.from('employees').upsert(row, { onConflict: 'id' });
+    if (error) {
+      console.warn('[employees] Table upsert fallback:', error.message);
+    }
+  } catch (err) {
+    console.warn('[employees] Save exception:', err.message);
+  }
+}
+
+export async function deleteEmployeeFromSupabase(employeeId) {
+  if (!isSupabaseConfigured() || !employeeId) return;
+  try {
+    await supabase.from('employees').delete().eq('id', employeeId);
+  } catch (err) {
+    console.warn('[employees] Delete exception:', err.message);
+  }
+}
+
+export async function fetchEmployeeAttendanceFromSupabase() {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const { data, error } = await supabase.from('employee_attendance').select('*').order('date', { ascending: false });
+    if (error) return await fetchSystemSetting('employee_attendance');
+    if (data && data.length > 0) {
+      return data.map(r => ({
+        id: r.id,
+        employeeId: r.employee_id || r.employeeId,
+        date: r.date,
+        shiftType: r.shift_type || r.shiftType,
+        shiftHours: Number(r.shift_hours || r.shiftHours) || 12,
+        status: r.status,
+        checkIn: r.check_in || r.checkIn,
+        checkOut: r.check_out || r.checkOut,
+        totalHoursWorked: Number(r.total_hours_worked || r.totalHoursWorked) || 0,
+        overtimeHours: Number(r.overtime_hours || r.overtimeHours) || 0,
+        overtimeReason: r.overtime_reason || r.overtimeReason || '',
+        overtimeStatus: r.overtime_status || r.overtimeStatus || 'Pending Approval',
+        overtimeApprovedBy: r.overtime_approved_by || r.overtimeApprovedBy || '',
+        overtimeApprovedDate: r.overtime_approved_date || r.overtimeApprovedDate || '',
+        dinnerAllowanceEligible: r.dinner_allowance_eligible ?? r.dinnerAllowanceEligible ?? false,
+        markedBy: r.marked_by || r.markedBy || ''
+      }));
+    }
+  } catch (e) {
+    console.warn('[employee_attendance] fetch note:', e.message);
+  }
+  return await fetchSystemSetting('employee_attendance');
+}
+
+export async function saveEmployeeAttendanceToSupabase(record) {
+  if (!isSupabaseConfigured() || !record) return;
+  try {
+    const row = {
+      id: record.id,
+      employee_id: record.employeeId,
+      date: record.date,
+      shift_type: record.shiftType,
+      shift_hours: record.shiftHours || 12,
+      status: record.status,
+      check_in: record.checkIn,
+      check_out: record.checkOut,
+      total_hours_worked: record.totalHoursWorked || 0,
+      overtime_hours: record.overtimeHours || 0,
+      overtime_reason: record.overtimeReason || '',
+      overtime_status: record.overtimeStatus || 'Pending Approval',
+      overtime_approved_by: record.overtimeApprovedBy || '',
+      overtime_approved_date: record.overtimeApprovedDate || '',
+      dinner_allowance_eligible: record.dinnerAllowanceEligible || false,
+      marked_by: record.markedBy || '',
+      updated_at: new Date().toISOString()
+    };
+    await supabase.from('employee_attendance').upsert(row, { onConflict: 'id' });
+  } catch (err) {
+    console.warn('[employee_attendance] save exception:', err.message);
+  }
+}
+
+export async function fetchSalaryAdvancesFromSupabase() {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const { data, error } = await supabase.from('salary_advances').select('*').order('request_date', { ascending: false });
+    if (error) return await fetchSystemSetting('salary_advances');
+    if (data && data.length > 0) {
+      return data.map(r => ({
+        id: r.id,
+        employeeId: r.employee_id || r.employeeId,
+        employeeName: r.employee_name || r.employeeName,
+        department: r.department,
+        requestDate: r.request_date || r.requestDate,
+        advanceAmount: Number(r.advance_amount || r.advanceAmount) || 0,
+        repaymentTenureMonths: Number(r.repayment_tenure_months || r.repaymentTenureMonths) || 1,
+        monthlyEmiAmount: Number(r.monthly_emi_amount || r.monthlyEmiAmount) || 0,
+        reason: r.reason || '',
+        status: r.status,
+        approvedBy: r.approved_by || r.approvedBy || '',
+        approvedDate: r.approved_date || r.approvedDate || '',
+        disbursedDate: r.disbursed_date || r.disbursedDate || '',
+        totalRecoveredAmount: Number(r.total_recovered_amount || r.totalRecoveredAmount) || 0,
+        remainingBalance: Number(r.remaining_balance || r.remainingBalance) || 0,
+        deductionHistory: r.deduction_history || r.deductionHistory || []
+      }));
+    }
+  } catch (e) {
+    console.warn('[salary_advances] fetch note:', e.message);
+  }
+  return await fetchSystemSetting('salary_advances');
+}
+
+export async function saveSalaryAdvanceToSupabase(adv) {
+  if (!isSupabaseConfigured() || !adv) return;
+  try {
+    const row = {
+      id: adv.id,
+      employee_id: adv.employeeId,
+      employee_name: adv.employeeName,
+      department: adv.department,
+      request_date: adv.requestDate,
+      advance_amount: adv.advanceAmount,
+      repayment_tenure_months: adv.repaymentTenureMonths,
+      monthly_emi_amount: adv.monthlyEmiAmount,
+      reason: adv.reason,
+      status: adv.status,
+      approved_by: adv.approvedBy || '',
+      approved_date: adv.approvedDate || '',
+      disbursed_date: adv.disbursedDate || '',
+      total_recovered_amount: adv.totalRecoveredAmount || 0,
+      remaining_balance: adv.remainingBalance || 0,
+      deduction_history: adv.deductionHistory || [],
+      updated_at: new Date().toISOString()
+    };
+    await supabase.from('salary_advances').upsert(row, { onConflict: 'id' });
+  } catch (err) {
+    console.warn('[salary_advances] save exception:', err.message);
+  }
+}
+
 export async function deleteGRNFromSupabase(grnId) {
   if (!isSupabaseConfigured()) return;
   await ensureValidSession();

@@ -737,6 +737,7 @@ export const initialSalesQuotations = [];
 export const SYSTEM_ROLES = [
   "Admin",
   "Plant Manager",
+  "HR & Payroll Manager",
   "Production Manager",
   "Store Manager",
   "QC Chemist",
@@ -901,6 +902,7 @@ export const ALL_MODULES = [
   { key: "inventory", label: "Inventory, GRN & QC", category: "Store & Inventory" },
   { key: "ink_management", label: "Ink Management & Solid Costing", category: "Store & Inventory" },
   { key: "material_indents", label: "Material Indents & Store", category: "Store & Inventory" },
+  { key: "employees", label: "Employee Management & Payroll", category: "Human Resources & Payroll" },
   { key: "user_management", label: "User Management & RBAC", category: "Administration" },
   { key: "cylinders", label: "Rotogravure Cylinders", category: "Pre-Press & Tooling" },
   { key: "printing_scheduler", label: "Printing Machine Scheduler", category: "Shop Floor & Planning" },
@@ -916,10 +918,10 @@ export const generateFullRolePermissions = (allowAll = false) => {
     ALL_MODULES.forEach(m => {
       if (r === "Printing Operator") {
         perm[r][m.key] = (m.key === "printing_scheduler" || m.key === "dashboard");
-      } else if (r === "Admin" || r === "Plant Manager") {
+      } else if (r === "Admin" || r === "Plant Manager" || r === "HR & Payroll Manager") {
         perm[r][m.key] = true;
       } else if (r === "Production Manager") {
-        perm[r][m.key] = (m.key === "dashboard" || m.key === "production_records" || m.key === "printing_scheduler" || m.key === "cylinders" || m.key === "orders" || m.key === "job_masters" || m.key === "inventory" || m.key === "scrap_analytics");
+        perm[r][m.key] = (m.key === "dashboard" || m.key === "production_records" || m.key === "printing_scheduler" || m.key === "cylinders" || m.key === "orders" || m.key === "job_masters" || m.key === "inventory" || m.key === "scrap_analytics" || m.key === "employees");
       } else if (r === "Store Manager") {
         perm[r][m.key] = (m.key === "dashboard" || m.key === "inventory" || m.key === "material_indents" || m.key === "vendors" || m.key === "ink_management" || m.key === "dispatch");
       } else if (r === "QC Chemist") {
@@ -939,6 +941,625 @@ export const generateFullRolePermissions = (allowAll = false) => {
 };
 
 export const DEFAULT_ROLE_PERMISSIONS = generateFullRolePermissions(false);
+
+// ==========================================
+// EMPLOYEE & PAYROLL SYSTEM CONSTANTS & DATA
+// ==========================================
+
+export const EMPLOYEE_DEPARTMENTS = [
+  "Rotogravure Printing",
+  "Solventless Lamination",
+  "High-Speed Slitting",
+  "Pouch Making & Sealing",
+  "Extrusion & Blown Film",
+  "Quality Assurance (QA/QC)",
+  "Plant Maintenance & Electrical",
+  "Stores & Raw Material",
+  "Dispatch & Logistics",
+  "Accounts & Finance",
+  "Sales & Commercial",
+  "Human Resources & Admin",
+  "Plant Security & Safety"
+];
+
+export const EMPLOYEE_DESIGNATIONS = [
+  "Chief Operating Officer (COO)",
+  "Plant Head",
+  "Production Manager",
+  "Printing Chief Operator",
+  "Printing Operator",
+  "Printing Helper / Assistant",
+  "Lamination Master Operator",
+  "Lamination Operator",
+  "Slitting Machine Operator",
+  "Pouch Machine Operator",
+  "Senior QC Chemist",
+  "QC Inspector",
+  "Maintenance Engineer",
+  "Chief Electrician",
+  "Store Incharge",
+  "Dispatch Officer",
+  "Accounts Manager",
+  "HR Executive",
+  "Commercial Executive",
+  "Security Guard"
+];
+
+export const EMPLOYEE_STATUSES = [
+  "Active",
+  "On Probation",
+  "Notice Period",
+  "Relieved",
+  "Terminated"
+];
+
+export const SHIFT_OPTIONS = [
+  { id: "12h", hours: 12, label: "12 Hours Shift (Standard Factory Shift)", desc: "Day (08:00 - 20:00) / Night (20:00 - 08:00)" },
+  { id: "10h", hours: 10, label: "10 Hours Shift (Extended Day / Night)", desc: "Day (08:00 - 18:00) / Night (20:00 - 06:00)" },
+  { id: "8h", hours: 8, label: "8 Hours Shift (Standard General / 3-Shift)", desc: "General (09:00 - 17:00) or Shift I/II/III" },
+  { id: "custom", hours: 8, label: "Custom Shift Hours", desc: "User defined working hours" }
+];
+
+export const initialEmployees = [
+  {
+    id: "EMP-001",
+    empCode: "SIL-PR-01",
+    fullName: "Rameshwar Prasad Sharma",
+    gender: "Male",
+    dob: "1988-06-14",
+    phone: "+91 98261 44551",
+    email: "rameshwar.p@samyakpackaging.com",
+    department: "Rotogravure Printing",
+    designation: "Printing Chief Operator",
+    joiningDate: "2021-03-15",
+    status: "Active",
+    shiftDurationHours: 12,
+    defaultShift: "Shift A: Day (08:00 - 20:00)",
+    address: "House 42, Sector 1, Industrial Area, Pithampur, MP - 454775",
+    aadharNo: "4521 8890 1234",
+    panNo: "ABCPS1234F",
+    uanNo: "101234567890",
+    esicNo: "23001234560000001",
+    emergencyContact: "Sunita Sharma (Wife) - +91 98261 99882",
+    bankDetails: {
+      bankName: "State Bank of India",
+      accountNumber: "30987654321",
+      ifscCode: "SBIN0004521",
+      accountHolderName: "Rameshwar Prasad Sharma",
+      branch: "Pithampur Sector 3 Branch",
+      paymentMode: "Bank Transfer (NEFT)"
+    },
+    salaryStructure: {
+      basicSalary: 18000,
+      hra: 7200,
+      otherAllowance: 2800,
+      dinnerAllowancePerNight: 150,
+      fixedDinnerAllowance: 0,
+      optPf: true,
+      optEsic: false, // > 21,000 gross
+      professionalTax: 200
+    },
+    offboarding: {
+      resignationDate: "",
+      relievingDate: "",
+      noticePeriodDays: 30,
+      handoverComplete: false,
+      settlementStatus: "N/A",
+      notes: ""
+    }
+  },
+  {
+    id: "EMP-002",
+    empCode: "SIL-PR-02",
+    fullName: "Dinesh Kumar Yadav",
+    gender: "Male",
+    dob: "1994-11-20",
+    phone: "+91 97552 11009",
+    email: "dinesh.y@samyakpackaging.com",
+    department: "Rotogravure Printing",
+    designation: "Printing Operator",
+    joiningDate: "2023-01-10",
+    status: "Active",
+    shiftDurationHours: 12,
+    defaultShift: "Shift B: Night (20:00 - 08:00)",
+    address: "Village Kheda, Rau-Pithampur Road, Indore, MP",
+    aadharNo: "7766 5544 3322",
+    panNo: "BKVPD9988E",
+    uanNo: "101998877665",
+    esicNo: "23009988770000002",
+    emergencyContact: "Mahesh Yadav (Brother) - +91 97552 44332",
+    bankDetails: {
+      bankName: "HDFC Bank",
+      accountNumber: "50100458963214",
+      ifscCode: "HDFC0001234",
+      accountHolderName: "Dinesh Kumar Yadav",
+      branch: "Indore Transport Nagar",
+      paymentMode: "Bank Transfer (NEFT)"
+    },
+    salaryStructure: {
+      basicSalary: 12500,
+      hra: 5000,
+      otherAllowance: 1500,
+      dinnerAllowancePerNight: 150,
+      fixedDinnerAllowance: 0,
+      optPf: true,
+      optEsic: true, // <= 21,000 gross
+      professionalTax: 150
+    },
+    offboarding: {
+      resignationDate: "",
+      relievingDate: "",
+      noticePeriodDays: 30,
+      handoverComplete: false,
+      settlementStatus: "N/A",
+      notes: ""
+    }
+  },
+  {
+    id: "EMP-003",
+    empCode: "SIL-LAM-01",
+    fullName: "Sunil Verma",
+    gender: "Male",
+    dob: "1991-04-18",
+    phone: "+91 98930 22334",
+    email: "sunil.verma@samyakpackaging.com",
+    department: "Solventless Lamination",
+    designation: "Lamination Master Operator",
+    joiningDate: "2022-06-01",
+    status: "Active",
+    shiftDurationHours: 10,
+    defaultShift: "Shift A: Day (08:00 - 18:00)",
+    address: "Flat 204, Om Gurudev Complex, Mhow, MP",
+    aadharNo: "8899 1122 3344",
+    panNo: "CQRPV5566G",
+    uanNo: "101556677889",
+    esicNo: "23005566770000003",
+    emergencyContact: "Aarti Verma (Wife) - +91 98930 77665",
+    bankDetails: {
+      bankName: "Bank of Baroda",
+      accountNumber: "04560100098765",
+      ifscCode: "BARB0MHOWXX",
+      accountHolderName: "Sunil Verma",
+      branch: "Mhow Main Branch",
+      paymentMode: "Bank Transfer (NEFT)"
+    },
+    salaryStructure: {
+      basicSalary: 15000,
+      hra: 6000,
+      otherAllowance: 2000,
+      dinnerAllowancePerNight: 120,
+      fixedDinnerAllowance: 0,
+      optPf: true,
+      optEsic: false,
+      professionalTax: 200
+    },
+    offboarding: {
+      resignationDate: "",
+      relievingDate: "",
+      noticePeriodDays: 30,
+      handoverComplete: false,
+      settlementStatus: "N/A",
+      notes: ""
+    }
+  },
+  {
+    id: "EMP-004",
+    empCode: "SIL-QC-01",
+    fullName: "Pooja Trivedi",
+    gender: "Female",
+    dob: "1996-09-25",
+    phone: "+91 94250 88991",
+    email: "pooja.t@samyakpackaging.com",
+    department: "Quality Assurance (QA/QC)",
+    designation: "Senior QC Chemist",
+    joiningDate: "2023-08-15",
+    status: "Active",
+    shiftDurationHours: 8,
+    defaultShift: "General Shift (09:00 - 17:00)",
+    address: "Scheme 78, Vijay Nagar, Indore, MP",
+    aadharNo: "3344 5566 7788",
+    panNo: "BPTTP8877K",
+    uanNo: "101334455667",
+    esicNo: "",
+    emergencyContact: "Anand Trivedi (Father) - +91 94250 11223",
+    bankDetails: {
+      bankName: "Axis Bank",
+      accountNumber: "918010045678901",
+      ifscCode: "UTIB0000456",
+      accountHolderName: "Pooja Trivedi",
+      branch: "Vijay Nagar Indore",
+      paymentMode: "Bank Transfer (NEFT)"
+    },
+    salaryStructure: {
+      basicSalary: 22000,
+      hra: 8800,
+      otherAllowance: 4200,
+      dinnerAllowancePerNight: 0,
+      fixedDinnerAllowance: 0,
+      optPf: true,
+      optEsic: false,
+      professionalTax: 200
+    },
+    offboarding: {
+      resignationDate: "",
+      relievingDate: "",
+      noticePeriodDays: 30,
+      handoverComplete: false,
+      settlementStatus: "N/A",
+      notes: ""
+    }
+  },
+  {
+    id: "EMP-005",
+    empCode: "SIL-SLT-01",
+    fullName: "Mukesh Bhati",
+    gender: "Male",
+    dob: "1993-02-12",
+    phone: "+91 96850 44112",
+    email: "mukesh.b@samyakpackaging.com",
+    department: "High-Speed Slitting",
+    designation: "Slitting Machine Operator",
+    joiningDate: "2022-11-20",
+    status: "Active",
+    shiftDurationHours: 12,
+    defaultShift: "Shift A: Day (08:00 - 20:00)",
+    address: "Gram Sagore, Pithampur Sector 2, MP",
+    aadharNo: "5566 7788 9900",
+    panNo: "DEXPB3344M",
+    uanNo: "101889900112",
+    esicNo: "23008899000000005",
+    emergencyContact: "Kishore Bhati (Father) - +91 96850 99881",
+    bankDetails: {
+      bankName: "State Bank of India",
+      accountNumber: "20458963217",
+      ifscCode: "SBIN0004521",
+      accountHolderName: "Mukesh Bhati",
+      branch: "Pithampur Sector 3",
+      paymentMode: "Bank Transfer (NEFT)"
+    },
+    salaryStructure: {
+      basicSalary: 11000,
+      hra: 4400,
+      otherAllowance: 1600,
+      dinnerAllowancePerNight: 150,
+      fixedDinnerAllowance: 0,
+      optPf: true,
+      optEsic: true,
+      professionalTax: 150
+    },
+    offboarding: {
+      resignationDate: "",
+      relievingDate: "",
+      noticePeriodDays: 30,
+      handoverComplete: false,
+      settlementStatus: "N/A",
+      notes: ""
+    }
+  },
+  {
+    id: "EMP-006",
+    empCode: "SIL-PCH-01",
+    fullName: "Anil Sahu",
+    gender: "Male",
+    dob: "1995-07-30",
+    phone: "+91 91110 33445",
+    email: "anil.sahu@samyakpackaging.com",
+    department: "Pouch Making & Sealing",
+    designation: "Pouch Machine Operator",
+    joiningDate: "2024-02-01",
+    status: "Active",
+    shiftDurationHours: 10,
+    defaultShift: "Shift B: Night (20:00 - 06:00)",
+    address: "Kishanpura, Mhow, MP",
+    aadharNo: "1122 3344 5566",
+    panNo: "EIZPS4455Q",
+    uanNo: "101445566778",
+    esicNo: "23004455660000006",
+    emergencyContact: "Rajesh Sahu (Uncle) - +91 91110 88992",
+    bankDetails: {
+      bankName: "Punjab National Bank",
+      accountNumber: "1234000100987654",
+      ifscCode: "PUNB0123400",
+      accountHolderName: "Anil Sahu",
+      branch: "Mhow Cantt",
+      paymentMode: "Bank Transfer (NEFT)"
+    },
+    salaryStructure: {
+      basicSalary: 10500,
+      hra: 4200,
+      otherAllowance: 1300,
+      dinnerAllowancePerNight: 120,
+      fixedDinnerAllowance: 0,
+      optPf: true,
+      optEsic: true,
+      professionalTax: 150
+    },
+    offboarding: {
+      resignationDate: "",
+      relievingDate: "",
+      noticePeriodDays: 30,
+      handoverComplete: false,
+      settlementStatus: "N/A",
+      notes: ""
+    }
+  }
+];
+
+export const initialAttendanceRecords = [
+  {
+    id: "ATT-20260827-EMP001",
+    employeeId: "EMP-001",
+    date: "2026-08-27",
+    shiftType: "Shift A: Day (08:00 - 20:00)",
+    shiftHours: 12,
+    status: "Present",
+    checkIn: "07:55",
+    checkOut: "22:00",
+    totalHoursWorked: 14,
+    overtimeHours: 2,
+    overtimeReason: "Extended production run for Dev Agro urgent job lot on Rotomec 8-Color",
+    overtimeStatus: "Pending Approval", // "Pending Approval", "Approved", "Rejected"
+    overtimeApprovedBy: "",
+    overtimeApprovedDate: "",
+    dinnerAllowanceEligible: false,
+    markedBy: "Samyak Jain (Admin)"
+  },
+  {
+    id: "ATT-20260827-EMP002",
+    employeeId: "EMP-002",
+    date: "2026-08-27",
+    shiftType: "Shift B: Night (20:00 - 08:00)",
+    shiftHours: 12,
+    status: "Present",
+    checkIn: "19:50",
+    checkOut: "08:10",
+    totalHoursWorked: 12.33,
+    overtimeHours: 0,
+    overtimeReason: "",
+    overtimeStatus: "Approved",
+    overtimeApprovedBy: "Plant Manager",
+    overtimeApprovedDate: "2026-08-27",
+    dinnerAllowanceEligible: true, // Night shift gets Dinner Allowance
+    markedBy: "Shift Supervisor"
+  },
+  {
+    id: "ATT-20260827-EMP003",
+    employeeId: "EMP-003",
+    date: "2026-08-27",
+    shiftType: "Shift A: Day (08:00 - 18:00)",
+    shiftHours: 10,
+    status: "Present",
+    checkIn: "08:00",
+    checkOut: "20:00",
+    totalHoursWorked: 12,
+    overtimeHours: 2,
+    overtimeReason: "Solventless lamination line setup and adhesive curing monitoring",
+    overtimeStatus: "Approved",
+    overtimeApprovedBy: "Samyak Jain (Admin)",
+    overtimeApprovedDate: "2026-08-27",
+    dinnerAllowanceEligible: false,
+    markedBy: "Samyak Jain (Admin)"
+  },
+  {
+    id: "ATT-20260827-EMP004",
+    employeeId: "EMP-004",
+    date: "2026-08-27",
+    shiftType: "General Shift (09:00 - 17:00)",
+    shiftHours: 8,
+    status: "Present",
+    checkIn: "08:50",
+    checkOut: "17:15",
+    totalHoursWorked: 8.4,
+    overtimeHours: 0,
+    overtimeReason: "",
+    overtimeStatus: "Approved",
+    overtimeApprovedBy: "",
+    overtimeApprovedDate: "",
+    dinnerAllowanceEligible: false,
+    markedBy: "HR Department"
+  },
+  {
+    id: "ATT-20260827-EMP005",
+    employeeId: "EMP-005",
+    date: "2026-08-27",
+    shiftType: "Shift A: Day (08:00 - 20:00)",
+    shiftHours: 12,
+    status: "Present",
+    checkIn: "07:50",
+    checkOut: "23:00",
+    totalHoursWorked: 15,
+    overtimeHours: 3,
+    overtimeReason: "High-speed slitting roll rewinding for immediate dispatch challan",
+    overtimeStatus: "Pending Approval",
+    overtimeApprovedBy: "",
+    overtimeApprovedDate: "",
+    dinnerAllowanceEligible: false,
+    markedBy: "Shift Supervisor"
+  }
+];
+
+export const initialSalaryAdvances = [
+  {
+    id: "ADV-2026-001",
+    employeeId: "EMP-002",
+    employeeName: "Dinesh Kumar Yadav",
+    department: "Rotogravure Printing",
+    requestDate: "2026-08-10",
+    advanceAmount: 10000,
+    repaymentTenureMonths: 2,
+    monthlyEmiAmount: 5000,
+    reason: "Urgent medical expense for family member",
+    status: "Approved & Disbursed", // "Pending Approval", "Approved & Disbursed", "Rejected", "Fully Recovered"
+    approvedBy: "Plant Manager",
+    approvedDate: "2026-08-11",
+    disbursedDate: "2026-08-11",
+    totalRecoveredAmount: 0,
+    remainingBalance: 10000,
+    deductionHistory: []
+  },
+  {
+    id: "ADV-2026-002",
+    employeeId: "EMP-005",
+    employeeName: "Mukesh Bhati",
+    department: "High-Speed Slitting",
+    requestDate: "2026-08-20",
+    advanceAmount: 6000,
+    repaymentTenureMonths: 3,
+    monthlyEmiAmount: 2000,
+    reason: "Children school admission and books fee",
+    status: "Pending Approval",
+    approvedBy: "",
+    approvedDate: "",
+    disbursedDate: "",
+    totalRecoveredAmount: 0,
+    remainingBalance: 6000,
+    deductionHistory: []
+  }
+];
+
+// Helper to compute salary for a specific month and employee
+export function calculateEmployeeMonthlySalary(emp, monthKey, attendanceList = [], advanceList = [], totalWorkingDays = 26) {
+  if (!emp) return null;
+
+  const struct = emp.salaryStructure || {};
+  const basic = Number(struct.basicSalary) || 0;
+  const hra = Number(struct.hra) || 0;
+  const other = Number(struct.otherAllowance) || 0;
+  const fixedGross = basic + hra + other;
+  const shiftHours = Number(emp.shiftDurationHours) || 12;
+
+  // Filter attendance for this employee and month (e.g. '2026-08')
+  const empAtt = attendanceList.filter(a => 
+    a.employeeId === emp.id && 
+    (a.date || '').startsWith(monthKey)
+  );
+
+  let presentCount = 0;
+  let halfDayCount = 0;
+  let paidLeaveCount = 0;
+  let absentCount = 0;
+  let nightShiftCount = 0;
+  let approvedOtHours = 0;
+  let pendingOtHours = 0;
+
+  empAtt.forEach(a => {
+    if (a.status === 'Present') presentCount += 1;
+    else if (a.status === 'Half Day') halfDayCount += 1;
+    else if (a.status === 'Paid Leave') paidLeaveCount += 1;
+    else if (a.status === 'Absent') absentCount += 1;
+
+    // Check night shift
+    if (a.dinnerAllowanceEligible || (a.shiftType && a.shiftType.toLowerCase().includes('night'))) {
+      nightShiftCount += 1;
+    }
+
+    // Overtime hours
+    const ot = Number(a.overtimeHours) || 0;
+    if (ot > 0) {
+      if (a.overtimeStatus === 'Approved') {
+        approvedOtHours += ot;
+      } else if (a.overtimeStatus === 'Pending Approval') {
+        pendingOtHours += ot;
+      }
+    }
+  });
+
+  // Effective days paid = Present + (HalfDay * 0.5) + PaidLeave
+  const effectivePaidDays = presentCount + (halfDayCount * 0.5) + paidLeaveCount;
+  const proRataFactor = totalWorkingDays > 0 ? (effectivePaidDays / totalWorkingDays) : 1;
+
+  // Earned base salary components
+  const earnedBasic = Math.round(basic * proRataFactor);
+  const earnedHra = Math.round(hra * proRataFactor);
+  const earnedOther = Math.round(other * proRataFactor);
+
+  // Dinner Allowance (either per night shift or fixed)
+  const dinnerPerNight = Number(struct.dinnerAllowancePerNight) || 0;
+  const fixedDinner = Number(struct.fixedDinnerAllowance) || 0;
+  const dinnerAllowance = fixedDinner > 0 ? fixedDinner : (nightShiftCount * dinnerPerNight);
+
+  // Overtime Calculation:
+  // Hourly Base Rate = Fixed Gross / (Working Days * Shift Hours)
+  const totalStandardMonthHours = totalWorkingDays * shiftHours;
+  const hourlyRate = totalStandardMonthHours > 0 ? (fixedGross / totalStandardMonthHours) : 0;
+  // Overtime rate standard multiplier: 1.5x of hourly rate for flexible packaging manufacturing
+  const otRatePerHr = hourlyRate * 1.5;
+  const earnedOtPay = Math.round(approvedOtHours * otRatePerHr);
+
+  // Total Gross Earned
+  const totalGrossEarned = earnedBasic + earnedHra + earnedOther + dinnerAllowance + earnedOtPay;
+
+  // Statutory Deductions:
+  // PF: 12% of Earned Basic if opted in (or capped at ₹1,800 if desired)
+  let pfDeduction = 0;
+  if (struct.optPf) {
+    pfDeduction = Math.round(earnedBasic * 0.12);
+  }
+
+  // ESIC: 0.75% of Gross Earned if opted in (Standard ESIC threshold is gross <= ₹21,000)
+  let esicDeduction = 0;
+  if (struct.optEsic) {
+    esicDeduction = Math.round(totalGrossEarned * 0.0075);
+  }
+
+  // Professional Tax
+  const ptDeduction = Number(struct.professionalTax) || 0;
+
+  // Salary Advance EMI Deduction (active approved advances)
+  const activeAdvances = advanceList.filter(adv => 
+    adv.employeeId === emp.id && 
+    (adv.status === 'Approved & Disbursed') &&
+    (adv.remainingBalance > 0)
+  );
+  
+  let totalAdvanceDeduction = 0;
+  activeAdvances.forEach(adv => {
+    const emi = Number(adv.monthlyEmiAmount) || 0;
+    const deductThisMonth = Math.min(emi, adv.remainingBalance);
+    totalAdvanceDeduction += deductThisMonth;
+  });
+
+  const totalDeductions = pfDeduction + esicDeduction + ptDeduction + totalAdvanceDeduction;
+  const netPayable = Math.max(0, totalGrossEarned - totalDeductions);
+
+  return {
+    employeeId: emp.id,
+    empCode: emp.empCode,
+    fullName: emp.fullName,
+    department: emp.department,
+    designation: emp.designation,
+    shiftDurationHours: shiftHours,
+    bankDetails: emp.bankDetails,
+    totalWorkingDays,
+    presentCount,
+    halfDayCount,
+    paidLeaveCount,
+    absentCount,
+    effectivePaidDays,
+    nightShiftCount,
+    approvedOtHours,
+    pendingOtHours,
+    hourlyRate: parseFloat(hourlyRate.toFixed(2)),
+    otRatePerHr: parseFloat(otRatePerHr.toFixed(2)),
+    // Earnings
+    fixedGross,
+    earnedBasic,
+    earnedHra,
+    earnedOther,
+    dinnerAllowance,
+    earnedOtPay,
+    totalGrossEarned,
+    // Deductions
+    pfDeduction,
+    esicDeduction,
+    ptDeduction,
+    totalAdvanceDeduction,
+    totalDeductions,
+    // Net
+    netPayable
+  };
+}
+
 
 
 
