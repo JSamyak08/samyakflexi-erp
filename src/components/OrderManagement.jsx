@@ -12,7 +12,8 @@ import {
   Plus,
   PauseCircle,
   PlayCircle,
-  Trash2
+  Trash2,
+  Clock
 } from 'lucide-react';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
 import TablePagination, { usePagination } from './TablePagination';
