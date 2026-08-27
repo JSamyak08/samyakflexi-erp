@@ -598,21 +598,21 @@ export default function EmployeeManagement({
     <div className="tab-container" style={{ padding: '20px 24px' }}>
       
       {/* Header Banner */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
         <div>
-          <h2 style={{ fontSize: '1.6rem', fontWeight: '900', color: 'var(--primary-brand)', margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Users size={28} /> Employee Management & Payroll HR Engine
+          <h2 style={{ fontSize: '1.5rem', fontWeight: '900', color: 'var(--primary-brand)', margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Users size={26} /> Employee Management & Payroll HR Engine
           </h2>
-          <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+          <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
             Manage staff onboarding, 8h/10h/12h shift attendance, daily overtime approvals, salary advances, statutory PF/ESIC, & monthly payroll processing.
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <button 
             type="button" 
             className="btn-secondary" 
-            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '700' }}
             onClick={() => setShowAdvanceModal(true)}
           >
             <Coins size={16} /> Request Salary Advance
@@ -621,7 +621,7 @@ export default function EmployeeManagement({
           <button 
             type="button" 
             className="btn-primary" 
-            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '700' }}
             onClick={handleOpenOnboardModal}
           >
             <UserPlus size={16} /> Onboard New Employee
@@ -683,7 +683,7 @@ export default function EmployeeManagement({
       {activeSubTab === 'directory' && (
         <div>
           {/* Quick Metrics Bar */}
-          <div className="stat-cards-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', marginBottom: '20px' }}>
+          <div className="stat-cards-grid">
             <div className="stat-card">
               <div className="stat-card-title">Active Factory Strength</div>
               <div className="stat-card-val" style={{ color: '#0f172a' }}>
@@ -1318,7 +1318,7 @@ export default function EmployeeManagement({
           </div>
 
           {/* Payroll KPI Summary Cards */}
-          <div className="stat-cards-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginBottom: '18px' }}>
+          <div className="stat-cards-grid">
             <div className="stat-card">
               <div className="stat-card-title">Net Salary Payout</div>
               <div className="stat-card-val" style={{ color: '#0284c7' }}>
