@@ -486,6 +486,18 @@ export default function EmployeeManagement({
     const selectedEmp = employees.find(emp => emp.id === advEmpId);
     if (!selectedEmp) return;
 
+    // Rule Enforcement: Any employee with a previous outstanding advance cannot request a new advance before completion of old dues
+    const activeExistingAdvance = salaryAdvances.find(adv => 
+      adv.employeeId === selectedEmp.id && 
+      (adv.status === 'Approved & Disbursed' || adv.status === 'Pending Approval') &&
+      Number(adv.remainingBalance ?? (adv.advanceAmount - (adv.totalRecoveredAmount || 0))) > 0
+    );
+
+    if (activeExistingAdvance) {
+      alert(`⚠️ Advance Blocked: ${selectedEmp.fullName} already has an active outstanding advance (${activeExistingAdvance.id}) with ₹${Number(activeExistingAdvance.remainingBalance || activeExistingAdvance.advanceAmount).toLocaleString()} remaining dues! New advances cannot be requested until previous dues are 100% completed.`);
+      return;
+    }
+
     const amt = Number(advAmount);
     const tenure = Number(advTenureMonths) || 1;
     const emi = Math.round(amt / tenure);
@@ -1943,68 +1955,115 @@ export default function EmployeeManagement({
               </button>
             </div>
 
-            <form onSubmit={handleSaveSalaryAdvance}>
-              <div style={{ marginBottom: '12px' }}>
-                <label className="form-label">Select Employee *</label>
-                <select className="form-control" value={advEmpId} onChange={e => setAdvEmpId(e.target.value)} required>
-                  <option value="">-- Choose Employee --</option>
-                  {employees.filter(e => e.status === 'Active' || e.status === 'On Probation').map(e => (
-                    <option key={e.id} value={e.id}>{e.fullName} ({e.empCode || e.id}) - {e.department}</option>
-                  ))}
-                </select>
-              </div>
+            {/* Advance Request Form */}
+            {(() => {
+              const selectedEmpActiveAdvance = advEmpId ? salaryAdvances.find(adv => 
+                adv.employeeId === advEmpId && 
+                (adv.status === 'Approved & Disbursed' || adv.status === 'Pending Approval') &&
+                Number(adv.remainingBalance ?? (adv.advanceAmount - (adv.totalRecoveredAmount || 0))) > 0
+              ) : null;
 
-              <div className="form-grid-2" style={{ marginBottom: '12px' }}>
-                <div>
-                  <label className="form-label">Advance Amount (₹) *</label>
-                  <input 
-                    type="number" 
-                    className="form-control" 
-                    value={advAmount} 
-                    onChange={e => setAdvAmount(e.target.value)} 
-                    placeholder="e.g. 10000" 
-                    required 
-                  />
-                </div>
+              return (
+                <form onSubmit={handleSaveSalaryAdvance}>
+                  <div style={{ marginBottom: '12px' }}>
+                    <label className="form-label">Select Employee *</label>
+                    <select className="form-control" value={advEmpId} onChange={e => setAdvEmpId(e.target.value)} required>
+                      <option value="">-- Choose Employee --</option>
+                      {employees.filter(e => e.status === 'Active' || e.status === 'On Probation').map(e => {
+                        const hasActive = salaryAdvances.find(adv => 
+                          adv.employeeId === e.id && 
+                          (adv.status === 'Approved & Disbursed' || adv.status === 'Pending Approval') &&
+                          Number(adv.remainingBalance ?? (adv.advanceAmount - (adv.totalRecoveredAmount || 0))) > 0
+                        );
+                        return (
+                          <option key={e.id} value={e.id}>
+                            {e.fullName} ({e.empCode || e.id}) - {e.department} {hasActive ? `[⚠️ Advance Due: ₹${Number(hasActive.remainingBalance || hasActive.advanceAmount).toLocaleString()}]` : ''}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
 
-                <div>
-                  <label className="form-label">Repayment Tenure (Months)</label>
-                  <select className="form-control" value={advTenureMonths} onChange={e => setAdvTenureMonths(Number(e.target.value) || 1)}>
-                    <option value={1}>1 Month (Full in next salary)</option>
-                    <option value={2}>2 Months (50% EMI)</option>
-                    <option value={3}>3 Months (33.3% EMI)</option>
-                    <option value={4}>4 Months (25% EMI)</option>
-                    <option value={6}>6 Months (16.6% EMI)</option>
-                  </select>
-                </div>
-              </div>
+                  {selectedEmpActiveAdvance && (
+                    <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', padding: '14px 16px', borderRadius: '8px', marginBottom: '16px', color: '#991b1b', fontSize: '0.84rem' }}>
+                      <div style={{ fontWeight: '900', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px', color: '#b91c1c' }}>
+                        <AlertTriangle size={18} style={{ color: '#dc2626' }} /> Advance Request Blocked — Outstanding Advance Pending
+                      </div>
+                      <div>
+                        This employee already has an active advance (<b>{selectedEmpActiveAdvance.id}</b>) with an outstanding balance of <b style={{ color: '#b91c1c' }}>₹{Number(selectedEmpActiveAdvance.remainingBalance || selectedEmpActiveAdvance.advanceAmount).toLocaleString()}</b> ({selectedEmpActiveAdvance.status}). As per factory policy, a new advance cannot be requested before completion of old dues.
+                      </div>
+                    </div>
+                  )}
 
-              {Number(advAmount) > 0 && (
-                <div style={{ background: '#f0fdf4', padding: '10px 14px', borderRadius: '6px', border: '1px solid #bbf7d0', marginBottom: '14px', fontSize: '0.84rem', color: '#166534' }}>
-                  💰 Monthly Salary EMI Deduction: <b>₹{Math.round(Number(advAmount) / (Number(advTenureMonths) || 1)).toLocaleString()} / month</b>
-                </div>
-              )}
+                  <div className="form-grid-2" style={{ marginBottom: '12px' }}>
+                    <div>
+                      <label className="form-label">Advance Amount (₹) *</label>
+                      <input 
+                        type="number" 
+                        className="form-control" 
+                        value={advAmount} 
+                        onChange={e => setAdvAmount(e.target.value)} 
+                        placeholder="e.g. 10000" 
+                        disabled={Boolean(selectedEmpActiveAdvance)}
+                        required 
+                      />
+                    </div>
 
-              <div style={{ marginBottom: '18px' }}>
-                <label className="form-label">Reason for Advance Request</label>
-                <textarea 
-                  className="form-control" 
-                  rows={2} 
-                  value={advReason} 
-                  onChange={e => setAdvReason(e.target.value)} 
-                  placeholder="e.g. Family medical emergency, festival, children school fee..."
-                />
-              </div>
+                    <div>
+                      <label className="form-label">Repayment Tenure (Months)</label>
+                      <select 
+                        className="form-control" 
+                        value={advTenureMonths} 
+                        onChange={e => setAdvTenureMonths(Number(e.target.value) || 1)}
+                        disabled={Boolean(selectedEmpActiveAdvance)}
+                      >
+                        <option value={1}>1 Month (Full in next salary)</option>
+                        <option value={2}>2 Months (50% EMI)</option>
+                        <option value={3}>3 Months (33.3% EMI)</option>
+                        <option value={4}>4 Months (25% EMI)</option>
+                        <option value={6}>6 Months (16.6% EMI)</option>
+                      </select>
+                    </div>
+                  </div>
 
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                <button type="button" className="btn-secondary" onClick={() => setShowAdvanceModal(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn-primary">
-                  Submit Advance Request
-                </button>
-              </div>
-            </form>
+                  {Number(advAmount) > 0 && !selectedEmpActiveAdvance && (
+                    <div style={{ background: '#f0fdf4', padding: '10px 14px', borderRadius: '6px', border: '1px solid #bbf7d0', marginBottom: '14px', fontSize: '0.84rem', color: '#166534' }}>
+                      💰 Monthly Salary EMI Deduction: <b>₹{Math.round(Number(advAmount) / (Number(advTenureMonths) || 1)).toLocaleString()} / month</b>
+                    </div>
+                  )}
+
+                  <div style={{ marginBottom: '18px' }}>
+                    <label className="form-label">Reason for Advance Request</label>
+                    <textarea 
+                      className="form-control" 
+                      rows={2} 
+                      value={advReason} 
+                      onChange={e => setAdvReason(e.target.value)} 
+                      placeholder="e.g. Family medical emergency, festival, children school fee..."
+                      disabled={Boolean(selectedEmpActiveAdvance)}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                    <button type="button" className="btn-secondary" onClick={() => setShowAdvanceModal(false)}>
+                      Cancel
+                    </button>
+                    <button 
+                      type="submit" 
+                      className="btn-primary"
+                      disabled={Boolean(selectedEmpActiveAdvance)}
+                      style={{
+                        opacity: selectedEmpActiveAdvance ? 0.5 : 1,
+                        cursor: selectedEmpActiveAdvance ? 'not-allowed' : 'pointer'
+                      }}
+                      title={selectedEmpActiveAdvance ? 'Request blocked due to outstanding advance' : 'Submit Advance Request'}
+                    >
+                      Submit Advance Request
+                    </button>
+                  </div>
+                </form>
+              );
+            })()}
           </div>
         </div>
       )}
