@@ -84,6 +84,11 @@ export default function EmployeeManagement({
     return roleStr.includes('admin') || roleStr.includes('plant') || roleStr.includes('hr') || roleStr.includes('director');
   }, [currentUser, userRole]);
 
+  const isAdmin = useMemo(() => {
+    const roleStr = String(currentUser?.role || userRole || '').toLowerCase().trim();
+    return roleStr === 'admin';
+  }, [currentUser, userRole]);
+
   // Sub-Tab Navigation: 'directory', 'attendance', 'overtime', 'advances', 'payroll'
   const [activeSubTab, setActiveSubTab] = useState(() => {
     return urlParams?.subTab || 'directory';
@@ -240,6 +245,10 @@ export default function EmployeeManagement({
 
   // Open Edit Employee Modal
   const handleOpenEditModal = (emp) => {
+    if (!isAdmin) {
+      alert("⛔ Permission Denied: Only the Admin role is authorized to Edit employee records.");
+      return;
+    }
     setEditingEmployee(emp);
     setFormEmpCode(emp.empCode || emp.id);
     setFormFullName(emp.fullName || '');
@@ -353,6 +362,10 @@ export default function EmployeeManagement({
 
   // Open Offboarding Modal
   const handleOpenOffboardModal = (emp) => {
+    if (!isAdmin) {
+      alert("⛔ Permission Denied: Only the Admin role is authorized to Offboard employees.");
+      return;
+    }
     setOffboardingEmployee(emp);
     const off = emp.offboarding || {};
     setOffResignDate(off.resignationDate || new Date().toISOString().split('T')[0]);
@@ -388,6 +401,10 @@ export default function EmployeeManagement({
 
   // Delete Employee
   const handleDeleteEmployee = (id, name) => {
+    if (!isAdmin) {
+      alert("⛔ Permission Denied: Only the Admin role is authorized to Delete employee records.");
+      return;
+    }
     if (!window.confirm(`Are you sure you want to delete employee "${name}"? This action cannot be undone.`)) return;
     if (onDeleteEmployee) onDeleteEmployee(id);
     deleteEmployeeFromSupabase(id);
@@ -982,35 +999,55 @@ export default function EmployeeManagement({
                           </span>
                         </td>
                         <td style={{ textAlign: 'center' }}>
-                          <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                            <button 
-                              type="button" 
-                              className="btn-secondary" 
-                              style={{ padding: '3px 8px', fontSize: '0.75rem', color: '#0284c7' }}
-                              onClick={() => handleOpenEditModal(emp)}
-                              title="Edit Employee & Shift Hours"
+                          {isAdmin ? (
+                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                              <button 
+                                type="button" 
+                                className="btn-secondary" 
+                                style={{ padding: '3px 8px', fontSize: '0.75rem', color: '#0284c7' }}
+                                onClick={() => handleOpenEditModal(emp)}
+                                title="Edit Employee & Shift Hours (Admin Only)"
+                              >
+                                <Edit3 size={13} /> Edit
+                              </button>
+                              <button 
+                                type="button" 
+                                className="btn-secondary" 
+                                style={{ padding: '3px 8px', fontSize: '0.75rem', color: '#d97706' }}
+                                onClick={() => handleOpenOffboardModal(emp)}
+                                title="Offboard / Relieving / Settlement (Admin Only)"
+                              >
+                                <UserMinus size={13} /> Offboard
+                              </button>
+                              <button 
+                                type="button" 
+                                className="btn-secondary" 
+                                style={{ padding: '3px 8px', fontSize: '0.75rem', color: '#ef4444' }}
+                                onClick={() => handleDeleteEmployee(emp.id, emp.fullName)}
+                                title="Delete Record (Admin Only)"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          ) : (
+                            <span 
+                              style={{ 
+                                display: 'inline-flex', 
+                                alignItems: 'center', 
+                                gap: '4px', 
+                                padding: '3px 8px', 
+                                fontSize: '0.72rem', 
+                                fontWeight: '700', 
+                                color: '#64748b', 
+                                background: '#f1f5f9', 
+                                borderRadius: '4px',
+                                border: '1px solid #cbd5e1'
+                              }}
+                              title="Edit, Offboard, and Delete permissions are restricted to Admin role."
                             >
-                              <Edit3 size={13} /> Edit
-                            </button>
-                            <button 
-                              type="button" 
-                              className="btn-secondary" 
-                              style={{ padding: '3px 8px', fontSize: '0.75rem', color: '#d97706' }}
-                              onClick={() => handleOpenOffboardModal(emp)}
-                              title="Offboard / Relieving / Settlement"
-                            >
-                              <UserMinus size={13} /> Offboard
-                            </button>
-                            <button 
-                              type="button" 
-                              className="btn-secondary" 
-                              style={{ padding: '3px 8px', fontSize: '0.75rem', color: '#ef4444' }}
-                              onClick={() => handleDeleteEmployee(emp.id, emp.fullName)}
-                              title="Delete Record"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
+                              <Lock size={12} style={{ color: '#64748b' }} /> Admin Only
+                            </span>
+                          )}
                         </td>
                       </tr>
                     );
