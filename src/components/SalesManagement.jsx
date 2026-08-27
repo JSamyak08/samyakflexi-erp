@@ -23,7 +23,9 @@ import {
   Lock, 
   Layers, 
   SlidersHorizontal,
-  X
+  X,
+  ChevronDown,
+  Sparkles
 } from 'lucide-react';
 import SalesQuotationPDF from './SalesQuotationPDF';
 import { 
@@ -360,6 +362,85 @@ export default function SalesManagement({
     setNewClientPhone(''); setNewClientEmail('');
   };
 
+  // Job Master dropdown state for product items table
+  const [activeJobDropdownIndex, setActiveJobDropdownIndex] = useState(null);
+
+  // Filter Job Masters for autocomplete in Product Items table
+  const getJobMasterSuggestions = (query, clientNameFilter) => {
+    const allJM = Array.isArray(jobMasters) ? jobMasters : [];
+    const q = (query || '').toLowerCase().trim();
+    if (!q) {
+      if (clientNameFilter) {
+        const clientNorm = clientNameFilter.toLowerCase().trim();
+        const matched = allJM.filter(j => (j.clientName || '').toLowerCase().includes(clientNorm) || clientNorm.includes((j.clientName || '').toLowerCase()));
+        const others = allJM.filter(j => !(j.clientName || '').toLowerCase().includes(clientNorm) && !clientNorm.includes((j.clientName || '').toLowerCase()));
+        return [...matched, ...others];
+      }
+      return allJM;
+    }
+    return allJM.filter(j => 
+      (j.jobName || '').toLowerCase().includes(q) ||
+      (j.skuCode || '').toLowerCase().includes(q) ||
+      (j.clientName || '').toLowerCase().includes(q) ||
+      (j.structure || '').toLowerCase().includes(q) ||
+      (j.id || '').toLowerCase().includes(q)
+    );
+  };
+
+  // Auto-fill quotation item row from chosen Job Master
+  const handleSelectJobMaster = (jm, rowIdx) => {
+    const updated = [...items];
+    const target = updated[rowIdx];
+    target.jobTitle = jm.jobName || '';
+    target.jobMasterId = jm.id;
+    target.skuCode = jm.skuCode || '';
+
+    // Pre-fill layers & structure
+    if (Array.isArray(jm.layers) && jm.layers.length > 0) {
+      target.layers = jm.layers.map((l, i) => ({
+        id: l.id || (i + 1),
+        filmType: l.filmType || 'PET',
+        micron: Number(l.micron) || 12
+      }));
+      target.structure = getStructureString(target);
+    } else if (jm.structure && jm.structure !== '—') {
+      target.layers = parseStructureToLayers(jm.structure);
+      target.structure = getStructureString(target);
+    }
+
+    // Pre-fill dimensions
+    if (jm.printWidthMm) target.printWidthMm = jm.printWidthMm;
+    if (jm.repeatLengthMm) target.repeatLengthMm = jm.repeatLengthMm;
+
+    // Pre-fill material format
+    if (jm.materialFormat) {
+      const fmt = jm.materialFormat === 'Pouching' ? 'Standup Zipper Pouch Form' : jm.materialFormat === 'Reel' ? 'Roll Form' : jm.materialFormat;
+      if (MATERIAL_FORMATS.includes(fmt)) target.materialFormat = fmt;
+    }
+
+    // Pre-fill rate if available
+    const rateVal = jm.sellingPricePerKg || jm.ratePerKg || jm.ratePerUom;
+    if (rateVal && !target.ratePerUom) {
+      target.ratePerUom = rateVal;
+    }
+
+    setItems(updated);
+    setActiveJobDropdownIndex(null);
+
+    // If client is not yet selected in Quotation, auto-select from Job Master
+    if (!selectedClientName && jm.clientName) {
+      const matchedClient = (clients || []).find(c => 
+        (c.name || c.companyName || '').toLowerCase().trim() === jm.clientName.toLowerCase().trim()
+      );
+      if (matchedClient) {
+        handleSelectClient(matchedClient);
+      } else {
+        setSelectedClientName(jm.clientName);
+        setClientSearchQuery(jm.clientName);
+      }
+    }
+  };
+
   // Open Create Form — everything blank, no seed data
   const handleOpenCreateForm = () => {
     setEditingQuotationId(null);
@@ -636,38 +717,46 @@ export default function SalesManagement({
       }
     }
 
-    // 1. Create Job Master in Job Master Technical Directory
-    const newJobMaster = {
-      id: `JM-2026-${Math.floor(100 + Math.random() * 900)}`,
-      skuCode: `SKU-${qtn.clientName.substring(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`,
-      jobName: mainItem.jobTitle || 'Custom Flexible Packaging Job',
-      clientName: qtn.clientName,
-      structure,
-      printWidthMm,
-      repeatLengthMm,
-      pouchOpenWidth: 120,
-      pouchHeight: 160,
-      materialFormat: mainItem.materialFormat || 'Roll Form',
-      layers,
-      cylinderSku: `CYL-${qtn.clientName.substring(0, 3).toUpperCase()}-001`,
-      cylinderCost: qtn.cylinderTerms || '₹ 35,000',
-      colorsCount: 6,
-      engravuresName: 'Acme Rotogravure Engravers',
-      costBorneBy: 'Client (100%)',
-      utilisationLimit: 10000,
-      creationDate: new Date().toISOString().split('T')[0]
-    };
+    // 1. Locate existing Job Master or Create new Job Master in Technical Directory
+    const existingJM = (jobMasters || []).find(j => 
+      (mainItem.jobMasterId && j.id === mainItem.jobMasterId) ||
+      (j.jobName && mainItem.jobTitle && j.jobName.toLowerCase().trim() === mainItem.jobTitle.toLowerCase().trim())
+    );
 
-    if (onAddJobMaster) {
-      onAddJobMaster(newJobMaster);
+    let effectiveJobMaster = existingJM;
+    if (!effectiveJobMaster) {
+      effectiveJobMaster = {
+        id: mainItem.jobMasterId || `JM-2026-${Math.floor(100 + Math.random() * 900)}`,
+        skuCode: mainItem.skuCode || `SKU-${qtn.clientName.substring(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`,
+        jobName: mainItem.jobTitle || 'Custom Flexible Packaging Job',
+        clientName: qtn.clientName,
+        structure,
+        printWidthMm,
+        repeatLengthMm,
+        pouchOpenWidth: 120,
+        pouchHeight: 160,
+        materialFormat: mainItem.materialFormat || 'Roll Form',
+        layers,
+        cylinderSku: `CYL-${qtn.clientName.substring(0, 3).toUpperCase()}-001`,
+        cylinderCost: qtn.cylinderTerms || '₹ 35,000',
+        colorsCount: 6,
+        engravuresName: 'Acme Rotogravure Engravers',
+        costBorneBy: 'Client (100%)',
+        utilisationLimit: 10000,
+        creationDate: new Date().toISOString().split('T')[0]
+      };
+
+      if (onAddJobMaster) {
+        onAddJobMaster(effectiveJobMaster);
+      }
     }
 
     // 2. Create Order in Order Management System with all required fields
     const newOrder = {
       id: orderId,
       ocnNumber: ocnNo,
-      jobMasterId: newJobMaster.id,
-      jobName: mainItem.jobTitle || 'Custom Flexible Packaging Job',
+      jobMasterId: effectiveJobMaster.id,
+      jobName: mainItem.jobTitle || effectiveJobMaster.jobName || 'Custom Flexible Packaging Job',
       clientName: qtn.clientName,
       // Both field names kept for compatibility
       orderQtyKg,
@@ -719,7 +808,7 @@ export default function SalesManagement({
       saveSalesQuotationToSupabase(updatedTarget);
     }
 
-    alert(`🎉 SUCCESS!\n\nSales Quotation ${qtn.quotationNo} has been CONVERTED to Order Confirmation Note (${ocnNo}).\n\n- Job Master "${newJobMaster.jobName}" (${newJobMaster.id}) created in Job Master Directory.\n- Order ${orderId} is now LIVE across Production, Inventory & Cylinder scheduling!`);
+    alert(`🎉 SUCCESS!\n\nSales Quotation ${qtn.quotationNo} has been CONVERTED to Order Confirmation Note (${ocnNo}).\n\n- Job Master "${effectiveJobMaster.jobName}" (${effectiveJobMaster.id}) ${existingJM ? 'linked' : 'created'} in Job Master Directory.\n- Order ${orderId} is now LIVE across Production, Inventory & Cylinder scheduling!`);
   };
 
   // Filtered Quotations
@@ -1370,20 +1459,149 @@ export default function SalesManagement({
 
                     return (
                       <tr key={it.id || idx}>
-                        <td style={{ verticalAlign: 'top', padding: '8px' }}>
-                          <input 
-                            type="text" 
-                            className="form-control" 
-                            style={{ padding: '4px 8px', fontSize: '0.82rem', fontWeight: '700' }}
-                            placeholder="e.g. Britannia Bourbon 250g"
-                            value={it.jobTitle} 
-                            onChange={e => {
-                              const updated = [...items];
-                              updated[idx].jobTitle = e.target.value;
-                              setItems(updated);
-                            }} 
-                            required 
-                          />
+                        <td style={{ verticalAlign: 'top', padding: '8px', position: 'relative' }}>
+                          <div style={{ position: 'relative' }}>
+                            <input 
+                              type="text" 
+                              className="form-control" 
+                              style={{ 
+                                padding: '5px 24px 5px 8px', 
+                                fontSize: '0.82rem', 
+                                fontWeight: '700',
+                                borderColor: it.jobMasterId ? '#0284c7' : undefined,
+                                background: it.jobMasterId ? '#f0f9ff' : '#ffffff'
+                              }}
+                              placeholder="Type product name or select Job Master..."
+                              value={it.jobTitle} 
+                              onChange={e => {
+                                const val = e.target.value;
+                                const updated = [...items];
+                                updated[idx].jobTitle = val;
+                                if (updated[idx].jobMasterId && updated[idx].jobTitle !== val) {
+                                  updated[idx].jobMasterId = '';
+                                }
+                                setItems(updated);
+                                setActiveJobDropdownIndex(idx);
+                              }} 
+                              onFocus={() => setActiveJobDropdownIndex(idx)}
+                              required 
+                            />
+                            <button
+                              type="button"
+                              style={{
+                                position: 'absolute',
+                                right: '4px',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                border: 'none',
+                                background: 'none',
+                                color: '#64748b',
+                                cursor: 'pointer',
+                                padding: '2px',
+                                display: 'flex',
+                                alignItems: 'center'
+                              }}
+                              onClick={() => setActiveJobDropdownIndex(activeJobDropdownIndex === idx ? null : idx)}
+                              title="Show Job Masters List"
+                            >
+                              <ChevronDown size={14} />
+                            </button>
+                          </div>
+
+                          {it.jobMasterId && (
+                            <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.7rem', color: '#0284c7', fontWeight: '700' }}>
+                              <span style={{ background: '#e0f2fe', padding: '1px 6px', borderRadius: '3px', border: '1px solid #bae6fd', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                🔗 Master: {it.skuCode || it.jobMasterId}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Autocomplete Dropdown List for Job Masters */}
+                          {activeJobDropdownIndex === idx && (
+                            <>
+                              <div 
+                                style={{ position: 'fixed', inset: 0, zIndex: 99 }} 
+                                onClick={() => setActiveJobDropdownIndex(null)}
+                              />
+                              <div 
+                                style={{ 
+                                  position: 'absolute', 
+                                  top: '100%', 
+                                  left: '8px', 
+                                  width: '320px',
+                                  zIndex: 100, 
+                                  background: '#ffffff', 
+                                  border: '1px solid #cbd5e1', 
+                                  borderRadius: '6px', 
+                                  maxHeight: '260px', 
+                                  overflowY: 'auto',
+                                  boxShadow: '0 10px 25px -5px rgba(0,0,0,0.18)',
+                                  marginTop: '2px'
+                                }}
+                              >
+                                <div style={{ padding: '6px 10px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: '0.72rem', fontWeight: '800', color: '#64748b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span>📚 JOB MASTERS ({getJobMasterSuggestions(it.jobTitle, selectedClientName).length})</span>
+                                  <span style={{ fontSize: '0.68rem', color: '#0284c7' }}>Auto-fills specs</span>
+                                </div>
+
+                                {getJobMasterSuggestions(it.jobTitle, selectedClientName).length > 0 ? (
+                                  getJobMasterSuggestions(it.jobTitle, selectedClientName).map(jm => {
+                                    const isClientMatch = selectedClientName && (jm.clientName || '').toLowerCase().includes(selectedClientName.toLowerCase().trim());
+                                    return (
+                                      <div 
+                                        key={jm.id || jm.skuCode || jm.jobName}
+                                        style={{ 
+                                          padding: '8px 10px', 
+                                          cursor: 'pointer', 
+                                          borderBottom: '1px solid #f1f5f9',
+                                          background: isClientMatch ? '#f8fafc' : '#ffffff'
+                                        }}
+                                        onMouseDown={(e) => {
+                                          e.preventDefault();
+                                          handleSelectJobMaster(jm, idx);
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.background = '#f0f9ff'}
+                                        onMouseLeave={e => e.currentTarget.style.background = isClientMatch ? '#f8fafc' : '#ffffff'}
+                                      >
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '6px' }}>
+                                          <div style={{ fontWeight: '800', fontSize: '0.84rem', color: '#0f172a' }}>
+                                            {jm.jobName}
+                                          </div>
+                                          {jm.skuCode && (
+                                            <span style={{ fontSize: '0.68rem', fontWeight: '800', background: '#e2e8f0', color: '#334155', padding: '1px 5px', borderRadius: '3px', whiteSpace: 'nowrap' }}>
+                                              {jm.skuCode}
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        <div style={{ fontSize: '0.74rem', color: '#0284c7', fontWeight: '600', marginTop: '2px' }}>
+                                          🏢 {jm.clientName || 'General Client'}
+                                          {isClientMatch && <span style={{ marginLeft: '4px', color: '#059669', fontWeight: '800' }}>✓ Client Match</span>}
+                                        </div>
+
+                                        <div style={{ fontSize: '0.72rem', color: '#475569', marginTop: '2px', background: '#f1f5f9', padding: '2px 5px', borderRadius: '3px', display: 'inline-block' }}>
+                                          🔬 {jm.structure || (jm.layers && jm.layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')) || 'Standard Structure'}
+                                        </div>
+
+                                        {(jm.printWidthMm || jm.repeatLengthMm) && (
+                                          <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '2px' }}>
+                                            Width: {jm.printWidthMm || 1000}mm | Repeat: {jm.repeatLengthMm || 400}mm
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })
+                                ) : (
+                                  <div style={{ padding: '12px 10px', fontSize: '0.78rem', color: '#64748b', textAlign: 'center' }}>
+                                    No matching Job Master for "{it.jobTitle}".
+                                    <div style={{ marginTop: '4px', fontSize: '0.72rem', color: '#059669', fontWeight: '700' }}>
+                                      ✍️ Creating as New Product directly.
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </>
+                          )}
                         </td>
                         <td style={{ verticalAlign: 'top', background: isCylinder ? '#f0f9ff' : '#fafafa', padding: '8px' }}>
                           {isCylinder ? (
