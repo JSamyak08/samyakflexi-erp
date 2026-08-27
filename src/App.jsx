@@ -16,6 +16,8 @@ import {
   initialInks,
   DEFAULT_ROLE_PERMISSIONS,
   isOrderOverdue,
+  isOrderNearingDeadline,
+  getOrderStatusInfo,
   FILM_DENSITIES
 } from './factoryStore';
 import { initialCylinders } from './dataStore';
@@ -2940,7 +2942,9 @@ export default function App() {
                     </thead>
                     <tbody>
                       {(orders || []).map(o => {
-                        const isOverdue = isOrderOverdue(o);
+                        const statusInfo = getOrderStatusInfo(o);
+                        const isOverdue = statusInfo.isOverdue;
+                        const isNearing = statusInfo.isNearingDeadline;
                         // Derive substrate structure from the matching Job Master's layers, fallback to order.structure
                         const matchedJM = (jobMasters || []).find(j =>
                           (j.jobName || '').toLowerCase().trim() === (o.jobName || '').toLowerCase().trim()
@@ -2949,16 +2953,20 @@ export default function App() {
                           ? matchedJM.layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
                           : (o.structure || '—');
                         return (
-                          <tr key={o.id} className={isOverdue ? 'row-delayed-highlight' : ''}>
-                            <td style={{ fontWeight: '700', color: isOverdue ? '#dc2626' : 'var(--primary-brand)' }}>{o.id}</td>
+                          <tr key={o.id} className={isOverdue ? 'row-delayed-highlight' : (isNearing ? 'row-nearing-highlight' : '')}>
+                            <td style={{ fontWeight: '700', color: isOverdue ? '#dc2626' : (isNearing ? '#b45309' : 'var(--primary-brand)') }}>{o.id}</td>
                             <td style={{ fontWeight: '600' }}>{o.jobName}</td>
                             <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{substrateDisplay}</td>
-                            <td style={{ color: isOverdue ? '#dc2626' : 'inherit', fontWeight: isOverdue ? '700' : 'normal' }}>
+                            <td style={{ color: isOverdue ? '#dc2626' : (isNearing ? '#b45309' : 'inherit'), fontWeight: (isOverdue || isNearing) ? '700' : 'normal' }}>
                               {o.targetDeliveryDate}
                             </td>
                             <td>
                               {isOverdue ? (
                                 <span className="badge-delayed-tag">DELAYED</span>
+                              ) : isNearing ? (
+                                <span className="badge-delayed-tag" style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a' }}>
+                                  NEARING DEADLINE
+                                </span>
                               ) : (
                                 <span className="badge badge-us">{o.status}</span>
                               )}

@@ -35,7 +35,8 @@ import {
   initialProductionRecords,
   initialClients,
   initialJobMasters,
-  FILM_DENSITIES
+  FILM_DENSITIES,
+  parseStandardDate
 } from '../factoryStore';
 import { initialCylinders } from '../dataStore';
 
@@ -127,7 +128,8 @@ export async function saveOrderToSupabase(order) {
     return;
   }
   await ensureValidSession();
-  const targetDateVal = order.targetDeliveryDate || order.deliveryDate || new Date().toISOString().split('T')[0];
+  const parsedTarget = parseStandardDate(order.targetDeliveryDate || order.deliveryDate);
+  const targetDateVal = parsedTarget ? parsedTarget.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
 
   const jobDetails = {
     ...(order.jobDetails || {}),

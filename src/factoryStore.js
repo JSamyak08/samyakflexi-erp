@@ -454,38 +454,110 @@ export const isReconciliationDue = (currentDateString = new Date().toISOString()
 };
 
 /**
- * Helper to check if an order is overdue past target delivery date
+ * Robust date parser supporting YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY, and Date objects
  */
-export const isOrderOverdue = (order) => {
-  if (!order) return false;
-  if (order.status === 'Completed' || order.status === 'On Hold') return false;
-  if (order.status === 'Delayed') return true;
+export const parseStandardDate = (dateStr) => {
+  if (!dateStr) return null;
+  if (dateStr instanceof Date) return isNaN(dateStr.getTime()) ? null : dateStr;
+  
+  const str = String(dateStr).trim();
+  if (!str) return null;
+
+  // Format: YYYY-MM-DD or YYYY/MM/DD
+  if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(str)) {
+    const [y, m, d] = str.split(/[-/]/);
+    return new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
+  }
+
+  // Format: DD/MM/YYYY or DD-MM-YYYY
+  if (/^\d{1,2}[-/]\d{1,2}[-/]\d{4}/.test(str)) {
+    const [d, m, y] = str.split(/[-/]/);
+    return new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
+  }
+
+  const parsed = new Date(str);
+  return isNaN(parsed.getTime()) ? null : parsed;
+};
+
+/**
+ * Helper to compute order delivery urgency status:
+ * - Overdue: target delivery date is in the past
+ * - Nearing Deadline: target delivery date is within 4 days (0 to 4 days remaining)
+ * - On Track: target delivery date is > 4 days in future
+ */
+export const getOrderStatusInfo = (order) => {
+  if (!order) {
+    return { isOverdue: false, isNearingDeadline: false, daysRemaining: null, statusText: 'In Progress', badgeClass: 'badge-us' };
+  }
+
+  if (order.status === 'Completed') {
+    return { isOverdue: false, isNearingDeadline: false, daysRemaining: null, statusText: 'Completed', badgeClass: 'badge-success' };
+  }
+  if (order.status === 'On Hold') {
+    return { isOverdue: false, isNearingDeadline: false, daysRemaining: null, statusText: 'On Hold', badgeClass: 'badge-warning' };
+  }
 
   const targetDateStr = order.targetDeliveryDate || order.deliveryDate;
-  if (!targetDateStr) return false;
+  const targetDate = parseStandardDate(targetDateStr);
 
-  let targetDate;
-  if (typeof targetDateStr === 'string' && targetDateStr.includes('/')) {
-    const parts = targetDateStr.split('/');
-    if (parts.length === 3) {
-      if (parts[0].length === 4) {
-        targetDate = new Date(`${parts[0]}-${parts[1]}-${parts[2]}`);
-      } else {
-        targetDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
-      }
-    }
+  if (!targetDate) {
+    const isDelayed = order.status === 'Delayed';
+    return {
+      isOverdue: isDelayed,
+      isNearingDeadline: false,
+      daysRemaining: null,
+      statusText: isDelayed ? 'Overdue' : (order.status || 'In Progress'),
+      badgeClass: isDelayed ? 'badge-danger' : 'badge-us'
+    };
   }
-
-  if (!targetDate || isNaN(targetDate.getTime())) {
-    targetDate = new Date(targetDateStr);
-  }
-
-  if (isNaN(targetDate.getTime())) return false;
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  return targetDate < today;
+  const diffTime = targetDate.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0 || order.status === 'Delayed') {
+    return {
+      isOverdue: true,
+      isNearingDeadline: false,
+      daysRemaining: diffDays,
+      statusText: 'Overdue',
+      badgeClass: 'badge-danger'
+    };
+  }
+
+  if (diffDays >= 0 && diffDays <= 4) {
+    return {
+      isOverdue: false,
+      isNearingDeadline: true,
+      daysRemaining: diffDays,
+      statusText: 'Nearing Deadline',
+      badgeClass: 'badge-warning'
+    };
+  }
+
+  return {
+    isOverdue: false,
+    isNearingDeadline: false,
+    daysRemaining: diffDays,
+    statusText: order.status || 'In Progress',
+    badgeClass: 'badge-us'
+  };
+};
+
+/**
+ * Helper to check if an order is overdue past target delivery date
+ */
+export const isOrderOverdue = (order) => {
+  return getOrderStatusInfo(order).isOverdue;
+};
+
+/**
+ * Helper to check if an order is within 4 days of target delivery date
+ */
+export const isOrderNearingDeadline = (order) => {
+  return getOrderStatusInfo(order).isNearingDeadline;
 };
 
 /**

@@ -17,7 +17,7 @@ import {
 import PurchaseOrderPDF from './PurchaseOrderPDF';
 import TablePagination, { usePagination } from './TablePagination';
 import { pushSlugState } from '../utils/slugRouter';
-import { calculateJobRawMaterials, isOrderOverdue } from '../factoryStore';
+import { calculateJobRawMaterials, isOrderOverdue, isOrderNearingDeadline, getOrderStatusInfo } from '../factoryStore';
 
 export default function OrderManagement({ 
   urlParams = {},
@@ -492,16 +492,18 @@ export default function OrderManagement({
   };
 
   // Filter orders
+  // Filter orders
   const filteredOrders = orders.filter(o => {
     const matchesSearch = 
-      o.jobName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      o.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      o.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (o.jobName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (o.id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (o.clientName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       getSubstrateStructure(o).toLowerCase().includes(searchTerm.toLowerCase());
     
-    const isOverdue = isOrderOverdue(o);
+    const statusInfo = getOrderStatusInfo(o);
     
-    if (statusFilter === 'DELAYED' && !isOverdue) return false;
+    if (statusFilter === 'DELAYED' && !statusInfo.isOverdue) return false;
+    if (statusFilter === 'NEARING_DEADLINE' && !statusInfo.isNearingDeadline) return false;
     if (statusFilter === 'ON_HOLD' && o.status !== 'On Hold') return false;
     if (statusFilter === 'PENDING_PO' && o.poIssued) return false;
     
@@ -511,6 +513,7 @@ export default function OrderManagement({
   const ordersPagination = usePagination(filteredOrders, 50);
 
   const delayedOrdersCount = (orders || []).filter(o => isOrderOverdue(o)).length;
+  const nearingDeadlineCount = (orders || []).filter(o => isOrderNearingDeadline(o)).length;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -531,7 +534,7 @@ export default function OrderManagement({
               <ShoppingBag size={22} style={{ color: 'var(--primary-brand)' }} /> Order Management & Vendor PO Issuance
             </h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '2px' }}>
-              Track order delays (RED) and select itemized raw material requirements across orders to issue consolidated Purchase Orders to vendors.
+              Track order delays (RED), orders nearing deadline (AMBER), and select itemized raw material requirements across orders to issue consolidated Purchase Orders to vendors.
             </p>
           </div>
 
@@ -606,6 +609,62 @@ export default function OrderManagement({
         </div>
       )}
 
+      {/* Amber Nearing Deadline Alert Notification */}
+      {nearingDeadlineCount > 0 && (
+        <div style={{
+          background: 'linear-gradient(135deg, #ffffff 0%, #fffdf7 100%)',
+          border: '1px solid #fde68a',
+          borderLeft: '4px solid #f59e0b',
+          padding: '14px 18px',
+          borderRadius: '10px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px',
+          boxShadow: '0 2px 6px -2px rgba(245, 158, 11, 0.06)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{
+              width: '34px',
+              height: '34px',
+              borderRadius: '8px',
+              background: '#fef3c7',
+              color: '#d97706',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}>
+              <Clock size={18} />
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <h4 style={{ fontSize: '0.92rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                  Orders Nearing Target Deadline
+                </h4>
+                <span style={{
+                  background: '#fef3c7',
+                  color: '#b45309',
+                  border: '1px solid #fde68a',
+                  fontSize: '0.72rem',
+                  fontWeight: '800',
+                  padding: '2px 8px',
+                  borderRadius: '9999px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em'
+                }}>
+                  {nearingDeadlineCount} {nearingDeadlineCount === 1 ? 'Order' : 'Orders'} (≤ 4 Days Remaining)
+                </span>
+              </div>
+              <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px', margin: 0 }}>
+                Orders are within 4 days of scheduled dispatch. Ensure printing cylinders and materials are loaded on machine schedule.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Filter Toolbar */}
       <div className="glass-panel" style={{ padding: '16px 20px', display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: '1', minWidth: '240px' }}>
@@ -622,9 +681,10 @@ export default function OrderManagement({
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: '500' }}>Filter Status:</span>
-          <select className="form-control" style={{ width: '180px' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+          <select className="form-control" style={{ width: '240px' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
             <option value="ALL">All Orders ({(orders || []).length})</option>
             <option value="DELAYED">⚠️ Overdue / Delayed ({delayedOrdersCount})</option>
+            <option value="NEARING_DEADLINE">⏳ Nearing Deadline (≤4 Days) ({nearingDeadlineCount})</option>
             <option value="ON_HOLD">⏸️ On Hold Orders</option>
             <option value="PENDING_PO">Pending PO Issuance</option>
           </select>
@@ -644,16 +704,21 @@ export default function OrderManagement({
       {/* Orders List with Itemized Raw Material Requirements Drawer */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {ordersPagination.paginatedItems.map(order => {
-          const isOverdue = isOrderOverdue(order);
+          const statusInfo = getOrderStatusInfo(order);
+          const isOverdue = statusInfo.isOverdue;
+          const isNearing = statusInfo.isNearingDeadline;
           const isExpanded = expandedOrders[order.id];
           const reqs = getOrderMaterialRequirements(order);
           const allReqsSelected = reqs.length > 0 && reqs.every(r => selectedReqIds[r.id]);
+
+          const cardBorder = isOverdue ? '2px solid #ef4444' : (isNearing ? '2px solid #f59e0b' : '1px solid var(--border-color)');
+          const cardBg = isOverdue ? '#fef2f2' : (isNearing ? '#fffbeb' : 'transparent');
 
           return (
             <div 
               key={order.id} 
               className={`glass-panel ${isOverdue ? 'row-delayed-highlight' : ''}`}
-              style={{ padding: '0', overflow: 'hidden', border: isOverdue ? '2px solid #ef4444' : '1px solid var(--border-color)' }}
+              style={{ padding: '0', overflow: 'hidden', border: cardBorder }}
             >
               {/* Order Header Row */}
               <div 
@@ -662,7 +727,7 @@ export default function OrderManagement({
                   padding: '16px 20px', 
                   display: 'flex',
                   alignItems: 'center',
-                  background: isOverdue ? '#fef2f2' : 'transparent',
+                  background: cardBg,
                   transition: 'background 0.2s ease',
                   cursor: 'pointer'
                 }}
@@ -678,9 +743,9 @@ export default function OrderManagement({
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '0' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                       <span className="order-id-badge" style={{ 
-                        background: isOverdue ? 'rgba(239, 68, 68, 0.15)' : 'var(--accent-light)',
-                        color: isOverdue ? '#dc2626' : 'var(--primary-brand)',
-                        border: isOverdue ? '1px solid rgba(239, 68, 68, 0.25)' : '1px solid var(--border-color)'
+                        background: isOverdue ? 'rgba(239, 68, 68, 0.15)' : (isNearing ? 'rgba(245, 158, 11, 0.15)' : 'var(--accent-light)'),
+                        color: isOverdue ? '#dc2626' : (isNearing ? '#b45309' : 'var(--primary-brand)'),
+                        border: isOverdue ? '1px solid rgba(239, 68, 68, 0.25)' : (isNearing ? '1px solid rgba(245, 158, 11, 0.25)' : '1px solid var(--border-color)')
                       }}>
                         {order.id}
                       </span>
@@ -688,6 +753,11 @@ export default function OrderManagement({
                         {order.jobName}
                       </h3>
                       {isOverdue && <span className="badge-delayed-tag">OVERDUE</span>}
+                      {isNearing && (
+                        <span className="badge-delayed-tag" style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a' }}>
+                          NEARING DEADLINE ({statusInfo.daysRemaining === 0 ? 'TODAY' : `${statusInfo.daysRemaining}D LEFT`})
+                        </span>
+                      )}
                     </div>
                     
                     <div style={{ display: 'flex', gap: '14px', fontSize: '0.8rem', color: 'var(--text-secondary)', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -702,19 +772,34 @@ export default function OrderManagement({
                   {/* Middle Column: Target Date */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                     <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: '600' }}>Target Delivery</span>
-                    <span style={{ fontWeight: '800', fontSize: '0.92rem', color: isOverdue ? '#dc2626' : 'var(--text-primary)' }}>
+                    <span style={{ 
+                      fontWeight: '800', 
+                      fontSize: '0.92rem', 
+                      color: isOverdue ? '#dc2626' : (isNearing ? '#b45309' : 'var(--text-primary)') 
+                    }}>
                       {order.targetDeliveryDate}
                     </span>
                   </div>
 
                   {/* Middle-Right Column: Status */}
                   <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <span 
-                      className={`badge ${order.status === 'On Hold' ? 'badge-warning' : isOverdue ? 'badge-warning' : 'badge-us'}`}
-                      style={{ fontSize: '0.75rem', padding: '4px 10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: '95px', textAlign: 'center' }}
-                    >
-                      {order.status === 'On Hold' ? '⏸️ ON HOLD' : (isOverdue ? '⚠️ OVERDUE' : order.status)}
-                    </span>
+                    {order.status === 'On Hold' ? (
+                      <span className="badge badge-warning" style={{ fontSize: '0.75rem', padding: '4px 10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: '95px', textAlign: 'center' }}>
+                        ⏸️ ON HOLD
+                      </span>
+                    ) : isOverdue ? (
+                      <span className="badge badge-warning" style={{ background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', fontSize: '0.75rem', padding: '4px 10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: '95px', textAlign: 'center' }}>
+                        ⚠️ OVERDUE
+                      </span>
+                    ) : isNearing ? (
+                      <span className="badge badge-warning" style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', fontSize: '0.75rem', padding: '4px 10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: '95px', textAlign: 'center' }}>
+                        ⏳ NEARING DEADLINE
+                      </span>
+                    ) : (
+                      <span className="badge badge-us" style={{ fontSize: '0.75rem', padding: '4px 10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: '95px', textAlign: 'center' }}>
+                        {order.status || 'In Progress'}
+                      </span>
+                    )}
                   </div>
 
                   {/* Right Column: Actions */}
