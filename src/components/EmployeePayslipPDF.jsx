@@ -153,10 +153,12 @@ export default function EmployeePayslipPDF({ employee, salaryData, monthKey = "2
                     <td style={{ padding: '8px 12px' }}>Other Allowance</td>
                     <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '700' }}>₹ {(salaryData.earnedOther || 0).toLocaleString()}</td>
                   </tr>
-                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '8px 12px' }}>Dinner Allowance ({salaryData.nightShiftCount || 0} Nights)</td>
-                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '700' }}>₹ {(salaryData.dinnerAllowance || 0).toLocaleString()}</td>
-                  </tr>
+                  {(salaryData.dinnerAllowance || 0) > 0 && (
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '8px 12px' }}>Dinner Allowance (Optional) ({salaryData.nightShiftCount || 0} Nights)</td>
+                      <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '700' }}>₹ {(salaryData.dinnerAllowance || 0).toLocaleString()}</td>
+                    </tr>
+                  )}
                   <tr style={{ borderBottom: '1px solid #f1f5f9', background: salaryData.approvedOtHours > 0 ? '#f0fdf4' : 'transparent' }}>
                     <td style={{ padding: '8px 12px' }}>
                       Approved Overtime Pay ({salaryData.approvedOtHours || 0} hrs @ ₹{salaryData.otRatePerHr || 0}/hr)

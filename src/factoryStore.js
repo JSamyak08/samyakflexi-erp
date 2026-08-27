@@ -1033,8 +1033,9 @@ export const initialEmployees = [
       basicSalary: 18000,
       hra: 7200,
       otherAllowance: 2800,
-      dinnerAllowancePerNight: 150,
+      dinnerAllowancePerNight: 0,
       fixedDinnerAllowance: 0,
+      optDinner: false,
       optPf: true,
       optEsic: false, // > 21,000 gross
       professionalTax: 200
@@ -1080,8 +1081,9 @@ export const initialEmployees = [
       basicSalary: 12500,
       hra: 5000,
       otherAllowance: 1500,
-      dinnerAllowancePerNight: 150,
+      dinnerAllowancePerNight: 0,
       fixedDinnerAllowance: 0,
+      optDinner: false,
       optPf: true,
       optEsic: true, // <= 21,000 gross
       professionalTax: 150
@@ -1127,8 +1129,9 @@ export const initialEmployees = [
       basicSalary: 15000,
       hra: 6000,
       otherAllowance: 2000,
-      dinnerAllowancePerNight: 120,
+      dinnerAllowancePerNight: 0,
       fixedDinnerAllowance: 0,
+      optDinner: false,
       optPf: true,
       optEsic: false,
       professionalTax: 200
@@ -1176,6 +1179,7 @@ export const initialEmployees = [
       otherAllowance: 4200,
       dinnerAllowancePerNight: 0,
       fixedDinnerAllowance: 0,
+      optDinner: false,
       optPf: true,
       optEsic: false,
       professionalTax: 200
@@ -1221,8 +1225,9 @@ export const initialEmployees = [
       basicSalary: 11000,
       hra: 4400,
       otherAllowance: 1600,
-      dinnerAllowancePerNight: 150,
+      dinnerAllowancePerNight: 0,
       fixedDinnerAllowance: 0,
+      optDinner: false,
       optPf: true,
       optEsic: true,
       professionalTax: 150
@@ -1268,8 +1273,9 @@ export const initialEmployees = [
       basicSalary: 10500,
       hra: 4200,
       otherAllowance: 1300,
-      dinnerAllowancePerNight: 120,
+      dinnerAllowancePerNight: 0,
       fixedDinnerAllowance: 0,
+      optDinner: false,
       optPf: true,
       optEsic: true,
       professionalTax: 150
@@ -1319,7 +1325,7 @@ export const initialAttendanceRecords = [
     overtimeStatus: "Approved",
     overtimeApprovedBy: "Plant Manager",
     overtimeApprovedDate: "2026-08-27",
-    dinnerAllowanceEligible: true, // Night shift gets Dinner Allowance
+    dinnerAllowanceEligible: false,
     markedBy: "Shift Supervisor"
   },
   {
@@ -1473,10 +1479,11 @@ export function calculateEmployeeMonthlySalary(emp, monthKey, attendanceList = [
   const earnedHra = Math.round(hra * proRataFactor);
   const earnedOther = Math.round(other * proRataFactor);
 
-  // Dinner Allowance (either per night shift or fixed)
+  // Dinner Allowance (Optional: only applied if employee salary structure explicitly opts in)
   const dinnerPerNight = Number(struct.dinnerAllowancePerNight) || 0;
   const fixedDinner = Number(struct.fixedDinnerAllowance) || 0;
-  const dinnerAllowance = fixedDinner > 0 ? fixedDinner : (nightShiftCount * dinnerPerNight);
+  const optDinner = Boolean(struct.optDinner || dinnerPerNight > 0 || fixedDinner > 0);
+  const dinnerAllowance = optDinner ? (fixedDinner > 0 ? fixedDinner : (nightShiftCount * dinnerPerNight)) : 0;
 
   // Overtime Calculation:
   // Hourly Base Rate = Fixed Gross / (Working Days * Shift Hours)

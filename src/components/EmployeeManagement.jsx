@@ -151,7 +151,8 @@ export default function EmployeeManagement({
   const [formBasicSalary, setFormBasicSalary] = useState(15000);
   const [formHra, setFormHra] = useState(6000);
   const [formOtherAllowance, setFormOtherAllowance] = useState(2000);
-  const [formDinnerPerNight, setFormDinnerPerNight] = useState(150);
+  const [formOptDinner, setFormOptDinner] = useState(false);
+  const [formDinnerPerNight, setFormDinnerPerNight] = useState(0);
   const [formFixedDinner, setFormFixedDinner] = useState(0);
   const [formOptPf, setFormOptPf] = useState(true);
   const [formOptEsic, setFormOptEsic] = useState(false);
@@ -212,7 +213,8 @@ export default function EmployeeManagement({
     setFormBasicSalary(14000);
     setFormHra(5600);
     setFormOtherAllowance(2000);
-    setFormDinnerPerNight(150);
+    setFormOptDinner(false);
+    setFormDinnerPerNight(0);
     setFormFixedDinner(0);
     setFormOptPf(true);
     setFormOptEsic(false);
@@ -255,7 +257,8 @@ export default function EmployeeManagement({
     setFormBasicSalary(struct.basicSalary || 14000);
     setFormHra(struct.hra || 5600);
     setFormOtherAllowance(struct.otherAllowance || 2000);
-    setFormDinnerPerNight(struct.dinnerAllowancePerNight || 150);
+    setFormOptDinner(struct.optDinner || Boolean(Number(struct.dinnerAllowancePerNight) > 0 || Number(struct.fixedDinnerAllowance) > 0));
+    setFormDinnerPerNight(struct.dinnerAllowancePerNight || 0);
     setFormFixedDinner(struct.fixedDinnerAllowance || 0);
     setFormOptPf(struct.optPf ?? true);
     setFormOptEsic(struct.optEsic ?? false);
@@ -305,8 +308,9 @@ export default function EmployeeManagement({
         basicSalary: Number(formBasicSalary) || 0,
         hra: Number(formHra) || 0,
         otherAllowance: Number(formOtherAllowance) || 0,
-        dinnerAllowancePerNight: Number(formDinnerPerNight) || 0,
-        fixedDinnerAllowance: Number(formFixedDinner) || 0,
+        optDinner: Boolean(formOptDinner),
+        dinnerAllowancePerNight: formOptDinner ? (Number(formDinnerPerNight) || 0) : 0,
+        fixedDinnerAllowance: formOptDinner ? (Number(formFixedDinner) || 0) : 0,
         optPf: Boolean(formOptPf),
         optEsic: Boolean(formOptEsic),
         professionalTax: Number(formPt) || 0
@@ -418,7 +422,7 @@ export default function EmployeeManagement({
       overtimeStatus: ot > 0 ? 'Pending Approval' : 'Approved',
       overtimeApprovedBy: '',
       overtimeApprovedDate: '',
-      dinnerAllowanceEligible: isNight,
+      dinnerAllowanceEligible: Boolean(markingAttendanceEmp?.salaryStructure?.optDinner || Number(markingAttendanceEmp?.salaryStructure?.dinnerAllowancePerNight) > 0),
       markedBy: currentUser?.name || 'Shift Supervisor'
     };
 
@@ -432,7 +436,6 @@ export default function EmployeeManagement({
   const handleBulkMarkPresent = () => {
     if (!window.confirm(`Mark all active employees as PRESENT for ${attendanceDate}?`)) return;
     employees.filter(e => e.status === 'Active' || e.status === 'On Probation').forEach(emp => {
-      const isNight = (emp.defaultShift || '').toLowerCase().includes('night');
       const shiftHrs = emp.shiftDurationHours || 12;
       const rec = {
         id: `ATT-${attendanceDate.replace(/-/g, '')}-${emp.id}`,
@@ -447,7 +450,7 @@ export default function EmployeeManagement({
         overtimeHours: 0,
         overtimeReason: '',
         overtimeStatus: 'Approved',
-        dinnerAllowanceEligible: isNight,
+        dinnerAllowanceEligible: Boolean(emp.salaryStructure?.optDinner || Number(emp.salaryStructure?.dinnerAllowancePerNight) > 0),
         markedBy: currentUser?.name || 'Shift Supervisor'
       };
       if (onSaveAttendance) onSaveAttendance(rec);
@@ -835,8 +838,10 @@ export default function EmployeeManagement({
                               ESIC {struct.optEsic ? '✓' : '✗'}
                             </span>
                           </div>
-                          <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '2px' }}>
-                            Dinner: ₹{struct.dinnerAllowancePerNight || 150}/night
+                          <div style={{ fontSize: '0.7rem', color: (struct.dinnerAllowancePerNight > 0 || struct.fixedDinnerAllowance > 0) ? '#64748b' : '#94a3b8', marginTop: '2px' }}>
+                            {(struct.dinnerAllowancePerNight > 0 || struct.fixedDinnerAllowance > 0) 
+                              ? `Dinner: ₹${struct.dinnerAllowancePerNight || struct.fixedDinnerAllowance}/night (Opted)` 
+                              : 'Dinner: Optional (None)'}
                           </div>
                         </td>
                         <td>
@@ -1020,12 +1025,12 @@ export default function EmployeeManagement({
                         )}
                       </td>
                       <td>
-                        {isNight ? (
+                        {(att?.dinnerAllowanceEligible || (emp.salaryStructure?.optDinner && (Number(emp.salaryStructure?.dinnerAllowancePerNight) > 0 || Number(emp.salaryStructure?.fixedDinnerAllowance) > 0))) ? (
                           <span style={{ background: '#f5f3ff', color: '#6d28d9', padding: '2px 6px', borderRadius: '3px', fontSize: '0.7rem', fontWeight: '800', border: '1px solid #ddd6fe' }}>
-                            🍲 ₹{emp.salaryStructure?.dinnerAllowancePerNight || 150}
+                            🍲 ₹{emp.salaryStructure?.dinnerAllowancePerNight || emp.salaryStructure?.fixedDinnerAllowance}
                           </span>
                         ) : (
-                          <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>N/A (Day)</span>
+                          <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>Optional (None)</span>
                         )}
                       </td>
                       <td style={{ textAlign: 'center' }}>
@@ -1581,9 +1586,9 @@ export default function EmployeeManagement({
                     <label className="form-label">Default Assigned Shift</label>
                     <select className="form-control" value={formDefaultShift} onChange={e => setFormDefaultShift(e.target.value)}>
                       <option value="Shift A: Day (08:00 - 20:00)">Shift A: Day Shift (08:00 - 20:00, 12h)</option>
-                      <option value="Shift B: Night (20:00 - 08:00)">Shift B: Night Shift (20:00 - 08:00, 12h - Dinner Allw)</option>
+                      <option value="Shift B: Night (20:00 - 08:00)">Shift B: Night Shift (20:00 - 08:00, 12h)</option>
                       <option value="Shift A: Day (08:00 - 18:00)">Shift A: Day Shift (08:00 - 18:00, 10h)</option>
-                      <option value="Shift B: Night (20:00 - 06:00)">Shift B: Night Shift (20:00 - 06:00, 10h - Dinner Allw)</option>
+                      <option value="Shift B: Night (20:00 - 06:00)">Shift B: Night Shift (20:00 - 06:00, 10h)</option>
                       <option value="General Shift (09:00 - 17:00)">General Shift (09:00 - 17:00, 8h)</option>
                     </select>
                   </div>
@@ -1656,15 +1661,15 @@ export default function EmployeeManagement({
                 </div>
               </div>
 
-              {/* Statutory Opt-Ins Toggle Box */}
-              <div style={{ background: '#f8fafc', padding: '12px 18px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '18px', display: 'flex', gap: '24px', alignItems: 'center' }}>
+              {/* Statutory & Optional Allowances Opt-Ins Toggle Box */}
+              <div style={{ background: '#f8fafc', padding: '12px 18px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '18px', display: 'flex', gap: '20px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: '800', fontSize: '0.84rem' }}>
                   <input 
                     type="checkbox" 
                     checked={formOptPf} 
                     onChange={e => setFormOptPf(e.target.checked)} 
                   />
-                  <span>Deduct Provident Fund (PF - 12% on Basic)</span>
+                  <span>Deduct PF (12% on Basic)</span>
                 </label>
 
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: '800', fontSize: '0.84rem' }}>
@@ -1673,9 +1678,31 @@ export default function EmployeeManagement({
                     checked={formOptEsic} 
                     onChange={e => setFormOptEsic(e.target.checked)} 
                   />
-                  <span>Deduct ESIC (0.75% on Gross Salary)</span>
+                  <span>Deduct ESIC (0.75% on Gross)</span>
+                </label>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: '800', fontSize: '0.84rem' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={formOptDinner} 
+                    onChange={e => setFormOptDinner(e.target.checked)} 
+                  />
+                  <span>Optional Dinner Allowance</span>
                 </label>
               </div>
+
+              {formOptDinner && (
+                <div className="form-grid-3" style={{ marginBottom: '16px', background: '#faf5ff', padding: '12px 16px', borderRadius: '6px', border: '1px solid #e9d5ff' }}>
+                  <div>
+                    <label className="form-label" style={{ color: '#6b21a8' }}>Dinner Allowance (₹/Night Shift)</label>
+                    <input type="number" className="form-control" value={formDinnerPerNight} onChange={e => setFormDinnerPerNight(e.target.value)} placeholder="e.g. 150" />
+                  </div>
+                  <div>
+                    <label className="form-label" style={{ color: '#6b21a8' }}>Fixed Monthly Dinner (₹/mo)</label>
+                    <input type="number" className="form-control" value={formFixedDinner} onChange={e => setFormFixedDinner(e.target.value)} placeholder="0 if per night" />
+                  </div>
+                </div>
+              )}
 
               {/* SECTION E: Bank Account Details */}
               <h5 style={{ fontSize: '0.88rem', fontWeight: '800', color: '#0f172a', marginBottom: '12px', borderBottom: '1px solid #f1f5f9', paddingBottom: '4px' }}>
@@ -1831,9 +1858,9 @@ export default function EmployeeManagement({
                 <label className="form-label">Shift Type Assigned</label>
                 <select className="form-control" value={attShiftType} onChange={e => setAttShiftType(e.target.value)}>
                   <option value="Shift A: Day (08:00 - 20:00)">Shift A: Day (08:00 - 20:00, 12h)</option>
-                  <option value="Shift B: Night (20:00 - 08:00)">Shift B: Night (20:00 - 08:00, 12h - Dinner Allw)</option>
+                  <option value="Shift B: Night (20:00 - 08:00)">Shift B: Night (20:00 - 08:00, 12h)</option>
                   <option value="Shift A: Day (08:00 - 18:00)">Shift A: Day (08:00 - 18:00, 10h)</option>
-                  <option value="Shift B: Night (20:00 - 06:00)">Shift B: Night (20:00 - 06:00, 10h - Dinner Allw)</option>
+                  <option value="Shift B: Night (20:00 - 06:00)">Shift B: Night (20:00 - 06:00, 10h)</option>
                   <option value="General Shift (09:00 - 17:00)">General Shift (09:00 - 17:00, 8h)</option>
                 </select>
               </div>
