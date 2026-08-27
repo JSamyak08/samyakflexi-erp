@@ -30,7 +30,8 @@ import {
   Moon,
   Briefcase,
   Layers,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Lock
 } from 'lucide-react';
 import TablePagination, { usePagination } from './TablePagination';
 import EmployeePayslipPDF from './EmployeePayslipPDF';
@@ -407,6 +408,12 @@ export default function EmployeeManagement({
     const ot = parseFloat(attOtHours) || 0;
     const shiftHrs = markingAttendanceEmp.shiftDurationHours || 12;
 
+    const isExisting = Boolean(markingAttendanceEmp?.id && attendanceRecords.some(a => a.employeeId === markingAttendanceEmp.id && a.date === attendanceDate));
+    if (isExisting && !isAdmin) {
+      alert("⛔ Permission Denied: Attendance has already been marked for this employee. Only the Admin role is authorized to edit or modify locked attendance records.");
+      return;
+    }
+
     const record = {
       id: `ATT-${attendanceDate.replace(/-/g, '')}-${markingAttendanceEmp.id}`,
       employeeId: markingAttendanceEmp.id,
@@ -434,8 +441,17 @@ export default function EmployeeManagement({
 
   // Bulk Mark All Present
   const handleBulkMarkPresent = () => {
-    if (!window.confirm(`Mark all active employees as PRESENT for ${attendanceDate}?`)) return;
+    if (!window.confirm(`Mark active employees as PRESENT for ${attendanceDate}? (Already marked records will remain locked)`)) return;
+    let markedCount = 0;
+    let lockedCount = 0;
+
     employees.filter(e => e.status === 'Active' || e.status === 'On Probation').forEach(emp => {
+      const alreadyMarked = attendanceRecords.some(a => a.employeeId === emp.id && a.date === attendanceDate);
+      if (alreadyMarked && !isAdmin) {
+        lockedCount += 1;
+        return;
+      }
+
       const shiftHrs = emp.shiftDurationHours || 12;
       const rec = {
         id: `ATT-${attendanceDate.replace(/-/g, '')}-${emp.id}`,
@@ -455,8 +471,10 @@ export default function EmployeeManagement({
       };
       if (onSaveAttendance) onSaveAttendance(rec);
       saveEmployeeAttendanceToSupabase(rec);
+      markedCount += 1;
     });
-    alert(`Bulk attendance recorded as PRESENT for ${attendanceDate}!`);
+
+    alert(`Bulk attendance summary for ${attendanceDate}:\n• Marked Present: ${markedCount} employees\n${lockedCount > 0 ? `• Locked (Already Marked): ${lockedCount} employees (Admin required to change)` : ''}`);
   };
 
   // Approve / Reject Overtime
@@ -1046,14 +1064,46 @@ export default function EmployeeManagement({
                         )}
                       </td>
                       <td style={{ textAlign: 'center' }}>
-                        <button 
-                          type="button" 
-                          className="btn-secondary" 
-                          style={{ padding: '4px 10px', fontSize: '0.75rem', color: '#0284c7' }}
-                          onClick={() => handleOpenAttendanceModal(emp)}
-                        >
-                          <Edit3 size={13} /> {att ? 'Edit Log' : 'Mark Att'}
-                        </button>
+                        {att ? (
+                          isAdmin ? (
+                            <button 
+                              type="button" 
+                              className="btn-secondary" 
+                              style={{ padding: '4px 10px', fontSize: '0.75rem', color: '#0284c7', fontWeight: '700' }}
+                              onClick={() => handleOpenAttendanceModal(emp)}
+                              title="Edit Attendance Record (Admin Authorization)"
+                            >
+                              <Edit3 size={13} /> Edit Log
+                            </button>
+                          ) : (
+                            <span 
+                              style={{ 
+                                display: 'inline-flex', 
+                                alignItems: 'center', 
+                                gap: '4px', 
+                                padding: '4px 8px', 
+                                fontSize: '0.72rem', 
+                                fontWeight: '700', 
+                                color: '#64748b', 
+                                background: '#f1f5f9', 
+                                borderRadius: '4px',
+                                border: '1px solid #cbd5e1'
+                              }}
+                              title="Attendance already recorded. Locked for non-admin roles."
+                            >
+                              <Lock size={12} style={{ color: '#64748b' }} /> Locked (Admin Only)
+                            </span>
+                          )
+                        ) : (
+                          <button 
+                            type="button" 
+                            className="btn-primary" 
+                            style={{ padding: '4px 10px', fontSize: '0.75rem', fontWeight: '700' }}
+                            onClick={() => handleOpenAttendanceModal(emp)}
+                          >
+                            <Calendar size={13} /> Mark Att
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
