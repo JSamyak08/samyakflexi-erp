@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, RefreshCw, Trash2, Home } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
 import * as Sentry from '@sentry/react';
 
 export default class ErrorBoundary extends React.Component {
@@ -23,16 +23,6 @@ export default class ErrorBoundary extends React.Component {
   }
 
   handleReload = () => {
-    window.location.href = '/';
-  };
-
-  handleResetStorageAndReload = () => {
-    try {
-      localStorage.clear();
-      sessionStorage.clear();
-    } catch (e) {
-      console.error("Failed to clear storage", e);
-    }
     window.location.href = '/';
   };
 
@@ -111,32 +101,13 @@ export default class ErrorBoundary extends React.Component {
                   color: '#ffffff',
                   border: 'none',
                   borderRadius: '8px',
-                  padding: '10px 18px',
-                  fontWeight: '600',
-                  fontSize: '0.9rem',
+                  padding: '10px 22px',
+                  fontWeight: '700',
+                  fontSize: '0.92rem',
                   cursor: 'pointer'
                 }}
               >
                 <RefreshCw size={16} /> Reload Page
-              </button>
-
-              <button
-                onClick={this.handleResetStorageAndReload}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  background: 'rgba(239, 68, 68, 0.15)',
-                  color: '#f87171',
-                  border: '1px solid rgba(239, 68, 68, 0.3)',
-                  borderRadius: '8px',
-                  padding: '10px 18px',
-                  fontWeight: '600',
-                  fontSize: '0.9rem',
-                  cursor: 'pointer'
-                }}
-              >
-                <Trash2 size={16} /> Reset Storage & Fix White Screen
               </button>
             </div>
           </div>
