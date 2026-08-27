@@ -254,28 +254,25 @@ export const saveSupabaseCredentials = (supabaseUrl, supabaseAnonKey) => {
   currentClientInstance = null;
   currentClientKey = '';
 
-  // Notify the entire application of credential update (without broadcasting raw secrets)
+  // Notify the entire application of credential update
   try {
     if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
-      let evt;
-      if (typeof CustomEvent === 'function') {
+      let evt = null;
+      try {
+        evt = new CustomEvent('supabase-credentials-changed', {
+          detail: { configured: isSupabaseConfigured() }
+        });
+      } catch (e) {
         try {
-          evt = new CustomEvent('supabase-credentials-changed', {
-            detail: { configured: isSupabaseConfigured() }
-          });
-        } catch (e) {}
+          evt = document.createEvent('Event');
+          evt.initEvent('supabase-credentials-changed', false, false);
+        } catch (e2) {}
       }
-      if (!evt && typeof document !== 'undefined' && typeof document.createEvent === 'function') {
-        try {
-          evt = document.createEvent('CustomEvent');
-          evt.initCustomEvent('supabase-credentials-changed', false, false, { configured: isSupabaseConfigured() });
-        } catch (e) {}
+      if (evt) {
+        try { window.dispatchEvent(evt); } catch (e) {}
       }
-      if (evt) window.dispatchEvent(evt);
     }
-  } catch (err) {
-    console.warn('Dispatch event notice:', err);
-  }
+  } catch (err) {}
 };
 
 /**
@@ -294,23 +291,20 @@ export const clearSupabaseCredentials = () => {
 
   try {
     if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
-      let evt;
-      if (typeof CustomEvent === 'function') {
+      let evt = null;
+      try {
+        evt = new CustomEvent('supabase-credentials-changed', {
+          detail: { configured: false }
+        });
+      } catch (e) {
         try {
-          evt = new CustomEvent('supabase-credentials-changed', {
-            detail: { configured: false }
-          });
-        } catch (e) {}
+          evt = document.createEvent('Event');
+          evt.initEvent('supabase-credentials-changed', false, false);
+        } catch (e2) {}
       }
-      if (!evt && typeof document !== 'undefined' && typeof document.createEvent === 'function') {
-        try {
-          evt = document.createEvent('CustomEvent');
-          evt.initCustomEvent('supabase-credentials-changed', false, false, { configured: false });
-        } catch (e) {}
+      if (evt) {
+        try { window.dispatchEvent(evt); } catch (e) {}
       }
-      if (evt) window.dispatchEvent(evt);
     }
-  } catch (err) {
-    console.warn('Dispatch event notice:', err);
-  }
+  } catch (err) {}
 };
