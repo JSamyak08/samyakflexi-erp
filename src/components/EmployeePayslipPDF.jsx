@@ -20,7 +20,7 @@ function numberToWords(num) {
   return str.trim();
 }
 
-export default function EmployeePayslipPDF({ employee, salaryData, monthKey = "2026-08", onClose }) {
+export default function EmployeePayslipPDF({ employee, salaryData, monthKey = "2026-08", payment, onClose }) {
   if (!employee || !salaryData) return null;
 
   const logoImage = getCompanyLogo();
@@ -218,7 +218,7 @@ export default function EmployeePayslipPDF({ employee, salaryData, monthKey = "2
           </div>
 
           {/* NET PAYABLE BOX */}
-          <div style={{ background: '#0f172a', color: '#ffffff', padding: '16px 20px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+          <div style={{ background: '#0f172a', color: '#ffffff', padding: '16px 20px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: payment ? '16px' : '24px' }}>
             <div>
               <div style={{ fontSize: '0.78rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>NET SALARY PAYABLE (A - B)</div>
               <div style={{ fontSize: '0.85rem', color: '#cbd5e1', marginTop: '2px' }}>
@@ -231,6 +231,28 @@ export default function EmployeePayslipPDF({ employee, salaryData, monthKey = "2
               </div>
             </div>
           </div>
+
+          {/* PAYMENT DISBURSAL CONFIRMATION (IF PAID) */}
+          {payment && (
+            <div style={{ background: '#f0fdf4', border: '1.5px solid #86efac', padding: '12px 18px', borderRadius: '6px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem' }}>
+              <div>
+                <span style={{ background: '#16a34a', color: '#ffffff', padding: '2px 8px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: '900', marginRight: '8px' }}>
+                  DISBURSED & PAID ✓
+                </span>
+                <span style={{ color: '#166534', fontWeight: '700' }}>
+                  Paid on {payment.paymentDate} at {payment.paymentTime} via {payment.paymentMode}
+                </span>
+                {payment.transactionReference && (
+                  <div style={{ color: '#15803d', fontSize: '0.74rem', marginTop: '2px', fontFamily: 'monospace' }}>
+                    Txn / UTR Ref: <b>{payment.transactionReference}</b>
+                  </div>
+                )}
+              </div>
+              <div style={{ textAlign: 'right', fontSize: '0.74rem', color: '#166534' }}>
+                Disbursed By: <b>{payment.disbursedBy || 'Finance Dept'}</b>
+              </div>
+            </div>
+          )}
 
           {/* Signatures Section */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'end', marginTop: '30px', paddingTop: '16px', borderTop: '1px dashed #cbd5e1' }}>

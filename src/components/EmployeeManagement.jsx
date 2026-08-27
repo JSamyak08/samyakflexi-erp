@@ -31,7 +31,8 @@ import {
   Briefcase,
   Layers,
   FileSpreadsheet,
-  Lock
+  Lock,
+  CreditCard
 } from 'lucide-react';
 import TablePagination, { usePagination } from './TablePagination';
 import EmployeePayslipPDF from './EmployeePayslipPDF';
@@ -49,7 +50,8 @@ import {
   saveEmployeeToSupabase, 
   deleteEmployeeFromSupabase, 
   saveEmployeeAttendanceToSupabase, 
-  saveSalaryAdvanceToSupabase 
+  saveSalaryAdvanceToSupabase,
+  saveSalaryPaymentToSupabase 
 } from '../services/supabaseDataService';
 import { pushSlugState } from '../utils/slugRouter';
 
@@ -58,6 +60,7 @@ export default function EmployeeManagement({
   employees = initialEmployees,
   attendanceRecords = initialAttendanceRecords,
   salaryAdvances = initialSalaryAdvances,
+  salaryPayments = [],
   currentUser,
   userRole = "Admin",
   onAddEmployee,
@@ -65,7 +68,8 @@ export default function EmployeeManagement({
   onDeleteEmployee,
   onSaveAttendance,
   onSaveSalaryAdvance,
-  onUpdateSalaryAdvance
+  onUpdateSalaryAdvance,
+  onSaveSalaryPayment
 }) {
   // Check RBAC Permissions
   const isAuthorized = useMemo(() => {
@@ -180,6 +184,16 @@ export default function EmployeeManagement({
   const [offHandover, setOffHandover] = useState(false);
   const [offSettlementStatus, setOffSettlementStatus] = useState('In Process');
   const [offNotes, setOffNotes] = useState('');
+
+  // Form State for Salary Payment Disbursal
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentRowData, setPaymentRowData] = useState(null);
+  const [paymentEmpData, setPaymentEmpData] = useState(null);
+  const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [paymentTime, setPaymentTime] = useState(() => new Date().toTimeString().slice(0, 8));
+  const [paymentMode, setPaymentMode] = useState('Bank Transfer (NEFT)');
+  const [paymentTxnRef, setPaymentTxnRef] = useState('');
+  const [paymentNotes, setPaymentNotes] = useState('');
 
   // Open Onboard Modal
   const handleOpenOnboardModal = () => {
@@ -564,6 +578,84 @@ export default function EmployeeManagement({
     if (onUpdateSalaryAdvance) onUpdateSalaryAdvance(updated);
     saveSalaryAdvanceToSupabase(updated);
     alert(`Salary Advance of ₹${adv.advanceAmount.toLocaleString()} for ${adv.employeeName} approved & disbursed! Monthly EMI: ₹${adv.monthlyEmiAmount}`);
+  };
+
+  // Open Payment Disbursal Modal
+  const handleOpenPaymentModal = (row, emp) => {
+    setPaymentRowData(row);
+    setPaymentEmpData(emp);
+    const now = new Date();
+    setPaymentDate(now.toISOString().split('T')[0]);
+    setPaymentTime(now.toTimeString().slice(0, 8));
+    setPaymentMode(emp?.bankDetails?.paymentMode || 'Bank Transfer (NEFT)');
+    setPaymentTxnRef(`UTR-${Date.now().toString().slice(-6)}`);
+    setPaymentNotes(`${payrollMonth} monthly salary disbursed`);
+    setShowPaymentModal(true);
+  };
+
+  // Save Salary Payment Record
+  const handleSaveSalaryPaymentSubmit = (e) => {
+    e.preventDefault();
+    if (!paymentRowData || !paymentEmpData) return;
+
+    const paymentRecord = {
+      id: `PAY-${payrollMonth.replace(/-/g, '')}-${paymentRowData.employeeId}`,
+      monthKey: payrollMonth,
+      employeeId: paymentRowData.employeeId,
+      employeeName: paymentRowData.fullName,
+      empCode: paymentRowData.empCode,
+      department: paymentRowData.department,
+      netAmountPaid: Number(paymentRowData.netPayable) || 0,
+      paymentDate: paymentDate,
+      paymentTime: paymentTime,
+      paymentTimestamp: `${paymentDate}T${paymentTime}`,
+      paymentMode: paymentMode,
+      transactionReference: paymentTxnRef.trim(),
+      bankName: paymentEmpData?.bankDetails?.bankName || '',
+      accountNumber: paymentEmpData?.bankDetails?.accountNumber || '',
+      status: 'Paid',
+      disbursedBy: currentUser?.name || 'Samyak Jain (Admin)',
+      notes: paymentNotes.trim(),
+      createdAt: new Date().toISOString()
+    };
+
+    if (onSaveSalaryPayment) onSaveSalaryPayment(paymentRecord);
+    saveSalaryPaymentToSupabase(paymentRecord);
+
+    // Auto-update active salary advance recovery if EMI was deducted
+    if (Number(paymentRowData.totalAdvanceDeduction) > 0) {
+      const activeAdv = salaryAdvances.find(a => 
+        a.employeeId === paymentRowData.employeeId && 
+        (a.status === 'Approved & Disbursed' || a.status === 'Pending Approval') && 
+        Number(a.remainingBalance) > 0
+      );
+      if (activeAdv) {
+        const emiAmt = Number(paymentRowData.totalAdvanceDeduction);
+        const newRecovered = (activeAdv.totalRecoveredAmount || 0) + emiAmt;
+        const newBal = Math.max(0, (activeAdv.remainingBalance || activeAdv.advanceAmount) - emiAmt);
+        const updatedAdv = {
+          ...activeAdv,
+          totalRecoveredAmount: newRecovered,
+          remainingBalance: newBal,
+          status: newBal === 0 ? 'Fully Recovered' : activeAdv.status,
+          deductionHistory: [
+            ...(activeAdv.deductionHistory || []),
+            {
+              monthKey: payrollMonth,
+              amount: emiAmt,
+              recoveredDate: paymentDate,
+              recoveredTime: paymentTime,
+              paymentId: paymentRecord.id
+            }
+          ]
+        };
+        if (onUpdateSalaryAdvance) onUpdateSalaryAdvance(updatedAdv);
+        saveSalaryAdvanceToSupabase(updatedAdv);
+      }
+    }
+
+    setShowPaymentModal(false);
+    alert(`✅ Salary Payment Recorded Successfully!\n• Employee: ${paymentRowData.fullName} (${paymentRowData.empCode})\n• Net Paid: ₹${paymentRecord.netAmountPaid.toLocaleString()}\n• Date & Time: ${paymentDate} at ${paymentTime}\n• Mode: ${paymentMode}\n• Ref: ${paymentTxnRef || 'N/A'}`);
   };
 
   // Filtered Employee List
@@ -1395,11 +1487,13 @@ export default function EmployeeManagement({
             </div>
 
             <div className="stat-card">
-              <div className="stat-card-title">Gross Earnings</div>
-              <div className="stat-card-val" style={{ color: '#0f172a' }}>
-                ₹ {payrollTotals.totalGross.toLocaleString()}
+              <div className="stat-card-title">Disbursed / Paid</div>
+              <div className="stat-card-val" style={{ color: '#16a34a' }}>
+                ₹ {salaryPayments.filter(p => p.monthKey === payrollMonth).reduce((acc, p) => acc + (p.netAmountPaid || 0), 0).toLocaleString()}
               </div>
-              <div className="stat-card-sub">Basic + HRA + Allowances + OT</div>
+              <div className="stat-card-sub">
+                {salaryPayments.filter(p => p.monthKey === payrollMonth).length} / {monthlyPayrollSummary.length} Paid
+              </div>
             </div>
 
             <div className="stat-card">
@@ -1429,7 +1523,7 @@ export default function EmployeeManagement({
 
           {/* Master Salary Sheet Table */}
           <div className="glass-panel" style={{ padding: '0', overflowX: 'auto' }}>
-            <table className="data-table" style={{ width: '100%', minWidth: '1080px', margin: 0 }}>
+            <table className="data-table" style={{ width: '100%', minWidth: '1180px', margin: 0 }}>
               <thead>
                 <tr>
                   <th>Employee</th>
@@ -1443,12 +1537,15 @@ export default function EmployeeManagement({
                   <th>PF / ESIC</th>
                   <th>Advance EMI</th>
                   <th>Net Payable</th>
+                  <th>Payment Status & Disbursal</th>
                   <th style={{ textAlign: 'center' }}>Payslip</th>
                 </tr>
               </thead>
               <tbody>
                 {monthlyPayrollSummary.map(row => {
                   const emp = employees.find(e => e.id === row.employeeId);
+                  const matchingPayment = salaryPayments.find(p => p.monthKey === payrollMonth && p.employeeId === row.employeeId);
+
                   return (
                     <tr key={row.employeeId}>
                       <td>
@@ -1513,12 +1610,36 @@ export default function EmployeeManagement({
                           ₹ {(row.netPayable || 0).toLocaleString()}
                         </div>
                       </td>
+                      <td>
+                        {matchingPayment ? (
+                          <div>
+                            <span style={{ background: '#dcfce7', color: '#166534', padding: '3px 8px', borderRadius: '4px', fontSize: '0.74rem', fontWeight: '900', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                              <CheckCircle2 size={13} style={{ color: '#16a34a' }} /> PAID
+                            </span>
+                            <div style={{ fontSize: '0.7rem', color: '#0f172a', fontWeight: '700', marginTop: '3px' }}>
+                              📅 {matchingPayment.paymentDate} <span style={{ color: '#64748b', fontWeight: 'normal' }}>at {matchingPayment.paymentTime}</span>
+                            </div>
+                            <div style={{ fontSize: '0.68rem', color: '#64748b' }}>
+                              {matchingPayment.paymentMode} {matchingPayment.transactionReference ? `• Ref: ${matchingPayment.transactionReference}` : ''}
+                            </div>
+                          </div>
+                        ) : (
+                          <button 
+                            type="button" 
+                            className="btn-primary" 
+                            style={{ padding: '4px 10px', fontSize: '0.74rem', fontWeight: '800', background: '#0284c7', borderColor: '#0284c7', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                            onClick={() => handleOpenPaymentModal(row, emp)}
+                          >
+                            <CreditCard size={13} /> Record Payment
+                          </button>
+                        )}
+                      </td>
                       <td style={{ textAlign: 'center' }}>
                         <button 
                           type="button" 
-                          className="btn-primary" 
-                          style={{ padding: '4px 10px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                          onClick={() => setActivePayslipData({ employee: emp, salaryData: row })}
+                          className="btn-secondary" 
+                          style={{ padding: '4px 10px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: '700' }}
+                          onClick={() => setActivePayslipData({ employee: emp, salaryData: row, payment: matchingPayment })}
                         >
                           <Printer size={13} /> View Slip
                         </button>
@@ -2119,13 +2240,126 @@ export default function EmployeeManagement({
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 5: PRINTABLE PAYSLIP PREVIEW                                        */}
+      {/* MODAL 5: RECORD SALARY PAYMENT DISBURSAL                                  */}
+      {/* ========================================================================= */}
+      {showPaymentModal && paymentRowData && (
+        <div className="modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.75)', zIndex: 1050 }}>
+          <div className="modal-content glass-panel" style={{ width: '560px', padding: '24px', background: '#ffffff' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
+              <h3 style={{ margin: 0, fontWeight: '900', color: 'var(--primary-brand)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <CreditCard size={20} /> Record Salary Payment
+              </h3>
+              <button type="button" className="btn-secondary" onClick={() => setShowPaymentModal(false)}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveSalaryPaymentSubmit}>
+              {/* Employee Summary Card */}
+              <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontWeight: '900', fontSize: '1rem', color: '#0f172a' }}>{paymentRowData.fullName}</div>
+                  <div style={{ fontSize: '0.74rem', color: '#64748b' }}>
+                    {paymentRowData.department} • {paymentRowData.empCode}
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: '#475569', marginTop: '3px' }}>
+                    Bank: <b>{paymentEmpData?.bankDetails?.bankName || '—'}</b> | A/C: <b>{paymentEmpData?.bankDetails?.accountNumber || '—'}</b>
+                  </div>
+                </div>
+
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: '800' }}>Net Disbursal Amount</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#0284c7' }}>
+                    ₹ {(paymentRowData.netPayable || 0).toLocaleString()}
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: '#059669', fontWeight: '700' }}>Month: {payrollMonth}</div>
+                </div>
+              </div>
+
+              {/* Payment Date and Time Capture */}
+              <div className="form-grid-2" style={{ marginBottom: '14px' }}>
+                <div>
+                  <label className="form-label">Payment Disbursal Date *</label>
+                  <input 
+                    type="date" 
+                    className="form-control" 
+                    value={paymentDate} 
+                    onChange={e => setPaymentDate(e.target.value)} 
+                    required 
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">Payment Time (HH:MM:SS) *</label>
+                  <input 
+                    type="time" 
+                    step="1"
+                    className="form-control" 
+                    value={paymentTime} 
+                    onChange={e => setPaymentTime(e.target.value)} 
+                    required 
+                  />
+                </div>
+              </div>
+
+              <div className="form-grid-2" style={{ marginBottom: '14px' }}>
+                <div>
+                  <label className="form-label">Payment Mode</label>
+                  <select className="form-control" value={paymentMode} onChange={e => setPaymentMode(e.target.value)}>
+                    <option value="Bank Transfer (NEFT)">Bank Transfer (NEFT)</option>
+                    <option value="RTGS">RTGS</option>
+                    <option value="IMPS">IMPS</option>
+                    <option value="UPI">UPI</option>
+                    <option value="Cheque">Cheque</option>
+                    <option value="Cash">Cash</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="form-label">Transaction / UTR Reference No</label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    value={paymentTxnRef} 
+                    onChange={e => setPaymentTxnRef(e.target.value)} 
+                    placeholder="e.g. UTR123456789" 
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '18px' }}>
+                <label className="form-label">Payment Notes / Remarks</label>
+                <input 
+                  type="text" 
+                  className="form-control" 
+                  value={paymentNotes} 
+                  onChange={e => setPaymentNotes(e.target.value)} 
+                  placeholder="e.g. August 2026 Salary transferred via SBI corporate net banking" 
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button type="button" className="btn-secondary" onClick={() => setShowPaymentModal(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary" style={{ background: '#16a34a', borderColor: '#16a34a' }}>
+                  <CheckCircle2 size={16} /> Confirm & Record Payment
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 6: PRINTABLE PAYSLIP PREVIEW                                        */}
       {/* ========================================================================= */}
       {activePayslipData && (
         <EmployeePayslipPDF 
           employee={activePayslipData.employee} 
           salaryData={activePayslipData.salaryData} 
           monthKey={payrollMonth} 
+          payment={activePayslipData.payment}
           onClose={() => setActivePayslipData(null)} 
         />
       )}

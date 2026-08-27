@@ -99,6 +99,7 @@ import {
   fetchEmployeesFromSupabase, saveEmployeeToSupabase, deleteEmployeeFromSupabase,
   fetchEmployeeAttendanceFromSupabase, saveEmployeeAttendanceToSupabase,
   fetchSalaryAdvancesFromSupabase, saveSalaryAdvanceToSupabase,
+  fetchSalaryPaymentsFromSupabase, saveSalaryPaymentToSupabase,
   fetchRolePermissionsFromSupabase, saveRolePermissionsToSupabase,
   fetchSystemSetting, saveSystemSetting
 } from './services/supabaseDataService';
@@ -301,6 +302,7 @@ export default function App() {
   const [employees, setEmployees] = useState(() => loadLocalState('employees', initialEmployees));
   const [employeeAttendance, setEmployeeAttendance] = useState(() => loadLocalState('employee_attendance', initialAttendanceRecords));
   const [salaryAdvances, setSalaryAdvances] = useState(() => loadLocalState('salary_advances', initialSalaryAdvances));
+  const [salaryPayments, setSalaryPayments] = useState(() => loadLocalState('salary_payments', []));
 
 
   const logAudit = async (actionType, moduleName, details, targetId = null) => {
@@ -465,6 +467,7 @@ export default function App() {
         fetchSafe(fetchEmployeesFromSupabase, 'Employees'),
         fetchSafe(fetchEmployeeAttendanceFromSupabase, 'Attendance'),
         fetchSafe(fetchSalaryAdvancesFromSupabase, 'Salary Advances'),
+        fetchSafe(fetchSalaryPaymentsFromSupabase, 'Salary Payments'),
         fetchSafe(fetchRolePermissionsFromSupabase, 'Role Permissions'),
         fetchSafe(fetchAuditLogsFromSupabase, 'Audit Logs')
       ]);
@@ -851,6 +854,17 @@ export default function App() {
           (prev || []).forEach(p => { if (p && p.id && !map.has(p.id)) map.set(p.id, p); });
           const merged = Array.from(map.values());
           safeLocalStorageSet('samyak_erp_salary_advances', merged);
+          return merged;
+        });
+      }
+
+      if (Array.isArray(supaPayments) && supaPayments.length > 0) {
+        setSalaryPayments(prev => {
+          const map = new Map();
+          supaPayments.forEach(pay => { if (pay && pay.id) map.set(pay.id, pay); });
+          (prev || []).forEach(p => { if (p && p.id && !map.has(p.id)) map.set(p.id, p); });
+          const merged = Array.from(map.values());
+          safeLocalStorageSet('samyak_erp_salary_payments', merged);
           return merged;
         });
       }
@@ -1899,6 +1913,20 @@ export default function App() {
       await saveSalaryAdvanceToSupabase(updatedAdv);
     } catch (err) {
       console.warn("[Sync Notice] Salary Advance updated locally. Supabase notice:", err);
+    }
+  };
+
+  const handleSaveSalaryPayment = async (newPayment) => {
+    setSalaryPayments(prev => {
+      const updated = [newPayment, ...prev.filter(p => p.id !== newPayment.id)];
+      safeLocalStorageSet('samyak_erp_salary_payments', updated);
+      return updated;
+    });
+    logAudit('PAYMENT', 'Employee Management', `Disbursed ${newPayment.monthKey} salary of ₹${(newPayment.netAmountPaid || 0).toLocaleString()} to ${newPayment.employeeName} (${newPayment.paymentMode}) on ${newPayment.paymentDate} at ${newPayment.paymentTime}`, newPayment.id);
+    try {
+      await saveSalaryPaymentToSupabase(newPayment);
+    } catch (err) {
+      console.warn("[Sync Notice] Salary Payment saved locally. Supabase notice:", err);
     }
   };
 
@@ -3524,6 +3552,7 @@ export default function App() {
             employees={employees}
             attendanceRecords={employeeAttendance}
             salaryAdvances={salaryAdvances}
+            salaryPayments={salaryPayments}
             currentUser={currentUser}
             userRole={currentUser?.role}
             onAddEmployee={handleAddEmployee}
@@ -3532,6 +3561,7 @@ export default function App() {
             onSaveAttendance={handleSaveAttendance}
             onSaveSalaryAdvance={handleSaveSalaryAdvance}
             onUpdateSalaryAdvance={handleUpdateSalaryAdvance}
+            onSaveSalaryPayment={handleSaveSalaryPayment}
           />
         )}
 

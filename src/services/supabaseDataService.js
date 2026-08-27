@@ -2448,6 +2448,68 @@ export async function saveSalaryAdvanceToSupabase(adv) {
   }
 }
 
+export async function fetchSalaryPaymentsFromSupabase() {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const { data, error } = await supabase.from('salary_payments').select('*').order('payment_timestamp', { ascending: false });
+    if (error) return await fetchSystemSetting('salary_payments');
+    if (data && data.length > 0) {
+      return data.map(r => ({
+        id: r.id,
+        monthKey: r.month_key || r.monthKey,
+        employeeId: r.employee_id || r.employeeId,
+        employeeName: r.employee_name || r.employeeName,
+        empCode: r.emp_code || r.empCode,
+        department: r.department,
+        netAmountPaid: Number(r.net_amount_paid || r.netAmountPaid) || 0,
+        paymentDate: r.payment_date || r.paymentDate,
+        paymentTime: r.payment_time || r.paymentTime,
+        paymentTimestamp: r.payment_timestamp || r.paymentTimestamp,
+        paymentMode: r.payment_mode || r.paymentMode || 'Bank Transfer (NEFT)',
+        transactionReference: r.transaction_reference || r.transactionReference || '',
+        bankName: r.bank_name || r.bankName || '',
+        accountNumber: r.account_number || r.accountNumber || '',
+        status: r.status || 'Paid',
+        disbursedBy: r.disbursed_by || r.disbursedBy || '',
+        notes: r.notes || '',
+        createdAt: r.created_at || r.createdAt
+      }));
+    }
+  } catch (e) {
+    console.warn('[salary_payments] fetch note:', e.message);
+  }
+  return await fetchSystemSetting('salary_payments');
+}
+
+export async function saveSalaryPaymentToSupabase(payment) {
+  if (!isSupabaseConfigured() || !payment) return;
+  try {
+    const row = {
+      id: payment.id,
+      month_key: payment.monthKey,
+      employee_id: payment.employeeId,
+      employee_name: payment.employeeName,
+      emp_code: payment.empCode || '',
+      department: payment.department || '',
+      net_amount_paid: payment.netAmountPaid,
+      payment_date: payment.paymentDate,
+      payment_time: payment.paymentTime,
+      payment_timestamp: payment.paymentTimestamp || `${payment.paymentDate}T${payment.paymentTime}`,
+      payment_mode: payment.paymentMode || 'Bank Transfer (NEFT)',
+      transaction_reference: payment.transactionReference || '',
+      bank_name: payment.bankName || '',
+      account_number: payment.accountNumber || '',
+      status: payment.status || 'Paid',
+      disbursed_by: payment.disbursedBy || '',
+      notes: payment.notes || '',
+      updated_at: new Date().toISOString()
+    };
+    await supabase.from('salary_payments').upsert(row, { onConflict: 'id' });
+  } catch (err) {
+    console.warn('[salary_payments] save exception:', err.message);
+  }
+}
+
 export async function deleteGRNFromSupabase(grnId) {
   if (!isSupabaseConfigured()) return;
   await ensureValidSession();
