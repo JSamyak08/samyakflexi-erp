@@ -44,6 +44,42 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ============================================================================
+   SYSTEM-WIDE CAPITALIZATION STANDARD (Title Case: First Alphabet of Every Word)
+   ============================================================================ */
+h1, h2, h3, h4, h5, h6,
+.tab-title, .page-title, .card-title, .modal-title, .section-title,
+.sidebar-section-header, .nav-item, .nav-tab-btn, .tab-button,
+.form-label, label, legend,
+.stat-card-title, .stat-card-sub, .stats-title,
+th, .data-table th, .data-table td, table th, table td,
+button, .btn-primary, .btn-secondary, .btn-danger, .btn-warning,
+.badge, .status-badge, .status-pill, .nav-badge-pill, .badge-status,
+.dropdown-item, select, select option,
+.alert, .alert-title, .banner-title,
+.filter-label, .address-box-title, .details-section-header,
+.order-card-title, .job-title, .user-name {
+  text-transform: capitalize;
+}
+
+/* Specific exclusions for technical identifiers, codes, emails, passwords, formulas, monospace */
+code, pre, kbd, samp,
+input[type="password"],
+input[type="email"],
+input[type="url"],
+input[type="date"],
+input[type="time"],
+input[type="month"],
+input[type="number"],
+.font-mono,
+.no-capitalize,
+[style*="font-family: monospace"],
+[style*="monospace"],
+[style*="text-transform: none"],
+[style*="text-transform: uppercase"] {
+  text-transform: none;
+}
+
 /* Layout */
 .app-container {
   display: flex;
@@ -174,7 +210,7 @@ body {
   color: var(--text-muted);
   font-size: 0.75rem;
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: capitalize;
   letter-spacing: 0.05em;
 }
 .stats-value {
@@ -361,7 +397,7 @@ body {
 .data-table th {
   color: var(--text-muted);
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: capitalize;
   font-size: 0.75rem;
   letter-spacing: 0.05em;
   background: #f8fafc;
