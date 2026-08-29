@@ -51,46 +51,45 @@ export default function OrderManagement({
     return jm?.structure || order?.structure || '—';
   };
 
-  // Helper: derive dynamic Material Form (Reel or Pouching) from Order specs, linked Job Master, or structure
+  // Helper: derive Material Form (Reel Form or Pouching Form) directly from Job Master specifications
   const getMaterialForm = (order) => {
-    if (!order) return 'Reel';
+    if (!order) return 'Reel Form';
 
-    // 1. Direct explicit property on order
-    const rawType = order.orderType || order.materialFormat || order.materialForm || order.supplyFormat || order.calculationDetails?.orderType;
-    if (rawType) {
-      const s = String(rawType).trim().toLowerCase();
-      if (s.includes('pouch')) return 'Pouching';
-      if (s.includes('reel') || s.includes('roll')) return 'Reel';
-    }
-
-    // 2. Check linked Job Master
+    // 1. Primary: Linked Job Master from Job Master Directory
     const jm = jobMasters.find(j =>
-      (j.jobName || '').toLowerCase().trim() === (order?.jobName || '').toLowerCase().trim()
+      (order.jobMasterId && (j.id === order.jobMasterId || j.jobMasterId === order.jobMasterId)) ||
+      ((j.jobName || '').toLowerCase().trim() === (order?.jobName || '').toLowerCase().trim())
     );
     if (jm) {
-      if (jm.orderType) {
-        return jm.orderType.toLowerCase().includes('pouch') ? 'Pouching' : 'Reel';
+      const jmType = jm.orderType || jm.materialFormat || jm.materialForm || jm.supplyFormat;
+      if (jmType) {
+        const s = String(jmType).trim().toLowerCase();
+        if (s.includes('pouch')) return 'Pouching Form';
+        if (s.includes('reel') || s.includes('roll')) return 'Reel Form';
       }
-      if (jm.materialFormat || jm.materialForm || jm.supplyFormat) {
-        const jmf = String(jm.materialFormat || jm.materialForm || jm.supplyFormat).toLowerCase();
-        if (jmf.includes('pouch')) return 'Pouching';
-        if (jmf.includes('reel') || jmf.includes('roll')) return 'Reel';
-      }
-      if ((jm.pouchOpenWidth && Number(jm.pouchOpenWidth) > 0) || (jm.pouchHeight && Number(jm.pouchHeight) > 0)) {
-        return 'Pouching';
+      if ((jm.pouchOpenWidth && Number(jm.pouchOpenWidth) > 0) || (jm.pouchHeight && Number(jm.pouchHeight) > 0) || jm.pouchType) {
+        return 'Pouching Form';
       }
       if (Array.isArray(jm.routingSteps) && jm.routingSteps.some(s => (s.operation || '').toLowerCase().includes('pouch'))) {
-        return 'Pouching';
+        return 'Pouching Form';
       }
+    }
+
+    // 2. Order's job details / attributes
+    const rawType = order.jobDetails?.orderType || order.jobDetails?.materialFormat || order.orderType || order.materialFormat || order.materialForm || order.supplyFormat || order.calculationDetails?.orderType;
+    if (rawType) {
+      const s = String(rawType).trim().toLowerCase();
+      if (s.includes('pouch')) return 'Pouching Form';
+      if (s.includes('reel') || s.includes('roll')) return 'Reel Form';
     }
 
     // 3. Fallback: Check keywords in Job Title / Product Name
     const jn = (order?.jobName || '').toLowerCase();
-    if (jn.includes('pouch') || jn.includes('bag') || jn.includes('zipper') || jn.includes('standup') || jn.includes('sachet') || jn.includes('pack')) {
-      return 'Pouching';
+    if (jn.includes('pouch') || jn.includes('bag') || jn.includes('zipper') || jn.includes('standup') || jn.includes('sachet') || jn.includes('center seal') || jn.includes('three side')) {
+      return 'Pouching Form';
     }
 
-    return 'Reel';
+    return 'Reel Form';
   };
 
   // Helper: ensure Itemized Raw Material Requirements are always calculated and loaded up
@@ -812,36 +811,20 @@ export default function OrderManagement({
                       <span>Qty: <strong style={{ color: 'var(--text-primary)' }}>{(order.orderQtyKg ?? 0).toLocaleString()} kg</strong></span>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                         Form:
-                        <select 
-                          value={getMaterialForm(order)}
-                          onChange={(e) => {
-                            e.stopPropagation();
-                            const newType = e.target.value;
-                            const updatedOrder = { 
-                              ...order, 
-                              orderType: newType, 
-                              materialFormat: newType,
-                              jobDetails: { ...(order.jobDetails || {}), orderType: newType, materialFormat: newType }
-                            };
-                            if (onUpdateOrder) onUpdateOrder(updatedOrder);
-                            saveOrderToSupabase(updatedOrder);
-                          }}
-                          onClick={e => e.stopPropagation()}
+                        <span
                           style={{
                             padding: '2px 8px',
                             fontSize: '0.74rem',
                             fontWeight: '700',
                             borderRadius: '4px',
-                            border: `1px solid ${getMaterialForm(order) === 'Pouching' ? '#93c5fd' : '#86efac'}`,
-                            background: getMaterialForm(order) === 'Pouching' ? '#eff6ff' : '#f0fdf4',
-                            color: getMaterialForm(order) === 'Pouching' ? '#1d4ed8' : '#15803d',
-                            cursor: 'pointer'
+                            border: `1px solid ${getMaterialForm(order).includes('Pouch') ? '#93c5fd' : '#86efac'}`,
+                            background: getMaterialForm(order).includes('Pouch') ? '#eff6ff' : '#f0fdf4',
+                            color: getMaterialForm(order).includes('Pouch') ? '#1d4ed8' : '#15803d'
                           }}
-                          title="Change Material Form (Reel or Pouching)"
+                          title="Form specified in Job Master"
                         >
-                          <option value="Reel">Reel Form</option>
-                          <option value="Pouching">Pouching Form</option>
-                        </select>
+                          {getMaterialForm(order)}
+                        </span>
                       </span>
                     </div>
                   </div>
