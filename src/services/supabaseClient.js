@@ -126,8 +126,17 @@ export const getSupabaseClient = () => {
 export const supabase = new Proxy({}, {
   get(_target, prop) {
     const client = getSupabaseClient();
+    if (prop === 'constructor' || typeof prop === 'symbol') {
+      return Reflect.get(client, prop);
+    }
     const value = client[prop];
     return typeof value === 'function' ? value.bind(client) : value;
+  },
+  has(_target, prop) {
+    return prop in getSupabaseClient();
+  },
+  getPrototypeOf() {
+    return Object.getPrototypeOf(getSupabaseClient());
   }
 });
 

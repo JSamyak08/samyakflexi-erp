@@ -1,16 +1,19 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import * as Sentry from "@sentry/react"
 import './index.css'
 import App from './App.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 
 if (import.meta.env.VITE_SENTRY_DSN) {
-  Sentry.init({
-    dsn: import.meta.env.VITE_SENTRY_DSN,
-    dataCollection: {
-      userInfo: false,
-    }
+  import('@sentry/react').then(Sentry => {
+    Sentry.init({
+      dsn: import.meta.env.VITE_SENTRY_DSN,
+      dataCollection: {
+        userInfo: false,
+      }
+    });
+  }).catch(err => {
+    console.warn("Sentry initialization deferred:", err);
   });
 }
 
@@ -22,4 +25,4 @@ root.render(
       <App />
     </ErrorBoundary>
   </StrictMode>,
-)
+);

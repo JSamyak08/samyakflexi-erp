@@ -1,11 +1,15 @@
 import React from 'react';
-import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
-import * as Sentry from '@sentry/react';
+import { AlertTriangle, RefreshCw, LogIn, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null, errorInfo: null };
+    this.state = { 
+      hasError: false, 
+      error: null, 
+      errorInfo: null,
+      showDetails: false 
+    };
   }
 
   static getDerivedStateFromError(error) {
@@ -15,7 +19,9 @@ export default class ErrorBoundary extends React.Component {
   componentDidCatch(error, errorInfo) {
     console.error("Uncaught ERP Runtime Error:", error, errorInfo);
     try {
-      Sentry.captureException(error, { extra: errorInfo });
+      if (typeof window !== 'undefined' && window.Sentry && typeof window.Sentry.captureException === 'function') {
+        window.Sentry.captureException(error, { extra: errorInfo });
+      }
     } catch (sentryErr) {
       console.warn("Failed to capture exception to Sentry:", sentryErr);
     }
@@ -26,8 +32,37 @@ export default class ErrorBoundary extends React.Component {
     window.location.href = '/';
   };
 
+  handleGoToLogin = () => {
+    try {
+      localStorage.removeItem('samyak_erp_current_user');
+    } catch (e) {}
+    window.location.href = '/login';
+  };
+
+  handleClearCacheAndReset = () => {
+    try {
+      const protectedKeys = ['samyak_supabase_url', 'samyak_supabase_key'];
+      const keys = Object.keys(localStorage);
+      for (const k of keys) {
+        if (!protectedKeys.includes(k)) {
+          localStorage.removeItem(k);
+        }
+      }
+      sessionStorage.clear();
+      if (window.indexedDB) {
+        window.indexedDB.deleteDatabase('samyak_erp_idb');
+      }
+    } catch (e) {
+      console.warn('Storage clear notice:', e);
+    }
+    window.location.href = '/login';
+  };
+
   render() {
     if (this.state.hasError) {
+      const errorMsg = this.state.error?.message || this.state.error?.toString() || 'Unknown render exception';
+      const stackTrace = this.state.error?.stack || this.state.errorInfo?.componentStack || '';
+
       return (
         <div style={{
           minHeight: '100vh',
@@ -44,7 +79,7 @@ export default class ErrorBoundary extends React.Component {
             border: '1px solid rgba(239, 68, 68, 0.3)',
             borderRadius: '16px',
             padding: '36px',
-            maxWidth: '560px',
+            maxWidth: '640px',
             width: '100%',
             boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
             textAlign: 'center'
@@ -70,27 +105,67 @@ export default class ErrorBoundary extends React.Component {
               SamyakFlexi ERP encountered an unexpected error while rendering this page view.
             </p>
 
-            {this.state.error && (
-              <div style={{
-                background: '#0f172a',
-                border: '1px solid #334155',
-                borderRadius: '8px',
-                padding: '12px 16px',
-                marginBottom: '24px',
-                textAlign: 'left',
-                fontFamily: 'monospace',
-                fontSize: '0.8rem',
-                color: '#f87171',
-                maxHeight: '120px',
-                overflowY: 'auto',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-all'
-              }}>
-                {this.state.error.toString()}
+            <div style={{
+              background: '#0f172a',
+              border: '1px solid #334155',
+              borderRadius: '8px',
+              padding: '12px 16px',
+              marginBottom: '20px',
+              textAlign: 'left',
+              fontFamily: 'monospace',
+              fontSize: '0.82rem',
+              color: '#f87171',
+              maxHeight: '120px',
+              overflowY: 'auto',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-all'
+            }}>
+              {errorMsg}
+            </div>
+
+            {/* Stack trace toggle */}
+            {stackTrace && (
+              <div style={{ marginBottom: '20px', textAlign: 'left' }}>
+                <button
+                  type="button"
+                  onClick={() => this.setState(prev => ({ showDetails: !prev.showDetails }))}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#94a3b8',
+                    cursor: 'pointer',
+                    fontSize: '0.78rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: 0,
+                    marginBottom: '8px'
+                  }}
+                >
+                  {this.state.showDetails ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  <span>{this.state.showDetails ? 'Hide technical stack trace' : 'View technical stack trace'}</span>
+                </button>
+
+                {this.state.showDetails && (
+                  <div style={{
+                    background: '#020617',
+                    border: '1px solid #1e293b',
+                    borderRadius: '6px',
+                    padding: '10px 12px',
+                    fontFamily: 'monospace',
+                    fontSize: '0.72rem',
+                    color: '#94a3b8',
+                    maxHeight: '160px',
+                    overflowY: 'auto',
+                    whiteSpace: 'pre-wrap'
+                  }}>
+                    {stackTrace}
+                  </div>
+                )}
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
               <button
                 onClick={this.handleReload}
                 style={{
@@ -101,13 +176,52 @@ export default class ErrorBoundary extends React.Component {
                   color: '#ffffff',
                   border: 'none',
                   borderRadius: '8px',
-                  padding: '10px 22px',
+                  padding: '10px 18px',
                   fontWeight: '700',
-                  fontSize: '0.92rem',
+                  fontSize: '0.88rem',
                   cursor: 'pointer'
                 }}
               >
-                <RefreshCw size={16} /> Reload Page
+                <RefreshCw size={15} /> Reload Page
+              </button>
+
+              <button
+                onClick={this.handleGoToLogin}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: '#334155',
+                  color: '#f8fafc',
+                  border: '1px solid #475569',
+                  borderRadius: '8px',
+                  padding: '10px 18px',
+                  fontWeight: '600',
+                  fontSize: '0.88rem',
+                  cursor: 'pointer'
+                }}
+              >
+                <LogIn size={15} /> Go to Login
+              </button>
+
+              <button
+                onClick={this.handleClearCacheAndReset}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: 'rgba(239, 68, 68, 0.12)',
+                  color: '#f87171',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  borderRadius: '8px',
+                  padding: '10px 18px',
+                  fontWeight: '600',
+                  fontSize: '0.88rem',
+                  cursor: 'pointer'
+                }}
+                title="Clears corrupted local cache & reset state without losing Supabase database data"
+              >
+                <Trash2 size={15} /> Reset Local Cache
               </button>
             </div>
           </div>
