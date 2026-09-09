@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ShoppingBag, 
   Layers, 
@@ -13,7 +13,14 @@ import {
   PauseCircle,
   PlayCircle,
   Trash2,
-  Clock
+  Clock,
+  PackageCheck,
+  PackageX,
+  Filter,
+  CheckSquare,
+  Square,
+  Box,
+  ArrowUpRight
 } from 'lucide-react';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
 import TablePagination, { usePagination } from './TablePagination';
@@ -179,10 +186,22 @@ export default function OrderManagement({
 
     return reqs;
   };
+
   const isAdmin = currentUser?.role === 'Admin';
+  
+  // Navigation SubTab: 'orders' | 'requirements'
+  const [activeSubTab, setActiveSubTab] = useState(urlParams?.subtab === 'requirements' ? 'requirements' : 'orders');
+
+  // Search and Filter states for Orders View
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [vendorFilter, setVendorFilter] = useState('ALL');
+
+  // Search and Filter states for Consolidated Requirements View
+  const [reqSearchTerm, setReqSearchTerm] = useState('');
+  const [reqStatusFilter, setReqStatusFilter] = useState('SHORTAGE'); // 'SHORTAGE' | 'ALL' | 'PENDING_PO' | 'IN_STOCK' | 'PO_ISSUED'
+  const [reqVendorFilter, setReqVendorFilter] = useState('ALL');
+  const [reqCategoryFilter, setReqCategoryFilter] = useState('ALL'); // 'ALL' | 'Film' | 'Ink' | 'Adhesive'
 
   // Helper for automatic stock checking & reservation matching
   const getStockCheckForReq = (req) => {
@@ -224,6 +243,111 @@ export default function OrderManagement({
       isPartiallyAvailable: reservedKg > 0 && reservedKg < reqQty
     };
   };
+
+  // Aggregated Consolidated Material Requirements List across all active orders
+  const allMaterialRequirements = useMemo(() => {
+    const list = [];
+    (orders || []).forEach(order => {
+      // Exclude completed orders from active requirement replenishment
+      if (order.status === 'Completed') return;
+
+      const reqs = getOrderMaterialRequirements(order);
+      const statusInfo = getOrderStatusInfo(order);
+
+      reqs.forEach(req => {
+        const stockInfo = getStockCheckForReq(req);
+        const filmLow = (req.filmType || '').toLowerCase();
+        let category = 'Film';
+        if (filmLow.includes('ink')) category = 'Ink';
+        else if (filmLow.includes('adhesive')) category = 'Adhesive';
+
+        list.push({
+          ...req,
+          orderId: order.id,
+          order: order,
+          jobName: order.jobName || 'Untitled Job',
+          clientName: order.clientName || 'General Client',
+          orderQtyKg: order.orderQtyKg || 0,
+          targetDeliveryDate: order.targetDeliveryDate || order.deliveryDate || '—',
+          orderStatus: order.status || 'Scheduled',
+          isOverdue: statusInfo.isOverdue,
+          isNearingDeadline: statusInfo.isNearingDeadline,
+          daysRemaining: statusInfo.daysRemaining,
+          structure: getSubstrateStructure(order),
+          category,
+          stockInfo,
+          // True if shortage / balance to order and PO not yet issued
+          isShortage: stockInfo.balanceKg > 0 && !req.poIssued
+        });
+      });
+    });
+    return list;
+  }, [orders, jobMasters, inventory]);
+
+  // Summary Metrics for Requirements
+  const reqMetrics = useMemo(() => {
+    const totalLines = allMaterialRequirements.length;
+    const totalGrossKg = allMaterialRequirements.reduce((sum, r) => sum + (parseFloat(r.qtyKg) || 0), 0);
+
+    const shortageItems = allMaterialRequirements.filter(r => r.isShortage);
+    const shortageLines = shortageItems.length;
+    const shortageBalanceKg = shortageItems.reduce((sum, r) => sum + (parseFloat(r.stockInfo.balanceKg) || 0), 0);
+
+    const inStockItems = allMaterialRequirements.filter(r => r.stockInfo.isFullyAvailable);
+    const inStockLines = inStockItems.length;
+    const inStockKg = inStockItems.reduce((sum, r) => sum + (parseFloat(r.stockInfo.reservedKg) || 0), 0);
+
+    const poIssuedItems = allMaterialRequirements.filter(r => r.poIssued);
+    const poIssuedLines = poIssuedItems.length;
+    const poIssuedKg = poIssuedItems.reduce((sum, r) => sum + (parseFloat(r.qtyKg) || 0), 0);
+
+    return {
+      totalLines,
+      totalGrossKg,
+      shortageLines,
+      shortageBalanceKg,
+      inStockLines,
+      inStockKg,
+      poIssuedLines,
+      poIssuedKg
+    };
+  }, [allMaterialRequirements]);
+
+  // Filtered Requirements List
+  const filteredRequirements = useMemo(() => {
+    return allMaterialRequirements.filter(r => {
+      // Search term filter
+      if (reqSearchTerm) {
+        const q = reqSearchTerm.toLowerCase();
+        const matches = 
+          (r.orderId || '').toLowerCase().includes(q) ||
+          (r.jobName || '').toLowerCase().includes(q) ||
+          (r.clientName || '').toLowerCase().includes(q) ||
+          (r.filmType || '').toLowerCase().includes(q) ||
+          String(r.micron || '').toLowerCase().includes(q) ||
+          String(r.widthMm || '').toLowerCase().includes(q) ||
+          (r.preferredVendor || '').toLowerCase().includes(q) ||
+          (r.poNumber || '').toLowerCase().includes(q);
+        if (!matches) return false;
+      }
+
+      // Status filter
+      if (reqStatusFilter === 'SHORTAGE' && !r.isShortage) return false;
+      if (reqStatusFilter === 'PENDING_PO' && r.poIssued) return false;
+      if (reqStatusFilter === 'IN_STOCK' && !r.stockInfo.isFullyAvailable) return false;
+      if (reqStatusFilter === 'PO_ISSUED' && !r.poIssued) return false;
+
+      // Vendor filter
+      if (reqVendorFilter !== 'ALL' && r.preferredVendor !== reqVendorFilter) return false;
+
+      // Category filter
+      if (reqCategoryFilter !== 'ALL' && r.category !== reqCategoryFilter) return false;
+
+      return true;
+    });
+  }, [allMaterialRequirements, reqSearchTerm, reqStatusFilter, reqVendorFilter, reqCategoryFilter]);
+
+  const requirementsPagination = usePagination(filteredRequirements, 50);
 
   // Job Completion Guard Handler
   const handleMarkJobCompleted = (order, e) => {
@@ -309,7 +433,15 @@ export default function OrderManagement({
   const [activePoPdfData, setActivePoPdfData] = useState(null);
 
   const toggleSelectReq = (reqId) => {
-    setSelectedReqIds(prev => ({ ...prev, [reqId]: !prev[reqId] }));
+    setSelectedReqIds(prev => {
+      const copy = { ...prev };
+      if (copy[reqId]) {
+        delete copy[reqId];
+      } else {
+        copy[reqId] = true;
+      }
+      return copy;
+    });
   };
 
   const toggleSelectAllForOrder = (order) => {
@@ -322,6 +454,34 @@ export default function OrderManagement({
       else newMap[r.id] = true;
     });
     setSelectedReqIds(newMap);
+  };
+
+  // Bulk select helpers for the Consolidated Requirements view
+  const handleSelectAllFilteredReqs = () => {
+    const allSelected = filteredRequirements.length > 0 && filteredRequirements.every(r => selectedReqIds[r.id]);
+    const newMap = { ...selectedReqIds };
+    filteredRequirements.forEach(r => {
+      if (allSelected) {
+        delete newMap[r.id];
+      } else {
+        newMap[r.id] = true;
+      }
+    });
+    setSelectedReqIds(newMap);
+  };
+
+  const handleSelectAllPendingShortageReqs = () => {
+    const newMap = { ...selectedReqIds };
+    allMaterialRequirements.forEach(r => {
+      if (r.isShortage) {
+        newMap[r.id] = true;
+      }
+    });
+    setSelectedReqIds(newMap);
+  };
+
+  const handleClearAllSelectedReqs = () => {
+    setSelectedReqIds({});
   };
 
   // Extract selected requirements list
@@ -372,7 +532,7 @@ export default function OrderManagement({
         widthMm: req.widthMm,
         grossQtyKg: req.qtyKg,
         reservedKg: stockInfo.reservedKg,
-        qtyKg: stockInfo.balanceKg, // Defaults to balance quantity only!
+        qtyKg: stockInfo.balanceKg > 0 ? stockInfo.balanceKg : req.qtyKg, // Defaults to shortage balance or gross qty
         rate: rate
       };
     });
@@ -404,7 +564,8 @@ export default function OrderManagement({
     let vendorName = '';
 
     orders.forEach(ord => {
-      (ord.materialRequirements || []).forEach(r => {
+      const reqs = getOrderMaterialRequirements(ord);
+      reqs.forEach(r => {
         if (r.poNumber === poNo || (r.poIssued && (r.poNumber === poNo || ord.poNumber === poNo))) {
           if (r.preferredVendor) vendorName = r.preferredVendor;
           let rate = 165;
@@ -476,10 +637,11 @@ export default function OrderManagement({
       [poNo]: poData
     }));
 
-    // Update PO status in orders state
+    // Update PO status in orders state & database
     orders.forEach(order => {
       let orderUpdated = false;
-      const updatedReqs = (order.materialRequirements || []).map(r => {
+      const existingReqs = getOrderMaterialRequirements(order);
+      const updatedReqs = existingReqs.map(r => {
         if (selectedReqIds[r.id]) {
           orderUpdated = true;
           return { ...r, poIssued: true, poNumber: poNo };
@@ -492,6 +654,7 @@ export default function OrderManagement({
         onUpdateOrder({
           ...order,
           materialRequirements: updatedReqs,
+          rawMaterialRequirements: updatedReqs,
           poIssued: allIssued,
           poNumber: poNo
         });
@@ -535,7 +698,6 @@ export default function OrderManagement({
   };
 
   // Filter orders
-  // Filter orders
   const filteredOrders = orders.filter(o => {
     const matchesSearch = 
       (o.jobName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -568,385 +730,817 @@ export default function OrderManagement({
         />
       )}
 
-      <div className="hide-on-print" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {/* Top Banner */}
-      <div className="glass-panel" style={{ padding: '20px 24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-          <div>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <ShoppingBag size={22} style={{ color: 'var(--primary-brand)' }} /> Order Management & Vendor PO Issuance
-            </h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '2px' }}>
-              Track order delays (RED), orders nearing deadline (AMBER), and select itemized raw material requirements across orders to issue consolidated Purchase Orders to vendors.
-            </p>
-          </div>
-
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <button className="btn-secondary" onClick={onNavigateToPunching}>
-              <Plus size={16} /> Punch New Order
-            </button>
-            
-            <button 
-              className={`btn-primary ${selectedRequirements.length > 0 ? '' : 'btn-disabled'}`}
-              onClick={handleOpenPoModal}
-            >
-              <FileText size={16} /> Issue Vendor PO ({selectedRequirements.length} Lines Selected)
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Red Delay Alert Notification if delayed orders exist */}
-      {delayedOrdersCount > 0 && (
-        <div style={{
-          background: 'linear-gradient(135deg, #ffffff 0%, #fffbfb 100%)',
-          border: '1px solid #fecaca',
-          borderLeft: '4px solid #dc2626',
-          padding: '14px 18px',
-          borderRadius: '10px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '12px',
-          boxShadow: '0 2px 6px -2px rgba(220, 38, 38, 0.06)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{
-              width: '34px',
-              height: '34px',
-              borderRadius: '8px',
-              background: '#fee2e2',
-              color: '#dc2626',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0
-            }}>
-              <AlertTriangle size={18} />
-            </div>
+      <div className="hide-on-print" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        {/* Top Banner */}
+        <div className="glass-panel" style={{ padding: '20px 24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                <h4 style={{ fontSize: '0.92rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
-                  Delivery Deadline Overdue
-                </h4>
-                <span style={{
-                  background: '#fee2e2',
-                  color: '#dc2626',
-                  border: '1px solid #fca5a5',
-                  fontSize: '0.72rem',
-                  fontWeight: '800',
-                  padding: '2px 8px',
-                  borderRadius: '9999px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.04em'
-                }}>
-                  {delayedOrdersCount} {delayedOrdersCount === 1 ? 'Order' : 'Orders'} Highlighted in Red
-                </span>
-              </div>
-              <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px', margin: 0 }}>
-                Orders have crossed target delivery deadlines. Ensure vendor raw materials and printing cylinders are allocated.
+              <h2 style={{ fontSize: '1.25rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <ShoppingBag size={22} style={{ color: 'var(--primary-brand)' }} /> Order Management & Vendor PO Issuance
+              </h2>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '2px' }}>
+                Manage manufacturing orders, track delays, and consolidate raw material shortages across orders to issue bulk Purchase Orders to vendors.
               </p>
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* Amber Nearing Deadline Alert Notification */}
-      {nearingDeadlineCount > 0 && (
-        <div style={{
-          background: 'linear-gradient(135deg, #ffffff 0%, #fffdf7 100%)',
-          border: '1px solid #fde68a',
-          borderLeft: '4px solid #f59e0b',
-          padding: '14px 18px',
-          borderRadius: '10px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '12px',
-          boxShadow: '0 2px 6px -2px rgba(245, 158, 11, 0.06)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{
-              width: '34px',
-              height: '34px',
-              borderRadius: '8px',
-              background: '#fef3c7',
-              color: '#d97706',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0
-            }}>
-              <Clock size={18} />
-            </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                <h4 style={{ fontSize: '0.92rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
-                  Orders Nearing Target Deadline
-                </h4>
-                <span style={{
-                  background: '#fef3c7',
-                  color: '#b45309',
-                  border: '1px solid #fde68a',
-                  fontSize: '0.72rem',
-                  fontWeight: '800',
-                  padding: '2px 8px',
-                  borderRadius: '9999px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.04em'
-                }}>
-                  {nearingDeadlineCount} {nearingDeadlineCount === 1 ? 'Order' : 'Orders'} (≤ 4 Days Remaining)
-                </span>
-              </div>
-              <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px', margin: 0 }}>
-                Orders are within 4 days of scheduled dispatch. Ensure printing cylinders and materials are loaded on machine schedule.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Filter Toolbar */}
-      <div className="glass-panel" style={{ padding: '16px 20px', display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative', flex: '1', minWidth: '240px' }}>
-          <Search size={16} style={{ position: 'absolute', left: '12px', top: '11px', color: 'var(--text-muted)' }} />
-          <input 
-            type="text"
-            className="form-control"
-            style={{ paddingLeft: '36px' }}
-            placeholder="Search order ID, job name, client, or film structure..."
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-          />
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: '500' }}>Filter Status:</span>
-          <select className="form-control" style={{ width: '240px' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-            <option value="ALL">All Orders ({(orders || []).length})</option>
-            <option value="DELAYED">⚠️ Overdue / Delayed ({delayedOrdersCount})</option>
-            <option value="NEARING_DEADLINE">⏳ Nearing Deadline (≤4 Days) ({nearingDeadlineCount})</option>
-            <option value="ON_HOLD">⏸️ On Hold Orders</option>
-            <option value="PENDING_PO">Pending PO Issuance</option>
-          </select>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: '500' }}>Vendor:</span>
-          <select className="form-control" style={{ width: '180px' }} value={vendorFilter} onChange={e => setVendorFilter(e.target.value)}>
-            <option value="ALL">All Preferred Vendors</option>
-            {(vendors || []).map(v => (
-              <option key={v.id} value={v.companyName}>{v.companyName}</option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Orders List with Itemized Raw Material Requirements Drawer */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        {ordersPagination.paginatedItems.map(order => {
-          const statusInfo = getOrderStatusInfo(order);
-          const isOverdue = statusInfo.isOverdue;
-          const isNearing = statusInfo.isNearingDeadline;
-          const isExpanded = expandedOrders[order.id];
-          const reqs = getOrderMaterialRequirements(order);
-          const allReqsSelected = reqs.length > 0 && reqs.every(r => selectedReqIds[r.id]);
-
-          const cardBorder = isOverdue ? '2px solid #ef4444' : (isNearing ? '2px solid #f59e0b' : '1px solid var(--border-color)');
-          const cardBg = isOverdue ? '#fef2f2' : (isNearing ? '#fffbeb' : 'transparent');
-
-          return (
-            <div 
-              key={order.id} 
-              className={`glass-panel ${isOverdue ? 'row-delayed-highlight' : ''}`}
-              style={{ padding: '0', overflow: 'hidden', border: cardBorder }}
-            >
-              {/* Order Header Row */}
-              <div 
-                className="order-header-row"
-                style={{ 
-                  padding: '16px 20px', 
-                  display: 'flex',
-                  alignItems: 'center',
-                  background: cardBg,
-                  transition: 'background 0.2s ease',
-                  cursor: 'pointer'
-                }}
-                onClick={() => toggleExpandOrder(order.id)}
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button className="btn-secondary" onClick={onNavigateToPunching}>
+                <Plus size={16} /> Punch New Order
+              </button>
+              
+              <button 
+                className={`btn-primary ${selectedRequirements.length > 0 ? '' : 'btn-disabled'}`}
+                onClick={handleOpenPoModal}
+                title={selectedRequirements.length > 0 ? "Issue Consolidated Purchase Order for selected material requirements" : "Select at least 1 material requirement line first"}
               >
-                <div className="order-card-header-grid">
-                  {/* Chevron Toggle */}
-                  <div style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
-                    {isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-                  </div>
+                <FileText size={16} /> Issue Vendor PO ({selectedRequirements.length} Lines Selected)
+              </button>
+            </div>
+          </div>
+        </div>
 
-                  {/* Left Column: Job Details */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '0' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                      <span className="order-id-badge" style={{ 
-                        background: isOverdue ? 'rgba(239, 68, 68, 0.15)' : (isNearing ? 'rgba(245, 158, 11, 0.15)' : 'var(--accent-light)'),
-                        color: isOverdue ? '#dc2626' : (isNearing ? '#b45309' : 'var(--primary-brand)'),
-                        border: isOverdue ? '1px solid rgba(239, 68, 68, 0.25)' : (isNearing ? '1px solid rgba(245, 158, 11, 0.25)' : '1px solid var(--border-color)')
+        {/* SUB-TAB NAVIGATION BAR */}
+        <div style={{ 
+          display: 'flex', 
+          gap: '8px', 
+          background: 'rgba(241, 245, 249, 0.8)', 
+          padding: '6px', 
+          borderRadius: '10px', 
+          border: '1px solid var(--border-color)',
+          flexWrap: 'wrap'
+        }}>
+          <button
+            type="button"
+            className={`btn-secondary ${activeSubTab === 'orders' ? 'active' : ''}`}
+            style={{
+              flex: '1',
+              minWidth: '220px',
+              padding: '10px 18px',
+              fontSize: '0.88rem',
+              fontWeight: activeSubTab === 'orders' ? '700' : '600',
+              background: activeSubTab === 'orders' ? '#ffffff' : 'transparent',
+              color: activeSubTab === 'orders' ? 'var(--primary-brand)' : 'var(--text-secondary)',
+              border: activeSubTab === 'orders' ? '1px solid #cbd5e1' : '1px solid transparent',
+              borderRadius: '8px',
+              boxShadow: activeSubTab === 'orders' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              cursor: 'pointer'
+            }}
+            onClick={() => setActiveSubTab('orders')}
+          >
+            <ShoppingBag size={18} />
+            <span>Orders & Jobs Breakdown</span>
+            <span style={{
+              background: activeSubTab === 'orders' ? '#eff6ff' : '#e2e8f0',
+              color: activeSubTab === 'orders' ? '#1d4ed8' : '#475569',
+              padding: '2px 8px',
+              borderRadius: '9999px',
+              fontSize: '0.75rem',
+              fontWeight: '800'
+            }}>
+              {(orders || []).length} Orders
+            </span>
+            {delayedOrdersCount > 0 && (
+              <span style={{
+                background: '#fee2e2',
+                color: '#dc2626',
+                padding: '2px 7px',
+                borderRadius: '9999px',
+                fontSize: '0.72rem',
+                fontWeight: '800'
+              }}>
+                {delayedOrdersCount} Overdue
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            className={`btn-secondary ${activeSubTab === 'requirements' ? 'active' : ''}`}
+            style={{
+              flex: '1',
+              minWidth: '260px',
+              padding: '10px 18px',
+              fontSize: '0.88rem',
+              fontWeight: activeSubTab === 'requirements' ? '700' : '600',
+              background: activeSubTab === 'requirements' ? '#ffffff' : 'transparent',
+              color: activeSubTab === 'requirements' ? 'var(--primary-brand)' : 'var(--text-secondary)',
+              border: activeSubTab === 'requirements' ? '1px solid #cbd5e1' : '1px solid transparent',
+              borderRadius: '8px',
+              boxShadow: activeSubTab === 'requirements' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              cursor: 'pointer'
+            }}
+            onClick={() => setActiveSubTab('requirements')}
+          >
+            <Layers size={18} />
+            <span>Consolidated Raw Material Requirements</span>
+            {reqMetrics.shortageLines > 0 ? (
+              <span style={{
+                background: '#fee2e2',
+                color: '#b91c1c',
+                border: '1px solid #fca5a5',
+                padding: '2px 8px',
+                borderRadius: '9999px',
+                fontSize: '0.75rem',
+                fontWeight: '800'
+              }}>
+                {reqMetrics.shortageLines} Pending / Shortage
+              </span>
+            ) : (
+              <span style={{
+                background: '#dcfce7',
+                color: '#15803d',
+                padding: '2px 8px',
+                borderRadius: '9999px',
+                fontSize: '0.75rem',
+                fontWeight: '800'
+              }}>
+                All Stocked
+              </span>
+            )}
+            {selectedRequirements.length > 0 && (
+              <span style={{
+                background: '#3b82f6',
+                color: '#ffffff',
+                padding: '2px 8px',
+                borderRadius: '9999px',
+                fontSize: '0.75rem',
+                fontWeight: '800'
+              }}>
+                {selectedRequirements.length} Selected
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* TAB 1: ALL ORDERS & JOB BREAKDOWN */}
+        {activeSubTab === 'orders' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* Red Delay Alert Notification if delayed orders exist */}
+            {delayedOrdersCount > 0 && (
+              <div style={{
+                background: 'linear-gradient(135deg, #ffffff 0%, #fffbfb 100%)',
+                border: '1px solid #fecaca',
+                borderLeft: '4px solid #dc2626',
+                padding: '14px 18px',
+                borderRadius: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '12px',
+                boxShadow: '0 2px 6px -2px rgba(220, 38, 38, 0.06)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '8px',
+                    background: '#fee2e2',
+                    color: '#dc2626',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}>
+                    <AlertTriangle size={18} />
+                  </div>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <h4 style={{ fontSize: '0.92rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                        Delivery Deadline Overdue
+                      </h4>
+                      <span style={{
+                        background: '#fee2e2',
+                        color: '#dc2626',
+                        border: '1px solid #fca5a5',
+                        fontSize: '0.72rem',
+                        fontWeight: '800',
+                        padding: '2px 8px',
+                        borderRadius: '9999px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.04em'
                       }}>
-                        {order.id}
-                      </span>
-                      <h3 style={{ fontSize: '1.05rem', fontWeight: '800', margin: '0', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '380px' }} title={order.jobName}>
-                        {order.jobName}
-                      </h3>
-                      {isOverdue && <span className="badge-delayed-tag">OVERDUE</span>}
-                      {isNearing && (
-                        <span className="badge-delayed-tag" style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a' }}>
-                          NEARING DEADLINE ({statusInfo.daysRemaining === 0 ? 'TODAY' : `${statusInfo.daysRemaining}D LEFT`})
-                        </span>
-                      )}
-                    </div>
-                    
-                    <div style={{ display: 'flex', gap: '14px', fontSize: '0.8rem', color: 'var(--text-secondary)', flexWrap: 'wrap', alignItems: 'center' }}>
-                      <span>Client: <strong style={{ color: 'var(--text-primary)' }}>{order.clientName}</strong></span>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                        Structure: <span style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: '4px', fontWeight: '600', color: '#1e293b' }}>{getSubstrateStructure(order)}</span>
-                      </span>
-                      <span>Qty: <strong style={{ color: 'var(--text-primary)' }}>{(order.orderQtyKg ?? 0).toLocaleString()} kg</strong></span>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                        Form:
-                        <span
-                          style={{
-                            padding: '2px 8px',
-                            fontSize: '0.74rem',
-                            fontWeight: '700',
-                            borderRadius: '4px',
-                            border: `1px solid ${getMaterialForm(order).includes('Pouch') ? '#93c5fd' : '#86efac'}`,
-                            background: getMaterialForm(order).includes('Pouch') ? '#eff6ff' : '#f0fdf4',
-                            color: getMaterialForm(order).includes('Pouch') ? '#1d4ed8' : '#15803d'
-                          }}
-                          title="Form specified in Job Master"
-                        >
-                          {getMaterialForm(order)}
-                        </span>
+                        {delayedOrdersCount} {delayedOrdersCount === 1 ? 'Order' : 'Orders'} Highlighted in Red
                       </span>
                     </div>
-                  </div>
-
-                  {/* Middle Column: Target Date */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: '600' }}>Target Delivery</span>
-                    <span style={{ 
-                      fontWeight: '800', 
-                      fontSize: '0.92rem', 
-                      color: isOverdue ? '#dc2626' : (isNearing ? '#b45309' : 'var(--text-primary)') 
-                    }}>
-                      {order.targetDeliveryDate}
-                    </span>
-                  </div>
-
-                  {/* Middle-Right Column: Status */}
-                  <div style={{ display: 'flex', alignItems: 'center' }}>
-                    {order.status === 'On Hold' ? (
-                      <span className="badge badge-warning" style={{ fontSize: '0.75rem', padding: '4px 10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: '95px', textAlign: 'center' }}>
-                        ⏸️ ON HOLD
-                      </span>
-                    ) : isOverdue ? (
-                      <span className="badge badge-warning" style={{ background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', fontSize: '0.75rem', padding: '4px 10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: '95px', textAlign: 'center' }}>
-                        ⚠️ OVERDUE
-                      </span>
-                    ) : isNearing ? (
-                      <span className="badge badge-warning" style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', fontSize: '0.75rem', padding: '4px 10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: '95px', textAlign: 'center' }}>
-                        ⏳ NEARING DEADLINE
-                      </span>
-                    ) : (
-                      <span className="badge badge-us" style={{ fontSize: '0.75rem', padding: '4px 10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: '95px', textAlign: 'center' }}>
-                        {order.status || 'In Progress'}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Right Column: Actions */}
-                  <div 
-                    className="order-card-right-section"
-                    style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}
-                    onClick={e => e.stopPropagation()}
-                  >
-                    {order.status !== 'Completed' && (
-                      <button 
-                        className="btn-secondary" 
-                        style={{ padding: '6px 12px', fontSize: '0.78rem', color: '#047857', borderColor: '#a7f3d0', background: '#ecfdf5', borderRadius: '6px', fontWeight: '600' }}
-                        onClick={(e) => handleMarkJobCompleted(order, e)}
-                        title="Mark Job Completed (Requires Approved Production Record)"
-                      >
-                        <CheckCircle2 size={13} /> Complete
-                      </button>
-                    )}
-
-                    {isAdmin && (
-                      <>
-                        <button 
-                          className="btn-secondary" 
-                          style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '6px', fontWeight: '600' }}
-                          onClick={(e) => handleToggleHoldOrder(order, e)}
-                          title={order.status === 'On Hold' ? 'Resume Order' : 'Put Order On Hold'}
-                        >
-                          {order.status === 'On Hold' ? <PlayCircle size={13} /> : <PauseCircle size={13} />}
-                          {order.status === 'On Hold' ? 'Resume' : 'Hold'}
-                        </button>
-
-                        <button 
-                          className="btn-secondary" 
-                          style={{ padding: '6px 12px', fontSize: '0.78rem', color: '#dc2626', borderColor: '#fecaca', borderRadius: '6px', fontWeight: '600' }}
-                          onClick={(e) => handleDeleteOrderClick(order, e)}
-                          title="Delete Order"
-                        >
-                          <Trash2 size={13} /> Delete
-                        </button>
-                      </>
-                    )}
+                    <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px', margin: 0 }}>
+                      Orders have crossed target delivery deadlines. Ensure vendor raw materials and printing cylinders are allocated.
+                    </p>
                   </div>
                 </div>
               </div>
+            )}
 
-              {/* Expandable Drawer: Itemized Raw Material Breakdown per Vendor */}
-              {isExpanded && (
-                <div style={{ padding: '16px 20px', background: '#ffffff', borderTop: '1px solid var(--border-color)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <Layers size={16} style={{ color: 'var(--primary-brand)' }} />
-                      <h4 style={{ fontSize: '0.85rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
-                        ITEMIZED RAW MATERIAL REQUIREMENTS ({reqs.length} ITEMS)
+            {/* Amber Nearing Deadline Alert Notification */}
+            {nearingDeadlineCount > 0 && (
+              <div style={{
+                background: 'linear-gradient(135deg, #ffffff 0%, #fffdf7 100%)',
+                border: '1px solid #fde68a',
+                borderLeft: '4px solid #f59e0b',
+                padding: '14px 18px',
+                borderRadius: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '12px',
+                boxShadow: '0 2px 6px -2px rgba(245, 158, 11, 0.06)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '8px',
+                    background: '#fef3c7',
+                    color: '#d97706',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}>
+                    <Clock size={18} />
+                  </div>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <h4 style={{ fontSize: '0.92rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                        Orders Nearing Target Deadline
                       </h4>
+                      <span style={{
+                        background: '#fef3c7',
+                        color: '#b45309',
+                        border: '1px solid #fde68a',
+                        fontSize: '0.72rem',
+                        fontWeight: '800',
+                        padding: '2px 8px',
+                        borderRadius: '9999px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.04em'
+                      }}>
+                        {nearingDeadlineCount} {nearingDeadlineCount === 1 ? 'Order' : 'Orders'} (≤ 4 Days Remaining)
+                      </span>
+                    </div>
+                    <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px', margin: 0 }}>
+                      Orders are within 4 days of scheduled dispatch. Ensure printing cylinders and materials are loaded on machine schedule.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Filter Toolbar */}
+            <div className="glass-panel" style={{ padding: '16px 20px', display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ position: 'relative', flex: '1', minWidth: '240px' }}>
+                <Search size={16} style={{ position: 'absolute', left: '12px', top: '11px', color: 'var(--text-muted)' }} />
+                <input 
+                  type="text"
+                  className="form-control"
+                  style={{ paddingLeft: '36px' }}
+                  placeholder="Search order ID, job name, client, or film structure..."
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                />
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: '500' }}>Filter Status:</span>
+                <select className="form-control" style={{ width: '240px' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+                  <option value="ALL">All Orders ({(orders || []).length})</option>
+                  <option value="DELAYED">⚠️ Overdue / Delayed ({delayedOrdersCount})</option>
+                  <option value="NEARING_DEADLINE">⏳ Nearing Deadline (≤4 Days) ({nearingDeadlineCount})</option>
+                  <option value="ON_HOLD">⏸️ On Hold Orders</option>
+                  <option value="PENDING_PO">Pending PO Issuance</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: '500' }}>Vendor:</span>
+                <select className="form-control" style={{ width: '180px' }} value={vendorFilter} onChange={e => setVendorFilter(e.target.value)}>
+                  <option value="ALL">All Preferred Vendors</option>
+                  {(vendors || []).map(v => (
+                    <option key={v.id} value={v.companyName}>{v.companyName}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Orders List with Itemized Raw Material Requirements Drawer */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {ordersPagination.paginatedItems.map(order => {
+                const statusInfo = getOrderStatusInfo(order);
+                const isOverdue = statusInfo.isOverdue;
+                const isNearing = statusInfo.isNearingDeadline;
+                const isExpanded = expandedOrders[order.id];
+                const reqs = getOrderMaterialRequirements(order);
+                const allReqsSelected = reqs.length > 0 && reqs.every(r => selectedReqIds[r.id]);
+
+                const cardBorder = isOverdue ? '2px solid #ef4444' : (isNearing ? '2px solid #f59e0b' : '1px solid var(--border-color)');
+                const cardBg = isOverdue ? '#fef2f2' : (isNearing ? '#fffbeb' : 'transparent');
+
+                return (
+                  <div 
+                    key={order.id} 
+                    className={`glass-panel ${isOverdue ? 'row-delayed-highlight' : ''}`}
+                    style={{ padding: '0', overflow: 'hidden', border: cardBorder }}
+                  >
+                    {/* Order Header Row */}
+                    <div 
+                      className="order-header-row"
+                      style={{ 
+                        padding: '16px 20px', 
+                        display: 'flex',
+                        alignItems: 'center',
+                        background: cardBg,
+                        transition: 'background 0.2s ease',
+                        cursor: 'pointer'
+                      }}
+                      onClick={() => toggleExpandOrder(order.id)}
+                    >
+                      <div className="order-card-header-grid">
+                        {/* Chevron Toggle */}
+                        <div style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
+                          {isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+                        </div>
+
+                        {/* Left Column: Job Details */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '0' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                            <span className="order-id-badge" style={{ 
+                              background: isOverdue ? 'rgba(239, 68, 68, 0.15)' : (isNearing ? 'rgba(245, 158, 11, 0.15)' : 'var(--accent-light)'),
+                              color: isOverdue ? '#dc2626' : (isNearing ? '#b45309' : 'var(--primary-brand)'),
+                              border: isOverdue ? '1px solid rgba(239, 68, 68, 0.25)' : (isNearing ? '1px solid rgba(245, 158, 11, 0.25)' : '1px solid var(--border-color)')
+                            }}>
+                              {order.id}
+                            </span>
+                            <h3 style={{ fontSize: '1.05rem', fontWeight: '800', margin: '0', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '380px' }} title={order.jobName}>
+                              {order.jobName}
+                            </h3>
+                            {isOverdue && <span className="badge-delayed-tag">OVERDUE</span>}
+                            {isNearing && (
+                              <span className="badge-delayed-tag" style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a' }}>
+                                NEARING DEADLINE ({statusInfo.daysRemaining === 0 ? 'TODAY' : `${statusInfo.daysRemaining}D LEFT`})
+                              </span>
+                            )}
+                          </div>
+                          
+                          <div style={{ display: 'flex', gap: '14px', fontSize: '0.8rem', color: 'var(--text-secondary)', flexWrap: 'wrap', alignItems: 'center' }}>
+                            <span>Client: <strong style={{ color: 'var(--text-primary)' }}>{order.clientName}</strong></span>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                              Structure: <span style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: '4px', fontWeight: '600', color: '#1e293b' }}>{getSubstrateStructure(order)}</span>
+                            </span>
+                            <span>Qty: <strong style={{ color: 'var(--text-primary)' }}>{(order.orderQtyKg ?? 0).toLocaleString()} kg</strong></span>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                              Form:
+                              <span
+                                style={{
+                                  padding: '2px 8px',
+                                  fontSize: '0.74rem',
+                                  fontWeight: '700',
+                                  borderRadius: '4px',
+                                  border: `1px solid ${getMaterialForm(order).includes('Pouch') ? '#93c5fd' : '#86efac'}`,
+                                  background: getMaterialForm(order).includes('Pouch') ? '#eff6ff' : '#f0fdf4',
+                                  color: getMaterialForm(order).includes('Pouch') ? '#1d4ed8' : '#15803d'
+                                }}
+                                title="Form specified in Job Master"
+                              >
+                                {getMaterialForm(order)}
+                              </span>
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Middle Column: Target Date */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: '600' }}>Target Delivery</span>
+                          <span style={{ 
+                            fontWeight: '800', 
+                            fontSize: '0.92rem', 
+                            color: isOverdue ? '#dc2626' : (isNearing ? '#b45309' : 'var(--text-primary)') 
+                          }}>
+                            {order.targetDeliveryDate}
+                          </span>
+                        </div>
+
+                        {/* Middle-Right Column: Status */}
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                          {order.status === 'On Hold' ? (
+                            <span className="badge badge-warning" style={{ fontSize: '0.75rem', padding: '4px 10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: '95px', textAlign: 'center' }}>
+                              ⏸️ ON HOLD
+                            </span>
+                          ) : isOverdue ? (
+                            <span className="badge badge-warning" style={{ background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', fontSize: '0.75rem', padding: '4px 10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: '95px', textAlign: 'center' }}>
+                              ⚠️ OVERDUE
+                            </span>
+                          ) : isNearing ? (
+                            <span className="badge badge-warning" style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', fontSize: '0.75rem', padding: '4px 10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: '95px', textAlign: 'center' }}>
+                              ⏳ NEARING DEADLINE
+                            </span>
+                          ) : (
+                            <span className="badge badge-us" style={{ fontSize: '0.75rem', padding: '4px 10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: '95px', textAlign: 'center' }}>
+                              {order.status || 'In Progress'}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Right Column: Actions */}
+                        <div 
+                          className="order-card-right-section"
+                          style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}
+                          onClick={e => e.stopPropagation()}
+                        >
+                          {order.status !== 'Completed' && (
+                            <button 
+                              className="btn-secondary" 
+                              style={{ padding: '6px 12px', fontSize: '0.78rem', color: '#047857', borderColor: '#a7f3d0', background: '#ecfdf5', borderRadius: '6px', fontWeight: '600' }}
+                              onClick={(e) => handleMarkJobCompleted(order, e)}
+                              title="Mark Job Completed (Requires Approved Production Record)"
+                            >
+                              <CheckCircle2 size={13} /> Complete
+                            </button>
+                          )}
+
+                          {isAdmin && (
+                            <>
+                              <button 
+                                className="btn-secondary" 
+                                style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '6px', fontWeight: '600' }}
+                                onClick={(e) => handleToggleHoldOrder(order, e)}
+                                title={order.status === 'On Hold' ? 'Resume Order' : 'Put Order On Hold'}
+                              >
+                                {order.status === 'On Hold' ? <PlayCircle size={13} /> : <PauseCircle size={13} />}
+                                {order.status === 'On Hold' ? 'Resume' : 'Hold'}
+                              </button>
+
+                              <button 
+                                className="btn-secondary" 
+                                style={{ padding: '6px 12px', fontSize: '0.78rem', color: '#dc2626', borderColor: '#fecaca', borderRadius: '6px', fontWeight: '600' }}
+                                onClick={(e) => handleDeleteOrderClick(order, e)}
+                                title="Delete Order"
+                              >
+                                <Trash2 size={13} /> Delete
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
                     </div>
 
-                    <button 
-                      className="btn-secondary" 
-                      style={{ fontSize: '0.75rem', padding: '4px 8px' }}
-                      onClick={(e) => { e.stopPropagation(); toggleSelectAllForOrder(order); }}
-                    >
-                      {allReqsSelected ? 'Deselect Order Materials' : 'Select All Materials for PO'}
-                    </button>
-                  </div>
+                    {/* Expandable Drawer: Itemized Raw Material Breakdown per Vendor */}
+                    {isExpanded && (
+                      <div style={{ padding: '16px 20px', background: '#ffffff', borderTop: '1px solid var(--border-color)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <Layers size={16} style={{ color: 'var(--primary-brand)' }} />
+                            <h4 style={{ fontSize: '0.85rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+                              ITEMIZED RAW MATERIAL REQUIREMENTS ({reqs.length} ITEMS)
+                            </h4>
+                          </div>
 
-                  <table className="data-table" style={{ fontSize: '0.82rem' }}>
-                    <thead>
-                      <tr style={{ background: '#f8fafc' }}>
-                        <th style={{ width: '40px' }}>Select</th>
-                        <th>Material Description</th>
-                        <th>Micron (µ)</th>
-                        <th>Width (mm)</th>
-                        <th>Gross Required (Kg)</th>
-                        <th style={{ minWidth: '220px' }}>Stock Check & Reservation</th>
-                        <th style={{ color: '#2563eb' }}>Balance Qty for PO (Kg)</th>
-                        <th>Preferred Vendor</th>
-                        <th>PO Status</th>
+                          <button 
+                            className="btn-secondary" 
+                            style={{ fontSize: '0.75rem', padding: '4px 8px' }}
+                            onClick={(e) => { e.stopPropagation(); toggleSelectAllForOrder(order); }}
+                          >
+                            {allReqsSelected ? 'Deselect Order Materials' : 'Select All Materials for PO'}
+                          </button>
+                        </div>
+
+                        <table className="data-table" style={{ fontSize: '0.82rem' }}>
+                          <thead>
+                            <tr style={{ background: '#f8fafc' }}>
+                              <th style={{ width: '40px' }}>Select</th>
+                              <th>Material Description</th>
+                              <th>Micron (µ)</th>
+                              <th>Width (mm)</th>
+                              <th>Gross Required (Kg)</th>
+                              <th style={{ minWidth: '220px' }}>Stock Check & Reservation</th>
+                              <th style={{ color: '#2563eb' }}>Balance Qty for PO (Kg)</th>
+                              <th>Preferred Vendor</th>
+                              <th>PO Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {reqs.map(req => {
+                              const isChecked = !!selectedReqIds[req.id];
+                              const stockInfo = getStockCheckForReq(req);
+
+                              return (
+                                <tr key={req.id} style={{ background: isChecked ? '#eff6ff' : 'transparent' }}>
+                                  <td>
+                                    <input 
+                                      type="checkbox"
+                                      style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                      checked={isChecked}
+                                      onChange={() => toggleSelectReq(req.id)}
+                                    />
+                                  </td>
+                                  <td style={{ fontWeight: '600' }}>{req.filmType}</td>
+                                  <td>{req.micron}</td>
+                                  <td>{req.widthMm}</td>
+                                  <td className="bold-val">{req.qtyKg} kg</td>
+
+                                  {/* Stock Check & Reservation Status */}
+                                  <td>
+                                    {stockInfo.isFullyAvailable ? (
+                                      <div style={{ background: '#dcfce7', border: '1px solid #86efac', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#15803d' }}>
+                                        <strong>✅ {stockInfo.reservedKg} kg / {stockInfo.reqQty} kg in stock</strong>
+                                        <div style={{ fontSize: '0.7rem', color: '#166534' }}>
+                                          Fully Reserved for Order (No PO Required)
+                                        </div>
+                                      </div>
+                                    ) : stockInfo.isPartiallyAvailable ? (
+                                      <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#047857' }}>
+                                        <strong>🟢 {stockInfo.reservedKg} kg out of {stockInfo.reqQty} kg available</strong>
+                                        <div style={{ fontSize: '0.7rem', color: '#065f46' }}>
+                                          {stockInfo.reservedKg} kg Reserved for Order
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div style={{ background: '#fffbe6', border: '1px solid #ffe58f', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#d48806' }}>
+                                        <span>⚠️ 0 kg in stock (Full {stockInfo.reqQty} kg needed)</span>
+                                      </div>
+                                    )}
+                                  </td>
+
+                                  {/* Balance Quantity Only to Order */}
+                                  <td>
+                                    <span className="badge" style={{ background: stockInfo.balanceKg > 0 ? '#e0f2fe' : '#f1f5f9', color: stockInfo.balanceKg > 0 ? '#0369a1' : '#64748b', fontWeight: '800', fontSize: '0.85rem' }}>
+                                      {stockInfo.balanceKg} kg
+                                    </span>
+                                  </td>
+
+                                  <td style={{ color: 'var(--text-secondary)' }}>
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                      <Building2 size={13} /> {req.preferredVendor}
+                                    </span>
+                                  </td>
+                                  <td>
+                                    {req.poIssued ? (
+                                      <button 
+                                        type="button"
+                                        className="btn-secondary" 
+                                        style={{ 
+                                          display: 'inline-flex', 
+                                          alignItems: 'center', 
+                                          gap: '4px', 
+                                          padding: '4px 8px', 
+                                          fontSize: '0.75rem', 
+                                          fontWeight: '700', 
+                                          color: '#047857', 
+                                          borderColor: '#a7f3d0', 
+                                          background: '#ecfdf5', 
+                                          cursor: 'pointer' 
+                                        }}
+                                        onClick={(e) => handleViewPoPdf(req.poNumber || order.poNumber || 'PO-2026-101', e)}
+                                        title="Click to View, Print & Download Purchase Order PDF"
+                                      >
+                                        <FileText size={13} /> {req.poNumber || order.poNumber || 'PO-2026-101'}
+                                      </button>
+                                    ) : (
+                                      <span className="badge badge-warning">Pending PO</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <TablePagination
+              currentPage={ordersPagination.currentPage}
+              totalItems={ordersPagination.totalItems}
+              pageSize={ordersPagination.pageSize}
+              onPageChange={ordersPagination.setCurrentPage}
+              onPageSizeChange={ordersPagination.setPageSize}
+            />
+          </div>
+        )}
+
+        {/* TAB 2: CONSOLIDATED RAW MATERIAL REQUIREMENTS VIEW */}
+        {activeSubTab === 'requirements' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* KPI Summary Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+              <div className="glass-panel" style={{ padding: '16px 20px', borderLeft: '4px solid var(--primary-brand)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: '0.78rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+                    Total Requirements
+                  </span>
+                  <Layers size={18} style={{ color: 'var(--primary-brand)' }} />
+                </div>
+                <div style={{ fontSize: '1.45rem', fontWeight: '800', marginTop: '6px', color: 'var(--text-primary)' }}>
+                  {reqMetrics.totalGrossKg.toLocaleString()} <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>kg</span>
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                  Across {reqMetrics.totalLines} material lines in active orders
+                </div>
+              </div>
+
+              <div className="glass-panel" style={{ padding: '16px 20px', borderLeft: '4px solid #ef4444', background: reqMetrics.shortageLines > 0 ? '#fffbfb' : 'transparent' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: '0.78rem', fontWeight: '700', textTransform: 'uppercase', color: '#b91c1c', letterSpacing: '0.04em' }}>
+                    Pending PO / Shortage
+                  </span>
+                  <PackageX size={18} style={{ color: '#ef4444' }} />
+                </div>
+                <div style={{ fontSize: '1.45rem', fontWeight: '800', marginTop: '6px', color: '#dc2626' }}>
+                  {reqMetrics.shortageBalanceKg.toLocaleString()} <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>kg</span>
+                </div>
+                <div style={{ fontSize: '0.78rem', color: '#991b1b', marginTop: '4px', fontWeight: '600' }}>
+                  {reqMetrics.shortageLines} lines requiring Purchase Orders
+                </div>
+              </div>
+
+              <div className="glass-panel" style={{ padding: '16px 20px', borderLeft: '4px solid #10b981' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: '0.78rem', fontWeight: '700', textTransform: 'uppercase', color: '#047857', letterSpacing: '0.04em' }}>
+                    In-Stock & Reserved
+                  </span>
+                  <PackageCheck size={18} style={{ color: '#10b981' }} />
+                </div>
+                <div style={{ fontSize: '1.45rem', fontWeight: '800', marginTop: '6px', color: '#059669' }}>
+                  {reqMetrics.inStockKg.toLocaleString()} <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>kg</span>
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                  {reqMetrics.inStockLines} lines covered by inventory stock
+                </div>
+              </div>
+
+              <div className="glass-panel" style={{ padding: '16px 20px', borderLeft: '4px solid #3b82f6' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: '0.78rem', fontWeight: '700', textTransform: 'uppercase', color: '#1d4ed8', letterSpacing: '0.04em' }}>
+                    POs Issued to Vendors
+                  </span>
+                  <FileText size={18} style={{ color: '#3b82f6' }} />
+                </div>
+                <div style={{ fontSize: '1.45rem', fontWeight: '800', marginTop: '6px', color: '#2563eb' }}>
+                  {reqMetrics.poIssuedKg.toLocaleString()} <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>kg</span>
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                  {reqMetrics.poIssuedLines} lines with issued vendor POs
+                </div>
+              </div>
+            </div>
+
+            {/* Filter Toolbar for Requirements */}
+            <div className="glass-panel" style={{ padding: '16px 20px', display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ position: 'relative', flex: '1', minWidth: '240px' }}>
+                <Search size={16} style={{ position: 'absolute', left: '12px', top: '11px', color: 'var(--text-muted)' }} />
+                <input 
+                  type="text"
+                  className="form-control"
+                  style={{ paddingLeft: '36px' }}
+                  placeholder="Search order ID, job name, client, film grade, vendor, or PO#..."
+                  value={reqSearchTerm}
+                  onChange={e => setReqSearchTerm(e.target.value)}
+                />
+              </div>
+
+              {/* Status Filter */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: '600' }}>Status:</span>
+                <select 
+                  className="form-control" 
+                  style={{ width: '220px', fontWeight: reqStatusFilter === 'SHORTAGE' ? '700' : '500' }} 
+                  value={reqStatusFilter} 
+                  onChange={e => setReqStatusFilter(e.target.value)}
+                >
+                  <option value="SHORTAGE">⚠️ Pending PO / Shortage ({reqMetrics.shortageLines})</option>
+                  <option value="ALL">All Material Lines ({reqMetrics.totalLines})</option>
+                  <option value="PENDING_PO">Pending PO (Any stock) ({allMaterialRequirements.filter(r => !r.poIssued).length})</option>
+                  <option value="IN_STOCK">✅ Fully In-Stock ({reqMetrics.inStockLines})</option>
+                  <option value="PO_ISSUED">📄 PO Already Issued ({reqMetrics.poIssuedLines})</option>
+                </select>
+              </div>
+
+              {/* Vendor Filter */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: '600' }}>Vendor:</span>
+                <select 
+                  className="form-control" 
+                  style={{ width: '180px' }} 
+                  value={reqVendorFilter} 
+                  onChange={e => setReqVendorFilter(e.target.value)}
+                >
+                  <option value="ALL">All Vendors</option>
+                  {Array.from(new Set(allMaterialRequirements.map(r => r.preferredVendor).filter(Boolean))).map(vName => (
+                    <option key={vName} value={vName}>{vName}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Category Filter */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: '600' }}>Category:</span>
+                <select 
+                  className="form-control" 
+                  style={{ width: '140px' }} 
+                  value={reqCategoryFilter} 
+                  onChange={e => setReqCategoryFilter(e.target.value)}
+                >
+                  <option value="ALL">All Items</option>
+                  <option value="Film">Film / Substrates</option>
+                  <option value="Ink">Printing Inks</option>
+                  <option value="Adhesive">Adhesives</option>
+                </select>
+              </div>
+
+              {/* Bulk Selection Action Buttons */}
+              <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', flexWrap: 'wrap' }}>
+                <button 
+                  type="button" 
+                  className="btn-secondary" 
+                  style={{ fontSize: '0.78rem', padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  onClick={handleSelectAllFilteredReqs}
+                >
+                  <CheckSquare size={14} /> Toggle All Filtered ({filteredRequirements.length})
+                </button>
+                {reqMetrics.shortageLines > 0 && (
+                  <button 
+                    type="button" 
+                    className="btn-secondary" 
+                    style={{ fontSize: '0.78rem', padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '4px', color: '#b91c1c', borderColor: '#fca5a5' }}
+                    onClick={handleSelectAllPendingShortageReqs}
+                  >
+                    <AlertTriangle size={14} /> Select All Pending Shortage
+                  </button>
+                )}
+                {selectedRequirements.length > 0 && (
+                  <button 
+                    type="button" 
+                    className="btn-secondary" 
+                    style={{ fontSize: '0.78rem', padding: '6px 10px', color: '#64748b' }}
+                    onClick={handleClearAllSelectedReqs}
+                  >
+                    Clear ({selectedRequirements.length})
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Consolidated Material Requirements Table */}
+            <div className="glass-panel" style={{ padding: '0', overflow: 'hidden' }}>
+              <div style={{ overflowX: 'auto' }}>
+                <table className="data-table" style={{ fontSize: '0.82rem', width: '100%' }}>
+                  <thead>
+                    <tr style={{ background: '#f8fafc' }}>
+                      <th style={{ width: '44px', textAlign: 'center' }}>
+                        <input 
+                          type="checkbox"
+                          style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                          checked={filteredRequirements.length > 0 && filteredRequirements.every(r => selectedReqIds[r.id])}
+                          onChange={handleSelectAllFilteredReqs}
+                          title="Select / Deselect all visible filtered items"
+                        />
+                      </th>
+                      <th>Order ID & Client</th>
+                      <th>Job Name & Structure</th>
+                      <th>Material Specification</th>
+                      <th>Gauge / Width</th>
+                      <th>Gross Req. (Kg)</th>
+                      <th style={{ minWidth: '210px' }}>Inventory Stock & Reservation</th>
+                      <th style={{ color: '#2563eb' }}>Balance for PO</th>
+                      <th>Preferred Vendor</th>
+                      <th>Target Dispatch</th>
+                      <th>PO Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {requirementsPagination.paginatedItems.length === 0 ? (
+                      <tr>
+                        <td colSpan="11" style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
+                          <Layers size={32} style={{ margin: '0 auto 8px', opacity: 0.5, display: 'block' }} />
+                          <div style={{ fontSize: '0.95rem', fontWeight: '700', color: 'var(--text-primary)' }}>No Raw Material Requirements Found</div>
+                          <p style={{ fontSize: '0.82rem', margin: '4px 0 0' }}>Try adjusting your search terms or filter settings above.</p>
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {reqs.map(req => {
+                    ) : (
+                      requirementsPagination.paginatedItems.map(req => {
                         const isChecked = !!selectedReqIds[req.id];
-                        const stockInfo = getStockCheckForReq(req);
+                        const stockInfo = req.stockInfo;
 
                         return (
-                          <tr key={req.id} style={{ background: isChecked ? '#eff6ff' : 'transparent' }}>
-                            <td>
+                          <tr 
+                            key={req.id} 
+                            style={{ 
+                              background: isChecked ? '#eff6ff' : (req.isShortage ? '#fffdf7' : 'transparent'),
+                              transition: 'background 0.15s ease'
+                            }}
+                          >
+                            {/* Checkbox */}
+                            <td style={{ textAlign: 'center' }}>
                               <input 
                                 type="checkbox"
                                 style={{ width: '16px', height: '16px', cursor: 'pointer' }}
@@ -954,46 +1548,138 @@ export default function OrderManagement({
                                 onChange={() => toggleSelectReq(req.id)}
                               />
                             </td>
-                            <td style={{ fontWeight: '600' }}>{req.filmType}</td>
-                            <td>{req.micron}</td>
-                            <td>{req.widthMm}</td>
-                            <td className="bold-val">{req.qtyKg} kg</td>
 
-                            {/* Stock Check & Reservation Status */}
+                            {/* Order ID & Client */}
+                            <td>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                <span 
+                                  className="order-id-badge" 
+                                  style={{ 
+                                    fontSize: '0.74rem', 
+                                    padding: '2px 6px',
+                                    background: req.isOverdue ? '#fee2e2' : (req.isNearingDeadline ? '#fef3c7' : 'var(--accent-light)'),
+                                    color: req.isOverdue ? '#dc2626' : (req.isNearingDeadline ? '#b45309' : 'var(--primary-brand)'),
+                                    width: 'fit-content'
+                                  }}
+                                >
+                                  {req.orderId}
+                                </span>
+                                <span style={{ fontWeight: '700', color: 'var(--text-primary)', fontSize: '0.78rem' }}>
+                                  {req.clientName}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* Job Name & Structure */}
+                            <td>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', maxWidth: '240px' }}>
+                                <span style={{ fontWeight: '700', color: 'var(--text-primary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }} title={req.jobName}>
+                                  {req.jobName}
+                                </span>
+                                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                                  {req.structure}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* Material Specification */}
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ 
+                                  padding: '2px 6px', 
+                                  borderRadius: '4px', 
+                                  fontSize: '0.72rem', 
+                                  fontWeight: '700',
+                                  background: req.category === 'Film' ? '#e0f2fe' : (req.category === 'Ink' ? '#fdf4ff' : '#fef3c7'),
+                                  color: req.category === 'Film' ? '#0369a1' : (req.category === 'Ink' ? '#9333ea' : '#b45309')
+                                }}>
+                                  {req.category}
+                                </span>
+                                <span style={{ fontWeight: '700', color: 'var(--text-primary)' }}>
+                                  {req.filmType}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* Gauge / Slit Width */}
+                            <td>
+                              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                {req.micron && req.micron !== '-' ? <span><strong>{req.micron}</strong> µ</span> : <span>—</span>}
+                                {req.widthMm && req.widthMm !== '-' ? <span> • <strong>{req.widthMm}</strong> mm</span> : ''}
+                              </div>
+                            </td>
+
+                            {/* Gross Req Kg */}
+                            <td className="bold-val" style={{ whiteSpace: 'nowrap' }}>
+                              {(parseFloat(req.qtyKg) || 0).toLocaleString()} kg
+                            </td>
+
+                            {/* Stock Check & Reservation */}
                             <td>
                               {stockInfo.isFullyAvailable ? (
                                 <div style={{ background: '#dcfce7', border: '1px solid #86efac', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#15803d' }}>
-                                  <strong>✅ {stockInfo.reservedKg} kg / {stockInfo.reqQty} kg in stock</strong>
+                                  <strong>✅ {stockInfo.reservedKg} kg in stock</strong>
                                   <div style={{ fontSize: '0.7rem', color: '#166534' }}>
-                                    Fully Reserved for Order (No PO Required)
+                                    Fully Reserved (No PO Required)
                                   </div>
                                 </div>
                               ) : stockInfo.isPartiallyAvailable ? (
                                 <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#047857' }}>
-                                  <strong>🟢 {stockInfo.reservedKg} kg out of {stockInfo.reqQty} kg available</strong>
+                                  <strong>🟢 {stockInfo.reservedKg} / {stockInfo.reqQty} kg in stock</strong>
                                   <div style={{ fontSize: '0.7rem', color: '#065f46' }}>
-                                    {stockInfo.reservedKg} kg Reserved for Order
+                                    {stockInfo.reservedKg} kg Reserved • <strong>{stockInfo.balanceKg} kg Shortage</strong>
                                   </div>
                                 </div>
                               ) : (
-                                <div style={{ background: '#fffbe6', border: '1px solid #ffe58f', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#d48806' }}>
-                                  <span>⚠️ 0 kg in stock (Full {stockInfo.reqQty} kg needed)</span>
+                                <div style={{ background: '#fee2e2', border: '1px solid #fecaca', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#dc2626' }}>
+                                  <strong>⚠️ 0 kg in stock</strong>
+                                  <div style={{ fontSize: '0.7rem', color: '#991b1b' }}>
+                                    Full {stockInfo.reqQty} kg Shortage
+                                  </div>
                                 </div>
                               )}
                             </td>
 
-                            {/* Balance Quantity Only to Order */}
+                            {/* Balance Qty for PO */}
                             <td>
-                              <span className="badge" style={{ background: stockInfo.balanceKg > 0 ? '#e0f2fe' : '#f1f5f9', color: stockInfo.balanceKg > 0 ? '#0369a1' : '#64748b', fontWeight: '800', fontSize: '0.85rem' }}>
-                                {stockInfo.balanceKg} kg
+                              <span className="badge" style={{ 
+                                background: stockInfo.balanceKg > 0 ? '#fee2e2' : '#f1f5f9', 
+                                color: stockInfo.balanceKg > 0 ? '#b91c1c' : '#64748b', 
+                                border: stockInfo.balanceKg > 0 ? '1px solid #fca5a5' : '1px solid var(--border-color)',
+                                fontWeight: '800', 
+                                fontSize: '0.82rem' 
+                              }}>
+                                {stockInfo.balanceKg.toLocaleString()} kg
                               </span>
                             </td>
 
+                            {/* Preferred Vendor */}
                             <td style={{ color: 'var(--text-secondary)' }}>
-                              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <Building2 size={13} /> {req.preferredVendor}
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.78rem' }}>
+                                <Building2 size={13} style={{ flexShrink: 0, color: 'var(--text-muted)' }} /> 
+                                <span style={{ fontWeight: '600' }}>{req.preferredVendor}</span>
                               </span>
                             </td>
+
+                            {/* Target Dispatch */}
+                            <td>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                <span style={{ 
+                                  fontWeight: '700', 
+                                  fontSize: '0.8rem', 
+                                  color: req.isOverdue ? '#dc2626' : (req.isNearingDeadline ? '#b45309' : 'var(--text-primary)') 
+                                }}>
+                                  {req.targetDeliveryDate}
+                                </span>
+                                {req.isOverdue ? (
+                                  <span style={{ fontSize: '0.68rem', fontWeight: '800', color: '#dc2626' }}>OVERDUE</span>
+                                ) : req.isNearingDeadline ? (
+                                  <span style={{ fontSize: '0.68rem', fontWeight: '800', color: '#b45309' }}>≤4D LEFT</span>
+                                ) : null}
+                              </div>
+                            </td>
+
+                            {/* PO Status */}
                             <td>
                               {req.poIssued ? (
                                 <button 
@@ -1003,167 +1689,231 @@ export default function OrderManagement({
                                     display: 'inline-flex', 
                                     alignItems: 'center', 
                                     gap: '4px', 
-                                    padding: '4px 8px', 
-                                    fontSize: '0.75rem', 
+                                    padding: '3px 7px', 
+                                    fontSize: '0.74rem', 
                                     fontWeight: '700', 
                                     color: '#047857', 
                                     borderColor: '#a7f3d0', 
                                     background: '#ecfdf5', 
                                     cursor: 'pointer' 
                                   }}
-                                  onClick={(e) => handleViewPoPdf(req.poNumber || order.poNumber || 'PO-2026-101', e)}
+                                  onClick={(e) => handleViewPoPdf(req.poNumber || req.order?.poNumber || 'PO-2026-101', e)}
                                   title="Click to View, Print & Download Purchase Order PDF"
                                 >
-                                  <FileText size={13} /> {req.poNumber || order.poNumber || 'PO-2026-101'}
+                                  <FileText size={12} /> {req.poNumber || req.order?.poNumber || 'PO-2026-101'}
                                 </button>
                               ) : (
-                                <span className="badge badge-warning">Pending PO</span>
+                                <span className="badge badge-warning" style={{ fontSize: '0.72rem', padding: '3px 6px' }}>
+                                  Pending PO
+                                </span>
                               )}
                             </td>
                           </tr>
                         );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Requirements Table Pagination */}
+              <TablePagination
+                currentPage={requirementsPagination.currentPage}
+                totalItems={requirementsPagination.totalItems}
+                pageSize={requirementsPagination.pageSize}
+                onPageChange={requirementsPagination.setCurrentPage}
+                onPageSizeChange={requirementsPagination.setPageSize}
+              />
             </div>
-          );
-        })}
-      </div>
-      <TablePagination
-        currentPage={ordersPagination.currentPage}
-        totalItems={ordersPagination.totalItems}
-        pageSize={ordersPagination.pageSize}
-        onPageChange={ordersPagination.setCurrentPage}
-        onPageSizeChange={ordersPagination.setPageSize}
-      />
 
-      {/* Modal: Consolidated Vendor Purchase Order Generation */}
-      {isPoModalOpen && (
-        <div className="modal-overlay" onClick={() => setIsPoModalOpen(false)}>
-          <div className="glass-card modal-content" style={{ width: '680px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <FileText size={22} style={{ color: 'var(--primary-brand)' }} /> Issue Consolidated Vendor Purchase Order (PO)
-            </h3>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '20px' }}>
-              Consolidating <b>{selectedRequirements.length} material requirement lines</b> from selected orders into a single Purchase Order.
-            </p>
-
-            <form onSubmit={handleGenerateConsolidatedPO}>
-              <div className="form-group">
-                <label>Select Vendor for Purchase Order *</label>
-                <select 
-                  className="form-control"
-                  value={selectedVendorId}
-                  onChange={e => setSelectedVendorId(e.target.value)}
-                >
-                  {(vendors || []).map(v => (
-                    <option key={v.id} value={v.id}>
-                      {v.companyName} (GSTIN: {v.gstin}) | Supplies: {v.materials.join(', ')}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Selected Material Line Items Table Preview */}
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ fontSize: '0.8rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px', display: 'block' }}>
-                  COMBINED PO LINE ITEMS
-                </label>
-                <div style={{ maxHeight: '180px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
-                  <table className="data-table" style={{ fontSize: '0.78rem' }}>
-                    <thead>
-                      <tr>
-                        <th>Order ID & Job</th>
-                        <th>Material Grade</th>
-                        <th>Width</th>
-                        <th style={{ width: '100px' }}>Qty (Kg) *</th>
-                        <th style={{ width: '110px' }}>Rate (₹/kg) *</th>
-                        <th style={{ textAlign: 'right' }}>Total (₹)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {editablePoItems.map(item => {
-                        const qty = parseFloat(item.qtyKg) || 0;
-                        const rate = parseFloat(item.rate) || 0;
-                        return (
-                          <tr key={item.id}>
-                            <td><b>{item.orderId}</b>: {item.jobName}</td>
-                            <td style={{ fontWeight: '600' }}>{item.filmType} {item.micron !== '-' ? item.micron + 'µ' : ''}</td>
-                            <td>{item.widthMm}mm</td>
-                            <td>
-                              <input 
-                                type="number" 
-                                className="form-control" 
-                                style={{ padding: '3px 6px', fontSize: '0.8rem', fontWeight: '700' }}
-                                value={item.qtyKg} 
-                                onChange={e => handlePoItemChange(item.id, 'qtyKg', e.target.value)} 
-                              />
-                            </td>
-                            <td>
-                              <input 
-                                type="number" 
-                                className="form-control" 
-                                style={{ padding: '3px 6px', fontSize: '0.8rem', fontWeight: '700' }}
-                                value={item.rate} 
-                                onChange={e => handlePoItemChange(item.id, 'rate', e.target.value)} 
-                              />
-                            </td>
-                            <td style={{ textAlign: 'right', fontWeight: '800', color: 'var(--primary-brand)' }}>
-                              ₹{((qty * rate) ?? 0).toLocaleString()}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="form-grid">
-                <div className="form-group">
-                  <label>Promised Delivery Date *</label>
-                  <input 
-                    type="date" 
-                    className="form-control"
-                    required
-                    value={deliveryDate}
-                    onChange={e => setDeliveryDate(e.target.value)}
-                  />
+            {/* Floating Selection Banner when items are selected */}
+            {selectedRequirements.length > 0 && (
+              <div style={{
+                position: 'sticky',
+                bottom: '16px',
+                zIndex: 40,
+                background: 'rgba(15, 23, 42, 0.95)',
+                backdropFilter: 'blur(8px)',
+                color: '#ffffff',
+                padding: '12px 20px',
+                borderRadius: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '12px',
+                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{
+                      background: '#3b82f6',
+                      color: '#ffffff',
+                      fontWeight: '800',
+                      fontSize: '0.85rem',
+                      padding: '3px 10px',
+                      borderRadius: '9999px'
+                    }}>
+                      {selectedRequirements.length} Lines Selected
+                    </span>
+                    <span style={{ fontSize: '0.85rem', color: '#cbd5e1' }}>
+                      Total Net Qty: <strong>{selectedRequirements.reduce((sum, r) => sum + (parseFloat(r.qtyKg) || 0), 0).toLocaleString()} kg</strong>
+                    </span>
+                  </div>
+                  <span style={{ color: '#64748b' }}>•</span>
+                  <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                    Across {new Set(selectedRequirements.map(r => r.orderId)).size} distinct orders
+                  </span>
                 </div>
 
-                <div className="form-group">
-                  <label>Payment Terms</label>
-                  <input 
-                    type="text" 
-                    className="form-control"
-                    value={paymentTerms}
-                    onChange={e => setPaymentTerms(e.target.value)}
-                  />
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <button 
+                    type="button" 
+                    className="btn-secondary" 
+                    style={{ background: 'rgba(255,255,255,0.1)', color: '#ffffff', border: '1px solid rgba(255,255,255,0.2)', fontSize: '0.8rem', padding: '6px 12px' }}
+                    onClick={handleClearAllSelectedReqs}
+                  >
+                    Clear Selection
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn-primary" 
+                    style={{ fontSize: '0.85rem', padding: '7px 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    onClick={handleOpenPoModal}
+                  >
+                    <FileText size={16} /> Issue Vendor Purchase Order
+                  </button>
                 </div>
               </div>
-
-              <div className="form-group">
-                <label>PO Special Instructions / Delivery Terms</label>
-                <textarea 
-                  className="form-control"
-                  rows="2"
-                  value={poRemarks}
-                  onChange={e => setPoRemarks(e.target.value)}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
-                <button type="button" className="btn-secondary" onClick={() => setIsPoModalOpen(false)}>Cancel</button>
-                <button type="submit" className="btn-primary">
-                  <CheckCircle2 size={16} /> Generate & Print Vendor PO PDF
-                </button>
-              </div>
-            </form>
+            )}
           </div>
-        </div>
-      )}
+        )}
+
+        {/* Modal: Consolidated Vendor Purchase Order Generation */}
+        {isPoModalOpen && (
+          <div className="modal-overlay" onClick={() => setIsPoModalOpen(false)}>
+            <div className="glass-card modal-content" style={{ width: '680px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
+              <h3 style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FileText size={22} style={{ color: 'var(--primary-brand)' }} /> Issue Consolidated Vendor Purchase Order (PO)
+              </h3>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '20px' }}>
+                Consolidating <b>{selectedRequirements.length} material requirement lines</b> from selected orders into a single Purchase Order.
+              </p>
+
+              <form onSubmit={handleGenerateConsolidatedPO}>
+                <div className="form-group">
+                  <label>Select Vendor for Purchase Order *</label>
+                  <select 
+                    className="form-control"
+                    value={selectedVendorId}
+                    onChange={e => setSelectedVendorId(e.target.value)}
+                  >
+                    {(vendors || []).map(v => (
+                      <option key={v.id} value={v.id}>
+                        {v.companyName} (GSTIN: {v.gstin}) | Supplies: {v.materials.join(', ')}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Selected Material Line Items Table Preview */}
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px', display: 'block' }}>
+                    COMBINED PO LINE ITEMS
+                  </label>
+                  <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
+                    <table className="data-table" style={{ fontSize: '0.78rem' }}>
+                      <thead>
+                        <tr>
+                          <th>Order ID & Job</th>
+                          <th>Material Grade</th>
+                          <th>Width</th>
+                          <th style={{ width: '100px' }}>Qty (Kg) *</th>
+                          <th style={{ width: '110px' }}>Rate (₹/kg) *</th>
+                          <th style={{ textAlign: 'right' }}>Total (₹)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {editablePoItems.map(item => {
+                          const qty = parseFloat(item.qtyKg) || 0;
+                          const rate = parseFloat(item.rate) || 0;
+                          return (
+                            <tr key={item.id}>
+                              <td><b>{item.orderId}</b>: {item.jobName}</td>
+                              <td style={{ fontWeight: '600' }}>{item.filmType} {item.micron !== '-' ? item.micron + 'µ' : ''}</td>
+                              <td>{item.widthMm}mm</td>
+                              <td>
+                                <input 
+                                  type="number" 
+                                  className="form-control" 
+                                  style={{ padding: '3px 6px', fontSize: '0.8rem', fontWeight: '700' }}
+                                  value={item.qtyKg} 
+                                  onChange={e => handlePoItemChange(item.id, 'qtyKg', e.target.value)} 
+                                />
+                              </td>
+                              <td>
+                                <input 
+                                  type="number" 
+                                  className="form-control" 
+                                  style={{ padding: '3px 6px', fontSize: '0.8rem', fontWeight: '700' }}
+                                  value={item.rate} 
+                                  onChange={e => handlePoItemChange(item.id, 'rate', e.target.value)} 
+                                />
+                              </td>
+                              <td style={{ textAlign: 'right', fontWeight: '800', color: 'var(--primary-brand)' }}>
+                                ₹{((qty * rate) ?? 0).toLocaleString()}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label>Promised Delivery Date *</label>
+                    <input 
+                      type="date" 
+                      className="form-control"
+                      required
+                      value={deliveryDate}
+                      onChange={e => setDeliveryDate(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Payment Terms</label>
+                    <input 
+                      type="text" 
+                      className="form-control"
+                      value={paymentTerms}
+                      onChange={e => setPaymentTerms(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label>PO Special Instructions / Delivery Terms</label>
+                  <textarea 
+                    className="form-control"
+                    rows="2"
+                    value={poRemarks}
+                    onChange={e => setPoRemarks(e.target.value)}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                  <button type="button" className="btn-secondary" onClick={() => setIsPoModalOpen(false)}>Cancel</button>
+                  <button type="submit" className="btn-primary">
+                    <CheckCircle2 size={16} /> Generate & Print Vendor PO PDF
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
