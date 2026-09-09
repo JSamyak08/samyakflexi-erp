@@ -726,6 +726,7 @@ export default function OrderManagement({
       {activePoPdfData && (
         <PurchaseOrderPDF 
           poData={activePoPdfData} 
+          vendors={vendors}
           onClose={() => setActivePoPdfData(null)} 
         />
       )}

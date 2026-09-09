@@ -209,6 +209,7 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
       {activePoPdfData && (
         <PurchaseOrderPDF 
           poData={activePoPdfData} 
+          vendors={vendors}
           onClose={() => setActivePoPdfData(null)} 
         />
       )}

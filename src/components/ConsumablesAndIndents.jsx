@@ -1936,7 +1936,11 @@ export default function ConsumablesAndIndents({
       {/* OVERLAY: PURCHASE ORDER PDF PREVIEW MODAL */}
       {/* ========================================================================= */}
       {activePOData && (
-        <PurchaseOrderPDF poData={activePOData} onClose={() => setActivePOData(null)} />
+        <PurchaseOrderPDF 
+          poData={activePOData} 
+          vendors={vendors}
+          onClose={() => setActivePOData(null)} 
+        />
       )}
 
     </div>

@@ -2229,7 +2229,11 @@ export default function InventoryManagement({
 
       {/* Purchase Order PDF View Modal */}
       {selectedPOForPDF && (
-        <PurchaseOrderPDF poData={selectedPOForPDF} onClose={() => setSelectedPOForPDF(null)} />
+        <PurchaseOrderPDF 
+          poData={selectedPOForPDF} 
+          vendors={vendors}
+          onClose={() => setSelectedPOForPDF(null)} 
+        />
       )}
 
       {/* Modal: Resolve Rate Discrepancy (Admin Only) */}

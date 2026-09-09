@@ -2597,6 +2597,7 @@ export default function InkManagement({
       {activePoPdfData && (
         <PurchaseOrderPDF 
           poData={activePoPdfData}
+          vendors={vendors}
           onClose={() => setActivePoPdfData(null)}
         />
       )}

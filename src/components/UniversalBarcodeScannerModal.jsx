@@ -30,6 +30,7 @@ import {
   Database
 } from 'lucide-react';
 import QRCode2D from './QRCode2D';
+import PurchaseOrderPDF from './PurchaseOrderPDF';
 
 /**
  * Universal Barcode & 2D QR Inspector Modal
@@ -58,13 +59,15 @@ export default function UniversalBarcodeScannerModal({
   inventory = [],
   dispatchShipments = [],
   deliveryChallans = [],
-  productionRecords = []
+  productionRecords = [],
+  vendors = []
 }) {
   const [barcodeInput, setBarcodeInput] = useState('');
   const [activeBarcode, setActiveBarcode] = useState('');
   const [cameraActive, setCameraActive] = useState(false);
   const [copied, setCopied] = useState(false);
   const [cameraError, setCameraError] = useState('');
+  const [activePoPdfData, setActivePoPdfData] = useState(null);
   
   const inputRef = useRef(null);
   const videoRef = useRef(null);
@@ -520,8 +523,112 @@ export default function UniversalBarcodeScannerModal({
       };
     }
 
+    // 9. Purchase Orders (PO) Search (Internal ERP Verification)
+    const cleanPoQuery = query.replace(/^samyak-erp-po:/i, '').replace(/^erp-doc-po:/i, '').replace(/^po:/i, '').trim();
+    
+    // Check localStorage issued POs first
+    let matchedPoData = null;
+    let matchedPoNo = '';
+    try {
+      const savedPos = JSON.parse(localStorage.getItem('samyak_erp_issued_pos') || '{}');
+      for (const [key, val] of Object.entries(savedPos)) {
+        if (key.toLowerCase() === cleanPoQuery || key.toLowerCase().includes(cleanPoQuery) || cleanPoQuery.includes(key.toLowerCase())) {
+          matchedPoData = val;
+          matchedPoNo = key;
+          break;
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    // Check across orders for issued PO numbers if not in store
+    if (!matchedPoData) {
+      const ordWithPo = (orders || []).find(o => {
+        const poNum = (o.poNumber || o.po_number || '').toLowerCase();
+        const hasReqPo = (o.materialRequirements || []).some(r => (r.poNumber || '').toLowerCase() === cleanPoQuery || cleanPoQuery.includes((r.poNumber || '').toLowerCase()));
+        return (poNum && (poNum === cleanPoQuery || cleanPoQuery.includes(poNum))) || hasReqPo;
+      });
+
+      if (ordWithPo) {
+        matchedPoNo = ordWithPo.poNumber || cleanPoQuery.toUpperCase();
+        const matchingReqs = (ordWithPo.materialRequirements || []).filter(r => !r.poNumber || r.poNumber === matchedPoNo || cleanPoQuery.includes((r.poNumber || '').toLowerCase()));
+        const preferredVendorName = matchingReqs[0]?.preferredVendor || 'Preferred Supplier';
+        const vendorObj = (vendors || []).find(v => (v.companyName || v.name) === preferredVendorName) || { companyName: preferredVendorName };
+
+        matchedPoData = {
+          poNumber: matchedPoNo,
+          date: ordWithPo.orderDate || ordWithPo.targetDeliveryDate || new Date().toLocaleDateString('en-IN'),
+          vendor: vendorObj,
+          items: matchingReqs.map(r => ({
+            itemDesc: `${r.filmType} ${r.micron && r.micron !== '-' ? r.micron + 'µ' : ''}`.trim(),
+            spec: `${r.filmType} ${r.micron && r.micron !== '-' ? r.micron + 'µ' : ''} | Width: ${r.widthMm}mm`,
+            qtyKg: r.qtyKg,
+            rate: 165,
+            amount: (parseFloat(r.qtyKg) || 0) * 165
+          })),
+          terms: '30 Days Net',
+          deliveryDate: ordWithPo.targetDeliveryDate || 'N/A',
+          remarks: `Linked to Manufacturing Order ${ordWithPo.id} (${ordWithPo.jobName})`
+        };
+      }
+    }
+
+    // Check across GRNs for PO number
+    if (!matchedPoData) {
+      const grnWithPo = (grns || []).find(g => {
+        const poNum = (g.po_number || g.poNumber || '').toLowerCase();
+        return poNum && (poNum === cleanPoQuery || cleanPoQuery.includes(poNum));
+      });
+      if (grnWithPo) {
+        matchedPoNo = grnWithPo.po_number || grnWithPo.poNumber;
+        matchedPoData = {
+          poNumber: matchedPoNo,
+          date: grnWithPo.received_date || grnWithPo.receivedDate || new Date().toLocaleDateString('en-IN'),
+          vendor: (vendors || []).find(v => (v.companyName || v.name) === (grnWithPo.vendor_name || grnWithPo.vendorName || grnWithPo.supplier)) || { companyName: grnWithPo.vendor_name || grnWithPo.vendorName || grnWithPo.supplier || 'Vendor' },
+          items: [{ 
+            itemDesc: grnWithPo.itemName || 'Material Item', 
+            qtyKg: grnWithPo.received_qty_kg || grnWithPo.netWeightKg || 0, 
+            rate: grnWithPo.purchaseRatePerKg || 0,
+            amount: (parseFloat(grnWithPo.received_qty_kg || grnWithPo.netWeightKg || 0) || 0) * (parseFloat(grnWithPo.purchaseRatePerKg || 0) || 0)
+          }],
+          terms: 'Standard Terms',
+          deliveryDate: grnWithPo.received_date || 'N/A',
+          remarks: `Inward GRN: ${grnWithPo.grn_number || grnWithPo.grnNumber || grnWithPo.id}`
+        };
+      }
+    }
+
+    if (matchedPoData) {
+      const vName = typeof matchedPoData.vendor === 'string' ? matchedPoData.vendor : (matchedPoData.vendor?.companyName || matchedPoData.vendor?.name || 'N/A');
+      const itemsList = matchedPoData.items || [];
+      const totalPoQty = itemsList.reduce((acc, it) => acc + (parseFloat(it.qtyKg || it.qty || 0) || 0), 0);
+      const totalPoAmt = itemsList.reduce((acc, it) => acc + ((parseFloat(it.qtyKg || it.qty || 0) || 0) * (parseFloat(it.rate || it.unitPrice || 0) || 0)), 0);
+
+      return {
+        type: 'PURCHASE_ORDER',
+        entityCategory: 'Purchase Order (PO) - Internal ERP Document',
+        badgeColor: '#4f46e5',
+        badgeBg: '#eef2ff',
+        title: `Purchase Order: ${matchedPoNo || matchedPoData.poNumber}`,
+        code: matchedPoNo || matchedPoData.poNumber,
+        raw: matchedPoData,
+        properties: [
+          { label: 'Purchase Order No', value: matchedPoNo || matchedPoData.poNumber, isCode: true },
+          { label: 'Supplier / Vendor', value: vName },
+          { label: 'PO Date', value: matchedPoData.date || 'N/A' },
+          { label: 'Target / Delivery Date', value: matchedPoData.deliveryDate || 'N/A' },
+          { label: 'Payment Terms', value: matchedPoData.terms || '30 Days Net' },
+          { label: 'Total Material Items', value: `${itemsList.length} Items` },
+          { label: 'Total Ordered Quantity', value: `${totalPoQty.toLocaleString()} kg`, isHighlight: true },
+          ...(totalPoAmt > 0 ? [{ label: 'Total Order Value (Taxable)', value: `₹ ${totalPoAmt.toLocaleString()}` }] : []),
+          { label: 'Delivery / Special Terms', value: matchedPoData.remarks || 'Standard flexible packaging raw material terms apply.' }
+        ]
+      };
+    }
+
     return { notFound: true, query: activeBarcode };
-  }, [activeBarcode, inventoryRolls, orders, cylinders, jobMasters, grns, inks, dispatchShipments, inventory]);
+  }, [activeBarcode, inventoryRolls, orders, cylinders, jobMasters, grns, inks, dispatchShipments, inventory, vendors]);
 
   const handleCopyDetails = () => {
     if (!searchResults || searchResults.notFound) return;
@@ -1013,6 +1120,27 @@ export default function UniversalBarcodeScannerModal({
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {searchResults && searchResults.type === 'PURCHASE_ORDER' && (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setActivePoPdfData(searchResults.raw)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 14px',
+                  background: '#eef2ff',
+                  color: '#4f46e5',
+                  borderColor: '#c7d2fe',
+                  fontSize: '0.82rem',
+                  fontWeight: '700'
+                }}
+              >
+                <FileText size={14} /> View PO Document
+              </button>
+            )}
+
             {searchResults && !searchResults.notFound && (
               <button
                 type="button"
@@ -1066,6 +1194,15 @@ export default function UniversalBarcodeScannerModal({
           </div>
         </div>
       </div>
+
+      {/* PO Document Viewer Overlay */}
+      {activePoPdfData && (
+        <PurchaseOrderPDF 
+          poData={activePoPdfData}
+          vendors={vendors}
+          onClose={() => setActivePoPdfData(null)}
+        />
+      )}
     </div>
   );
 }

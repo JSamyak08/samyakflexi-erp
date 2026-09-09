@@ -5,7 +5,7 @@ import { numberToWords, formatINR, calculateGSTBreakdown } from '../utils/pdfHel
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import QRCode2D from './QRCode2D';
 
-export default function PurchaseOrderPDF({ poData, onClose }) {
+export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
   if (!poData) return null;
 
   const defaultPoNum = poData.poNumber || generateDocRefNumber('po');
@@ -31,14 +31,21 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
     items = []
   } = poData;
 
+  // Dynamically resolve vendor record from vendors list if available
+  const rawVendorName = typeof vendor === 'string' ? vendor : (vendor?.companyName || vendor?.name || '');
+  const matchedVendor = (vendors || []).find(v => 
+    (vendor?.id && v.id === vendor.id) ||
+    (rawVendorName && (v.companyName || v.name || '').toLowerCase().trim() === rawVendorName.toLowerCase().trim())
+  ) || (typeof vendor === 'object' && vendor !== null ? vendor : {});
+
   const supplier = {
-    name: vendor.companyName || vendor.name || "Creative Marketing",
-    address: vendor.address || "Sadhuwasvani Nagar, 2-B, Near Sadhuwasvani Garden, Indore (Madhya Pradesh) India - 452007",
-    email: vendor.email || "creativemarketing.ak@gmail.com",
-    contactNo: vendor.phone || vendor.contactNo || "9425066225",
-    gstin: vendor.gstin || "23AAQFC4167Q1ZT",
-    contactPerson: vendor.contactPerson || "Abhijeet Kher",
-    stateCode: (vendor.gstin || "23").substring(0, 2)
+    name: matchedVendor.companyName || matchedVendor.name || rawVendorName || "Vendor / Supplier",
+    address: matchedVendor.address || vendor.address || "Address on file / Registered Vendor Office",
+    email: matchedVendor.email || vendor.email || "—",
+    contactNo: matchedVendor.phone || matchedVendor.contactNo || matchedVendor.contact_no || vendor.phone || vendor.contactNo || "—",
+    gstin: matchedVendor.gstin || vendor.gstin || "—",
+    contactPerson: matchedVendor.contactPerson || matchedVendor.contact_person || vendor.contactPerson || "Sales & Commercial Desk",
+    stateCode: (matchedVendor.gstin || vendor.gstin || "23").substring(0, 2)
   };
 
   const handleUpdateTerm = (index, value) => {
@@ -144,7 +151,7 @@ export default function PurchaseOrderPDF({ poData, onClose }) {
                 </div>
               </div>
               <div style={{ background: '#ffffff', padding: '2px', border: '1px solid #e2e8f0', borderRadius: '4px' }}>
-                <QRCode2D value={currentPoNumber || 'PO-000'} size={48} showLabel={false} margin={0} />
+                <QRCode2D value={`SAMYAK-ERP-PO:${currentPoNumber || 'PO-000'}`} size={48} showLabel={false} margin={0} />
               </div>
             </div>
           </div>

@@ -3657,6 +3657,7 @@ export default function App() {
         dispatchShipments={dispatchShipments}
         deliveryChallans={deliveryChallans}
         productionRecords={productionRecords}
+        vendors={vendors}
       />
     </div>
   );
