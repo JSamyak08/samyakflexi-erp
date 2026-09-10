@@ -27,6 +27,7 @@ import TablePagination, { usePagination } from './TablePagination';
 import { pushSlugState } from '../utils/slugRouter';
 import { calculateJobRawMaterials, isOrderOverdue, isOrderNearingDeadline, getOrderStatusInfo } from '../factoryStore';
 import { saveOrderToSupabase } from '../services/supabaseDataService';
+import { getNextDocRefNumber } from '../services/settingsService';
 
 export default function OrderManagement({ 
   urlParams = {},
@@ -34,15 +35,21 @@ export default function OrderManagement({
   vendors = [], 
   inventory = [],
   jobMasters = [],
+  cylinders = [],
   currentUser,
   productionRecords = [],
   onUpdateOrder, 
   onDeleteOrder,
+  onUpdateCylinder,
+  onAddGRN,
   onNavigateToPunching,
   onNavigateToProductionRecords
 }) {
   // Helper: derive substrate structure from Job Master layers (authoritative source)
   const getSubstrateStructure = (order) => {
+    if (order?.isCylinderOrder || order?.orderType === 'Rotogravure Cylinder' || order?.materialFormat === 'Rotogravure Cylinder') {
+      return order.cylinderDetails?.description || order.structure || 'Rotogravure Cylinder Set';
+    }
     const jm = jobMasters.find(j =>
       (j.jobName || '').toLowerCase().trim() === (order?.jobName || '').toLowerCase().trim()
     );
@@ -58,9 +65,12 @@ export default function OrderManagement({
     return jm?.structure || order?.structure || '—';
   };
 
-  // Helper: derive Material Form (Reel Form or Pouching Form) directly from Job Master specifications
+  // Helper: derive Material Form (Reel Form, Pouching Form, or Rotogravure Cylinder)
   const getMaterialForm = (order) => {
     if (!order) return 'Reel Form';
+    if (order.isCylinderOrder || order.orderType === 'Rotogravure Cylinder' || order.materialFormat === 'Rotogravure Cylinder') {
+      return 'Rotogravure Cylinder';
+    }
 
     // 1. Primary: Linked Job Master from Job Master Directory
     const jm = jobMasters.find(j =>
@@ -101,6 +111,11 @@ export default function OrderManagement({
 
   // Helper: ensure Itemized Raw Material Requirements are always calculated and loaded up
   const getOrderMaterialRequirements = (order) => {
+    if (!order) return [];
+    if (order.isCylinderOrder || order.orderType === 'Rotogravure Cylinder' || order.materialFormat === 'Rotogravure Cylinder' || (order.jobName || '').toLowerCase().includes('cylinder')) {
+      return [];
+    }
+
     const existing = order.materialRequirements || order.rawMaterialRequirements;
     if (Array.isArray(existing) && existing.length > 0) {
       return existing;
@@ -548,6 +563,158 @@ export default function OrderManagement({
       }
       return item;
     }));
+  };
+
+  const handleIssueEngraverPo = (order, e) => {
+    if (e) e.stopPropagation();
+    const engraverName = order.engraverName || order.cylinderDetails?.engraverName || 'Jindal Engravers, Mathura';
+    let vendorObj = (vendors || []).find(v => 
+      (v.companyName || v.name || '').toLowerCase().includes(engraverName.toLowerCase()) ||
+      engraverName.toLowerCase().includes((v.companyName || v.name || '').toLowerCase())
+    );
+    if (!vendorObj) {
+      vendorObj = vendors.find(v => (v.category || '').toLowerCase().includes('cylinder') || (v.category || '').toLowerCase().includes('engrav')) || vendors[0] || {
+        companyName: engraverName,
+        contactPerson: 'Engraver Manager',
+        phone: '9826012345',
+        gstin: '09AAABJ1234F1Z1',
+        address: 'Industrial Area, Mathura / Indore'
+      };
+    }
+
+    const poNo = `PO-CYL-2026-${Math.floor(100 + Math.random() * 900)}`;
+    const rateVal = parseFloat(order.cylinderDetails?.rate || order.sellingPricePerKg) || 35000;
+    const qtyVal = parseFloat(order.cylinderDetails?.quantity || order.orderQtyKg) || 1;
+    const totalVal = rateVal * qtyVal;
+
+    const poItems = [{
+      id: `CYL-PO-${order.id}`,
+      orderId: order.id,
+      itemDesc: `Rotogravure Cylinder Engraving Set — ${order.jobName}`,
+      spec: `SKU: ${order.cylinderDetails?.sku || 'CYL-001'} | Colors: ${order.cylinderDetails?.colorsCount || 8} Colors | Specs: ${order.cylinderDetails?.description || order.structure || 'Rotogravure Cylinder Set'}`,
+      qtyKg: qtyVal,
+      unit: 'Set',
+      rate: rateVal,
+      amount: totalVal
+    }];
+
+    const poData = {
+      poNumber: poNo,
+      date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+      vendor: vendorObj,
+      items: poItems,
+      deliveryDate: order.targetDeliveryDate || new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
+      terms: '100% Advance along with Purchase Order',
+      remarks: 'Engraved cylinders must strictly conform to electronic proof & job specifications. Dynamic balancing test report & proof print required upon delivery.'
+    };
+
+    setIssuedPoStore(prev => ({
+      ...prev,
+      [poNo]: poData
+    }));
+
+    // Update order status
+    onUpdateOrder({
+      ...order,
+      poIssued: true,
+      poNumber: poNo,
+      engraverPoNo: poNo,
+      status: 'Under Engraving'
+    });
+
+    // Update linked cylinder record in database if available
+    if (cylinders && cylinders.length > 0) {
+      const targetSku = (order.cylinderDetails?.sku || '').trim().toLowerCase();
+      const targetJob = (order.jobName || '').trim().toLowerCase();
+      const matchedCyl = cylinders.find(c => 
+        (targetSku && c.sku && c.sku.trim().toLowerCase() === targetSku) ||
+        (targetJob && c.jobName && c.jobName.trim().toLowerCase() === targetJob)
+      );
+      if (matchedCyl && onUpdateCylinder) {
+        onUpdateCylinder({
+          ...matchedCyl,
+          poIssued: true,
+          poNumber: poNo,
+          status: 'Under Engraving'
+        });
+      }
+    }
+
+    setActivePoPdfData(poData);
+    alert(`✅ Purchase Order ${poNo} issued successfully to Engraver "${vendorObj.companyName || vendorObj.name}"!\nOpening PO PDF preview now.`);
+  };
+
+  const handleReceiveCylinderInward = (order, e) => {
+    if (e) e.stopPropagation();
+    const engraverName = order.engraverName || order.cylinderDetails?.engraverName || 'Jindal Engravers, Mathura';
+    const grnNo = getNextDocRefNumber('grn');
+    const qtyVal = parseFloat(order.cylinderDetails?.quantity || order.orderQtyKg) || 1;
+    const rateVal = parseFloat(order.cylinderDetails?.rate || order.sellingPricePerKg) || 35000;
+
+    const newGRN = {
+      grnNo: grnNo,
+      poNumber: order.poNumber || `PO-CYL-${order.id}`,
+      vendorName: engraverName,
+      invoiceNo: `INV-CYL-${Math.floor(1000 + Math.random() * 9000)}`,
+      receivedDate: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
+      category: 'Rotogravure Cylinders',
+      itemName: order.jobName || 'Rotogravure Cylinder Set',
+      cylinderSku: order.cylinderDetails?.sku || `CYL-${order.id}`,
+      unit: 'Set',
+      packagingType: 'Cylinder Box',
+      rollsReceived: qtyVal,
+      netWeightKg: qtyVal,
+      grossWeightKg: qtyVal,
+      tareWeightKg: 0,
+      itemsBreakdown: [{
+        unitNo: 1,
+        grossWeightKg: qtyVal,
+        tareWeightKg: 0,
+        netWeightKg: qtyVal,
+        lengthMeters: 0,
+        vendorRollNo: order.cylinderDetails?.sku || 'CYL-001'
+      }],
+      purchaseRatePerKg: rateVal,
+      purchaseRate: rateVal,
+      unitPrice: rateVal,
+      batchNo: `GRN-CYL-${grnNo}`,
+      status: 'Approved (Stock Added)',
+      qcNotes: 'Cylinder physical inspection, chrome plating thickness, and proof print approved.',
+      inspectedBy: currentUser?.name || 'QA Inspector',
+      storeManager: 'Store Mgr Dilip Joshi'
+    };
+
+    if (onAddGRN) {
+      onAddGRN(newGRN);
+    }
+
+    // Update order status
+    onUpdateOrder({
+      ...order,
+      status: 'Completed',
+      inwardGrnNo: grnNo,
+      cylinderReceived: true
+    });
+
+    // Update linked cylinder status in cylinders table to 'Active In-Use'
+    if (cylinders && cylinders.length > 0) {
+      const targetSku = (order.cylinderDetails?.sku || '').trim().toLowerCase();
+      const targetJob = (order.jobName || '').trim().toLowerCase();
+      const matchedCyl = cylinders.find(c => 
+        (targetSku && c.sku && c.sku.trim().toLowerCase() === targetSku) ||
+        (targetJob && c.jobName && c.jobName.trim().toLowerCase() === targetJob)
+      );
+      if (matchedCyl && onUpdateCylinder) {
+        onUpdateCylinder({
+          ...matchedCyl,
+          status: 'Active In-Use',
+          inwardGrnNo: grnNo,
+          receivedDate: new Date().toISOString().split('T')[0]
+        });
+      }
+    }
+
+    alert(`✅ Cylinder Set "${order.jobName}" received in factory!\nIssued Inward GRN ${grnNo}.\nStatus updated to "Active In-Use" and Order marked Completed.`);
   };
 
   const handleViewPoPdf = (poNo, e) => {
@@ -1193,126 +1360,217 @@ export default function OrderManagement({
                       </div>
                     </div>
 
-                    {/* Expandable Drawer: Itemized Raw Material Breakdown per Vendor */}
+                    {/* Expandable Drawer: Itemized Raw Material Breakdown or Cylinder Engraving Specs */}
                     {isExpanded && (
                       <div style={{ padding: '16px 20px', background: '#ffffff', borderTop: '1px solid var(--border-color)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <Layers size={16} style={{ color: 'var(--primary-brand)' }} />
-                            <h4 style={{ fontSize: '0.85rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
-                              ITEMIZED RAW MATERIAL REQUIREMENTS ({reqs.length} ITEMS)
-                            </h4>
+                        {order.isCylinderOrder || order.orderType === 'Rotogravure Cylinder' || order.materialFormat === 'Rotogravure Cylinder' ? (
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <Layers size={18} style={{ color: '#0284c7' }} />
+                                <h4 style={{ fontSize: '0.92rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                                  🔩 ROTOGRAVURE CYLINDER ENGRAVING & PO SPECIFICATIONS
+                                </h4>
+                                <span style={{ background: '#e0f2fe', color: '#0369a1', fontSize: '0.72rem', fontWeight: '800', padding: '2px 8px', borderRadius: '4px', border: '1px solid #bae6fd' }}>
+                                  Engraver Work Order
+                                </span>
+                              </div>
+
+                              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                                {order.poIssued ? (
+                                  <button 
+                                    type="button" 
+                                    className="btn-secondary"
+                                    style={{ padding: '6px 12px', fontSize: '0.8rem', fontWeight: '700', color: '#047857', background: '#ecfdf5', borderColor: '#a7f3d0' }}
+                                    onClick={(e) => handleViewPoPdf(order.poNumber || order.engraverPoNo, e)}
+                                  >
+                                    <FileText size={14} /> View Engraver PO ({order.poNumber || order.engraverPoNo})
+                                  </button>
+                                ) : (
+                                  <button 
+                                    type="button" 
+                                    className="btn-primary"
+                                    style={{ padding: '6px 14px', fontSize: '0.82rem', fontWeight: '700', background: '#0284c7' }}
+                                    onClick={(e) => handleIssueEngraverPo(order, e)}
+                                  >
+                                    <ShoppingBag size={14} /> Issue Purchase Order to Engraver
+                                  </button>
+                                )}
+
+                                {order.status !== 'Completed' && (
+                                  <button 
+                                    type="button" 
+                                    className="btn-secondary"
+                                    style={{ padding: '6px 12px', fontSize: '0.8rem', fontWeight: '700', color: '#047857', background: '#ecfdf5', borderColor: '#a7f3d0' }}
+                                    onClick={(e) => handleReceiveCylinderInward(order, e)}
+                                  >
+                                    <PackageCheck size={14} /> Inward GRN / Receive Cylinder
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', background: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                              <div>
+                                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Cylinder Set SKU</span>
+                                <strong style={{ fontSize: '0.9rem', color: '#0f172a' }}>{order.cylinderDetails?.sku || order.jobName}</strong>
+                              </div>
+
+                              <div>
+                                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Assigned Engraver Vendor</span>
+                                <strong style={{ fontSize: '0.9rem', color: '#0284c7', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <Building2 size={14} /> {order.engraverName || order.cylinderDetails?.engraverName || 'Jindal Engravers, Mathura'}
+                                </strong>
+                              </div>
+
+                              <div>
+                                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Colors Count</span>
+                                <strong style={{ fontSize: '0.9rem', color: '#0f172a' }}>{order.cylinderDetails?.colorsCount || 8} Colors Set</strong>
+                              </div>
+
+                              <div>
+                                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Quoted Rate / Cost</span>
+                                <strong style={{ fontSize: '0.9rem', color: '#059669' }}>
+                                  ₹ {(order.cylinderDetails?.totalAmount || (order.sellingPricePerKg * (order.orderQtyKg || 1)) || 35000).toLocaleString()}
+                                </strong>
+                              </div>
+
+                              <div>
+                                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Engraving Status</span>
+                                <span className="badge" style={{ background: order.status === 'Completed' ? '#dcfce7' : '#e0f2fe', color: order.status === 'Completed' ? '#15803d' : '#0369a1', fontWeight: '800', fontSize: '0.78rem' }}>
+                                  {order.status === 'Completed' ? '✅ Received In Factory (Active)' : `⚙️ ${order.status || 'Under Engraving'}`}
+                                </span>
+                              </div>
+
+                              <div>
+                                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Purchase Order (PO)</span>
+                                <span style={{ fontSize: '0.82rem', fontWeight: '700', color: order.poIssued ? '#047857' : '#b45309' }}>
+                                  {order.poIssued ? `✅ Issued: ${order.poNumber || order.engraverPoNo}` : '⚠️ Pending PO Issuance'}
+                                </span>
+                              </div>
+                            </div>
                           </div>
+                        ) : (
+                          <>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <Layers size={16} style={{ color: 'var(--primary-brand)' }} />
+                                <h4 style={{ fontSize: '0.85rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+                                  ITEMIZED RAW MATERIAL REQUIREMENTS ({reqs.length} ITEMS)
+                                </h4>
+                              </div>
 
-                          <button 
-                            className="btn-secondary" 
-                            style={{ fontSize: '0.75rem', padding: '4px 8px' }}
-                            onClick={(e) => { e.stopPropagation(); toggleSelectAllForOrder(order); }}
-                          >
-                            {allReqsSelected ? 'Deselect Order Materials' : 'Select All Materials for PO'}
-                          </button>
-                        </div>
+                              <button 
+                                className="btn-secondary" 
+                                style={{ fontSize: '0.75rem', padding: '4px 8px' }}
+                                onClick={(e) => { e.stopPropagation(); toggleSelectAllForOrder(order); }}
+                              >
+                                {allReqsSelected ? 'Deselect Order Materials' : 'Select All Materials for PO'}
+                              </button>
+                            </div>
 
-                        <table className="data-table" style={{ fontSize: '0.82rem' }}>
-                          <thead>
-                            <tr style={{ background: '#f8fafc' }}>
-                              <th style={{ width: '40px' }}>Select</th>
-                              <th>Material Description</th>
-                              <th>Micron (µ)</th>
-                              <th>Width (mm)</th>
-                              <th>Gross Required (Kg)</th>
-                              <th style={{ minWidth: '220px' }}>Stock Check & Reservation</th>
-                              <th style={{ color: '#2563eb' }}>Balance Qty for PO (Kg)</th>
-                              <th>Preferred Vendor</th>
-                              <th>PO Status</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {reqs.map(req => {
-                              const isChecked = !!selectedReqIds[req.id];
-                              const stockInfo = getStockCheckForReq(req);
-
-                              return (
-                                <tr key={req.id} style={{ background: isChecked ? '#eff6ff' : 'transparent' }}>
-                                  <td>
-                                    <input 
-                                      type="checkbox"
-                                      style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-                                      checked={isChecked}
-                                      onChange={() => toggleSelectReq(req.id)}
-                                    />
-                                  </td>
-                                  <td style={{ fontWeight: '600' }}>{req.filmType}</td>
-                                  <td>{req.micron}</td>
-                                  <td>{req.widthMm}</td>
-                                  <td className="bold-val">{req.qtyKg} kg</td>
-
-                                  {/* Stock Check & Reservation Status */}
-                                  <td>
-                                    {stockInfo.isFullyAvailable ? (
-                                      <div style={{ background: '#dcfce7', border: '1px solid #86efac', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#15803d' }}>
-                                        <strong>✅ {stockInfo.reservedKg} kg / {stockInfo.reqQty} kg in stock</strong>
-                                        <div style={{ fontSize: '0.7rem', color: '#166534' }}>
-                                          Fully Reserved for Order (No PO Required)
-                                        </div>
-                                      </div>
-                                    ) : stockInfo.isPartiallyAvailable ? (
-                                      <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#047857' }}>
-                                        <strong>🟢 {stockInfo.reservedKg} kg out of {stockInfo.reqQty} kg available</strong>
-                                        <div style={{ fontSize: '0.7rem', color: '#065f46' }}>
-                                          {stockInfo.reservedKg} kg Reserved for Order
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <div style={{ background: '#fffbe6', border: '1px solid #ffe58f', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#d48806' }}>
-                                        <span>⚠️ 0 kg in stock (Full {stockInfo.reqQty} kg needed)</span>
-                                      </div>
-                                    )}
-                                  </td>
-
-                                  {/* Balance Quantity Only to Order */}
-                                  <td>
-                                    <span className="badge" style={{ background: stockInfo.balanceKg > 0 ? '#e0f2fe' : '#f1f5f9', color: stockInfo.balanceKg > 0 ? '#0369a1' : '#64748b', fontWeight: '800', fontSize: '0.85rem' }}>
-                                      {stockInfo.balanceKg} kg
-                                    </span>
-                                  </td>
-
-                                  <td style={{ color: 'var(--text-secondary)' }}>
-                                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                      <Building2 size={13} /> {req.preferredVendor}
-                                    </span>
-                                  </td>
-                                  <td>
-                                    {req.poIssued ? (
-                                      <button 
-                                        type="button"
-                                        className="btn-secondary" 
-                                        style={{ 
-                                          display: 'inline-flex', 
-                                          alignItems: 'center', 
-                                          gap: '4px', 
-                                          padding: '4px 8px', 
-                                          fontSize: '0.75rem', 
-                                          fontWeight: '700', 
-                                          color: '#047857', 
-                                          borderColor: '#a7f3d0', 
-                                          background: '#ecfdf5', 
-                                          cursor: 'pointer' 
-                                        }}
-                                        onClick={(e) => handleViewPoPdf(req.poNumber || order.poNumber || 'PO-2026-101', e)}
-                                        title="Click to View, Print & Download Purchase Order PDF"
-                                      >
-                                        <FileText size={13} /> {req.poNumber || order.poNumber || 'PO-2026-101'}
-                                      </button>
-                                    ) : (
-                                      <span className="badge badge-warning">Pending PO</span>
-                                    )}
-                                  </td>
+                            <table className="data-table" style={{ fontSize: '0.82rem' }}>
+                              <thead>
+                                <tr style={{ background: '#f8fafc' }}>
+                                  <th style={{ width: '40px' }}>Select</th>
+                                  <th>Material Description</th>
+                                  <th>Micron (µ)</th>
+                                  <th>Width (mm)</th>
+                                  <th>Gross Required (Kg)</th>
+                                  <th style={{ minWidth: '220px' }}>Stock Check & Reservation</th>
+                                  <th style={{ color: '#2563eb' }}>Balance Qty for PO (Kg)</th>
+                                  <th>Preferred Vendor</th>
+                                  <th>PO Status</th>
                                 </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
+                              </thead>
+                              <tbody>
+                                {reqs.map(req => {
+                                  const isChecked = !!selectedReqIds[req.id];
+                                  const stockInfo = getStockCheckForReq(req);
+
+                                  return (
+                                    <tr key={req.id} style={{ background: isChecked ? '#eff6ff' : 'transparent' }}>
+                                      <td>
+                                        <input 
+                                          type="checkbox"
+                                          style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                          checked={isChecked}
+                                          onChange={() => toggleSelectReq(req.id)}
+                                        />
+                                      </td>
+                                      <td style={{ fontWeight: '600' }}>{req.filmType}</td>
+                                      <td>{req.micron}</td>
+                                      <td>{req.widthMm}</td>
+                                      <td className="bold-val">{req.qtyKg} kg</td>
+
+                                      {/* Stock Check & Reservation Status */}
+                                      <td>
+                                        {stockInfo.isFullyAvailable ? (
+                                          <div style={{ background: '#dcfce7', border: '1px solid #86efac', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#15803d' }}>
+                                            <strong>✅ {stockInfo.reservedKg} kg / {stockInfo.reqQty} kg in stock</strong>
+                                            <div style={{ fontSize: '0.7rem', color: '#166534' }}>
+                                              Fully Reserved for Order (No PO Required)
+                                            </div>
+                                          </div>
+                                        ) : stockInfo.isPartiallyAvailable ? (
+                                          <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#047857' }}>
+                                            <strong>🟢 {stockInfo.reservedKg} kg out of {stockInfo.reqQty} kg available</strong>
+                                            <div style={{ fontSize: '0.7rem', color: '#065f46' }}>
+                                              {stockInfo.reservedKg} kg Reserved for Order
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <div style={{ background: '#fffbe6', border: '1px solid #ffe58f', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#d48806' }}>
+                                            <span>⚠️ 0 kg in stock (Full {stockInfo.reqQty} kg needed)</span>
+                                          </div>
+                                        )}
+                                      </td>
+
+                                      {/* Balance Quantity Only to Order */}
+                                      <td>
+                                        <span className="badge" style={{ background: stockInfo.balanceKg > 0 ? '#e0f2fe' : '#f1f5f9', color: stockInfo.balanceKg > 0 ? '#0369a1' : '#64748b', fontWeight: '800', fontSize: '0.85rem' }}>
+                                          {stockInfo.balanceKg} kg
+                                        </span>
+                                      </td>
+
+                                      <td style={{ color: 'var(--text-secondary)' }}>
+                                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                          <Building2 size={13} /> {req.preferredVendor}
+                                        </span>
+                                      </td>
+                                      <td>
+                                        {req.poIssued ? (
+                                          <button 
+                                            type="button"
+                                            className="btn-secondary" 
+                                            style={{ 
+                                              display: 'inline-flex', 
+                                              alignItems: 'center', 
+                                              gap: '4px', 
+                                              padding: '4px 8px', 
+                                              fontSize: '0.75rem', 
+                                              fontWeight: '700', 
+                                              color: '#047857', 
+                                              borderColor: '#a7f3d0', 
+                                              background: '#ecfdf5', 
+                                              cursor: 'pointer' 
+                                            }}
+                                            onClick={(e) => handleViewPoPdf(req.poNumber || order.poNumber || 'PO-2026-101', e)}
+                                            title="Click to View, Print & Download Purchase Order PDF"
+                                          >
+                                            <FileText size={13} /> {req.poNumber || order.poNumber || 'PO-2026-101'}
+                                          </button>
+                                        ) : (
+                                          <span className="badge badge-warning">Pending PO</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>

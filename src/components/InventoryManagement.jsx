@@ -164,7 +164,10 @@ export default function InventoryManagement({
   inventoryRolls = initialInventoryRolls,
   dispatchShipments = initialDispatchShipments,
   onAddRoll,
-  onAddDispatchShipment
+  onAddDispatchShipment,
+  cylinders = [],
+  onUpdateCylinder,
+  onUpdateOrder
 }) {
   const [activeTab, setActiveTab] = useState('stock'); // stock, grn_inward, qc_approval, issue_return, reconciliation
   const [searchTerm, setSearchTerm] = useState('');
@@ -1401,6 +1404,7 @@ export default function InventoryManagement({
     const totalTareQty = grnCalculatedTotals.totalTare > 0 ? grnCalculatedTotals.totalTare : 0;
     const rateVal = parseFloat(grnPurchaseRate) || 0;
 
+    const isCylinderCategory = grnCategory === 'Rotogravure Cylinders';
     const newGRN = {
       grnNo: getNextDocRefNumber('grn'),
       poNumber: grnPoNo,
@@ -1413,7 +1417,7 @@ export default function InventoryManagement({
       filmType: isFilm ? grnFilmType : grnCategory,
       micron: isFilm ? parseFloat(grnMicron) : '-',
       widthMm: isFilm ? parseFloat(grnWidthMm) : '-',
-      unit: isFilm ? 'Kg' : grnUnit,
+      unit: isFilm ? 'Kg' : (isCylinderCategory ? 'Set' : grnUnit),
       packagingType: grnPackagingType,
       rollsReceived: unitCount,
       netWeightKg: totalNetQty,
@@ -1433,9 +1437,9 @@ export default function InventoryManagement({
       batchNo: grnBatchNo,
       freightAmount: parseFloat(grnFreightAmount) || 0,
       transporterName: grnTransporterName.trim() || 'Direct Dispatch / Self',
-      status: "Pending QC", // Goes to Store QC Verification
-      qcNotes: "",
-      inspectedBy: "",
+      status: isCylinderCategory ? "Approved" : "Pending QC", // Auto approve cylinder GRNs
+      qcNotes: isCylinderCategory ? "Engraved cylinder set received and verified." : "",
+      inspectedBy: isCylinderCategory ? "Cylinder QC Inspector" : "",
       storeManager: "Store Mgr Dilip Joshi"
     };
 
@@ -1444,6 +1448,37 @@ export default function InventoryManagement({
 
     if (onAddGRN) {
       onAddGRN(newGRN);
+    }
+
+    // Auto update linked Rotogravure Cylinder & Order status if Category is Rotogravure Cylinders or matches a Cylinder order/PO
+    if (isCylinderCategory || grnPoNo.startsWith('PO-CYL-')) {
+      const linkedCylinder = (cylinders || []).find(c => 
+        (grnPoNo && c.poNumber === grnPoNo) ||
+        (grnSelectedStockItemId && String(c.id) === String(grnSelectedStockItemId)) ||
+        (c.cylinderCode && itemName.toLowerCase().includes(c.cylinderCode.toLowerCase())) ||
+        (c.jobName && itemName.toLowerCase().includes(c.jobName.toLowerCase()))
+      );
+      if (linkedCylinder && onUpdateCylinder) {
+        onUpdateCylinder({
+          ...linkedCylinder,
+          status: 'Active In-Use',
+          inwardGrnNo: newGRN.grnNo,
+          receivedDate: newGRN.receivedDate
+        });
+      }
+      const linkedOrder = (orders || []).find(o => 
+        (grnPoNo && (o.engraverPoNumber === grnPoNo || o.poNumber === grnPoNo)) ||
+        (linkedCylinder && o.cylinderId === linkedCylinder.id) ||
+        (o.isCylinderOrder && o.jobName && itemName.toLowerCase().includes(o.jobName.toLowerCase()))
+      );
+      if (linkedOrder && onUpdateOrder) {
+        onUpdateOrder({
+          ...linkedOrder,
+          status: 'Completed',
+          cylinderStatus: 'Active In-Use',
+          inwardGrnNo: newGRN.grnNo
+        });
+      }
     }
 
     // Generate individual barcode stickers for each box / roll / container unit received with its DISTINCT net weight!
@@ -1517,6 +1552,35 @@ export default function InventoryManagement({
 
     if (onUpdateGRN) {
       onUpdateGRN(updatedGRN);
+    }
+
+    // Handle Rotogravure Cylinder status update on QC Approval
+    if (status === 'Approved' && (updatedGRN.category === 'Rotogravure Cylinders' || (updatedGRN.poNumber && updatedGRN.poNumber.startsWith('PO-CYL-')))) {
+      const linkedCylinder = (cylinders || []).find(c => 
+        (updatedGRN.poNumber && c.poNumber === updatedGRN.poNumber) ||
+        (updatedGRN.stockItemId && String(c.id) === String(updatedGRN.stockItemId)) ||
+        (c.jobName && updatedGRN.itemName && updatedGRN.itemName.toLowerCase().includes(c.jobName.toLowerCase()))
+      );
+      if (linkedCylinder && onUpdateCylinder) {
+        onUpdateCylinder({
+          ...linkedCylinder,
+          status: 'Active In-Use',
+          inwardGrnNo: updatedGRN.grnNo
+        });
+      }
+      const linkedOrder = (orders || []).find(o => 
+        (updatedGRN.poNumber && (o.engraverPoNumber === updatedGRN.poNumber || o.poNumber === updatedGRN.poNumber)) ||
+        (linkedCylinder && o.cylinderId === linkedCylinder.id) ||
+        (o.isCylinderOrder && o.jobName && updatedGRN.itemName && updatedGRN.itemName.toLowerCase().includes(o.jobName.toLowerCase()))
+      );
+      if (linkedOrder && onUpdateOrder) {
+        onUpdateOrder({
+          ...linkedOrder,
+          status: 'Completed',
+          cylinderStatus: 'Active In-Use',
+          inwardGrnNo: updatedGRN.grnNo
+        });
+      }
     }
 
     // If Approved, automatically add stock to central Inventory!
@@ -3785,6 +3849,7 @@ export default function InventoryManagement({
                       onChange={e => setGrnCategory(e.target.value)}
                     >
                       <option value="Film Substrates">Film Substrates (PET, METPET, LDPE, BOPP, CPP, Foil)</option>
+                      <option value="Rotogravure Cylinders">Rotogravure Cylinders (Engraved Cylinder Sets)</option>
                       <option value="Printing Inks & Toners">Printing Inks & Toners</option>
                       <option value="Chemicals & Solvents">Chemicals & Solvents (Ethyl Acetate, Anilox Cleaner)</option>
                       <option value="Adhesives & Hardener">Adhesives & Hardener (Solventless Comp A/B)</option>

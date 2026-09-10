@@ -1950,6 +1950,61 @@ export default function App() {
     }
   };
 
+  const syncCylinderToOrderManagement = (cyl) => {
+    if (!cyl) return;
+    const isEngraving = (cyl.status || '').toLowerCase().includes('engraving');
+    if (!isEngraving) return;
+
+    const targetJob = (cyl.jobName || '').trim().toLowerCase();
+    const targetSku = (cyl.sku || '').trim().toLowerCase();
+
+    const existingOrder = (orders || []).find(o => 
+      (o.cylinderDetails && o.cylinderDetails.sku && o.cylinderDetails.sku.trim().toLowerCase() === targetSku) ||
+      (o.jobName && targetJob && o.jobName.trim().toLowerCase() === targetJob)
+    );
+
+    if (!existingOrder) {
+      const ocnNo = getNextDocRefNumber('ocn');
+      const orderId = `ORD-2026-${Math.floor(100 + Math.random() * 900)}`;
+      const numericCost = parseFloat(String(cyl.cylinderCost || '').replace(/[^0-9.]/g, '')) || 35000;
+      
+      const cylOrder = {
+        id: orderId,
+        ocnNumber: ocnNo,
+        jobName: cyl.jobName || 'Rotogravure Cylinder Set',
+        clientName: cyl.clientGroup || 'Standard Client',
+        orderQtyKg: 1,
+        quantityKg: 1,
+        orderType: 'Rotogravure Cylinder',
+        materialFormat: 'Rotogravure Cylinder',
+        isCylinderOrder: true,
+        sellingPricePerKg: numericCost,
+        cylinderDetails: {
+          sku: cyl.sku,
+          jobName: cyl.jobName,
+          description: `Cylinder Set - ${cyl.colorsCount || 8} Colors`,
+          quantity: 1,
+          rate: numericCost,
+          totalAmount: numericCost,
+          engraverName: cyl.engravuresName || 'Jindal Engravers, Mathura',
+          colorsCount: cyl.colorsCount || 8,
+          status: 'Under Engraving'
+        },
+        engraverName: cyl.engravuresName || 'Jindal Engravers, Mathura',
+        orderDate: new Date().toISOString().split('T')[0],
+        targetDeliveryDate: new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
+        poNumber: cyl.poNumber || `PO-CYL-${cyl.sku}`,
+        poIssued: cyl.poIssued || false,
+        status: 'Under Engraving',
+        materialRequirements: [],
+        rawMaterialRequirements: [],
+        calculationDetails: null
+      };
+
+      handleAddOrder(cylOrder);
+    }
+  };
+
   const handleAddCylinder = async (newCyl) => {
     if (!newCyl) return;
     const targetSku = (newCyl.sku || '').trim().toLowerCase();
@@ -1978,6 +2033,10 @@ export default function App() {
     });
 
     logAudit('CREATE', 'Cylinders', `Saved rotogravure cylinder ${newCyl.sku} for "${newCyl.jobName}"`, newCyl.id);
+    
+    // Sync to Order Management if status is Under Engraving
+    syncCylinderToOrderManagement(newCyl);
+
     try {
       await saveCylinderToSupabase(newCyl);
     } catch (err) {
@@ -2013,6 +2072,10 @@ export default function App() {
     });
 
     logAudit('UPDATE', 'Cylinders', `Updated rotogravure cylinder ${updatedCyl.sku} for "${updatedCyl.jobName}"`, updatedCyl.id);
+    
+    // Sync to Order Management if status is Under Engraving
+    syncCylinderToOrderManagement(updatedCyl);
+
     try {
       await saveCylinderToSupabase(updatedCyl);
     } catch (err) {
@@ -3351,11 +3414,13 @@ export default function App() {
             orders={orders}
             clients={clients}
             jobMasters={jobMasters}
+            cylinders={cylinders}
             currentUser={currentUser}
             userRole={currentUser?.role}
             onAddOrder={handleAddOrder}
             onAddJobMaster={handleAddJobMaster}
             onAddClient={handleAddClient}
+            onAddCylinder={handleAddCylinder}
           />
         )}
 
@@ -3434,10 +3499,13 @@ export default function App() {
             vendors={vendors}
             inventory={inventory}
             jobMasters={jobMasters}
+            cylinders={cylinders}
             currentUser={currentUser}
             productionRecords={productionRecords}
             onUpdateOrder={handleUpdateOrder} 
             onDeleteOrder={handleDeleteOrder}
+            onUpdateCylinder={handleUpdateCylinder}
+            onAddGRN={handleAddGRN}
             onNavigateToPunching={() => handleTabChange('job_punching')}
             onNavigateToProductionRecords={() => handleTabChange('production_records')}
           />
@@ -3472,6 +3540,9 @@ export default function App() {
             onAddVendor={handleAddVendor}
             inventoryRolls={inventoryRolls}
             dispatchShipments={dispatchShipments}
+            cylinders={cylinders}
+            onUpdateCylinder={handleUpdateCylinder}
+            onUpdateOrder={handleUpdateOrder}
             onAddRoll={handleAddRoll}
             onAddDispatchShipment={handleAddDispatchShipment}
             onSaveProductionRecord={handleSaveProductionRecord}

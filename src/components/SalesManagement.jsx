@@ -634,146 +634,194 @@ export default function SalesManagement({
       return;
     }
 
-    if (!window.confirm(`Are you sure you want to convert Sales Quotation "${qtn.quotationNo}" into an official Order Confirmation Note (OCN)?\n\nThis will automatically:\n1. Generate a new Order Confirmation Note (OCN)\n2. Create a new Job Master in Technical Directory\n3. Link order across Production, Inventory & Scheduling.`)) {
+    if (!window.confirm(`Are you sure you want to convert Sales Quotation "${qtn.quotationNo}" into an official Order Confirmation Note (OCN)?\n\nThis will automatically:\n1. Generate a new Order Confirmation Note (OCN)\n2. Link order to database across Order Management, Cylinders & Production.`)) {
       return;
     }
 
     const ocnNo = getNextDocRefNumber('ocn');
     const mainItem = (qtn.items && qtn.items[0]) || {};
-
-    // Resolve layers — use item layers or fall back to parsing structure string
-    const layers = (mainItem.layers && mainItem.layers.length > 0)
-      ? mainItem.layers
-      : [
-          { id: 1, filmType: 'PET', micron: 12 },
-          { id: 2, filmType: 'Natural LD GP Film', micron: 40 }
-        ];
-
-    const printWidthMm = parseFloat(mainItem.printWidthMm) || 1000;
-    const repeatLengthMm = parseFloat(mainItem.repeatLengthMm) || 400;
-    const orderQtyKg = parseFloat(mainItem.quantity) || 2000;
-    const orderType = (mainItem.materialFormat || '').toLowerCase().includes('pouch') ? 'Pouching' : 'Reel';
-    const structure = mainItem.structure || getStructureString(mainItem) ||
-      layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
-
-    // Run the full material calculation engine for accurate gross weights per layer
-    const calcResults = calculateJobRawMaterials({
-      printWidthMm,
-      repeatLengthMm,
-      orderQtyKg,
-      orderType,
-      inkGsm: 1.5,
-      adhesiveGsm: 1.5,
-      layers,
-      filmPrices: DEFAULT_DAILY_RATES,
-      inkPrice: DEFAULT_PROCESSING_RATES.liquidInkPrice,
-      adhesivePrice: DEFAULT_PROCESSING_RATES.adhesivePrice
-    });
+    const isCylinderQuote = mainItem.materialFormat === 'Rotogravure Cylinder';
 
     const orderId = `ORD-2026-${Math.floor(100 + Math.random() * 900)}`;
+    const printWidthMm = parseFloat(mainItem.printWidthMm) || 1000;
+    const repeatLengthMm = parseFloat(mainItem.repeatLengthMm) || 400;
 
-    // Build itemized material requirements with proper IDs, widths, and quantities
-    const materialRequirements = [];
-    if (calcResults && calcResults.layerResults) {
-      calcResults.layerResults.forEach((layer, idx) => {
-        materialRequirements.push({
-          id: `REQ-${orderId}-${idx + 1}`,
-          filmType: layer.filmType,
-          micron: layer.micron,
-          // widthMm already has +5mm applied by getFilmSlitWidth inside calculateJobRawMaterials
-          // for the 4 designated LD film types only
-          widthMm: layer.widthMm,
-          qtyKg: parseFloat((layer.grossKg || 0).toFixed(2)),
-          preferredVendor: isLDFilm(layer.filmType) ? 'Malwa Extrusions Pvt Ltd' : 'FlexiPoly Films Ltd',
-          poIssued: false,
-          poNumber: ''
-        });
-      });
+    let layers = [];
+    let materialRequirements = [];
+    let calcResults = null;
+    let orderType = 'Reel';
+    let structure = mainItem.description || mainItem.structure || 'Rotogravure Cylinder Set';
 
-      if (calcResults.inkDetails && calcResults.inkDetails.grossKg > 0) {
-        materialRequirements.push({
-          id: `REQ-${orderId}-INK`,
-          filmType: 'Liquid Inks',
-          micron: '-',
-          widthMm: '-',
-          qtyKg: parseFloat(calcResults.inkDetails.grossKg.toFixed(2)),
-          preferredVendor: 'Siegwerk Inks Ltd',
-          poIssued: false,
-          poNumber: ''
-        });
-      }
+    if (isCylinderQuote) {
+      orderType = 'Rotogravure Cylinder';
+      // For Rotogravure Cylinder quotes, NO film requirements exist!
+      layers = [];
+      materialRequirements = [];
 
-      if (calcResults.adhesiveDetails && calcResults.adhesiveDetails.grossKg > 0) {
-        materialRequirements.push({
-          id: `REQ-${orderId}-ADH`,
-          filmType: 'Solvent-less Adhesive',
-          micron: '-',
-          widthMm: '-',
-          qtyKg: parseFloat(calcResults.adhesiveDetails.grossKg.toFixed(2)),
-          preferredVendor: 'Siegwerk Inks Ltd',
-          poIssued: false,
-          poNumber: ''
-        });
-      }
-    }
-
-    // 1. Locate existing Job Master or Create new Job Master in Technical Directory
-    const existingJM = (jobMasters || []).find(j => 
-      (mainItem.jobMasterId && j.id === mainItem.jobMasterId) ||
-      (j.jobName && mainItem.jobTitle && j.jobName.toLowerCase().trim() === mainItem.jobTitle.toLowerCase().trim())
-    );
-
-    let effectiveJobMaster = existingJM;
-    if (!effectiveJobMaster) {
-      effectiveJobMaster = {
-        id: mainItem.jobMasterId || `JM-2026-${Math.floor(100 + Math.random() * 900)}`,
-        skuCode: mainItem.skuCode || `SKU-${qtn.clientName.substring(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`,
-        jobName: mainItem.jobTitle || 'Custom Flexible Packaging Job',
-        clientName: qtn.clientName,
-        structure,
-        printWidthMm,
-        repeatLengthMm,
-        pouchOpenWidth: 120,
-        pouchHeight: 160,
-        materialFormat: mainItem.materialFormat || 'Roll Form',
-        layers,
-        cylinderSku: `CYL-${qtn.clientName.substring(0, 3).toUpperCase()}-001`,
-        cylinderCost: qtn.cylinderTerms || '₹ 35,000',
-        colorsCount: 6,
-        engravuresName: 'Acme Rotogravure Engravers',
+      // Auto-create / Sync Cylinder record in Cylinders database
+      const cylinderSku = mainItem.skuCode || `CYL-${qtn.clientName.substring(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
+      const engraverName = mainItem.engravuresName || qtn.engraverName || 'Jindal Engravers, Mathura';
+      const cylinderCost = mainItem.ratePerUom ? `₹ ${parseFloat(mainItem.ratePerUom).toLocaleString()}` : (qtn.cylinderTerms || '₹ 35,000');
+      
+      const newCyl = {
+        id: `CYL-REC-${Date.now()}`,
+        sku: cylinderSku,
+        jobName: mainItem.jobTitle || mainItem.description || 'Rotogravure Cylinder Set',
+        clientGroup: qtn.clientName,
+        colorsCount: parseInt(mainItem.colorsCount) || 8,
+        cylinderCost: cylinderCost,
+        engravuresName: engraverName,
         costBorneBy: 'Client (100%)',
-        utilisationLimit: 10000,
-        creationDate: new Date().toISOString().split('T')[0]
+        status: 'Under Engraving',
+        poIssued: false,
+        created_at: new Date().toISOString()
       };
 
-      if (onAddJobMaster) {
-        onAddJobMaster(effectiveJobMaster);
+      if (onAddCylinder) {
+        onAddCylinder(newCyl);
+      }
+    } else {
+      orderType = (mainItem.materialFormat || '').toLowerCase().includes('pouch') ? 'Pouching' : 'Reel';
+      layers = (mainItem.layers && mainItem.layers.length > 0)
+        ? mainItem.layers
+        : [
+            { id: 1, filmType: 'PET', micron: 12 },
+            { id: 2, filmType: 'Natural LD GP Film', micron: 40 }
+          ];
+
+      structure = mainItem.structure || getStructureString(mainItem) || layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
+
+      // Run full material calculation engine for standard printed flexible packaging
+      calcResults = calculateJobRawMaterials({
+        printWidthMm,
+        repeatLengthMm,
+        orderQtyKg: parseFloat(mainItem.quantity) || 2000,
+        orderType,
+        inkGsm: 1.5,
+        adhesiveGsm: 1.5,
+        layers,
+        filmPrices: DEFAULT_DAILY_RATES,
+        inkPrice: DEFAULT_PROCESSING_RATES.liquidInkPrice,
+        adhesivePrice: DEFAULT_PROCESSING_RATES.adhesivePrice
+      });
+
+      if (calcResults && calcResults.layerResults) {
+        calcResults.layerResults.forEach((layer, idx) => {
+          materialRequirements.push({
+            id: `REQ-${orderId}-${idx + 1}`,
+            filmType: layer.filmType,
+            micron: layer.micron,
+            widthMm: layer.widthMm,
+            qtyKg: parseFloat((layer.grossKg || 0).toFixed(2)),
+            preferredVendor: isLDFilm(layer.filmType) ? 'Malwa Extrusions Pvt Ltd' : 'FlexiPoly Films Ltd',
+            poIssued: false,
+            poNumber: ''
+          });
+        });
+
+        if (calcResults.inkDetails && calcResults.inkDetails.grossKg > 0) {
+          materialRequirements.push({
+            id: `REQ-${orderId}-INK`,
+            filmType: 'Liquid Inks',
+            micron: '-',
+            widthMm: '-',
+            qtyKg: parseFloat(calcResults.inkDetails.grossKg.toFixed(2)),
+            preferredVendor: 'Siegwerk Inks Ltd',
+            poIssued: false,
+            poNumber: ''
+          });
+        }
+
+        if (calcResults.adhesiveDetails && calcResults.adhesiveDetails.grossKg > 0) {
+          materialRequirements.push({
+            id: `REQ-${orderId}-ADH`,
+            filmType: 'Solvent-less Adhesive',
+            micron: '-',
+            widthMm: '-',
+            qtyKg: parseFloat(calcResults.adhesiveDetails.grossKg.toFixed(2)),
+            preferredVendor: 'Siegwerk Inks Ltd',
+            poIssued: false,
+            poNumber: ''
+          });
+        }
       }
     }
 
-    // 2. Create Order in Order Management System with all required fields
+    // 1. Locate existing Job Master or Create new Job Master if standard packaging job
+    let effectiveJobMaster = null;
+    if (!isCylinderQuote) {
+      const existingJM = (jobMasters || []).find(j => 
+        (mainItem.jobMasterId && j.id === mainItem.jobMasterId) ||
+        (j.jobName && mainItem.jobTitle && j.jobName.toLowerCase().trim() === mainItem.jobTitle.toLowerCase().trim())
+      );
+
+      effectiveJobMaster = existingJM;
+      if (!effectiveJobMaster) {
+        effectiveJobMaster = {
+          id: mainItem.jobMasterId || `JM-2026-${Math.floor(100 + Math.random() * 900)}`,
+          skuCode: mainItem.skuCode || `SKU-${qtn.clientName.substring(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`,
+          jobName: mainItem.jobTitle || 'Custom Flexible Packaging Job',
+          clientName: qtn.clientName,
+          structure,
+          printWidthMm,
+          repeatLengthMm,
+          pouchOpenWidth: 120,
+          pouchHeight: 160,
+          materialFormat: mainItem.materialFormat || 'Roll Form',
+          layers,
+          cylinderSku: `CYL-${qtn.clientName.substring(0, 3).toUpperCase()}-001`,
+          cylinderCost: qtn.cylinderTerms || '₹ 35,000',
+          colorsCount: 6,
+          engravuresName: 'Acme Rotogravure Engravers',
+          costBorneBy: 'Client (100%)',
+          utilisationLimit: 10000,
+          creationDate: new Date().toISOString().split('T')[0]
+        };
+
+        if (onAddJobMaster) {
+          onAddJobMaster(effectiveJobMaster);
+        }
+      }
+    }
+
+    const orderQtyKg = parseFloat(mainItem.quantity) || 1;
+
+    // 2. Create Order in Order Management System with exact required fields
     const newOrder = {
       id: orderId,
       ocnNumber: ocnNo,
-      jobMasterId: effectiveJobMaster.id,
-      jobName: mainItem.jobTitle || effectiveJobMaster.jobName || 'Custom Flexible Packaging Job',
+      jobMasterId: effectiveJobMaster ? effectiveJobMaster.id : null,
+      jobName: mainItem.jobTitle || (isCylinderQuote ? (mainItem.description || 'Rotogravure Cylinder Set') : (effectiveJobMaster?.jobName || 'Custom Job')),
       clientName: qtn.clientName,
-      // Both field names kept for compatibility
       orderQtyKg,
       quantityKg: orderQtyKg,
-      orderType,
+      orderType: isCylinderQuote ? 'Rotogravure Cylinder' : orderType,
+      materialFormat: mainItem.materialFormat || 'Roll Form',
+      isCylinderOrder: isCylinderQuote,
       sellingPricePerKg: parseFloat(mainItem.ratePerUom) || 250,
       printWidthMm,
       repeatLengthMm,
       structure,
       layers,
-      // jobDetails mirrors Job Master structure for Production Scheduler compatibility
       jobDetails: { layers, printWidthMm, repeatLengthMm, structure },
+      cylinderDetails: isCylinderQuote ? {
+        sku: mainItem.skuCode || `CYL-${qtn.clientName.substring(0, 3).toUpperCase()}-001`,
+        jobName: mainItem.jobTitle || mainItem.description || 'Rotogravure Cylinder Set',
+        description: mainItem.description || mainItem.structure || 'Rotogravure Cylinder Set',
+        quantity: orderQtyKg,
+        rate: parseFloat(mainItem.ratePerUom) || 0,
+        totalAmount: mainItem.totalAmount || (orderQtyKg * (parseFloat(mainItem.ratePerUom) || 0)),
+        engraverName: mainItem.engravuresName || qtn.engraverName || 'Jindal Engravers, Mathura',
+        colorsCount: parseInt(mainItem.colorsCount) || 8,
+        status: 'Under Engraving'
+      } : null,
+      engraverName: isCylinderQuote ? (mainItem.engravuresName || qtn.engraverName || 'Jindal Engravers, Mathura') : undefined,
       orderDate: new Date().toISOString().split('T')[0],
       targetDeliveryDate: qtn.estimatedDeliveryDate,
       deliveryDate: qtn.estimatedDeliveryDate,
       poNumber: `PO-QTN-${qtn.quotationNo}`,
-      status: 'Confirmed',
+      poIssued: false,
+      status: isCylinderQuote ? 'Under Engraving' : 'Confirmed',
       materialRequirements,
       rawMaterialRequirements: materialRequirements,
       calculationDetails: calcResults
