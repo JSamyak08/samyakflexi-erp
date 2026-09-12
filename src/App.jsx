@@ -135,6 +135,17 @@ const DUMMY_GRN_IDS = new Set([
 const DUMMY_VENDOR_IDS = new Set([
   'VND-001','VND-002','VND-003','VND-004','VND-005','VND-006','VND-007','VND-008'
 ]);
+// Known seed employee, attendance, and advance IDs
+const DUMMY_EMP_IDS = new Set([
+  'EMP-001', 'EMP-002', 'EMP-003', 'EMP-004', 'EMP-005', 'EMP-006'
+]);
+const DUMMY_ATT_IDS = new Set([
+  'ATT-20260827-EMP001', 'ATT-20260827-EMP002', 'ATT-20260827-EMP003',
+  'ATT-20260827-EMP004', 'ATT-20260827-EMP005'
+]);
+const DUMMY_ADV_IDS = new Set([
+  'ADV-2026-001', 'ADV-2026-002'
+]);
 
 /**
  * Returns true if any id field of the item matches a known dummy seed ID.
@@ -147,6 +158,10 @@ function isDummyRecord(item) {
   if (DUMMY_INV_IDS.has(id)) return true;
   if (DUMMY_GRN_IDS.has(item.grnNo || '')) return true;
   if (DUMMY_VENDOR_IDS.has(id)) return true;
+  if (DUMMY_EMP_IDS.has(id)) return true;
+  if (DUMMY_ATT_IDS.has(id)) return true;
+  if (DUMMY_ADV_IDS.has(id)) return true;
+  if (item.employeeId && DUMMY_EMP_IDS.has(String(item.employeeId))) return true;
   // Also check orderId / jobId references
   if (item.orderId && DUMMY_ORDER_IDS.has(item.orderId)) return true;
   if (item.jobId && DUMMY_ORDER_IDS.has(item.jobId)) return true;
@@ -180,7 +195,11 @@ function stripDummyRecords(arr, idFields = ['id', 'orderId', 'jobId']) {
     'samyak_erp_cylinders',
     'samyak_erp_inventory_rolls',
     'samyak_erp_dispatch_shipments',
-    'samyak_erp_job_datasheets'
+    'samyak_erp_job_datasheets',
+    'samyak_erp_employees',
+    'samyak_erp_employee_attendance',
+    'samyak_erp_salary_advances',
+    'samyak_erp_salary_payments'
   ];
   for (const key of keysToClean) {
     try {
@@ -260,9 +279,9 @@ export default function App() {
       const parsed = safeLocalStorageGet(storageKey, null);
       if (parsed !== null && parsed !== undefined) {
         if (Array.isArray(fallbackDefault)) {
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          if (Array.isArray(parsed)) return parsed;
         } else if (typeof fallbackDefault === 'object' && fallbackDefault !== null) {
-          if (typeof parsed === 'object' && parsed !== null && Object.keys(parsed).length > 0) return parsed;
+          if (typeof parsed === 'object' && parsed !== null) return parsed;
         } else {
           return parsed;
         }
@@ -299,10 +318,10 @@ export default function App() {
   const [consumables, setConsumables] = useState(() => stripDummyRecords(loadLocalState('consumables', [])));
   const [storeIssueTransactions, setStoreIssueTransactions] = useState(() => stripDummyRecords(loadLocalState('store_issue_transactions', [])));
   const [auditLogs, setAuditLogs] = useState(() => pruneOldAuditLogs(loadLocalState('audit_logs', [])));
-  const [employees, setEmployees] = useState(() => loadLocalState('employees', initialEmployees));
-  const [employeeAttendance, setEmployeeAttendance] = useState(() => loadLocalState('employee_attendance', initialAttendanceRecords));
-  const [salaryAdvances, setSalaryAdvances] = useState(() => loadLocalState('salary_advances', initialSalaryAdvances));
-  const [salaryPayments, setSalaryPayments] = useState(() => loadLocalState('salary_payments', []));
+  const [employees, setEmployees] = useState(() => stripDummyRecords(loadLocalState('employees', [])));
+  const [employeeAttendance, setEmployeeAttendance] = useState(() => stripDummyRecords(loadLocalState('employee_attendance', [])));
+  const [salaryAdvances, setSalaryAdvances] = useState(() => stripDummyRecords(loadLocalState('salary_advances', [])));
+  const [salaryPayments, setSalaryPayments] = useState(() => stripDummyRecords(loadLocalState('salary_payments', [])));
 
 
   const logAudit = async (actionType, moduleName, details, targetId = null) => {
@@ -825,44 +844,49 @@ export default function App() {
         });
       }
 
-      if (Array.isArray(supaEmployees) && supaEmployees.length > 0) {
+      if (Array.isArray(supaEmployees)) {
+        const cleanSupa = stripDummyRecords(supaEmployees);
         setEmployees(prev => {
           const map = new Map();
-          supaEmployees.forEach(e => { if (e && e.id) map.set(e.id, e); });
-          (prev || []).forEach(p => { if (p && p.id && !map.has(p.id)) map.set(p.id, p); });
+          cleanSupa.forEach(e => { if (e && e.id && !isDummyRecord(e)) map.set(e.id, e); });
+          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
           const merged = Array.from(map.values());
           safeLocalStorageSet('samyak_erp_employees', merged);
           return merged;
         });
+        supaEmployees.filter(isDummyRecord).forEach(d => deleteEmployeeFromSupabase(d.id).catch(console.warn));
       }
 
-      if (Array.isArray(supaAttendance) && supaAttendance.length > 0) {
+      if (Array.isArray(supaAttendance)) {
+        const cleanSupa = stripDummyRecords(supaAttendance);
         setEmployeeAttendance(prev => {
           const map = new Map();
-          supaAttendance.forEach(a => { if (a && a.id) map.set(a.id, a); });
-          (prev || []).forEach(p => { if (p && p.id && !map.has(p.id)) map.set(p.id, p); });
+          cleanSupa.forEach(a => { if (a && a.id && !isDummyRecord(a)) map.set(a.id, a); });
+          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
           const merged = Array.from(map.values());
           safeLocalStorageSet('samyak_erp_employee_attendance', merged);
           return merged;
         });
       }
 
-      if (Array.isArray(supaAdvances) && supaAdvances.length > 0) {
+      if (Array.isArray(supaAdvances)) {
+        const cleanSupa = stripDummyRecords(supaAdvances);
         setSalaryAdvances(prev => {
           const map = new Map();
-          supaAdvances.forEach(adv => { if (adv && adv.id) map.set(adv.id, adv); });
-          (prev || []).forEach(p => { if (p && p.id && !map.has(p.id)) map.set(p.id, p); });
+          cleanSupa.forEach(adv => { if (adv && adv.id && !isDummyRecord(adv)) map.set(adv.id, adv); });
+          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
           const merged = Array.from(map.values());
           safeLocalStorageSet('samyak_erp_salary_advances', merged);
           return merged;
         });
       }
 
-      if (Array.isArray(supaPayments) && supaPayments.length > 0) {
+      if (Array.isArray(supaPayments)) {
+        const cleanSupa = stripDummyRecords(supaPayments);
         setSalaryPayments(prev => {
           const map = new Map();
-          supaPayments.forEach(pay => { if (pay && pay.id) map.set(pay.id, pay); });
-          (prev || []).forEach(p => { if (p && p.id && !map.has(p.id)) map.set(p.id, p); });
+          cleanSupa.forEach(pay => { if (pay && pay.id && !isDummyRecord(pay)) map.set(pay.id, pay); });
+          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
           const merged = Array.from(map.values());
           safeLocalStorageSet('samyak_erp_salary_payments', merged);
           return merged;

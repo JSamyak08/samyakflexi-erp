@@ -2252,7 +2252,7 @@ export async function fetchEmployeesFromSupabase() {
       console.warn('[employees] Table fetch fallback to system_settings:', error.message);
       return await fetchSystemSetting('employees');
     }
-    if (data && data.length > 0) {
+    if (data) {
       return data.map(r => ({
         id: r.id,
         empCode: r.emp_code || r.empCode,
@@ -2325,6 +2325,9 @@ export async function deleteEmployeeFromSupabase(employeeId) {
   if (!isSupabaseConfigured() || !employeeId) return;
   try {
     await supabase.from('employees').delete().eq('id', employeeId);
+    await supabase.from('employee_attendance').delete().eq('employee_id', employeeId);
+    await supabase.from('salary_advances').delete().eq('employee_id', employeeId);
+    await supabase.from('salary_payments').delete().eq('employee_id', employeeId);
   } catch (err) {
     console.warn('[employees] Delete exception:', err.message);
   }
@@ -2335,7 +2338,7 @@ export async function fetchEmployeeAttendanceFromSupabase() {
   try {
     const { data, error } = await supabase.from('employee_attendance').select('*').order('date', { ascending: false });
     if (error) return await fetchSystemSetting('employee_attendance');
-    if (data && data.length > 0) {
+    if (data) {
       return data.map(r => ({
         id: r.id,
         employeeId: r.employee_id || r.employeeId,
@@ -2394,7 +2397,7 @@ export async function fetchSalaryAdvancesFromSupabase() {
   try {
     const { data, error } = await supabase.from('salary_advances').select('*').order('request_date', { ascending: false });
     if (error) return await fetchSystemSetting('salary_advances');
-    if (data && data.length > 0) {
+    if (data) {
       return data.map(r => ({
         id: r.id,
         employeeId: r.employee_id || r.employeeId,
@@ -2453,7 +2456,7 @@ export async function fetchSalaryPaymentsFromSupabase() {
   try {
     const { data, error } = await supabase.from('salary_payments').select('*').order('payment_timestamp', { ascending: false });
     if (error) return await fetchSystemSetting('salary_payments');
-    if (data && data.length > 0) {
+    if (data) {
       return data.map(r => ({
         id: r.id,
         monthKey: r.month_key || r.monthKey,

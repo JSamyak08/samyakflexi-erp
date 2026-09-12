@@ -57,9 +57,9 @@ import { pushSlugState } from '../utils/slugRouter';
 
 export default function EmployeeManagement({
   urlParams = {},
-  employees = initialEmployees,
-  attendanceRecords = initialAttendanceRecords,
-  salaryAdvances = initialSalaryAdvances,
+  employees = [],
+  attendanceRecords = [],
+  salaryAdvances = [],
   salaryPayments = [],
   currentUser,
   userRole = "Admin",
