@@ -172,6 +172,112 @@ CREATE TABLE IF NOT EXISTS public.inventory_rolls (
     status TEXT DEFAULT 'In Stock'
 );
 
+-- 9B. SEMI-FINISHED GOODS (SFG) TABLE
+CREATE TABLE IF NOT EXISTS public.sfg_goods (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    sfg_batch_code TEXT UNIQUE NOT NULL,
+    sfg_type TEXT NOT NULL,
+    job_id TEXT,
+    order_id TEXT,
+    job_name TEXT NOT NULL,
+    job_code TEXT,
+    client_name TEXT,
+    structure TEXT,
+    film_type TEXT,
+    micron NUMERIC DEFAULT 0,
+    width_mm NUMERIC DEFAULT 0,
+    total_gross_kg NUMERIC DEFAULT 0,
+    total_net_kg NUMERIC DEFAULT 0,
+    total_meters NUMERIC DEFAULT 0,
+    rolls_count INTEGER DEFAULT 1,
+    machine_name TEXT,
+    operator_name TEXT,
+    shift TEXT,
+    storage_bay TEXT,
+    production_date DATE DEFAULT CURRENT_DATE,
+    unit_valuation_rate NUMERIC DEFAULT 0,
+    status TEXT DEFAULT 'In Stock (WIP)',
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 9C. FINISHED GOODS (FG) TABLE
+CREATE TABLE IF NOT EXISTS public.fg_goods (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    fg_batch_code TEXT UNIQUE NOT NULL,
+    fg_type TEXT NOT NULL,
+    job_id TEXT,
+    order_id TEXT,
+    job_name TEXT NOT NULL,
+    job_code TEXT,
+    client_name TEXT,
+    structure TEXT,
+    film_type TEXT,
+    micron NUMERIC DEFAULT 0,
+    width_mm NUMERIC DEFAULT 0,
+    total_gross_kg NUMERIC DEFAULT 0,
+    total_net_kg NUMERIC DEFAULT 0,
+    total_meters NUMERIC DEFAULT 0,
+    rolls_count INTEGER DEFAULT 1,
+    machine_name TEXT,
+    operator_name TEXT,
+    shift TEXT,
+    storage_bay TEXT,
+    production_date DATE DEFAULT CURRENT_DATE,
+    unit_valuation_rate NUMERIC DEFAULT 0,
+    status TEXT DEFAULT 'In Stock (Ready for Dispatch)',
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 9D. AUDIT LOGS TABLE
+CREATE TABLE IF NOT EXISTS public.audit_logs (
+    id TEXT PRIMARY KEY,
+    username TEXT DEFAULT 'System',
+    user_role TEXT DEFAULT 'Admin',
+    action_type TEXT DEFAULT 'UPDATE',
+    module TEXT DEFAULT 'System',
+    details TEXT,
+    target_id TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 9E. SYSTEM SETTINGS TABLE
+CREATE TABLE IF NOT EXISTS public.system_settings (
+    setting_key TEXT PRIMARY KEY,
+    setting_value TEXT NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 9F. SALES QUOTATIONS TABLE
+CREATE TABLE IF NOT EXISTS public.sales_quotations (
+    id TEXT PRIMARY KEY,
+    quotation_no TEXT UNIQUE NOT NULL,
+    revision_no INT DEFAULT 0,
+    amendment_no TEXT DEFAULT 'Rev 00',
+    enquiry_date DATE,
+    estimated_delivery_date DATE,
+    sales_manager TEXT,
+    client_name TEXT NOT NULL,
+    client_address TEXT,
+    client_gstin TEXT,
+    contact_person TEXT,
+    contact_phone TEXT,
+    contact_email TEXT,
+    payment_terms TEXT,
+    cylinder_terms TEXT,
+    transport_terms TEXT,
+    status TEXT DEFAULT 'Sent to Client',
+    ocn_ref_no TEXT,
+    converted_date TIMESTAMPTZ,
+    items JSONB DEFAULT '[]'::jsonb,
+    terms_and_conditions JSONB DEFAULT '[]'::jsonb,
+    comments TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- 10. DISPATCH SHIPMENTS & PACKING LIST TABLE
 CREATE TABLE IF NOT EXISTS public.dispatch_shipments (
     dispatch_id TEXT PRIMARY KEY,
