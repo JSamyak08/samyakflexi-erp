@@ -151,6 +151,7 @@ export default function ProductionScheduler({
   const [inputInkGsm, setInputInkGsm] = useState('');
   const [inputPrintedOutputKg, setInputPrintedOutputKg] = useState('');
   const [inputOperatorNotes, setInputOperatorNotes] = useState('');
+  const [printLessApproved, setPrintLessApproved] = useState(false);
   const [isSubmittingEndJob, setIsSubmittingEndJob] = useState(false);
 
   // Custom Queue Ordering State
@@ -592,6 +593,7 @@ export default function ProductionScheduler({
     setInputInkGsm(order.inkGsm ? String(order.inkGsm) : '');
     setInputPrintedOutputKg(order.printLayerNetKg ? String(order.printLayerNetKg) : (order.printQtyKg ? String(order.printQtyKg) : ''));
     setInputOperatorNotes('');
+    setPrintLessApproved(false);
     setEndJobStep('input');
     setIsEndJobModalOpen(true);
   };
@@ -599,7 +601,8 @@ export default function ProductionScheduler({
   // Proceed to Confirmation Step
   const handleProceedToConfirmation = (e) => {
     e.preventDefault();
-    if (!inputActualMeters || parseFloat(inputActualMeters) <= 0) {
+    const actualNum = parseFloat(inputActualMeters);
+    if (!inputActualMeters || isNaN(actualNum) || actualNum <= 0) {
       alert("Please enter a valid number for 'Actual Meters Printed'.");
       return;
     }
@@ -611,6 +614,13 @@ export default function ProductionScheduler({
       alert("Please enter a valid 'Printed Output (in kgs)'.");
       return;
     }
+
+    const targetNum = endJobTargetOrder?.targetMeters || 0;
+    if (targetNum > 0 && actualNum < targetNum && !printLessApproved) {
+      alert(`⚠️ Shortfall Warning: Actual Meters Printed (${actualNum.toLocaleString()} m) is LESS than Target Meters (${targetNum.toLocaleString()} m).\n\nPlease click 'Approval to Print Less Received' to proceed, or click 'Continue Job' to print more meters on press.`);
+      return;
+    }
+
     setEndJobStep('confirm');
   };
 
@@ -1879,117 +1889,216 @@ export default function ProductionScheduler({
             </div>
 
             {/* STEP 1: SHOP FLOOR PRODUCTION INPUT FORM */}
-            {endJobStep === 'input' && (
-              <form onSubmit={handleProceedToConfirmation} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-                
-                {/* Field 1: Actual Meters Printed */}
-                <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                    <label style={{ fontSize: '0.85rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
-                      📏 Actual Meters Printed (m) *
-                    </label>
-                    <span style={{ fontSize: '0.75rem', color: '#0284c7', fontWeight: '700' }}>
-                      Target: {endJobTargetOrder.targetMeters.toLocaleString()} m
+            {endJobStep === 'input' && (() => {
+              const targetMetersNum = endJobTargetOrder.targetMeters || 0;
+              const actualMetersNum = parseFloat(inputActualMeters) || 0;
+              const meterPercentage = (targetMetersNum > 0 && actualMetersNum > 0)
+                ? ((actualMetersNum / targetMetersNum) * 100).toFixed(1)
+                : null;
+              const isMetersShortfall = (actualMetersNum > 0 && targetMetersNum > 0 && actualMetersNum < targetMetersNum);
+
+              return (
+                <form onSubmit={handleProceedToConfirmation} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                  
+                  {/* Field 1: Actual Meters Printed */}
+                  <div style={{ background: isMetersShortfall ? '#fffbeb' : '#f8fafc', padding: '16px', borderRadius: '10px', border: isMetersShortfall ? '1.5px solid #f59e0b' : '1px solid #e2e8f0', transition: 'all 0.2s ease' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <label style={{ fontSize: '0.85rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                        📏 Actual Meters Printed (m) *
+                      </label>
+                      <span style={{ fontSize: '0.75rem', color: '#0284c7', fontWeight: '700' }}>
+                        Target: {endJobTargetOrder.targetMeters.toLocaleString()} m
+                      </span>
+                    </div>
+                    <input 
+                      type="number"
+                      step="1"
+                      min="1"
+                      className="form-control"
+                      style={{ 
+                        fontSize: '1.1rem', 
+                        fontWeight: '800', 
+                        color: isMetersShortfall ? '#b45309' : '#0f172a', 
+                        border: isMetersShortfall ? '2px solid #d97706' : '1.5px solid #0284c7', 
+                        background: '#ffffff' 
+                      }}
+                      placeholder="e.g. 5871"
+                      value={inputActualMeters}
+                      onChange={e => {
+                        setInputActualMeters(e.target.value);
+                        if (printLessApproved && parseFloat(e.target.value) >= targetMetersNum) {
+                          setPrintLessApproved(false);
+                        }
+                      }}
+                      required
+                    />
+
+                    {/* Meter Percentage vs Target Display */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
+                      <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                        Enter final counter meter reading recorded on the press rewinder.
+                      </span>
+                      {meterPercentage !== null && (
+                        <span 
+                          style={{ 
+                            fontSize: '0.78rem', 
+                            fontWeight: '900', 
+                            padding: '2px 8px', 
+                            borderRadius: '6px', 
+                            background: isMetersShortfall ? '#fef3c7' : (parseFloat(meterPercentage) >= 100 ? '#ecfdf5' : '#e0f2fe'),
+                            color: isMetersShortfall ? '#b45309' : (parseFloat(meterPercentage) >= 100 ? '#047857' : '#0369a1'),
+                            border: isMetersShortfall ? '1px solid #fde68a' : (parseFloat(meterPercentage) >= 100 ? '1px solid #a7f3d0' : '1px solid #bae6fd')
+                          }}
+                        >
+                          📊 {meterPercentage}% of Target {isMetersShortfall ? `(${(targetMetersNum - actualMetersNum).toLocaleString()} m Shortfall)` : (actualMetersNum > targetMetersNum ? `(+${(actualMetersNum - targetMetersNum).toLocaleString()} m Extra)` : '(Target Met)')}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Immediate Warning Box if Less Printed Than Target */}
+                    {isMetersShortfall && (
+                      <div style={{ marginTop: '14px', background: '#fef3c7', border: '1.5px solid #f59e0b', borderRadius: '8px', padding: '12px 14px' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                          <AlertTriangle size={20} style={{ color: '#d97706', flexShrink: 0, marginTop: '2px' }} />
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#92400e', marginBottom: '2px' }}>
+                              ⚠️ Shortfall Warning: Actual ({actualMetersNum.toLocaleString()} m) &lt; Target ({targetMetersNum.toLocaleString()} m)
+                            </div>
+                            <p style={{ margin: 0, fontSize: '0.78rem', color: '#b45309', lineHeight: '1.4' }}>
+                              Printed meters are less than the target requirement ({meterPercentage}% of target achieved). Please print more meters to fulfill the run, or grant approval to receive less.
+                            </p>
+
+                            <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
+                              {/* Action Button 1: Approval to Print Less Received */}
+                              <button 
+                                type="button" 
+                                className="btn-secondary" 
+                                style={{ 
+                                  fontSize: '0.75rem', 
+                                  fontWeight: '800', 
+                                  padding: '6px 12px', 
+                                  background: printLessApproved ? '#dcfce7' : '#ffffff', 
+                                  color: printLessApproved ? '#15803d' : '#b45309', 
+                                  borderColor: printLessApproved ? '#86efac' : '#d97706',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                                onClick={() => setPrintLessApproved(prev => !prev)}
+                              >
+                                {printLessApproved ? <CheckCircle size={14} /> : <AlertTriangle size={14} />}
+                                {printLessApproved ? '✓ Approval Granted (Print Less Received)' : 'Approval to Print Less Received'}
+                              </button>
+
+                              {/* Action Button 2: Continue Job */}
+                              <button 
+                                type="button" 
+                                className="btn-primary" 
+                                style={{ 
+                                  fontSize: '0.75rem', 
+                                  fontWeight: '800', 
+                                  padding: '6px 12px', 
+                                  background: '#0284c7', 
+                                  borderColor: '#0284c7',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                                onClick={() => setIsEndJobModalOpen(false)}
+                                title="Return to active running job on press to print remaining meters"
+                              >
+                                <Play size={14} /> Continue Job
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Field 2: Ink GSM (In Speed) */}
+                  <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <label style={{ fontSize: '0.85rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                        🎨 Ink GSM (In Speed) (g/m²) *
+                      </label>
+                    </div>
+                    <input 
+                      type="number"
+                      step="0.05"
+                      min="0.1"
+                      className="form-control"
+                      style={{ fontSize: '1.1rem', fontWeight: '800', color: '#0f172a', border: '1.5px solid #7c3aed', background: '#ffffff' }}
+                      placeholder="e.g. 1.50"
+                      value={inputInkGsm}
+                      onChange={e => setInputInkGsm(e.target.value)}
+                      required
+                    />
+                    <span style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                      Measured ink application weight on web during running mechanical speed.
                     </span>
                   </div>
-                  <input 
-                    type="number"
-                    step="1"
-                    min="1"
-                    className="form-control"
-                    style={{ fontSize: '1.1rem', fontWeight: '800', color: '#0f172a', border: '1.5px solid #0284c7', background: '#ffffff' }}
-                    placeholder="e.g. 5200"
-                    value={inputActualMeters}
-                    onChange={e => setInputActualMeters(e.target.value)}
-                    required
-                  />
-                  <span style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
-                    Enter final counter meter reading recorded on the press rewinder.
-                  </span>
-                </div>
 
-                {/* Field 2: Ink GSM (In Speed) */}
-                <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                    <label style={{ fontSize: '0.85rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
-                      🎨 Ink GSM (In Speed) (g/m²) *
-                    </label>
+                  {/* Field 3: Printed Output (in kgs) */}
+                  <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <label style={{ fontSize: '0.85rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                        ⚖️ Printed Output (in kgs) *
+                      </label>
+                      <WeighingScaleCaptureButton onCapture={(weight) => setInputPrintedOutputKg(String(weight))} />
+                    </div>
+                    <input 
+                      type="number"
+                      step="0.1"
+                      min="0.1"
+                      className="form-control"
+                      style={{ fontSize: '1.1rem', fontWeight: '800', color: '#059669', border: '1.5px solid #059669', background: '#ffffff' }}
+                      placeholder="e.g. 245.5"
+                      value={inputPrintedOutputKg}
+                      onChange={e => setInputPrintedOutputKg(e.target.value)}
+                      required
+                    />
+                    <span style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                      Total net weight of printed rolls before transfer to Lamination / Slitting.
+                    </span>
                   </div>
-                  <input 
-                    type="number"
-                    step="0.05"
-                    min="0.1"
-                    className="form-control"
-                    style={{ fontSize: '1.1rem', fontWeight: '800', color: '#0f172a', border: '1.5px solid #7c3aed', background: '#ffffff' }}
-                    placeholder="e.g. 1.50"
-                    value={inputInkGsm}
-                    onChange={e => setInputInkGsm(e.target.value)}
-                    required
-                  />
-                  <span style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
-                    Measured ink application weight on web during running mechanical speed.
-                  </span>
-                </div>
 
-                {/* Field 3: Printed Output (in kgs) */}
-                <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                    <label style={{ fontSize: '0.85rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
-                      ⚖️ Printed Output (in kgs) *
+                  {/* Field 4: Operator Remarks / Notes (Optional) */}
+                  <div>
+                    <label style={{ fontSize: '0.8rem', fontWeight: '700', color: '#475569', display: 'block', marginBottom: '4px' }}>
+                      Shift / Operator Notes (Optional)
                     </label>
-                    <WeighingScaleCaptureButton onCapture={(weight) => setInputPrintedOutputKg(String(weight))} />
+                    <textarea
+                      rows={2}
+                      className="form-control"
+                      placeholder="e.g. Viscosity maintained at 15s B4 cup, blade changed at 3000m..."
+                      value={inputOperatorNotes}
+                      onChange={e => setInputOperatorNotes(e.target.value)}
+                      style={{ fontSize: '0.85rem' }}
+                    />
                   </div>
-                  <input 
-                    type="number"
-                    step="0.1"
-                    min="0.1"
-                    className="form-control"
-                    style={{ fontSize: '1.1rem', fontWeight: '800', color: '#059669', border: '1.5px solid #059669', background: '#ffffff' }}
-                    placeholder="e.g. 245.5"
-                    value={inputPrintedOutputKg}
-                    onChange={e => setInputPrintedOutputKg(e.target.value)}
-                    required
-                  />
-                  <span style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
-                    Total net weight of printed rolls before transfer to Lamination / Slitting.
-                  </span>
-                </div>
 
-                {/* Field 4: Operator Remarks / Notes (Optional) */}
-                <div>
-                  <label style={{ fontSize: '0.8rem', fontWeight: '700', color: '#475569', display: 'block', marginBottom: '4px' }}>
-                    Shift / Operator Notes (Optional)
-                  </label>
-                  <textarea
-                    rows={2}
-                    className="form-control"
-                    placeholder="e.g. Viscosity maintained at 15s B4 cup, blade changed at 3000m..."
-                    value={inputOperatorNotes}
-                    onChange={e => setInputOperatorNotes(e.target.value)}
-                    style={{ fontSize: '0.85rem' }}
-                  />
-                </div>
-
-                {/* Action Buttons */}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px', paddingTop: '14px', borderTop: '1px solid #e2e8f0' }}>
-                  <button 
-                    type="button" 
-                    className="btn-secondary" 
-                    onClick={() => setIsEndJobModalOpen(false)}
-                    style={{ padding: '9px 18px', fontWeight: '700' }}
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    type="submit" 
-                    className="btn-primary" 
-                    style={{ padding: '9px 22px', fontWeight: '900', background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', display: 'flex', alignItems: 'center', gap: '6px' }}
-                  >
-                    Proceed to Confirmation Review <ChevronRight size={16} />
-                  </button>
-                </div>
-              </form>
-            )}
+                  {/* Action Buttons */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px', paddingTop: '14px', borderTop: '1px solid #e2e8f0' }}>
+                    <button 
+                      type="button" 
+                      className="btn-secondary" 
+                      onClick={() => setIsEndJobModalOpen(false)}
+                      style={{ padding: '9px 18px', fontWeight: '700' }}
+                    >
+                      Cancel
+                    </button>
+                    <button 
+                      type="submit" 
+                      className="btn-primary" 
+                      style={{ padding: '9px 22px', fontWeight: '900', background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      Proceed to Confirmation Review <ChevronRight size={16} />
+                    </button>
+                  </div>
+                </form>
+              );
+            })()}
 
             {/* STEP 2: CONFIRMATION TAB & FINAL SUMMARY */}
             {endJobStep === 'confirm' && (
@@ -2011,8 +2120,25 @@ export default function ProductionScheduler({
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                   
                   <div style={{ background: '#ffffff', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Actual Meters Printed</span>
-                    <div style={{ fontSize: '1.3rem', fontWeight: '900', color: '#0284c7', marginTop: '2px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Actual Meters Printed</span>
+                      {endJobTargetOrder.targetMeters > 0 && (
+                        <span 
+                          style={{ 
+                            fontSize: '0.72rem', 
+                            fontWeight: '900', 
+                            padding: '2px 6px', 
+                            borderRadius: '4px',
+                            background: parseFloat(inputActualMeters) < endJobTargetOrder.targetMeters ? '#fef3c7' : '#ecfdf5',
+                            color: parseFloat(inputActualMeters) < endJobTargetOrder.targetMeters ? '#b45309' : '#047857',
+                            border: parseFloat(inputActualMeters) < endJobTargetOrder.targetMeters ? '1px solid #fde68a' : '1px solid #a7f3d0'
+                          }}
+                        >
+                          {((parseFloat(inputActualMeters) / endJobTargetOrder.targetMeters) * 100).toFixed(1)}% of Target
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: '900', color: parseFloat(inputActualMeters) < endJobTargetOrder.targetMeters ? '#b45309' : '#0284c7', marginTop: '2px' }}>
                       {parseFloat(inputActualMeters).toLocaleString()} m
                     </div>
                     <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Target: {endJobTargetOrder.targetMeters.toLocaleString()} m</span>
