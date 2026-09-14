@@ -619,11 +619,11 @@ export default function ProductionScheduler({
           {
             id: `in-roll-${Date.now()}-1`,
             barcodeId: '',
-            filmType: filmType,
-            micron: String(micron),
-            widthMm: String(printWidth),
-            initialWeightKg: String(reqQty),
-            consumedWeightKg: String(reqQty)
+            filmType: '',
+            micron: '',
+            widthMm: '',
+            initialWeightKg: '',
+            consumedWeightKg: ''
           }
         ];
         setInputRollsList(initialList);
@@ -668,11 +668,11 @@ export default function ProductionScheduler({
         updatedList = inputRollsList.map((r, i) => i === index ? {
           ...r,
           barcodeId: matched.barcodeId || matched.id || bId,
-          filmType: matched.filmType || matched.itemName || r.filmType,
-          micron: String(matched.micron || r.micron),
-          widthMm: String(matched.widthMm || r.widthMm),
-          initialWeightKg: String(matched.netWeightKg || matched.availableWeightKg || r.initialWeightKg),
-          consumedWeightKg: String(matched.netWeightKg || matched.availableWeightKg || r.consumedWeightKg)
+          filmType: matched.filmType || matched.itemName || '',
+          micron: matched.micron ? String(matched.micron) : '',
+          widthMm: matched.widthMm ? String(matched.widthMm) : '',
+          initialWeightKg: (matched.netWeightKg || matched.availableWeightKg) ? String(matched.netWeightKg || matched.availableWeightKg) : '',
+          consumedWeightKg: (matched.netWeightKg || matched.availableWeightKg) ? String(matched.netWeightKg || matched.availableWeightKg) : ''
         } : r);
       } else {
         updatedList = inputRollsList.map((r, i) => i === index ? { ...r, barcodeId: bId } : r);
@@ -697,9 +697,9 @@ export default function ProductionScheduler({
       {
         id: `in-roll-${Date.now()}-${inputRollsList.length + 1}`,
         barcodeId: '',
-        filmType: defaultFilm,
-        micron: String(defaultMic),
-        widthMm: String(defaultWidth),
+        filmType: '',
+        micron: '',
+        widthMm: '',
         initialWeightKg: '',
         consumedWeightKg: ''
       }
@@ -729,11 +729,11 @@ export default function ProductionScheduler({
       setInputRollsList(prev => prev.map((r, i) => i === index ? {
         ...r,
         barcodeId: matched.barcodeId || matched.id || bId,
-        filmType: matched.filmType || matched.itemName || r.filmType,
-        micron: String(matched.micron || r.micron),
-        widthMm: String(matched.widthMm || r.widthMm),
-        initialWeightKg: String(matched.netWeightKg || matched.availableWeightKg || r.initialWeightKg),
-        consumedWeightKg: String(matched.netWeightKg || matched.availableWeightKg || r.consumedWeightKg)
+        filmType: matched.filmType || matched.itemName || '',
+        micron: matched.micron ? String(matched.micron) : '',
+        widthMm: matched.widthMm ? String(matched.widthMm) : '',
+        initialWeightKg: (matched.netWeightKg || matched.availableWeightKg) ? String(matched.netWeightKg || matched.availableWeightKg) : '',
+        consumedWeightKg: (matched.netWeightKg || matched.availableWeightKg) ? String(matched.netWeightKg || matched.availableWeightKg) : ''
       } : r));
     } else {
       setInputRollsList(prev => prev.map((r, i) => i === index ? { ...r, barcodeId: bId } : r));
@@ -770,11 +770,11 @@ export default function ProductionScheduler({
         {
           id: `in-roll-${Date.now()}-1`,
           barcodeId: '',
-          filmType: filmType,
-          micron: String(micron),
-          widthMm: String(printWidth),
-          initialWeightKg: String(reqQty),
-          consumedWeightKg: String(reqQty)
+          filmType: '',
+          micron: '',
+          widthMm: '',
+          initialWeightKg: '',
+          consumedWeightKg: ''
         }
       ]);
     }
