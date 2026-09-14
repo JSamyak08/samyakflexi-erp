@@ -1710,6 +1710,70 @@ export default function ProductionRecordManagement({
             );
           })()}
 
+          {/* Consumed SFG Inventory Log (From SFG Store) */}
+          {(() => {
+            const sfgLogs = selectedRecord.sfgConsumptions || [];
+            if (sfgLogs.length === 0) return null;
+
+            return (
+              <div style={{ marginTop: '20px', padding: '18px 20px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '10px', marginBottom: '24px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <h4 style={{ fontSize: '1.05rem', fontWeight: '800', color: '#c2410c', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Zap size={20} style={{ color: '#ea580c' }} /> Consumed SFG Inventory Log (From SFG Store)
+                  </h4>
+                  <span style={{ fontSize: '0.78rem', color: '#9a3412', fontWeight: '700' }}>
+                    {sfgLogs.length} Consumption Event(s)
+                  </span>
+                </div>
+
+                <div style={{ overflowX: 'auto', background: '#ffffff', borderRadius: '8px', border: '1px solid #ffedd5' }}>
+                  <table className="data-table" style={{ fontSize: '0.8rem', width: '100%', margin: 0 }}>
+                    <thead>
+                      <tr style={{ background: '#fff7ed', color: '#9a3412' }}>
+                        <th>Date & Time</th>
+                        <th>SFG Batch Barcode</th>
+                        <th>Stage Consumed For</th>
+                        <th style={{ textAlign: 'right' }}>Consumed Weight (kg)</th>
+                        <th style={{ textAlign: 'right' }}>Remaining SFG Balance (kg)</th>
+                        <th>Operator</th>
+                        <th>Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sfgLogs.map((log, idx) => (
+                        <tr key={log.id || idx}>
+                          <td style={{ color: '#64748b', fontSize: '0.78rem' }}>
+                            {new Date(log.timestamp || log.date).toLocaleString()}
+                          </td>
+                          <td>
+                            <code style={{ background: '#fff3ed', border: '1px solid #fdba74', padding: '2px 6px', borderRadius: '4px', fontWeight: '800', color: '#c2410c' }}>
+                              {log.sfgBatchCode || 'SFG-BATCH'}
+                            </code>
+                          </td>
+                          <td style={{ fontWeight: '700', color: '#0f172a' }}>
+                            {log.targetProcess}
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: '800', color: '#ea580c' }}>
+                            {log.consumedKg} kg
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: '800', color: '#15803d' }}>
+                            {log.remainingBalanceKg} kg
+                          </td>
+                          <td style={{ color: '#334155' }}>
+                            {log.operatorName || '-'}
+                          </td>
+                          <td style={{ color: '#64748b', fontSize: '0.78rem' }}>
+                            {log.notes || '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* ========================================================================= */}
           {/* ADMIN ROLE ONLY: FINANCIAL PROFITABILITY & COST VARIANCE ANALYSIS */}
           {/* ========================================================================= */}

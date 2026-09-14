@@ -2571,6 +2571,164 @@ export async function deleteProductionRecordFromSupabase(recId) {
   }
 }
 
+// ============================================================================
+// SEMI-FINISHED GOODS (SFG) GOODS
+// ============================================================================
+
+export async function fetchSFGGoodsFromSupabase() {
+  if (!isSupabaseConfigured()) return [];
+  try {
+    const { data, error } = await supabase.from('sfg_goods').select('*').order('created_at', { ascending: false });
+    if (error) {
+      console.warn('[sfg_goods] fetch error, using system_settings fallback:', error.message);
+      return (await fetchSystemSetting('sfg_goods')) || [];
+    }
+    if (!data) return [];
+    return data.map(item => {
+      let extra = {};
+      if (item.notes && item.notes.startsWith('{')) {
+        try { extra = JSON.parse(item.notes); } catch (e) {}
+      }
+      const netKg = Number(item.total_net_kg ?? extra.totalNetKg ?? 0) || 0;
+      const consumedKg = Number(extra.consumedKg ?? item.consumed_kg ?? 0) || 0;
+      const availableKg = Math.max(0, netKg - consumedKg);
+      
+      let computedStatus = item.status || 'In Stock (WIP)';
+      if (consumedKg > 0) {
+        computedStatus = availableKg <= 0 ? 'Fully Consumed' : 'Partially Consumed';
+      }
+
+      return {
+        id: String(item.id),
+        sfgBatchCode: item.sfg_batch_code || extra.sfgBatchCode || item.id,
+        sfgType: item.sfg_type || extra.sfgType || 'Printed Rolls',
+        jobId: item.job_id || extra.jobId || '',
+        orderId: item.order_id || extra.orderId || '',
+        jobName: item.job_name || extra.jobName || 'Untitled Job',
+        jobCode: item.job_code || extra.jobCode || '',
+        clientName: item.client_name || extra.clientName || '',
+        structure: item.structure || extra.structure || '',
+        filmType: item.film_type || extra.filmType || '',
+        micron: Number(item.micron ?? extra.micron ?? 0) || 0,
+        widthMm: Number(item.width_mm ?? extra.widthMm ?? 0) || 0,
+        totalGrossKg: Number(item.total_gross_kg ?? extra.totalGrossKg ?? 0) || 0,
+        totalNetKg: netKg,
+        consumedKg: consumedKg,
+        availableKg: availableKg,
+        totalMeters: Number(item.total_meters ?? extra.totalMeters ?? 0) || 0,
+        rollsCount: Number(item.rolls_count ?? extra.rollsCount ?? 1) || 1,
+        machineName: item.machine_name || extra.machineName || '',
+        operatorName: item.operator_name || extra.operatorName || '',
+        shift: item.shift || extra.shift || '',
+        storageBay: item.storage_bay || extra.storageBay || 'Bay A',
+        productionDate: item.production_date || extra.productionDate || new Date().toISOString().split('T')[0],
+        unitValuationRate: Number(item.unit_valuation_rate ?? extra.unitValuationRate ?? 0) || 0,
+        status: computedStatus,
+        notes: extra.notesText || (item.notes && !item.notes.startsWith('{') ? item.notes : ''),
+        consumptionHistory: Array.isArray(extra.consumptionHistory) ? extra.consumptionHistory : [],
+        createdAt: item.created_at || new Date().toISOString()
+      };
+    });
+  } catch (err) {
+    console.error('Error fetching SFG goods from Supabase:', err);
+    return (await fetchSystemSetting('sfg_goods')) || [];
+  }
+}
+
+export async function saveSFGGoodToSupabase(item) {
+  if (!isSupabaseConfigured() || !item) return;
+  await ensureValidSession();
+  try {
+    const sfgBatchCode = item.sfgBatchCode || item.id || `SFG-${Date.now()}`;
+    const netKg = Number(item.totalNetKg ?? item.netWeightKg ?? 0) || 0;
+    const consumedKg = Number(item.consumedKg ?? 0) || 0;
+    const availableKg = Math.max(0, netKg - consumedKg);
+    let computedStatus = item.status || 'In Stock (WIP)';
+    if (consumedKg > 0) {
+      computedStatus = availableKg <= 0 ? 'Fully Consumed' : 'Partially Consumed';
+    }
+
+    const notesEnvelope = JSON.stringify({
+      sfgBatchCode,
+      sfgType: item.sfgType,
+      jobId: item.jobId,
+      orderId: item.orderId,
+      jobName: item.jobName,
+      jobCode: item.jobCode,
+      clientName: item.clientName,
+      structure: item.structure,
+      filmType: item.filmType,
+      micron: item.micron,
+      widthMm: item.widthMm,
+      totalGrossKg: item.totalGrossKg,
+      totalNetKg: netKg,
+      consumedKg: consumedKg,
+      availableKg: availableKg,
+      totalMeters: item.totalMeters,
+      rollsCount: item.rollsCount,
+      machineName: item.machineName,
+      operatorName: item.operatorName,
+      shift: item.shift,
+      storageBay: item.storageBay,
+      productionDate: item.productionDate,
+      notesText: item.notes || '',
+      consumptionHistory: item.consumptionHistory || []
+    });
+
+    const payload = {
+      sfg_batch_code: sfgBatchCode,
+      sfg_type: item.sfgType || 'Printed Rolls',
+      job_id: item.jobId || null,
+      order_id: item.orderId || null,
+      job_name: item.jobName || 'Untitled Job',
+      job_code: item.jobCode || '',
+      client_name: item.clientName || '',
+      structure: item.structure || '',
+      film_type: item.filmType || '',
+      micron: Number(item.micron) || 0,
+      width_mm: Number(item.widthMm) || 0,
+      total_gross_kg: Number(item.totalGrossKg) || 0,
+      total_net_kg: netKg,
+      total_meters: Number(item.totalMeters) || 0,
+      rolls_count: Number(item.rollsCount) || 1,
+      machine_name: item.machineName || '',
+      operator_name: item.operatorName || '',
+      shift: item.shift || '',
+      storage_bay: item.storageBay || 'Bay A',
+      production_date: item.productionDate || new Date().toISOString().split('T')[0],
+      status: computedStatus,
+      notes: notesEnvelope,
+      updated_at: new Date().toISOString()
+    };
+
+    if (item.id && item.id.length > 20) {
+      payload.id = item.id;
+    }
+
+    console.log('[sfg_goods] Upserting item:', sfgBatchCode);
+    const { error } = await supabase.from('sfg_goods').upsert(payload, { onConflict: 'sfg_batch_code' });
+    if (error) {
+      console.warn('[sfg_goods] Table upsert error, storing in system_settings backup:', error.message);
+    }
+  } catch (err) {
+    console.error('Error saving SFG good to Supabase:', err);
+  }
+}
+
+export async function deleteSFGGoodFromSupabase(idOrBatchCode) {
+  if (!isSupabaseConfigured()) return;
+  await ensureValidSession();
+  try {
+    const { error } = await supabase.from('sfg_goods').delete().or(`id.eq.${idOrBatchCode},sfg_batch_code.eq.${idOrBatchCode}`);
+    if (error) {
+      console.error('[sfg_goods] Delete error:', error.message);
+    }
+  } catch (err) {
+    console.error('Error deleting SFG good from Supabase:', err);
+  }
+}
+
+
 
 // ============================================================================
 // SEED MIGRATION: SEED DATA PUSHES HAVE BEEN PERMANENTLY DISABLED

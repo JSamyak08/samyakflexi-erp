@@ -75,6 +75,7 @@ import ScrapWastageAnalysis from './components/ScrapWastageAnalysis';
 import AuditLogsManagement from './components/AuditLogsManagement';
 import InkManagement from './components/InkManagement';
 import DispatchManagement from './components/DispatchManagement';
+import SFGStoreManagement from './components/SFGStoreManagement';
 import WeighingScaleWidget from './components/WeighingScaleWidget';
 import UniversalBarcodeScannerModal from './components/UniversalBarcodeScannerModal';
 import { fetchAuditLogsFromSupabase, saveAuditLogToSupabase, createAuditEntry, pruneOldAuditLogs } from './services/auditLogger';
@@ -101,6 +102,7 @@ import {
   fetchSalaryAdvancesFromSupabase, saveSalaryAdvanceToSupabase,
   fetchSalaryPaymentsFromSupabase, saveSalaryPaymentToSupabase,
   fetchRolePermissionsFromSupabase, saveRolePermissionsToSupabase,
+  fetchSFGGoodsFromSupabase, saveSFGGoodToSupabase, deleteSFGGoodFromSupabase,
   fetchSystemSetting, saveSystemSetting
 } from './services/supabaseDataService';
 import { createUserInSupabaseAuth } from './services/authService';
@@ -322,6 +324,7 @@ export default function App() {
   const [employeeAttendance, setEmployeeAttendance] = useState(() => stripDummyRecords(loadLocalState('employee_attendance', [])));
   const [salaryAdvances, setSalaryAdvances] = useState(() => stripDummyRecords(loadLocalState('salary_advances', [])));
   const [salaryPayments, setSalaryPayments] = useState(() => stripDummyRecords(loadLocalState('salary_payments', [])));
+  const [sfgGoods, setSfgGoods] = useState(() => stripDummyRecords(loadLocalState('sfg_goods', [])));
 
 
   const logAudit = async (actionType, moduleName, details, targetId = null) => {
@@ -406,6 +409,7 @@ export default function App() {
   useEffect(() => { safeLocalStorageSet('samyak_erp_employees', employees); }, [employees]);
   useEffect(() => { safeLocalStorageSet('samyak_erp_employee_attendance', employeeAttendance); }, [employeeAttendance]);
   useEffect(() => { safeLocalStorageSet('samyak_erp_salary_advances', salaryAdvances); }, [salaryAdvances]);
+  useEffect(() => { safeLocalStorageSet('samyak_erp_sfg_goods', sfgGoods); }, [sfgGoods]);
 
 
   // Asynchronously hydrate any full artwork assets from IndexedDB if needed on mount
@@ -466,7 +470,7 @@ export default function App() {
         supaProd, supaUsers, supaSheets, supaRolls, supaShipments,
         supaMachines, supaSchedules, supaClients, supaJobMasters,
         supaInks, supaEmployees, supaAttendance, supaAdvances,
-        supaRolePerms, supaAuditLogs
+        supaRolePerms, supaAuditLogs, supaSFG
       ] = await Promise.all([
         fetchSafe(fetchOrders, 'Orders'),
         fetchSafe(fetchVendors, 'Vendors'),
@@ -488,7 +492,8 @@ export default function App() {
         fetchSafe(fetchSalaryAdvancesFromSupabase, 'Salary Advances'),
         fetchSafe(fetchSalaryPaymentsFromSupabase, 'Salary Payments'),
         fetchSafe(fetchRolePermissionsFromSupabase, 'Role Permissions'),
-        fetchSafe(fetchAuditLogsFromSupabase, 'Audit Logs')
+        fetchSafe(fetchAuditLogsFromSupabase, 'Audit Logs'),
+        fetchSafe(fetchSFGGoodsFromSupabase, 'SFG Goods')
       ]);
 
 
@@ -509,6 +514,7 @@ export default function App() {
 
       if (!isMounted) return;
 
+      if (Array.isArray(supaSFG) && supaSFG.length > 0) setSfgGoods(stripDummyRecords(supaSFG));
       if (Array.isArray(supaAuditLogs)) setAuditLogs(pruneOldAuditLogs(supaAuditLogs));
       if (dbPrefixes) safeLocalStorageSet('samyak_doc_prefixes', dbPrefixes);
       if (dbTerms) safeLocalStorageSet('samyak_doc_terms', dbTerms);
@@ -2412,6 +2418,85 @@ export default function App() {
     }
   };
 
+  // SFG Store & Consumed SFG Handlers
+  const handleSaveSFGGood = async (item) => {
+    setSfgGoods(prev => {
+      const idx = prev.findIndex(s => s.id === item.id || s.sfgBatchCode === item.sfgBatchCode);
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = item;
+        return updated;
+      }
+      return [item, ...prev];
+    });
+    logAudit('CREATE', 'SFG Store', `Saved SFG Batch "${item.sfgBatchCode}" for job "${item.jobName}"`, item.id || item.sfgBatchCode);
+    try {
+      await saveSFGGoodToSupabase(item);
+    } catch (err) {
+      console.warn("[Sync Notice] SFG item saved locally. Supabase notice:", err);
+    }
+  };
+
+  const handleConsumeSFG = async (updatedSfgItem, logEntry) => {
+    // 1. Update SFG Goods State & Supabase
+    setSfgGoods(prev => {
+      const idx = prev.findIndex(s => s.id === updatedSfgItem.id || s.sfgBatchCode === updatedSfgItem.sfgBatchCode);
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = updatedSfgItem;
+        return updated;
+      }
+      return [updatedSfgItem, ...prev];
+    });
+    saveSFGGoodToSupabase(updatedSfgItem).catch(console.warn);
+
+    // 2. Sync to Job's Production Record
+    const targetOrderId = updatedSfgItem.orderId || logEntry.orderId;
+    const targetJobName = (updatedSfgItem.jobName || logEntry.jobName || '').trim().toLowerCase();
+
+    let matchedRec = (productionRecords || []).find(r => 
+      (targetOrderId && String(r.orderId) === String(targetOrderId)) || 
+      (r.jobName && (r.jobName || '').trim().toLowerCase() === targetJobName)
+    );
+
+    if (matchedRec) {
+      const existingLogs = Array.isArray(matchedRec.sfgConsumptions) ? matchedRec.sfgConsumptions : [];
+      const updatedRec = {
+        ...matchedRec,
+        sfgConsumptions: [logEntry, ...existingLogs]
+      };
+      setProductionRecords(prev => prev.map(r => r.id === updatedRec.id ? updatedRec : r));
+      saveProductionRecordToSupabase(updatedRec).catch(console.warn);
+    } else {
+      // Create new production record shell for this job
+      const newRec = {
+        id: `PROD-REC-${Date.now()}`,
+        orderId: targetOrderId || `ORD-${Date.now()}`,
+        jobName: updatedSfgItem.jobName || 'Untitled Job',
+        clientName: updatedSfgItem.clientName || 'General Client',
+        operatorName: logEntry.operatorName || 'Plant Operator',
+        shift: logEntry.shift || 'Day Shift',
+        status: 'Pending Plant Approval',
+        dateFilled: logEntry.date || new Date().toISOString().split('T')[0],
+        sfgConsumptions: [logEntry]
+      };
+      setProductionRecords(prev => [newRec, ...prev]);
+      saveProductionRecordToSupabase(newRec).catch(console.warn);
+    }
+
+    logAudit('UPDATE', 'SFG Store', `Consumed ${logEntry.consumedKg} kg SFG from batch "${updatedSfgItem.sfgBatchCode}" for stage "${logEntry.targetProcess}". Remaining Balance: ${updatedSfgItem.availableKg} kg`, updatedSfgItem.sfgBatchCode);
+  };
+
+  const handleDeleteSFGGood = async (sfgId) => {
+    setSfgGoods(prev => prev.filter(s => s.id !== sfgId && s.sfgBatchCode !== sfgId));
+    logAudit('DELETE', 'SFG Store', `Deleted SFG record ${sfgId}`, sfgId);
+    try {
+      await deleteSFGGoodFromSupabase(sfgId);
+    } catch (err) {
+      console.warn("[Sync Notice] SFG item deleted locally. Supabase notice:", err);
+    }
+  };
+
 
   const handlePunchOrderFromJobMaster = (jobMaster) => {
     setSelectedJobMasterForPunch(jobMaster);
@@ -2680,7 +2765,7 @@ export default function App() {
           )}
 
           {/* Group 4: Supply Chain & Logistics */}
-          {(isTabAllowed('inventory') || isTabAllowed('ink_management') || isTabAllowed('material_indents') || isTabAllowed('vendors') || isTabAllowed('dispatch')) && (
+          {(isTabAllowed('inventory') || isTabAllowed('sfg_store') || isTabAllowed('ink_management') || isTabAllowed('material_indents') || isTabAllowed('vendors') || isTabAllowed('dispatch')) && (
             <>
               <div className="sidebar-section-header">Supply Chain & Store</div>
 
@@ -2710,6 +2795,21 @@ export default function App() {
                     <FileCheck size={18} />
                   </span>
                   <span>Issued Purchase Orders</span>
+                </div>
+              )}
+
+              {isTabAllowed('sfg_store') && (
+                <div 
+                  className={`nav-item ${activeTab === 'sfg_store' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('sfg_store')}
+                >
+                  <span className="nav-icon-box" style={{ color: '#8b5cf6' }}>
+                    <Layers size={18} />
+                  </span>
+                  <span>SFG Store</span>
+                  <span className="nav-badge-pill nav-badge-neutral">
+                    {(sfgGoods || []).length}
+                  </span>
                 </div>
               )}
 
@@ -3694,6 +3794,21 @@ export default function App() {
             onAddRoll={handleAddRoll}
             onAddDispatchShipment={handleAddDispatchShipment}
             onSaveProductionRecord={handleSaveProductionRecord}
+          />
+        )}
+
+        {/* TAB: DEDICATED SFG STORE MANAGEMENT */}
+        {activeTab === 'sfg_store' && (
+          <SFGStoreManagement 
+            sfgGoods={sfgGoods}
+            orders={orders}
+            jobMasters={jobMasters}
+            productionRecords={productionRecords}
+            machines={machines}
+            currentUser={currentUser}
+            onSaveSFGGood={handleSaveSFGGood}
+            onConsumeSFG={handleConsumeSFG}
+            onDeleteSFGGood={handleDeleteSFGGood}
           />
         )}
 
