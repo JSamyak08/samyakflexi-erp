@@ -45,6 +45,9 @@ import {
   getProcessingRates,
   saveProcessingRates,
   DEFAULT_RATES,
+  getCoaSignatories,
+  saveCoaSignatories,
+  DEFAULT_COA_SIGNATORIES,
   getEmailSettings,
   saveEmailSettings,
   DEFAULT_EMAIL_SETTINGS,
@@ -66,6 +69,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
   const [prefixState, setPrefixState] = useState(() => getDocumentPrefixes());
   const [termsState, setTermsState] = useState(() => getDocumentTerms());
   const [ratesState, setRatesState] = useState(() => getProcessingRates());
+  const [coaSignatoriesState, setCoaSignatoriesState] = useState(() => getCoaSignatories());
 
   // Email Gateway & Routing State
   const [emailSettings, setEmailSettings] = useState(() => getEmailSettings());
@@ -166,6 +170,22 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
   const handleResetPrefixes = () => {
     setPrefixState({ ...DEFAULT_PREFIXES });
     saveDocumentPrefixes({ ...DEFAULT_PREFIXES });
+    triggerSaveNotification();
+  };
+
+  const handleCoaSignatoryChange = (field, value) => {
+    setCoaSignatoriesState(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleSaveCoaSignatories = (e) => {
+    e.preventDefault();
+    saveCoaSignatories(coaSignatoriesState);
+    triggerSaveNotification();
+  };
+
+  const handleResetCoaSignatories = () => {
+    setCoaSignatoriesState({ ...DEFAULT_COA_SIGNATORIES });
+    saveCoaSignatories({ ...DEFAULT_COA_SIGNATORIES });
     triggerSaveNotification();
   };
 
@@ -666,6 +686,69 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
               <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end' }}>
                 <button type="submit" className="btn-primary" style={{ padding: '8px 20px' }}>
                   <Check size={16} /> Save Document Prefixes
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* SECTION: COA LABORATORY SIGNATORY TITLES CONFIGURATION */}
+          <div className="glass-panel" style={{ padding: '24px' }}>
+            <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Shield size={20} style={{ color: '#047857' }} /> Certificate of Analysis (CoA) Laboratory Signatory Titles
+                </h3>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  Configure custom designation headers for Quality Control Chemist & QA Head on official test reports.
+                </p>
+              </div>
+              <button type="button" className="btn-secondary" onClick={handleResetCoaSignatories} style={{ fontSize: '0.78rem' }}>
+                <RefreshCw size={14} /> Reset Signatory Titles
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCoaSignatories}>
+              <div className="form-grid" style={{ gap: '20px' }}>
+                <div>
+                  <label className="form-label" style={{ fontWeight: '700' }}>
+                    Prepared By Signatory Title / Designation *
+                  </label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    style={{ fontWeight: '600' }}
+                    value={coaSignatoriesState.preparedByLabel} 
+                    onChange={e => handleCoaSignatoryChange('preparedByLabel', e.target.value)} 
+                    placeholder="e.g. PREPARED BY / QUALITY CONTROL CHEMIST"
+                    required 
+                  />
+                  <span style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                    Header label printed above the Quality Control Chemist verification box on the CoA PDF.
+                  </span>
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ fontWeight: '700' }}>
+                    Approved By Signatory Title / Designation *
+                  </label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    style={{ fontWeight: '600' }}
+                    value={coaSignatoriesState.approvedByLabel} 
+                    onChange={e => handleCoaSignatoryChange('approvedByLabel', e.target.value)} 
+                    placeholder="e.g. APPROVED BY / QUALITY ASSURANCE HEAD"
+                    required 
+                  />
+                  <span style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                    Header label printed above the Quality Assurance Manager signature & seal box on the CoA PDF.
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end' }}>
+                <button type="submit" className="btn-primary" style={{ padding: '8px 20px', background: 'linear-gradient(135deg, #047857 0%, #065f46 100%)' }}>
+                  <Check size={16} /> Save CoA Signatory Titles
                 </button>
               </div>
             </form>

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Printer, ArrowLeft, Edit3, Plus, Trash2, CheckCircle2 } from 'lucide-react';
 import { COMPANY_DETAILS } from '../factoryStore';
-import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber } from '../services/settingsService';
+import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getCoaSignatories } from '../services/settingsService';
 
 export const DEFAULT_COA_PARAMETERS = [
   { srNo: 1, parameter: "Total Thickness", uom: "Micron", standard: "50 ( ± 5 % )", observation: "45 TO 55" },
@@ -25,6 +25,10 @@ export const DEFAULT_COA_PARAMETERS = [
 
 export default function CertificateOfAnalysisPDF({ coaData, onClose }) {
   if (!coaData) return null;
+
+  const coaSignatories = getCoaSignatories();
+  const preparedByHeader = coaSignatories.preparedByLabel || 'PREPARED BY / QUALITY CONTROL CHEMIST';
+  const approvedByHeader = coaSignatories.approvedByLabel || 'APPROVED BY / QUALITY ASSURANCE HEAD';
 
   const defaultCoaNo = coaData.coaNo || generateDocRefNumber('coa');
   const [currentCoaNo, setCurrentCoaNo] = useState(defaultCoaNo);
@@ -279,7 +283,7 @@ export default function CertificateOfAnalysisPDF({ coaData, onClose }) {
             {/* Prepared By / Chemist */}
             <div style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px 14px', background: '#ffffff' }}>
               <div style={{ fontSize: '10px', fontWeight: '800', color: '#1e293b', borderBottom: '1px solid #e2e8f0', paddingBottom: '3px', marginBottom: '6px' }}>
-                PREPARED BY / QUALITY CONTROL CHEMIST
+                {preparedByHeader}
               </div>
               <div style={{ height: '35px', display: 'flex', alignItems: 'center', color: '#0284c7', fontStyle: 'italic', fontWeight: 'bold', fontSize: '11px' }}>
                 ✓ QC Verified & Logged
@@ -293,7 +297,7 @@ export default function CertificateOfAnalysisPDF({ coaData, onClose }) {
             {/* Approved By / QA Manager */}
             <div style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px 14px', background: '#ffffff' }}>
               <div style={{ fontSize: '10px', fontWeight: '800', color: '#1e293b', borderBottom: '1px solid #e2e8f0', paddingBottom: '3px', marginBottom: '6px' }}>
-                APPROVED BY / QUALITY ASSURANCE HEAD
+                {approvedByHeader}
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                 <div>

@@ -7,6 +7,12 @@ const LOGO_STORAGE_KEY = 'samyak_company_logo';
 const SIGNATURE_STORAGE_KEY = 'samyak_authorised_signature';
 const PREFIX_STORAGE_KEY = 'samyak_doc_prefixes';
 const TERMS_STORAGE_KEY = 'samyak_doc_terms';
+const COA_SIGNATORIES_STORAGE_KEY = 'samyak_coa_signatories';
+
+export const DEFAULT_COA_SIGNATORIES = {
+  preparedByLabel: 'PREPARED BY / QUALITY CONTROL CHEMIST',
+  approvedByLabel: 'APPROVED BY / QUALITY ASSURANCE HEAD'
+};
 
 import { compressImageDataUrl, safeLocalStorageSet } from '../utils/safeStorage';
 import { saveSystemSetting, saveEmailSettingsToSupabase, saveEmailTemplatesToSupabase } from './supabaseDataService';
@@ -200,6 +206,31 @@ export function saveDocumentTerms(termsConfig) {
     saveSystemSetting('doc_terms', termsConfig).catch(() => {});
   } catch (e) {
     console.error("Failed to save document terms", e);
+  }
+}
+
+
+/**
+ * Get CoA Signatories configuration
+ */
+export function getCoaSignatories() {
+  try {
+    const saved = localStorage.getItem(COA_SIGNATORIES_STORAGE_KEY);
+    return saved ? { ...DEFAULT_COA_SIGNATORIES, ...JSON.parse(saved) } : { ...DEFAULT_COA_SIGNATORIES };
+  } catch (e) {
+    return { ...DEFAULT_COA_SIGNATORIES };
+  }
+}
+
+/**
+ * Save CoA Signatories configuration
+ */
+export function saveCoaSignatories(signatoryConfig) {
+  try {
+    localStorage.setItem(COA_SIGNATORIES_STORAGE_KEY, JSON.stringify(signatoryConfig));
+    saveSystemSetting('coa_signatories', signatoryConfig).catch(() => {});
+  } catch (e) {
+    console.error("Failed to save CoA signatories", e);
   }
 }
 
