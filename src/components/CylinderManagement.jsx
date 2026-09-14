@@ -25,7 +25,9 @@ import {
   History,
   Eye,
   RefreshCw,
-  Download
+  Download,
+  Link,
+  Link2
 } from 'lucide-react';
 import { calculateUtilisation } from '../dataStore';
 import { FILM_DENSITIES } from '../factoryStore';
