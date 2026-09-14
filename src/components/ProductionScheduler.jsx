@@ -743,8 +743,8 @@ export default function ProductionScheduler({
   // Initiate End Job: Open Pop-up & Prefill Shop Floor Inputs
   const handleInitiateEndJob = (order) => {
     setEndJobTargetOrder(order);
-    setInputActualMeters(order.targetMeters ? String(order.targetMeters) : '');
-    setInputInkGsm(order.inkGsm ? String(order.inkGsm) : '');
+    setInputActualMeters('');
+    setInputInkGsm('');
 
     const matchingJM = (jobMasters || []).find(j => j.id === order.jobMasterId || j.jobCode === order.jobCode);
     const printWidth = order.widthMm || order.printWidthMm || matchingJM?.printWidthMm || matchingJM?.cylinderData?.widthMm || 460;
@@ -752,10 +752,9 @@ export default function ProductionScheduler({
     const micron = order.micron || 12;
     const reqQty = order.printQtyKg || order.quantityKg || order.quantity || 100;
 
-    const initialWeightKg = order.printLayerNetKg ? String(order.printLayerNetKg) : (order.printQtyKg ? String(order.printQtyKg) : '');
-    setInputPrintedOutputKg(initialWeightKg);
+    setInputPrintedOutputKg('');
     setOutputRollsList([
-      { id: `roll-${Date.now()}-1`, rollNo: 1, netWeightKg: initialWeightKg }
+      { id: `roll-${Date.now()}-1`, rollNo: 1, netWeightKg: '' }
     ]);
 
     const grnCode = (order.jobCode || order.id || 'ORD').replace(/[^a-zA-Z0-9-]/g, '');
