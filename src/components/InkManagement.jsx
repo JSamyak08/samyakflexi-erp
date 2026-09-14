@@ -642,7 +642,7 @@ export default function InkManagement({
       deliveryDate: deliveryDateStr,
       promisedDeliveryDate: deliveryDateStr,
       vendor: matchedVendor,
-      category: 'Printing Inks & Toners',
+      category: 'Printing Inks',
       source: `Ink Management (${items.length} Product Codes)`,
       paymentTerms: poModalPaymentTerms,
       logisticDetails: poModalFreightTerms,
@@ -687,7 +687,7 @@ export default function InkManagement({
       const invItem = (inventory || []).find(i => 
         (i.id && (i.id === ink.productCode || i.id === ink.id)) ||
         (i.itemCode && (i.itemCode === ink.productCode || i.itemCode === ink.id)) ||
-        ((i.category === 'Printing Inks & Toners' || i.category === 'Inks & Solvents') && 
+        ((i.category === 'Printing Inks' || i.category === 'Printing Inks & Toners' || i.category === 'Inks & Solvents') && 
          i.itemName && ink.shade && i.itemName.toLowerCase().includes(ink.shade.toLowerCase()))
       );
 
@@ -1682,11 +1682,11 @@ export default function InkManagement({
                 </thead>
                 <tbody>
                   {(grns || []).filter(g => 
-                    (g.category === 'Printing Inks & Toners' || g.category === 'Inks & Solvents') ||
+                    (g.category === 'Printing Inks' || g.category === 'Printing Inks & Toners' || g.category === 'Inks & Solvents') ||
                     (g.itemName && g.itemName.toLowerCase().includes('ink'))
                   ).length > 0 ? (
                     (grns || []).filter(g => 
-                      (g.category === 'Printing Inks & Toners' || g.category === 'Inks & Solvents') ||
+                      (g.category === 'Printing Inks' || g.category === 'Printing Inks & Toners' || g.category === 'Inks & Solvents') ||
                       (g.itemName && g.itemName.toLowerCase().includes('ink'))
                     ).slice(0, 10).map(g => (
                       <tr key={g.id || g.grnNo}>
@@ -1748,12 +1748,12 @@ export default function InkManagement({
                 </thead>
                 <tbody>
                   {(storeIssueTransactions || []).filter(tx => 
-                    (tx.category === 'Printing Inks & Toners' || tx.category === 'Inks & Solvents') ||
+                    (tx.category === 'Printing Inks' || tx.category === 'Printing Inks & Toners' || tx.category === 'Inks & Solvents') ||
                     (tx.itemName && tx.itemName.toLowerCase().includes('ink')) ||
                     (inks || []).some(k => k.productCode === tx.itemCode || k.shade === tx.itemName)
                   ).length > 0 ? (
                     (storeIssueTransactions || []).filter(tx => 
-                      (tx.category === 'Printing Inks & Toners' || tx.category === 'Inks & Solvents') ||
+                      (tx.category === 'Printing Inks' || tx.category === 'Printing Inks & Toners' || tx.category === 'Inks & Solvents') ||
                       (tx.itemName && tx.itemName.toLowerCase().includes('ink')) ||
                       (inks || []).some(k => k.productCode === tx.itemCode || k.shade === tx.itemName)
                     ).slice(0, 10).map(tx => (

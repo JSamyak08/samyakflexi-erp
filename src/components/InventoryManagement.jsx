@@ -61,7 +61,7 @@ export const INVENTORY_CATEGORIES = [
   "Film Substrates",
   "Semi-Finished Goods (SFG)",
   "Finished Goods (FG)",
-  "Printing Inks & Toners",
+  "Printing Inks",
   "Chemicals & Solvents",
   "Adhesives & Hardener",
   "Doctor Blades & Wipers",
@@ -1849,7 +1849,7 @@ export default function InventoryManagement({
         id: matchedInk.productCode || matchedInk.id,
         itemCode: matchedInk.productCode,
         itemName: matchedInk.shade || matchedInk.productCode,
-        category: 'Printing Inks & Toners',
+        category: 'Printing Inks',
         unit: matchedInk.unit || 'Kg',
         unitPrice: matchedInk.pricePerKg || matchedInk.unitPrice || 0,
         availableQtyKg: matchedInk.stockQtyKg || 0,
@@ -2933,7 +2933,7 @@ export default function InventoryManagement({
                 >
                   <option value="ALL">🌐 All Inventory Item Categories</option>
                   <option value="Film Substrates">Film Substrates (PET, LDPE, BOPP)</option>
-                  <option value="Printing Inks & Toners">Printing Inks & Toners</option>
+                  <option value="Printing Inks">Printing Inks</option>
                   <option value="Chemicals & Solvents">Chemicals & Solvents</option>
                   <option value="Adhesives & Hardener">Adhesives & Hardener</option>
                   <option value="Doctor Blades & Wipers">Doctor Blades & Wipers</option>
@@ -3850,7 +3850,7 @@ export default function InventoryManagement({
                     >
                       <option value="Film Substrates">Film Substrates (PET, METPET, LDPE, BOPP, CPP, Foil)</option>
                       <option value="Rotogravure Cylinders">Rotogravure Cylinders (Engraved Cylinder Sets)</option>
-                      <option value="Printing Inks & Toners">Printing Inks & Toners</option>
+                      <option value="Printing Inks">Printing Inks</option>
                       <option value="Chemicals & Solvents">Chemicals & Solvents (Ethyl Acetate, Anilox Cleaner)</option>
                       <option value="Adhesives & Hardener">Adhesives & Hardener (Solventless Comp A/B)</option>
                       <option value="Doctor Blades & Wipers">Doctor Blades & Wipers</option>

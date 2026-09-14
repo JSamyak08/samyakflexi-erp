@@ -67,7 +67,7 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
 
     const nonFilmCategories = [
       'Doctor Blades', 'Doctor Blades & Wipers', 'Inks & Solvents',
-      'Printing Inks & Toners', 'Chemicals & Solvents', 'Adhesives & Hardener',
+      'Printing Inks', 'Printing Inks & Toners', 'Chemicals & Solvents', 'Adhesives & Hardener',
       'Rollers & Sleeves', 'Machine Spare Parts', 'Lubricants & Oils',
       'Tapes & Consumables', 'Safety Gear (PPE)', 'General Store', 'CONSUMABLE_ITEM', 'Packaging & Cores'
     ];

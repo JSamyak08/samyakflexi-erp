@@ -356,7 +356,7 @@ export function sanitizeInventoryItem(rawItem) {
     if (lowerName.includes('acetate') || lowerName.includes('solvent') || lowerName.includes('thinner') || lowerName.includes('alcohol') || lowerName.includes('chemical') || lowerName.includes('toluene') || lowerName.includes('ipa')) {
       category = 'Chemicals & Solvents';
     } else if (lowerName.includes('ink') || lowerName.includes('cyan') || lowerName.includes('magenta') || lowerName.includes('yellow') || lowerName.includes('varnish') || lowerName.includes('toner')) {
-      category = 'Printing Inks & Toners';
+      category = 'Printing Inks';
     } else if (lowerName.includes('adhesive') || lowerName.includes('hardener') || lowerName.includes('glue') || lowerName.includes('polyurethane')) {
       category = 'Adhesives & Hardener';
     } else if (lowerName.includes('blade') || lowerName.includes('wiper')) {

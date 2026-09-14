@@ -1572,7 +1572,7 @@ export default function ConsumablesAndIndents({
                   <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Category *</label>
                   <select className="form-control" value={newItemCategory} onChange={e => setNewItemCategory(e.target.value)}>
                     <option value="Chemicals & Solvents">Chemicals & Solvents</option>
-                    <option value="Inks & Toners">Inks & Toners</option>
+                    <option value="Printing Inks">Printing Inks</option>
                     <option value="Adhesives & Hardener">Adhesives & Hardener</option>
                     <option value="Doctor Blades & Wipers">Doctor Blades & Wipers</option>
                     <option value="Rollers & Sleeves">Rollers & Sleeves</option>
