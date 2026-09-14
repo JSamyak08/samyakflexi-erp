@@ -2728,7 +2728,128 @@ export async function deleteSFGGoodFromSupabase(idOrBatchCode) {
   }
 }
 
+// ============================================================================
+// DELIVERY CHALLANS & COA SUPABASE PERSISTENCE
+// ============================================================================
 
+export async function fetchDeliveryChallansFromSupabase() {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const { data, error } = await supabase.from('delivery_challans').select('*').order('created_at', { ascending: false });
+    if (error) {
+      console.warn('[delivery_challans] Table fetch fallback to system_settings:', error.message);
+      return await fetchSystemSetting('delivery_challans');
+    }
+    if (data && data.length > 0) {
+      return data.map(r => r.payload || r.details || r);
+    }
+  } catch (e) {
+    console.warn('[delivery_challans] Exception, falling back to system_settings:', e.message);
+  }
+  return await fetchSystemSetting('delivery_challans');
+}
+
+export async function saveDeliveryChallanToSupabase(dc) {
+  if (!isSupabaseConfigured() || !dc) return;
+  try {
+    const { error } = await supabase.from('delivery_challans').upsert({
+      id: String(dc.id),
+      challan_no: dc.challanNo || '',
+      client_name: dc.clientName || '',
+      payload: dc,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'id' });
+    
+    if (error) {
+      console.warn('[delivery_challans] Table upsert notice, saving to system_settings snapshot:', error.message);
+    }
+  } catch (e) {
+    console.warn('[delivery_challans] Save exception:', e.message);
+  }
+  try {
+    const existing = (await fetchDeliveryChallansFromSupabase()) || [];
+    const updated = [dc, ...existing.filter(d => String(d.id) !== String(dc.id))];
+    await saveSystemSetting('delivery_challans', updated);
+  } catch (e) {
+    console.warn('[delivery_challans] System setting snapshot update notice:', e.message);
+  }
+}
+
+export async function deleteDeliveryChallanFromSupabase(id) {
+  if (!isSupabaseConfigured() || !id) return;
+  try {
+    await supabase.from('delivery_challans').delete().eq('id', String(id));
+  } catch (e) {
+    console.warn('[delivery_challans] Table delete notice:', e.message);
+  }
+  try {
+    const existing = (await fetchDeliveryChallansFromSupabase()) || [];
+    const updated = existing.filter(d => String(d.id) !== String(id));
+    await saveSystemSetting('delivery_challans', updated);
+  } catch (e) {
+    console.warn('[delivery_challans] System setting snapshot delete notice:', e.message);
+  }
+}
+
+export async function fetchCertificatesOfAnalysisFromSupabase() {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const { data, error } = await supabase.from('certificate_of_analyses').select('*').order('created_at', { ascending: false });
+    if (error) {
+      console.warn('[certificate_of_analyses] Table fetch fallback to system_settings:', error.message);
+      return await fetchSystemSetting('certificate_of_analyses');
+    }
+    if (data && data.length > 0) {
+      return data.map(r => r.payload || r.details || r);
+    }
+  } catch (e) {
+    console.warn('[certificate_of_analyses] Exception, falling back to system_settings:', e.message);
+  }
+  return await fetchSystemSetting('certificate_of_analyses');
+}
+
+export async function saveCertificateOfAnalysisToSupabase(coa) {
+  if (!isSupabaseConfigured() || !coa) return;
+  try {
+    const { error } = await supabase.from('certificate_of_analyses').upsert({
+      id: String(coa.id),
+      coa_no: coa.coaNo || '',
+      job_name: coa.jobName || '',
+      customer_name: coa.customerName || '',
+      payload: coa,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'id' });
+    
+    if (error) {
+      console.warn('[certificate_of_analyses] Table upsert notice, saving to system_settings snapshot:', error.message);
+    }
+  } catch (e) {
+    console.warn('[certificate_of_analyses] Save exception:', e.message);
+  }
+  try {
+    const existing = (await fetchCertificatesOfAnalysisFromSupabase()) || [];
+    const updated = [coa, ...existing.filter(c => String(c.id) !== String(coa.id))];
+    await saveSystemSetting('certificate_of_analyses', updated);
+  } catch (e) {
+    console.warn('[certificate_of_analyses] System setting snapshot update notice:', e.message);
+  }
+}
+
+export async function deleteCertificateOfAnalysisFromSupabase(id) {
+  if (!isSupabaseConfigured() || !id) return;
+  try {
+    await supabase.from('certificate_of_analyses').delete().eq('id', String(id));
+  } catch (e) {
+    console.warn('[certificate_of_analyses] Table delete notice:', e.message);
+  }
+  try {
+    const existing = (await fetchCertificatesOfAnalysisFromSupabase()) || [];
+    const updated = existing.filter(c => String(c.id) !== String(id));
+    await saveSystemSetting('certificate_of_analyses', updated);
+  } catch (e) {
+    console.warn('[certificate_of_analyses] System setting snapshot delete notice:', e.message);
+  }
+}
 
 // ============================================================================
 // SEED MIGRATION: SEED DATA PUSHES HAVE BEEN PERMANENTLY DISABLED

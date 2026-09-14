@@ -317,7 +317,7 @@ export default function DispatchManagement({
     setEditingDcId(null);
     const nextRef = generateDocRefNumber('dc');
     setDcChallanNo(nextRef);
-    setDcInvoiceNo(`SIL/INV/26-27/${Math.floor(100 + Math.random() * 900)}`);
+    setDcInvoiceNo('');
     
     const now = new Date();
     const isoString = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -332,18 +332,18 @@ export default function DispatchManagement({
     setDcClientContactPerson(firstClient.contactPerson || firstClient.contactName || '');
     setDcClientPhone(firstClient.phone || firstClient.contactNo || firstClient.mobile || '');
 
-    setDcVehicleNo('MP-09-AB-1234');
-    setDcTransporterName('Self / Direct Logistics Truck');
-    setDcDriverPhone('+91 98260 00000');
+    setDcVehicleNo('');
+    setDcTransporterName('');
+    setDcDriverPhone('');
     setDcPoRefNo('');
     setDcJobName('');
     setDcGstRatePct(18);
     setDcTaxType('auto');
-    setDcDispatchedBy(currentUser ? `${currentUser.name} (Dispatch Incharge)` : 'Dilip Joshi (Dispatch Store Manager)');
-    setDcRemarks('Material dispatched in sound condition, sealed with stretch film rolls.');
+    setDcDispatchedBy(currentUser ? `${currentUser.name}` : '');
+    setDcRemarks('');
 
     setDcItems([
-      { id: 1, description: 'Flexible Packaging Printed Laminated Roll Stock', hsnSac: '3923', quantity: 1000, unit: 'Kg', rate: 185, amount: 185000 }
+      { id: Date.now(), description: '', itemType: '', hsnSac: '', quantity: 0, unit: 'Kg', rate: 0, amount: 0 }
     ]);
 
     const defaultTerms = getDocumentTerms().dcTerms || [];

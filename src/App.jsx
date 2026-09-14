@@ -103,6 +103,8 @@ import {
   fetchSalaryPaymentsFromSupabase, saveSalaryPaymentToSupabase,
   fetchRolePermissionsFromSupabase, saveRolePermissionsToSupabase,
   fetchSFGGoodsFromSupabase, saveSFGGoodToSupabase, deleteSFGGoodFromSupabase,
+  fetchDeliveryChallansFromSupabase, saveDeliveryChallanToSupabase, deleteDeliveryChallanFromSupabase,
+  fetchCertificatesOfAnalysisFromSupabase, saveCertificateOfAnalysisToSupabase, deleteCertificateOfAnalysisFromSupabase,
   fetchSystemSetting, saveSystemSetting
 } from './services/supabaseDataService';
 import { createUserInSupabaseAuth } from './services/authService';
@@ -470,7 +472,7 @@ export default function App() {
         supaProd, supaUsers, supaSheets, supaRolls, supaShipments,
         supaMachines, supaSchedules, supaClients, supaJobMasters,
         supaInks, supaEmployees, supaAttendance, supaAdvances,
-        supaRolePerms, supaAuditLogs, supaSFG
+        supaRolePerms, supaAuditLogs, supaSFG, supaDCs, supaCoAs
       ] = await Promise.all([
         fetchSafe(fetchOrders, 'Orders'),
         fetchSafe(fetchVendors, 'Vendors'),
@@ -493,7 +495,9 @@ export default function App() {
         fetchSafe(fetchSalaryPaymentsFromSupabase, 'Salary Payments'),
         fetchSafe(fetchRolePermissionsFromSupabase, 'Role Permissions'),
         fetchSafe(fetchAuditLogsFromSupabase, 'Audit Logs'),
-        fetchSafe(fetchSFGGoodsFromSupabase, 'SFG Goods')
+        fetchSafe(fetchSFGGoodsFromSupabase, 'SFG Goods'),
+        fetchSafe(fetchDeliveryChallansFromSupabase, 'Delivery Challans'),
+        fetchSafe(fetchCertificatesOfAnalysisFromSupabase, 'Certificates of Analysis')
       ]);
 
 
@@ -515,6 +519,8 @@ export default function App() {
       if (!isMounted) return;
 
       if (Array.isArray(supaSFG) && supaSFG.length > 0) setSfgGoods(stripDummyRecords(supaSFG));
+      if (Array.isArray(supaDCs) && supaDCs.length > 0) setDeliveryChallans(stripDummyRecords(supaDCs));
+      if (Array.isArray(supaCoAs) && supaCoAs.length > 0) setCertificateOfAnalyses(stripDummyRecords(supaCoAs));
       if (Array.isArray(supaAuditLogs)) setAuditLogs(pruneOldAuditLogs(supaAuditLogs));
       if (dbPrefixes) safeLocalStorageSet('samyak_doc_prefixes', dbPrefixes);
       if (dbTerms) safeLocalStorageSet('samyak_doc_terms', dbTerms);
@@ -2198,26 +2204,46 @@ export default function App() {
     }
   };
 
-  const handleSaveDeliveryChallan = (newDc) => {
+  const handleSaveDeliveryChallan = async (newDc) => {
     setDeliveryChallans(prev => [newDc, ...prev.filter(d => d.id !== newDc.id)]);
     logAudit('CREATE', 'Dispatch', `Issued Delivery Challan ${newDc.challanNo} for "${newDc.clientName}"`, newDc.id);
+    try {
+      await saveDeliveryChallanToSupabase(newDc);
+    } catch (err) {
+      console.warn("[Sync Notice] Delivery Challan saved locally. Supabase notice:", err);
+    }
   };
 
-  const handleDeleteDeliveryChallan = (id) => {
+  const handleDeleteDeliveryChallan = async (id) => {
     const updated = deliveryChallans.filter(d => d.id !== id);
     setDeliveryChallans(updated);
     logAudit('DELETE', 'Dispatch', `Deleted Delivery Challan ${id}`, id);
+    try {
+      await deleteDeliveryChallanFromSupabase(id);
+    } catch (err) {
+      console.warn("[Sync Notice] Delivery Challan deleted locally. Supabase notice:", err);
+    }
   };
 
-  const handleSaveCoA = (newCoa) => {
+  const handleSaveCoA = async (newCoa) => {
     setCertificateOfAnalyses(prev => [newCoa, ...prev.filter(c => c.id !== newCoa.id)]);
     logAudit('CREATE', 'Quality', `Generated Quality CoA ${newCoa.coaNo} for "${newCoa.jobName}"`, newCoa.id);
+    try {
+      await saveCertificateOfAnalysisToSupabase(newCoa);
+    } catch (err) {
+      console.warn("[Sync Notice] CoA saved locally. Supabase notice:", err);
+    }
   };
 
-  const handleDeleteCoA = (id) => {
+  const handleDeleteCoA = async (id) => {
     const updated = certificateOfAnalyses.filter(c => c.id !== id);
     setCertificateOfAnalyses(updated);
     logAudit('DELETE', 'Quality', `Deleted Quality CoA ${id}`, id);
+    try {
+      await deleteCertificateOfAnalysisFromSupabase(id);
+    } catch (err) {
+      console.warn("[Sync Notice] CoA deleted locally. Supabase notice:", err);
+    }
   };
 
   const handleAddClient = async (newClient) => {
