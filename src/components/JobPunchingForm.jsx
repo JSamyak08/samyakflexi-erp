@@ -13,7 +13,10 @@ import {
   CheckCircle2, 
   Sparkles,
   Info,
-  DollarSign
+  DollarSign,
+  AlertTriangle,
+  RotateCcw,
+  Check
 } from 'lucide-react';
 import OrderConfirmationPDF from './OrderConfirmationPDF';
 import { notifyOrderPunched } from '../services/emailService';
@@ -35,7 +38,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
   const [adhesivePrice, setAdhesivePrice] = useState(() => getProcessingRates().adhesivePrice || DEFAULT_PROCESSING_RATES.adhesivePrice);
   const [colorsCount, setColorsCount] = useState(() => initialJobMasterData?.colorsCount || '');
   const [targetDeliveryDays, setTargetDeliveryDays] = useState(10);
-  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isWarningIgnored, setIsWarningIgnored] = useState(false);
 
   // Dynamic Layers State
   const [layers, setLayers] = useState(() => initialJobMasterData?.layers ? initialJobMasterData.layers.map(l => ({ ...l, rate: l.rate ?? l.ratePerKg ?? '' })) : [
@@ -57,6 +60,21 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
     }
   }, [initialJobMasterData]);
 
+  // Active Job Master reference (from initialJobMasterData or selected jobName match)
+  const activeJobMaster = useMemo(() => {
+    if (initialJobMasterData && initialJobMasterData.jobName) return initialJobMasterData;
+    if (!jobName) return null;
+    const search = jobName.toLowerCase().trim();
+    const list = (jobMasters && jobMasters.length > 0) ? jobMasters : [];
+    return list.find(j => (j.jobName || '').toLowerCase().trim() === search) ||
+           list.find(j => (j.jobName || '').toLowerCase().includes(search)) || null;
+  }, [initialJobMasterData, jobName, jobMasters]);
+
+  // Reset warning ignore state whenever target Job Master changes
+  React.useEffect(() => {
+    setIsWarningIgnored(false);
+  }, [activeJobMaster]);
+
   // Auto-sync Print Width, Repeat Length, Client, Colors & Layers whenever jobName matches a Job Master
   React.useEffect(() => {
     if (!jobName) return;
@@ -74,6 +92,76 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       }
     }
   }, [jobName, jobMasters]);
+
+  // Compute field-by-field deviations against activeJobMaster benchmark
+  const deviations = useMemo(() => {
+    if (!activeJobMaster) return [];
+    const list = [];
+
+    // 1. Client Name
+    if (clientName && activeJobMaster.clientName && clientName.trim().toLowerCase() !== activeJobMaster.clientName.trim().toLowerCase()) {
+      list.push({
+        field: 'Client Name',
+        current: clientName,
+        expected: activeJobMaster.clientName
+      });
+    }
+
+    // 2. Print Width
+    if (printWidthMm && activeJobMaster.printWidthMm && parseFloat(printWidthMm) !== parseFloat(activeJobMaster.printWidthMm)) {
+      list.push({
+        field: 'Print Width',
+        current: `${printWidthMm} mm`,
+        expected: `${activeJobMaster.printWidthMm} mm`
+      });
+    }
+
+    // 3. Repeat Length
+    if (repeatLengthMm && activeJobMaster.repeatLengthMm && parseFloat(repeatLengthMm) !== parseFloat(activeJobMaster.repeatLengthMm)) {
+      list.push({
+        field: 'Repeat Length',
+        current: `${repeatLengthMm} mm`,
+        expected: `${activeJobMaster.repeatLengthMm} mm`
+      });
+    }
+
+    // 4. Printing Colors
+    if (colorsCount && activeJobMaster.colorsCount && parseInt(colorsCount) !== parseInt(activeJobMaster.colorsCount)) {
+      list.push({
+        field: 'Printing Colors',
+        current: `${colorsCount} Colors`,
+        expected: `${activeJobMaster.colorsCount} Colors`
+      });
+    }
+
+    // 5. Laminate Structure
+    if (activeJobMaster.layers && activeJobMaster.layers.length > 0 && layers && layers.length > 0) {
+      const currentStruct = layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
+      const jmStruct = activeJobMaster.layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
+      if (currentStruct.toLowerCase() !== jmStruct.toLowerCase()) {
+        list.push({
+          field: 'Laminate Structure',
+          current: currentStruct,
+          expected: jmStruct
+        });
+      }
+    }
+
+    return list;
+  }, [activeJobMaster, clientName, printWidthMm, repeatLengthMm, colorsCount, layers]);
+
+  const handleRevertToJobMasterSpecs = () => {
+    if (!activeJobMaster) return;
+    if (activeJobMaster.jobName) setJobName(activeJobMaster.jobName);
+    if (activeJobMaster.clientName) setClientName(activeJobMaster.clientName);
+    if (activeJobMaster.printWidthMm) setPrintWidthMm(activeJobMaster.printWidthMm);
+    if (activeJobMaster.repeatLengthMm) setRepeatLengthMm(activeJobMaster.repeatLengthMm);
+    if (activeJobMaster.colorsCount) setColorsCount(activeJobMaster.colorsCount);
+    if (activeJobMaster.layers && activeJobMaster.layers.length > 0) {
+      setLayers(activeJobMaster.layers.map(l => ({ ...l, rate: l.rate ?? l.ratePerKg ?? '' })));
+    }
+    setIsWarningIgnored(false);
+  };
 
   // Lookup matched client in Client Directory
   const matchedClient = useMemo(() => {
@@ -196,6 +284,11 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       return;
     }
 
+    if (deviations.length > 0 && !isWarningIgnored) {
+      alert(`⚠️ Warning: Entered order specifications differ from Job Master benchmark (${deviations.map(d => d.field).join(', ')}).\n\nPlease click 'Ignore Warning & Continue' in the warning box if this custom change is intentional.`);
+      return;
+    }
+
     const unratedLayer = layers.find(l => (!l.rate && l.rate !== 0) && (l.rate === '' || l.rate === undefined));
     if (unratedLayer) {
       alert(`Please enter the Market Rate (₹/kg) for Layer (${unratedLayer.filmType}) before proceeding.`);
@@ -278,6 +371,106 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
           <h3 style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Sparkles size={18} style={{ color: 'var(--accent-color)' }} /> Job & Layer Specifications
           </h3>
+
+          {/* DEVIATION WARNING ALERT BANNER */}
+          {activeJobMaster && deviations.length > 0 && !isWarningIgnored && (
+            <div style={{
+              background: '#fffbebf0',
+              border: '1px solid #fde68a',
+              borderRadius: '10px',
+              padding: '16px',
+              marginBottom: '20px',
+              boxShadow: '0 4px 12px rgba(217, 119, 6, 0.08)'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#b45309', fontWeight: '700', fontSize: '0.95rem' }}>
+                    <AlertTriangle size={18} style={{ color: '#d97706' }} />
+                    <span>Specification Deviation Warning</span>
+                    <span style={{ fontSize: '0.75rem', background: '#fef3c7', color: '#92400e', padding: '2px 8px', borderRadius: '4px', border: '1px solid #fcd34d', fontWeight: '700' }}>
+                      Job Master: {activeJobMaster.skuCode || activeJobMaster.jobName}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '0.82rem', color: '#78350f', margin: '6px 0 10px 0' }}>
+                    The entered specifications differ from the standard Job Master record:
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '10px' }}>
+                    {deviations.map((dev, idx) => (
+                      <div key={idx} style={{ background: '#ffffff', padding: '6px 10px', borderRadius: '6px', border: '1px solid #fef3c7', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ color: '#92400e', fontWeight: '700', minWidth: '120px' }}>{dev.field}:</span>
+                        <span style={{ color: '#dc2626', fontWeight: '700' }}>{dev.current}</span>
+                        <span style={{ color: '#64748b', fontSize: '0.76rem' }}>(Job Master has <strong style={{ color: '#047857' }}>{dev.expected}</strong>)</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '4px' }}>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ background: '#ffffff', borderColor: '#fcd34d', color: '#92400e', fontSize: '0.78rem', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '700' }}
+                    onClick={handleRevertToJobMasterSpecs}
+                    title="Reset fields back to standard Job Master specs"
+                  >
+                    <RotateCcw size={14} /> Revert to Job Master Specs
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    style={{ background: '#d97706', borderColor: '#b45309', color: '#ffffff', fontSize: '0.78rem', padding: '6px 14px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '700' }}
+                    onClick={() => setIsWarningIgnored(true)}
+                    title="Ignore warning and proceed with custom specs"
+                  >
+                    <Check size={14} /> Ignore Warning & Continue
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeJobMaster && deviations.length > 0 && isWarningIgnored && (
+            <div style={{
+              background: '#f8fafc',
+              border: '1px dashed #cbd5e1',
+              borderRadius: '8px',
+              padding: '10px 14px',
+              marginBottom: '18px',
+              display: 'flex',
+              justify: 'space-between',
+              alignItems: 'center'
+            }}>
+              <span style={{ fontSize: '0.8rem', color: '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <CheckCircle2 size={15} style={{ color: '#059669' }} />
+                <span>Custom deviations acknowledged for <strong>{activeJobMaster.skuCode || activeJobMaster.jobName}</strong> ({deviations.length} field custom override).</span>
+              </span>
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ fontSize: '0.75rem', padding: '4px 8px' }}
+                onClick={() => setIsWarningIgnored(false)}
+              >
+                Review Warnings
+              </button>
+            </div>
+          )}
+
+          {activeJobMaster && deviations.length === 0 && (
+            <div style={{
+              background: '#ecfdf5',
+              border: '1px solid #a7f3d0',
+              borderRadius: '8px',
+              padding: '8px 14px',
+              marginBottom: '18px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '0.8rem',
+              color: '#047857'
+            }}>
+              <CheckCircle2 size={16} />
+              <span>Job Master Specs matched 100% for <strong>{activeJobMaster.skuCode || activeJobMaster.jobName}</strong> ({activeJobMaster.clientName}).</span>
+            </div>
+          )}
 
           <div style={{ marginBottom: '20px' }}>
             <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px', display: 'block' }}>
