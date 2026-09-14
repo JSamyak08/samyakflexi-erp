@@ -618,7 +618,7 @@ export default function ProductionScheduler({
         const initialList = [
           {
             id: `in-roll-${Date.now()}-1`,
-            barcodeId: `RM-BC-${grnCode}-1`,
+            barcodeId: '',
             filmType: filmType,
             micron: String(micron),
             widthMm: String(printWidth),
@@ -696,7 +696,7 @@ export default function ProductionScheduler({
       ...inputRollsList,
       {
         id: `in-roll-${Date.now()}-${inputRollsList.length + 1}`,
-        barcodeId: `RM-BC-${grnCode}-${inputRollsList.length + 1}`,
+        barcodeId: '',
         filmType: defaultFilm,
         micron: String(defaultMic),
         widthMm: String(defaultWidth),
@@ -769,7 +769,7 @@ export default function ProductionScheduler({
       setInputRollsList([
         {
           id: `in-roll-${Date.now()}-1`,
-          barcodeId: `RM-BC-${grnCode}-1`,
+          barcodeId: '',
           filmType: filmType,
           micron: String(micron),
           widthMm: String(printWidth),
