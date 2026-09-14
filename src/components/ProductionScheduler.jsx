@@ -2147,15 +2147,6 @@ export default function ProductionScheduler({
                     </div>
 
                     <div style={{ textAlign: 'right' }}>
-                      {isAutosavingRolls ? (
-                        <span className="badge" style={{ background: '#fef3c7', color: '#b45309', fontSize: '0.7rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px' }}>
-                          <RefreshCw size={11} className="animate-spin" /> Saving...
-                        </span>
-                      ) : (
-                        <span className="badge badge-success" style={{ background: '#dcfce7', color: '#15803d', fontSize: '0.7rem', fontWeight: '800', padding: '3px 8px' }}>
-                          ✓ Autosaved to Database {lastAutosavedTime ? `(${lastAutosavedTime})` : ''}
-                        </span>
-                      )}
                       <div style={{ fontSize: '1.15rem', fontWeight: '900', color: '#0284c7', marginTop: '2px' }}>
                         Total: {inputRollsList.reduce((sum, r) => sum + (parseFloat(r.consumedWeightKg) || 0), 0).toFixed(2)} kg
                       </div>
