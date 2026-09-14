@@ -39,7 +39,8 @@ import {
   Filter,
   Scale,
   FileText,
-  CheckCheck
+  CheckCheck,
+  Barcode
 } from 'lucide-react';
 import { 
   initialMachines, 
