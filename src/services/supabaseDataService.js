@@ -706,6 +706,10 @@ export async function fetchCylinders() {
         shellSize: c.shell_size || pm.shellSize || '',
         petSize: c.pet_size || pm.petSize || '',
         creationDate: c.creation_date || (c.created_at ? String(c.created_at).split('T')[0] : new Date().toISOString().split('T')[0]),
+        isLocked: Boolean(c.is_locked ?? pm.isLocked),
+        lockedBy: c.locked_by || pm.lockedBy || '',
+        lockedAt: c.locked_at || pm.lockedAt || '',
+        changelogs: Array.isArray(c.changelogs) ? c.changelogs : (Array.isArray(pm.changelogs) ? pm.changelogs : []),
         press_marks: pm
       };
     });
@@ -727,6 +731,8 @@ export async function saveCylinderToSupabase(cyl) {
 
   const fileUrl = cyl.artworkUrl || cyl.jobCardFileUrl || cyl.artwork_url || '';
   const fileName = cyl.jobCardFileName || (fileUrl ? 'Artwork_KLD_Proof.pdf' : '');
+
+  const changelogsList = Array.isArray(cyl.changelogs) ? cyl.changelogs : [];
 
   const pressMarks = {
     silLogo: cyl.silLogo !== undefined && cyl.silLogo !== null ? cyl.silLogo : '',
@@ -764,7 +770,11 @@ export async function saveCylinderToSupabase(cyl) {
     utilisationLimit: Number(cyl.utilisationLimit) || 10000,
     jobCardFileUrl: fileUrl,
     jobCardFileName: fileName,
-    artworkUrl: fileUrl
+    artworkUrl: fileUrl,
+    isLocked: Boolean(cyl.isLocked),
+    lockedBy: cyl.lockedBy || '',
+    lockedAt: cyl.lockedAt || '',
+    changelogs: changelogsList
   };
 
   const fullPayload = {
@@ -812,7 +822,11 @@ export async function saveCylinderToSupabase(cyl) {
     printing: pressMarks.printing,
     invoice_to: pressMarks.invoiceTo,
     shell_size: pressMarks.shellSize,
-    pet_size: pressMarks.petSize
+    pet_size: pressMarks.petSize,
+    is_locked: Boolean(cyl.isLocked),
+    locked_by: cyl.lockedBy || '',
+    locked_at: cyl.lockedAt || '',
+    changelogs: changelogsList
   };
 
   // Dual-Persist: Save failsafe snapshot in system_settings
@@ -861,6 +875,19 @@ export async function saveCylinderToSupabase(cyl) {
         console.error('[cylinders] Minimal payload failed:', minErr.message);
         handleSupabaseError(minErr, 'cylinders');
       }
+    }
+  }
+}
+
+export async function saveCylinderBatchToSupabase(cylList) {
+  if (!isSupabaseConfigured() || !Array.isArray(cylList) || cylList.length === 0) return;
+  await ensureValidSession();
+  console.log(`[cylinders] Bulk syncing ${cylList.length} cylinder set(s) to Supabase...`);
+  for (const cyl of cylList) {
+    try {
+      await saveCylinderToSupabase(cyl);
+    } catch (e) {
+      console.warn('[cylinders] Failed to save cylinder in batch:', cyl?.id, e);
     }
   }
 }

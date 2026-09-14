@@ -85,7 +85,7 @@ import {
   fetchVendors, saveVendorToSupabase, deleteVendorFromSupabase,
   fetchInventory, saveInventoryItemToSupabase, saveInventoryBatchToSupabase, deleteInventoryItemFromSupabase, sanitizeInventoryItem,
   fetchGRNs, saveGRNToSupabase, deleteGRNFromSupabase, sanitizeGRN,
-  fetchCylinders, saveCylinderToSupabase, deleteCylinderFromSupabase,
+  fetchCylinders, saveCylinderToSupabase, saveCylinderBatchToSupabase, deleteCylinderFromSupabase,
   fetchProductionRecords, saveProductionRecordToSupabase, deleteProductionRecordFromSupabase,
   fetchUsers, saveUserToSupabase, deleteUserFromSupabase, updateUserPasswordInDB,
   fetchJobDataSheets, saveJobDataSheetToSupabase, deleteJobDataSheetFromSupabase,
@@ -2068,6 +2068,35 @@ export default function App() {
     }
   };
 
+  const handleBatchAddCylinders = async (newCylList) => {
+    if (!Array.isArray(newCylList) || newCylList.length === 0) return;
+    setCylinders(prev => {
+      const map = new Map();
+      (prev || []).forEach(c => {
+        const k = (c.sku || c.jobName || String(c.id)).trim().toLowerCase();
+        if (k) map.set(k, c);
+      });
+      newCylList.forEach(c => {
+        const k = (c.sku || c.jobName || String(c.id)).trim().toLowerCase();
+        if (k) {
+          const existing = map.get(k);
+          map.set(k, { ...(existing || {}), ...c });
+        }
+      });
+      const merged = Array.from(map.values());
+      safeLocalStorageSet('samyak_erp_cylinders', merged);
+      return merged;
+    });
+
+    logAudit('CREATE', 'Cylinders', `Bulk uploaded ${newCylList.length} cylinder job(s) via CSV`, 'BULK_CSV');
+
+    try {
+      await saveCylinderBatchToSupabase(newCylList);
+    } catch (err) {
+      console.warn("[Sync Notice] Batch cylinders saved locally. Supabase notice:", err);
+    }
+  };
+
   const handleUpdateCylinder = async (updatedCyl) => {
     if (!updatedCyl) return;
     const targetSku = (updatedCyl.sku || '').trim().toLowerCase();
@@ -3672,6 +3701,7 @@ export default function App() {
             onUpdateJobMaster={handleUpdateJobMaster}
             currentUser={currentUser}
             onAddCylinder={handleAddCylinder}
+            onBatchAddCylinders={handleBatchAddCylinders}
             onUpdateCylinder={handleUpdateCylinder}
             onDeleteCylinder={handleDeleteCylinder}
           />

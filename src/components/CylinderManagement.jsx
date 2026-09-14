@@ -18,13 +18,78 @@ import {
   FileCode,
   X,
   Building2,
-  Lock
+  Lock,
+  Unlock,
+  Clock,
+  FileSpreadsheet,
+  History,
+  Eye,
+  RefreshCw
 } from 'lucide-react';
 import { calculateUtilisation } from '../dataStore';
 import { FILM_DENSITIES } from '../factoryStore';
 import CylinderJobCardForm from '../CylinderJobCardForm';
 import { uploadArtworkFile, openArtworkViewer } from '../services/supabaseStorageService';
 import ArtworkModal from './ArtworkModal';
+
+// Target Schema Fields for Rotogravure Cylinder Bulk Import
+const TARGET_SCHEMA_FIELDS = [
+  { key: 'sku', label: 'SKU / Cylinder Code', required: true, aliases: ['sku', 'sku code', 'cylinder sku', 'code', 'item code', 'id'] },
+  { key: 'jobName', label: 'Job / Brand Name', required: true, aliases: ['job name', 'jobname', 'brand', 'brand name', 'product name', 'job', 'name'] },
+  { key: 'clientGroup', label: 'Client Group / Company', required: false, aliases: ['client', 'client group', 'client name', 'company', 'party', 'customer'] },
+  { key: 'colorsCount', label: 'Printing Colors Count', required: false, aliases: ['colors', 'color count', 'colors count', 'no of colors', 'cylinders', 'cylinder count'] },
+  { key: 'printWidthMm', label: 'Print Width (mm)', required: false, aliases: ['print width', 'print width (mm)', 'pet size', 'width', 'width mm'] },
+  { key: 'faceLengthMm', label: 'Face Length (mm)', required: false, aliases: ['face length', 'face length (mm)', 'shell size', 'length', 'length mm'] },
+  { key: 'circumferenceMm', label: 'Circumference (mm)', required: false, aliases: ['circumference', 'circumference (mm)', 'repeat length', 'repeat', 'repeat (mm)'] },
+  { key: 'rate', label: 'Rate (₹/sq cm)', required: false, aliases: ['rate', 'sq cm rate', 'rate per sq inch', 'rate (rs)'] },
+  { key: 'engravuresName', label: 'Engraver Name', required: false, aliases: ['engraver', 'engraver name', 'engravures name', 'vendor'] },
+  { key: 'cylinderCost', label: 'Total Cylinder Set Cost', required: false, aliases: ['total cost', 'set cost', 'cylinder cost', 'cost'] },
+  { key: 'costPerCylinder', label: 'Cost Per Cylinder', required: false, aliases: ['cost per cylinder', 'cost/cylinder', 'per cylinder cost'] },
+  { key: 'costBorneBy', label: 'Cost Borne By', required: false, aliases: ['cost borne by', 'cost borne', 'borne by'] },
+  { key: 'status', label: 'Operational Status', required: false, aliases: ['status', 'operational status', 'state'] },
+  { key: 'assignedPress', label: 'Assigned Press', required: false, aliases: ['assigned press', 'press', 'machine', 'line'] },
+  { key: 'structure', label: 'Laminate Structure', required: false, aliases: ['structure', 'laminate structure', 'substrate', 'layers'] }
+];
+
+function parseCsvLine(line) {
+  const result = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      result.push(cur.trim());
+      cur = '';
+    } else {
+      cur += char;
+    }
+  }
+  result.push(cur.trim());
+  return result;
+}
+
+function autoMapHeaders(csvHeaders) {
+  const mapping = {};
+  TARGET_SCHEMA_FIELDS.forEach(field => {
+    let matchedHeader = '';
+    for (const h of csvHeaders) {
+      const cleanH = h.toLowerCase().replace(/[^a-z0-9]/g, ' ').trim();
+      if (field.aliases.some(alias => cleanH === alias || cleanH.includes(alias))) {
+        matchedHeader = h;
+        break;
+      }
+    }
+    mapping[field.key] = matchedHeader || '';
+  });
+  return mapping;
+}
 
 export default function CylinderManagement({ 
   urlParams = {},
@@ -36,13 +101,16 @@ export default function CylinderManagement({
   onUpdateJobMaster,
   currentUser,
   onAddCylinder, 
+  onBatchAddCylinders,
   onUpdateCylinder,
   onDeleteCylinder,
   machines = []
 }) {
-  const EDIT_ROLES = ['Admin', 'SuperAdmin', 'Plant Manager', 'Production Manager'];
+  // Access Control: Only Admin and Plant Manager have Edit/Lock/Delete access
+  const EDIT_ROLES = ['Admin', 'SuperAdmin', 'Plant Manager'];
   const userRole = currentUser?.role || 'Admin';
   const canEditCylinders = EDIT_ROLES.includes(userRole);
+  const isAdminOrPlantManager = EDIT_ROLES.includes(userRole);
   const isAdmin = userRole === 'Admin' || userRole === 'SuperAdmin';
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -59,13 +127,23 @@ export default function CylinderManagement({
   const [selectedForPDF, setSelectedForPDF] = useState(null);
   const [activeArtworkModal, setActiveArtworkModal] = useState({ isOpen: false, url: '', title: '' });
 
+  // Changelog Modal State
+  const [changelogCylinder, setChangelogCylinder] = useState(null);
+
+  // Bulk Upload CSV Modal State
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+  const [bulkCsvFileName, setBulkCsvFileName] = useState('');
+  const [bulkParsedHeaders, setBulkParsedHeaders] = useState([]);
+  const [bulkParsedRows, setBulkParsedRows] = useState([]);
+  const [bulkHeaderMapping, setBulkHeaderMapping] = useState({});
+  const [bulkAutoCreateJobMasters, setBulkAutoCreateJobMasters] = useState(true);
+
   // Live printing press list — only Rotogravure / Flexographic / Digital machines
   const printingPresses = useMemo(() => {
     const PRINTING_TYPES = ['Rotogravure', 'Flexographic', 'Digital'];
     const presses = machines
       .filter(m => PRINTING_TYPES.includes(m.type))
       .map(m => m.name);
-    // Fallback if no machines loaded yet
     return presses.length > 0 ? presses : [
       'Rotogravure Press #1 (8-Color)',
       'Rotogravure Press #2 (10-Color)',
@@ -119,6 +197,15 @@ export default function CylinderManagement({
 
   // Available film types for substrate layer dropdown
   const availableFilmTypes = useMemo(() => Object.keys(FILM_DENSITIES), []);
+
+  const createChangelogEntry = (action, details) => ({
+    id: `LOG-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    timestamp: new Date().toISOString(),
+    user: currentUser?.name || 'System User',
+    role: userRole,
+    action,
+    details
+  });
 
   // Add / Remove substrate layer helpers
   const addLayer = () => {
@@ -206,7 +293,6 @@ export default function CylinderManagement({
   const calculatedCostPerCylinder = Math.round(billingAreaUnits * Number(rate || 1.6));
   const calculatedTotalSetCost = Math.round(calculatedCostPerCylinder * (parseInt(colorsCount) || 1));
 
-  // Automatically update costs when dimensions, colors, or rates change if autoCalculateCost is active
   useEffect(() => {
     if (autoCalculateCost && circumferenceMm > 0 && faceLengthMm > 0) {
       setCostPerCylinder(String(calculatedCostPerCylinder));
@@ -214,14 +300,12 @@ export default function CylinderManagement({
     }
   }, [circumferenceMm, faceLengthMm, rate, colorsCount, autoCalculateCost, calculatedCostPerCylinder, calculatedTotalSetCost]);
 
-  const getNextCylinderSku = () => {
+  const getNextCylinderSku = (offset = 0) => {
     let maxNum = 0;
-
     const checkValue = (val) => {
       if (!val) return;
       const str = String(val).trim();
       if (!str) return;
-
       const matches = str.match(/\d+/g);
       if (matches && matches.length > 0) {
         let numToConsider = parseInt(matches[matches.length - 1], 10);
@@ -249,7 +333,7 @@ export default function CylinderManagement({
       checkValue(j.skuCode);
     });
 
-    const nextIndex = maxNum + 1;
+    const nextIndex = maxNum + 1 + offset;
     return `SKU-CYL-${String(nextIndex).padStart(3, '0')}`;
   };
 
@@ -263,6 +347,10 @@ export default function CylinderManagement({
   }, [sku, cylinders, editingCylinder]);
 
   const openAddModal = () => {
+    if (!canEditCylinders) {
+      alert("⛔ Permission Denied: Only Admin and Plant Manager roles are authorized to create or edit Rotogravure Cylinder sets.");
+      return;
+    }
     setEditingCylinder(null);
     setSku(getNextCylinderSku());
     setJobName('');
@@ -299,6 +387,15 @@ export default function CylinderManagement({
   };
 
   const openEditModal = (cyl) => {
+    if (!canEditCylinders) {
+      alert("⛔ Permission Denied: Only Admin and Plant Manager roles are authorized to edit Rotogravure Cylinder sets.");
+      return;
+    }
+    if (cyl.isLocked && !isAdminOrPlantManager) {
+      alert(`🔒 Permission Restricted: Cylinder Set "${cyl.jobName}" is LOCKED. Only Admin and Plant Manager can unlock or modify locked cylinders.`);
+      return;
+    }
+
     setEditingCylinder(cyl);
     setSku(cyl.sku || '');
     setJobName(cyl.jobName || '');
@@ -350,6 +447,80 @@ export default function CylinderManagement({
     setIsModalOpen(true);
   };
 
+  // Lock / Unlock Cylinder Set Toggle Handler (Admin & Plant Manager Only)
+  const handleToggleLock = (cyl) => {
+    if (!isAdminOrPlantManager) {
+      alert("⛔ Permission Denied: Only Admin and Plant Manager roles are authorized to Lock or Unlock Rotogravure Cylinder sets.");
+      return;
+    }
+
+    const nextLocked = !cyl.isLocked;
+    const actionType = nextLocked ? 'LOCKED' : 'UNLOCKED';
+    const actionDetails = nextLocked 
+      ? `Cylinder set locked by ${currentUser?.name || userRole}`
+      : `Cylinder set unlocked by ${currentUser?.name || userRole}`;
+
+    const newLog = createChangelogEntry(actionType, actionDetails);
+    const existingLogs = Array.isArray(cyl.changelogs) ? cyl.changelogs : [];
+    const updatedLogs = [newLog, ...existingLogs];
+
+    const updatedCyl = {
+      ...cyl,
+      isLocked: nextLocked,
+      lockedBy: nextLocked ? `${currentUser?.name || 'Authorized User'} (${userRole})` : '',
+      lockedAt: nextLocked ? new Date().toISOString() : '',
+      changelogs: updatedLogs
+    };
+
+    if (onUpdateCylinder) {
+      onUpdateCylinder(updatedCyl);
+    }
+
+    alert(`Cylinder set "${cyl.jobName}" is now ${nextLocked ? 'LOCKED 🔒' : 'UNLOCKED 🔓'}.`);
+  };
+
+  // Inline Artwork Image Upload / Manual Editing Post-Bulk Import
+  const handleInlineArtworkUpload = async (e, cyl) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (cyl.isLocked && !isAdminOrPlantManager) {
+      alert("⛔ Permission Denied: This cylinder set is locked. Only Admin and Plant Manager can edit locked records.");
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const result = await uploadArtworkFile(file, cyl.sku || cyl.jobName || 'cylinder');
+      const newUrl = result.publicUrl || '';
+      if (newUrl) {
+        const newLog = createChangelogEntry('ARTWORK_UPDATED', `Artwork file "${file.name}" uploaded manually`);
+        const existingLogs = Array.isArray(cyl.changelogs) ? cyl.changelogs : [];
+        const updatedLogs = [newLog, ...existingLogs];
+
+        const updatedCyl = {
+          ...cyl,
+          artworkUrl: newUrl,
+          jobCardFileUrl: newUrl,
+          jobCardFileName: file.name,
+          changelogs: updatedLogs
+        };
+
+        if (onUpdateCylinder) {
+          onUpdateCylinder(updatedCyl);
+        }
+        alert(`Artwork image updated successfully for "${cyl.jobName}"!`);
+      } else {
+        alert("Artwork upload failed: " + (result.error || "Could not retrieve public URL"));
+      }
+    } catch (err) {
+      console.error("Artwork inline upload error:", err);
+      alert("Failed to upload artwork: " + err.message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const handleArtworkUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -379,14 +550,27 @@ export default function CylinderManagement({
       return;
     }
 
+    if (editingCylinder && editingCylinder.isLocked && !isAdminOrPlantManager) {
+      alert("⛔ Permission Denied: This cylinder set is LOCKED. Only Admin and Plant Manager can save changes to locked cylinders.");
+      return;
+    }
+
     const structureSummary = layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
     const nextJmId = `JM-2026-${String((jobMasters ? jobMasters.length : 0) + 101).padStart(3, '0')}`;
 
+    const existingLogs = Array.isArray(editingCylinder?.changelogs) ? editingCylinder.changelogs : [];
+    const actionType = editingCylinder ? 'UPDATED' : 'CREATED';
+    const actionDetails = editingCylinder 
+      ? `Specifications updated by ${currentUser?.name || userRole}`
+      : `Cylinder set onboarded by ${currentUser?.name || userRole}`;
+    const newLog = createChangelogEntry(actionType, actionDetails);
+    const updatedLogs = [newLog, ...existingLogs];
+
     const payload = {
       id: editingCylinder ? editingCylinder.id : Date.now(),
-      sku,
-      jobName,
-      clientGroup,
+      sku: sku.trim(),
+      jobName: jobName.trim(),
+      clientGroup: clientGroup.trim(),
       structure: structureSummary,
       layers,
       jobMasterId: editingCylinder ? (editingCylinder.jobMasterId || editingCylinder.id) : nextJmId,
@@ -413,7 +597,11 @@ export default function CylinderManagement({
       arcMark: arcMark || 'Yes',
       slittingMark: slittingMark || 'Yes',
       trackerLine: trackerLine || 'Yes',
-      specialInstructions: specialInstructions || ''
+      specialInstructions: specialInstructions || '',
+      isLocked: editingCylinder ? Boolean(editingCylinder.isLocked) : false,
+      lockedBy: editingCylinder ? (editingCylinder.lockedBy || '') : '',
+      lockedAt: editingCylinder ? (editingCylinder.lockedAt || '') : '',
+      changelogs: updatedLogs
     };
 
     if (editingCylinder) {
@@ -458,11 +646,192 @@ export default function CylinderManagement({
   };
 
   const handleDelete = (cyl) => {
+    if (!canEditCylinders) {
+      alert("⛔ Permission Denied: Only Admin and Plant Manager roles can delete cylinder sets.");
+      return;
+    }
+    if (cyl.isLocked && !isAdminOrPlantManager) {
+      alert("🔒 Cannot Delete: This cylinder set is LOCKED. Only Admin and Plant Manager can unlock or delete locked cylinders.");
+      return;
+    }
     if (window.confirm(`Are you sure you want to delete Cylinder Set "${cyl.jobName}" (${cyl.sku})? This cannot be undone.`)) {
       if (onDeleteCylinder) {
         onDeleteCylinder(cyl.id);
       }
     }
+  };
+
+  // ==========================================
+  // BULK UPLOAD CSV PARSER & CROSS-CHECK ENGINE
+  // ==========================================
+
+  const handleCsvFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setBulkCsvFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result;
+      if (text && typeof text === 'string') {
+        processCsvRawText(text);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const processCsvRawText = (text) => {
+    const lines = text.split(/\r\n|\n/).map(l => l.trim()).filter(Boolean);
+    if (lines.length === 0) {
+      alert("The selected CSV file appears to be empty.");
+      return;
+    }
+
+    const headers = parseCsvLine(lines[0]);
+    const rawRows = lines.slice(1).map(l => parseCsvLine(l)).filter(r => r.length > 0 && r.some(val => val !== ''));
+
+    const initialMapping = autoMapHeaders(headers);
+
+    setBulkParsedHeaders(headers);
+    setBulkParsedRows(rawRows);
+    setBulkHeaderMapping(initialMapping);
+    setIsBulkModalOpen(true);
+  };
+
+  // Preview Jobs generated dynamically from CSV mapping
+  const bulkPreviewJobs = useMemo(() => {
+    if (!bulkParsedRows || bulkParsedRows.length === 0) return [];
+
+    return bulkParsedRows.map((row, idx) => {
+      const getValue = (key) => {
+        const headerName = bulkHeaderMapping[key];
+        if (!headerName) return '';
+        const headerIdx = bulkParsedHeaders.indexOf(headerName);
+        if (headerIdx < 0 || headerIdx >= row.length) return '';
+        return row[headerIdx] || '';
+      };
+
+      const rawSku = getValue('sku');
+      const rawJobName = getValue('jobName');
+      const rawClient = getValue('clientGroup');
+      const rawColors = getValue('colorsCount');
+      const rawPrintWidth = getValue('printWidthMm');
+      const rawFaceLength = getValue('faceLengthMm');
+      const rawCircumference = getValue('circumferenceMm');
+      const rawRate = getValue('rate');
+      const rawEngraver = getValue('engravuresName');
+      const rawCost = getValue('cylinderCost');
+      const rawCostPerCyl = getValue('costPerCylinder');
+      const rawCostBorneBy = getValue('costBorneBy');
+      const rawStatus = getValue('status');
+      const rawPress = getValue('assignedPress');
+      const rawStructure = getValue('structure');
+
+      const computedSku = rawSku || getNextCylinderSku(idx);
+      const computedJobName = rawJobName || `Bulk Job #${idx + 1}`;
+      const computedClient = rawClient || 'Standard Client';
+      const computedColors = parseInt(rawColors) || 6;
+      const computedWidth = parseFloat(rawPrintWidth) || 1000;
+      const computedFace = parseFloat(rawFaceLength) || 1050;
+      const computedCirc = parseFloat(rawCircumference) || 400;
+      const computedRate = parseFloat(rawRate) || 1.6;
+      const computedCost = rawCost ? `₹ ${parseInt(rawCost.replace(/\D/g, '')) || 0}` : `₹ ${Math.round((computedFace * computedCirc / 100) * computedRate * computedColors).toLocaleString()}`;
+      const computedCostPerCyl = rawCostPerCyl ? `₹ ${parseInt(rawCostPerCyl.replace(/\D/g, '')) || 0}` : `₹ ${Math.round((computedFace * computedCirc / 100) * computedRate).toLocaleString()}`;
+
+      let parsedLayers = [
+        { id: 1, filmType: 'PET', micron: 12 },
+        { id: 2, filmType: 'METPET', micron: 12 },
+        { id: 3, filmType: 'Natural GP LD', micron: 35 }
+      ];
+
+      if (rawStructure) {
+        const parts = rawStructure.split('/');
+        parsedLayers = parts.map((p, i) => {
+          const trimmed = p.trim();
+          const mMatch = trimmed.match(/(\d+)\s*µ?/);
+          const mic = mMatch ? parseInt(mMatch[1], 10) : 12;
+          const ft = trimmed.replace(/\d+\s*µ?/, '').trim() || 'PET';
+          return { id: i + 1, filmType: ft, micron: mic };
+        });
+      }
+
+      const isValid = Boolean(computedSku && computedJobName);
+
+      return {
+        id: `CYL-BULK-${Date.now()}-${idx}`,
+        sku: computedSku,
+        jobName: computedJobName,
+        clientGroup: computedClient,
+        colorsCount: computedColors,
+        printWidthMm: computedWidth,
+        faceLengthMm: computedFace,
+        circumferenceMm: computedCirc,
+        rate: computedRate,
+        ratePerSqInch: computedRate,
+        engravuresName: rawEngraver || 'Janata Engravers',
+        cylinderCost: computedCost,
+        costPerCylinder: computedCostPerCyl,
+        costBorneBy: rawCostBorneBy || 'Client (100%)',
+        costBorneType: (rawCostBorneBy || '').includes('Us') ? 'us' : (rawCostBorneBy || '').includes('Both') ? 'both' : 'client',
+        status: rawStatus || 'Active In-Use',
+        assignedPress: rawPress || printingPresses[0] || '',
+        structure: rawStructure || parsedLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / '),
+        layers: parsedLayers,
+        layer1PrintedQtyKg: 0,
+        dispatchedQty: 0,
+        utilisationLimit: 10000,
+        artworkUrl: null,
+        isLocked: false,
+        lockedBy: '',
+        lockedAt: '',
+        changelogs: [createChangelogEntry('BULK_UPLOADED', `Imported via CSV Bulk Upload (${bulkCsvFileName || 'CSV'})`)],
+        isValid
+      };
+    });
+  }, [bulkParsedRows, bulkParsedHeaders, bulkHeaderMapping, bulkCsvFileName, printingPresses]);
+
+  const handleConfirmBulkUpload = () => {
+    if (bulkPreviewJobs.length === 0) {
+      alert("No valid jobs to import.");
+      return;
+    }
+
+    if (onBatchAddCylinders) {
+      onBatchAddCylinders(bulkPreviewJobs);
+    } else {
+      bulkPreviewJobs.forEach(job => {
+        if (onAddCylinder) onAddCylinder(job);
+      });
+    }
+
+    // Auto-create consequent Job Master entries if toggle enabled
+    if (bulkAutoCreateJobMasters && onAddJobMaster) {
+      bulkPreviewJobs.forEach((job, idx) => {
+        const jmId = `JM-2026-${String((jobMasters ? jobMasters.length : 0) + 101 + idx).padStart(3, '0')}`;
+        onAddJobMaster({
+          id: jmId,
+          skuCode: job.sku,
+          jobName: job.jobName,
+          clientName: job.clientGroup,
+          structure: job.structure,
+          printWidthMm: job.printWidthMm,
+          faceLengthMm: job.faceLengthMm,
+          repeatLengthMm: job.circumferenceMm,
+          layers: job.layers,
+          cylinderSku: job.sku,
+          cylinderCost: job.cylinderCost,
+          colorsCount: job.colorsCount,
+          engravuresName: job.engravuresName,
+          costBorneBy: job.costBorneBy,
+          utilisationLimit: job.utilisationLimit,
+          artworkUrl: null,
+          creationDate: new Date().toISOString().split('T')[0]
+        });
+      });
+    }
+
+    setIsBulkModalOpen(false);
+    alert(`✅ Bulk Upload Complete!\nSuccessfully imported ${bulkPreviewJobs.length} Rotogravure Cylinder set(s) into database.${bulkAutoCreateJobMasters ? ' Linked Job Master entries were also created.' : ''}\n\nNote: You can now manually upload Artwork Images for each job in the table.`);
   };
 
   const uniqueCylinders = useMemo(() => {
@@ -508,22 +877,38 @@ export default function CylinderManagement({
               <Layers size={22} style={{ color: 'var(--primary-brand)' }} /> Rotogravure Cylinder Database & Utilisation Tracking
             </h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '2px' }}>
-              Automated Cylinder Surface Area {isAdmin ? '& Cost Calculation' : 'Tracking'}, Cloud Artwork Storage, and Layer 1 Substrate Wear Tracking.
+              Automated Cylinder Surface Area {isAdmin ? '& Cost Calculation' : 'Tracking'}, CSV Bulk Upload, Job Locking Control, and Audit Changelogs.
             </p>
           </div>
 
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <div style={{ position: 'relative', width: '280px' }}>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative', width: '260px' }}>
               <Search size={16} style={{ position: 'absolute', left: '12px', top: '11px', color: 'var(--text-muted)' }} />
               <input 
                 type="text" 
                 className="form-control"
                 style={{ paddingLeft: '36px' }}
-                placeholder="Search SKU, job name, or client..."
+                placeholder="Search SKU, job, or client..."
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
               />
             </div>
+
+            {canEditCylinders && (
+              <label 
+                className="btn-secondary" 
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: '700', cursor: 'pointer', padding: '8px 14px' }}
+                title="Bulk Upload Jobs from CSV file"
+              >
+                <FileSpreadsheet size={16} style={{ color: '#047857' }} /> Bulk Upload Jobs (CSV)
+                <input 
+                  type="file" 
+                  accept=".csv,.txt" 
+                  style={{ display: 'none' }} 
+                  onChange={handleCsvFileUpload} 
+                />
+              </label>
+            )}
 
             {canEditCylinders ? (
               <button className="btn-primary" onClick={openAddModal}>
@@ -541,7 +926,12 @@ export default function CylinderManagement({
       {/* Main Cylinders Directory Table */}
       <div className="glass-panel" style={{ padding: '24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h3 style={{ fontSize: '1.05rem', fontWeight: '700' }}>Active Printing Cylinders Directory</h3>
+          <h3 style={{ fontSize: '1.05rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            Active Printing Cylinders Directory
+            <span style={{ fontSize: '0.78rem', background: '#e2e8f0', color: '#334155', padding: '2px 8px', borderRadius: '12px', fontWeight: '600' }}>
+              Only Admin & Plant Manager Edit Access
+            </span>
+          </h3>
           <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
             Showing <strong>{filteredCylinders.length}</strong> cylinder sets
           </span>
@@ -557,11 +947,10 @@ export default function CylinderManagement({
                 <th>Client Group</th>
                 <th>{isAdmin ? 'Cost & Engraver' : 'Engraver'}</th>
                 {isAdmin && <th>Cost Borne By</th>}
-                <th>Layer 1 Print (Kg)</th>
                 <th>Wear Utilisation</th>
-                <th>Status</th>
+                <th>Lock & Status</th>
                 <th>Assigned Press</th>
-                <th>Actions</th>
+                <th>Actions & Audit Trail</th>
               </tr>
             </thead>
             <tbody>
@@ -578,27 +967,44 @@ export default function CylinderManagement({
                   const cCirc = c.circumferenceMm || 400;
                   const cFace = c.faceLengthMm || 1050;
                   const cUnits = Math.round((cCirc * cFace) / 100);
+                  const isLocked = Boolean(c.isLocked);
+                  const changelogCount = Array.isArray(c.changelogs) ? c.changelogs.length : 0;
 
                   return (
-                    <tr key={c.id}>
+                    <tr key={c.id} style={isLocked ? { background: '#f8fafc' } : {}}>
                       <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                           {c.artworkUrl ? (
                             <img 
                               src={c.artworkUrl} 
                               alt="Artwork" 
-                              style={{ width: '36px', height: '36px', objectFit: 'contain', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }} 
+                              style={{ width: '40px', height: '40px', objectFit: 'contain', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }} 
                               onClick={() => setActiveArtworkModal({ isOpen: true, url: c.artworkUrl, title: `${c.sku} - ${c.jobName}` })}
-                              title="Click to view artwork"
+                              title="Click to view full artwork image"
                             />
                           ) : (
-                            <div style={{ width: '36px', height: '36px', background: '#f1f5f9', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
-                              <Layers size={18} />
-                            </div>
+                            <label 
+                              style={{ width: '40px', height: '40px', background: '#f1f5f9', borderRadius: '6px', border: '1px dashed #cbd5e1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b', cursor: canEditCylinders ? 'pointer' : 'default' }}
+                              title={canEditCylinders ? "Click to upload Artwork Image post-bulk upload" : "No artwork uploaded"}
+                            >
+                              <ImageIcon size={16} />
+                              <span style={{ fontSize: '0.58rem', marginTop: '1px', fontWeight: '700' }}>+ Image</span>
+                              {canEditCylinders && (
+                                <input 
+                                  type="file" 
+                                  accept="image/*,.pdf" 
+                                  style={{ display: 'none' }} 
+                                  onChange={e => handleInlineArtworkUpload(e, c)} 
+                                />
+                              )}
+                            </label>
                           )}
                           <div>
-                            <div style={{ fontWeight: '700', color: 'var(--primary-brand)', fontSize: '0.85rem' }}>{c.sku}</div>
-                            {c.artworkUrl && (
+                            <div style={{ fontWeight: '700', color: 'var(--primary-brand)', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              {c.sku}
+                              {isLocked && <Lock size={12} style={{ color: '#d97706' }} title={`Locked by ${c.lockedBy || 'Admin'}`} />}
+                            </div>
+                            {c.artworkUrl ? (
                               <button 
                                 type="button"
                                 onClick={() => setActiveArtworkModal({ isOpen: true, url: c.artworkUrl, title: `${c.sku} - ${c.jobName}` })}
@@ -606,23 +1012,41 @@ export default function CylinderManagement({
                               >
                                 View Artwork <ExternalLink size={10} />
                               </button>
+                            ) : (
+                              canEditCylinders && (
+                                <label style={{ fontSize: '0.68rem', color: '#047857', cursor: 'pointer', fontWeight: '700', textDecoration: 'underline' }}>
+                                  Upload Image
+                                  <input type="file" accept="image/*,.pdf" style={{ display: 'none' }} onChange={e => handleInlineArtworkUpload(e, c)} />
+                                </label>
+                              )
                             )}
                           </div>
                         </div>
                       </td>
+
                       <td>
-                        <div style={{ fontWeight: '700' }}>{c.jobName}</div>
-                        <span className="badge badge-both" style={{ fontSize: '0.7rem', padding: '2px 6px', marginTop: '2px' }}>
-                          🎨 {c.colorsCount || 6} Printing Colors
-                        </span>
+                        <div style={{ fontWeight: '700', color: '#0f172a' }}>{c.jobName}</div>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '2px' }}>
+                          <span className="badge badge-both" style={{ fontSize: '0.7rem', padding: '2px 6px' }}>
+                            🎨 {c.colorsCount || 6} Colors
+                          </span>
+                          {c.structure && (
+                            <span style={{ fontSize: '0.7rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }} title={c.structure}>
+                              {c.structure}
+                            </span>
+                          )}
+                        </div>
                       </td>
+
                       <td>
                         <div style={{ fontSize: '0.85rem', fontWeight: '600' }}>{cFace}L × {cCirc}C mm</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{cUnits.toLocaleString()} sq. cm (L×C÷100)</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{cUnits.toLocaleString()} sq. cm</div>
                       </td>
+
                       <td>
                         <div style={{ fontWeight: '600' }}>{c.clientGroup || 'Standard'}</div>
                       </td>
+
                       <td>
                         {isAdmin && (
                           <>
@@ -636,18 +1060,14 @@ export default function CylinderManagement({
                         )}
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{c.engravuresName}</div>
                       </td>
+
                       {isAdmin && (
                         <td>
                           <span className={`badge badge-${c.costBorneType || 'client'}`}>{c.costBorneBy || 'Client (100%)'}</span>
                         </td>
                       )}
-                      <td>
-                        <div style={{ fontWeight: '800', color: 'var(--primary-brand)' }}>
-                          {c.layer1PrintedQtyKg ? `${c.layer1PrintedQtyKg} kg` : `${c.dispatchedQty} kg`}
-                        </div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Layer 1 Substrate</div>
-                      </td>
-                      <td style={{ minWidth: '160px' }}>
+
+                      <td style={{ minWidth: '150px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
                           <span style={{ color: 'var(--text-secondary)' }}>{c.dispatchedQty}kg / {c.utilisationLimit || 10000}kg</span>
                           <span style={{ color: isWarning ? 'var(--warning)' : 'var(--success)', fontWeight: 'bold' }}>{util}%</span>
@@ -656,12 +1076,28 @@ export default function CylinderManagement({
                           <div className={`progress-fill ${isWarning ? 'warning' : ''}`} style={{ width: `${util}%`, background: isWarning ? '#d97706' : '#0f172a' }}></div>
                         </div>
                       </td>
+
                       <td>
-                        <span className={`badge ${c.status === 'Worn Out / Retouch Needed' ? 'badge-warning' : 'badge-us'}`}>
-                          {c.status || 'Active In-Use'}
-                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span className={`badge ${c.status === 'Worn Out / Retouch Needed' ? 'badge-warning' : 'badge-us'}`} style={{ fontSize: '0.7rem' }}>
+                            {c.status || 'Active In-Use'}
+                          </span>
+                          {isLocked ? (
+                            <span 
+                              style={{ fontSize: '0.68rem', background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', padding: '1px 6px', borderRadius: '4px', fontWeight: '700', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                              title={c.lockedBy ? `Locked by ${c.lockedBy}` : 'Locked'}
+                            >
+                              🔒 Locked
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: '0.68rem', color: '#64748b', padding: '1px 6px', borderRadius: '4px', border: '1px solid #e2e8f0', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                              🔓 Unlocked
+                            </span>
+                          )}
+                        </div>
                       </td>
-                      <td style={{ maxWidth: '160px' }}>
+
+                      <td style={{ maxWidth: '140px' }}>
                         {c.assignedPress ? (
                           <span style={{ fontSize: '0.78rem', fontWeight: '600', color: 'var(--primary-brand)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <Printer size={12} />{c.assignedPress}
@@ -670,30 +1106,59 @@ export default function CylinderManagement({
                           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>— Not Assigned —</span>
                         )}
                       </td>
+
                       <td>
-                        <div style={{ display: 'flex', gap: '6px' }}>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                          {/* LOCK / UNLOCK BUTTON (Admin & Plant Manager Only) */}
+                          {isAdminOrPlantManager && (
+                            <button 
+                              className={`btn-secondary ${isLocked ? 'text-warning' : ''}`}
+                              style={{ padding: '6px 8px', fontSize: '0.75rem' }} 
+                              onClick={() => handleToggleLock(c)} 
+                              title={isLocked ? "Unlock Cylinder Specifications" : "Lock Cylinder Specifications"}
+                            >
+                              {isLocked ? <Lock size={14} style={{ color: '#d97706' }} /> : <Unlock size={14} />}
+                            </button>
+                          )}
+
+                          {/* EDIT SPECIFICATIONS */}
                           {canEditCylinders ? (
-                            <>
-                              <button className="btn-secondary" style={{ padding: '6px 8px', fontSize: '0.75rem' }} onClick={() => openEditModal(c)} title="Edit Specifications">
-                                <Edit3 size={14} />
-                              </button>
+                            <button 
+                              className="btn-secondary" 
+                              style={{ padding: '6px 8px', fontSize: '0.75rem', opacity: isLocked && !isAdminOrPlantManager ? 0.5 : 1 }} 
+                              onClick={() => openEditModal(c)} 
+                              title={isLocked ? "View Specs (Locked)" : "Edit Specifications"}
+                            >
+                              <Edit3 size={14} />
+                            </button>
+                          ) : null}
 
-                              <button className="btn-secondary" style={{ padding: '6px 8px', fontSize: '0.75rem' }} onClick={() => setSelectedForPDF(c)} title="Print Job Card">
-                                <Printer size={14} />
-                              </button>
+                          {/* VIEW PRINT JOB CARD */}
+                          <button className="btn-secondary" style={{ padding: '6px 8px', fontSize: '0.75rem' }} onClick={() => setSelectedForPDF(c)} title="View / Print Job Card">
+                            <Printer size={14} />
+                          </button>
 
-                              <button 
-                                className="btn-secondary text-danger" 
-                                style={{ padding: '6px 8px', fontSize: '0.75rem' }} 
-                                onClick={() => handleDelete(c)}
-                                title="Delete Cylinder Set"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </>
-                          ) : (
-                            <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => setSelectedForPDF(c)} title="View Job Card">
-                              <Printer size={13} /> View Specs
+                          {/* VIEW CHANGELOGS / AUDIT HISTORY */}
+                          <button 
+                            className="btn-secondary" 
+                            style={{ padding: '6px 8px', fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: '3px', fontWeight: '700' }}
+                            onClick={() => setChangelogCylinder(c)}
+                            title="View Job Changelog History"
+                          >
+                            <History size={13} style={{ color: 'var(--primary-brand)' }} />
+                            {changelogCount > 0 && <span>({changelogCount})</span>}
+                          </button>
+
+                          {/* DELETE CYLINDER */}
+                          {canEditCylinders && (
+                            <button 
+                              className="btn-secondary text-danger" 
+                              style={{ padding: '6px 8px', fontSize: '0.75rem', opacity: isLocked ? 0.4 : 1 }} 
+                              onClick={() => handleDelete(c)}
+                              title={isLocked ? "Cannot delete locked cylinder" : "Delete Cylinder Set"}
+                              disabled={isLocked}
+                            >
+                              <Trash2 size={14} />
                             </button>
                           )}
                         </div>
@@ -706,6 +1171,185 @@ export default function CylinderManagement({
           </table>
         </div>
       </div>
+
+      {/* ========================================== */}
+      {/* BULK UPLOAD CSV & CROSS-CHECK MODAL         */}
+      {/* ========================================== */}
+      {isBulkModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsBulkModalOpen(false)}>
+          <div className="glass-card modal-content" style={{ width: '1000px', maxWidth: '95vw', maxHeight: '92vh', overflowY: 'auto', padding: '24px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '10px', margin: 0, color: 'var(--text-primary)' }}>
+                  <FileSpreadsheet size={24} style={{ color: '#047857' }} /> Bulk Upload Cylinder Jobs (CSV Cross-Check)
+                </h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.84rem', margin: '4px 0 0 0' }}>
+                  Verify column header mapping and preview parsed job records before batch ingestion.
+                </p>
+              </div>
+              <button type="button" className="btn-icon" onClick={() => setIsBulkModalOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* STEP 1: HEADER MAPPING CROSS-CHECK */}
+            <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '16px' }}>
+              <h4 style={{ fontSize: '0.9rem', fontWeight: '800', color: '#0f172a', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <CheckCircle2 size={16} style={{ color: '#047857' }} /> 1. Cross-Check Column Header Mapping
+              </h4>
+              <p style={{ fontSize: '0.78rem', color: '#475569', marginBottom: '14px' }}>
+                Select which column from your CSV maps to each Rotogravure Cylinder schema field:
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                {TARGET_SCHEMA_FIELDS.map(field => (
+                  <div key={field.key} style={{ background: '#ffffff', padding: '8px 12px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                    <label style={{ fontSize: '0.78rem', fontWeight: '700', color: field.required ? '#b91c1c' : '#334155', display: 'block', marginBottom: '4px' }}>
+                      {field.label} {field.required && '*'}
+                    </label>
+                    <select 
+                      className="form-control" 
+                      style={{ fontSize: '0.8rem', padding: '4px 8px' }}
+                      value={bulkHeaderMapping[field.key] || ''}
+                      onChange={e => setBulkHeaderMapping(prev => ({ ...prev, [field.key]: e.target.value }))}
+                    >
+                      <option value="">-- Do Not Map --</option>
+                      {bulkParsedHeaders.map(h => (
+                        <option key={h} value={h}>{h}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* STEP 2: DATA PREVIEW TABLE */}
+            <div style={{ background: '#ffffff', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <h4 style={{ fontSize: '0.9rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                  2. Parsed Job Records Preview ({bulkPreviewJobs.length} Rows)
+                </h4>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', fontWeight: '700', color: '#047857', cursor: 'pointer' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={bulkAutoCreateJobMasters} 
+                    onChange={e => setBulkAutoCreateJobMasters(e.target.checked)}
+                    style={{ width: '16px', height: '16px', accentColor: '#047857' }}
+                  />
+                  Auto-Create Consequent Entries in Job Master Directory
+                </label>
+              </div>
+
+              <div style={{ overflowX: 'auto', maxHeight: '320px' }}>
+                <table className="data-table" style={{ fontSize: '0.8rem' }}>
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>SKU Code</th>
+                      <th>Job Name</th>
+                      <th>Client Group</th>
+                      <th>Colors</th>
+                      <th>Dimensions (Face × Rep)</th>
+                      <th>Cost</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bulkPreviewJobs.map((job, idx) => (
+                      <tr key={idx} style={{ background: job.isValid ? 'transparent' : '#fef2f2' }}>
+                        <td>{idx + 1}</td>
+                        <td style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>{job.sku}</td>
+                        <td style={{ fontWeight: '700' }}>{job.jobName}</td>
+                        <td>{job.clientGroup}</td>
+                        <td>🎨 {job.colorsCount} C</td>
+                        <td>{job.faceLengthMm}L × {job.circumferenceMm}C mm</td>
+                        <td style={{ fontWeight: '700' }}>{job.cylinderCost}</td>
+                        <td>
+                          <span className="badge badge-success" style={{ fontSize: '0.7rem' }}>Ready to Import</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* FOOTER ACTIONS */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', borderTop: '1px solid #e2e8f0', paddingTop: '12px' }}>
+              <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                💡 <b>Post-Upload Note:</b> Job specifications will be imported immediately. Artwork Images can be uploaded manually for each job post-upload.
+              </div>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button type="button" className="btn-secondary" onClick={() => setIsBulkModalOpen(false)}>Cancel</button>
+                <button type="button" className="btn-primary" onClick={handleConfirmBulkUpload}>
+                  <CheckCircle2 size={16} /> Confirm & Ingest {bulkPreviewJobs.length} Job(s)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* JOB CHANGELOG & AUDIT TRAIL MODAL          */}
+      {/* ========================================== */}
+      {changelogCylinder && (
+        <div className="modal-overlay" onClick={() => setChangelogCylinder(null)}>
+          <div className="glass-card modal-content" style={{ width: '680px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', padding: '24px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '10px', margin: 0, color: 'var(--text-primary)' }}>
+                  <History size={22} style={{ color: 'var(--primary-brand)' }} /> Job Changelog & Revision History
+                </h3>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '3px' }}>
+                  SKU: <strong style={{ color: 'var(--primary-brand)' }}>{changelogCylinder.sku}</strong> | Job: <strong>{changelogCylinder.jobName}</strong>
+                </div>
+              </div>
+              <button type="button" className="btn-icon" onClick={() => setChangelogCylinder(null)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              {(!changelogCylinder.changelogs || changelogCylinder.changelogs.length === 0) ? (
+                <div style={{ textAlign: 'center', padding: '24px', color: '#64748b', fontSize: '0.85rem' }}>
+                  <Clock size={32} style={{ color: '#cbd5e1', marginBottom: '8px' }} />
+                  <div>No historical change logs recorded for this cylinder set yet.</div>
+                  <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px' }}>All future edits, locks, unlocks, and artwork updates will be tracked here.</div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {changelogCylinder.changelogs.map((log, idx) => (
+                    <div key={log.id || idx} style={{ background: '#ffffff', padding: '12px 14px', borderRadius: '6px', border: '1px solid #e2e8f0', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                      <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: log.action === 'LOCKED' ? '#d97706' : log.action === 'CREATED' ? '#047857' : log.action === 'BULK_UPLOADED' ? '#2563eb' : '#64748b', marginTop: '5px', flexShrink: 0 }} />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                          <span className={`badge ${log.action === 'LOCKED' ? 'badge-warning' : log.action === 'CREATED' ? 'badge-success' : 'badge-us'}`} style={{ fontSize: '0.7rem', padding: '2px 6px' }}>
+                            {log.action}
+                          </span>
+                          <span style={{ fontSize: '0.72rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <Clock size={11} /> {new Date(log.timestamp).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.84rem', fontWeight: '600', color: '#0f172a', marginTop: '4px' }}>
+                          {log.details}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
+                          By <strong>{log.user || 'Authorized User'}</strong> ({log.role || 'User'})
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
+              <button type="button" className="btn-secondary" onClick={() => setChangelogCylinder(null)}>Close Timeline</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add / Edit Cylinder Modal */}
       {isModalOpen && (
@@ -1161,6 +1805,9 @@ export default function CylinderManagement({
                 const faceLengthNum = Number(String(updated.faceLength || updated.totalWidth).replace(/\D/g, '')) || selectedForPDF.faceLengthMm || 1050;
                 const repeatLengthNum = Number(String(updated.totalHeight).replace(/\D/g, '')) || selectedForPDF.circumferenceMm || 400;
 
+                const newLog = createChangelogEntry('UPDATED', 'Specifications updated via Job Card Editor');
+                const existingLogs = Array.isArray(selectedForPDF.changelogs) ? selectedForPDF.changelogs : [];
+
                 const fullUpdatedCyl = {
                   ...selectedForPDF,
                   ...(targetCylinder || {}),
@@ -1199,7 +1846,8 @@ export default function CylinderManagement({
                   printing: updated.printing || selectedForPDF.printing,
                   invoiceTo: updated.invoiceTo || selectedForPDF.invoiceTo,
                   shellSize: updated.shellSize || selectedForPDF.shellSize,
-                  petSize: updated.petSize || selectedForPDF.petSize
+                  petSize: updated.petSize || selectedForPDF.petSize,
+                  changelogs: [newLog, ...existingLogs]
                 };
 
                 if (onUpdateCylinder) {
