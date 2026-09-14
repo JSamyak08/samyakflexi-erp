@@ -2952,6 +2952,7 @@ export default function App() {
             <ProductionScheduler 
               orders={orders}
               inventory={inventory}
+              inventoryRolls={inventoryRolls}
               machines={machines}
               schedules={schedules}
               jobMasters={jobMasters}
@@ -2966,6 +2967,8 @@ export default function App() {
               onUpdateOrder={handleUpdateOrder}
               onStartJob={handleStartPrintingJob}
               onEndJob={handleEndPrintingJob}
+              onAddRoll={handleAddRoll}
+              onSaveInventoryItem={handleSaveInventoryItem}
             />
           </div>
         ) : activeTab === 'dashboard' && (
@@ -3781,6 +3784,7 @@ export default function App() {
           <ProductionScheduler 
             orders={orders}
             inventory={inventory}
+            inventoryRolls={inventoryRolls}
             machines={machines}
             schedules={schedules}
             jobMasters={jobMasters}
@@ -3795,6 +3799,8 @@ export default function App() {
             onUpdateOrder={handleUpdateOrder}
             onStartJob={handleStartPrintingJob}
             onEndJob={handleEndPrintingJob}
+            onAddRoll={handleAddRoll}
+            onSaveInventoryItem={handleSaveInventoryItem}
           />
         )}
 

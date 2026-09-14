@@ -48,6 +48,8 @@ import {
   FILM_DENSITIES
 } from '../factoryStore';
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
+import BarcodePrinterModal from './BarcodePrinterModal';
+import { saveInventoryRollToSupabase } from '../services/supabaseDataService';
 
 // Helper: Resolve Film Density for flexible packaging substrates
 const getFilmDensity = (filmType = '') => {
@@ -83,6 +85,7 @@ const parseStructureLayers = (structureStr = '') => {
 export default function ProductionScheduler({
   orders = [],
   inventory = [],
+  inventoryRolls = [],
   machines = initialMachines,
   schedules = [],
   jobMasters = [],
@@ -97,7 +100,9 @@ export default function ProductionScheduler({
   onUpdateOrder,
   onStartJob,
   onEndJob,
-  onReorderQueue
+  onReorderQueue,
+  onAddRoll,
+  onSaveInventoryItem
 }) {
   // Navigation Tabs: 'queue' (Ready Queue - Default) | 'completed' (Completed Jobs) | 'machines' (Press Configuration)
   const [activeTab, setActiveTab] = useState('queue');
@@ -123,6 +128,7 @@ export default function ProductionScheduler({
   }, [machines]);
 
   // Active Job Run Modal & Artwork Preview State
+  const [selectedOrderForRun, setSelectedOrderForRun] = useState(null);
   const [activeRunningJob, setActiveRunningJob] = useState(null);
   const [activeMachineSelection, setActiveMachineSelection] = useState({});
   const [isArtworkZoomOpen, setIsArtworkZoomOpen] = useState(false);
@@ -134,7 +140,7 @@ export default function ProductionScheduler({
   // Machine Management Modal State
   const [isMachineModalOpen, setIsMachineModalOpen] = useState(false);
   const [editingMachineId, setEditingMachineId] = useState(null);
-  const [machineName, setMachineName] = useState('');
+  const [machineName, setMachineName] = useState('Expert 1000 Rotogravure Press (8C)');
   const [machineType, setMachineType] = useState('Rotogravure');
   const [machineColors, setMachineColors] = useState(8);
   const [machineMaxSpeed, setMachineMaxSpeed] = useState(250);
@@ -152,6 +158,10 @@ export default function ProductionScheduler({
   const [inputPrintedOutputKg, setInputPrintedOutputKg] = useState('');
   const [inputOperatorNotes, setInputOperatorNotes] = useState('');
   const [printLessApproved, setPrintLessApproved] = useState(false);
+  const [outputRollsList, setOutputRollsList] = useState([
+    { id: 'roll-1', rollNo: 1, netWeightKg: '' }
+  ]);
+  const [selectedRollsForAutoPrint, setSelectedRollsForAutoPrint] = useState(null);
   const [isSubmittingEndJob, setIsSubmittingEndJob] = useState(false);
 
   // Custom Queue Ordering State
@@ -591,7 +601,11 @@ export default function ProductionScheduler({
     setEndJobTargetOrder(order);
     setInputActualMeters(order.targetMeters ? String(order.targetMeters) : '');
     setInputInkGsm(order.inkGsm ? String(order.inkGsm) : '');
-    setInputPrintedOutputKg(order.printLayerNetKg ? String(order.printLayerNetKg) : (order.printQtyKg ? String(order.printQtyKg) : ''));
+    const initialWeightKg = order.printLayerNetKg ? String(order.printLayerNetKg) : (order.printQtyKg ? String(order.printQtyKg) : '');
+    setInputPrintedOutputKg(initialWeightKg);
+    setOutputRollsList([
+      { id: `roll-${Date.now()}-1`, rollNo: 1, netWeightKg: initialWeightKg }
+    ]);
     setInputOperatorNotes('');
     setPrintLessApproved(false);
     setEndJobStep('input');
@@ -610,10 +624,15 @@ export default function ProductionScheduler({
       alert("Please enter a valid 'Ink GSM (In Speed)'.");
       return;
     }
-    if (!inputPrintedOutputKg || parseFloat(inputPrintedOutputKg) <= 0) {
-      alert("Please enter a valid 'Printed Output (in kgs)'.");
+
+    const totalRollsKg = outputRollsList.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
+    if (outputRollsList.length === 0 || totalRollsKg <= 0) {
+      alert("Please enter valid net weight (kg) for at least one printed roll.");
       return;
     }
+
+    // Automatically sync total weight from roll breakdown
+    setInputPrintedOutputKg(String(totalRollsKg.toFixed(2)));
 
     const targetNum = endJobTargetOrder?.targetMeters || 0;
     if (targetNum > 0 && actualNum < targetNum && !printLessApproved) {
@@ -639,7 +658,111 @@ export default function ProductionScheduler({
 
       const actualMetersNum = parseFloat(inputActualMeters) || endJobTargetOrder.targetMeters || 0;
       const inkGsmNum = parseFloat(inputInkGsm) || 1.5;
-      const outputKgNum = parseFloat(inputPrintedOutputKg) || endJobTargetOrder.printQtyKg || 0;
+      const totalRollsKg = outputRollsList.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
+      const outputKgNum = totalRollsKg > 0 ? totalRollsKg : (parseFloat(inputPrintedOutputKg) || 0);
+
+      // Determine routing: Reverse Printing Job -> Lamination Machine, Surface Printing Job -> Slitting Machine
+      const matchingJM = (jobMasters || []).find(j => j.id === endJobTargetOrder.jobMasterId || j.jobCode === endJobTargetOrder.jobCode);
+      const printTypeStr = (endJobTargetOrder.printType || matchingJM?.printType || endJobTargetOrder.printingType || '').toLowerCase();
+      const jobTypeStr = (endJobTargetOrder.jobType || matchingJM?.jobType || '').toLowerCase();
+      const lamStructureStr = (endJobTargetOrder.laminateStructure || matchingJM?.laminateStructure || endJobTargetOrder.substrateStructure || matchingJM?.substrateStructure || '').toLowerCase();
+
+      const isReverseJob = printTypeStr.includes('reverse') || 
+                           jobTypeStr.includes('reverse') || 
+                           lamStructureStr.includes('metpet') || 
+                           lamStructureStr.includes('foil') || 
+                           lamStructureStr.includes('/') ||
+                           (!printTypeStr.includes('surface') && (endJobTargetOrder.colorsCount || 0) > 0);
+
+      const nextProcessName = isReverseJob ? 'Lamination Machine' : 'Slitting Machine';
+      const grnCode = (endJobTargetOrder.jobCode || endJobTargetOrder.id || 'ORD-000').replace(/[^a-zA-Z0-9-]/g, '');
+
+      // Create SFG Barcode Rolls for Database Storage & Automatic Printing
+      const createdSfgRolls = [];
+
+      for (let idx = 0; idx < outputRollsList.length; idx++) {
+        const rItem = outputRollsList[idx];
+        const rollSeqNo = idx + 1;
+        const rollWeight = parseFloat(rItem.netWeightKg) || 0;
+        if (rollWeight <= 0) continue;
+
+        const barcodeId = `SFG-BC-${grnCode}-${rollSeqNo}`;
+
+        const sfgRollObj = {
+          id: barcodeId,
+          barcodeId: barcodeId,
+          grnNo: `PRINT-RUN-${grnCode}`,
+          rollType: 'SEMI_FINISHED_GOODS',
+          category: 'Semi-Finished Goods (SFG)',
+          itemName: `${endJobTargetOrder.jobName} - Printed SFG Roll ${rollSeqNo}`,
+          jobName: endJobTargetOrder.jobName,
+          jobCode: endJobTargetOrder.jobCode || endJobTargetOrder.id,
+          orderId: endJobTargetOrder.id,
+          customerName: endJobTargetOrder.clientName || endJobTargetOrder.customerName || 'Client',
+          filmType: endJobTargetOrder.printFilmType || 'PET',
+          micron: Number(endJobTargetOrder.micron) || 12,
+          widthMm: Number(endJobTargetOrder.widthMm) || 460,
+          unit: 'Kg',
+          packagingType: 'Roll',
+          unitNo: rollSeqNo,
+          rollNo: rollSeqNo,
+          totalUnits: outputRollsList.length,
+          netWeightKg: rollWeight,
+          grossWeightKg: Number((rollWeight + 0.5).toFixed(2)),
+          tareWeightKg: 0.5,
+          availableWeightKg: rollWeight,
+          lengthMeters: Math.round(rollWeight > 0 ? (rollWeight / (outputKgNum || 1)) * actualMetersNum : actualMetersNum),
+          purchaseRatePerKg: Number(endJobTargetOrder.rate || endJobTargetOrder.unitPrice || 0),
+          unitPrice: Number(endJobTargetOrder.rate || endJobTargetOrder.unitPrice || 0),
+          stationId: 'PRINTING_PRESS_REWINDER',
+          machineName: machineName || 'Rotogravure Press',
+          operatorName: machineOperator || 'Operator',
+          nextProcess: nextProcessName,
+          processStage: 'PRINTED_SFG',
+          status: 'In Stock (SFG)',
+          qcStatus: 'Approved',
+          inwardDatetime: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
+          locationBay: isReverseJob ? 'SFG Store (Bay B - Pre-Lamination)' : 'SFG Store (Bay C - Pre-Slitting)'
+        };
+
+        createdSfgRolls.push(sfgRollObj);
+
+        // Dispatch to application state
+        if (onAddRoll) {
+          await onAddRoll(sfgRollObj);
+        }
+
+        // Direct Persistence into Supabase Database
+        try {
+          await saveInventoryRollToSupabase(sfgRollObj);
+        } catch (dbErr) {
+          console.warn("[SFG Database Notice] Roll barcode saved locally. Supabase sync notice:", dbErr);
+        }
+      }
+
+      // Also create/update an SFG Inventory Item in central stock for this Job so SFG Stock Register reflects it!
+      const sfgItemId = `SFG-ITEM-${endJobTargetOrder.id}`;
+      const sfgInventoryItem = {
+        id: sfgItemId,
+        itemCode: sfgItemId,
+        itemName: `${endJobTargetOrder.jobName} (Printed SFG Web)`,
+        category: 'Semi-Finished Goods (SFG)',
+        filmType: endJobTargetOrder.printFilmType || 'PET',
+        micron: endJobTargetOrder.micron || 12,
+        widthMm: endJobTargetOrder.widthMm || 460,
+        unit: 'Kg',
+        availableQtyKg: outputKgNum,
+        allocatedQtyKg: 0,
+        unitPrice: Number(endJobTargetOrder.rate || 0),
+        location: isReverseJob ? 'SFG Store (Pre-Lamination)' : 'SFG Store (Pre-Slitting)',
+        reorderLevelKg: 50,
+        lastVendor: 'In-House Printing Press',
+        lastBatch: `PRINT-RUN-${grnCode}`
+      };
+
+      if (onSaveInventoryItem) {
+        await onSaveInventoryItem(sfgInventoryItem);
+      }
 
       const endData = {
         endTime,
@@ -648,6 +771,7 @@ export default function ProductionScheduler({
         actualMetersPrinted: actualMetersNum,
         inkGsmInSpeed: inkGsmNum,
         printedOutputKg: outputKgNum,
+        rollsBreakdown: createdSfgRolls,
         notes: inputOperatorNotes
       };
 
@@ -661,6 +785,8 @@ export default function ProductionScheduler({
         actualMetersPrinted: actualMetersNum,
         inkGsmInSpeed: inkGsmNum,
         printedOutputKg: outputKgNum,
+        rollsBreakdown: createdSfgRolls,
+        nextProcess: nextProcessName,
         printingNotes: inputOperatorNotes
       };
 
@@ -673,7 +799,13 @@ export default function ProductionScheduler({
       setIsEndJobModalOpen(false);
       setActiveRunningJob(null);
       setEndJobTargetOrder(null);
-      alert(`🎉 Printing Run for "${completedOrder.jobName}" Completed & Saved!\n\n• Actual Meters: ${actualMetersNum.toLocaleString()} m\n• Ink GSM: ${inkGsmNum} g/m²\n• Printed Output: ${outputKgNum} kg\n• Run Duration: ${durationFormatted}\n\nJob has moved to "Completed Jobs" tab.`);
+
+      // Trigger automatic barcode printing pop-up for generated SFG rolls
+      if (createdSfgRolls.length > 0) {
+        setSelectedRollsForAutoPrint(createdSfgRolls);
+      } else {
+        alert(`🎉 Printing Run for "${completedOrder.jobName}" Completed & Saved!\n\n• Actual Meters: ${actualMetersNum.toLocaleString()} m\n• Ink GSM: ${inkGsmNum} g/m²\n• Printed Output: ${outputKgNum} kg (${outputRollsList.length} SFG Rolls)\n• Next Process: ${nextProcessName}\n\nSFG rolls saved to database & taken in SFG inventory.`);
+      }
     } catch (err) {
       console.error("Error ending printing job:", err);
       alert("Failed to save job completion data. Please try again.");
@@ -2039,28 +2171,116 @@ export default function ProductionScheduler({
                     </span>
                   </div>
 
-                  {/* Field 3: Printed Output (in kgs) */}
-                  <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                      <label style={{ fontSize: '0.85rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
-                        ⚖️ Printed Output (in kgs) *
-                      </label>
-                      <WeighingScaleCaptureButton onCapture={(weight) => setInputPrintedOutputKg(String(weight))} />
+                  {/* Field 3: Printed Output (Roll-Wise Sequence in kgs) */}
+                  <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                      <div>
+                        <label style={{ fontSize: '0.88rem', fontWeight: '900', color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Scale size={18} style={{ color: '#059669' }} /> Printed Output (Roll-Wise Sequence in Kgs) *
+                        </label>
+                        <span style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px', display: 'block' }}>
+                          Add net weight for each printed roll sequentially. Barcodes will be printed & SFG inventory updated automatically.
+                        </span>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#64748b' }}>Total Weight:</span>
+                        <div style={{ fontSize: '1.25rem', fontWeight: '900', color: '#059669' }}>
+                          {outputRollsList.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0).toFixed(2)} kg
+                        </div>
+                      </div>
                     </div>
-                    <input 
-                      type="number"
-                      step="0.1"
-                      min="0.1"
-                      className="form-control"
-                      style={{ fontSize: '1.1rem', fontWeight: '800', color: '#059669', border: '1.5px solid #059669', background: '#ffffff' }}
-                      placeholder="e.g. 245.5"
-                      value={inputPrintedOutputKg}
-                      onChange={e => setInputPrintedOutputKg(e.target.value)}
-                      required
-                    />
-                    <span style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
-                      Total net weight of printed rolls before transfer to Lamination / Slitting.
-                    </span>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
+                      {outputRollsList.map((roll, index) => (
+                        <div 
+                          key={roll.id} 
+                          style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '10px', 
+                            background: '#ffffff', 
+                            padding: '8px 12px', 
+                            borderRadius: '8px', 
+                            border: '1px solid #e2e8f0',
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
+                          }}
+                        >
+                          <span style={{ fontSize: '0.82rem', fontWeight: '900', color: '#334155', minWidth: '70px' }}>
+                            Roll #{index + 1}
+                          </span>
+
+                          <div style={{ flex: 1, position: 'relative' }}>
+                            <input 
+                              type="number"
+                              step="0.1"
+                              min="0.1"
+                              className="form-control"
+                              style={{ fontSize: '1rem', fontWeight: '800', color: '#059669', border: '1.5px solid #10b981', background: '#f0fdf4' }}
+                              placeholder={`Roll #${index + 1} Weight (kg)`}
+                              value={roll.netWeightKg}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setOutputRollsList(prev => prev.map((r, i) => i === index ? { ...r, netWeightKg: val } : r));
+                              }}
+                              required
+                            />
+                          </div>
+
+                          <WeighingScaleCaptureButton 
+                            onCapture={(weight) => {
+                              setOutputRollsList(prev => prev.map((r, i) => i === index ? { ...r, netWeightKg: String(weight) } : r));
+                            }} 
+                          />
+
+                          {outputRollsList.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOutputRollsList(prev => prev.filter((_, i) => i !== index));
+                              }}
+                              style={{
+                                background: '#fef2f2',
+                                border: '1px solid #fecaca',
+                                color: '#ef4444',
+                                borderRadius: '6px',
+                                padding: '6px 8px',
+                                cursor: 'pointer'
+                              }}
+                              title="Remove Roll"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOutputRollsList(prev => [
+                          ...prev,
+                          { id: `roll-${Date.now()}-${prev.length + 1}`, rollNo: prev.length + 1, netWeightKg: '' }
+                        ]);
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '8px',
+                        background: '#ecfdf5',
+                        border: '1.5px dashed #10b981',
+                        borderRadius: '8px',
+                        color: '#047857',
+                        fontWeight: '800',
+                        fontSize: '0.82rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <Plus size={16} /> + Add Next Printed Roll (Roll #{outputRollsList.length + 1})
+                    </button>
                   </div>
 
                   {/* Field 4: Operator Remarks / Notes (Optional) */}
@@ -2334,6 +2554,14 @@ export default function ProductionScheduler({
             </form>
           </div>
         </div>
+      )}
+
+      {/* Automatic Barcode Printing Modal for Generated SFG Rolls */}
+      {selectedRollsForAutoPrint && (
+        <BarcodePrinterModal 
+          rolls={selectedRollsForAutoPrint} 
+          onClose={() => setSelectedRollsForAutoPrint(null)} 
+        />
       )}
 
     </div>
