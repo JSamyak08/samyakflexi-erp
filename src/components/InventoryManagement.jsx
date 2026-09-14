@@ -2952,7 +2952,7 @@ export default function InventoryManagement({
                 style={{ fontSize: '0.8rem', padding: '6px 12px' }}
                 onClick={handleDownloadBulkInventoryTemplate}
               >
-                <Download size={15} /> Download CSV Template
+                <Download size={15} /> Download Sample CSV
               </button>
 
               <label 
@@ -3436,7 +3436,7 @@ export default function InventoryManagement({
 
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button className="btn-secondary" onClick={downloadReconciliationTemplate}>
-                  <Download size={16} /> Download Excel/CSV Template
+                  <Download size={16} /> Download Sample Excel/CSV
                 </button>
 
                 <label className="btn-primary" style={{ cursor: 'pointer' }}>

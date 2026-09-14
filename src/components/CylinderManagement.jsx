@@ -24,7 +24,8 @@ import {
   FileSpreadsheet,
   History,
   Eye,
-  RefreshCw
+  RefreshCw,
+  Download
 } from 'lucide-react';
 import { calculateUtilisation } from '../dataStore';
 import { FILM_DENSITIES } from '../factoryStore';
@@ -735,6 +736,35 @@ export default function CylinderManagement({
   // BULK UPLOAD CSV PARSER & CROSS-CHECK ENGINE
   // ==========================================
 
+  const handleDownloadSampleCSV = () => {
+    const headers = [
+      "sku",
+      "jobName",
+      "clientGroup",
+      "colorsCount",
+      "printWidthMm",
+      "faceLengthMm",
+      "circumferenceMm",
+      "structure",
+      "cylinderCost",
+      "engravuresName",
+      "status"
+    ];
+    const rows = [
+      ["CYL-2026-001", "500g Atta Pouch", "Amul Packaging", "6", "1050", "450", "450", "12µ PET / 12µ METPET / 30µ Natural LDPE", "28500", "Janata Engravers", "Active"],
+      ["CYL-2026-002", "1kg Sugar Bag", "Fortune Foods", "5", "920", "520", "520", "12µ PET / 40µ LLDPE", "24000", "Pioneer Engravures", "Active"],
+      ["CYL-2026-003", "250g Namkeen Foil", "Haldiram Snacks", "7", "850", "380", "380", "12µ PET / 7µ AL FOIL / 25µ CAST PP", "32000", "Calico Engraving", "Active"]
+    ];
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "Rotogravure_Cylinders_Sample_Samyak.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleCsvFileUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -971,19 +1001,30 @@ export default function CylinderManagement({
             </div>
 
             {canEditCylinders && (
-              <label 
-                className="btn-secondary" 
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: '700', cursor: 'pointer', padding: '8px 14px' }}
-                title="Bulk Upload Jobs from CSV file"
-              >
-                <FileSpreadsheet size={16} style={{ color: '#047857' }} /> Bulk Upload Jobs (CSV)
-                <input 
-                  type="file" 
-                  accept=".csv,.txt" 
-                  style={{ display: 'none' }} 
-                  onChange={handleCsvFileUpload} 
-                />
-              </label>
+              <>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: '700', cursor: 'pointer', padding: '8px 14px' }}
+                  onClick={handleDownloadSampleCSV}
+                  title="Download Sample CSV Template for Rotogravure Cylinders"
+                >
+                  <Download size={16} style={{ color: '#047857' }} /> Sample CSV
+                </button>
+                <label 
+                  className="btn-secondary" 
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: '700', cursor: 'pointer', padding: '8px 14px' }}
+                  title="Bulk Upload Jobs from CSV file"
+                >
+                  <FileSpreadsheet size={16} style={{ color: '#047857' }} /> Bulk Upload Jobs (CSV)
+                  <input 
+                    type="file" 
+                    accept=".csv,.txt" 
+                    style={{ display: 'none' }} 
+                    onChange={handleCsvFileUpload} 
+                  />
+                </label>
+              </>
             )}
 
             {canEditCylinders ? (
@@ -1293,9 +1334,19 @@ export default function CylinderManagement({
                   Verify column header mapping and preview parsed job records before batch ingestion.
                 </p>
               </div>
-              <button type="button" className="btn-icon" onClick={() => setIsBulkModalOpen(false)}>
-                <X size={18} />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={handleDownloadSampleCSV}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', padding: '6px 12px' }}
+                >
+                  <Download size={14} style={{ color: '#047857' }} /> Download Sample CSV
+                </button>
+                <button type="button" className="btn-icon" onClick={() => setIsBulkModalOpen(false)}>
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
             {/* STEP 1: HEADER MAPPING CROSS-CHECK */}

@@ -33,7 +33,8 @@ import {
   FileSpreadsheet,
   Link,
   Link2,
-  UploadCloud
+  UploadCloud,
+  Download
 } from 'lucide-react';
 import { calculateUtilisation } from '../dataStore';
 import { FILM_DENSITIES } from '../factoryStore';
@@ -252,6 +253,34 @@ export default function JobMasterDirectory({
     if (!query) return allClientOptions;
     return allClientOptions.filter(c => c.name.toLowerCase().includes(query));
   }, [allClientOptions, clientSearchTerm]);
+
+  const handleDownloadSampleCSV = () => {
+    const headers = [
+      "skuCode",
+      "jobName",
+      "clientName",
+      "colorsCount",
+      "printWidthMm",
+      "faceLengthMm",
+      "repeatLengthMm",
+      "structure",
+      "cylinderCost",
+      "engravuresName"
+    ];
+    const rows = [
+      ["JM-2026-001", "500g Atta Pouch", "Amul Packaging", "6", "1050", "450", "450", "12µ PET / 12µ METPET / 30µ Natural LDPE", "28500", "Janata Engravers"],
+      ["JM-2026-002", "1kg Sugar Bag", "Fortune Foods", "5", "920", "520", "520", "12µ PET / 40µ LLDPE", "24000", "Pioneer Engravures"],
+      ["JM-2026-003", "250g Namkeen Foil", "Haldiram Snacks", "7", "850", "380", "380", "12µ PET / 7µ AL FOIL / 25µ CAST PP", "32000", "Calico Engraving"]
+    ];
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "Job_Masters_Sample_Samyak.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const handleCsvFileSelected = (e) => {
     const file = e.target.files?.[0];
@@ -1731,9 +1760,19 @@ export default function JobMasterDirectory({
                   Verify column header mapping and preview parsed Job Master templates before batch ingestion into Supabase database tables.
                 </p>
               </div>
-              <button type="button" className="btn-icon" onClick={() => setIsBulkModalOpen(false)}>
-                <X size={18} />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={handleDownloadSampleCSV}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', padding: '6px 12px' }}
+                >
+                  <Download size={14} style={{ color: '#047857' }} /> Download Sample CSV
+                </button>
+                <button type="button" className="btn-icon" onClick={() => setIsBulkModalOpen(false)}>
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
             {/* STEP 1: HEADER MAPPING CROSS-CHECK */}
@@ -2298,6 +2337,15 @@ export default function JobMasterDirectory({
               <Search size={18} style={{ color: 'var(--text-muted)' }} />
               <input type="text" placeholder="Search Job Name, SKU, Client..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ border: 'none', outline: 'none', background: 'transparent', width: '100%', fontSize: '0.9rem' }} />
             </div>
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', margin: 0, padding: '8px 14px', border: '1px solid #047857', color: '#047857', background: '#ecfdf5', fontWeight: '700', borderRadius: '6px' }}
+              onClick={handleDownloadSampleCSV}
+              title="Download Sample CSV Template for Job Masters"
+            >
+              <Download size={16} /> Sample CSV
+            </button>
             <label className="btn-secondary" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', margin: 0, padding: '8px 14px', border: '1px solid #047857', color: '#047857', background: '#ecfdf5', fontWeight: '700', borderRadius: '6px' }}>
               <FileSpreadsheet size={18} /> Bulk Upload (CSV)
               <input type="file" accept=".csv" style={{ display: 'none' }} onChange={handleCsvFileSelected} />

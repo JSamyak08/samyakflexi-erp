@@ -1039,7 +1039,7 @@ export default function InkManagement({
                   style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', padding: '8px 14px' }} 
                   title="Download CSV Template with required headers"
                 >
-                  <Download size={15} /> Download CSV Template
+                  <Download size={15} /> Download Sample CSV
                 </button>
 
                 <label 
