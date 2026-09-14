@@ -31,6 +31,80 @@ import { generateDocRefNumber, getNextDocRefNumber, getDocumentTerms } from '../
 import { formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
 import { COMPANY_DETAILS } from '../factoryStore';
 
+export const DEFAULT_MATERIAL_TEMPLATES = [
+  {
+    id: 'tpl-2layer-pet-ld',
+    name: '2 Layer: PET 12µ + Poly 50µ (Standard Pouch)',
+    isBuiltIn: true,
+    specification: '2 layer (12 PET + 50 Deep Freeze LD)',
+    filmType: 'natural Deep Freeze (80%)',
+    thicknessMicron: '50µ',
+    parameters: [
+      { srNo: 1, parameter: "Total Thickness", uom: "Micron", standard: "50 ( ± 5 % )", observation: "" },
+      { srNo: 2, parameter: "Average GSM", uom: "g/m²", standard: "64.5 ( ± 3 % )", observation: "" },
+      { srNo: 3, parameter: "Pouch Dim.", uom: "MM", standard: "700 x 500 ( +2mm -1 mm)", observation: "" },
+      { srNo: 4, parameter: "Printing Matter", uom: "—", standard: "As Per Art Work", observation: "" },
+      { srNo: 5, parameter: "Shade", uom: "—", standard: "As Per Customer sample", observation: "" },
+      { srNo: 6, parameter: "Direction", uom: "—", standard: "Readable", observation: "" },
+      { srNo: 7, parameter: "Diameter", uom: "MM", standard: "310 mm", observation: "" },
+      { srNo: 8, parameter: "Tensile strength", uom: "Kg/sq.cm", standard: "MD - 250 | TD - 230", observation: "" },
+      { srNo: 9, parameter: "Elongation", uom: "%", standard: "MD - 450 | TD - 550", observation: "" },
+      { srNo: 10, parameter: "Surface Tension", uom: "Dynes/cm", standard: "40 - 42", observation: "" },
+      { srNo: 11, parameter: "Sealing Strength", uom: "Kgf/15mm", standard: "> 2.50", observation: "" },
+      { srNo: 12, parameter: "Bond Strength", uom: "Kgf/15mm", standard: "> 0.400", observation: "" },
+      { srNo: 13, parameter: "Kinetic coefficient of Friction ( outer to Metal )", uom: "unit", standard: "0.15 - 0.24", observation: "" },
+      { srNo: 14, parameter: "Winding", uom: "—", standard: "Strength Buildup", observation: "" },
+      { srNo: 15, parameter: "Odor", uom: "—", standard: "Should Pass", observation: "" },
+      { srNo: 16, parameter: "Print Quality", uom: "—", standard: "Tecotap Test at 45° angle", observation: "" },
+      { srNo: 17, parameter: "Joints", uom: "Rolls", standard: "Average less than 1 (Max 2)", observation: "" }
+    ]
+  },
+  {
+    id: 'tpl-3layer-pet-metpet-ld',
+    name: '3 Layer: PET 12µ + METPET 12µ + Poly 50µ (High Barrier)',
+    isBuiltIn: true,
+    specification: '3 layer (12 PET + 12 METPET + 50 Poly)',
+    filmType: 'Metallic Barrier Laminate',
+    thicknessMicron: '74µ',
+    parameters: [
+      { srNo: 1, parameter: "Total Thickness", uom: "Micron", standard: "74 ( ± 5 % )", observation: "" },
+      { srNo: 2, parameter: "Average GSM", uom: "g/m²", standard: "92.0 ( ± 3 % )", observation: "" },
+      { srNo: 3, parameter: "Pouch Dim.", uom: "MM", standard: "As Per Spec", observation: "" },
+      { srNo: 4, parameter: "Printing Matter", uom: "—", standard: "As Per Art Work", observation: "" },
+      { srNo: 5, parameter: "Shade", uom: "—", standard: "As Per Customer sample", observation: "" },
+      { srNo: 6, parameter: "Direction", uom: "—", standard: "Readable", observation: "" },
+      { srNo: 7, parameter: "Barrier OTR (Oxygen Trans. Rate)", uom: "cc/m²/day", standard: "< 1.5", observation: "" },
+      { srNo: 8, parameter: "Barrier WVTR (Water Vapor Trans. Rate)", uom: "g/m²/day", standard: "< 1.0", observation: "" },
+      { srNo: 9, parameter: "Tensile strength", uom: "Kg/sq.cm", standard: "MD - 350 | TD - 320", observation: "" },
+      { srNo: 10, parameter: "Sealing Strength", uom: "Kgf/15mm", standard: "> 3.0", observation: "" },
+      { srNo: 11, parameter: "Bond Strength (PET/METPET)", uom: "Kgf/15mm", standard: "> 0.35", observation: "" },
+      { srNo: 12, parameter: "Bond Strength (METPET/PE)", uom: "Kgf/15mm", standard: "> 0.45", observation: "" },
+      { srNo: 13, parameter: "Print Quality", uom: "—", standard: "Tape Test Pass", observation: "" },
+      { srNo: 14, parameter: "Odor", uom: "—", standard: "Solvent Free / Odorless", observation: "" }
+    ]
+  },
+  {
+    id: 'tpl-3layer-pet-foil-ld',
+    name: '3 Layer: PET 12µ + Alu Foil 7µ + Poly 50µ (Ultra Barrier)',
+    isBuiltIn: true,
+    specification: '3 layer (12 PET + 7 ALU FOIL + 50 Poly)',
+    filmType: 'Foil Barrier Laminate',
+    thicknessMicron: '69µ',
+    parameters: [
+      { srNo: 1, parameter: "Total Thickness", uom: "Micron", standard: "69 ( ± 5 % )", observation: "" },
+      { srNo: 2, parameter: "Average GSM", uom: "g/m²", standard: "115.0 ( ± 3 % )", observation: "" },
+      { srNo: 3, parameter: "Pouch Dim.", uom: "MM", standard: "As Per Spec", observation: "" },
+      { srNo: 4, parameter: "Printing Matter", uom: "—", standard: "As Per Art Work", observation: "" },
+      { srNo: 5, parameter: "Shade", uom: "—", standard: "As Per Customer sample", observation: "" },
+      { srNo: 6, parameter: "Pin Hole Count (Foil)", uom: "No./m²", standard: "0 Pin Holes", observation: "" },
+      { srNo: 7, parameter: "Sealing Strength", uom: "Kgf/15mm", standard: "> 3.5", observation: "" },
+      { srNo: 8, parameter: "Bond Strength (PET/FOIL)", uom: "Kgf/15mm", standard: "> 0.30", observation: "" },
+      { srNo: 9, parameter: "Bond Strength (FOIL/PE)", uom: "Kgf/15mm", standard: "> 0.40", observation: "" },
+      { srNo: 10, parameter: "Odor", uom: "—", standard: "Pass", observation: "" }
+    ]
+  }
+];
+
 export default function DispatchManagement({
   deliveryChallans = [],
   certificateOfAnalyses = [],
@@ -123,25 +197,118 @@ export default function DispatchManagement({
   }, [jobMasters, cylinders]);
 
   // --------------------------------------------------------------------------
-  // COA FORM STATE
+  // COA FORM STATE & MATERIAL STRUCTURE TEMPLATES
   // --------------------------------------------------------------------------
+  const [coaTemplates, setCoaTemplates] = useState(() => {
+    try {
+      const saved = localStorage.getItem('samyak_coa_templates');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const customOnly = parsed.filter(p => !DEFAULT_MATERIAL_TEMPLATES.some(d => d.id === p.id));
+          return [...DEFAULT_MATERIAL_TEMPLATES, ...customOnly];
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load saved CoA templates:", e);
+    }
+    return DEFAULT_MATERIAL_TEMPLATES;
+  });
+
+  const [selectedCoaTemplateId, setSelectedCoaTemplateId] = useState(DEFAULT_MATERIAL_TEMPLATES[0].id);
+
   const [coaNo, setCoaNo] = useState('');
   const [coaTestDate, setCoaTestDate] = useState('');
   const [coaCustomerName, setCoaCustomerName] = useState('');
   const [coaJobName, setCoaJobName] = useState('');
   const [coaInvoiceNo, setCoaInvoiceNo] = useState('');
   const [coaJobCode, setCoaJobCode] = useState('1');
-  const [coaFilmType, setCoaFilmType] = useState('natural Deep Freeze (80%)');
-  const [coaNetWeight, setCoaNetWeight] = useState('365.08 kg');
-  const [coaSpecification, setCoaSpecification] = useState('2 layer (12 PET + 50 Deep Freeze)');
-  const [coaSizeMm, setCoaSizeMm] = useState('700 mm');
-  const [coaThicknessMicron, setCoaThicknessMicron] = useState('50µ');
+  const [coaFilmType, setCoaFilmType] = useState('');
+  const [coaNetWeight, setCoaNetWeight] = useState('');
+  const [coaSpecification, setCoaSpecification] = useState('');
+  const [coaSizeMm, setCoaSizeMm] = useState('');
+  const [coaThicknessMicron, setCoaThicknessMicron] = useState('');
   const [coaBatchLotNo, setCoaBatchLotNo] = useState('');
   const [coaOverallStatus, setCoaOverallStatus] = useState('PASSED & APPROVED');
   const [coaQcInspector, setCoaQcInspector] = useState('');
   const [coaApprovedByHead, setCoaApprovedByHead] = useState('');
   const [coaRemarks, setCoaRemarks] = useState('');
   const [coaParameters, setCoaParameters] = useState([]);
+
+  // Handler to apply selected Material Structure Template
+  const handleSelectCoaTemplate = (templateId) => {
+    setSelectedCoaTemplateId(templateId);
+    const matched = coaTemplates.find(t => t.id === templateId);
+    if (matched) {
+      setCoaSpecification(matched.specification || '');
+      setCoaFilmType(matched.filmType || '');
+      setCoaThicknessMicron(matched.thicknessMicron || '');
+      
+      const cleanParams = (matched.parameters || []).map((p, idx) => ({
+        srNo: idx + 1,
+        parameter: p.parameter || '',
+        uom: p.uom || '—',
+        standard: p.standard || '',
+        observation: ''
+      }));
+      setCoaParameters(cleanParams);
+    }
+  };
+
+  // Handler to save current CoA material structure and test parameters as a new template
+  const handleSaveCurrentAsTemplate = () => {
+    const tplName = prompt("Enter a name for this Material Structure Template:", coaSpecification || "Custom Structure Template");
+    if (!tplName || !tplName.trim()) return;
+
+    const newTpl = {
+      id: `custom-tpl-${Date.now()}`,
+      name: tplName.trim(),
+      isBuiltIn: false,
+      specification: coaSpecification,
+      filmType: coaFilmType,
+      thicknessMicron: coaThicknessMicron,
+      parameters: coaParameters.map(p => ({
+        parameter: p.parameter,
+        uom: p.uom,
+        standard: p.standard,
+        observation: ''
+      }))
+    };
+
+    const updated = [...coaTemplates, newTpl];
+    setCoaTemplates(updated);
+    setSelectedCoaTemplateId(newTpl.id);
+    try {
+      localStorage.setItem('samyak_coa_templates', JSON.stringify(updated.filter(t => !t.isBuiltIn)));
+    } catch (e) {
+      console.error("Failed to save template to localStorage:", e);
+    }
+    alert(`Material Structure Template "${newTpl.name}" saved successfully!`);
+  };
+
+  // Handler to delete a custom template
+  const handleDeleteCoaTemplate = (templateId) => {
+    const target = coaTemplates.find(t => t.id === templateId);
+    if (!target) return;
+    if (target.isBuiltIn) {
+      alert("Built-in system templates cannot be deleted.");
+      return;
+    }
+    if (confirm(`Are you sure you want to delete template "${target.name}"?`)) {
+      const updated = coaTemplates.filter(t => t.id !== templateId);
+      setCoaTemplates(updated);
+      const nextId = updated[0]?.id || '';
+      setSelectedCoaTemplateId(nextId);
+      if (nextId) {
+        handleSelectCoaTemplate(nextId);
+      }
+      try {
+        localStorage.setItem('samyak_coa_templates', JSON.stringify(updated.filter(t => !t.isBuiltIn)));
+      } catch (e) {
+        console.error("Failed to delete template from localStorage:", e);
+      }
+    }
+  };
 
   // --------------------------------------------------------------------------
   // OPEN DC MODAL HANDLERS
@@ -324,25 +491,39 @@ export default function DispatchManagement({
     setCoaNo(nextCoa);
     setCoaTestDate(new Date().toLocaleDateString('en-GB'));
     
-    const firstClient = (clients && clients[0]) || {};
-    setCoaCustomerName(firstClient.companyName || 'Foodella Foods');
-
-    const firstJob = (jobMasters && jobMasters[0]) || {};
-    setCoaJobName(firstJob.jobName || 'Foodella Reverse 7mm');
-    setCoaJobCode(firstJob.id ? String(firstJob.id).replace('JM-', '') : '1');
-    setCoaInvoiceNo(`SAM/25-26/${Math.floor(10000 + Math.random() * 90000)}`);
-    setCoaFilmType(firstJob.structure ? `natural ${firstJob.structure}` : 'natural Deep Freeze (80%)');
-    setCoaNetWeight('365.08 kg');
-    setCoaSpecification(firstJob.structure ? `Multi-layer (${firstJob.structure})` : '2 layer (12 PET + 50 Deep Freeze)');
-    setCoaSizeMm(firstJob.printWidthMm ? `${firstJob.printWidthMm} mm` : '700 mm');
-    setCoaThicknessMicron(firstJob.micron ? `${firstJob.micron}µ` : '50µ');
-    setCoaBatchLotNo(`BATCH-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`);
+    // All user fields are left empty for fresh entry by user
+    setCoaCustomerName('');
+    setCoaJobName('');
+    setCoaJobCode('');
+    setCoaInvoiceNo('');
+    setCoaBatchLotNo('');
+    setCoaNetWeight('');
+    setCoaSizeMm('');
     setCoaOverallStatus('PASSED & APPROVED');
-    setCoaQcInspector(currentUser ? `${currentUser.name} (QC Engineer)` : 'Ramesh Kumar (Quality Chemist)');
-    setCoaApprovedByHead('Samyak Jain (QA Head)');
+    setCoaQcInspector(currentUser ? `${currentUser.name} (QC Inspector)` : '');
+    setCoaApprovedByHead('');
     setCoaRemarks('Material tested strictly in Quality Control Laboratory and meets all agreed technical specifications. Approved for dispatch.');
 
-    setCoaParameters([...DEFAULT_COA_PARAMETERS]);
+    // Load active or default material structure template parameters & specs
+    const activeTemplate = coaTemplates.find(t => t.id === selectedCoaTemplateId) || coaTemplates[0];
+    if (activeTemplate) {
+      setSelectedCoaTemplateId(activeTemplate.id);
+      setCoaFilmType(activeTemplate.filmType || '');
+      setCoaSpecification(activeTemplate.specification || '');
+      setCoaThicknessMicron(activeTemplate.thicknessMicron || '');
+      setCoaParameters((activeTemplate.parameters || []).map((p, idx) => ({
+        srNo: idx + 1,
+        parameter: p.parameter,
+        uom: p.uom,
+        standard: p.standard,
+        observation: ''
+      })));
+    } else {
+      setCoaFilmType('');
+      setCoaSpecification('');
+      setCoaThicknessMicron('');
+      setCoaParameters(DEFAULT_COA_PARAMETERS.map(p => ({ ...p, observation: '' })));
+    }
 
     setIsCoaModalOpen(true);
   };
@@ -1275,6 +1456,67 @@ export default function DispatchManagement({
                     onChange={e => setCoaBatchLotNo(e.target.value)} 
                     required 
                   />
+                </div>
+              </div>
+
+              {/* Material Structure Template Selector & Action Toolbar */}
+              <div style={{ 
+                background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)', 
+                padding: '12px 16px', 
+                borderRadius: '10px', 
+                border: '1px solid #bbf7d0', 
+                marginBottom: '16px',
+                display: 'flex',
+                flexWrap: 'wrap',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: '12px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1', minWidth: '280px' }}>
+                  <Layers size={18} style={{ color: '#166534' }} />
+                  <span style={{ fontSize: '0.82rem', fontWeight: '700', color: '#166534', whiteSpace: 'nowrap' }}>
+                    Material Structure Template:
+                  </span>
+                  <select 
+                    className="form-control" 
+                    style={{ fontSize: '0.82rem', fontWeight: '700', color: '#047857', background: '#ffffff', borderColor: '#86efac' }}
+                    value={selectedCoaTemplateId}
+                    onChange={e => handleSelectCoaTemplate(e.target.value)}
+                  >
+                    {coaTemplates.map(t => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} {t.isBuiltIn ? '(Default System)' : '(Saved Custom)'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <button 
+                    type="button" 
+                    className="btn-secondary" 
+                    style={{ fontSize: '0.76rem', padding: '5px 10px', background: '#ffffff', color: '#047857', border: '1px solid #86efac', fontWeight: '700' }}
+                    onClick={handleSaveCurrentAsTemplate}
+                    title="Save current structure specs & parameters as a new template"
+                  >
+                    <Plus size={14} /> Save Current as Template
+                  </button>
+                  {(() => {
+                    const currentTpl = coaTemplates.find(t => t.id === selectedCoaTemplateId);
+                    if (currentTpl && !currentTpl.isBuiltIn) {
+                      return (
+                        <button 
+                          type="button" 
+                          style={{ background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', padding: '5px 8px', borderRadius: '6px', cursor: 'pointer' }}
+                          onClick={() => handleDeleteCoaTemplate(selectedCoaTemplateId)}
+                          title="Delete this custom template"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      );
+                    }
+                    return null;
+                  })()}
                 </div>
               </div>
 
