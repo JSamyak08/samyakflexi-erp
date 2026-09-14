@@ -2051,7 +2051,7 @@ export default function ProductionScheduler({
             )}
 
             {/* Split Screen Layout: Left Specifications & Cylinder Sequence | Right High-Res Artwork Preview */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: '24px', alignItems: 'start' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))', gap: '24px', alignItems: 'start' }}>
               
               {/* Left Column: Job Order Technical Specifications */}
               <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
@@ -2059,7 +2059,7 @@ export default function ProductionScheduler({
                   <Layers size={18} style={{ color: '#0284c7' }} /> Technical Printing Specifications
                 </h3>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
                   <div style={{ background: '#ffffff', padding: '12px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                     <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Printing Width</span>
                     <div style={{ fontSize: '1.3rem', fontWeight: '900', color: '#0284c7', marginTop: '2px' }}>
@@ -2136,7 +2136,7 @@ export default function ProductionScheduler({
 
                 {/* Input Film Substrate Rolls (Consumed) - Live Active Run with Autosave */}
                 <div style={{ marginTop: '16px', background: '#ffffff', padding: '16px', borderRadius: '10px', border: '1.5px solid #0284c7', boxShadow: '0 2px 8px rgba(2, 132, 199, 0.08)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
                     <div>
                       <h4 style={{ fontSize: '0.95rem', fontWeight: '900', color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <Barcode size={18} style={{ color: '#0284c7' }} /> Input Film Substrate Rolls (Consumed)
@@ -2163,7 +2163,7 @@ export default function ProductionScheduler({
                   </div>
 
                   {/* List of Input Rolls */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '12px' }}>
                     {inputRollsList.map((roll, index) => {
                       const initW = parseFloat(roll.initialWeightKg) || 0;
                       const consW = parseFloat(roll.consumedWeightKg) || 0;
@@ -2173,14 +2173,21 @@ export default function ProductionScheduler({
                         <div 
                           key={roll.id || index} 
                           style={{ 
-                            background: '#f8fafc', 
-                            padding: '12px', 
-                            borderRadius: '8px', 
-                            border: '1px solid #cbd5e1'
+                            background: '#ffffff', 
+                            padding: '14px', 
+                            borderRadius: '10px', 
+                            border: '1px solid #cbd5e1',
+                            boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '10px'
                           }}
                         >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                            <span style={{ fontSize: '0.8rem', fontWeight: '900', color: '#0f172a' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '0.82rem', fontWeight: '900', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ background: '#0284c7', color: '#ffffff', width: '20px', height: '20px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.72rem' }}>
+                                {index + 1}
+                              </span>
                               Input Roll #{index + 1}
                             </span>
 
@@ -2188,23 +2195,23 @@ export default function ProductionScheduler({
                               <button
                                 type="button"
                                 onClick={() => handleDeleteInputRollActiveRun(index)}
-                                style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#ef4444', borderRadius: '6px', padding: '3px 6px', cursor: 'pointer' }}
+                                style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#ef4444', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px' }}
                                 title="Remove Input Roll"
                               >
-                                <Trash2 size={12} />
+                                <Trash2 size={13} /> Remove
                               </button>
                             )}
                           </div>
 
-                          <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 0.8fr 0.8fr 1fr 1fr', gap: '8px', alignItems: 'center' }}>
-                            <div>
-                              <label style={{ fontSize: '0.68rem', fontWeight: '800', color: '#0284c7', display: 'flex', alignItems: 'center', gap: '3px', marginBottom: '2px' }}>
-                                <Barcode size={11} /> Barcode ID *
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', alignItems: 'end' }}>
+                            <div style={{ minWidth: '180px' }}>
+                              <label style={{ fontSize: '0.7rem', fontWeight: '800', color: '#0284c7', display: 'flex', alignItems: 'center', gap: '3px', marginBottom: '3px' }}>
+                                <Barcode size={12} /> Barcode ID (Scan Entry) *
                               </label>
                               <input 
                                 type="text" 
                                 className="form-control" 
-                                style={{ fontSize: '0.78rem', fontWeight: '800', color: '#0284c7', border: '1.5px solid #0284c7', background: '#ffffff' }} 
+                                style={{ fontSize: '0.82rem', fontWeight: '800', color: '#0284c7', border: '1.5px solid #0284c7', background: '#f0f9ff', width: '100%' }} 
                                 value={roll.barcodeId || ''} 
                                 disabled={activeRunningJob.isPrintingCompleted}
                                 onChange={e => handleInputRollBarcodeChangeActiveRun(e.target.value, index)}
@@ -2213,11 +2220,11 @@ export default function ProductionScheduler({
                             </div>
 
                             <div>
-                              <label style={{ fontSize: '0.68rem', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '2px' }}>Substrate</label>
+                              <label style={{ fontSize: '0.7rem', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '3px' }}>Substrate</label>
                               <input 
                                 type="text" 
                                 className="form-control" 
-                                style={{ fontSize: '0.78rem', fontWeight: '700', background: '#ffffff' }} 
+                                style={{ fontSize: '0.82rem', fontWeight: '700', background: '#ffffff', width: '100%' }} 
                                 value={roll.filmType || ''} 
                                 disabled={activeRunningJob.isPrintingCompleted}
                                 onChange={e => handleInputRollFieldChangeActiveRun(index, 'filmType', e.target.value)}
@@ -2226,11 +2233,11 @@ export default function ProductionScheduler({
                             </div>
 
                             <div>
-                              <label style={{ fontSize: '0.68rem', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '2px' }}>Micron (µ)</label>
+                              <label style={{ fontSize: '0.7rem', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '3px' }}>Micron (µ)</label>
                               <input 
                                 type="number" 
                                 className="form-control" 
-                                style={{ fontSize: '0.78rem', fontWeight: '700', background: '#ffffff' }} 
+                                style={{ fontSize: '0.82rem', fontWeight: '700', background: '#ffffff', width: '100%' }} 
                                 value={roll.micron || ''} 
                                 disabled={activeRunningJob.isPrintingCompleted}
                                 onChange={e => handleInputRollFieldChangeActiveRun(index, 'micron', e.target.value)}
@@ -2239,11 +2246,11 @@ export default function ProductionScheduler({
                             </div>
 
                             <div>
-                              <label style={{ fontSize: '0.68rem', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '2px' }}>Width (mm)</label>
+                              <label style={{ fontSize: '0.7rem', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '3px' }}>Width (mm)</label>
                               <input 
                                 type="number" 
                                 className="form-control" 
-                                style={{ fontSize: '0.78rem', fontWeight: '800', color: parseFloat(roll.widthMm) > (activeRunningJob.widthMm || 460) ? '#b45309' : '#0f172a', background: '#ffffff' }} 
+                                style={{ fontSize: '0.82rem', fontWeight: '800', color: parseFloat(roll.widthMm) > (activeRunningJob.widthMm || 460) ? '#b45309' : '#0f172a', background: '#ffffff', width: '100%' }} 
                                 value={roll.widthMm || ''} 
                                 disabled={activeRunningJob.isPrintingCompleted}
                                 onChange={e => handleInputRollFieldChangeActiveRun(index, 'widthMm', e.target.value)}
@@ -2252,12 +2259,12 @@ export default function ProductionScheduler({
                             </div>
 
                             <div>
-                              <label style={{ fontSize: '0.68rem', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '2px' }}>Initial Wt (kg)</label>
+                              <label style={{ fontSize: '0.7rem', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '3px' }}>Initial Wt (kg)</label>
                               <input 
                                 type="number" 
                                 step="0.1"
                                 className="form-control" 
-                                style={{ fontSize: '0.8rem', fontWeight: '700', background: '#ffffff' }} 
+                                style={{ fontSize: '0.82rem', fontWeight: '700', background: '#ffffff', width: '100%' }} 
                                 value={roll.initialWeightKg || ''} 
                                 disabled={activeRunningJob.isPrintingCompleted}
                                 onChange={e => handleInputRollFieldChangeActiveRun(index, 'initialWeightKg', e.target.value)}
@@ -2266,12 +2273,12 @@ export default function ProductionScheduler({
                             </div>
 
                             <div>
-                              <label style={{ fontSize: '0.68rem', fontWeight: '800', color: '#059669', display: 'block', marginBottom: '2px' }}>Consumed (kg) *</label>
+                              <label style={{ fontSize: '0.7rem', fontWeight: '800', color: '#059669', display: 'block', marginBottom: '3px' }}>Consumed (kg) *</label>
                               <input 
                                 type="number" 
                                 step="0.1"
                                 className="form-control" 
-                                style={{ fontSize: '0.85rem', fontWeight: '900', color: '#059669', border: '1.5px solid #10b981', background: '#ffffff' }} 
+                                style={{ fontSize: '0.88rem', fontWeight: '900', color: '#059669', border: '1.5px solid #10b981', background: '#ecfdf5', width: '100%' }} 
                                 value={roll.consumedWeightKg || ''} 
                                 disabled={activeRunningJob.isPrintingCompleted}
                                 onChange={e => handleInputRollFieldChangeActiveRun(index, 'consumedWeightKg', e.target.value)}
@@ -2281,11 +2288,11 @@ export default function ProductionScheduler({
                           </div>
 
                           {balW > 0 && (
-                            <div style={{ marginTop: '8px', background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '5px 8px', borderRadius: '6px', fontSize: '0.72rem', color: '#047857', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '6px 10px', borderRadius: '6px', fontSize: '0.75rem', color: '#047857', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
                               <span>
                                 ⚖️ <strong>Unused Balance: {balW.toFixed(1)} kg</strong> (Barcode Tag <code>RM-BAL-{(roll.barcodeId || 'ROLL').slice(-8)}</code>)
                               </span>
-                              <span className="badge badge-success" style={{ fontSize: '0.62rem', background: '#dcfce7', color: '#15803d', padding: '2px 6px' }}>
+                              <span className="badge badge-success" style={{ fontSize: '0.65rem', background: '#dcfce7', color: '#15803d', padding: '2px 8px' }}>
                                 Auto Balance Barcode
                               </span>
                             </div>
