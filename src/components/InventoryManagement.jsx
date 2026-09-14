@@ -1437,7 +1437,8 @@ export default function InventoryManagement({
       batchNo: grnBatchNo,
       freightAmount: parseFloat(grnFreightAmount) || 0,
       transporterName: grnTransporterName.trim() || 'Direct Dispatch / Self',
-      status: isCylinderCategory ? "Approved" : "Pending QC", // Auto approve cylinder GRNs
+      status: isCylinderCategory ? "Approved" : "Pending QC Approval", // Auto approve cylinder GRNs, non-cylinders require QC Lab Approval
+      qcStatus: isCylinderCategory ? "Approved" : "Pending QC Approval",
       qcNotes: isCylinderCategory ? "Engraved cylinder set received and verified." : "",
       inspectedBy: isCylinderCategory ? "Cylinder QC Inspector" : "",
       storeManager: "Store Mgr Dilip Joshi"
@@ -1525,7 +1526,8 @@ export default function InventoryManagement({
         unitPrice: rateVal,
         stationId: 'SCALE_1_INWARD',
         locationBay: isFilm ? 'Bay A' : 'Consumables Store',
-        status: 'In Stock'
+        status: isCylinderCategory ? 'In Stock' : 'Pending QC',
+        qcStatus: isCylinderCategory ? 'Approved' : 'Pending QC'
       };
       newRolls.push(rollObj);
 
@@ -1536,16 +1538,18 @@ export default function InventoryManagement({
 
     setIsNewGRNModalOpen(false);
     setSelectedRollForBarcodeModal(newRolls);
-    alert(`✅ Inward GRN ${newGRN.grnNo} created for ${grnCategory}! ${unitCount} individual barcode sticker(s) generated with exact distinct weights.`);
+    alert(`✅ Inward GRN ${newGRN.grnNo} recorded! ${isCylinderCategory ? 'Stock approved.' : 'Sent to QC Approval Lab for laboratory clearance.'} ${unitCount} barcode sticker(s) generated.`);
   };
 
   // QC Approval / Rejection (Updates Stock for Films, Inks, Solvents, Adhesives, Spares, PPE)
   const handleQCAction = (status) => {
     if (!qcInspectingGRN) return;
 
+    const finalStatus = status === 'Approved' ? 'Approved' : 'Rejected';
     const updatedGRN = {
       ...qcInspectingGRN,
-      status,
+      status: finalStatus,
+      qcStatus: finalStatus,
       qcNotes: qcNotesInput || (status === 'Approved' ? 'Inspected and passed all laboratory parameters.' : 'Rejected due to spec variation.'),
       inspectedBy: 'QC Chemist Ramesh Kumar'
     };
@@ -1876,36 +1880,36 @@ export default function InventoryManagement({
     let isQCRejected = false;
 
     if (matchedGrn) {
-      qcStatus = matchedGrn.status || matchedGrn.qcStatus || 'Approved';
+      qcStatus = matchedGrn.status || matchedGrn.qcStatus || 'Pending QC Approval';
     } else if (matchedRoll) {
-      if (matchedRoll.status === 'Pending QC' || matchedRoll.qcStatus === 'Pending QC') {
-        qcStatus = 'Pending QC';
-      } else if (matchedRoll.status === 'Rejected' || matchedRoll.qcStatus === 'Rejected') {
+      if (String(matchedRoll.status || matchedRoll.qcStatus || '').toLowerCase().includes('pending')) {
+        qcStatus = 'Pending QC Approval';
+      } else if (String(matchedRoll.status || matchedRoll.qcStatus || '').toLowerCase().includes('reject')) {
         qcStatus = 'Rejected';
       } else {
         const linkedGrn = (safeGrns || []).find(g => (matchedRoll.grnNo && g.grnNo === matchedRoll.grnNo) || (matchedRoll.batchNo && g.batchNo === matchedRoll.batchNo));
-        if (linkedGrn && (linkedGrn.status === 'Pending QC' || linkedGrn.status === 'Pending')) {
-          qcStatus = 'Pending QC';
-        } else if (linkedGrn && linkedGrn.status === 'Rejected') {
+        if (linkedGrn && String(linkedGrn.status || linkedGrn.qcStatus || '').toLowerCase().includes('pending')) {
+          qcStatus = 'Pending QC Approval';
+        } else if (linkedGrn && String(linkedGrn.status || linkedGrn.qcStatus || '').toLowerCase().includes('reject')) {
           qcStatus = 'Rejected';
         }
       }
     } else if (targetItem) {
-      if (targetItem.status === 'Pending QC' || targetItem.qcStatus === 'Pending QC') {
-        qcStatus = 'Pending QC';
-      } else if (targetItem.status === 'Rejected' || targetItem.qcStatus === 'Rejected') {
+      if (String(targetItem.status || targetItem.qcStatus || '').toLowerCase().includes('pending')) {
+        qcStatus = 'Pending QC Approval';
+      } else if (String(targetItem.status || targetItem.qcStatus || '').toLowerCase().includes('reject')) {
         qcStatus = 'Rejected';
       } else {
-        const linkedGrn = (safeGrns || []).find(g => (batchNo && g.batchNo === batchNo) || (g.itemId && g.itemId === targetItem.id && (g.status === 'Pending QC' || g.status === 'Pending')));
-        if (linkedGrn && (linkedGrn.status === 'Pending QC' || linkedGrn.status === 'Pending')) {
-          qcStatus = 'Pending QC';
+        const linkedGrn = (safeGrns || []).find(g => (batchNo && g.batchNo === batchNo) || (g.itemId && g.itemId === targetItem.id && String(g.status || g.qcStatus || '').toLowerCase().includes('pending')));
+        if (linkedGrn && String(linkedGrn.status || linkedGrn.qcStatus || '').toLowerCase().includes('pending')) {
+          qcStatus = 'Pending QC Approval';
         }
       }
     }
 
-    if (qcStatus === 'Pending QC' || qcStatus === 'Pending') {
+    if (String(qcStatus).toLowerCase().includes('pending')) {
       isQCPending = true;
-    } else if (qcStatus === 'Rejected') {
+    } else if (String(qcStatus).toLowerCase().includes('reject')) {
       isQCRejected = true;
     }
 
@@ -2191,7 +2195,10 @@ export default function InventoryManagement({
     reader.readAsText(file);
   };
 
-  const pendingQCGRNs = (safeGrns || []).filter(g => g.status === 'Pending QC');
+  const pendingQCGRNs = (safeGrns || []).filter(g => {
+    const st = String(g.status || g.qcStatus || '').trim().toLowerCase();
+    return st.includes('pending') || st === 'awaiting qc clearance' || st === 'awaiting qc';
+  });
 
   const filteredInventory = (safeInventory || []).filter(i => {
     // 1. Category Filter
@@ -3197,9 +3204,15 @@ export default function InventoryManagement({
                     <td style={{ fontWeight: '700', color: '#60a5fa' }}>{g.netWeightKg} kg ({g.rollsReceived} rolls)</td>
                     <td><code>{g.batchNo}</code></td>
                     <td>
-                      {g.status === 'Approved' && <span className="badge badge-us">APPROVED BY QC</span>}
-                      {g.status === 'Pending QC' && <span className="badge badge-warning">PENDING QC</span>}
-                      {g.status === 'Rejected' && <span className="badge badge-warning" style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444' }}>REJECTED</span>}
+                      {((g.status || '').toLowerCase().includes('approved') || (g.qcStatus || '').toLowerCase().includes('approved')) && (
+                        <span className="badge badge-us" style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontWeight: '700' }}>APPROVED BY QC</span>
+                      )}
+                      {(((g.status || '').toLowerCase().includes('pending') || (!g.status && !g.qcStatus)) && !(g.status || '').toLowerCase().includes('approved')) && (
+                        <span className="badge badge-warning" style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', fontWeight: '700' }}>⏳ PENDING QC APPROVAL</span>
+                      )}
+                      {((g.status || '').toLowerCase().includes('reject') || (g.qcStatus || '').toLowerCase().includes('reject')) && (
+                        <span className="badge badge-warning" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', fontWeight: '700' }}>REJECTED BY QC</span>
+                      )}
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: '6px' }}>

@@ -1699,9 +1699,13 @@ export default function InkManagement({
                         <td>₹ {g.purchaseRatePerKg || g.unitPrice || 0} / kg</td>
                         <td style={{ fontWeight: '800' }}>₹ {((Number(g.netWeightKg || g.quantityKg || 0)) * (Number(g.purchaseRatePerKg || g.unitPrice || 0))).toLocaleString()}</td>
                         <td>
-                          <span className="badge badge-success" style={{ fontSize: '0.7rem' }}>
-                            {g.qcStatus || 'Approved'}
-                          </span>
+                          {((g.status || g.qcStatus || '').toLowerCase().includes('approved')) ? (
+                            <span className="badge badge-success" style={{ fontSize: '0.7rem' }}>Approved by QC</span>
+                          ) : ((g.status || g.qcStatus || '').toLowerCase().includes('reject')) ? (
+                            <span className="badge badge-danger" style={{ fontSize: '0.7rem' }}>Rejected</span>
+                          ) : (
+                            <span className="badge badge-warning" style={{ fontSize: '0.7rem', background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a' }}>⏳ Pending QC Approval</span>
+                          )}
                         </td>
                       </tr>
                     ))

@@ -190,8 +190,8 @@ export default function GRNPDF({ grnData, onClose }) {
                   <td className="label-col">Manufacturer Batch #</td>
                   <td className="value-col">{batchNo}</td>
                   <td className="label-col">QC Status</td>
-                  <td className="value-col" style={{ color: status === 'Approved' ? '#059669' : '#dc2626', fontWeight: 'bold' }}>
-                    {status.toUpperCase()}
+                  <td className="value-col" style={{ color: (status || '').toLowerCase().includes('approved') ? '#059669' : ((status || '').toLowerCase().includes('pending') ? '#d97706' : '#dc2626'), fontWeight: 'bold' }}>
+                    {((status || '').toLowerCase().includes('pending') ? 'PENDING QC APPROVAL' : (status || '').toLowerCase().includes('approved') ? 'APPROVED BY QC' : status).toUpperCase()}
                   </td>
                 </tr>
                 <tr>
