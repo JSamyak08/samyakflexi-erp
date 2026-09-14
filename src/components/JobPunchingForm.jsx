@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import OrderConfirmationPDF from './OrderConfirmationPDF';
 import { notifyOrderPunched } from '../services/emailService';
-import { getProcessingRates } from '../services/settingsService';
+import { getProcessingRates, saveProcessingRates } from '../services/settingsService';
 
 export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, initialJobMasterData, clients = [], jobMasters = [] }) {
   // Form State
@@ -36,6 +36,29 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
   // Editable Processing Prices State (loaded from System Settings baseline, editable inline)
   const [inkPrice, setInkPrice] = useState(() => getProcessingRates().liquidInkPrice || DEFAULT_PROCESSING_RATES.liquidInkPrice);
   const [adhesivePrice, setAdhesivePrice] = useState(() => getProcessingRates().adhesivePrice || DEFAULT_PROCESSING_RATES.adhesivePrice);
+
+  // Persist Liquid Ink & Adhesive rate changes for all future job punching
+  const handleInkPriceChange = (val) => {
+    setInkPrice(val);
+    const num = parseFloat(val);
+    if (!isNaN(num) && num > 0) {
+      saveProcessingRates({
+        liquidInkPrice: num,
+        adhesivePrice: parseFloat(adhesivePrice) || DEFAULT_PROCESSING_RATES.adhesivePrice
+      });
+    }
+  };
+
+  const handleAdhesivePriceChange = (val) => {
+    setAdhesivePrice(val);
+    const num = parseFloat(val);
+    if (!isNaN(num) && num > 0) {
+      saveProcessingRates({
+        liquidInkPrice: parseFloat(inkPrice) || DEFAULT_PROCESSING_RATES.liquidInkPrice,
+        adhesivePrice: num
+      });
+    }
+  };
   const [colorsCount, setColorsCount] = useState(() => initialJobMasterData?.colorsCount || '');
   const [targetDeliveryDays, setTargetDeliveryDays] = useState(10);
   const [isWarningIgnored, setIsWarningIgnored] = useState(false);
@@ -564,28 +587,6 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
             </div>
 
             <div className="form-group">
-              <label>Estimated Ink GSM (g/m²)</label>
-              <input 
-                type="number" 
-                step="0.1"
-                className="form-control"
-                value={inkGsm}
-                onChange={e => setInkGsm(e.target.value)}
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Estimated Adhesive GSM (g/m²)</label>
-              <input 
-                type="number" 
-                step="0.1"
-                className="form-control"
-                value={adhesiveGsm}
-                onChange={e => setAdhesiveGsm(e.target.value)}
-              />
-            </div>
-
-            <div className="form-group">
               <label>Target Delivery (Days from today)</label>
               <input 
                 type="number" 
@@ -593,6 +594,72 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
                 value={targetDeliveryDays}
                 onChange={e => setTargetDeliveryDays(e.target.value)}
               />
+            </div>
+          </div>
+
+          {/* PROCESSING CHEMICAL RATES & CONSUMPTION (AUTO-SAVED FOR FUTURE JOBS) */}
+          <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #cbd5e1', marginTop: '16px', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: '800', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                🧪 Processing Rates & Consumption (Auto-Saved for Future Jobs)
+              </span>
+              <span style={{ fontSize: '0.72rem', background: '#ecfdf5', color: '#047857', padding: '2px 8px', borderRadius: '4px', border: '1px solid #a7f3d0', fontWeight: '700' }}>
+                💾 Saved for future jobs
+              </span>
+            </div>
+
+            <div className="form-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)', gap: '14px' }}>
+              {/* Liquid Ink Block */}
+              <div style={{ background: '#ffffff', padding: '12px', borderRadius: '8px', border: '1px solid #ddd6fe' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: '800', color: '#6d28d9', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                  Liquid Ink Rate (₹/kg) *
+                </label>
+                <input 
+                  type="number" 
+                  className="form-control" 
+                  style={{ fontWeight: '700', color: '#6d28d9', borderColor: '#c4b5fd' }}
+                  value={inkPrice}
+                  onChange={e => handleInkPriceChange(e.target.value)}
+                  placeholder="1500"
+                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                  <label style={{ fontSize: '0.75rem', color: '#64748b', whiteSpace: 'nowrap' }}>Ink GSM (g/m²):</label>
+                  <input 
+                    type="number" 
+                    step="0.1"
+                    className="form-control" 
+                    style={{ padding: '4px 8px', fontSize: '0.82rem' }}
+                    value={inkGsm}
+                    onChange={e => setInkGsm(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Solvent-less Adhesive Block */}
+              <div style={{ background: '#ffffff', padding: '12px', borderRadius: '8px', border: '1px solid #a7f3d0' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: '800', color: '#047857', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                  Solvent-less Adhesive Rate (₹/kg) *
+                </label>
+                <input 
+                  type="number" 
+                  className="form-control" 
+                  style={{ fontWeight: '700', color: '#047857', borderColor: '#6ee7b7' }}
+                  value={adhesivePrice}
+                  onChange={e => handleAdhesivePriceChange(e.target.value)}
+                  placeholder="270"
+                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                  <label style={{ fontSize: '0.75rem', color: '#64748b', whiteSpace: 'nowrap' }}>Adhesive GSM (g/m²):</label>
+                  <input 
+                    type="number" 
+                    step="0.1"
+                    className="form-control" 
+                    style={{ padding: '4px 8px', fontSize: '0.82rem' }}
+                    value={adhesiveGsm}
+                    onChange={e => setAdhesiveGsm(e.target.value)}
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
@@ -740,8 +807,16 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
               <div className="mat-req-card">
                 <div>
                   <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>Liquid Ink (+20% solvent wt gain)</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                    Rate: ₹{calculationResults.inkDetails.pricePerKg}/kg | {calculationResults.inkDetails.gsm} GSM
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
+                    Rate: ₹
+                    <input
+                      type="number"
+                      style={{ width: '70px', padding: '2px 6px', fontSize: '0.78rem', fontWeight: '700', border: '1px solid #c4b5fd', borderRadius: '4px', color: '#6d28d9', background: '#faf5ff' }}
+                      value={inkPrice}
+                      onChange={e => handleInkPriceChange(e.target.value)}
+                      title="Edit rate & auto-save for future job punching"
+                    />
+                    /kg | {calculationResults.inkDetails.gsm} GSM
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
@@ -758,8 +833,16 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
               <div className="mat-req-card">
                 <div>
                   <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>Solvent-less Adhesive (100% wt gain)</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                    Rate: ₹{calculationResults.adhesiveDetails.pricePerKg}/kg | {calculationResults.adhesiveDetails.gsm} GSM
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
+                    Rate: ₹
+                    <input
+                      type="number"
+                      style={{ width: '70px', padding: '2px 6px', fontSize: '0.78rem', fontWeight: '700', border: '1px solid #6ee7b7', borderRadius: '4px', color: '#047857', background: '#ecfdf5' }}
+                      value={adhesivePrice}
+                      onChange={e => handleAdhesivePriceChange(e.target.value)}
+                      title="Edit rate & auto-save for future job punching"
+                    />
+                    /kg | {calculationResults.adhesiveDetails.gsm} GSM
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
