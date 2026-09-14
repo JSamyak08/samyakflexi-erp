@@ -1684,35 +1684,61 @@ export default function App() {
     };
     await handleUpdateOrder(updatedOrder);
 
-    // Update corresponding Production Record
-    const existingRec = productionRecords.find(r => r.orderId === order.id || r.id === order.id || r.jobCode === order.jobCode);
-    if (existingRec) {
-      const updatedRecord = {
-        ...existingRec,
-        status: 'In Production',
-        printingStatus: 'Completed',
-        printingEndTime: endIso,
-        printingDurationMinutes: computedDurationMinutes,
-        printingDurationFormatted: durationFormatted,
-        qtyFirstPassL1: printedOutputKg > 0 ? printedOutputKg : (existingRec.qtyFirstPassL1 || 0),
-        actualMetersPrinted,
-        inkGsmInSpeed,
-        stages: {
-          ...(existingRec.stages || {}),
-          printing: {
-            ...(existingRec.stages?.printing || {}),
-            status: 'Completed',
-            endTime: endIso,
-            durationMinutes: computedDurationMinutes,
-            durationFormatted: durationFormatted,
-            actualMetersPrinted,
-            inkGsmInSpeed,
-            printedOutputKg
-          }
+    // Update corresponding Production Record (or create if missing)
+    const existingRec = productionRecords.find(r => r.orderId === order.id || r.id === order.id || (r.jobCode && r.jobCode === order.jobCode));
+    const baseRecord = existingRec || {
+      id: `REC-${order.id}`,
+      orderId: order.id,
+      jobCode: order.jobCode,
+      jobName: order.jobName,
+      clientName: order.clientName || order.customerName || '',
+      dateFilled: new Date().toISOString().split('T')[0],
+      status: 'Filled by Plant Manager',
+      filledBy: 'Operator',
+      materialsList: []
+    };
+
+    const updatedRecord = {
+      ...baseRecord,
+      status: 'Filled by Plant Manager',
+      printingStatus: 'Completed',
+      printingEndTime: endIso,
+      printingDurationMinutes: computedDurationMinutes,
+      printingDurationFormatted: durationFormatted,
+      qtyFirstPassL1: printedOutputKg > 0 ? printedOutputKg : (baseRecord.qtyFirstPassL1 || 0),
+      totalProductionQtyKg: printedOutputKg > 0 ? printedOutputKg : (baseRecord.totalProductionQtyKg || 0),
+      grossProductionKg: printedOutputKg > 0 ? printedOutputKg : (baseRecord.grossProductionKg || 0),
+      actualMetersPrinted,
+      inkGsmInSpeed,
+      printedOutputKg,
+      inputRollsList: endData.inputRollsList || baseRecord.inputRollsList || [],
+      rollsBreakdown: endData.rollsBreakdown || baseRecord.rollsBreakdown || [],
+      outputRolls: endData.rollsBreakdown || baseRecord.outputRolls || [],
+      totalInputConsumedKg: endData.totalInputConsumedKg || 0,
+      printWidthMm: endData.printWidthMm || order.printWidthMm || 460,
+      inputRollWidthMm: endData.inputRollWidthMm || 460,
+      isBiggerSize: endData.isBiggerSize || false,
+      excessFilmWastageKg: endData.excessFilmWastageKg || 0,
+      excessFilmWastagePct: endData.excessFilmWastagePct || 0,
+      inkWeightGainKg: endData.inkWeightGainKg || 0,
+      actualCalculatedInkGsm: endData.actualCalculatedInkGsm || 0,
+      notes: endData.notes || baseRecord.notes || '',
+      stages: {
+        ...(baseRecord.stages || {}),
+        printing: {
+          ...(baseRecord.stages?.printing || {}),
+          status: 'Completed',
+          endTime: endIso,
+          durationMinutes: computedDurationMinutes,
+          durationFormatted: durationFormatted,
+          actualMetersPrinted,
+          inkGsmInSpeed,
+          printedOutputKg,
+          actualCalculatedInkGsm: endData.actualCalculatedInkGsm || 0
         }
-      };
-      handleSaveProductionRecord(updatedRecord);
-    }
+      }
+    };
+    handleSaveProductionRecord(updatedRecord);
     logAudit('UPDATE', 'Printing Scheduler', `Ended printing job for "${order.jobName}" (${order.id}). Meters: ${actualMetersPrinted}m, Ink GSM: ${inkGsmInSpeed}, Output: ${printedOutputKg}kg, Duration: ${durationFormatted}`, order.id);
   };
 

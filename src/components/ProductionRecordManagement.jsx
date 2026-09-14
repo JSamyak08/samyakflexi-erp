@@ -1232,6 +1232,191 @@ export default function ProductionRecordManagement({
             </div>
           </div>
 
+          {/* Substrate Input Rolls & Actual Ink GSM Technical Analysis */}
+          {(() => {
+            const linkedOrder = orders.find(o => o.id === selectedRecord.orderId || o.jobName === selectedRecord.jobName) || {};
+            const matchedJM = (jobMasters || []).find(j => j.id === selectedRecord.jobMasterId || j.id === linkedOrder?.jobMasterId || j.jobCode === selectedRecord.jobCode);
+
+            const inputRolls = selectedRecord.inputRollsList || [];
+            const outputRolls = selectedRecord.rollsBreakdown || selectedRecord.outputRolls || [];
+            const actualMeters = parseFloat(selectedRecord.actualMetersPrinted || linkedOrder?.actualMetersPrinted || 0);
+            const printWidthMm = parseFloat(selectedRecord.printWidthMm || linkedOrder?.printWidthMm || matchedJM?.printWidthMm || matchedJM?.cylinderData?.widthMm || linkedOrder?.widthMm || 460);
+
+            const totalInputConsumedKg = inputRolls.reduce((sum, r) => sum + (parseFloat(r.consumedWeightKg) || 0), 0) || parseFloat(selectedRecord.totalInputConsumedKg) || 0;
+            const totalOutputRollsKg = outputRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0) || parseFloat(selectedRecord.printedOutputKg) || 0;
+
+            let inputRollWidthMm = printWidthMm;
+            if (inputRolls.length > 0) {
+              const maxW = Math.max(...inputRolls.map(r => parseFloat(r.widthMm) || 0));
+              if (maxW > 0) inputRollWidthMm = maxW;
+            } else if (selectedRecord.inputRollWidthMm) {
+              inputRollWidthMm = parseFloat(selectedRecord.inputRollWidthMm);
+            }
+
+            const isBiggerSize = inputRollWidthMm > printWidthMm;
+            let excessFilmWastageKg = parseFloat(selectedRecord.excessFilmWastageKg || 0);
+            let excessFilmWastagePct = parseFloat(selectedRecord.excessFilmWastagePct || 0);
+
+            if (isBiggerSize && totalInputConsumedKg > 0 && (!excessFilmWastageKg || excessFilmWastageKg === 0)) {
+              const trimRatio = (inputRollWidthMm - printWidthMm) / inputRollWidthMm;
+              excessFilmWastageKg = totalInputConsumedKg * trimRatio;
+              excessFilmWastagePct = (excessFilmWastageKg / totalInputConsumedKg) * 100;
+            }
+
+            let inkWeightGainKg = parseFloat(selectedRecord.inkWeightGainKg || 0);
+            if (!inkWeightGainKg || inkWeightGainKg === 0) {
+              if (isBiggerSize) {
+                inkWeightGainKg = totalOutputRollsKg - (totalInputConsumedKg - excessFilmWastageKg);
+              } else {
+                inkWeightGainKg = totalOutputRollsKg - totalInputConsumedKg;
+              }
+            }
+
+            const printedAreaM2 = (actualMeters * printWidthMm) / 1000;
+            let actualCalculatedInkGsm = parseFloat(selectedRecord.actualCalculatedInkGsm || 0);
+            if ((!actualCalculatedInkGsm || actualCalculatedInkGsm === 0) && printedAreaM2 > 0 && inkWeightGainKg > 0) {
+              actualCalculatedInkGsm = (inkWeightGainKg * 0.20 * 1000) / printedAreaM2;
+            }
+
+            const operatorInkGsm = parseFloat(selectedRecord.inkGsmInSpeed || linkedOrder?.inkGsmInSpeed || 0);
+            const isInkGsmHigher = operatorInkGsm > 0 && actualCalculatedInkGsm > operatorInkGsm;
+
+            return (
+              <div style={{ margin: '16px 0 24px', padding: '20px', background: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '900', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Scale size={20} style={{ color: '#0284c7' }} /> Technical Substrate & Ink GSM Production Analysis
+                    </h4>
+                    <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                      Input film roll consumption, excess film trimming wastage, and dry ink solids gain calculation.
+                    </span>
+                  </div>
+
+                  {/* High Ink GSM Alert Banner */}
+                  {isInkGsmHigher && (
+                    <div style={{ background: '#fef2f2', border: '1.5px solid #ef4444', padding: '6px 14px', borderRadius: '8px', color: '#991b1b', fontWeight: '800', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <AlertCircle size={18} style={{ color: '#dc2626' }} />
+                      <span>⚠️ High Ink Consumption Alert: Actual GSM ({actualCalculatedInkGsm.toFixed(2)}) &gt; Operator Input ({operatorInkGsm.toFixed(2)})</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Substrate & Ink Metrics Grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', marginBottom: '16px' }}>
+                  <div style={{ background: '#ffffff', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Substrate Match</span>
+                    <div style={{ fontSize: '1.1rem', fontWeight: '900', color: '#0f172a', marginTop: '2px' }}>
+                      {selectedRecord.printFilmType || linkedOrder?.printFilmType || 'PET'} {selectedRecord.micron || linkedOrder?.micron || 12}µ
+                    </div>
+                    <span style={{ fontSize: '0.74rem', color: isBiggerSize ? '#b45309' : '#059669', fontWeight: '700' }}>
+                      {isBiggerSize ? `⚠️ Wider Input Film (${inputRollWidthMm}mm > Job Print ${printWidthMm}mm)` : `✓ Same Size (${printWidthMm}mm)`}
+                    </span>
+                  </div>
+
+                  <div style={{ background: '#ffffff', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Total Input Consumed</span>
+                    <div style={{ fontSize: '1.2rem', fontWeight: '900', color: '#0284c7', marginTop: '2px' }}>
+                      {totalInputConsumedKg.toFixed(2)} kg
+                    </div>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Across {inputRolls.length || 1} input rolls</span>
+                  </div>
+
+                  {isBiggerSize && (
+                    <div style={{ background: '#fffbeb', padding: '12px 16px', borderRadius: '8px', border: '1px solid #fde68a' }}>
+                      <span style={{ fontSize: '0.72rem', color: '#b45309', fontWeight: '800', textTransform: 'uppercase' }}>Extra Film Trimming Wastage</span>
+                      <div style={{ fontSize: '1.2rem', fontWeight: '900', color: '#d97706', marginTop: '2px' }}>
+                        {excessFilmWastageKg.toFixed(2)} kg <span style={{ fontSize: '0.85rem' }}>({excessFilmWastagePct.toFixed(1)}%)</span>
+                      </div>
+                      <span style={{ fontSize: '0.72rem', color: '#b45309' }}>Trimming side wastage ({inputRollWidthMm - printWidthMm} mm difference)</span>
+                    </div>
+                  )}
+
+                  <div style={{ background: '#ffffff', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Dry Ink Solids Gain</span>
+                    <div style={{ fontSize: '1.2rem', fontWeight: '900', color: '#059669', marginTop: '2px' }}>
+                      {(inkWeightGainKg * 0.20).toFixed(2)} kg <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: '600' }}>(20% Ink Solids)</span>
+                    </div>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Gross Ink Weight Gain: {inkWeightGainKg.toFixed(2)} kg</span>
+                  </div>
+
+                  {/* Side-by-side GSM Comparison */}
+                  <div style={{ background: isInkGsmHigher ? '#fef2f2' : '#f0fdf4', padding: '12px 16px', borderRadius: '8px', border: isInkGsmHigher ? '1.5px solid #fca5a5' : '1.5px solid #86efac' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.72rem', color: isInkGsmHigher ? '#991b1b' : '#166534', fontWeight: '800', textTransform: 'uppercase' }}>Ink GSM Comparison</span>
+                      {isInkGsmHigher && <span className="badge badge-danger" style={{ fontSize: '0.65rem' }}>VARIANCE ALERT</span>}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginTop: '4px' }}>
+                      <div>
+                        <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: '700' }}>OPERATOR INPUT</div>
+                        <div style={{ fontSize: '1.15rem', fontWeight: '900', color: '#475569' }}>
+                          {operatorInkGsm.toFixed(2)} GSM
+                        </div>
+                      </div>
+                      <div style={{ fontSize: '1.2rem', fontWeight: '700', color: '#94a3b8' }}>vs</div>
+                      <div>
+                        <div style={{ fontSize: '0.7rem', color: isInkGsmHigher ? '#dc2626' : '#059669', fontWeight: '800' }}>ACTUAL CALCULATED</div>
+                        <div style={{ fontSize: '1.25rem', fontWeight: '900', color: isInkGsmHigher ? '#dc2626' : '#059669' }}>
+                          {actualCalculatedInkGsm.toFixed(2)} GSM
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Input Rolls Table */}
+                {inputRolls.length > 0 && (
+                  <div>
+                    <h5 style={{ fontSize: '0.85rem', fontWeight: '800', color: '#334155', marginBottom: '8px' }}>
+                      🎞️ Input Substrate Rolls Roll-Wise Consumption Details ({inputRolls.length} Rolls)
+                    </h5>
+                    <table className="data-table" style={{ fontSize: '0.8rem' }}>
+                      <thead>
+                        <tr>
+                          <th>Roll #</th>
+                          <th>Barcode ID</th>
+                          <th>Substrate</th>
+                          <th>Micron</th>
+                          <th>Width (mm)</th>
+                          <th>Initial Wt (kg)</th>
+                          <th>Consumed Wt (kg)</th>
+                          <th>Remaining Wt (kg)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {inputRolls.map((r, idx) => {
+                          const initW = parseFloat(r.initialWeightKg) || 0;
+                          const consW = parseFloat(r.consumedWeightKg) || 0;
+                          const balW = Math.max(0, initW - consW);
+                          return (
+                            <tr key={idx}>
+                              <td style={{ fontWeight: '700' }}>Roll #{idx + 1}</td>
+                              <td><code style={{ background: '#ffffff', border: '1px solid #cbd5e1', padding: '2px 6px', borderRadius: '4px', fontWeight: '800' }}>{r.barcodeId || 'N/A'}</code></td>
+                              <td>{r.filmType || 'PET'}</td>
+                              <td>{r.micron || 12}µ</td>
+                              <td>{r.widthMm || 460} mm</td>
+                              <td>{initW.toFixed(1)} kg</td>
+                              <td style={{ fontWeight: '800', color: '#0284c7' }}>{consW.toFixed(1)} kg</td>
+                              <td>
+                                {balW > 0 ? (
+                                  <span style={{ fontWeight: '800', color: '#059669' }}>
+                                    {balW.toFixed(1)} kg <span style={{ fontSize: '0.7rem', color: '#64748b' }}>(Barcode Generated)</span>
+                                  </span>
+                                ) : (
+                                  <span style={{ color: '#94a3b8' }}>0 kg (Fully Consumed)</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Ingredient Materials Breakdown Table */}
           <h4 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '12px', color: 'var(--text-primary)' }}>
             📦 Ingredient Materials Issue & Return Record
