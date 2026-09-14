@@ -52,6 +52,7 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
       { id: 1, description: "Britannia Bourbon 250g PET/METPET Film Roll", hsnSac: "3923", quantity: 1250, unit: "Kg", rate: 195, amount: 243750 }
     ],
     gstRatePct = 18,
+    taxType = 'auto',
     dispatchedBy = "Dilip Joshi (Dispatch Store Incharge)",
     remarks = "Material dispatched in 12 rolls wrapped in waterproof Stretch Film."
   } = challanData;
@@ -67,7 +68,7 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
     return sum + (item.amount ? parseFloat(item.amount) : qty * rate);
   }, 0);
 
-  const gstCalc = calculateGSTBreakdown(clientGstin, clientAddress, subtotalTaxable, gstRatePct, COMPANY_DETAILS.gstin);
+  const gstCalc = calculateGSTBreakdown(clientGstin, clientAddress, subtotalTaxable, gstRatePct, COMPANY_DETAILS.gstin, taxType);
   const totalQtyKg = itemRows.reduce((sum, item) => sum + (parseFloat(item.quantity) || 0), 0);
 
   return (

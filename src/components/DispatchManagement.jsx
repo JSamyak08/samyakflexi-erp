@@ -37,6 +37,7 @@ export default function DispatchManagement({
   clients = [],
   jobMasters = [],
   orders = [],
+  cylinders = [],
   currentUser,
   onSaveDeliveryChallan,
   onDeleteDeliveryChallan,
@@ -74,10 +75,52 @@ export default function DispatchManagement({
   const [dcPoRefNo, setDcPoRefNo] = useState('');
   const [dcJobName, setDcJobName] = useState('');
   const [dcGstRatePct, setDcGstRatePct] = useState(18);
+  const [dcTaxType, setDcTaxType] = useState('auto'); // 'auto' | 'cgst_sgst' | 'igst'
   const [dcDispatchedBy, setDcDispatchedBy] = useState('');
   const [dcRemarks, setDcRemarks] = useState('');
   const [dcItems, setDcItems] = useState([]);
   const [dcTerms, setDcTerms] = useState([]);
+
+  // Presets list combining Job Masters & Rotogravure Cylinders
+  const itemPresetOptions = useMemo(() => {
+    const list = [];
+
+    // 1. From Job Masters
+    (jobMasters || []).forEach(jm => {
+      const jName = jm.jobName || jm.name || 'Job Master Item';
+      const cName = jm.clientName || 'Client';
+      const sku = jm.skuCode || jm.sku || jm.id || '';
+      list.push({
+        id: `JM-${jm.id || jName}`,
+        category: 'Job Master',
+        label: `Job Master: ${jName} (${cName}${sku ? ' - SKU: ' + sku : ''})`,
+        description: `${jName} - Flexible Packaging Printed Laminated Film${sku ? ' (SKU: ' + sku + ')' : ''}`,
+        hsnSac: '3923',
+        quantity: 1000,
+        unit: 'Kg',
+        rate: Number(jm.sellingPricePerKg) || 185
+      });
+    });
+
+    // 2. From Rotogravure Cylinders
+    (cylinders || []).forEach(c => {
+      const cName = c.jobName || 'Rotogravure Cylinder Set';
+      const colors = c.colorsCount || 6;
+      const eng = c.engravuresName || 'Job Work Repair';
+      list.push({
+        id: `CYL-${c.id || cName}`,
+        category: 'Rotogravure Cylinder',
+        label: `Cylinder: ${cName} - ${colors} Colors Set (${eng})`,
+        description: `Rotogravure Printing Cylinders (${colors} Colors Set) for ${cName} - Sent for Repair / Re-engraving / Chrome Plating Job Work`,
+        hsnSac: '8442',
+        quantity: Number(colors) || 6,
+        unit: 'Nos',
+        rate: Number(c.costPerCylinder) || 0
+      });
+    });
+
+    return list;
+  }, [jobMasters, cylinders]);
 
   // --------------------------------------------------------------------------
   // COA FORM STATE
@@ -128,6 +171,7 @@ export default function DispatchManagement({
     setDcPoRefNo('');
     setDcJobName('');
     setDcGstRatePct(18);
+    setDcTaxType('auto');
     setDcDispatchedBy(currentUser ? `${currentUser.name} (Dispatch Incharge)` : 'Dilip Joshi (Dispatch Store Manager)');
     setDcRemarks('Material dispatched in sound condition, sealed with stretch film rolls.');
 
@@ -157,6 +201,7 @@ export default function DispatchManagement({
     setDcPoRefNo(dc.poRefNo || '');
     setDcJobName(dc.jobName || '');
     setDcGstRatePct(dc.gstRatePct || 18);
+    setDcTaxType(dc.taxType || 'auto');
     setDcDispatchedBy(dc.dispatchedBy || '');
     setDcRemarks(dc.remarks || '');
     setDcItems(Array.isArray(dc.items) && dc.items.length > 0 ? dc.items : []);
@@ -212,7 +257,7 @@ export default function DispatchManagement({
     const finalChallanNo = editingDcId ? dcChallanNo : getNextDocRefNumber('dc');
 
     const subtotal = dcItems.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
-    const gstInfo = calculateGSTBreakdown(dcClientGstin, dcClientAddress, subtotal, dcGstRatePct, COMPANY_DETAILS.gstin);
+    const gstInfo = calculateGSTBreakdown(dcClientGstin, dcClientAddress, subtotal, dcGstRatePct, COMPANY_DETAILS.gstin, dcTaxType);
     const grandTotal = gstInfo.grandTotal;
 
     const payload = {
@@ -232,6 +277,7 @@ export default function DispatchManagement({
       jobName: dcJobName,
       items: dcItems,
       gstRatePct: parseFloat(dcGstRatePct) || 18,
+      taxType: dcTaxType,
       subtotalAmount: subtotal,
       grandTotalAmount: grandTotal,
       dispatchedBy: dcDispatchedBy,
@@ -246,6 +292,27 @@ export default function DispatchManagement({
 
     setIsDcModalOpen(false);
     setActiveDcForPDF(payload);
+  };
+
+  // Helper to apply preset item selection to a specific DC row
+  const handleApplyPresetToDcRow = (rowId, presetObj) => {
+    if (!presetObj) return;
+    setDcItems(prev => prev.map(item => {
+      if (item.id === rowId) {
+        const qty = parseFloat(presetObj.quantity) || 1;
+        const rate = parseFloat(presetObj.rate) || 0;
+        return {
+          ...item,
+          description: presetObj.description,
+          hsnSac: presetObj.hsnSac || '3923',
+          quantity: qty,
+          unit: presetObj.unit || 'Kg',
+          rate: rate,
+          amount: Number((qty * rate).toFixed(2))
+        };
+      }
+      return item;
+    }));
   };
 
   // --------------------------------------------------------------------------
@@ -943,10 +1010,10 @@ export default function DispatchManagement({
                   <table className="data-table" style={{ width: '100%', minWidth: '680px', margin: 0, fontSize: '0.82rem' }}>
                     <thead>
                       <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                        <th style={{ width: '35%', padding: '8px 10px' }}>Item Description *</th>
-                        <th style={{ width: '14%', padding: '8px 10px' }}>HSN / SAC</th>
-                        <th style={{ width: '14%', padding: '8px 10px' }}>Qty (Kg) *</th>
-                        <th style={{ width: '14%', padding: '8px 10px' }}>Rate (₹/kg)</th>
+                        <th style={{ width: '38%', padding: '8px 10px' }}>Item Description & Presets *</th>
+                        <th style={{ width: '13%', padding: '8px 10px' }}>HSN / SAC</th>
+                        <th style={{ width: '13%', padding: '8px 10px' }}>Qty</th>
+                        <th style={{ width: '13%', padding: '8px 10px' }}>Rate (₹)</th>
                         <th style={{ width: '18%', padding: '8px 10px', textAlign: 'right' }}>Amount (₹)</th>
                         <th style={{ width: '5%', padding: '8px 5px', textAlign: 'center' }}></th>
                       </tr>
@@ -955,12 +1022,31 @@ export default function DispatchManagement({
                       {dcItems.map((item, idx) => (
                         <tr key={item.id || idx}>
                           <td style={{ padding: '6px 8px' }}>
+                            {itemPresetOptions.length > 0 && (
+                              <select 
+                                className="form-control" 
+                                style={{ padding: '2px 6px', fontSize: '0.74rem', marginBottom: '4px', color: '#0284c7', background: '#f0f9ff', borderColor: '#bae6fd' }}
+                                onChange={e => {
+                                  const selectedPreset = itemPresetOptions.find(p => p.id === e.target.value);
+                                  if (selectedPreset) {
+                                    handleApplyPresetToDcRow(item.id, selectedPreset);
+                                  }
+                                }}
+                                value=""
+                              >
+                                <option value="">-- Load from Job Master / Cylinders --</option>
+                                {itemPresetOptions.map(p => (
+                                  <option key={p.id} value={p.id}>[{p.category}] {p.label}</option>
+                                ))}
+                              </select>
+                            )}
                             <input 
                               type="text" 
                               className="form-control" 
                               style={{ padding: '5px 8px', fontSize: '0.82rem', fontWeight: '600' }}
                               value={item.description} 
                               onChange={e => handleUpdateDcItemRow(item.id, 'description', e.target.value)}
+                              placeholder="Enter item details..."
                               required 
                             />
                           </td>
@@ -974,15 +1060,18 @@ export default function DispatchManagement({
                             />
                           </td>
                           <td style={{ padding: '6px 8px' }}>
-                            <input 
-                              type="number" 
-                              step="any"
-                              className="form-control" 
-                              style={{ padding: '5px 8px', fontSize: '0.82rem', textAlign: 'right', fontWeight: '700' }}
-                              value={item.quantity} 
-                              onChange={e => handleUpdateDcItemRow(item.id, 'quantity', e.target.value)}
-                              required 
-                            />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <input 
+                                type="number" 
+                                step="any"
+                                className="form-control" 
+                                style={{ padding: '5px 6px', fontSize: '0.82rem', textAlign: 'right', fontWeight: '700' }}
+                                value={item.quantity} 
+                                onChange={e => handleUpdateDcItemRow(item.id, 'quantity', e.target.value)}
+                                required 
+                              />
+                              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '600' }}>{item.unit || 'Kg'}</span>
+                            </div>
                           </td>
                           <td style={{ padding: '6px 8px' }}>
                             <input 
@@ -1018,23 +1107,38 @@ export default function DispatchManagement({
                 {/* Subtotal & GST Calculation */}
                 {(() => {
                   const subtotal = dcItems.reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
-                  const gstInfo = calculateGSTBreakdown(dcClientGstin, dcClientAddress, subtotal, dcGstRatePct, COMPANY_DETAILS.gstin);
+                  const gstInfo = calculateGSTBreakdown(dcClientGstin, dcClientAddress, subtotal, dcGstRatePct, COMPANY_DETAILS.gstin, dcTaxType);
+                  const numGstPct = Number(dcGstRatePct) || 0;
                   return (
                     <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginTop: '12px', background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                      <div style={{ fontSize: '0.8rem', color: '#475569', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <span>Tax Rate:</span>
-                        <select 
-                          value={dcGstRatePct} 
-                          onChange={e => setDcGstRatePct(e.target.value)}
-                          style={{ padding: '3px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontWeight: '700', fontSize: '0.8rem' }}
-                        >
-                          <option value={18}>18% GST</option>
-                          <option value={12}>12% GST</option>
-                          <option value={5}>5% GST</option>
-                          <option value={0}>0% (Exempt)</option>
-                        </select>
+                      <div style={{ fontSize: '0.8rem', color: '#475569', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        <div>
+                          <span style={{ marginRight: '4px' }}>Tax Type:</span>
+                          <select 
+                            value={dcTaxType} 
+                            onChange={e => setDcTaxType(e.target.value)}
+                            style={{ padding: '3px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontWeight: '700', fontSize: '0.8rem', background: '#ffffff' }}
+                          >
+                            <option value="auto">Auto (Detect GSTIN)</option>
+                            <option value="cgst_sgst">CGST + SGST (Intra-State)</option>
+                            <option value="igst">IGST (Inter-State)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <span style={{ marginRight: '4px' }}>Tax Rate:</span>
+                          <select 
+                            value={dcGstRatePct} 
+                            onChange={e => setDcGstRatePct(e.target.value)}
+                            style={{ padding: '3px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontWeight: '700', fontSize: '0.8rem', background: '#ffffff' }}
+                          >
+                            <option value={18}>18% GST</option>
+                            <option value={12}>12% GST</option>
+                            <option value={5}>5% GST</option>
+                            <option value={0}>0% (Exempt)</option>
+                          </select>
+                        </div>
                         <span style={{ fontWeight: '700', color: gstInfo.isIntraState ? '#047857' : '#0284c7', fontSize: '0.78rem' }}>
-                          ({gstInfo.isIntraState ? 'CGST 9% + SGST 9% [Intra-State MP]' : 'IGST 18% [Inter-State]'})
+                          ({gstInfo.isIntraState ? `CGST ${(numGstPct / 2).toFixed(1)}% + SGST ${(numGstPct / 2).toFixed(1)}% [Intra-State]` : `IGST ${numGstPct}% [Inter-State]`})
                         </span>
                       </div>
 

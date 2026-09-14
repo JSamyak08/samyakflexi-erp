@@ -3858,6 +3858,7 @@ export default function App() {
             clients={clients}
             jobMasters={jobMasters}
             orders={orders}
+            cylinders={cylinders}
             currentUser={currentUser}
             onSaveDeliveryChallan={handleSaveDeliveryChallan}
             onDeleteDeliveryChallan={handleDeleteDeliveryChallan}

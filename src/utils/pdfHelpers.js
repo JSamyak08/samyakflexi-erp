@@ -68,7 +68,7 @@ export function formatINR(amount) {
  * Intra-State Supply (Within Madhya Pradesh - State Code 23): CGST 9% + SGST 9%
  * Inter-State Supply (Outside Madhya Pradesh - State Code != 23): IGST 18%
  */
-export function calculateGSTBreakdown(gstin = '', address = '', taxableAmount = 0, totalGstRatePct = 18, plantGstin = '23AAACS9988F1Z1') {
+export function calculateGSTBreakdown(gstin = '', address = '', taxableAmount = 0, totalGstRatePct = 18, plantGstin = '23AAACS9988F1Z1', taxTypeOverride = 'auto') {
   const taxable = parseFloat(taxableAmount) || 0;
   const ratePct = parseFloat(totalGstRatePct) || 18;
 
@@ -78,19 +78,25 @@ export function calculateGSTBreakdown(gstin = '', address = '', taxableAmount = 
 
   const addressUpper = String(address || '').toUpperCase();
   
-  // Intra-State check: Party GSTIN starts with plant state code (23) OR address contains MP locations
   let isIntraState = false;
-  if (/^\d{2}/.test(partyGstinClean)) {
-    isIntraState = partyStateCode === plantStateCode;
+
+  if (taxTypeOverride === 'igst') {
+    isIntraState = false;
+  } else if (taxTypeOverride === 'cgst_sgst') {
+    isIntraState = true;
   } else {
-    // Fallback on Address if GSTIN state code not present
-    isIntraState = addressUpper.includes('MADHYA PRADESH') || 
-                   addressUpper.includes(' M.P.') || 
-                   addressUpper.includes(' MP ') || 
-                   addressUpper.includes('PITHAMPUR') || 
-                   addressUpper.includes('INDORE') || 
-                   addressUpper.includes('BHOPAL') ||
-                   addressUpper.includes('UJJAIN');
+    // Auto-detect: Party GSTIN starts with plant state code (23) OR address contains MP locations
+    if (/^\d{2}/.test(partyGstinClean)) {
+      isIntraState = partyStateCode === plantStateCode;
+    } else {
+      isIntraState = addressUpper.includes('MADHYA PRADESH') || 
+                     addressUpper.includes(' M.P.') || 
+                     addressUpper.includes(' MP ') || 
+                     addressUpper.includes('PITHAMPUR') || 
+                     addressUpper.includes('INDORE') || 
+                     addressUpper.includes('BHOPAL') ||
+                     addressUpper.includes('UJJAIN');
+    }
   }
 
   if (isIntraState) {
@@ -118,7 +124,7 @@ export function calculateGSTBreakdown(gstin = '', address = '', taxableAmount = 
     return {
       isIntraState: false,
       type: 'INTER_STATE',
-      label: 'Inter-State Supply (Out of State)',
+      label: 'Inter-State Supply (IGST Interstate Transaction)',
       cgstRatePct: 0,
       cgstAmount: 0,
       sgstRatePct: 0,
