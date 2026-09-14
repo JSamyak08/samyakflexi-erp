@@ -471,8 +471,19 @@ CREATE TABLE IF NOT EXISTS public.email_templates (
 -- Enable Row Level Security (RLS) & Grant Permissive Access to Anon & Authenticated Roles for Internal ERP
 DO $$ 
 DECLARE
+  pol RECORD;
   tbl text;
 BEGIN
+  -- 1. Drop existing policies on public tables to prevent syntax/duplicate policy conflicts
+  FOR pol IN 
+    SELECT policyname, tablename 
+    FROM pg_policies 
+    WHERE schemaname = 'public'
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I;', pol.policyname, pol.tablename);
+  END LOOP;
+
+  -- 2. Enable RLS and grant full read-write access to anon & authenticated roles for ERP
   FOR tbl IN 
     SELECT table_name 
     FROM information_schema.tables 
@@ -480,8 +491,7 @@ BEGIN
       AND table_type = 'BASE TABLE'
   LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY;', tbl);
-    EXECUTE format('DROP POLICY IF EXISTS "Allow anon and auth full access" ON public.%I;', tbl);
-    EXECUTE format('CREATE POLICY "Allow anon and auth full access" ON public.%I FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);', tbl);
+    EXECUTE format('CREATE POLICY %I ON public.%I FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);', 'Allow anon and auth full access', tbl);
   END LOOP;
 END $$;
 

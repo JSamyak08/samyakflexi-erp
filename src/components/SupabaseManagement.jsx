@@ -731,87 +731,32 @@ SELECT
 FROM public.production_records pr
 ORDER BY pr.recorded_at DESC;
 
--- Enable Row Level Security (RLS) & default open access rules
-ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.vendors ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.inventory ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.grns ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.cylinders ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.production_records ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.job_datasheets ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.inventory_rolls ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.dispatch_shipments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.printing_machines ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.production_schedules ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.job_masters ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.inks ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.system_settings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.sales_quotations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.email_settings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.email_templates ENABLE ROW LEVEL SECURITY;
+-- Enable Row Level Security (RLS) & Grant Permissive Access to Anon & Authenticated Roles for Internal ERP
+DO $$ 
+DECLARE
+  pol RECORD;
+  tbl text;
+BEGIN
+  -- 1. Drop existing policies on public tables to prevent syntax/duplicate policy conflicts
+  FOR pol IN 
+    SELECT policyname, tablename 
+    FROM pg_policies 
+    WHERE schemaname = 'public'
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I;', pol.policyname, pol.tablename);
+  END LOOP;
 
-DROP POLICY IF EXISTS "Allow public read-write for orders" ON public.orders;
-CREATE POLICY "Allow public read-write for orders" ON public.orders FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Allow public read-write for vendors" ON public.vendors;
-CREATE POLICY "Allow public read-write for vendors" ON public.vendors FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Allow public read-write for clients" ON public.clients;
-CREATE POLICY "Allow public read-write for clients" ON public.clients FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Allow public read-write for inventory" ON public.inventory;
-CREATE POLICY "Allow public read-write for inventory" ON public.inventory FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Allow public read-write for grns" ON public.grns;
-CREATE POLICY "Allow public read-write for grns" ON public.grns FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Allow public read-write for cylinders" ON public.cylinders;
-CREATE POLICY "Allow public read-write for cylinders" ON public.cylinders FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Allow public read-write for production_records" ON public.production_records;
-CREATE POLICY "Allow public read-write for production_records" ON public.production_records FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Allow public read-write for users" ON public.users;
-CREATE POLICY "Allow public read-write for users" ON public.users FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Allow public read-write for job_datasheets" ON public.job_datasheets;
-CREATE POLICY "Allow public read-write for job_datasheets" ON public.job_datasheets FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Allow public read-write for job_masters" ON public.job_masters;
-CREATE POLICY "Allow public read-write for job_masters" ON public.job_masters FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Allow public read-write for inventory_rolls" ON public.inventory_rolls;
-CREATE POLICY "Allow public read-write for inventory_rolls" ON public.inventory_rolls FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Allow public read-write for dispatch_shipments" ON public.dispatch_shipments;
-CREATE POLICY "Allow public read-write for dispatch_shipments" ON public.dispatch_shipments FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Allow public read-write for printing_machines" ON public.printing_machines;
-CREATE POLICY "Allow public read-write for printing_machines" ON public.printing_machines FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Allow public read-write for production_schedules" ON public.production_schedules;
-CREATE POLICY "Allow public read-write for production_schedules" ON public.production_schedules FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Allow public read-write for inks" ON public.inks;
-CREATE POLICY "Allow public read-write for inks" ON public.inks FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Allow public read-write for audit_logs" ON public.audit_logs;
-CREATE POLICY "Allow public read-write for audit_logs" ON public.audit_logs FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Allow public read-write for system_settings" ON public.system_settings;
-CREATE POLICY "Allow public read-write for system_settings" ON public.system_settings FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Allow public read-write for sales_quotations" ON public.sales_quotations;
-CREATE POLICY "Allow public read-write for sales_quotations" ON public.sales_quotations FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Allow public read-write for email_settings" ON public.email_settings;
-CREATE POLICY "Allow public read-write for email_settings" ON public.email_settings FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Allow public read-write for email_templates" ON public.email_templates;
-CREATE POLICY "Allow public read-write for email_templates" ON public.email_templates FOR ALL USING (true);
+  -- 2. Enable RLS and grant full read-write access to anon & authenticated roles for ERP
+  FOR tbl IN 
+    SELECT table_name 
+    FROM information_schema.tables 
+    WHERE table_schema = 'public' 
+      AND table_type = 'BASE TABLE'
+  LOOP
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY;', tbl);
+    EXECUTE format('CREATE POLICY %I ON public.%I FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);', 'Allow anon and auth full access', tbl);
+  END LOOP;
+END $$;
 
 -- Column extensions & updates for backward compatibility
 ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS item_code TEXT;
