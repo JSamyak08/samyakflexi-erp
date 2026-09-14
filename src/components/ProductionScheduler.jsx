@@ -167,6 +167,8 @@ export default function ProductionScheduler({
   ]);
   const [selectedRollsForAutoPrint, setSelectedRollsForAutoPrint] = useState(null);
   const [isSubmittingEndJob, setIsSubmittingEndJob] = useState(false);
+  const [isAutosavingRolls, setIsAutosavingRolls] = useState(false);
+  const [lastAutosavedTime, setLastAutosavedTime] = useState(null);
 
   // Custom Queue Ordering State
   const [queueOrderIds, setQueueOrderIds] = useState(() => {
@@ -600,6 +602,116 @@ export default function ProductionScheduler({
     setActiveRunningJob(startedOrder);
   };
 
+  // Sync inputRollsList whenever activeRunningJob is opened or updated
+  useEffect(() => {
+    if (activeRunningJob) {
+      if (Array.isArray(activeRunningJob.inputRollsList) && activeRunningJob.inputRollsList.length > 0) {
+        setInputRollsList(activeRunningJob.inputRollsList);
+      } else {
+        const matchingJM = (jobMasters || []).find(j => j.id === activeRunningJob.jobMasterId || j.jobCode === activeRunningJob.jobCode);
+        const printWidth = activeRunningJob.widthMm || activeRunningJob.printWidthMm || matchingJM?.printWidthMm || 460;
+        const filmType = activeRunningJob.printFilmType || 'PET';
+        const micron = activeRunningJob.micron || 12;
+        const reqQty = activeRunningJob.printQtyKg || activeRunningJob.quantityKg || activeRunningJob.quantity || 100;
+        const grnCode = (activeRunningJob.jobCode || activeRunningJob.id || 'ORD').replace(/[^a-zA-Z0-9-]/g, '');
+
+        const initialList = [
+          {
+            id: `in-roll-${Date.now()}-1`,
+            barcodeId: `RM-BC-${grnCode}-1`,
+            filmType: filmType,
+            micron: String(micron),
+            widthMm: String(printWidth),
+            initialWeightKg: String(reqQty),
+            consumedWeightKg: String(reqQty)
+          }
+        ];
+        setInputRollsList(initialList);
+      }
+    }
+  }, [activeRunningJob?.id]);
+
+  // Live Autosave helper for Active Printing Run
+  const handleAutosaveInputRolls = (updatedList) => {
+    setInputRollsList(updatedList);
+    if (activeRunningJob) {
+      setIsAutosavingRolls(true);
+      const updatedJob = {
+        ...activeRunningJob,
+        inputRollsList: updatedList
+      };
+      setActiveRunningJob(updatedJob);
+
+      if (onUpdateOrder) {
+        onUpdateOrder(updatedJob);
+      }
+
+      setTimeout(() => {
+        setIsAutosavingRolls(false);
+        setLastAutosavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      }, 400);
+    }
+  };
+
+  const handleInputRollBarcodeChangeActiveRun = (bId, index) => {
+    const cleanId = bId.trim();
+    let updatedList = [];
+    if (!cleanId) {
+      updatedList = inputRollsList.map((r, i) => i === index ? { ...r, barcodeId: bId } : r);
+    } else {
+      const matched = (inventoryRolls || []).find(r => 
+        (r.barcodeId && String(r.barcodeId).toLowerCase().trim() === cleanId.toLowerCase()) || 
+        (r.id && String(r.id).toLowerCase().trim() === cleanId.toLowerCase())
+      );
+
+      if (matched) {
+        updatedList = inputRollsList.map((r, i) => i === index ? {
+          ...r,
+          barcodeId: matched.barcodeId || matched.id || bId,
+          filmType: matched.filmType || matched.itemName || r.filmType,
+          micron: String(matched.micron || r.micron),
+          widthMm: String(matched.widthMm || r.widthMm),
+          initialWeightKg: String(matched.netWeightKg || matched.availableWeightKg || r.initialWeightKg),
+          consumedWeightKg: String(matched.netWeightKg || matched.availableWeightKg || r.consumedWeightKg)
+        } : r);
+      } else {
+        updatedList = inputRollsList.map((r, i) => i === index ? { ...r, barcodeId: bId } : r);
+      }
+    }
+    handleAutosaveInputRolls(updatedList);
+  };
+
+  const handleInputRollFieldChangeActiveRun = (index, field, value) => {
+    const updatedList = inputRollsList.map((r, i) => i === index ? { ...r, [field]: value } : r);
+    handleAutosaveInputRolls(updatedList);
+  };
+
+  const handleAddInputRollActiveRun = () => {
+    const defaultWidth = activeRunningJob?.widthMm || 460;
+    const defaultFilm = activeRunningJob?.printFilmType || 'PET';
+    const defaultMic = activeRunningJob?.micron || 12;
+    const grnCode = (activeRunningJob?.jobCode || activeRunningJob?.id || 'ORD').replace(/[^a-zA-Z0-9-]/g, '');
+
+    const updatedList = [
+      ...inputRollsList,
+      {
+        id: `in-roll-${Date.now()}-${inputRollsList.length + 1}`,
+        barcodeId: `RM-BC-${grnCode}-${inputRollsList.length + 1}`,
+        filmType: defaultFilm,
+        micron: String(defaultMic),
+        widthMm: String(defaultWidth),
+        initialWeightKg: '',
+        consumedWeightKg: ''
+      }
+    ];
+    handleAutosaveInputRolls(updatedList);
+  };
+
+  const handleDeleteInputRollActiveRun = (index) => {
+    const updatedList = inputRollsList.filter((_, i) => i !== index);
+    handleAutosaveInputRolls(updatedList);
+  };
+
   // Handle Barcode Scan / Change on Input Film Roll (Auto-prefills Substrate, Micron, Width & Weight)
   const handleInputRollBarcodeChange = (bId, index) => {
     const cleanId = bId.trim();
@@ -647,17 +759,25 @@ export default function ProductionScheduler({
     ]);
 
     const grnCode = (order.jobCode || order.id || 'ORD').replace(/[^a-zA-Z0-9-]/g, '');
-    setInputRollsList([
-      {
-        id: `in-roll-${Date.now()}-1`,
-        barcodeId: `RM-BC-${grnCode}-1`,
-        filmType: filmType,
-        micron: String(micron),
-        widthMm: String(printWidth),
-        initialWeightKg: String(reqQty),
-        consumedWeightKg: String(reqQty)
-      }
-    ]);
+    if (Array.isArray(order.inputRollsList) && order.inputRollsList.length > 0) {
+      setInputRollsList(order.inputRollsList);
+    } else if (Array.isArray(activeRunningJob?.inputRollsList) && activeRunningJob.inputRollsList.length > 0) {
+      setInputRollsList(activeRunningJob.inputRollsList);
+    } else if (Array.isArray(inputRollsList) && inputRollsList.length > 0) {
+      // Keep existing inputRollsList
+    } else {
+      setInputRollsList([
+        {
+          id: `in-roll-${Date.now()}-1`,
+          barcodeId: `RM-BC-${grnCode}-1`,
+          filmType: filmType,
+          micron: String(micron),
+          widthMm: String(printWidth),
+          initialWeightKg: String(reqQty),
+          consumedWeightKg: String(reqQty)
+        }
+      ]);
+    }
 
     setInputOperatorNotes('');
     setPrintLessApproved(false);
@@ -2013,6 +2133,192 @@ export default function ProductionScheduler({
                     </div>
                   </div>
                 )}
+
+                {/* Input Film Substrate Rolls (Consumed) - Live Active Run with Autosave */}
+                <div style={{ marginTop: '16px', background: '#ffffff', padding: '16px', borderRadius: '10px', border: '1.5px solid #0284c7', boxShadow: '0 2px 8px rgba(2, 132, 199, 0.08)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <div>
+                      <h4 style={{ fontSize: '0.95rem', fontWeight: '900', color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Barcode size={18} style={{ color: '#0284c7' }} /> Input Film Substrate Rolls (Consumed)
+                      </h4>
+                      <span style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px', display: 'block' }}>
+                        Scan/enter consumed rolls during press run. Unused balances auto-generate RM barcode tags.
+                      </span>
+                    </div>
+
+                    <div style={{ textAlign: 'right' }}>
+                      {isAutosavingRolls ? (
+                        <span className="badge" style={{ background: '#fef3c7', color: '#b45309', fontSize: '0.7rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px' }}>
+                          <RefreshCw size={11} className="animate-spin" /> Saving...
+                        </span>
+                      ) : (
+                        <span className="badge badge-success" style={{ background: '#dcfce7', color: '#15803d', fontSize: '0.7rem', fontWeight: '800', padding: '3px 8px' }}>
+                          ✓ Autosaved to Database {lastAutosavedTime ? `(${lastAutosavedTime})` : ''}
+                        </span>
+                      )}
+                      <div style={{ fontSize: '1.15rem', fontWeight: '900', color: '#0284c7', marginTop: '2px' }}>
+                        Total: {inputRollsList.reduce((sum, r) => sum + (parseFloat(r.consumedWeightKg) || 0), 0).toFixed(2)} kg
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* List of Input Rolls */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '12px' }}>
+                    {inputRollsList.map((roll, index) => {
+                      const initW = parseFloat(roll.initialWeightKg) || 0;
+                      const consW = parseFloat(roll.consumedWeightKg) || 0;
+                      const balW = Math.max(0, initW - consW);
+
+                      return (
+                        <div 
+                          key={roll.id || index} 
+                          style={{ 
+                            background: '#f8fafc', 
+                            padding: '12px', 
+                            borderRadius: '8px', 
+                            border: '1px solid #cbd5e1'
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                            <span style={{ fontSize: '0.8rem', fontWeight: '900', color: '#0f172a' }}>
+                              Input Roll #{index + 1}
+                            </span>
+
+                            {inputRollsList.length > 1 && !activeRunningJob.isPrintingCompleted && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteInputRollActiveRun(index)}
+                                style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#ef4444', borderRadius: '6px', padding: '3px 6px', cursor: 'pointer' }}
+                                title="Remove Input Roll"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            )}
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 0.8fr 0.8fr 1fr 1fr', gap: '8px', alignItems: 'center' }}>
+                            <div>
+                              <label style={{ fontSize: '0.68rem', fontWeight: '800', color: '#0284c7', display: 'flex', alignItems: 'center', gap: '3px', marginBottom: '2px' }}>
+                                <Barcode size={11} /> Barcode ID *
+                              </label>
+                              <input 
+                                type="text" 
+                                className="form-control" 
+                                style={{ fontSize: '0.78rem', fontWeight: '800', color: '#0284c7', border: '1.5px solid #0284c7', background: '#ffffff' }} 
+                                value={roll.barcodeId || ''} 
+                                disabled={activeRunningJob.isPrintingCompleted}
+                                onChange={e => handleInputRollBarcodeChangeActiveRun(e.target.value, index)}
+                                placeholder="Scan Barcode ID..."
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{ fontSize: '0.68rem', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '2px' }}>Substrate</label>
+                              <input 
+                                type="text" 
+                                className="form-control" 
+                                style={{ fontSize: '0.78rem', fontWeight: '700', background: '#ffffff' }} 
+                                value={roll.filmType || ''} 
+                                disabled={activeRunningJob.isPrintingCompleted}
+                                onChange={e => handleInputRollFieldChangeActiveRun(index, 'filmType', e.target.value)}
+                                placeholder="PET / PE"
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{ fontSize: '0.68rem', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '2px' }}>Micron (µ)</label>
+                              <input 
+                                type="number" 
+                                className="form-control" 
+                                style={{ fontSize: '0.78rem', fontWeight: '700', background: '#ffffff' }} 
+                                value={roll.micron || ''} 
+                                disabled={activeRunningJob.isPrintingCompleted}
+                                onChange={e => handleInputRollFieldChangeActiveRun(index, 'micron', e.target.value)}
+                                placeholder="12"
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{ fontSize: '0.68rem', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '2px' }}>Width (mm)</label>
+                              <input 
+                                type="number" 
+                                className="form-control" 
+                                style={{ fontSize: '0.78rem', fontWeight: '800', color: parseFloat(roll.widthMm) > (activeRunningJob.widthMm || 460) ? '#b45309' : '#0f172a', background: '#ffffff' }} 
+                                value={roll.widthMm || ''} 
+                                disabled={activeRunningJob.isPrintingCompleted}
+                                onChange={e => handleInputRollFieldChangeActiveRun(index, 'widthMm', e.target.value)}
+                                placeholder="460"
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{ fontSize: '0.68rem', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '2px' }}>Initial Wt (kg)</label>
+                              <input 
+                                type="number" 
+                                step="0.1"
+                                className="form-control" 
+                                style={{ fontSize: '0.8rem', fontWeight: '700', background: '#ffffff' }} 
+                                value={roll.initialWeightKg || ''} 
+                                disabled={activeRunningJob.isPrintingCompleted}
+                                onChange={e => handleInputRollFieldChangeActiveRun(index, 'initialWeightKg', e.target.value)}
+                                placeholder="100.0"
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{ fontSize: '0.68rem', fontWeight: '800', color: '#059669', display: 'block', marginBottom: '2px' }}>Consumed (kg) *</label>
+                              <input 
+                                type="number" 
+                                step="0.1"
+                                className="form-control" 
+                                style={{ fontSize: '0.85rem', fontWeight: '900', color: '#059669', border: '1.5px solid #10b981', background: '#ffffff' }} 
+                                value={roll.consumedWeightKg || ''} 
+                                disabled={activeRunningJob.isPrintingCompleted}
+                                onChange={e => handleInputRollFieldChangeActiveRun(index, 'consumedWeightKg', e.target.value)}
+                                placeholder="85.0"
+                              />
+                            </div>
+                          </div>
+
+                          {balW > 0 && (
+                            <div style={{ marginTop: '8px', background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '5px 8px', borderRadius: '6px', fontSize: '0.72rem', color: '#047857', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span>
+                                ⚖️ <strong>Unused Balance: {balW.toFixed(1)} kg</strong> (Barcode Tag <code>RM-BAL-{(roll.barcodeId || 'ROLL').slice(-8)}</code>)
+                              </span>
+                              <span className="badge badge-success" style={{ fontSize: '0.62rem', background: '#dcfce7', color: '#15803d', padding: '2px 6px' }}>
+                                Auto Balance Barcode
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {!activeRunningJob.isPrintingCompleted && (
+                    <button
+                      type="button"
+                      onClick={handleAddInputRollActiveRun}
+                      style={{
+                        width: '100%',
+                        padding: '8px',
+                        background: '#f0f9ff',
+                        border: '1.5px dashed #0284c7',
+                        borderRadius: '8px',
+                        color: '#0369a1',
+                        fontWeight: '800',
+                        fontSize: '0.8rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <Plus size={15} /> + Add Input Substrate Roll (Roll #{inputRollsList.length + 1})
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Right Column: Latest Available Artwork Verification */}
@@ -2332,212 +2638,6 @@ export default function ProductionScheduler({
                     </span>
                   </div>
 
-                  {/* Field 2.5: Input Film Substrate Rolls (Consumed - Roll-Wise) */}
-                  <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                      <div>
-                        <label style={{ fontSize: '0.88rem', fontWeight: '900', color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <Barcode size={18} style={{ color: '#0284c7' }} /> Input Film Substrate Rolls (Consumed) *
-                        </label>
-                        <span style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px', display: 'block' }}>
-                          Scan/select input substrate rolls & enter consumed weight. Remaining balance generates a new barcode tag for RM inventory.
-                        </span>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#64748b' }}>Total Consumed:</span>
-                        <div style={{ fontSize: '1.25rem', fontWeight: '900', color: '#0284c7' }}>
-                          {inputRollsList.reduce((sum, r) => sum + (parseFloat(r.consumedWeightKg) || 0), 0).toFixed(2)} kg
-                        </div>
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '12px' }}>
-                      {inputRollsList.map((roll, index) => {
-                        const initW = parseFloat(roll.initialWeightKg) || 0;
-                        const consW = parseFloat(roll.consumedWeightKg) || 0;
-                        const balW = Math.max(0, initW - consW);
-
-                        return (
-                          <div 
-                            key={roll.id} 
-                            style={{ 
-                              background: '#ffffff', 
-                              padding: '12px', 
-                              borderRadius: '8px', 
-                              border: '1px solid #cbd5e1',
-                              boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
-                            }}
-                          >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                              <span style={{ fontSize: '0.82rem', fontWeight: '900', color: '#0f172a' }}>
-                                Input Roll #{index + 1}
-                              </span>
-
-                              {inputRollsList.length > 1 && (
-                                <button
-                                  type="button"
-                                  onClick={() => setInputRollsList(prev => prev.filter((_, i) => i !== index))}
-                                  style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#ef4444', borderRadius: '6px', padding: '4px 6px', cursor: 'pointer' }}
-                                  title="Remove Input Roll"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
-                              )}
-                            </div>
-
-                            <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1.1fr 0.8fr 0.8fr 1fr 1fr', gap: '8px', alignItems: 'center' }}>
-                              <div>
-                                <label style={{ fontSize: '0.7rem', fontWeight: '800', color: '#0284c7', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
-                                  <Barcode size={12} /> Barcode ID (Scan Entry) *
-                                </label>
-                                <input 
-                                  type="text" 
-                                  className="form-control" 
-                                  style={{ fontSize: '0.82rem', fontWeight: '800', color: '#0284c7', border: '1.5px solid #0284c7', background: '#f0f9ff' }} 
-                                  value={roll.barcodeId} 
-                                  onChange={e => handleInputRollBarcodeChange(e.target.value, index)}
-                                  placeholder="Scan or type Barcode ID..."
-                                  required 
-                                />
-                              </div>
-
-                              <div>
-                                <label style={{ fontSize: '0.7rem', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '2px' }}>Substrate (Auto)</label>
-                                <input 
-                                  type="text" 
-                                  className="form-control" 
-                                  style={{ fontSize: '0.82rem', fontWeight: '700' }} 
-                                  value={roll.filmType} 
-                                  onChange={e => {
-                                    const val = e.target.value;
-                                    setInputRollsList(prev => prev.map((r, i) => i === index ? { ...r, filmType: val } : r));
-                                  }}
-                                  placeholder="PET / PE"
-                                  required 
-                                />
-                              </div>
-
-                              <div>
-                                <label style={{ fontSize: '0.7rem', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '2px' }}>Micron (µ)</label>
-                                <input 
-                                  type="number" 
-                                  className="form-control" 
-                                  style={{ fontSize: '0.82rem', fontWeight: '700' }} 
-                                  value={roll.micron} 
-                                  onChange={e => {
-                                    const val = e.target.value;
-                                    setInputRollsList(prev => prev.map((r, i) => i === index ? { ...r, micron: val } : r));
-                                  }}
-                                  placeholder="12"
-                                  required 
-                                />
-                              </div>
-
-                              <div>
-                                <label style={{ fontSize: '0.7rem', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '2px' }}>Width (mm)</label>
-                                <input 
-                                  type="number" 
-                                  className="form-control" 
-                                  style={{ fontSize: '0.82rem', fontWeight: '800', color: parseFloat(roll.widthMm) > (endJobTargetOrder?.widthMm || 460) ? '#b45309' : '#0f172a' }} 
-                                  value={roll.widthMm} 
-                                  onChange={e => {
-                                    const val = e.target.value;
-                                    setInputRollsList(prev => prev.map((r, i) => i === index ? { ...r, widthMm: val } : r));
-                                  }}
-                                  placeholder="460"
-                                  required 
-                                />
-                              </div>
-
-                              <div>
-                                <label style={{ fontSize: '0.7rem', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '2px' }}>Initial Wt (kg)</label>
-                                <input 
-                                  type="number" 
-                                  step="0.1"
-                                  className="form-control" 
-                                  style={{ fontSize: '0.85rem', fontWeight: '700' }} 
-                                  value={roll.initialWeightKg} 
-                                  onChange={e => {
-                                    const val = e.target.value;
-                                    setInputRollsList(prev => prev.map((r, i) => i === index ? { ...r, initialWeightKg: val } : r));
-                                  }}
-                                  placeholder="100.0"
-                                  required 
-                                />
-                              </div>
-
-                              <div>
-                                <label style={{ fontSize: '0.7rem', fontWeight: '800', color: '#059669', display: 'block', marginBottom: '2px' }}>Consumed Wt (kg) *</label>
-                                <input 
-                                  type="number" 
-                                  step="0.1"
-                                  className="form-control" 
-                                  style={{ fontSize: '0.9rem', fontWeight: '900', color: '#059669', border: '1.5px solid #10b981', background: '#ecfdf5' }} 
-                                  value={roll.consumedWeightKg} 
-                                  onChange={e => {
-                                    const val = e.target.value;
-                                    setInputRollsList(prev => prev.map((r, i) => i === index ? { ...r, consumedWeightKg: val } : r));
-                                  }}
-                                  placeholder="85.0"
-                                  required 
-                                />
-                              </div>
-                            </div>
-
-                            {balW > 0 && (
-                              <div style={{ marginTop: '8px', background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '6px 10px', borderRadius: '6px', fontSize: '0.75rem', color: '#047857', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span>
-                                  ⚖️ <strong>Unused Balance: {balW.toFixed(1)} kg</strong> (Barcode <code>RM-BAL-{(roll.barcodeId || 'ROLL').slice(-8)}</code> will be printed for RM store)
-                                </span>
-                                <span className="badge badge-success" style={{ fontSize: '0.65rem', background: '#dcfce7', color: '#15803d' }}>
-                                  Auto Balance Barcode
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const defaultWidth = endJobTargetOrder?.widthMm || 460;
-                        const defaultFilm = endJobTargetOrder?.printFilmType || 'PET';
-                        const defaultMic = endJobTargetOrder?.micron || 12;
-                        setInputRollsList(prev => [
-                          ...prev,
-                          {
-                            id: `in-roll-${Date.now()}-${prev.length + 1}`,
-                            barcodeId: `RM-BC-${(endJobTargetOrder?.jobCode || endJobTargetOrder?.id || 'ORD').replace(/[^a-zA-Z0-9-]/g, '')}-${prev.length + 1}`,
-                            filmType: defaultFilm,
-                            micron: String(defaultMic),
-                            widthMm: String(defaultWidth),
-                            initialWeightKg: '',
-                            consumedWeightKg: ''
-                          }
-                        ]);
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: '8px',
-                        background: '#f0f9ff',
-                        border: '1.5px dashed #0284c7',
-                        borderRadius: '8px',
-                        color: '#0369a1',
-                        fontWeight: '800',
-                        fontSize: '0.82rem',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <Plus size={16} /> + Add Input Substrate Roll (Roll #{inputRollsList.length + 1})
-                    </button>
-                  </div>
-
                   {/* Field 3: Printed Output (Roll-Wise Sequence in kgs) */}
                   <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
@@ -2754,6 +2854,125 @@ export default function ProductionScheduler({
                     </div>
                     <span style={{ fontSize: '0.72rem', color: '#64748b' }}>{endJobTargetOrder.printLayerGsm} GSM • {endJobTargetOrder.widthMm} mm width</span>
                   </div>
+                </div>
+
+                {/* Input Substrate Rolls Verification Summary Table */}
+                <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <h4 style={{ fontSize: '0.92rem', fontWeight: '900', color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Barcode size={17} style={{ color: '#0284c7' }} /> Input Substrate Rolls Verification Summary
+                    </h4>
+                    <span className="badge badge-success" style={{ fontSize: '0.72rem', background: '#dcfce7', color: '#15803d' }}>
+                      ✓ Verified from Active Run
+                    </span>
+                  </div>
+
+                  <div style={{ overflowX: 'auto', background: '#ffffff', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '12px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', textAlign: 'left' }}>
+                      <thead>
+                        <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #cbd5e1', color: '#475569', fontWeight: '800' }}>
+                          <th style={{ padding: '8px 12px' }}>Roll #</th>
+                          <th style={{ padding: '8px 12px' }}>Barcode ID</th>
+                          <th style={{ padding: '8px 12px' }}>Substrate & Size</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'right' }}>Initial Wt</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'right' }}>Consumed Wt</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'right' }}>Unused Balance</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {inputRollsList.map((roll, idx) => {
+                          const initW = parseFloat(roll.initialWeightKg) || 0;
+                          const consW = parseFloat(roll.consumedWeightKg) || 0;
+                          const balW = Math.max(0, initW - consW);
+                          const balBarcodeId = roll.barcodeId ? `${roll.barcodeId}-BAL` : `RM-BAL-ROLL-${idx + 1}`;
+
+                          return (
+                            <tr key={roll.id || idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <td style={{ padding: '8px 12px', fontWeight: '800', color: '#0f172a' }}>Roll #{idx + 1}</td>
+                              <td style={{ padding: '8px 12px', fontWeight: '800', color: '#0284c7' }}>{roll.barcodeId || '—'}</td>
+                              <td style={{ padding: '8px 12px', color: '#334155' }}>
+                                <strong>{roll.filmType || 'PET'}</strong> {roll.micron || 12}µ ({roll.widthMm || 460}mm)
+                              </td>
+                              <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '700' }}>{initW.toFixed(1)} kg</td>
+                              <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '900', color: '#059669' }}>{consW.toFixed(1)} kg</td>
+                              <td style={{ padding: '8px 12px', textAlign: 'right', color: balW > 0 ? '#b45309' : '#64748b' }}>
+                                {balW > 0 ? (
+                                  <div>
+                                    <strong style={{ color: '#b45309' }}>{balW.toFixed(1)} kg</strong>
+                                    <div style={{ fontSize: '0.68rem', color: '#64748b' }}>Tag: {balBarcodeId}</div>
+                                  </div>
+                                ) : (
+                                  '0.0 kg (Fully Consumed)'
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Calculations Summary Badges */}
+                  {(() => {
+                    const totalInputConsumedKg = inputRollsList.reduce((sum, r) => sum + (parseFloat(r.consumedWeightKg) || 0), 0);
+                    const matchingJM = (jobMasters || []).find(j => j.id === endJobTargetOrder.jobMasterId || j.jobCode === endJobTargetOrder.jobCode);
+                    const printWidthMm = Number(endJobTargetOrder.printWidthMm || matchingJM?.printWidthMm || endJobTargetOrder.widthMm || 460);
+                    const inputWidths = inputRollsList.map(r => Number(r.widthMm) || printWidthMm);
+                    const maxInputWidth = Math.max(...inputWidths, printWidthMm);
+                    const isBiggerSize = maxInputWidth > printWidthMm;
+                    const outputKgNum = parseFloat(inputPrintedOutputKg) || 0;
+                    const actualMetersNum = parseFloat(inputActualMeters) || endJobTargetOrder.targetMeters || 0;
+
+                    let excessFilmWastageKg = 0;
+                    let excessFilmWastagePct = 0;
+                    if (isBiggerSize && totalInputConsumedKg > 0) {
+                      const trimRatio = (maxInputWidth - printWidthMm) / maxInputWidth;
+                      excessFilmWastageKg = Number((totalInputConsumedKg * trimRatio).toFixed(2));
+                      excessFilmWastagePct = Number(((excessFilmWastageKg / totalInputConsumedKg) * 100).toFixed(2));
+                    }
+
+                    let inkWeightGainKg = 0;
+                    if (isBiggerSize) {
+                      inkWeightGainKg = Number((outputKgNum - (totalInputConsumedKg - excessFilmWastageKg)).toFixed(2));
+                    } else {
+                      inkWeightGainKg = Number((outputKgNum - totalInputConsumedKg).toFixed(2));
+                    }
+
+                    const printedAreaM2 = (actualMetersNum * printWidthMm) / 1000;
+                    let actualCalculatedInkGsm = 0;
+                    if (printedAreaM2 > 0 && inkWeightGainKg > 0) {
+                      actualCalculatedInkGsm = Number(((inkWeightGainKg * 0.20 * 1000) / printedAreaM2).toFixed(2));
+                    }
+
+                    return (
+                      <div style={{ display: 'grid', gridTemplateColumns: isBiggerSize ? '1fr 1.2fr 1fr 1fr' : '1.2fr 1fr 1fr', gap: '8px' }}>
+                        <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                          <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Total Substrate Consumed</span>
+                          <div style={{ fontSize: '1rem', fontWeight: '900', color: '#0284c7' }}>{totalInputConsumedKg.toFixed(2)} kg</div>
+                        </div>
+
+                        {isBiggerSize && (
+                          <div style={{ background: '#fffbeb', padding: '8px 10px', borderRadius: '6px', border: '1px solid #fde68a' }}>
+                            <span style={{ fontSize: '0.68rem', color: '#b45309', fontWeight: '800', textTransform: 'uppercase' }}>✂️ Film Trimming Wastage</span>
+                            <div style={{ fontSize: '1rem', fontWeight: '900', color: '#b45309' }}>
+                              {excessFilmWastageKg} kg ({excessFilmWastagePct}%)
+                            </div>
+                            <span style={{ fontSize: '0.65rem', color: '#92400e' }}>Input {maxInputWidth}mm vs Print {printWidthMm}mm</span>
+                          </div>
+                        )}
+
+                        <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                          <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Ink Weight Gain</span>
+                          <div style={{ fontSize: '1rem', fontWeight: '900', color: '#059669' }}>{inkWeightGainKg} kg</div>
+                        </div>
+
+                        <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                          <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Calculated Ink GSM</span>
+                          <div style={{ fontSize: '1rem', fontWeight: '900', color: '#7c3aed' }}>{actualCalculatedInkGsm} GSM</div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {inputOperatorNotes && (
