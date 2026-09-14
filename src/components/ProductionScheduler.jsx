@@ -600,6 +600,34 @@ export default function ProductionScheduler({
     setActiveRunningJob(startedOrder);
   };
 
+  // Handle Barcode Scan / Change on Input Film Roll (Auto-prefills Substrate, Micron, Width & Weight)
+  const handleInputRollBarcodeChange = (bId, index) => {
+    const cleanId = bId.trim();
+    if (!cleanId) {
+      setInputRollsList(prev => prev.map((r, i) => i === index ? { ...r, barcodeId: bId } : r));
+      return;
+    }
+
+    const matched = (inventoryRolls || []).find(r => 
+      (r.barcodeId && String(r.barcodeId).toLowerCase().trim() === cleanId.toLowerCase()) || 
+      (r.id && String(r.id).toLowerCase().trim() === cleanId.toLowerCase())
+    );
+
+    if (matched) {
+      setInputRollsList(prev => prev.map((r, i) => i === index ? {
+        ...r,
+        barcodeId: matched.barcodeId || matched.id || bId,
+        filmType: matched.filmType || matched.itemName || r.filmType,
+        micron: String(matched.micron || r.micron),
+        widthMm: String(matched.widthMm || r.widthMm),
+        initialWeightKg: String(matched.netWeightKg || matched.availableWeightKg || r.initialWeightKg),
+        consumedWeightKg: String(matched.netWeightKg || matched.availableWeightKg || r.consumedWeightKg)
+      } : r));
+    } else {
+      setInputRollsList(prev => prev.map((r, i) => i === index ? { ...r, barcodeId: bId } : r));
+    }
+  };
+
   // Initiate End Job: Open Pop-up & Prefill Shop Floor Inputs
   const handleInitiateEndJob = (order) => {
     setEndJobTargetOrder(order);
@@ -2345,53 +2373,36 @@ export default function ProductionScheduler({
                                 Input Roll #{index + 1}
                               </span>
 
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <select
-                                  className="form-control"
-                                  style={{ padding: '3px 8px', fontSize: '0.75rem', width: 'auto', fontWeight: '700' }}
-                                  value={roll.barcodeId}
-                                  onChange={e => {
-                                    const bId = e.target.value;
-                                    const matched = (inventoryRolls || []).find(r => r.barcodeId === bId || r.id === bId);
-                                    if (matched) {
-                                      setInputRollsList(prev => prev.map((r, i) => i === index ? {
-                                        ...r,
-                                        barcodeId: matched.barcodeId || matched.id,
-                                        filmType: matched.filmType || r.filmType,
-                                        micron: String(matched.micron || r.micron),
-                                        widthMm: String(matched.widthMm || r.widthMm),
-                                        initialWeightKg: String(matched.netWeightKg || matched.availableWeightKg || r.initialWeightKg),
-                                        consumedWeightKg: String(matched.netWeightKg || matched.availableWeightKg || r.consumedWeightKg)
-                                      } : r));
-                                    } else {
-                                      setInputRollsList(prev => prev.map((r, i) => i === index ? { ...r, barcodeId: bId } : r));
-                                    }
-                                  }}
+                              {inputRollsList.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setInputRollsList(prev => prev.filter((_, i) => i !== index))}
+                                  style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#ef4444', borderRadius: '6px', padding: '4px 6px', cursor: 'pointer' }}
+                                  title="Remove Input Roll"
                                 >
-                                  <option value={roll.barcodeId || ''}>{roll.barcodeId ? `Barcode: ${roll.barcodeId}` : '-- Select / Scan Stock Barcode --'}</option>
-                                  {(inventoryRolls || []).filter(r => (r.category || '').includes('Raw Material') || r.rollType === 'RAW_MATERIAL' || (r.filmType && !r.rollType)).map(r => (
-                                    <option key={r.id || r.barcodeId} value={r.barcodeId || r.id}>
-                                      {r.barcodeId} - {r.filmType} {r.micron}µ ({r.widthMm}mm) - {r.availableWeightKg || r.netWeightKg}kg
-                                    </option>
-                                  ))}
-                                </select>
-
-                                {inputRollsList.length > 1 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setInputRollsList(prev => prev.filter((_, i) => i !== index))}
-                                    style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#ef4444', borderRadius: '6px', padding: '4px 6px', cursor: 'pointer' }}
-                                    title="Remove Input Roll"
-                                  >
-                                    <Trash2 size={13} />
-                                  </button>
-                                )}
-                              </div>
+                                  <Trash2 size={13} />
+                                </button>
+                              )}
                             </div>
 
-                            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr 0.8fr 1fr 1fr', gap: '8px', alignItems: 'center' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1.1fr 0.8fr 0.8fr 1fr 1fr', gap: '8px', alignItems: 'center' }}>
                               <div>
-                                <label style={{ fontSize: '0.7rem', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '2px' }}>Substrate</label>
+                                <label style={{ fontSize: '0.7rem', fontWeight: '800', color: '#0284c7', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
+                                  <Barcode size={12} /> Barcode ID (Scan Entry) *
+                                </label>
+                                <input 
+                                  type="text" 
+                                  className="form-control" 
+                                  style={{ fontSize: '0.82rem', fontWeight: '800', color: '#0284c7', border: '1.5px solid #0284c7', background: '#f0f9ff' }} 
+                                  value={roll.barcodeId} 
+                                  onChange={e => handleInputRollBarcodeChange(e.target.value, index)}
+                                  placeholder="Scan or type Barcode ID..."
+                                  required 
+                                />
+                              </div>
+
+                              <div>
+                                <label style={{ fontSize: '0.7rem', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '2px' }}>Substrate (Auto)</label>
                                 <input 
                                   type="text" 
                                   className="form-control" 
@@ -2456,12 +2467,12 @@ export default function ProductionScheduler({
                               </div>
 
                               <div>
-                                <label style={{ fontSize: '0.7rem', fontWeight: '800', color: '#0284c7', display: 'block', marginBottom: '2px' }}>Consumed Wt (kg) *</label>
+                                <label style={{ fontSize: '0.7rem', fontWeight: '800', color: '#059669', display: 'block', marginBottom: '2px' }}>Consumed Wt (kg) *</label>
                                 <input 
                                   type="number" 
                                   step="0.1"
                                   className="form-control" 
-                                  style={{ fontSize: '0.9rem', fontWeight: '900', color: '#0284c7', border: '1.5px solid #0284c7', background: '#e0f2fe' }} 
+                                  style={{ fontSize: '0.9rem', fontWeight: '900', color: '#059669', border: '1.5px solid #10b981', background: '#ecfdf5' }} 
                                   value={roll.consumedWeightKg} 
                                   onChange={e => {
                                     const val = e.target.value;
