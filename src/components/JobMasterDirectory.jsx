@@ -78,11 +78,13 @@ export default function JobMasterDirectory({
   onUpdateCylinder,
   onAddClient,
   onPunchOrderFromJobMaster,
+  onOpenJobCardModal,
   onUpdateJobMaster,
   onDeleteJobMaster,
   onLinkCylinderToJobMaster,
   onCreateAndLinkPair
 }) {
+  const handleTriggerPunchOrder = onPunchOrderFromJobMaster || onOpenJobCardModal;
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedJob, setSelectedJob] = useState(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -2041,7 +2043,7 @@ export default function JobMasterDirectory({
               <button className="btn-secondary" style={{ padding: '10px 14px', fontSize: '0.85rem', fontWeight: '700' }} onClick={() => handleOpenEditModal(selectedJob)} title="Edit Job Master">
                 <Edit size={16} /> Edit Specs
               </button>
-              <button className="btn-primary" style={{ padding: '10px 18px', fontSize: '0.9rem', fontWeight: '700', background: 'linear-gradient(135deg, #059669 0%, #047857 100%)' }} onClick={() => onPunchOrderFromJobMaster && onPunchOrderFromJobMaster(selectedJob)}>
+              <button className="btn-primary" style={{ padding: '10px 18px', fontSize: '0.9rem', fontWeight: '700', background: 'linear-gradient(135deg, #059669 0%, #047857 100%)' }} onClick={() => handleTriggerPunchOrder && handleTriggerPunchOrder(selectedJob)}>
                 <Calculator size={18} /> Punch New Order
               </button>
               <button className="btn-secondary" style={{ padding: '10px 14px', fontSize: '0.85rem', fontWeight: '700', color: '#dc2626', borderColor: '#fca5a5' }} onClick={() => handleConfirmDeleteJobMaster(selectedJob)} title="Delete Job Master">
@@ -2619,7 +2621,7 @@ export default function JobMasterDirectory({
                       <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                         <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => handleSelectJob(job)}>View Profile</button>
                         <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => handleOpenEditModal(job)}>Edit</button>
-                        <button className="btn-primary" style={{ padding: '4px 10px', fontSize: '0.75rem', background: '#047857' }} onClick={() => onPunchOrderFromJobMaster && onPunchOrderFromJobMaster(job)}>Punch Order</button>
+                        <button className="btn-primary" style={{ padding: '4px 10px', fontSize: '0.75rem', background: '#047857' }} onClick={() => handleTriggerPunchOrder && handleTriggerPunchOrder(job)}>Punch Order</button>
                         <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.75rem', color: '#dc2626', borderColor: '#fca5a5' }} onClick={() => handleConfirmDeleteJobMaster(job)} title="Delete Job Master">
                           <Trash2 size={13} />
                         </button>

@@ -3593,10 +3593,8 @@ export default function App() {
             onUpdateCylinder={handleUpdateCylinder}
             onLinkCylinderToJobMaster={handleLinkCylinderToJobMaster}
             onCreateAndLinkPair={handleCreateAndLinkPair}
-            onOpenJobCardModal={(jm) => {
-              setSelectedJobMasterForPunch(jm);
-              setActiveTab('job_punching');
-            }}
+            onPunchOrderFromJobMaster={handlePunchOrderFromJobMaster}
+            onOpenJobCardModal={handlePunchOrderFromJobMaster}
           />
         )}
 
