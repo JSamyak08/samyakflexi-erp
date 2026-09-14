@@ -75,18 +75,24 @@ function parseCsvLine(line) {
   return result;
 }
 
-function autoMapHeaders(csvHeaders) {
+/**
+ * Helper: Auto-detect CSV Header Mapping for Rotogravure Cylinders Bulk Upload
+ */
+function autoMapHeaders(headers = []) {
   const mapping = {};
-  TARGET_SCHEMA_FIELDS.forEach(field => {
-    let matchedHeader = '';
-    for (const h of csvHeaders) {
-      const cleanH = h.toLowerCase().replace(/[^a-z0-9]/g, ' ').trim();
-      if (field.aliases.some(alias => cleanH === alias || cleanH.includes(alias))) {
-        matchedHeader = h;
-        break;
-      }
-    }
-    mapping[field.key] = matchedHeader || '';
+  headers.forEach(h => {
+    const clean = h.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (clean.includes('sku') || clean.includes('code') || clean.includes('serial')) mapping[h] = 'sku';
+    else if (clean.includes('jobname') || clean.includes('title') || clean.includes('design') || clean.includes('itemname')) mapping[h] = 'jobName';
+    else if (clean.includes('client') || clean.includes('party') || clean.includes('customer') || clean.includes('group')) mapping[h] = 'clientGroup';
+    else if (clean.includes('color') || clean.includes('colour') || clean.includes('count')) mapping[h] = 'colorsCount';
+    else if (clean.includes('printwidth') || clean.includes('webwidth') || clean.includes('width')) mapping[h] = 'printWidthMm';
+    else if (clean.includes('facelength') || clean.includes('shellsize') || clean.includes('length')) mapping[h] = 'faceLengthMm';
+    else if (clean.includes('repeat') || clean.includes('circumference') || clean.includes('dia')) mapping[h] = 'circumferenceMm';
+    else if (clean.includes('structure') || clean.includes('laminate') || clean.includes('film')) mapping[h] = 'structure';
+    else if (clean.includes('cost') || clean.includes('rate') || clean.includes('price')) mapping[h] = 'cylinderCost';
+    else if (clean.includes('engrav') || clean.includes('vendor') || clean.includes('maker')) mapping[h] = 'engravuresName';
+    else if (clean.includes('status') || clean.includes('condition')) mapping[h] = 'status';
   });
   return mapping;
 }
@@ -98,12 +104,15 @@ export default function CylinderManagement({
   onAddClient,
   jobMasters = [],
   onAddJobMaster,
+  onBatchAddJobMasters,
   onUpdateJobMaster,
   currentUser,
   onAddCylinder, 
   onBatchAddCylinders,
   onUpdateCylinder,
   onDeleteCylinder,
+  onLinkCylinderToJobMaster,
+  onCreateAndLinkPair,
   machines = []
 }) {
   // Access Control: Only Admin and Plant Manager have Edit/Lock/Delete access
@@ -137,6 +146,67 @@ export default function CylinderManagement({
   const [bulkParsedRows, setBulkParsedRows] = useState([]);
   const [bulkHeaderMapping, setBulkHeaderMapping] = useState({});
   const [bulkAutoCreateJobMasters, setBulkAutoCreateJobMasters] = useState(true);
+
+  // Interactive Link / Create Job Master Modal State
+  const [linkingCylinder, setLinkingCylinder] = useState(null);
+  const [linkMode, setLinkMode] = useState('EXISTING');
+  const [selectedExistingJmId, setSelectedExistingJmId] = useState('');
+
+  const handleConfirmLinkToExistingJm = async () => {
+    if (!linkingCylinder || !selectedExistingJmId) {
+      alert("Please select a Job Master to link with!");
+      return;
+    }
+    if (onLinkCylinderToJobMaster) {
+      await onLinkCylinderToJobMaster(linkingCylinder.id, selectedExistingJmId);
+    } else {
+      const targetJm = (jobMasters || []).find(j => j.id === selectedExistingJmId);
+      if (onUpdateCylinder) {
+        onUpdateCylinder({ ...linkingCylinder, jobMasterId: selectedExistingJmId, sku: targetJm?.skuCode || linkingCylinder.sku });
+      }
+    }
+    setLinkingCylinder(null);
+    alert(`✅ Cylinder ${linkingCylinder.sku} successfully linked to Job Master!`);
+  };
+
+  const handleCreateNewJmAndLink = async () => {
+    if (!linkingCylinder) return;
+    const newJmId = `JM-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+    const newJm = {
+      id: newJmId,
+      skuCode: linkingCylinder.sku,
+      jobName: linkingCylinder.jobName,
+      clientName: linkingCylinder.clientGroup || 'Standard Client',
+      structure: linkingCylinder.structure || '—',
+      printWidthMm: linkingCylinder.printWidthMm || 1000,
+      faceLengthMm: linkingCylinder.faceLengthMm || 1050,
+      repeatLengthMm: linkingCylinder.circumferenceMm || 400,
+      layers: linkingCylinder.layers || [],
+      cylinderSku: linkingCylinder.sku,
+      cylinderCost: linkingCylinder.cylinderCost || '₹ 0',
+      colorsCount: linkingCylinder.colorsCount || 6,
+      engravuresName: linkingCylinder.engravuresName || '',
+      costBorneBy: linkingCylinder.costBorneBy || 'Client (100%)',
+      utilisationLimit: linkingCylinder.utilisationLimit || 10000,
+      creationDate: new Date().toISOString().split('T')[0]
+    };
+
+    const updatedCyl = {
+      ...linkingCylinder,
+      jobMasterId: newJmId,
+      job_master_id: newJmId
+    };
+
+    if (onCreateAndLinkPair) {
+      await onCreateAndLinkPair({ cylinder: updatedCyl, jobMaster: newJm });
+    } else {
+      if (onAddJobMaster) await onAddJobMaster(newJm);
+      if (onUpdateCylinder) await onUpdateCylinder(updatedCyl);
+    }
+
+    setLinkingCylinder(null);
+    alert(`✅ New Job Master (${newJmId}) created and linked to Cylinder (${linkingCylinder.sku}) in database!`);
+  };
 
   // Live printing press list — only Rotogravure / Flexographic / Digital machines
   const printingPresses = useMemo(() => {
@@ -805,10 +875,10 @@ export default function CylinderManagement({
     }
 
     // Auto-create consequent Job Master entries if toggle enabled
-    if (bulkAutoCreateJobMasters && onAddJobMaster) {
-      bulkPreviewJobs.forEach((job, idx) => {
+    if (bulkAutoCreateJobMasters) {
+      const createdJms = bulkPreviewJobs.map((job, idx) => {
         const jmId = `JM-2026-${String((jobMasters ? jobMasters.length : 0) + 101 + idx).padStart(3, '0')}`;
-        onAddJobMaster({
+        return {
           id: jmId,
           skuCode: job.sku,
           jobName: job.jobName,
@@ -826,8 +896,14 @@ export default function CylinderManagement({
           utilisationLimit: job.utilisationLimit,
           artworkUrl: null,
           creationDate: new Date().toISOString().split('T')[0]
-        });
+        };
       });
+
+      if (onBatchAddJobMasters) {
+        onBatchAddJobMasters(createdJms);
+      } else if (onAddJobMaster) {
+        createdJms.forEach(jm => onAddJobMaster(jm));
+      }
     }
 
     setIsBulkModalOpen(false);
@@ -1026,16 +1102,46 @@ export default function CylinderManagement({
 
                       <td>
                         <div style={{ fontWeight: '700', color: '#0f172a' }}>{c.jobName}</div>
-                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '2px' }}>
-                          <span className="badge badge-both" style={{ fontSize: '0.7rem', padding: '2px 6px' }}>
-                            🎨 {c.colorsCount || 6} Colors
-                          </span>
-                          {c.structure && (
-                            <span style={{ fontSize: '0.7rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }} title={c.structure}>
-                              {c.structure}
-                            </span>
-                          )}
-                        </div>
+                        {(() => {
+                          const linkedJm = (jobMasters || []).find(j => 
+                            j.id === c.jobMasterId || 
+                            (j.skuCode && c.sku && j.skuCode.trim().toLowerCase() === c.sku.trim().toLowerCase()) || 
+                            (j.jobName && c.jobName && j.jobName.trim().toLowerCase() === c.jobName.trim().toLowerCase())
+                          );
+                          return (
+                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '4px', flexWrap: 'wrap' }}>
+                              <span className="badge badge-both" style={{ fontSize: '0.7rem', padding: '2px 6px' }}>
+                                🎨 {c.colorsCount || 6} Colors
+                              </span>
+                              {linkedJm ? (
+                                <span 
+                                  style={{ fontSize: '0.68rem', padding: '2px 6px', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: '3px', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontWeight: '700' }}
+                                  title={`Linked to Job Master template ${linkedJm.skuCode || linkedJm.id}`}
+                                >
+                                  <Link size={10} /> Linked to JM ({linkedJm.skuCode || linkedJm.id})
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setLinkingCylinder(c);
+                                    setLinkMode('EXISTING');
+                                    setSelectedExistingJmId('');
+                                  }}
+                                  style={{ fontSize: '0.68rem', padding: '2px 6px', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: '3px', background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a', cursor: 'pointer', fontWeight: '700' }}
+                                  title="Click to resolve missing Job Master link or auto-create Job Master"
+                                >
+                                  <AlertTriangle size={10} /> ⚠️ Missing Job Master (Link)
+                                </button>
+                              )}
+                              {c.structure && (
+                                <span style={{ fontSize: '0.7rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }} title={c.structure}>
+                                  {c.structure}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       <td>
@@ -1922,6 +2028,92 @@ export default function CylinderManagement({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* INTERACTIVE LINK / CREATE JOB MASTER MODAL */}
+      {linkingCylinder && (
+        <div className="modal-overlay" style={{ zIndex: 2100 }} onClick={() => setLinkingCylinder(null)}>
+          <div className="glass-card modal-content" style={{ width: '600px', maxWidth: '95vw', padding: '24px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)', margin: 0 }}>
+                  <Link size={20} style={{ color: 'var(--primary-brand)' }} /> Link Rotogravure Cylinder to Job Master
+                </h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', margin: '4px 0 0 0' }}>
+                  Target Cylinder SKU: <strong style={{ color: 'var(--primary-brand)' }}>{linkingCylinder.sku}</strong> | Job: <strong>{linkingCylinder.jobName}</strong>
+                </p>
+              </div>
+              <button type="button" className="btn-icon" onClick={() => setLinkingCylinder(null)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
+              <button
+                type="button"
+                className={linkMode === 'EXISTING' ? 'btn-primary' : 'btn-secondary'}
+                style={{ flex: 1, fontSize: '0.85rem', padding: '8px' }}
+                onClick={() => setLinkMode('EXISTING')}
+              >
+                <Link size={14} /> Link to Existing Job Master
+              </button>
+              <button
+                type="button"
+                className={linkMode === 'CREATE_NEW' ? 'btn-primary' : 'btn-secondary'}
+                style={{ flex: 1, fontSize: '0.85rem', padding: '8px' }}
+                onClick={() => setLinkMode('CREATE_NEW')}
+              >
+                <Plus size={14} /> Create New & Link
+              </button>
+            </div>
+
+            {linkMode === 'EXISTING' ? (
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <label style={{ fontWeight: '700', fontSize: '0.88rem', display: 'block', marginBottom: '6px' }}>
+                  Select Existing Job Master Record:
+                </label>
+                <select
+                  className="form-control"
+                  value={selectedExistingJmId}
+                  onChange={e => setSelectedExistingJmId(e.target.value)}
+                  style={{ width: '100%', padding: '10px' }}
+                >
+                  <option value="">— Select Job Master —</option>
+                  {(jobMasters || []).map(j => (
+                    <option key={j.id} value={j.id}>
+                      {j.skuCode || j.id} — {j.jobName} ({j.clientName})
+                    </option>
+                  ))}
+                </select>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
+                  <button type="button" className="btn-secondary" onClick={() => setLinkingCylinder(null)}>Cancel</button>
+                  <button type="button" className="btn-primary" onClick={handleConfirmLinkToExistingJm} disabled={!selectedExistingJmId}>
+                    <CheckCircle2 size={16} /> Link Selected Record
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.85rem', color: '#334155', marginBottom: '12px' }}>
+                  A new Job Master record will be automatically generated with parameters pre-filled from Cylinder <strong>{linkingCylinder.sku}</strong>:
+                </div>
+                <div style={{ fontSize: '0.8rem', background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '16px' }}>
+                  <div><strong>Job Name:</strong> {linkingCylinder.jobName}</div>
+                  <div><strong>Client:</strong> {linkingCylinder.clientGroup || 'Standard'}</div>
+                  <div><strong>Dimensions:</strong> {linkingCylinder.faceLengthMm || 1050}L × {linkingCylinder.circumferenceMm || 400}C mm</div>
+                  <div><strong>Colors:</strong> {linkingCylinder.colorsCount || 6} Colors</div>
+                  <div style={{ gridColumn: 'span 2' }}><strong>Structure:</strong> {linkingCylinder.structure || '—'}</div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                  <button type="button" className="btn-secondary" onClick={() => setLinkingCylinder(null)}>Cancel</button>
+                  <button type="button" className="btn-primary" onClick={handleCreateNewJmAndLink}>
+                    <Plus size={16} /> Create & Save to Supabase Table
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

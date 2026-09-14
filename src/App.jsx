@@ -94,7 +94,7 @@ import {
   fetchPrintingMachines, savePrintingMachineToSupabase, deletePrintingMachineFromSupabase,
   fetchProductionSchedules, saveProductionScheduleToSupabase, deleteProductionScheduleFromSupabase,
   fetchClients, saveClientToSupabase, deleteClientFromSupabase,
-  fetchJobMasters, saveJobMasterToSupabase, deleteJobMasterFromSupabase,
+  fetchJobMasters, saveJobMasterToSupabase, deleteJobMasterFromSupabase, saveJobMasterBatchToSupabase,
   fetchInks, saveInkToSupabase, deleteInkFromSupabase,
   fetchEmployeesFromSupabase, saveEmployeeToSupabase, deleteEmployeeFromSupabase,
   fetchEmployeeAttendanceFromSupabase, saveEmployeeAttendanceToSupabase,
@@ -2248,6 +2248,69 @@ export default function App() {
     }
   };
 
+  const handleBatchAddJobMasters = async (newJmList) => {
+    if (!Array.isArray(newJmList) || newJmList.length === 0) return;
+    setJobMasters(prev => {
+      const map = new Map();
+      (prev || []).forEach(j => {
+        const k = (j.skuCode || j.sku || j.jobName || String(j.id)).trim().toLowerCase();
+        if (k) map.set(k, j);
+      });
+      newJmList.forEach(j => {
+        const k = (j.skuCode || j.sku || j.jobName || String(j.id)).trim().toLowerCase();
+        if (k) {
+          const existing = map.get(k);
+          map.set(k, { ...(existing || {}), ...j });
+        }
+      });
+      const merged = Array.from(map.values());
+      safeLocalStorageSet('samyak_erp_job_masters', merged);
+      return merged;
+    });
+
+    logAudit('CREATE', 'Job Masters', `Bulk uploaded ${newJmList.length} Job Master template(s) via CSV`, 'BULK_CSV');
+
+    try {
+      await saveJobMasterBatchToSupabase(newJmList);
+    } catch (err) {
+      console.warn("[Sync Notice] Batch Job Masters saved locally. Supabase notice:", err);
+    }
+  };
+
+  const handleLinkCylinderToJobMaster = async (cylinderId, jobMasterId) => {
+    if (!cylinderId || !jobMasterId) return;
+    const targetJm = (jobMasters || []).find(j => j.id === jobMasterId || j.skuCode === jobMasterId);
+    const targetCyl = (cylinders || []).find(c => c.id === cylinderId || c.sku === cylinderId);
+
+    if (targetCyl) {
+      const updatedCyl = {
+        ...targetCyl,
+        jobMasterId: jobMasterId,
+        job_master_id: jobMasterId,
+        sku: targetJm?.skuCode || targetCyl.sku
+      };
+      await handleUpdateCylinder(updatedCyl);
+    }
+
+    if (targetJm) {
+      const updatedJm = {
+        ...targetJm,
+        cylinderSku: targetCyl?.sku || targetJm.cylinderSku,
+        cylinderId: cylinderId
+      };
+      await handleUpdateJobMaster(updatedJm);
+    }
+  };
+
+  const handleCreateAndLinkPair = async ({ cylinder, jobMaster }) => {
+    if (cylinder) {
+      await handleAddCylinder(cylinder);
+    }
+    if (jobMaster) {
+      await handleAddJobMaster(jobMaster);
+    }
+  };
+
   // Ink Management Handlers & Inventory Synchronization
   const syncInkToInventory = (ink, overrideStock = null) => {
     const invId = ink.productCode || ink.id;
@@ -3520,11 +3583,16 @@ export default function App() {
             cylinders={cylinders}
             productionRecords={productionRecords}
             machines={machines}
+            currentUser={currentUser}
             onAddJobMaster={handleAddJobMaster}
+            onBatchAddJobMasters={handleBatchAddJobMasters}
             onUpdateJobMaster={handleUpdateJobMaster}
             onDeleteJobMaster={handleDeleteJobMaster}
             onAddCylinder={handleAddCylinder}
+            onBatchAddCylinders={handleBatchAddCylinders}
             onUpdateCylinder={handleUpdateCylinder}
+            onLinkCylinderToJobMaster={handleLinkCylinderToJobMaster}
+            onCreateAndLinkPair={handleCreateAndLinkPair}
             onOpenJobCardModal={(jm) => {
               setSelectedJobMasterForPunch(jm);
               setActiveTab('job_punching');
@@ -3698,12 +3766,15 @@ export default function App() {
             onAddClient={handleAddClient}
             jobMasters={jobMasters}
             onAddJobMaster={handleAddJobMaster}
+            onBatchAddJobMasters={handleBatchAddJobMasters}
             onUpdateJobMaster={handleUpdateJobMaster}
             currentUser={currentUser}
             onAddCylinder={handleAddCylinder}
             onBatchAddCylinders={handleBatchAddCylinders}
             onUpdateCylinder={handleUpdateCylinder}
             onDeleteCylinder={handleDeleteCylinder}
+            onLinkCylinderToJobMaster={handleLinkCylinderToJobMaster}
+            onCreateAndLinkPair={handleCreateAndLinkPair}
           />
         )}
 

@@ -1869,6 +1869,19 @@ export async function deleteJobMasterFromSupabase(jobMasterId) {
   handleSupabaseError(error, 'job_masters');
 }
 
+export async function saveJobMasterBatchToSupabase(jobMasterList) {
+  if (!isSupabaseConfigured() || !Array.isArray(jobMasterList) || jobMasterList.length === 0) return;
+  await ensureValidSession();
+  console.log(`[job_masters] Bulk syncing ${jobMasterList.length} Job Master(s) to Supabase...`);
+  for (const jm of jobMasterList) {
+    try {
+      await saveJobMasterToSupabase(jm);
+    } catch (e) {
+      console.warn('[job_masters] Failed to save job master in batch:', jm?.id, e);
+    }
+  }
+}
+
 /**
  * -----------------------------------------------------------------------------
  * 12. SALES QUOTATIONS SUPABASE OPERATIONS

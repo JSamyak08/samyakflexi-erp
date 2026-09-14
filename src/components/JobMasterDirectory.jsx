@@ -29,12 +29,37 @@ import {
   ArrowRight,
   ChevronUp,
   ChevronDown,
-  GitBranch
+  GitBranch,
+  FileSpreadsheet,
+  Link,
+  Link2,
+  UploadCloud
 } from 'lucide-react';
 import { calculateUtilisation } from '../dataStore';
 import { FILM_DENSITIES } from '../factoryStore';
 import CylinderJobCardForm from '../CylinderJobCardForm';
 import { saveJobMasterToSupabase, saveCylinderToSupabase } from '../services/supabaseDataService';
+
+/**
+ * Helper: Auto-detect CSV Header Mapping for Job Masters Bulk Upload
+ */
+function autoMapHeadersForJobMaster(headers = []) {
+  const mapping = {};
+  headers.forEach(h => {
+    const clean = h.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (clean.includes('sku') || clean.includes('code') || clean.includes('itemcode')) mapping[h] = 'skuCode';
+    else if (clean.includes('jobname') || clean.includes('title') || clean.includes('design') || clean.includes('itemname')) mapping[h] = 'jobName';
+    else if (clean.includes('client') || clean.includes('party') || clean.includes('customer') || clean.includes('group')) mapping[h] = 'clientName';
+    else if (clean.includes('color') || clean.includes('colour') || clean.includes('count')) mapping[h] = 'colorsCount';
+    else if (clean.includes('printwidth') || clean.includes('webwidth') || clean.includes('width')) mapping[h] = 'printWidthMm';
+    else if (clean.includes('facelength') || clean.includes('shellsize') || clean.includes('length')) mapping[h] = 'faceLengthMm';
+    else if (clean.includes('repeat') || clean.includes('circumference') || clean.includes('dia')) mapping[h] = 'repeatLengthMm';
+    else if (clean.includes('structure') || clean.includes('laminate') || clean.includes('film')) mapping[h] = 'structure';
+    else if (clean.includes('cost') || clean.includes('rate') || clean.includes('price')) mapping[h] = 'cylinderCost';
+    else if (clean.includes('engrav') || clean.includes('vendor') || clean.includes('maker')) mapping[h] = 'engravuresName';
+  });
+  return mapping;
+}
 
 export default function JobMasterDirectory({ 
   urlParams = {},
@@ -46,18 +71,97 @@ export default function JobMasterDirectory({
   machines = [],
   currentUser,
   onAddJobMaster,
+  onBatchAddJobMasters,
   onAddCylinder,
+  onBatchAddCylinders,
   onUpdateCylinder,
   onAddClient,
   onPunchOrderFromJobMaster,
   onUpdateJobMaster,
-  onDeleteJobMaster
+  onDeleteJobMaster,
+  onLinkCylinderToJobMaster,
+  onCreateAndLinkPair
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedJob, setSelectedJob] = useState(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingJobId, setEditingJobId] = useState(null);
   const [activeJobCardData, setActiveJobCardData] = useState(null);
+
+  // Bulk Upload CSV Modal State for Job Masters
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+  const [bulkCsvFileName, setBulkCsvFileName] = useState('');
+  const [bulkParsedHeaders, setBulkParsedHeaders] = useState([]);
+  const [bulkParsedRows, setBulkParsedRows] = useState([]);
+  const [bulkHeaderMapping, setBulkHeaderMapping] = useState({});
+  const [bulkAutoCreateCylinders, setBulkAutoCreateCylinders] = useState(true);
+
+  // Interactive Link / Create Cylinder Modal State
+  const [linkingJobMaster, setLinkingJobMaster] = useState(null);
+  const [linkMode, setLinkMode] = useState('EXISTING');
+  const [selectedExistingCylId, setSelectedExistingCylId] = useState('');
+
+  const handleConfirmLinkToExistingCyl = async () => {
+    if (!linkingJobMaster || !selectedExistingCylId) {
+      alert("Please select a Rotogravure Cylinder to link with!");
+      return;
+    }
+    const targetCyl = (cylinders || []).find(c => c.id === selectedExistingCylId || c.sku === selectedExistingCylId);
+    if (onLinkCylinderToJobMaster) {
+      await onLinkCylinderToJobMaster(selectedExistingCylId, linkingJobMaster.id);
+    } else {
+      if (onUpdateJobMaster) {
+        onUpdateJobMaster({ ...linkingJobMaster, cylinderSku: targetCyl?.sku || linkingJobMaster.skuCode, cylinderId: selectedExistingCylId });
+      }
+      if (onUpdateCylinder) {
+        onUpdateCylinder({ ...targetCyl, jobMasterId: linkingJobMaster.id, sku: linkingJobMaster.skuCode || targetCyl.sku });
+      }
+    }
+    setLinkingJobMaster(null);
+    alert(`✅ Job Master (${linkingJobMaster.skuCode}) successfully linked to Cylinder (${targetCyl?.sku || selectedExistingCylId})!`);
+  };
+
+  const handleCreateNewCylAndLink = async () => {
+    if (!linkingJobMaster) return;
+    const newCylId = `CYL-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+    const newCyl = {
+      id: newCylId,
+      sku: linkingJobMaster.skuCode || `SKU-${Date.now().toString().slice(-4)}`,
+      jobName: linkingJobMaster.jobName,
+      clientGroup: linkingJobMaster.clientName || 'Standard Client',
+      colorsCount: linkingJobMaster.colorsCount || 6,
+      printWidthMm: linkingJobMaster.printWidthMm || 1000,
+      faceLengthMm: linkingJobMaster.faceLengthMm || 1050,
+      circumferenceMm: linkingJobMaster.repeatLengthMm || 400,
+      structure: linkingJobMaster.structure || '—',
+      layers: linkingJobMaster.layers || [],
+      cylinderCost: linkingJobMaster.cylinderCost || '₹ 0',
+      engravuresName: linkingJobMaster.engravuresName || '',
+      costBorneBy: linkingJobMaster.costBorneBy || 'Client (100%)',
+      jobMasterId: linkingJobMaster.id,
+      job_master_id: linkingJobMaster.id,
+      status: 'Active In-Use',
+      dispatchedQty: 0,
+      utilisationLimit: linkingJobMaster.utilisationLimit || 10000,
+      artworkUrl: linkingJobMaster.artworkUrl || null
+    };
+
+    const updatedJm = {
+      ...linkingJobMaster,
+      cylinderSku: newCyl.sku,
+      cylinderId: newCylId
+    };
+
+    if (onCreateAndLinkPair) {
+      await onCreateAndLinkPair({ cylinder: newCyl, jobMaster: updatedJm });
+    } else {
+      if (onAddCylinder) await onAddCylinder(newCyl);
+      if (onUpdateJobMaster) await onUpdateJobMaster(updatedJm);
+    }
+
+    setLinkingJobMaster(null);
+    alert(`✅ New Rotogravure Cylinder (${newCyl.sku}) created and linked to Job Master (${linkingJobMaster.skuCode}) in database!`);
+  };
 
   // Auto-select job master if unique id is present in URL params
   React.useEffect(() => {
@@ -148,6 +252,133 @@ export default function JobMasterDirectory({
     if (!query) return allClientOptions;
     return allClientOptions.filter(c => c.name.toLowerCase().includes(query));
   }, [allClientOptions, clientSearchTerm]);
+
+  const handleCsvFileSelected = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setBulkCsvFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result || '';
+      const lines = text.split(/\r\n|\n/).filter(l => l.trim().length > 0);
+      if (lines.length === 0) {
+        alert("Selected CSV file is empty!");
+        return;
+      }
+
+      const headers = lines[0].split(',').map(h => h.trim().replace(/^["']|["']$/g, ''));
+      setBulkParsedHeaders(headers);
+
+      const rows = [];
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(',').map(v => v.trim().replace(/^["']|["']$/g, ''));
+        const rowObj = {};
+        headers.forEach((h, idx) => {
+          rowObj[h] = values[idx] || '';
+        });
+        rows.push(rowObj);
+      }
+
+      setBulkParsedRows(rows);
+      setBulkHeaderMapping(autoMapHeadersForJobMaster(headers));
+      setIsBulkModalOpen(true);
+    };
+    reader.readAsText(file);
+  };
+
+  const bulkPreviewJobs = useMemo(() => {
+    if (!bulkParsedRows.length) return [];
+    return bulkParsedRows.map((row, idx) => {
+      const getVal = (fieldKey) => {
+        const mappedHeader = Object.keys(bulkHeaderMapping).find(h => bulkHeaderMapping[h] === fieldKey);
+        return mappedHeader ? row[mappedHeader] : '';
+      };
+
+      const skuCode = getVal('skuCode') || `SKU-2026-${String(idx + 101).padStart(3, '0')}`;
+      const jobName = getVal('jobName') || `Untitled Job ${idx + 1}`;
+      const clientName = getVal('clientName') || 'Standard Client';
+      const colorsCount = parseInt(getVal('colorsCount')) || 6;
+      const printWidthMm = parseInt(getVal('printWidthMm')) || 1000;
+      const faceLengthMm = parseInt(getVal('faceLengthMm')) || 1050;
+      const repeatLengthMm = parseInt(getVal('repeatLengthMm')) || 400;
+      const structure = getVal('structure') || 'PET 12µ / METPET 12µ / Natural GP LD 35µ';
+      const cylinderCost = getVal('cylinderCost') || '₹ 0';
+      const engravuresName = getVal('engravuresName') || '';
+
+      const id = `JM-2026-${String((jobMasters ? jobMasters.length : 0) + 101 + idx).padStart(3, '0')}`;
+
+      return {
+        id,
+        skuCode,
+        jobName,
+        clientName,
+        colorsCount,
+        printWidthMm,
+        faceLengthMm,
+        repeatLengthMm,
+        pouchOpenWidth: printWidthMm,
+        pouchHeight: 150,
+        structure,
+        cylinderSku: skuCode,
+        cylinderCost,
+        costBorneBy: 'Client (100%)',
+        engravuresName,
+        utilisationLimit: 10000,
+        creationDate: new Date().toISOString().split('T')[0]
+      };
+    });
+  }, [bulkParsedRows, bulkHeaderMapping, jobMasters]);
+
+  const handleConfirmBulkUploadJobMasters = () => {
+    if (bulkPreviewJobs.length === 0) {
+      alert("No valid Job Masters to import.");
+      return;
+    }
+
+    if (onBatchAddJobMasters) {
+      onBatchAddJobMasters(bulkPreviewJobs);
+    } else {
+      bulkPreviewJobs.forEach(job => {
+        if (onAddJobMaster) onAddJobMaster(job);
+      });
+    }
+
+    // Auto-create consequent Rotogravure Cylinders if toggle enabled
+    if (bulkAutoCreateCylinders) {
+      const createdCyls = bulkPreviewJobs.map((job, idx) => {
+        const cylId = `CYL-2026-${String((cylinders ? cylinders.length : 0) + 101 + idx).padStart(3, '0')}`;
+        return {
+          id: cylId,
+          sku: job.skuCode,
+          jobName: job.jobName,
+          clientGroup: job.clientName,
+          colorsCount: job.colorsCount,
+          printWidthMm: job.printWidthMm,
+          faceLengthMm: job.faceLengthMm,
+          circumferenceMm: job.repeatLengthMm,
+          structure: job.structure,
+          cylinderCost: job.cylinderCost,
+          costBorneBy: job.costBorneBy,
+          engravuresName: job.engravuresName,
+          jobMasterId: job.id,
+          job_master_id: job.id,
+          status: 'Active In-Use',
+          dispatchedQty: 0,
+          utilisationLimit: job.utilisationLimit || 10000
+        };
+      });
+
+      if (onBatchAddCylinders) {
+        onBatchAddCylinders(createdCyls);
+      } else if (onAddCylinder) {
+        createdCyls.forEach(c => onAddCylinder(c));
+      }
+    }
+
+    setIsBulkModalOpen(false);
+    alert(`✅ Bulk Upload Complete!\nSuccessfully imported ${bulkPreviewJobs.length} Job Master template(s) into database.${bulkAutoCreateCylinders ? ' Linked Rotogravure Cylinder entries were also created.' : ''}`);
+  };
 
   const handleOnboardClientSubmit = (e) => {
     e.preventDefault();
@@ -1484,6 +1715,226 @@ export default function JobMasterDirectory({
           </div>
         </div>
       )}
+
+      {/* ========================================== */}
+      {/* BULK UPLOAD JOB MASTERS CSV MODAL           */}
+      {/* ========================================== */}
+      {isBulkModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsBulkModalOpen(false)}>
+          <div className="glass-card modal-content" style={{ width: '1000px', maxWidth: '95vw', maxHeight: '92vh', overflowY: 'auto', padding: '24px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '10px', margin: 0, color: 'var(--text-primary)' }}>
+                  <FileSpreadsheet size={24} style={{ color: '#047857' }} /> Bulk Upload Job Masters (CSV Cross-Check)
+                </h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.84rem', margin: '4px 0 0 0' }}>
+                  Verify column header mapping and preview parsed Job Master templates before batch ingestion into Supabase database tables.
+                </p>
+              </div>
+              <button type="button" className="btn-icon" onClick={() => setIsBulkModalOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* STEP 1: HEADER MAPPING CROSS-CHECK */}
+            <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '16px' }}>
+              <h4 style={{ fontSize: '0.9rem', fontWeight: '800', color: '#0f172a', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <CheckCircle2 size={16} style={{ color: '#047857' }} /> 1. Cross-Check Column Header Mapping
+              </h4>
+              <p style={{ fontSize: '0.78rem', color: '#475569', marginBottom: '14px' }}>
+                CSV File: <strong>{bulkCsvFileName}</strong> ({bulkParsedRows.length} rows parsed). Match your CSV columns to standard Job Master fields below:
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+                {[
+                  { key: 'skuCode', label: 'SKU / Item Code *' },
+                  { key: 'jobName', label: 'Job / Design Name *' },
+                  { key: 'clientName', label: 'Client / Customer Name' },
+                  { key: 'colorsCount', label: 'Colors Count' },
+                  { key: 'printWidthMm', label: 'Print Width (mm)' },
+                  { key: 'faceLengthMm', label: 'Face Length (mm)' },
+                  { key: 'repeatLengthMm', label: 'Repeat Length (mm)' },
+                  { key: 'structure', label: 'Film Structure' },
+                  { key: 'cylinderCost', label: 'Cylinder Cost (₹)' },
+                  { key: 'engravuresName', label: 'Engraver Name' }
+                ].map(field => (
+                  <div key={field.key} style={{ background: '#ffffff', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>{field.label}</div>
+                    <select
+                      className="form-control"
+                      style={{ fontSize: '0.8rem', padding: '4px 8px' }}
+                      value={Object.keys(bulkHeaderMapping).find(h => bulkHeaderMapping[h] === field.key) || ''}
+                      onChange={e => {
+                        const selHeader = e.target.value;
+                        setBulkHeaderMapping(prev => {
+                          const next = { ...prev };
+                          Object.keys(next).forEach(k => { if (next[k] === field.key) delete next[k]; });
+                          if (selHeader) next[selHeader] = field.key;
+                          return next;
+                        });
+                      }}
+                    >
+                      <option value="">— Unmapped —</option>
+                      {bulkParsedHeaders.map(h => (
+                        <option key={h} value={h}>{h}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+
+              {/* AUTO-CREATE LINKED CYLINDERS TOGGLE */}
+              <div style={{ marginTop: '14px', background: '#ecfdf5', padding: '10px 14px', borderRadius: '6px', border: '1px solid #a7f3d0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#047857', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                  <input type="checkbox" checked={bulkAutoCreateCylinders} onChange={e => setBulkAutoCreateCylinders(e.target.checked)} />
+                  ⚡ Automatically Create & Link Rotogravure Cylinders for all bulk-imported jobs
+                </label>
+                <span style={{ fontSize: '0.72rem', color: '#047857', fontWeight: '600' }}>Both records will be saved to Supabase</span>
+              </div>
+            </div>
+
+            {/* STEP 2: LIVE PREVIEW TABLE */}
+            <div style={{ background: '#ffffff', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <h4 style={{ fontSize: '0.9rem', fontWeight: '800', color: '#0f172a', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span><FileCode size={16} style={{ color: 'var(--primary-brand)' }} /> 2. Data Ingestion Preview ({bulkPreviewJobs.length} Record(s))</span>
+                <span style={{ fontSize: '0.78rem', color: '#64748b' }}>Ready for Supabase PostgreSQL Upsert</span>
+              </h4>
+
+              <div style={{ maxHeight: '280px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                <table className="data-table" style={{ fontSize: '0.8rem' }}>
+                  <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 10 }}>
+                    <tr>
+                      <th>#</th>
+                      <th>SKU Code</th>
+                      <th>Job Name</th>
+                      <th>Client Name</th>
+                      <th>Colors</th>
+                      <th>Dimensions</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bulkPreviewJobs.map((job, idx) => (
+                      <tr key={idx}>
+                        <td>{idx + 1}</td>
+                        <td style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>{job.skuCode}</td>
+                        <td style={{ fontWeight: '700' }}>{job.jobName}</td>
+                        <td>{job.clientName}</td>
+                        <td>🎨 {job.colorsCount} C</td>
+                        <td>{job.printWidthMm}W × {job.repeatLengthMm}R mm</td>
+                        <td>
+                          <span className="badge badge-success" style={{ fontSize: '0.7rem' }}>Ready to Import</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* FOOTER ACTIONS */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', borderTop: '1px solid #e2e8f0', paddingTop: '12px' }}>
+              <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                💡 <b>Database Persistence:</b> Job Master records will be persisted directly to Supabase tables.
+              </div>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button type="button" className="btn-secondary" onClick={() => setIsBulkModalOpen(false)}>Cancel</button>
+                <button type="button" className="btn-primary" onClick={handleConfirmBulkUploadJobMasters}>
+                  <CheckCircle2 size={16} /> Confirm & Ingest {bulkPreviewJobs.length} Job Master(s)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* INTERACTIVE LINK / CREATE CYLINDER MODAL   */}
+      {/* ========================================== */}
+      {linkingJobMaster && (
+        <div className="modal-overlay" style={{ zIndex: 2100 }} onClick={() => setLinkingJobMaster(null)}>
+          <div className="glass-card modal-content" style={{ width: '600px', maxWidth: '95vw', padding: '24px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)', margin: 0 }}>
+                  <Link size={20} style={{ color: 'var(--primary-brand)' }} /> Link Job Master to Rotogravure Cylinder
+                </h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', margin: '4px 0 0 0' }}>
+                  Target Job SKU: <strong style={{ color: 'var(--primary-brand)' }}>{linkingJobMaster.skuCode}</strong> | Job: <strong>{linkingJobMaster.jobName}</strong>
+                </p>
+              </div>
+              <button type="button" className="btn-icon" onClick={() => setLinkingJobMaster(null)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
+              <button
+                type="button"
+                className={linkMode === 'EXISTING' ? 'btn-primary' : 'btn-secondary'}
+                style={{ flex: 1, fontSize: '0.85rem', padding: '8px' }}
+                onClick={() => setLinkMode('EXISTING')}
+              >
+                <Link size={14} /> Link to Existing Cylinder
+              </button>
+              <button
+                type="button"
+                className={linkMode === 'CREATE_NEW' ? 'btn-primary' : 'btn-secondary'}
+                style={{ flex: 1, fontSize: '0.85rem', padding: '8px' }}
+                onClick={() => setLinkMode('CREATE_NEW')}
+              >
+                <Plus size={14} /> Create New & Link
+              </button>
+            </div>
+
+            {linkMode === 'EXISTING' ? (
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <label style={{ fontWeight: '700', fontSize: '0.88rem', display: 'block', marginBottom: '6px' }}>
+                  Select Existing Rotogravure Cylinder Record:
+                </label>
+                <select
+                  className="form-control"
+                  value={selectedExistingCylId}
+                  onChange={e => setSelectedExistingCylId(e.target.value)}
+                  style={{ width: '100%', padding: '10px' }}
+                >
+                  <option value="">— Select Cylinder Set —</option>
+                  {(cylinders || []).map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.sku || c.id} — {c.jobName} ({c.clientGroup})
+                    </option>
+                  ))}
+                </select>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
+                  <button type="button" className="btn-secondary" onClick={() => setLinkingJobMaster(null)}>Cancel</button>
+                  <button type="button" className="btn-primary" onClick={handleConfirmLinkToExistingCyl} disabled={!selectedExistingCylId}>
+                    <CheckCircle2 size={16} /> Link Selected Record
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.85rem', color: '#334155', marginBottom: '12px' }}>
+                  A new Rotogravure Cylinder record will be automatically generated with parameters pre-filled from Job Master <strong>{linkingJobMaster.skuCode}</strong>:
+                </div>
+                <div style={{ fontSize: '0.8rem', background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '16px' }}>
+                  <div><strong>Job Name:</strong> {linkingJobMaster.jobName}</div>
+                  <div><strong>Client:</strong> {linkingJobMaster.clientName || 'Standard'}</div>
+                  <div><strong>Dimensions:</strong> {linkingJobMaster.faceLengthMm || 1050}L × {linkingJobMaster.repeatLengthMm || 400}C mm</div>
+                  <div><strong>Colors:</strong> {linkingJobMaster.colorsCount || 6} Colors</div>
+                  <div style={{ gridColumn: 'span 2' }}><strong>Structure:</strong> {linkingJobMaster.structure || '—'}</div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                  <button type="button" className="btn-secondary" onClick={() => setLinkingJobMaster(null)}>Cancel</button>
+                  <button type="button" className="btn-primary" onClick={handleCreateNewCylAndLink}>
+                    <Plus size={16} /> Create & Save to Supabase Table
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 
@@ -1842,11 +2293,15 @@ export default function JobMasterDirectory({
             <h2 style={{ fontSize: '1.4rem', fontWeight: '700', color: 'var(--text-primary)' }}>Job Master Technical Directory ({(jobMasters || []).length})</h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px' }}>Central repository for all repeating job structures, film layer gauges, linked cylinders, and production histories.</p>
           </div>
-          <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-            <div className="search-bar" style={{ width: '280px' }}>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            <div className="search-bar" style={{ width: '260px' }}>
               <Search size={18} style={{ color: 'var(--text-muted)' }} />
               <input type="text" placeholder="Search Job Name, SKU, Client..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ border: 'none', outline: 'none', background: 'transparent', width: '100%', fontSize: '0.9rem' }} />
             </div>
+            <label className="btn-secondary" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', margin: 0, padding: '8px 14px', border: '1px solid #047857', color: '#047857', background: '#ecfdf5', fontWeight: '700', borderRadius: '6px' }}>
+              <FileSpreadsheet size={18} /> Bulk Upload (CSV)
+              <input type="file" accept=".csv" style={{ display: 'none' }} onChange={handleCsvFileSelected} />
+            </label>
             <button className="btn-primary" onClick={handleOpenCreateModal}><Plus size={18} /> Create New Job Master</button>
           </div>
         </div>
@@ -2059,7 +2514,41 @@ export default function JobMasterDirectory({
                   <tr key={job.id}>
                     <td style={{ fontWeight: '800', color: 'var(--primary-brand)' }}>{job.id}</td>
                     <td><span className="badge badge-both">{job.skuCode}</span></td>
-                    <td style={{ fontWeight: '700' }}>{job.jobName}</td>
+                    <td>
+                      <div style={{ fontWeight: '700', color: '#0f172a' }}>{job.jobName}</div>
+                      {(() => {
+                        const linkedCyl = (cylinders || []).find(c => 
+                          c.jobMasterId === job.id || 
+                          (c.sku && job.skuCode && c.sku.trim().toLowerCase() === job.skuCode.trim().toLowerCase()) || 
+                          (c.jobName && job.jobName && c.jobName.trim().toLowerCase() === job.jobName.trim().toLowerCase())
+                        );
+                        return (
+                          <div style={{ marginTop: '2px' }}>
+                            {linkedCyl ? (
+                              <span 
+                                style={{ fontSize: '0.68rem', padding: '2px 6px', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: '3px', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontWeight: '700' }}
+                                title={`Linked to Rotogravure Cylinder ${linkedCyl.sku}`}
+                              >
+                                <Link size={10} /> Linked Cylinder ({linkedCyl.sku})
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setLinkingJobMaster(job);
+                                  setLinkMode('EXISTING');
+                                  setSelectedExistingCylId('');
+                                }}
+                                style={{ fontSize: '0.68rem', padding: '2px 6px', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: '3px', background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a', cursor: 'pointer', fontWeight: '700' }}
+                                title="Click to resolve missing Rotogravure Cylinder link or auto-create Cylinder"
+                              >
+                                <AlertTriangle size={10} /> ⚠️ Missing Cylinder (Link)
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td style={{ color: 'var(--text-secondary)' }}>{job.clientName}</td>
                     <td style={{ fontSize: '0.8rem', fontWeight: '600' }}>{job.structure}</td>
                     <td>
