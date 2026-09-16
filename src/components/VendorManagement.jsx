@@ -126,7 +126,7 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
     setPhone(vendor.phone || '');
     setEmail(vendor.email || '');
     setBankDetails(vendor.bankDetails || '');
-    setPaymentTerms(vendor.paymentTerms || '30 Days Net');
+    setPaymentTerms(vendor.paymentTerms || vendor.payment_terms || '30 Days Net');
     setSelectedMaterials(vendor.materials || ['PET']);
     setIsOnboardingModalOpen(true);
   };
@@ -158,6 +158,7 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
       bankDetails: bankDetails || "HDFC Bank | A/C: 502000000000 | IFSC: HDFC0000123",
       materials: selectedMaterials,
       paymentTerms: paymentTerms.trim(),
+      payment_terms: paymentTerms.trim(),
       rating: editingVendor ? (editingVendor.rating || 5.0) : 5.0
     };
 
@@ -355,7 +356,7 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
             {/* Card Footer */}
             <div style={{ marginTop: 'auto', paddingTop: '12px', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
               <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                Terms: <b>{vendor.paymentTerms}</b>
+                Terms: <b>{vendor.paymentTerms || vendor.payment_terms || '30 Days Net'}</b>
               </span>
               <div style={{ display: 'flex', gap: '6px' }}>
                 <button 
@@ -401,7 +402,7 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
                   Purchase Order History — {selectedVendorForPoHistory.companyName}
                 </h3>
                 <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                  GSTIN: {selectedVendorForPoHistory.gstin} • Terms: {selectedVendorForPoHistory.paymentTerms}
+                  GSTIN: {selectedVendorForPoHistory.gstin} • Terms: {selectedVendorForPoHistory.paymentTerms || selectedVendorForPoHistory.payment_terms || '30 Days Net'}
                 </p>
               </div>
               <button className="btn-secondary" style={{ padding: '6px' }} onClick={() => setSelectedVendorForPoHistory(null)}>

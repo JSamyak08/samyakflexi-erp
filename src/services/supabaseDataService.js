@@ -194,6 +194,8 @@ export async function fetchVendors() {
       email: v.email,
       gstin: v.gstin,
       address: v.address,
+      paymentTerms: v.payment_terms || v.paymentTerms || '30 Days Net',
+      payment_terms: v.payment_terms || v.paymentTerms || '30 Days Net',
       rating: Number(v.rating) || 5.0,
       materials: v.category ? v.category.split(', ') : []
     }));
@@ -218,6 +220,7 @@ export async function saveVendorToSupabase(vendor) {
     email: vendor.email || '',
     gstin: vendor.gstin || '',
     address: vendor.address || '',
+    payment_terms: vendor.paymentTerms || vendor.payment_terms || '30 Days Net',
     rating: Number(vendor.rating) || 5.0
   };
   console.log('[vendors] Saving:', vendorId, vendorName);
