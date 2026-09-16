@@ -1178,6 +1178,7 @@ export default function InventoryManagement({
   const [editingStockItem, setEditingStockItem] = useState(null);
   const [editCategory, setEditCategory] = useState('Film Substrates');
   const [editItemName, setEditItemName] = useState('');
+  const [editSubstrateOrGrade, setEditSubstrateOrGrade] = useState('PET');
   const [editItemCode, setEditItemCode] = useState('');
   const [editUnit, setEditUnit] = useState('Kg');
   const [editFilmType, setEditFilmType] = useState('PET');
@@ -1198,6 +1199,7 @@ export default function InventoryManagement({
     setEditingStockItem({ id: newId, isNew: true });
     setEditCategory('Film Substrates');
     setEditItemName('');
+    setEditSubstrateOrGrade('PET');
     setEditItemCode(newId);
     setEditUnit('Kg');
     setEditFilmType('PET');
@@ -1228,10 +1230,13 @@ export default function InventoryManagement({
     const category = item.category || (isFilm ? 'Film Substrates' : 'Other Raw Materials');
     setEditCategory(category);
     
+    const subOrGrade = item.substrateOrGrade || item.substrateGrade || item.filmType || item.grade || item.subType || (isFilm ? 'PET' : '');
+    setEditSubstrateOrGrade(subOrGrade);
+    
     // Pre-fill Item Name
     const defaultName = isFilm 
-      ? `${item.filmType || 'PET'} ${item.micron && item.micron !== '-' ? item.micron + 'µ' : ''} (${item.widthMm && item.widthMm !== '-' ? item.widthMm + 'mm' : ''})`.trim()
-      : (item.itemName || item.filmType || `${category} Stock Item`);
+      ? `${subOrGrade || 'PET'} ${item.micron && item.micron !== '-' ? item.micron + 'µ' : ''} (${item.widthMm && item.widthMm !== '-' ? item.widthMm + 'mm' : ''})`.trim()
+      : (item.itemName || subOrGrade || `${category} Stock Item`);
     setEditItemName(item.itemName || defaultName);
     
     // Pre-fill Item Code / SKU
@@ -1248,11 +1253,11 @@ export default function InventoryManagement({
     setEditUnit(item.unit || fallbackUnit);
     
     // Pre-fill Film / Sub-type attributes
-    setEditFilmType(item.filmType && FILM_DENSITIES[item.filmType] ? item.filmType : 'PET');
+    setEditFilmType(item.filmType && FILM_DENSITIES[item.filmType] ? item.filmType : (subOrGrade && FILM_DENSITIES[subOrGrade] ? subOrGrade : 'PET'));
     setEditMicron(item.micron && item.micron !== '-' ? item.micron : (isFilm ? 12 : ''));
     setEditWidthMm(item.widthMm && item.widthMm !== '-' ? item.widthMm : (isFilm ? 1000 : ''));
-    setEditSubType(item.filmType && !FILM_DENSITIES[item.filmType] ? item.filmType : '');
-    setEditDimensions(item.widthMm && item.widthMm !== '-' && !isFilm ? `${item.widthMm}mm` : '');
+    setEditSubType(subOrGrade || (item.filmType && !FILM_DENSITIES[item.filmType] ? item.filmType : ''));
+    setEditDimensions(item.widthMm && item.widthMm !== '-' && !isFilm ? `${item.widthMm}mm` : (item.dimensions || ''));
     
     // Pre-fill Quantities & Thresholds (Accurate numbers from item)
     setEditAvailableQty(item.availableQtyKg ?? item.availableWeightKg ?? 0);
@@ -1270,10 +1275,14 @@ export default function InventoryManagement({
     setEditCategory(newCategory);
     if (newCategory === 'Film Substrates') {
       if (!editFilmType || !FILM_DENSITIES[editFilmType]) setEditFilmType('PET');
+      setEditSubstrateOrGrade(editFilmType || 'PET');
       if (!editMicron || editMicron === '-') setEditMicron(12);
       if (!editWidthMm || editWidthMm === '-') setEditWidthMm(1000);
       setEditUnit('Kg');
     } else {
+      if (!editSubstrateOrGrade || FILM_DENSITIES[editSubstrateOrGrade]) {
+        setEditSubstrateOrGrade(editSubType || '');
+      }
       if (newCategory === 'Chemicals & Solvents' && editUnit === 'Kg') setEditUnit('Litres');
       else if (newCategory === 'Doctor Blades & Wipers' && editUnit === 'Kg') setEditUnit('Meters');
       else if (newCategory === 'Tapes & Consumables' && editUnit === 'Kg') setEditUnit('Rolls');
@@ -1287,37 +1296,47 @@ export default function InventoryManagement({
     if (!editingStockItem) return;
 
     const isFilm = editCategory === 'Film Substrates';
-    const finalItemName = isFilm
-      ? `${editFilmType} ${editMicron}µ (${editWidthMm}mm Width)`
-      : (editItemName.trim() || `${editCategory} Stock Item`);
+    const finalSubstrateOrGrade = isFilm 
+      ? (editFilmType || editSubstrateOrGrade || 'PET') 
+      : (editSubstrateOrGrade.trim() || editSubType.trim() || '');
+    const defaultGeneratedName = isFilm
+      ? `${finalSubstrateOrGrade} ${editMicron}µ (${editWidthMm}mm Width)`
+      : `${editCategory} - ${finalSubstrateOrGrade || 'Item'}`;
+    const finalItemName = editItemName.trim() || defaultGeneratedName;
     const rateVal = parseFloat(editUnitPrice) || 0;
     const availQty = parseFloat(editAvailableQty) || 0;
     const valuation = Number((availQty * rateVal).toFixed(2));
+
+    const itemPayload = {
+      category: editCategory,
+      itemName: finalItemName,
+      substrateOrGrade: finalSubstrateOrGrade,
+      filmType: isFilm ? finalSubstrateOrGrade : (editSubType.trim() || finalSubstrateOrGrade),
+      grade: finalSubstrateOrGrade,
+      subType: editSubType.trim() || finalSubstrateOrGrade,
+      itemCode: editItemCode.trim() || editingStockItem.id,
+      unit: editUnit,
+      dimensions: !isFilm ? editDimensions.trim() : '',
+      micron: isFilm ? (parseFloat(editMicron) || 12) : '-',
+      widthMm: isFilm ? (parseFloat(editWidthMm) || 1000) : (editDimensions.trim() ? editDimensions.replace(/[^\d.]/g, '') || '-' : '-'),
+      density: isFilm ? (FILM_DENSITIES[finalSubstrateOrGrade] || 1.0) : 1.0,
+      availableQtyKg: availQty,
+      allocatedQtyKg: parseFloat(editAllocatedQty) || 0,
+      unitPrice: rateVal,
+      purchaseRatePerKg: rateVal,
+      purchaseValuation: valuation,
+      location: editLocation.trim() || 'Bay A',
+      reorderLevelKg: parseFloat(editReorderLevel) || 0,
+      lastVendor: editLastVendor.trim() || '',
+      lastBatch: editLastBatch.trim() || '',
+      lastUpdated: new Date().toISOString()
+    };
 
     let updatedInv;
     if (editingStockItem.isNew) {
       const newItem = {
         id: editingStockItem.id,
-        category: editCategory,
-        itemName: finalItemName,
-        itemCode: editItemCode.trim() || editingStockItem.id,
-        unit: editUnit,
-        filmType: isFilm ? editFilmType : (editSubType.trim() || ''),
-        grade: !isFilm ? editSubType.trim() : '',
-        dimensions: !isFilm ? editDimensions.trim() : '',
-        micron: isFilm ? (parseFloat(editMicron) || 12) : '-',
-        widthMm: isFilm ? (parseFloat(editWidthMm) || 1000) : (editDimensions.trim() ? editDimensions.replace(/[^\d.]/g, '') || '-' : '-'),
-        density: isFilm ? (FILM_DENSITIES[editFilmType] || 1.0) : 1.0,
-        availableQtyKg: availQty,
-        allocatedQtyKg: parseFloat(editAllocatedQty) || 0,
-        unitPrice: rateVal,
-        purchaseRatePerKg: rateVal,
-        purchaseValuation: valuation,
-        location: editLocation.trim() || 'Bay A',
-        reorderLevelKg: parseFloat(editReorderLevel) || 0,
-        lastVendor: editLastVendor.trim() || '',
-        lastBatch: editLastBatch.trim() || '',
-        lastUpdated: new Date().toISOString()
+        ...itemPayload
       };
       updatedInv = [newItem, ...inventory];
     } else {
@@ -1325,26 +1344,7 @@ export default function InventoryManagement({
         if (item.id === editingStockItem.id) {
           return {
             ...item,
-            category: editCategory,
-            itemName: finalItemName,
-            itemCode: editItemCode.trim() || item.itemCode || item.id,
-            unit: editUnit,
-            filmType: isFilm ? editFilmType : (editSubType.trim() || ''),
-            grade: !isFilm ? editSubType.trim() : (item.grade || ''),
-            dimensions: !isFilm ? editDimensions.trim() : (item.dimensions || ''),
-            micron: isFilm ? (parseFloat(editMicron) || 12) : '-',
-            widthMm: isFilm ? (parseFloat(editWidthMm) || 1000) : (editDimensions.trim() ? editDimensions.replace(/[^\d.]/g, '') || '-' : (item.widthMm || '-')),
-            density: isFilm ? (FILM_DENSITIES[editFilmType] || 1.0) : 1.0,
-            availableQtyKg: availQty,
-            allocatedQtyKg: parseFloat(editAllocatedQty) || 0,
-            unitPrice: rateVal,
-            purchaseRatePerKg: rateVal,
-            purchaseValuation: valuation,
-            location: editLocation.trim() || 'Bay A',
-            reorderLevelKg: parseFloat(editReorderLevel) || 0,
-            lastVendor: editLastVendor.trim() || item.lastVendor,
-            lastBatch: editLastBatch.trim() || item.lastBatch,
-            lastUpdated: new Date().toISOString()
+            ...itemPayload
           };
         }
         return item;
@@ -2310,6 +2310,7 @@ export default function InventoryManagement({
     const term = searchTerm.toLowerCase().trim();
     const title = (i.itemName || `${i.filmType || ''} Film`).toLowerCase();
     const filmType = (i.filmType || '').toLowerCase();
+    const substrateGrade = (i.substrateOrGrade || i.substrateGrade || i.grade || i.subType || '').toLowerCase();
     const location = (i.location || '').toLowerCase();
     const itemCode = (i.itemCode || '').toLowerCase();
     const id = (i.id || '').toLowerCase();
@@ -2320,6 +2321,7 @@ export default function InventoryManagement({
 
     return title.includes(term) ||
       filmType.includes(term) ||
+      substrateGrade.includes(term) ||
       location.includes(term) ||
       itemCode.includes(term) ||
       id.includes(term) ||
@@ -3051,6 +3053,16 @@ export default function InventoryManagement({
 
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
               <button 
+                type="button"
+                className="btn-primary" 
+                style={{ fontSize: '0.8rem', padding: '6px 14px', background: '#2563eb', borderColor: '#2563eb', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '700' }}
+                onClick={openAddStockModal}
+                title="Create a new raw material item with ItemName, Category & SubstrateOrGrade"
+              >
+                <Plus size={16} /> Add New Stock Item
+              </button>
+
+              <button 
                 className="btn-secondary" 
                 style={{ fontSize: '0.8rem', padding: '6px 12px' }}
                 onClick={handleDownloadBulkInventoryTemplate}
@@ -3088,6 +3100,7 @@ export default function InventoryManagement({
                   <th>Inventory ID</th>
                   <th>Item Name & Code</th>
                   <th>Category</th>
+                  <th>Substrate / Grade</th>
                   <th>Specs / Gauge</th>
                   <th>Available Stock</th>
                   <th>Purchase Rate (₹)</th>
@@ -3108,6 +3121,7 @@ export default function InventoryManagement({
                   const rate = parseFloat(item.unitPrice || item.purchaseRatePerKg) || 0;
                   const availQty = parseFloat(item.availableQtyKg) || 0;
                   const itemValuation = availQty * rate;
+                  const subGrade = item.substrateOrGrade || item.substrateGrade || item.filmType || item.grade || item.subType || '-';
 
                   // Pending QC matching for this item
                   const pendingGRNs = (safeGrns || []).filter(g => 
@@ -3148,6 +3162,11 @@ export default function InventoryManagement({
                       <td>
                         <span className="badge badge-info" style={{ fontSize: '0.75rem', fontWeight: '700' }}>
                           {item.category || 'Film Substrates'}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="badge" style={{ background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', fontSize: '0.75rem', fontWeight: '700' }}>
+                          {subGrade}
                         </span>
                       </td>
                       <td style={{ fontSize: '0.85rem' }}>
@@ -5125,11 +5144,24 @@ export default function InventoryManagement({
               {/* Category & Identity */}
               <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '16px' }}>
                 <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--primary-brand)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Tag size={15} /> 1. Category & Item Identification
+                  <Tag size={15} /> 1. Category, Item Name & Substrate/Grade Mapping
                 </div>
                 <div className="form-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
                   <div className="form-group">
-                    <label>Material Category *</label>
+                    <label style={{ fontWeight: '700' }}>Item Name / Description (ItemName) *</label>
+                    <input 
+                      type="text" 
+                      className="form-control"
+                      required
+                      placeholder="e.g. PET Film 12 Micron or Ethyl Acetate Solvent Grade"
+                      value={editItemName}
+                      onChange={e => setEditItemName(e.target.value)}
+                    />
+                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Exact item title used for inventory mapping, stock ledger & POs</span>
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ fontWeight: '700' }}>Material Category (Category) *</label>
                     <select 
                       className="form-control"
                       value={editCategory}
@@ -5139,18 +5171,62 @@ export default function InventoryManagement({
                         <option key={cat} value={cat}>{cat}</option>
                       ))}
                     </select>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Select target stock category</span>
                   </div>
 
                   <div className="form-group">
-                    <label>Item Name / Description *</label>
-                    <input 
-                      type="text" 
-                      className="form-control"
-                      required
-                      placeholder="e.g. PET 12µ (1000mm) or Ethyl Acetate Solvent"
-                      value={editItemName}
-                      onChange={e => setEditItemName(e.target.value)}
-                    />
+                    <label style={{ fontWeight: '700' }}>Substrate or Grade (SubstrateOrGrade) *</label>
+                    {editCategory === 'Film Substrates' ? (
+                      <select 
+                        className="form-control"
+                        value={editSubstrateOrGrade || editFilmType}
+                        onChange={e => {
+                          setEditSubstrateOrGrade(e.target.value);
+                          setEditFilmType(e.target.value);
+                        }}
+                      >
+                        {Object.keys(FILM_DENSITIES).map(type => (
+                          <option key={type} value={type}>{type} ({FILM_DENSITIES[type]} g/cc)</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <>
+                        <input 
+                          type="text" 
+                          className="form-control"
+                          list="standard-substrates-list"
+                          placeholder="e.g. Reverse Ink - Process Cyan / Ethyl Acetate / SL Adhesive"
+                          value={editSubstrateOrGrade}
+                          onChange={e => {
+                            setEditSubstrateOrGrade(e.target.value);
+                            setEditSubType(e.target.value);
+                          }}
+                        />
+                        <datalist id="standard-substrates-list">
+                          <option value="Reverse Ink - Process Cyan" />
+                          <option value="Reverse Ink - Process Magenta" />
+                          <option value="Reverse Ink - Process Yellow" />
+                          <option value="Reverse Ink - Process Black" />
+                          <option value="Reverse Ink - White High Opacity" />
+                          <option value="Surface Ink - Gloss White" />
+                          <option value="Surface Ink - Process Red" />
+                          <option value="Ethyl Acetate" />
+                          <option value="Toluene" />
+                          <option value="Isopropanol (IPA)" />
+                          <option value="MIBK (Methyl Isobutyl Ketone)" />
+                          <option value="Ethyl Cellosolve" />
+                          <option value="Solvent-less Adhesive Component A" />
+                          <option value="Solvent-less Adhesive Component B" />
+                          <option value="SL Adhesive" />
+                          <option value="Solvent-based Adhesive" />
+                          <option value="Hardener" />
+                          <option value="3 Inch Paper Core" />
+                          <option value="6 Inch Paper Core" />
+                          <option value="Stretch Film" />
+                        </datalist>
+                      </>
+                    )}
+                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Used for system density, GSM calculations & raw material mapping</span>
                   </div>
 
                   <div className="form-group">
@@ -5182,24 +5258,11 @@ export default function InventoryManagement({
               {/* Technical Specifications (Category Adaptive) */}
               <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '16px' }}>
                 <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--primary-brand)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Package size={15} /> 2. Technical Specifications & Dimensions
+                  <Package size={15} /> 2. Technical Specifications & Gauge
                 </div>
 
                 {editCategory === 'Film Substrates' ? (
                   <div className="form-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
-                    <div className="form-group">
-                      <label>Film Polymer Type *</label>
-                      <select 
-                        className="form-control"
-                        value={editFilmType}
-                        onChange={e => setEditFilmType(e.target.value)}
-                      >
-                        {Object.keys(FILM_DENSITIES).map(type => (
-                          <option key={type} value={type}>{type} ({FILM_DENSITIES[type]} g/cc)</option>
-                        ))}
-                      </select>
-                    </div>
-
                     <div className="form-group">
                       <label>Micron Gauge (µ) *</label>
                       <input 
@@ -5230,7 +5293,7 @@ export default function InventoryManagement({
                         type="text" 
                         className="form-control" 
                         disabled 
-                        value={`${FILM_DENSITIES[editFilmType] || 1.0} g/cm³`}
+                        value={`${FILM_DENSITIES[editSubstrateOrGrade || editFilmType] || 1.0} g/cm³`}
                         style={{ opacity: 0.7, background: 'rgba(255,255,255,0.05)' }}
                       />
                     </div>
@@ -5238,11 +5301,11 @@ export default function InventoryManagement({
                 ) : (
                   <div className="form-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
                     <div className="form-group">
-                      <label>Sub-Type / Grade / Shade</label>
+                      <label>Additional Notes / Spec Details</label>
                       <input 
                         type="text" 
                         className="form-control"
-                        placeholder="e.g. Cyan Solvent Ink / High Purity / Polyurethane"
+                        placeholder="e.g. High Purity Grade / Gloss Finish"
                         value={editSubType}
                         onChange={e => setEditSubType(e.target.value)}
                       />
