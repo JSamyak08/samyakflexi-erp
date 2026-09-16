@@ -138,6 +138,7 @@ export default function DispatchManagement({
   const [dcChallanNo, setDcChallanNo] = useState('');
   const [dcInvoiceNo, setDcInvoiceNo] = useState('');
   const [dcDispatchDateTime, setDcDispatchDateTime] = useState('');
+  const [dcPartyType, setDcPartyType] = useState('Client'); // 'Client' | 'Vendor'
   const [dcSelectedClientName, setDcSelectedClientName] = useState('');
   const [dcClientAddress, setDcClientAddress] = useState('');
   const [dcClientGstin, setDcClientGstin] = useState('');
@@ -148,12 +149,28 @@ export default function DispatchManagement({
   const [dcDriverPhone, setDcDriverPhone] = useState('');
   const [dcPoRefNo, setDcPoRefNo] = useState('');
   const [dcJobName, setDcJobName] = useState('');
+  const [dcChallanNature, setDcChallanNature] = useState('Returnable Material');
+  const [dcFreightCharges, setDcFreightCharges] = useState(0);
   const [dcGstRatePct, setDcGstRatePct] = useState(18);
   const [dcTaxType, setDcTaxType] = useState('auto'); // 'auto' | 'cgst_sgst' | 'igst'
   const [dcDispatchedBy, setDcDispatchedBy] = useState('');
   const [dcRemarks, setDcRemarks] = useState('');
   const [dcItems, setDcItems] = useState([]);
   const [dcTerms, setDcTerms] = useState([]);
+
+  // Material Return Inward Modal & History States
+  const [selectedDcForReturn, setSelectedDcForReturn] = useState(null);
+  const [viewReturnHistoryDc, setViewReturnHistoryDc] = useState(null);
+  const [returnDate, setReturnDate] = useState('');
+  const [returnedQty, setReturnedQty] = useState('');
+  const [returnRefDocNo, setReturnRefDocNo] = useState('');
+  const [returnTransporter, setReturnTransporter] = useState('');
+  const [returnVehicleNo, setReturnVehicleNo] = useState('');
+  const [returnLrNo, setReturnLrNo] = useState('');
+  const [returnCondition, setReturnCondition] = useState('Good Condition & Pass QC');
+  const [returnedBy, setReturnedBy] = useState('');
+  const [returnNotes, setReturnNotes] = useState('');
+  const [isFullyReturned, setIsFullyReturned] = useState(false);
 
   // Presets list combining Job Masters & Rotogravure Cylinders
   const itemPresetOptions = useMemo(() => {
