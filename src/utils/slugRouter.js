@@ -14,13 +14,16 @@ export const TAB_SLUG_MAP = {
   job_masters: '/job-masters',
   vendors: '/vendors',
   inventory: '/inventory',
+  sfg_store: '/sfg-fg-store',
   ink_management: '/ink-management',
   material_indents: '/material-indents',
+  dispatch: '/finished-goods-dispatch',
   employees: '/employee-management',
   user_management: '/user-management',
   cylinders: '/rotogravure-cylinders',
   printing_scheduler: '/printing-scheduler',
   scrap_wastage: '/scrap-wastage',
+  scrap_analytics: '/scrap-wastage',
   supabase: '/supabase-integration',
   doc_settings: '/letterhead-settings',
   audit_logs: '/audit-logs'
@@ -64,6 +67,11 @@ export const SLUG_TAB_MAP = {
   '/inventory': 'inventory',
   'inventory': 'inventory',
 
+  '/sfg-fg-store': 'sfg_store',
+  'sfg-fg-store': 'sfg_store',
+  '/sfg-store': 'sfg_store',
+  'sfg-store': 'sfg_store',
+
   '/ink-management': 'ink_management',
   'ink-management': 'ink_management',
   '/ink-master': 'ink_management',
@@ -75,6 +83,19 @@ export const SLUG_TAB_MAP = {
 
   '/material-indents': 'material_indents',
   'material-indents': 'material_indents',
+
+  '/finished-goods-dispatch': 'dispatch',
+  'finished-goods-dispatch': 'dispatch',
+  '/dispatch-hub': 'dispatch',
+  'dispatch-hub': 'dispatch',
+  '/dispatch': 'dispatch',
+  'dispatch': 'dispatch',
+  '/delivery-challan': 'dispatch',
+  'delivery-challan': 'dispatch',
+  '/delivery-challans': 'dispatch',
+  'delivery-challans': 'dispatch',
+  '/coa-hub': 'dispatch',
+  'coa-hub': 'dispatch',
 
   '/employee-management': 'employees',
   'employee-management': 'employees',
@@ -96,6 +117,8 @@ export const SLUG_TAB_MAP = {
 
   '/scrap-wastage': 'scrap_wastage',
   'scrap-wastage': 'scrap_wastage',
+  '/scrap-analytics': 'scrap_analytics',
+  'scrap-analytics': 'scrap_analytics',
 
   '/supabase-integration': 'supabase',
   'supabase-integration': 'supabase',

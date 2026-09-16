@@ -117,9 +117,28 @@ export default function DispatchManagement({
   onSaveDeliveryChallan,
   onDeleteDeliveryChallan,
   onSaveCoA,
-  onDeleteCoA
+  onDeleteCoA,
+  urlParams = {}
 }) {
-  const [activeTab, setActiveTab] = useState('challans'); // 'challans' | 'coas'
+  const [activeTab, setActiveTab] = useState(() => {
+    if (urlParams.subTab === 'coas' || urlParams.tab === 'coas' || urlParams.coaId || urlParams.coaNo) {
+      return 'coas';
+    }
+    return 'challans';
+  });
+
+  const handleTabSwitch = (tabKey) => {
+    setActiveTab(tabKey);
+    try {
+      if (typeof window !== 'undefined' && window.history) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('subTab', tabKey);
+        window.history.replaceState({ subTab: tabKey }, '', url.toString());
+      }
+    } catch (e) {
+      console.warn("Failed to push subTab to URL", e);
+    }
+  };
 
   // Modal States
   const [isDcModalOpen, setIsDcModalOpen] = useState(false);
@@ -132,6 +151,31 @@ export default function DispatchManagement({
 
   // Search & Filter
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Deep link auto-open for DC or COA modals when id, challanNo, coaId is present in URL
+  React.useEffect(() => {
+    const targetId = urlParams.id || urlParams.challanNo || urlParams.dcNo;
+    if (targetId) {
+      const matchedDc = deliveryChallans.find(dc => 
+        String(dc.id) === String(targetId) || 
+        String(dc.challanNo) === String(targetId)
+      );
+      if (matchedDc) {
+        setActiveDcForPDF(matchedDc);
+      }
+    }
+    const targetCoa = urlParams.coaId || urlParams.coaNo;
+    if (targetCoa) {
+      const matchedCoa = certificateOfAnalyses.find(coa => 
+        String(coa.id) === String(targetCoa) || 
+        String(coa.coaNo) === String(targetCoa)
+      );
+      if (matchedCoa) {
+        setActiveCoaForPDF(matchedCoa);
+        setActiveTab('coas');
+      }
+    }
+  }, [urlParams, deliveryChallans, certificateOfAnalyses]);
 
   // --------------------------------------------------------------------------
   // DC FORM STATE
@@ -829,7 +873,7 @@ export default function DispatchManagement({
           <button 
             type="button" 
             className={`btn-subtab ${activeTab === 'challans' ? 'active' : ''}`}
-            onClick={() => setActiveTab('challans')}
+            onClick={() => handleTabSwitch('challans')}
             style={{
               background: activeTab === 'challans' ? '#0284c7' : 'rgba(255, 255, 255, 0.05)',
               color: '#ffffff',
@@ -849,7 +893,7 @@ export default function DispatchManagement({
           <button 
             type="button" 
             className={`btn-subtab ${activeTab === 'coas' ? 'active' : ''}`}
-            onClick={() => setActiveTab('coas')}
+            onClick={() => handleTabSwitch('coas')}
             style={{
               background: activeTab === 'coas' ? '#047857' : 'rgba(255, 255, 255, 0.05)',
               color: '#ffffff',

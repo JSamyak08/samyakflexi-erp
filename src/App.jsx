@@ -3822,6 +3822,7 @@ export default function App() {
         {/* TAB: DEDICATED SFG STORE MANAGEMENT */}
         {activeTab === 'sfg_store' && (
           <SFGStoreManagement 
+            urlParams={urlParams}
             sfgGoods={sfgGoods}
             orders={orders}
             jobMasters={jobMasters}
@@ -3875,6 +3876,7 @@ export default function App() {
         {/* TAB: DISPATCH, DELIVERY CHALLAN & COA HUB */}
         {activeTab === 'dispatch' && (
           <DispatchManagement 
+            urlParams={urlParams}
             deliveryChallans={deliveryChallans}
             certificateOfAnalyses={certificateOfAnalyses}
             clients={clients}
