@@ -90,6 +90,8 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
   const gstCalc = calculateGSTBreakdown(clientGstin, clientAddress, subtotalTaxable, gstRatePct, COMPANY_DETAILS.gstin, taxType);
   const totalQtyKg = itemRows.reduce((sum, item) => sum + (parseFloat(item.quantity) || 0), 0);
 
+  const selectedNature = challanData.challanNature || challanData.movementType || challanData.natureOfMovement || "Sale of Goods";
+
   return (
     <div className="pdf-modal-overlay">
       <div className="pdf-modal-toolbar no-print">
@@ -141,24 +143,14 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
             </div>
           </div>
 
-          {/* Purpose of Goods Movement / Challan Nature Checkmarks Bar */}
-          <div style={{ border: '1px solid #cbd5e1', background: '#f8fafc', padding: '6px 12px', borderRadius: '4px', marginBottom: '10px', fontSize: '10px' }}>
-            <div style={{ fontWeight: '800', color: '#334155', marginBottom: '4px', textTransform: 'uppercase', fontSize: '8.5px', letterSpacing: '0.5px' }}>
+          {/* Purpose of Goods Movement / Challan Nature Bar (Only Selected Choice) */}
+          <div style={{ border: '1px solid #cbd5e1', background: '#f8fafc', padding: '6px 12px', borderRadius: '4px', marginBottom: '10px', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontWeight: '800', color: '#334155', textTransform: 'uppercase', fontSize: '8.5px', letterSpacing: '0.5px' }}>
               PURPOSE OF GOODS MOVEMENT / CHALLAN NATURE:
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', alignItems: 'center' }}>
-              {CHALLAN_NATURE_OPTIONS.map(option => {
-                const isSelected = (challanNature === option);
-                return (
-                  <div key={option} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontWeight: isSelected ? 'bold' : 'normal', color: isSelected ? '#1e40af' : '#475569' }}>
-                    <span style={{ fontSize: '12px', color: isSelected ? '#2563eb' : '#94a3b8' }}>
-                      {isSelected ? '☑' : '☐'}
-                    </span>
-                    <span>{option}</span>
-                  </div>
-                );
-              })}
-            </div>
+            </span>
+            <span style={{ fontWeight: '800', color: '#0369a1', background: '#e0f2fe', border: '1px solid #bae6fd', padding: '3px 10px', borderRadius: '4px', fontSize: '10.5px' }}>
+              ✓ {selectedNature}
+            </span>
           </div>
 
           {/* 3-Column Address & Dispatch Details Grid */}
