@@ -1216,7 +1216,7 @@ export default function DispatchManagement({
       {/* ==================================================================== */}
       {isDcModalOpen && (
         <div className="modal-overlay" onClick={() => setIsDcModalOpen(false)}>
-          <div className="glass-card modal-content" style={{ width: '820px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
+          <div className="glass-card modal-content" style={{ width: '920px', maxWidth: '95vw', maxHeight: '92vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             
             {/* Header */}
             <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '18px 24px', margin: '-24px -24px 20px -24px', borderRadius: '16px 16px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#ffffff' }}>
@@ -1240,198 +1240,228 @@ export default function DispatchManagement({
 
             <form onSubmit={handleSaveDcSubmit}>
               
-              {/* Grid 1: Basic Info & Party Type */}
-              <div className="form-grid" style={{ marginBottom: '16px' }}>
-                <div>
-                  <label className="form-label">Delivery Challan No *</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    style={{ fontWeight: '700', color: '#0284c7', background: '#f0f9ff' }}
-                    value={dcChallanNo} 
-                    onChange={e => setDcChallanNo(e.target.value)} 
-                    required 
-                  />
-                </div>
-
-                <div>
-                  <label className="form-label">Invoice Ref Number *</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    placeholder="e.g. SIL/INV/26-27/042"
-                    value={dcInvoiceNo} 
-                    onChange={e => setDcInvoiceNo(e.target.value)} 
-                    required 
-                  />
-                </div>
-
-                <div>
-                  <label className="form-label">Dispatch Date & Time *</label>
-                  <input 
-                    type="datetime-local" 
-                    className="form-control" 
-                    value={dcDispatchDateTime} 
-                    onChange={e => setDcDispatchDateTime(e.target.value)} 
-                    required 
-                  />
-                </div>
-
-                <div>
-                  <label className="form-label">Party Type (Select Destination Category) *</label>
-                  <select 
-                    className="form-control" 
-                    style={{ fontWeight: '700', color: dcPartyType === 'Vendor' ? '#d97706' : '#0284c7', background: dcPartyType === 'Vendor' ? '#fffbeb' : '#f0f9ff' }}
-                    value={dcPartyType} 
-                    onChange={e => {
-                      const newType = e.target.value;
-                      setDcPartyType(newType);
-                      if (newType === 'Vendor' && vendors.length > 0) {
-                        handlePartySelectChange(newType, vendors[0].name || vendors[0].vendorName || vendors[0].companyName || '');
-                      } else if (newType === 'Client' && clients.length > 0) {
-                        handlePartySelectChange(newType, clients[0].name || clients[0].companyName || clients[0].clientName || '');
-                      }
-                    }}
-                    required
-                  >
-                    <option value="Client">Client / Customer (Sales & Dispatch)</option>
-                    <option value="Vendor">Vendor / Supplier (Goods Return & Job Work)</option>
-                  </select>
-                </div>
-
-                <div style={{ gridColumn: 'span 2' }}>
-                  <label className="form-label">{dcPartyType === 'Vendor' ? 'Vendor Name (Select from Directory) *' : 'Client Name (Select from Directory) *'}</label>
-                  <select 
-                    className="form-control" 
-                    style={{ fontWeight: '700' }}
-                    value={dcSelectedClientName} 
-                    onChange={e => handlePartySelectChange(dcPartyType, e.target.value)}
-                    required
-                  >
-                    <option value="" disabled>-- Select {dcPartyType} --</option>
-                    {dcPartyType === 'Vendor' ? (
-                      (vendors || []).map(v => {
-                        const vName = v.name || v.vendorName || v.companyName || '';
-                        return (
-                          <option key={v.id || vName} value={vName}>[Vendor] {vName}</option>
-                        );
-                      })
-                    ) : (
-                      (clients || []).map(c => {
-                        const cName = c.name || c.companyName || c.clientName || '';
-                        return (
-                          <option key={c.id || cName} value={cName}>[Client] {cName}</option>
-                        );
-                      })
-                    )}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="form-label">Client / Vendor PO Ref #</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    placeholder="e.g. PO-BRIT-2026-991"
-                    value={dcPoRefNo} 
-                    onChange={e => setDcPoRefNo(e.target.value)} 
-                  />
-                </div>
-
-                <div>
-                  <label className="form-label">Job / Product Reference</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    placeholder="e.g. 250g Printed Laminated Roll"
-                    value={dcJobName} 
-                    onChange={e => setDcJobName(e.target.value)} 
-                  />
-                </div>
-              </div>
-
-              {/* Grid 2: Challan Nature & Movement Type Checkmarks */}
-              <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #cbd5e1', marginBottom: '16px' }}>
-                <div style={{ fontSize: '0.74rem', color: '#334155', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <CheckCircle2 size={16} color="#0284c7" /> Challan Purpose & Nature of Movement (Select One) *
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '8px' }}>
-                  {[
-                    { id: 'Sale of Goods', label: 'Sale of Goods', desc: 'Outright Sales Dispatch', color: '#0284c7' },
-                    { id: 'Returnable Material', label: 'Returnable Material', desc: 'General Returnable Goods', color: '#d97706' },
-                    { id: 'Non-Returnable Material', label: 'Non-Returnable Material', desc: 'Sample / Scrap / Non-Return', color: '#64748b' },
-                    { id: 'Job Work Material - Returnable', label: 'Job Work Material - Returnable', desc: 'Sent for Processing / Printing', color: '#7c3aed' },
-                    { id: 'Maintenance Material - Returnable', label: 'Maintenance Material - Returnable', desc: 'Cylinders / Parts for Repair', color: '#059669' }
-                  ].map(nature => (
-                    <label key={nature.id} style={{
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: '8px',
-                      padding: '10px 12px',
-                      borderRadius: '8px',
-                      border: `2px solid ${dcChallanNature === nature.id ? nature.color : '#e2e8f0'}`,
-                      background: dcChallanNature === nature.id ? `${nature.color}0D` : '#ffffff',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease'
-                    }}>
-                      <input
-                        type="radio"
-                        name="challanNature"
-                        value={nature.id}
-                        checked={dcChallanNature === nature.id}
-                        onChange={e => setDcChallanNature(e.target.value)}
-                        style={{ marginTop: '2px' }}
-                      />
-                      <div>
-                        <div style={{ fontSize: '0.82rem', fontWeight: dcChallanNature === nature.id ? '800' : '600', color: dcChallanNature === nature.id ? nature.color : '#1e293b' }}>
-                          ✓ {nature.label}
-                        </div>
-                        <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '1px' }}>
-                          {nature.desc}
-                        </div>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Grid 3: Logistics & Consignee Details */}
-              <div style={{ background: '#ffffff', padding: '14px', borderRadius: '10px', border: '1px solid #cbd5e1', marginBottom: '16px' }}>
-                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '10px' }}>
-                  Logistics & Consignee Destination Details
-                </div>
-                <div className="form-grid">
-                  <div style={{ gridColumn: 'span 2' }}>
-                    <label className="form-label">Consignee Delivery Address</label>
-                    <input 
-                      type="text" 
-                      className="form-control" 
-                      value={dcClientAddress} 
-                      onChange={e => setDcClientAddress(e.target.value)} 
-                    />
-                  </div>
-
+              {/* Card 1: Basic Identifiers & Party Info */}
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', marginBottom: '16px' }}>
+                {/* Top 3 Identifiers */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', marginBottom: '14px' }}>
                   <div>
-                    <label className="form-label">Vehicle Number *</label>
+                    <label className="form-label">Delivery Challan No *</label>
                     <input 
                       type="text" 
                       className="form-control" 
-                      placeholder="e.g. MP-09-AB-1234"
-                      value={dcVehicleNo} 
-                      onChange={e => setDcVehicleNo(e.target.value)} 
+                      style={{ fontWeight: '700', color: '#0284c7', background: '#f0f9ff' }}
+                      value={dcChallanNo} 
+                      onChange={e => setDcChallanNo(e.target.value)} 
                       required 
                     />
                   </div>
 
                   <div>
-                    <label className="form-label">Transporter / Logistics Company</label>
+                    <label className="form-label">Invoice Ref Number *</label>
                     <input 
                       type="text" 
                       className="form-control" 
-                      placeholder="e.g. VRL Logistics / Self"
-                      value={dcTransporterName} 
-                      onChange={e => setDcTransporterName(e.target.value)} 
+                      placeholder="e.g. SIL/INV/26-27/042"
+                      value={dcInvoiceNo} 
+                      onChange={e => setDcInvoiceNo(e.target.value)} 
+                      required 
                     />
+                  </div>
+
+                  <div>
+                    <label className="form-label">Dispatch Date & Time *</label>
+                    <input 
+                      type="datetime-local" 
+                      className="form-control" 
+                      value={dcDispatchDateTime} 
+                      onChange={e => setDcDispatchDateTime(e.target.value)} 
+                      required 
+                    />
+                  </div>
+                </div>
+
+                {/* Party Selection (Type + Name) */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', marginBottom: '14px', background: '#ffffff', padding: '12px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ flex: '1 1 240px' }}>
+                    <label className="form-label">Destination Party Category *</label>
+                    <select 
+                      className="form-control" 
+                      style={{ fontWeight: '700', color: dcPartyType === 'Vendor' ? '#d97706' : '#0284c7', background: dcPartyType === 'Vendor' ? '#fffbeb' : '#f0f9ff' }}
+                      value={dcPartyType} 
+                      onChange={e => {
+                        const newType = e.target.value;
+                        setDcPartyType(newType);
+                        if (newType === 'Vendor' && vendors.length > 0) {
+                          handlePartySelectChange(newType, vendors[0].name || vendors[0].vendorName || vendors[0].companyName || '');
+                        } else if (newType === 'Client' && clients.length > 0) {
+                          handlePartySelectChange(newType, clients[0].name || clients[0].companyName || clients[0].clientName || '');
+                        }
+                      }}
+                      required
+                    >
+                      <option value="Client">Client / Customer (Sales & Dispatch)</option>
+                      <option value="Vendor">Vendor / Supplier (Goods Return & Job Work)</option>
+                    </select>
+                  </div>
+
+                  <div style={{ flex: '2 1 320px' }}>
+                    <label className="form-label">
+                      {dcPartyType === 'Vendor' ? 'Vendor Name (Select from Directory) *' : 'Client Name (Select from Directory) *'}
+                    </label>
+                    <select 
+                      className="form-control" 
+                      style={{ fontWeight: '700' }}
+                      value={dcSelectedClientName} 
+                      onChange={e => handlePartySelectChange(dcPartyType, e.target.value)}
+                      required
+                    >
+                      <option value="" disabled>-- Select {dcPartyType} --</option>
+                      {dcPartyType === 'Vendor' ? (
+                        (vendors || []).map(v => {
+                          const vName = v.name || v.vendorName || v.companyName || '';
+                          return (
+                            <option key={v.id || vName} value={vName}>[Vendor] {vName}</option>
+                          );
+                        })
+                      ) : (
+                        (clients || []).map(c => {
+                          const cName = c.name || c.companyName || c.clientName || '';
+                          return (
+                            <option key={c.id || cName} value={cName}>[Client] {cName}</option>
+                          );
+                        })
+                      )}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Order & Job References */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
+                  <div>
+                    <label className="form-label">Client / Vendor PO Ref #</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="e.g. PO-BRIT-2026-991"
+                      value={dcPoRefNo} 
+                      onChange={e => setDcPoRefNo(e.target.value)} 
+                    />
+                  </div>
+
+                  <div>
+                    <label className="form-label">Job / Product Reference</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="e.g. 250g Printed Laminated Roll"
+                      value={dcJobName} 
+                      onChange={e => setDcJobName(e.target.value)} 
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 2: Purpose & Nature of Movement Checkmarks */}
+              <div style={{ background: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', marginBottom: '16px' }}>
+                <div style={{ fontSize: '0.76rem', color: '#334155', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <CheckCircle2 size={18} color="#0284c7" /> Challan Purpose & Nature of Movement (Select One) *
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px' }}>
+                  {[
+                    { id: 'Sale of Goods', label: 'Sale of Goods', desc: 'Outright Sales Dispatch', color: '#0284c7' },
+                    { id: 'Returnable Material', label: 'Returnable Material', desc: 'General Returnable Goods', color: '#d97706' },
+                    { id: 'Non-Returnable Material', label: 'Non-Returnable Material', desc: 'Sample / Scrap / Non-Return', color: '#64748b' },
+                    { id: 'Job Work Material - Returnable', label: 'Job Work Material - Returnable', desc: 'Processing / Printing', color: '#7c3aed' },
+                    { id: 'Maintenance Material - Returnable', label: 'Maintenance Material - Returnable', desc: 'Cylinders / Repair Parts', color: '#059669' }
+                  ].map(nature => {
+                    const isSelected = (dcChallanNature === nature.id);
+                    return (
+                      <label key={nature.id} style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justify: 'space-between',
+                        padding: '12px',
+                        borderRadius: '10px',
+                        border: `2px solid ${isSelected ? nature.color : '#cbd5e1'}`,
+                        background: isSelected ? `${nature.color}0D` : '#f8fafc',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        boxShadow: isSelected ? `0 2px 8px ${nature.color}20` : 'none'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                          <input
+                            type="radio"
+                            name="challanNature"
+                            value={nature.id}
+                            checked={isSelected}
+                            onChange={e => setDcChallanNature(e.target.value)}
+                            style={{ accentColor: nature.color }}
+                          />
+                          <span style={{ fontSize: '0.82rem', fontWeight: isSelected ? '800' : '700', color: isSelected ? nature.color : '#1e293b' }}>
+                            ✓ {nature.label}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.71rem', color: '#64748b', paddingLeft: '22px' }}>
+                          {nature.desc}
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Card 3: Logistics & Consignee Details */}
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', marginBottom: '16px' }}>
+                <div style={{ fontSize: '0.74rem', color: '#475569', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Truck size={16} color="#0284c7" /> Logistics & Consignee Destination Details
+                </div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div>
+                    <label className="form-label">Consignee Delivery Address</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="Full destination factory / godown address..."
+                      value={dcClientAddress} 
+                      onChange={e => setDcClientAddress(e.target.value)} 
+                    />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
+                    <div>
+                      <label className="form-label">Vehicle Number *</label>
+                      <input 
+                        type="text" 
+                        className="form-control" 
+                        placeholder="e.g. MP-09-AB-1234"
+                        value={dcVehicleNo} 
+                        onChange={e => setDcVehicleNo(e.target.value)} 
+                        required 
+                      />
+                    </div>
+
+                    <div>
+                      <label className="form-label">Transporter / Logistics Company</label>
+                      <input 
+                        type="text" 
+                        className="form-control" 
+                        placeholder="e.g. VRL Logistics / Self"
+                        value={dcTransporterName} 
+                        onChange={e => setDcTransporterName(e.target.value)} 
+                      />
+                    </div>
+
+                    <div>
+                      <label className="form-label">Driver Contact Number</label>
+                      <input 
+                        type="text" 
+                        className="form-control" 
+                        placeholder="e.g. +91 98260 00000"
+                        value={dcDriverPhone} 
+                        onChange={e => setDcDriverPhone(e.target.value)} 
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
