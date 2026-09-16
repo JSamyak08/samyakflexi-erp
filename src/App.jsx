@@ -3878,6 +3878,7 @@ export default function App() {
             deliveryChallans={deliveryChallans}
             certificateOfAnalyses={certificateOfAnalyses}
             clients={clients}
+            vendors={vendors}
             jobMasters={jobMasters}
             orders={orders}
             cylinders={cylinders}

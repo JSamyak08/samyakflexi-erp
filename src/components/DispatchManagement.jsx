@@ -323,6 +323,7 @@ export default function DispatchManagement({
     const isoString = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     setDcDispatchDateTime(isoString);
 
+    setDcPartyType('Client');
     // Default to first client if available
     const firstClient = (clients && clients[0]) || {};
     const firstName = firstClient.name || firstClient.companyName || firstClient.clientName || '';
@@ -337,13 +338,15 @@ export default function DispatchManagement({
     setDcDriverPhone('');
     setDcPoRefNo('');
     setDcJobName('');
+    setDcChallanNature('Sale of Goods');
+    setDcFreightCharges(0);
     setDcGstRatePct(18);
     setDcTaxType('auto');
     setDcDispatchedBy(currentUser ? `${currentUser.name}` : '');
     setDcRemarks('');
 
     setDcItems([
-      { id: Date.now(), description: '', itemType: '', hsnSac: '', quantity: 0, unit: 'Kg', rate: 0, amount: 0 }
+      { id: Date.now(), description: '', itemDetails: '', hsnSac: '', quantity: 0, unit: 'Kg', rate: 0, amount: 0 }
     ]);
 
     const defaultTerms = getDocumentTerms().dcTerms || [];
@@ -357,7 +360,8 @@ export default function DispatchManagement({
     setDcChallanNo(dc.challanNo);
     setDcInvoiceNo(dc.invoiceNo || '');
     setDcDispatchDateTime(dc.dispatchDateTime || '');
-    setDcSelectedClientName(dc.clientName || '');
+    setDcPartyType(dc.partyType || 'Client');
+    setDcSelectedClientName(dc.clientName || dc.partyName || '');
     setDcClientAddress(dc.clientAddress || '');
     setDcClientGstin(dc.clientGstin || '');
     setDcClientContactPerson(dc.clientContactPerson || '');
@@ -367,31 +371,43 @@ export default function DispatchManagement({
     setDcDriverPhone(dc.driverPhone || '');
     setDcPoRefNo(dc.poRefNo || '');
     setDcJobName(dc.jobName || '');
+    setDcChallanNature(dc.challanNature || dc.movementType || 'Sale of Goods');
+    setDcFreightCharges(dc.freightCharges || 0);
     setDcGstRatePct(dc.gstRatePct || 18);
     setDcTaxType(dc.taxType || 'auto');
     setDcDispatchedBy(dc.dispatchedBy || '');
     setDcRemarks(dc.remarks || '');
-    setDcItems(Array.isArray(dc.items) && dc.items.length > 0 ? dc.items : []);
+    setDcItems(Array.isArray(dc.items) && dc.items.length > 0 ? dc.items.map(i => ({ ...i, itemDetails: i.itemDetails || '' })) : []);
     setDcTerms(Array.isArray(dc.termsAndConditions) ? dc.termsAndConditions : (getDocumentTerms().dcTerms || []));
 
     setIsDcModalOpen(true);
   };
 
-  const handleClientSelectChange = (clientNameStr) => {
-    setDcSelectedClientName(clientNameStr);
-    const matched = clients.find(c => (c.name || c.companyName || c.clientName) === clientNameStr);
-    if (matched) {
-      setDcClientAddress(matched.address || matched.factoryAddress || matched.registeredAddress || '');
-      setDcClientGstin(matched.gstin || matched.gstNumber || '');
-      setDcClientContactPerson(matched.contactPerson || matched.contactName || '');
-      setDcClientPhone(matched.phone || matched.contactNo || matched.mobile || '');
+  const handlePartySelectChange = (partyTypeStr, partyNameStr) => {
+    setDcSelectedClientName(partyNameStr);
+    if (partyTypeStr === 'Vendor') {
+      const matched = (vendors || []).find(v => (v.name || v.vendorName || v.companyName) === partyNameStr);
+      if (matched) {
+        setDcClientAddress(matched.address || matched.factoryAddress || matched.registeredAddress || matched.officeAddress || '');
+        setDcClientGstin(matched.gstin || matched.gstNumber || '');
+        setDcClientContactPerson(matched.contactPerson || matched.contactName || '');
+        setDcClientPhone(matched.phone || matched.contactNo || matched.mobile || '');
+      }
+    } else {
+      const matched = (clients || []).find(c => (c.name || c.companyName || c.clientName) === partyNameStr);
+      if (matched) {
+        setDcClientAddress(matched.address || matched.factoryAddress || matched.registeredAddress || '');
+        setDcClientGstin(matched.gstin || matched.gstNumber || '');
+        setDcClientContactPerson(matched.contactPerson || matched.contactName || '');
+        setDcClientPhone(matched.phone || matched.contactNo || matched.mobile || '');
+      }
     }
   };
 
   const handleAddDcItemRow = () => {
     setDcItems(prev => [
       ...prev,
-      { id: Date.now(), description: 'Finished Flexible Packaging Roll', hsnSac: '3923', quantity: 500, unit: 'Kg', rate: 190, amount: 95000 }
+      { id: Date.now(), description: 'Finished Flexible Packaging Roll', itemDetails: 'Detailed Material Specification', hsnSac: '3923', quantity: 500, unit: 'Kg', rate: 190, amount: 95000 }
     ]);
   };
 
@@ -423,16 +439,25 @@ export default function DispatchManagement({
 
     const finalChallanNo = editingDcId ? dcChallanNo : getNextDocRefNumber('dc');
 
-    const subtotal = dcItems.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
-    const gstInfo = calculateGSTBreakdown(dcClientGstin, dcClientAddress, subtotal, dcGstRatePct, COMPANY_DETAILS.gstin, dcTaxType);
+    const subtotalItems = dcItems.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+    const freightAmount = parseFloat(dcFreightCharges) || 0;
+    const totalTaxable = subtotalItems + freightAmount;
+
+    const gstInfo = calculateGSTBreakdown(dcClientGstin, dcClientAddress, totalTaxable, dcGstRatePct, COMPANY_DETAILS.gstin, dcTaxType);
     const grandTotal = gstInfo.grandTotal;
+
+    const isReturnable = ['Returnable Material', 'Job Work Material - Returnable', 'Maintenance Material - Returnable'].includes(dcChallanNature);
+
+    const existingDc = (deliveryChallans || []).find(d => d.id === editingDcId);
 
     const payload = {
       id: editingDcId || `DC-${Date.now()}`,
       challanNo: finalChallanNo,
       invoiceNo: dcInvoiceNo,
       dispatchDateTime: dcDispatchDateTime,
+      partyType: dcPartyType,
       clientName: dcSelectedClientName,
+      partyName: dcSelectedClientName,
       clientAddress: dcClientAddress,
       clientGstin: dcClientGstin,
       clientContactPerson: dcClientContactPerson,
@@ -442,11 +467,16 @@ export default function DispatchManagement({
       driverPhone: dcDriverPhone,
       poRefNo: dcPoRefNo,
       jobName: dcJobName,
+      challanNature: dcChallanNature,
+      freightCharges: freightAmount,
       items: dcItems,
       gstRatePct: parseFloat(dcGstRatePct) || 18,
       taxType: dcTaxType,
-      subtotalAmount: subtotal,
+      subtotalAmount: subtotalItems,
+      taxableSubtotal: totalTaxable,
       grandTotalAmount: grandTotal,
+      returnStatus: existingDc?.returnStatus || (isReturnable ? 'Outbound (Pending Return)' : 'Non-Returnable'),
+      returnInwardHistory: existingDc?.returnInwardHistory || [],
       dispatchedBy: dcDispatchedBy,
       remarks: dcRemarks,
       termsAndConditions: dcTerms,
@@ -471,6 +501,7 @@ export default function DispatchManagement({
         return {
           ...item,
           description: presetObj.description,
+          itemDetails: presetObj.itemDetails || '',
           hsnSac: presetObj.hsnSac || '3923',
           quantity: qty,
           unit: presetObj.unit || 'Kg',
@@ -480,6 +511,70 @@ export default function DispatchManagement({
       }
       return item;
     }));
+  };
+
+  // Open Return Inward Modal Handler
+  const handleOpenReturnModal = (dc) => {
+    setSelectedDcForReturn(dc);
+    const now = new Date();
+    const isoString = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    setReturnDate(isoString);
+    setReturnedQty('');
+    setReturnRefDocNo('');
+    setReturnTransporter(dc.transporterName || '');
+    setReturnVehicleNo(dc.vehicleNo || '');
+    setReturnLrNo('');
+    setReturnCondition('Good Condition & Pass QC');
+    setReturnedBy(currentUser ? `${currentUser.name}` : '');
+    setReturnNotes('');
+    setIsFullyReturned(false);
+  };
+
+  // Submit Return Inward Entry
+  const handleConfirmReturnInward = (e) => {
+    e.preventDefault();
+    if (!selectedDcForReturn) return;
+
+    const qtyVal = parseFloat(returnedQty) || 0;
+    const logEntry = {
+      id: `RET-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      returnDateTime: returnDate || new Date().toISOString(),
+      returnedQty: qtyVal,
+      returnRefDocNo,
+      returnTransporter,
+      returnVehicleNo,
+      returnLrNo,
+      returnCondition,
+      returnedBy: returnedBy || currentUser?.name || 'Store Receiver',
+      returnNotes
+    };
+
+    const prevHistory = Array.isArray(selectedDcForReturn.returnInwardHistory) ? selectedDcForReturn.returnInwardHistory : [];
+    const updatedHistory = [logEntry, ...prevHistory];
+
+    const totalReturned = updatedHistory.reduce((sum, item) => sum + (parseFloat(item.returnedQty) || 0), 0);
+    const originalQty = (selectedDcForReturn.items || []).reduce((sum, item) => sum + (parseFloat(item.quantity) || 0), 0);
+
+    let newStatus = 'Outbound (Pending Return)';
+    if (isFullyReturned || (originalQty > 0 && totalReturned >= originalQty)) {
+      newStatus = 'Fully Returned';
+    } else if (totalReturned > 0) {
+      newStatus = 'Partially Returned';
+    }
+
+    const updatedDc = {
+      ...selectedDcForReturn,
+      returnStatus: newStatus,
+      totalReturnedQty: totalReturned,
+      returnInwardHistory: updatedHistory
+    };
+
+    if (onSaveDeliveryChallan) {
+      onSaveDeliveryChallan(updatedDc);
+    }
+
+    setSelectedDcForReturn(null);
   };
 
   // --------------------------------------------------------------------------
@@ -826,24 +921,23 @@ export default function DispatchManagement({
         {activeTab === 'challans' && (
           <>
             <div style={{ overflowX: 'auto', width: '100%', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#ffffff', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <table className="data-table" style={{ width: '100%', minWidth: '950px', margin: 0 }}>
+              <table className="data-table" style={{ width: '100%', minWidth: '1050px', margin: 0 }}>
                 <thead>
                   <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '12%' }}>Challan No</th>
-                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '12%' }}>Invoice No</th>
-                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '14%' }}>Dispatch Date/Time</th>
-                    <th style={{ padding: '12px 14px', width: '22%' }}>Client / Consignee</th>
-                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '11%' }}>Vehicle No</th>
-                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '9%' }}>Items Count</th>
-                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '9%' }}>Total Dispatched</th>
-                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '10%' }}>Grand Total (₹)</th>
-                    <th style={{ padding: '12px 14px', textAlign: 'right', whiteSpace: 'nowrap', width: '11%' }}>Actions</th>
+                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '11%' }}>Challan No</th>
+                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '11%' }}>Invoice No</th>
+                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '13%' }}>Dispatch Date/Time</th>
+                    <th style={{ padding: '12px 14px', width: '20%' }}>Party / Consignee</th>
+                    <th style={{ padding: '12px 14px', width: '14%' }}>Challan Nature</th>
+                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '10%' }}>Return Status</th>
+                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '9%' }}>Grand Total (₹)</th>
+                    <th style={{ padding: '12px 14px', textAlign: 'right', whiteSpace: 'nowrap', width: '12%' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(challanPagination.paginatedItems || []).length === 0 ? (
                     <tr>
-                      <td colSpan={9} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
+                      <td colSpan={8} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
                         <Truck size={36} style={{ opacity: 0.25, display: 'block', margin: '0 auto 8px' }} />
                         No Delivery Challans found. Click <strong>"+ Issue Delivery Challan"</strong> to create one.
                       </td>
@@ -851,6 +945,10 @@ export default function DispatchManagement({
                   ) : (
                     (challanPagination.paginatedItems || []).map(dc => {
                       const totalQty = (dc.items || []).reduce((s, i) => s + (parseFloat(i.quantity) || 0), 0);
+                      const isReturnable = ['Returnable Material', 'Job Work Material - Returnable', 'Maintenance Material - Returnable'].includes(dc.challanNature);
+                      const returnStatus = dc.returnStatus || (isReturnable ? 'Outbound (Pending Return)' : 'Non-Returnable');
+                      const partyType = dc.partyType || 'Client';
+
                       return (
                         <tr key={dc.id}>
                           <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
@@ -865,32 +963,84 @@ export default function DispatchManagement({
                             </div>
                           </td>
                           <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
-                            <div style={{ fontWeight: '700', color: '#0f172a' }}>{dc.clientName}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{
+                                fontSize: '0.68rem',
+                                fontWeight: '800',
+                                padding: '1px 5px',
+                                borderRadius: '4px',
+                                background: partyType === 'Vendor' ? '#fffbeb' : '#eff6ff',
+                                color: partyType === 'Vendor' ? '#b45309' : '#1d4ed8',
+                                border: `1px solid ${partyType === 'Vendor' ? '#fde68a' : '#bfdbfe'}`
+                              }}>
+                                {partyType}
+                              </span>
+                              <strong style={{ color: '#0f172a' }}>{dc.clientName || dc.partyName}</strong>
+                            </div>
                             {dc.clientGstin && <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>GST: {dc.clientGstin}</div>}
                           </td>
-                          <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                            <span className="badge badge-info" style={{ fontFamily: 'monospace', whiteSpace: 'nowrap', display: 'inline-block' }}>
-                              {dc.vehicleNo || 'Self Hand'}
+                          <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                            <span style={{
+                              fontSize: '0.74rem',
+                              fontWeight: '700',
+                              padding: '3px 8px',
+                              borderRadius: '6px',
+                              background: isReturnable ? '#fff7ed' : '#f1f5f9',
+                              color: isReturnable ? '#c2410c' : '#475569',
+                              border: `1px solid ${isReturnable ? '#fed7aa' : '#cbd5e1'}`
+                            }}>
+                              ✓ {dc.challanNature || 'Sale of Goods'}
                             </span>
                           </td>
                           <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                            <span style={{ fontSize: '0.8rem', fontWeight: '700', color: '#334155' }}>{(dc.items || []).length} SKU Item(s)</span>
-                          </td>
-                          <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                            <strong style={{ color: '#047857' }}>{totalQty.toFixed(2)} Kg</strong>
+                            {isReturnable ? (
+                              <span style={{
+                                fontSize: '0.74rem',
+                                fontWeight: '800',
+                                padding: '3px 8px',
+                                borderRadius: '12px',
+                                background: returnStatus === 'Fully Returned' ? '#dcfce7' : (returnStatus === 'Partially Returned' ? '#e0e7ff' : '#fef3c7'),
+                                color: returnStatus === 'Fully Returned' ? '#15803d' : (returnStatus === 'Partially Returned' ? '#4338ca' : '#b45309'),
+                                border: `1px solid ${returnStatus === 'Fully Returned' ? '#86efac' : (returnStatus === 'Partially Returned' ? '#c7d2fe' : '#fde68a')}`
+                              }}>
+                                {returnStatus}
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: '0.74rem', color: '#94a3b8' }}>N/A (Dispatched)</span>
+                            )}
                           </td>
                           <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                             <strong style={{ color: '#4f46e5' }}>{formatINR(dc.grandTotalAmount)}</strong>
                           </td>
                           <td style={{ padding: '12px 14px', textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', whiteSpace: 'nowrap' }}>
+                              {isReturnable && returnStatus !== 'Fully Returned' && (
+                                <button
+                                  className="btn-secondary"
+                                  style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#fff7ed', color: '#c2410c', borderColor: '#fed7aa', fontWeight: '700' }}
+                                  title="Record Return Inward Entry"
+                                  onClick={() => handleOpenReturnModal(dc)}
+                                >
+                                  + Return Inward
+                                </button>
+                              )}
+                              {Array.isArray(dc.returnInwardHistory) && dc.returnInwardHistory.length > 0 && (
+                                <button
+                                  className="btn-secondary"
+                                  style={{ padding: '4px 6px', fontSize: '0.75rem' }}
+                                  title="View Return Log History"
+                                  onClick={() => setViewReturnHistoryDc(dc)}
+                                >
+                                  History ({dc.returnInwardHistory.length})
+                                </button>
+                              )}
                               <button 
                                 className="btn-secondary" 
                                 style={{ padding: '4px 10px', fontSize: '0.75rem' }}
                                 title="View & Print Official PDF"
                                 onClick={() => setActiveDcForPDF(dc)}
                               >
-                                <Printer size={14} /> View PDF
+                                <Printer size={14} /> PDF
                               </button>
                               <button 
                                 className="btn-secondary" 
@@ -1073,7 +1223,7 @@ export default function DispatchManagement({
 
             <form onSubmit={handleSaveDcSubmit}>
               
-              {/* Grid 1: Basic Info */}
+              {/* Grid 1: Basic Info & Party Type */}
               <div className="form-grid" style={{ marginBottom: '16px' }}>
                 <div>
                   <label className="form-label">Delivery Challan No *</label>
@@ -1111,29 +1261,127 @@ export default function DispatchManagement({
                 </div>
 
                 <div>
-                  <label className="form-label">Client Name (Select from List) *</label>
+                  <label className="form-label">Party Type (Select Destination Category) *</label>
+                  <select 
+                    className="form-control" 
+                    style={{ fontWeight: '700', color: dcPartyType === 'Vendor' ? '#d97706' : '#0284c7', background: dcPartyType === 'Vendor' ? '#fffbeb' : '#f0f9ff' }}
+                    value={dcPartyType} 
+                    onChange={e => {
+                      const newType = e.target.value;
+                      setDcPartyType(newType);
+                      if (newType === 'Vendor' && vendors.length > 0) {
+                        handlePartySelectChange(newType, vendors[0].name || vendors[0].vendorName || vendors[0].companyName || '');
+                      } else if (newType === 'Client' && clients.length > 0) {
+                        handlePartySelectChange(newType, clients[0].name || clients[0].companyName || clients[0].clientName || '');
+                      }
+                    }}
+                    required
+                  >
+                    <option value="Client">Client / Customer (Sales & Dispatch)</option>
+                    <option value="Vendor">Vendor / Supplier (Goods Return & Job Work)</option>
+                  </select>
+                </div>
+
+                <div style={{ gridColumn: 'span 2' }}>
+                  <label className="form-label">{dcPartyType === 'Vendor' ? 'Vendor Name (Select from Directory) *' : 'Client Name (Select from Directory) *'}</label>
                   <select 
                     className="form-control" 
                     style={{ fontWeight: '700' }}
                     value={dcSelectedClientName} 
-                    onChange={e => handleClientSelectChange(e.target.value)}
+                    onChange={e => handlePartySelectChange(dcPartyType, e.target.value)}
                     required
                   >
-                    <option value="" disabled>-- Select Client --</option>
-                    {(clients || []).map(c => {
-                      const name = c.name || c.companyName || c.clientName || '';
-                      return (
-                        <option key={c.id || name} value={name}>{name}</option>
-                      );
-                    })}
+                    <option value="" disabled>-- Select {dcPartyType} --</option>
+                    {dcPartyType === 'Vendor' ? (
+                      (vendors || []).map(v => {
+                        const vName = v.name || v.vendorName || v.companyName || '';
+                        return (
+                          <option key={v.id || vName} value={vName}>[Vendor] {vName}</option>
+                        );
+                      })
+                    ) : (
+                      (clients || []).map(c => {
+                        const cName = c.name || c.companyName || c.clientName || '';
+                        return (
+                          <option key={c.id || cName} value={cName}>[Client] {cName}</option>
+                        );
+                      })
+                    )}
                   </select>
+                </div>
+
+                <div>
+                  <label className="form-label">Client / Vendor PO Ref #</label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    placeholder="e.g. PO-BRIT-2026-991"
+                    value={dcPoRefNo} 
+                    onChange={e => setDcPoRefNo(e.target.value)} 
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">Job / Product Reference</label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    placeholder="e.g. 250g Printed Laminated Roll"
+                    value={dcJobName} 
+                    onChange={e => setDcJobName(e.target.value)} 
+                  />
                 </div>
               </div>
 
-              {/* Grid 2: Logistics & Client Details */}
-              <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
+              {/* Grid 2: Challan Nature & Movement Type Checkmarks */}
+              <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #cbd5e1', marginBottom: '16px' }}>
+                <div style={{ fontSize: '0.74rem', color: '#334155', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <CheckCircle2 size={16} color="#0284c7" /> Challan Purpose & Nature of Movement (Select One) *
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '8px' }}>
+                  {[
+                    { id: 'Sale of Goods', label: 'Sale of Goods', desc: 'Outright Sales Dispatch', color: '#0284c7' },
+                    { id: 'Returnable Material', label: 'Returnable Material', desc: 'General Returnable Goods', color: '#d97706' },
+                    { id: 'Non-Returnable Material', label: 'Non-Returnable Material', desc: 'Sample / Scrap / Non-Return', color: '#64748b' },
+                    { id: 'Job Work Material - Returnable', label: 'Job Work Material - Returnable', desc: 'Sent for Processing / Printing', color: '#7c3aed' },
+                    { id: 'Maintenance Material - Returnable', label: 'Maintenance Material - Returnable', desc: 'Cylinders / Parts for Repair', color: '#059669' }
+                  ].map(nature => (
+                    <label key={nature.id} style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '8px',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: `2px solid ${dcChallanNature === nature.id ? nature.color : '#e2e8f0'}`,
+                      background: dcChallanNature === nature.id ? `${nature.color}0D` : '#ffffff',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}>
+                      <input
+                        type="radio"
+                        name="challanNature"
+                        value={nature.id}
+                        checked={dcChallanNature === nature.id}
+                        onChange={e => setDcChallanNature(e.target.value)}
+                        style={{ marginTop: '2px' }}
+                      />
+                      <div>
+                        <div style={{ fontSize: '0.82rem', fontWeight: dcChallanNature === nature.id ? '800' : '600', color: dcChallanNature === nature.id ? nature.color : '#1e293b' }}>
+                          ✓ {nature.label}
+                        </div>
+                        <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '1px' }}>
+                          {nature.desc}
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Grid 3: Logistics & Consignee Details */}
+              <div style={{ background: '#ffffff', padding: '14px', borderRadius: '10px', border: '1px solid #cbd5e1', marginBottom: '16px' }}>
                 <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '10px' }}>
-                  Logistics & Destination Details
+                  Logistics & Consignee Destination Details
                 </div>
                 <div className="form-grid">
                   <div style={{ gridColumn: 'span 2' }}>
@@ -1188,14 +1436,14 @@ export default function DispatchManagement({
                 </div>
 
                 <div style={{ overflowX: 'auto', width: '100%', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#ffffff' }}>
-                  <table className="data-table" style={{ width: '100%', minWidth: '680px', margin: 0, fontSize: '0.82rem' }}>
+                  <table className="data-table" style={{ width: '100%', minWidth: '780px', margin: 0, fontSize: '0.82rem' }}>
                     <thead>
                       <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                        <th style={{ width: '38%', padding: '8px 10px' }}>Item Description & Presets *</th>
-                        <th style={{ width: '13%', padding: '8px 10px' }}>HSN / SAC</th>
+                        <th style={{ width: '42%', padding: '8px 10px' }}>Item Title & Detailed Description *</th>
+                        <th style={{ width: '12%', padding: '8px 10px' }}>HSN / SAC</th>
                         <th style={{ width: '13%', padding: '8px 10px' }}>Qty</th>
                         <th style={{ width: '13%', padding: '8px 10px' }}>Rate (₹)</th>
-                        <th style={{ width: '18%', padding: '8px 10px', textAlign: 'right' }}>Amount (₹)</th>
+                        <th style={{ width: '15%', padding: '8px 10px', textAlign: 'right' }}>Amount (₹)</th>
                         <th style={{ width: '5%', padding: '8px 5px', textAlign: 'center' }}></th>
                       </tr>
                     </thead>
@@ -1224,14 +1472,22 @@ export default function DispatchManagement({
                             <input 
                               type="text" 
                               className="form-control" 
-                              style={{ padding: '5px 8px', fontSize: '0.82rem', fontWeight: '600' }}
+                              style={{ padding: '5px 8px', fontSize: '0.82rem', fontWeight: '700', marginBottom: '4px' }}
                               value={item.description} 
                               onChange={e => handleUpdateDcItemRow(item.id, 'description', e.target.value)}
-                              placeholder="Enter item details..."
+                              placeholder="Item Name / Title (e.g. 250g PET/METPET Roll)..."
                               required 
                             />
+                            <textarea
+                              rows={2}
+                              className="form-control"
+                              style={{ padding: '4px 8px', fontSize: '0.78rem', color: '#475569' }}
+                              value={item.itemDetails || ''}
+                              onChange={e => handleUpdateDcItemRow(item.id, 'itemDetails', e.target.value)}
+                              placeholder="Detailed Specification / Description / Notes..."
+                            />
                           </td>
-                          <td style={{ padding: '6px 8px' }}>
+                          <td style={{ padding: '6px 8px', verticalAlign: 'top' }}>
                             <input 
                               type="text" 
                               className="form-control" 
@@ -1240,7 +1496,7 @@ export default function DispatchManagement({
                               onChange={e => handleUpdateDcItemRow(item.id, 'hsnSac', e.target.value)}
                             />
                           </td>
-                          <td style={{ padding: '6px 8px' }}>
+                          <td style={{ padding: '6px 8px', verticalAlign: 'top' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                               <input 
                                 type="number" 
@@ -1254,7 +1510,7 @@ export default function DispatchManagement({
                               <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '600' }}>{item.unit || 'Kg'}</span>
                             </div>
                           </td>
-                          <td style={{ padding: '6px 8px' }}>
+                          <td style={{ padding: '6px 8px', verticalAlign: 'top' }}>
                             <input 
                               type="number" 
                               step="any"
@@ -1264,10 +1520,10 @@ export default function DispatchManagement({
                               onChange={e => handleUpdateDcItemRow(item.id, 'rate', e.target.value)}
                             />
                           </td>
-                          <td style={{ padding: '6px 12px', textAlign: 'right', fontWeight: '800', color: '#0284c7', fontSize: '0.88rem', verticalAlign: 'middle' }}>
+                          <td style={{ padding: '6px 12px', textAlign: 'right', fontWeight: '800', color: '#0284c7', fontSize: '0.88rem', verticalAlign: 'top' }}>
                             {formatINR(item.amount || (item.quantity * item.rate))}
                           </td>
-                          <td style={{ padding: '6px 8px', textAlign: 'center', verticalAlign: 'middle' }}>
+                          <td style={{ padding: '6px 8px', textAlign: 'center', verticalAlign: 'top' }}>
                             {dcItems.length > 1 && (
                               <button 
                                 type="button" 
@@ -1285,46 +1541,76 @@ export default function DispatchManagement({
                   </table>
                 </div>
 
-                {/* Subtotal & GST Calculation */}
+                {/* Freight Charges Row & Subtotal & GST Calculation */}
                 {(() => {
-                  const subtotal = dcItems.reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
-                  const gstInfo = calculateGSTBreakdown(dcClientGstin, dcClientAddress, subtotal, dcGstRatePct, COMPANY_DETAILS.gstin, dcTaxType);
+                  const subtotalItems = dcItems.reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
+                  const freightAmount = parseFloat(dcFreightCharges) || 0;
+                  const totalTaxable = subtotalItems + freightAmount;
+
+                  const gstInfo = calculateGSTBreakdown(dcClientGstin, dcClientAddress, totalTaxable, dcGstRatePct, COMPANY_DETAILS.gstin, dcTaxType);
                   const numGstPct = Number(dcGstRatePct) || 0;
                   return (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginTop: '12px', background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                      <div style={{ fontSize: '0.8rem', color: '#475569', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                        <div>
-                          <span style={{ marginRight: '4px' }}>Tax Type:</span>
-                          <select 
-                            value={dcTaxType} 
-                            onChange={e => setDcTaxType(e.target.value)}
-                            style={{ padding: '3px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontWeight: '700', fontSize: '0.8rem', background: '#ffffff' }}
-                          >
-                            <option value="auto">Auto (Detect GSTIN)</option>
-                            <option value="cgst_sgst">CGST + SGST (Intra-State)</option>
-                            <option value="igst">IGST (Inter-State)</option>
-                          </select>
+                    <div style={{ marginTop: '14px', background: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                      
+                      {/* Freight Charges Input Row */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', paddingBottom: '10px', borderBottom: '1px dashed #cbd5e1' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <Truck size={16} color="#0284c7" />
+                          <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155', margin: 0 }}>
+                            Freight / Transport Charges (Optional - ₹):
+                          </label>
                         </div>
-                        <div>
-                          <span style={{ marginRight: '4px' }}>Tax Rate:</span>
-                          <select 
-                            value={dcGstRatePct} 
-                            onChange={e => setDcGstRatePct(e.target.value)}
-                            style={{ padding: '3px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontWeight: '700', fontSize: '0.8rem', background: '#ffffff' }}
-                          >
-                            <option value={18}>18% GST</option>
-                            <option value={12}>12% GST</option>
-                            <option value={5}>5% GST</option>
-                            <option value={0}>0% (Exempt)</option>
-                          </select>
-                        </div>
-                        <span style={{ fontWeight: '700', color: gstInfo.isIntraState ? '#047857' : '#0284c7', fontSize: '0.78rem' }}>
-                          ({gstInfo.isIntraState ? `CGST ${(numGstPct / 2).toFixed(1)}% + SGST ${(numGstPct / 2).toFixed(1)}% [Intra-State]` : `IGST ${numGstPct}% [Inter-State]`})
-                        </span>
+                        <input
+                          type="number"
+                          step="any"
+                          min="0"
+                          className="form-control"
+                          style={{ width: '160px', padding: '6px 10px', fontSize: '0.88rem', fontWeight: '700', textAlign: 'right', color: '#0f172a' }}
+                          placeholder="e.g. 1500"
+                          value={dcFreightCharges}
+                          onChange={e => setDcFreightCharges(e.target.value)}
+                        />
                       </div>
 
-                      <div style={{ fontSize: '0.92rem', fontWeight: '800', color: '#0f172a' }}>
-                        Subtotal: {formatINR(subtotal)} | Grand Total: <span style={{ color: '#0284c7' }}>{formatINR(gstInfo.grandTotal)}</span>
+                      {/* Tax Settings & Total Breakdown */}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ fontSize: '0.8rem', color: '#475569', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                          <div>
+                            <span style={{ marginRight: '4px' }}>Tax Type:</span>
+                            <select 
+                              value={dcTaxType} 
+                              onChange={e => setDcTaxType(e.target.value)}
+                              style={{ padding: '3px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontWeight: '700', fontSize: '0.8rem', background: '#ffffff' }}
+                            >
+                              <option value="auto">Auto (Detect GSTIN)</option>
+                              <option value="cgst_sgst">CGST + SGST (Intra-State)</option>
+                              <option value="igst">IGST (Inter-State)</option>
+                            </select>
+                          </div>
+                          <div>
+                            <span style={{ marginRight: '4px' }}>Tax Rate:</span>
+                            <select 
+                              value={dcGstRatePct} 
+                              onChange={e => setDcGstRatePct(e.target.value)}
+                              style={{ padding: '3px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontWeight: '700', fontSize: '0.8rem', background: '#ffffff' }}
+                            >
+                              <option value={18}>18% GST</option>
+                              <option value={12}>12% GST</option>
+                              <option value={5}>5% GST</option>
+                              <option value={0}>0% (Exempt)</option>
+                            </select>
+                          </div>
+                          <span style={{ fontWeight: '700', color: gstInfo.isIntraState ? '#047857' : '#0284c7', fontSize: '0.78rem' }}>
+                            ({gstInfo.isIntraState ? `CGST ${(numGstPct / 2).toFixed(1)}% + SGST ${(numGstPct / 2).toFixed(1)}% [Intra-State]` : `IGST ${numGstPct}% [Inter-State]`})
+                          </span>
+                        </div>
+
+                        <div style={{ fontSize: '0.88rem', fontWeight: '700', color: '#0f172a', textAlign: 'right' }}>
+                          <div>Items Subtotal: {formatINR(subtotalItems)} {freightAmount > 0 && `+ Freight: ${formatINR(freightAmount)}`}</div>
+                          <div style={{ fontSize: '1rem', fontWeight: '800', color: '#0284c7', marginTop: '2px' }}>
+                            Grand Total: {formatINR(gstInfo.grandTotal)}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   );
@@ -1665,8 +1951,238 @@ export default function DispatchManagement({
                   <Printer size={18} /> Save & Open Quality Report (CoA) PDF
                 </button>
               </div>
-
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* MODAL 3: MARK MATERIAL RETURN INWARD (FOR RETURNABLE CHALLANS)       */}
+      {/* ==================================================================== */}
+      {selectedDcForReturn && (
+        <div className="modal-overlay" onClick={() => setSelectedDcForReturn(null)}>
+          <div className="glass-card modal-content" style={{ width: '650px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
+            <div style={{ background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)', padding: '18px 24px', margin: '-24px -24px 20px -24px', borderRadius: '16px 16px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#ffffff' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ background: 'rgba(255, 255, 255, 0.2)', padding: '10px', borderRadius: '10px', color: '#ffffff' }}>
+                  <Truck size={22} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.18rem', fontWeight: '800', margin: 0, color: '#ffffff' }}>
+                    Record Material Return Inward
+                  </h3>
+                  <p style={{ fontSize: '0.78rem', color: '#fef3c7', margin: '2px 0 0 0' }}>
+                    Challan #{selectedDcForReturn.challanNo} • {selectedDcForReturn.clientName || selectedDcForReturn.partyName} ({selectedDcForReturn.challanNature})
+                  </p>
+                </div>
+              </div>
+              <button type="button" className="modal-close-btn" onClick={() => setSelectedDcForReturn(null)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmReturnInward}>
+              <div style={{ background: '#f8fafc', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '16px', fontSize: '0.82rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <div><span style={{ color: '#64748b' }}>Original Dispatched Qty:</span> <strong>{(selectedDcForReturn.items || []).reduce((s,i) => s + (parseFloat(i.quantity)||0), 0).toFixed(2)} Kg</strong></div>
+                  <div><span style={{ color: '#64748b' }}>Previously Returned:</span> <strong style={{ color: '#d97706' }}>{Number(selectedDcForReturn.totalReturnedQty || 0).toFixed(2)} Kg</strong></div>
+                </div>
+              </div>
+
+              <div className="form-grid" style={{ marginBottom: '16px' }}>
+                <div>
+                  <label className="form-label">Return Date & Time *</label>
+                  <input
+                    type="datetime-local"
+                    className="form-control"
+                    value={returnDate}
+                    onChange={e => setReturnDate(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">Returned Quantity (Kg / Units) *</label>
+                  <input
+                    type="number"
+                    step="any"
+                    className="form-control"
+                    style={{ fontWeight: '800', color: '#d97706' }}
+                    placeholder="e.g. 500"
+                    value={returnedQty}
+                    onChange={e => setReturnedQty(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">Return Ref / Vendor DC / Invoice No</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. VEND/RET/2026/012"
+                    value={returnRefDocNo}
+                    onChange={e => setReturnRefDocNo(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">Transporter Company</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. VRL Logistics"
+                    value={returnTransporter}
+                    onChange={e => setReturnTransporter(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">Vehicle Number</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. MP-09-CD-5678"
+                    value={returnVehicleNo}
+                    onChange={e => setReturnVehicleNo(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">LR / Bilty Number</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. LR-998811"
+                    value={returnLrNo}
+                    onChange={e => setReturnLrNo(e.target.value)}
+                  />
+                </div>
+
+                <div style={{ gridColumn: 'span 2' }}>
+                  <label className="form-label">Material Inspection & Quality Condition *</label>
+                  <select
+                    className="form-control"
+                    style={{ fontWeight: '700' }}
+                    value={returnCondition}
+                    onChange={e => setReturnCondition(e.target.value)}
+                    required
+                  >
+                    <option value="Good Condition & Pass QC">✓ Good Condition & Pass QC Inspection</option>
+                    <option value="Re-engraved / Completed Job Work">✓ Re-engraved / Completed Job Work (Ready for Use)</option>
+                    <option value="Partially Processed / Pending Work">⚠ Partially Processed / Pending Further Work</option>
+                    <option value="Damaged / Defective / Rejected">✗ Damaged / Defective / Rejected</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="form-label">Received By (Store Incharge)</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={returnedBy}
+                    onChange={e => setReturnedBy(e.target.value)}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', marginTop: '24px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '0.85rem', color: '#15803d' }}>
+                    <input
+                      type="checkbox"
+                      checked={isFullyReturned}
+                      onChange={e => setIsFullyReturned(e.target.checked)}
+                    />
+                    Mark Delivery Challan as Fully Returned
+                  </label>
+                </div>
+
+                <div style={{ gridColumn: 'span 2' }}>
+                  <label className="form-label">Return Inward Remarks & Notes</label>
+                  <textarea
+                    className="form-control"
+                    rows={2}
+                    placeholder="Add details about returned material condition, serial numbers, etc..."
+                    value={returnNotes}
+                    onChange={e => setReturnNotes(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px' }}>
+                <button type="button" className="btn-secondary" onClick={() => setSelectedDcForReturn(null)}>Cancel</button>
+                <button type="submit" className="btn-primary" style={{ background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)' }}>
+                  <CheckCircle2 size={18} /> Confirm & Save Return Inward Entry
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* MODAL 4: VIEW RETURN INWARD HISTORY LOG                              */}
+      {/* ==================================================================== */}
+      {viewReturnHistoryDc && (
+        <div className="modal-overlay" onClick={() => setViewReturnHistoryDc(null)}>
+          <div className="glass-card modal-content" style={{ width: '750px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
+            <div style={{ background: '#0f172a', padding: '18px 24px', margin: '-24px -24px 20px -24px', borderRadius: '16px 16px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#ffffff' }}>
+              <div>
+                <h3 style={{ fontSize: '1.18rem', fontWeight: '800', margin: 0, color: '#ffffff' }}>
+                  Material Return Inward Log History
+                </h3>
+                <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0 0' }}>
+                  Challan #{viewReturnHistoryDc.challanNo} • {viewReturnHistoryDc.clientName || viewReturnHistoryDc.partyName}
+                </p>
+              </div>
+              <button type="button" className="modal-close-btn" onClick={() => setViewReturnHistoryDc(null)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ maxHeight: '450px', overflowY: 'auto', marginBottom: '16px' }}>
+              <table className="data-table" style={{ width: '100%', fontSize: '0.82rem' }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                    <th style={{ padding: '8px 10px' }}>Return Date & Time</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'right' }}>Returned Qty</th>
+                    <th style={{ padding: '8px 10px' }}>Ref / Doc #</th>
+                    <th style={{ padding: '8px 10px' }}>Vehicle / Transporter</th>
+                    <th style={{ padding: '8px 10px' }}>Quality Condition</th>
+                    <th style={{ padding: '8px 10px' }}>Received By</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(viewReturnHistoryDc.returnInwardHistory || []).map((ret, idx) => (
+                    <tr key={ret.id || idx}>
+                      <td style={{ padding: '8px 10px', color: '#64748b' }}>
+                        {new Date(ret.returnDateTime || ret.timestamp).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: '800', color: '#d97706' }}>
+                        {ret.returnedQty} Kg
+                      </td>
+                      <td style={{ padding: '8px 10px', fontWeight: '600' }}>
+                        {ret.returnRefDocNo || '—'}
+                      </td>
+                      <td style={{ padding: '8px 10px', color: '#334155' }}>
+                        {ret.returnVehicleNo ? `${ret.returnVehicleNo} (${ret.returnTransporter || 'Self'})` : (ret.returnTransporter || '—')}
+                      </td>
+                      <td style={{ padding: '8px 10px' }}>
+                        <span style={{ fontSize: '0.74rem', fontWeight: '700', color: ret.returnCondition.includes('Pass') || ret.returnCondition.includes('Completed') ? '#15803d' : '#c2410c' }}>
+                          {ret.returnCondition}
+                        </span>
+                      </td>
+                      <td style={{ padding: '8px 10px', color: '#475569' }}>
+                        {ret.returnedBy}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
+              <button type="button" className="btn-secondary" onClick={() => setViewReturnHistoryDc(null)}>Close History</button>
+            </div>
           </div>
         </div>
       )}

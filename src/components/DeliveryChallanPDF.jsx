@@ -38,7 +38,9 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
   const {
     invoiceNo = "SIL/INV/26-27/042",
     dispatchDateTime = new Date().toISOString().slice(0, 16).replace('T', ' '),
+    partyType = "Client",
     clientName = "Britannia Industries Ltd",
+    partyName = "",
     clientAddress = "Plot 12, Pithampur Industrial Area Sector III, Dhar, M.P. - 454775",
     clientGstin = "23AAACB1234F1Z5",
     clientContactPerson = "Rajesh Sharma",
@@ -48,25 +50,42 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
     driverPhone = "+91 91110 99887",
     poRefNo = "PO-BRIT-2026-991",
     jobName = "Britannia Bourbon 250g Printed Laminate Film",
+    challanNature = "Returnable Material",
+    freightCharges = 0,
     items = [
-      { id: 1, description: "Britannia Bourbon 250g PET/METPET Film Roll", hsnSac: "3923", quantity: 1250, unit: "Kg", rate: 195, amount: 243750 }
+      { id: 1, description: "Britannia Bourbon 250g PET/METPET Film Roll", itemDetails: "Primary laminate roll for packaging", hsnSac: "3923", quantity: 1250, unit: "Kg", rate: 195, amount: 243750 }
     ],
     gstRatePct = 18,
     taxType = 'auto',
     dispatchedBy = "Dilip Joshi (Dispatch Store Incharge)",
-    remarks = "Material dispatched in 12 rolls wrapped in waterproof Stretch Film."
+    remarks = "Material dispatched in 12 rolls wrapped in waterproof Stretch Film.",
+    returnStatus = "",
+    returnInwardHistory = []
   } = challanData;
+
+  const displayName = clientName || partyName || "Client / Vendor Party";
+
+  const CHALLAN_NATURE_OPTIONS = [
+    'Returnable Material',
+    'Non-Returnable Material',
+    'Sale of Goods',
+    'Job Work Material - Returnable',
+    'Maintenance Material - Returnable'
+  ];
 
   // Calculate row amounts & tax breakdowns
   const itemRows = (Array.isArray(items) && items.length > 0) ? items : [
-    { id: 1, description: "Flexible Packaging Laminated Film Rolls", hsnSac: "3923", quantity: 1000, unit: "Kg", rate: 180, amount: 180000 }
+    { id: 1, description: "Flexible Packaging Laminated Film Rolls", itemDetails: "", hsnSac: "3923", quantity: 1000, unit: "Kg", rate: 180, amount: 180000 }
   ];
 
-  const subtotalTaxable = itemRows.reduce((sum, item) => {
+  const subtotalItems = itemRows.reduce((sum, item) => {
     const qty = parseFloat(item.quantity) || 0;
     const rate = parseFloat(item.rate) || 0;
     return sum + (item.amount ? parseFloat(item.amount) : qty * rate);
   }, 0);
+
+  const freightAmt = parseFloat(freightCharges) || 0;
+  const subtotalTaxable = subtotalItems + freightAmt;
 
   const gstCalc = calculateGSTBreakdown(clientGstin, clientAddress, subtotalTaxable, gstRatePct, COMPANY_DETAILS.gstin, taxType);
   const totalQtyKg = itemRows.reduce((sum, item) => sum + (parseFloat(item.quantity) || 0), 0);
@@ -122,12 +141,34 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
             </div>
           </div>
 
+          {/* Purpose of Goods Movement / Challan Nature Checkmarks Bar */}
+          <div style={{ border: '1px solid #cbd5e1', background: '#f8fafc', padding: '6px 12px', borderRadius: '4px', marginBottom: '10px', fontSize: '10px' }}>
+            <div style={{ fontWeight: '800', color: '#334155', marginBottom: '4px', textTransform: 'uppercase', fontSize: '8.5px', letterSpacing: '0.5px' }}>
+              PURPOSE OF GOODS MOVEMENT / CHALLAN NATURE:
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', alignItems: 'center' }}>
+              {CHALLAN_NATURE_OPTIONS.map(option => {
+                const isSelected = (challanNature === option);
+                return (
+                  <div key={option} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontWeight: isSelected ? 'bold' : 'normal', color: isSelected ? '#1e40af' : '#475569' }}>
+                    <span style={{ fontSize: '12px', color: isSelected ? '#2563eb' : '#94a3b8' }}>
+                      {isSelected ? '☑' : '☐'}
+                    </span>
+                    <span>{option}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           {/* 3-Column Address & Dispatch Details Grid */}
           <table className="address-grid-table">
             <thead>
               <tr>
                 <th style={{ width: '36%' }}>Dispatched Billed From (Consignor)</th>
-                <th style={{ width: '36%' }}>Billed & Shipped To (Consignee)</th>
+                <th style={{ width: '36%' }}>
+                  Billed & Shipped To ({partyType === 'Vendor' ? 'Vendor / Consignee' : 'Client / Consignee'})
+                </th>
                 <th style={{ width: '28%' }}>Logistics & Dispatch Specs</th>
               </tr>
             </thead>
@@ -142,7 +183,12 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
                   <div className="address-line">Email: {COMPANY_DETAILS.email}</div>
                 </td>
                 <td>
-                  <div className="address-box-title">{clientName}</div>
+                  <div className="address-box-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span>{displayName}</span>
+                    <span style={{ background: partyType === 'Vendor' ? '#d97706' : '#2563eb', color: '#fff', fontSize: '8px', padding: '1px 5px', borderRadius: '3px', fontWeight: 'bold' }}>
+                      {partyType.toUpperCase()}
+                    </span>
+                  </div>
                   <div className="address-line">{clientAddress}</div>
                   <div className="address-line">GSTIN: <strong>{clientGstin || 'Unregistered / Exempt'}</strong></div>
                   <div className="address-line">Contact Person: {clientContactPerson || 'Store Manager / Receiver'}</div>
@@ -185,12 +231,17 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
                 const qty = parseFloat(item.quantity) || 0;
                 const rate = parseFloat(item.rate) || 0;
                 const amt = item.amount ? parseFloat(item.amount) : qty * rate;
+                const specText = item.itemDetails || item.subDetails;
                 return (
                   <tr key={item.id || idx}>
                     <td style={{ textAlign: 'center' }}>{idx + 1}</td>
                     <td>
                       <div style={{ fontWeight: 'bold', color: '#1e293b' }}>{item.description || item.name}</div>
-                      {item.subDetails && <div style={{ fontSize: '9.5px', color: '#64748b' }}>{item.subDetails}</div>}
+                      {specText && (
+                        <div style={{ fontSize: '9.5px', color: '#475569', marginTop: '2px', whiteSpace: 'pre-line' }}>
+                          {specText}
+                        </div>
+                      )}
                     </td>
                     <td style={{ textAlign: 'center', fontFamily: 'monospace' }}>{item.hsnSac || '3923'}</td>
                     <td style={{ textAlign: 'right', fontWeight: 'bold' }}>
@@ -227,7 +278,7 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
             </div>
 
             {/* Financial Breakdown Card */}
-            <table style={{ width: '280px', borderCollapse: 'collapse', fontSize: '11px', border: '1px solid #cbd5e1' }}>
+            <table style={{ width: '300px', borderCollapse: 'collapse', fontSize: '11px', border: '1px solid #cbd5e1' }}>
               <tbody>
                 <tr>
                   <td style={{ padding: '5px 10px', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>Total Net Qty:</td>
@@ -236,7 +287,21 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
                   </td>
                 </tr>
                 <tr>
-                  <td style={{ padding: '5px 10px', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>Subtotal (Taxable Value):</td>
+                  <td style={{ padding: '5px 10px', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>Items Subtotal:</td>
+                  <td style={{ padding: '5px 10px', borderBottom: '1px solid #e2e8f0', textAlign: 'right', fontWeight: 'bold' }}>
+                    {formatINR(subtotalItems)}
+                  </td>
+                </tr>
+                {freightAmt > 0 && (
+                  <tr>
+                    <td style={{ padding: '5px 10px', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>Freight / Carriage Charges:</td>
+                    <td style={{ padding: '5px 10px', borderBottom: '1px solid #e2e8f0', textAlign: 'right', fontWeight: 'bold', color: '#d97706' }}>
+                      + {formatINR(freightAmt)}
+                    </td>
+                  </tr>
+                )}
+                <tr>
+                  <td style={{ padding: '5px 10px', borderBottom: '1px solid #e2e8f0', color: '#475569', fontWeight: 'bold' }}>Total Taxable Value:</td>
                   <td style={{ padding: '5px 10px', borderBottom: '1px solid #e2e8f0', textAlign: 'right', fontWeight: 'bold' }}>
                     {formatINR(subtotalTaxable)}
                   </td>
@@ -273,6 +338,60 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
               </tbody>
             </table>
           </div>
+
+          {/* Material Return Inward History Log (if present) */}
+          {Array.isArray(returnInwardHistory) && returnInwardHistory.length > 0 && (
+            <div style={{ marginTop: '16px', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '8px 12px', background: '#f0fdf4' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <div style={{ fontSize: '10px', fontWeight: '800', color: '#166534', textTransform: 'uppercase' }}>
+                  MATERIAL RETURN INWARD LOG RECORD
+                </div>
+                {returnStatus && (
+                  <span style={{ fontSize: '9px', fontWeight: 'bold', background: '#dcfce7', color: '#15803d', padding: '2px 6px', borderRadius: '4px', border: '1px solid #86efac' }}>
+                    Status: {returnStatus}
+                  </span>
+                )}
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9.5px', background: '#ffffff', border: '1px solid #bbf7d0' }}>
+                <thead>
+                  <tr style={{ background: '#dcfce7', color: '#14532d', textTransform: 'uppercase', fontSize: '8.5px' }}>
+                    <th style={{ padding: '4px 6px', border: '1px solid #bbf7d0', textAlign: 'left' }}>Return Date & Time</th>
+                    <th style={{ padding: '4px 6px', border: '1px solid #bbf7d0', textAlign: 'right' }}>Returned Qty</th>
+                    <th style={{ padding: '4px 6px', border: '1px solid #bbf7d0', textAlign: 'left' }}>Logistics / Vehicle</th>
+                    <th style={{ padding: '4px 6px', border: '1px solid #bbf7d0', textAlign: 'left' }}>Ref Doc / Inv No</th>
+                    <th style={{ padding: '4px 6px', border: '1px solid #bbf7d0', textAlign: 'left' }}>Quality Condition</th>
+                    <th style={{ padding: '4px 6px', border: '1px solid #bbf7d0', textAlign: 'left' }}>Received By</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {returnInwardHistory.map((ret, rIdx) => (
+                    <tr key={ret.id || rIdx}>
+                      <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontWeight: 'bold' }}>
+                        {ret.returnDate} {ret.returnTime ? `@ ${ret.returnTime}` : ''}
+                      </td>
+                      <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: 'bold', color: '#166534' }}>
+                        {ret.returnedQty} {ret.unit || 'Kg'}
+                      </td>
+                      <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0' }}>
+                        {ret.vehicleNo || '—'} ({ret.transporter || 'Self'}, LR: {ret.lrNo || 'N/A'})
+                      </td>
+                      <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0' }}>
+                        {ret.refInvoiceNo || 'N/A'}
+                      </td>
+                      <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0' }}>
+                        <span style={{ fontWeight: 'bold', color: ret.qualityCondition === 'Damaged' ? '#dc2626' : ret.qualityCondition === 'Needs Rework' ? '#d97706' : '#16a34a' }}>
+                          {ret.qualityCondition || 'Good / OK'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0' }}>
+                        {ret.receivedBy || 'Store Incharge'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {/* Editable Terms & Conditions Section */}
           <div className="terms-section" style={{ marginTop: '16px' }}>
