@@ -2134,19 +2134,19 @@ export default function InventoryManagement({
       ["Tapes & Consumables", "Stretch Film Packaging Roll 23u", "Stretch Film", "23", "500", "80", "Rolls", "Dispatch Store", "30", "3M Packaging", "TAP-ST-330", "120"]
     ];
 
-    const csvContent = "data:text/csv;charset=utf-8," + 
-      [headers.join(","), ...sampleRows.map(e => e.join(","))].join("\n");
-    
-    const encodedUri = encodeURI(csvContent);
+    const csvContent = "\uFEFF" + [headers.join(","), ...sampleRows.map(e => e.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
+    link.setAttribute("href", url);
     link.setAttribute("download", "Bulk_Inventory_Stock_Template_Samyak.csv");
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
-  // Universal Bulk CSV Parser (Supports All Material Categories)
+  // Universal Bulk CSV Parser (Supports All Material Categories & Excel Encodings)
   const handleParseBulkCSV = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -2157,73 +2157,196 @@ export default function InventoryManagement({
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const text = evt.target.result;
-        const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
-        
-        if (lines.length <= 1) {
-          setBulkErrorMsg("CSV file is empty or only contains headers!");
+        const buffer = evt.target.result;
+        const bytes = new Uint8Array(buffer);
+
+        // Detect Encoding (UTF-8, UTF-16LE, UTF-16BE)
+        let encoding = 'utf-8';
+        if (bytes.length >= 2 && bytes[0] === 0xFF && bytes[1] === 0xFE) {
+          encoding = 'utf-16le';
+        } else if (bytes.length >= 2 && bytes[0] === 0xFE && bytes[1] === 0xFF) {
+          encoding = 'utf-16be';
+        } else {
+          // Check for high density of null bytes (typical for UTF-16LE exported from Excel without BOM)
+          let nullCount = 0;
+          const sampleSize = Math.min(bytes.length, 500);
+          for (let i = 1; i < sampleSize; i += 2) {
+            if (bytes[i] === 0x00) nullCount++;
+          }
+          if (nullCount > sampleSize * 0.2) {
+            encoding = 'utf-16le';
+          }
+        }
+
+        let text = new TextDecoder(encoding).decode(buffer);
+        // Strip BOM character if present
+        if (text.charCodeAt(0) === 0xFEFF) {
+          text = text.slice(1);
+        }
+
+        // Standardize line breaks
+        text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        const rawLines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+        if (rawLines.length === 0) {
+          setBulkErrorMsg("CSV file is completely empty!");
           return;
         }
 
-        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-        const hasHeader = headers.some(h => h.includes('item') || h.includes('film') || h.includes('qty') || h.includes('category') || h.includes('micron'));
-        const startIndex = hasHeader ? 1 : 0;
+        // Robust CSV line parser supporting quotes and commas
+        const parseCSVLine = (lineStr) => {
+          const cells = [];
+          let current = '';
+          let inQuotes = false;
+          for (let i = 0; i < lineStr.length; i++) {
+            const ch = lineStr[i];
+            if (ch === '"') {
+              if (inQuotes && lineStr[i + 1] === '"') {
+                current += '"';
+                i++;
+              } else {
+                inQuotes = !inQuotes;
+              }
+            } else if (ch === ',' && !inQuotes) {
+              cells.push(current.trim().replace(/^["']|["']$/g, ''));
+              current = '';
+            } else {
+              current += ch;
+            }
+          }
+          cells.push(current.trim().replace(/^["']|["']$/g, ''));
+          return cells;
+        };
+
+        const firstLineCells = parseCSVLine(rawLines[0]);
+        const headerMap = {};
+        
+        firstLineCells.forEach((h, idx) => {
+          const cleanH = h.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (cleanH.includes('category')) headerMap.category = idx;
+          else if (cleanH.includes('itemname') || cleanH.includes('item') || cleanH.includes('title') || cleanH.includes('description') || cleanH.includes('name')) {
+            if (headerMap.itemName === undefined) headerMap.itemName = idx;
+          }
+          else if (cleanH.includes('substrate') || cleanH.includes('grade') || cleanH.includes('filmtype') || cleanH.includes('polymer')) {
+            if (headerMap.substrateGrade === undefined) headerMap.substrateGrade = idx;
+          }
+          else if (cleanH.includes('micron') || cleanH.includes('gauge')) headerMap.micron = idx;
+          else if (cleanH.includes('width')) headerMap.widthMm = idx;
+          else if (cleanH.includes('availableqty') || cleanH.includes('qty') || cleanH.includes('quantity') || cleanH.includes('stock')) {
+            if (headerMap.qty === undefined) headerMap.qty = idx;
+          }
+          else if (cleanH.includes('uom') || cleanH.includes('unit')) headerMap.uom = idx;
+          else if (cleanH.includes('location') || cleanH.includes('bay') || cleanH.includes('rack')) headerMap.location = idx;
+          else if (cleanH.includes('reorder')) headerMap.reorder = idx;
+          else if (cleanH.includes('vendor') || cleanH.includes('supplier')) headerMap.vendor = idx;
+          else if (cleanH.includes('batch') || cleanH.includes('lot')) headerMap.batch = idx;
+          else if (cleanH.includes('unitcost') || cleanH.includes('cost') || cleanH.includes('rate') || cleanH.includes('price')) headerMap.unitCost = idx;
+        });
+
+        const hasNamedHeaders = Object.keys(headerMap).length >= 2;
+        const startIndex = hasNamedHeaders ? 1 : 0;
 
         const parsed = [];
-        for (let i = startIndex; i < lines.length; i++) {
-          const rawLine = lines[i];
-          const parts = rawLine.split(',').map(p => p.trim().replace(/^["']|["']$/g, ''));
-          if (parts.length < 2) continue;
+        for (let i = startIndex; i < rawLines.length; i++) {
+          const cells = parseCSVLine(rawLines[i]);
+          
+          // Skip completely empty lines or rows containing only blank commas (e.g., ",,,,,,,,")
+          if (cells.length === 0 || cells.every(c => !c || c.trim() === '')) continue;
 
-          let category = parts[0];
-          let itemName = parts[1];
-          let substrateGrade = parts[2];
-          let micron = parseFloat(parts[3]) || 0;
-          let widthMm = parseFloat(parts[4]) || 0;
-          let qty = parseFloat(parts[5]);
-          let uom = parts[6] || 'Kg';
-          let location = parts[7] || 'Main Factory Store';
-          let reorder = parseFloat(parts[8]) || 1000;
-          let vendor = parts[9] || 'Local Vendor';
-          let batch = parts[10] || 'BULK-BATCH';
-          let unitCost = parseFloat(parts[11]) || 0;
+          let category = '';
+          let itemName = '';
+          let substrateGrade = '';
+          let micron = 0;
+          let widthMm = 0;
+          let qty = NaN;
+          let uom = 'Kg';
+          let location = 'Main Factory Store';
+          let reorder = 1000;
+          let vendor = 'Local Vendor';
+          let batch = 'BULK-BATCH';
+          let unitCost = 0;
 
-          // If col 0 looks like a film grade (e.g. PET) and not a category, fallback to legacy schema
-          if (!INVENTORY_CATEGORIES.includes(category) && bulkCategory !== 'ALL') {
-            category = bulkCategory;
-            itemName = parts[0];
-            substrateGrade = parts[0];
-            micron = parseFloat(parts[1]) || 0;
-            widthMm = parseFloat(parts[2]) || 0;
-            qty = parseFloat(parts[3]) || 0;
-            uom = parts[4] && parts[4].length <= 6 ? parts[4] : 'Kg';
-            location = parts[5] || 'Main Factory Store';
-            reorder = parseFloat(parts[6]) || 1000;
-            vendor = parts[7] || 'Local Vendor';
-            batch = parts[8] || 'BULK-BATCH';
-            unitCost = parseFloat(parts[9]) || 0;
+          if (hasNamedHeaders) {
+            category = headerMap.category !== undefined ? cells[headerMap.category] : '';
+            itemName = headerMap.itemName !== undefined ? cells[headerMap.itemName] : '';
+            substrateGrade = headerMap.substrateGrade !== undefined ? cells[headerMap.substrateGrade] : '';
+            micron = headerMap.micron !== undefined ? parseFloat(cells[headerMap.micron]) : 0;
+            widthMm = headerMap.widthMm !== undefined ? parseFloat(cells[headerMap.widthMm]) : 0;
+            qty = headerMap.qty !== undefined ? parseFloat(cells[headerMap.qty]) : NaN;
+            uom = headerMap.uom !== undefined ? (cells[headerMap.uom] || 'Kg') : 'Kg';
+            location = headerMap.location !== undefined ? (cells[headerMap.location] || 'Main Factory Store') : 'Main Factory Store';
+            reorder = headerMap.reorder !== undefined ? (parseFloat(cells[headerMap.reorder]) || 1000) : 1000;
+            vendor = headerMap.vendor !== undefined ? (cells[headerMap.vendor] || 'Local Vendor') : 'Local Vendor';
+            batch = headerMap.batch !== undefined ? (cells[headerMap.batch] || 'BULK-BATCH') : 'BULK-BATCH';
+            unitCost = headerMap.unitCost !== undefined ? (parseFloat(cells[headerMap.unitCost]) || 0) : 0;
+          } else {
+            // Positional template layout
+            category = cells[0] || '';
+            itemName = cells[1] || '';
+            substrateGrade = cells[2] || '';
+            micron = parseFloat(cells[3]) || 0;
+            widthMm = parseFloat(cells[4]) || 0;
+            qty = parseFloat(cells[5]);
+            uom = cells[6] || 'Kg';
+            location = cells[7] || 'Main Factory Store';
+            reorder = parseFloat(cells[8]) || 1000;
+            vendor = cells[9] || 'Local Vendor';
+            batch = cells[10] || 'BULK-BATCH';
+            unitCost = parseFloat(cells[11]) || 0;
           }
 
-          if (isNaN(qty) || qty < 0) continue;
+          // Category auto-detection & fallback
+          if (!category || !INVENTORY_CATEGORIES.includes(category)) {
+            if (bulkCategory && bulkCategory !== 'ALL') {
+              category = bulkCategory;
+            } else {
+              const combo = (itemName + ' ' + substrateGrade).toLowerCase();
+              if (combo.includes('ink') || combo.includes('cyan') || combo.includes('magenta') || combo.includes('yellow')) category = 'Printing Inks';
+              else if (combo.includes('acetate') || combo.includes('solvent') || combo.includes('toluene') || combo.includes('ipa')) category = 'Chemicals & Solvents';
+              else if (combo.includes('adhesive') || combo.includes('hardener') || combo.includes('glue')) category = 'Adhesives & Hardener';
+              else if (combo.includes('core') || combo.includes('carton') || combo.includes('box')) category = 'Packaging & Cores';
+              else if (combo.includes('tape') || combo.includes('stretch')) category = 'Tapes & Consumables';
+              else category = 'Film Substrates';
+            }
+          }
+
+          // Resolve Substrate and Item Name
+          if (!substrateGrade && itemName) {
+            substrateGrade = itemName;
+          }
+          if (!itemName) {
+            const isFilm = category === 'Film Substrates';
+            itemName = isFilm 
+              ? `${substrateGrade || 'PET'} ${micron ? micron + 'µ' : ''} ${widthMm ? '(' + widthMm + 'mm)' : ''}`.trim()
+              : `${category} - ${substrateGrade || 'Item'}`;
+          }
+
+          // Strict validation: Skip invalid/empty row if no meaningful item name or substrate
+          if (!itemName && !substrateGrade) continue;
+          if (isNaN(qty)) {
+            qty = 0;
+          }
+          if (qty < 0) continue;
 
           parsed.push({
-            category: category || bulkCategory || 'Film Substrates',
-            itemName: itemName || `${substrateGrade} ${micron ? micron + 'µ' : ''} ${widthMm ? widthMm + 'mm' : ''}`.trim() || 'Raw Material Item',
-            filmType: substrateGrade || itemName || 'Standard Material',
-            micron: micron,
-            widthMm: widthMm,
+            category: category || 'Film Substrates',
+            itemName: itemName.trim(),
+            substrateOrGrade: (substrateGrade || itemName).trim(),
+            filmType: (substrateGrade || itemName).trim(),
+            micron: isNaN(micron) ? 0 : micron,
+            widthMm: isNaN(widthMm) ? 0 : widthMm,
             availableQty: qty,
             unit: uom || 'Kg',
-            location: location,
-            reorderLevel: reorder,
-            lastVendor: vendor,
-            lastBatch: batch,
-            unitPrice: unitCost
+            location: location || 'Main Factory Store',
+            reorderLevel: isNaN(reorder) ? 1000 : reorder,
+            lastVendor: vendor || 'Local Vendor',
+            lastBatch: batch || 'BULK-BATCH',
+            unitPrice: isNaN(unitCost) ? 0 : unitCost
           });
         }
 
         if (parsed.length === 0) {
-          setBulkErrorMsg("No valid inventory material rows could be parsed from the CSV file. Please check column format.");
+          setBulkErrorMsg("No valid inventory material rows could be parsed from the CSV file. Please make sure your file contains row data beneath the headers.");
         } else {
           setBulkParsedRows(parsed);
         }
@@ -2232,7 +2355,9 @@ export default function InventoryManagement({
         setBulkErrorMsg("Failed to read CSV file: " + err.message);
       }
     };
-    reader.readAsText(file);
+
+    reader.readAsArrayBuffer(file);
+    e.target.value = '';
   };
 
   // Confirm Import & Save Items Directly to Database
@@ -2249,16 +2374,20 @@ export default function InventoryManagement({
       const autoId = generateInventoryId([...currentInv, ...newItems]);
       const qtyNum = Number(row.availableQty) || 0;
       const uomStr = row.unit || 'Kg';
+      const subGradeStr = row.substrateOrGrade || row.filmType || row.itemName || '';
       
       const itemObj = {
         id: autoId,
         itemCode: autoId,
         category: row.category || bulkCategory || 'Film Substrates',
-        itemName: row.itemName || `${row.filmType} ${row.micron ? row.micron + 'µ' : ''}`.trim(),
-        filmType: row.filmType || row.itemName || 'Standard Material',
+        itemName: row.itemName || `${subGradeStr} ${row.micron ? row.micron + 'µ' : ''}`.trim(),
+        substrateOrGrade: subGradeStr,
+        filmType: subGradeStr,
+        grade: subGradeStr,
+        subType: subGradeStr,
         micron: Number(row.micron) || 0,
         widthMm: Number(row.widthMm) || 0,
-        density: FILM_DENSITIES[row.filmType] || 1.0,
+        density: FILM_DENSITIES[subGradeStr] || FILM_DENSITIES[row.filmType] || 1.0,
         unit: uomStr,
         availableQtyKg: uomStr === 'Kg' ? qtyNum : 0,
         availableQty: qtyNum,
@@ -2283,8 +2412,6 @@ export default function InventoryManagement({
     }
 
     alert(`Successfully imported ${newItems.length} inventory material stock items directly into the Database!`);
-    
-    // Reset modal state
     setIsBulkModalOpen(false);
     setBulkParsedRows([]);
     setBulkFileName('');
@@ -6549,7 +6676,7 @@ export default function InventoryManagement({
                           <td>{idx + 1}</td>
                           <td><span className="badge badge-subtle">{row.category}</span></td>
                           <td><strong>{row.itemName}</strong></td>
-                          <td>{row.filmType}</td>
+                          <td><span className="badge" style={{ background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', fontSize: '0.72rem', fontWeight: '700' }}>{row.substrateOrGrade || row.filmType || '-'}</span></td>
                           <td style={{ fontWeight: '800', color: '#0284c7' }}>{row.availableQty}</td>
                           <td>{row.unit}</td>
                           <td>{row.location}</td>
