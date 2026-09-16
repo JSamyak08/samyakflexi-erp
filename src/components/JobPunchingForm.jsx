@@ -62,6 +62,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
   const [colorsCount, setColorsCount] = useState(() => initialJobMasterData?.colorsCount || '');
   const [targetDeliveryDays, setTargetDeliveryDays] = useState(10);
   const [isWarningIgnored, setIsWarningIgnored] = useState(false);
+  const [isSubmitted, setIsSubmitted] = useState(false);
 
   // Dynamic Layers State
   const [layers, setLayers] = useState(() => initialJobMasterData?.layers ? initialJobMasterData.layers.map(l => ({ ...l, rate: l.rate ?? l.ratePerKg ?? '' })) : [
