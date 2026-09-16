@@ -109,6 +109,7 @@ export default function DispatchManagement({
   deliveryChallans = [],
   certificateOfAnalyses = [],
   clients = [],
+  vendors = [],
   jobMasters = [],
   orders = [],
   cylinders = [],
