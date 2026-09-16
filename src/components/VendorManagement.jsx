@@ -11,6 +11,8 @@ import {
   FileText,
   Search,
   Printer,
+  Edit3,
+  Trash2,
   X
 } from 'lucide-react';
 import { generateVendorId } from '../factoryStore';
@@ -54,9 +56,10 @@ function VendorMaterialItemsCell({ items = [] }) {
   );
 }
 
-export default function VendorManagement({ urlParams = {}, vendors = [], orders = [], onAddVendor }) {
+export default function VendorManagement({ urlParams = {}, vendors = [], orders = [], onAddVendor, onUpdateVendor, onDeleteVendor }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [isOnboardingModalOpen, setIsOnboardingModalOpen] = useState(false);
+  const [editingVendor, setEditingVendor] = useState(null);
   const [selectedVendorForPoHistory, setSelectedVendorForPoHistory] = useState(null);
   const [activePoPdfData, setActivePoPdfData] = useState(null);
 
@@ -66,7 +69,7 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
     }
   }, [urlParams?.id]);
 
-  // New Vendor Form State
+  // Vendor Form State
   const [companyName, setCompanyName] = useState('');
   const [gstin, setGstin] = useState('');
   const [address, setAddress] = useState('');
@@ -100,6 +103,42 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
     );
   };
 
+  const handleOpenCreateModal = () => {
+    setEditingVendor(null);
+    setCompanyName('');
+    setGstin('');
+    setAddress('');
+    setContactPerson('');
+    setPhone('');
+    setEmail('');
+    setBankDetails('');
+    setPaymentTerms('30 Days Net');
+    setSelectedMaterials(['PET', 'METPET']);
+    setIsOnboardingModalOpen(true);
+  };
+
+  const handleOpenEditModal = (vendor) => {
+    setEditingVendor(vendor);
+    setCompanyName(vendor.companyName || vendor.name || '');
+    setGstin(vendor.gstin || '');
+    setAddress(vendor.address || '');
+    setContactPerson(vendor.contactPerson || '');
+    setPhone(vendor.phone || '');
+    setEmail(vendor.email || '');
+    setBankDetails(vendor.bankDetails || '');
+    setPaymentTerms(vendor.paymentTerms || '30 Days Net');
+    setSelectedMaterials(vendor.materials || ['PET']);
+    setIsOnboardingModalOpen(true);
+  };
+
+  const handleDeleteVendorClick = (vendorId, vendorName) => {
+    if (window.confirm(`Are you sure you want to delete vendor "${vendorName}"?`)) {
+      if (onDeleteVendor) {
+        onDeleteVendor(vendorId);
+      }
+    }
+  };
+
   const handleSaveVendor = (e) => {
     e.preventDefault();
     if (!companyName.trim() || !gstin.trim()) {
@@ -107,8 +146,8 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
       return;
     }
 
-    const newVendor = {
-      id: generateVendorId(),
+    const vendorPayload = {
+      id: editingVendor ? editingVendor.id : generateVendorId(),
       name: companyName.trim(),
       companyName: companyName.trim(),
       gstin: gstin.toUpperCase().trim(),
@@ -118,15 +157,26 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
       email: email.trim(),
       bankDetails: bankDetails || "HDFC Bank | A/C: 502000000000 | IFSC: HDFC0000123",
       materials: selectedMaterials,
-      paymentTerms,
-      rating: 5.0
+      paymentTerms: paymentTerms.trim(),
+      rating: editingVendor ? (editingVendor.rating || 5.0) : 5.0
     };
 
-    if (onAddVendor) {
-      onAddVendor(newVendor);
+    if (editingVendor) {
+      if (onUpdateVendor) {
+        onUpdateVendor(vendorPayload);
+      } else if (onAddVendor) {
+        onAddVendor(vendorPayload);
+      }
+      alert(`Vendor "${companyName}" updated successfully!`);
+    } else {
+      if (onAddVendor) {
+        onAddVendor(vendorPayload);
+      }
+      alert(`Vendor "${companyName}" onboarded successfully!`);
     }
 
     // Reset Form
+    setEditingVendor(null);
     setCompanyName('');
     setGstin('');
     setAddress('');
@@ -135,7 +185,6 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
     setEmail('');
     setBankDetails('');
     setIsOnboardingModalOpen(false);
-    alert(`Vendor "${companyName}" onboarded successfully!`);
   };
 
   const filteredVendors = vendors.filter(v => 
@@ -238,7 +287,7 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
               />
             </div>
 
-            <button className="btn-primary" onClick={() => setIsOnboardingModalOpen(true)}>
+            <button className="btn-primary" onClick={handleOpenCreateModal}>
               <Plus size={18} /> Onboard New Vendor
             </button>
           </div>
@@ -304,17 +353,38 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
             </div>
 
             {/* Card Footer */}
-            <div style={{ marginTop: 'auto', paddingTop: '12px', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ marginTop: 'auto', paddingTop: '12px', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
               <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                 Terms: <b>{vendor.paymentTerms}</b>
               </span>
-              <button 
-                className="btn-secondary" 
-                style={{ padding: '6px 12px', fontSize: '0.8rem', cursor: 'pointer', background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0' }}
-                onClick={() => setSelectedVendorForPoHistory(vendor)}
-              >
-                <FileText size={14} /> PO History
-              </button>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button 
+                  type="button"
+                  className="btn-secondary" 
+                  style={{ padding: '5px 10px', fontSize: '0.78rem', cursor: 'pointer', background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontWeight: '700' }}
+                  onClick={() => setSelectedVendorForPoHistory(vendor)}
+                >
+                  <FileText size={14} /> PO History
+                </button>
+                <button 
+                  type="button"
+                  className="btn-secondary" 
+                  style={{ padding: '5px 8px', fontSize: '0.78rem', cursor: 'pointer' }}
+                  onClick={() => handleOpenEditModal(vendor)}
+                  title="Edit Vendor Details"
+                >
+                  <Edit3 size={14} /> Edit
+                </button>
+                <button 
+                  type="button"
+                  className="btn-danger" 
+                  style={{ padding: '5px 8px', fontSize: '0.78rem', cursor: 'pointer' }}
+                  onClick={() => handleDeleteVendorClick(vendor.id, vendor.companyName || vendor.name)}
+                  title="Delete Vendor Record"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
             </div>
           </div>
         ))}
@@ -408,10 +478,10 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
         <div className="modal-overlay" onClick={() => setIsOnboardingModalOpen(false)}>
           <div className="glass-card modal-content" style={{ width: '700px' }} onClick={e => e.stopPropagation()}>
             <h3 style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Building2 size={22} style={{ color: 'var(--accent-color)' }} /> Vendor Onboarding Form
+              <Building2 size={22} style={{ color: 'var(--accent-color)' }} /> {editingVendor ? "Edit Vendor Record" : "Vendor Onboarding Form"}
             </h3>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '20px' }}>
-              Input official company GSTIN, contact credentials, address and material details for PO generation.
+              {editingVendor ? "Update official company GSTIN, contact credentials, address and material details." : "Input official company GSTIN, contact credentials, address and material details for PO generation."}
             </p>
 
             <form onSubmit={handleSaveVendor}>
@@ -534,7 +604,7 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
                   Cancel
                 </button>
                 <button type="submit" className="btn-primary">
-                  <CheckCircle2 size={18} /> Complete Vendor Onboarding
+                  <CheckCircle2 size={18} /> {editingVendor ? "Save Vendor Changes" : "Complete Vendor Onboarding"}
                 </button>
               </div>
             </form>

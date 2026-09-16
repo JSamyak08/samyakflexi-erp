@@ -1770,6 +1770,16 @@ export default function App() {
     }
   };
 
+  const handleDeleteVendor = async (vendorId) => {
+    setVendors(prev => prev.filter(v => v.id !== vendorId));
+    logAudit('DELETE', 'Vendors', `Deleted vendor directory entry ${vendorId}`, vendorId);
+    try {
+      await deleteVendorFromSupabase(vendorId);
+    } catch (err) {
+      console.warn("[Sync Notice] Vendor deleted locally. Supabase notice:", err);
+    }
+  };
+
   const handleAddGRN = async (newGRN) => {
     setGrns(prev => [newGRN, ...prev.filter(g => g.grnNo !== newGRN.grnNo)]);
     logAudit('CREATE', 'GRN Inward', `Issued GRN ${newGRN.grnNo} for "${newGRN.itemName}" (${newGRN.receivedQtyKg} kg) from ${newGRN.vendorName}`, newGRN.grnNo);
@@ -3783,7 +3793,14 @@ export default function App() {
 
         {/* TAB 5: VENDOR MANAGEMENT */}
         {activeTab === 'vendors' && (
-          <VendorManagement urlParams={urlParams} vendors={vendors} orders={orders} onAddVendor={handleAddVendor} />
+          <VendorManagement 
+            urlParams={urlParams} 
+            vendors={vendors} 
+            orders={orders} 
+            onAddVendor={handleAddVendor} 
+            onUpdateVendor={handleAddVendor} 
+            onDeleteVendor={handleDeleteVendor} 
+          />
         )}
 
         {/* TAB 6: INVENTORY, GRN & QC */}
