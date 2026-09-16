@@ -164,6 +164,7 @@ export default function DispatchManagement({
   const [viewReturnHistoryDc, setViewReturnHistoryDc] = useState(null);
   const [returnDate, setReturnDate] = useState('');
   const [returnedQty, setReturnedQty] = useState('');
+  const [returnUnit, setReturnUnit] = useState('Kg');
   const [returnRefDocNo, setReturnRefDocNo] = useState('');
   const [returnTransporter, setReturnTransporter] = useState('');
   const [returnVehicleNo, setReturnVehicleNo] = useState('');
@@ -538,6 +539,8 @@ export default function DispatchManagement({
     const isoString = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     setReturnDate(isoString);
     setReturnedQty('');
+    const defaultUnit = (dc.items && dc.items[0] && dc.items[0].unit) ? dc.items[0].unit : 'Kg';
+    setReturnUnit(defaultUnit);
     setReturnRefDocNo('');
     setReturnTransporter(dc.transporterName || '');
     setReturnVehicleNo(dc.vehicleNo || '');
@@ -559,6 +562,7 @@ export default function DispatchManagement({
       timestamp: new Date().toISOString(),
       returnDateTime: returnDate || new Date().toISOString(),
       returnedQty: qtyVal,
+      unit: returnUnit,
       returnRefDocNo,
       returnTransporter,
       returnVehicleNo,
@@ -1545,17 +1549,34 @@ export default function DispatchManagement({
                             />
                           </td>
                           <td style={{ padding: '6px 8px', verticalAlign: 'top' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                               <input 
                                 type="number" 
                                 step="any"
                                 className="form-control" 
-                                style={{ padding: '5px 6px', fontSize: '0.82rem', textAlign: 'right', fontWeight: '700' }}
+                                style={{ padding: '5px 6px', fontSize: '0.82rem', textAlign: 'right', fontWeight: '700', flex: '1' }}
                                 value={item.quantity} 
                                 onChange={e => handleUpdateDcItemRow(item.id, 'quantity', e.target.value)}
                                 required 
                               />
-                              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '600' }}>{item.unit || 'Kg'}</span>
+                              <select 
+                                className="form-control" 
+                                style={{ padding: '4px 6px', fontSize: '0.78rem', fontWeight: '700', width: '85px', minWidth: '80px', background: '#f8fafc', borderColor: '#cbd5e1' }}
+                                value={item.unit || 'Kg'}
+                                onChange={e => handleUpdateDcItemRow(item.id, 'unit', e.target.value)}
+                              >
+                                <option value="Kg">Kg</option>
+                                <option value="Nos">Nos</option>
+                                <option value="Rolls">Rolls</option>
+                                <option value="Sets">Sets</option>
+                                <option value="Mtrs">Mtrs</option>
+                                <option value="Boxes">Boxes</option>
+                                <option value="Pcs">Pcs</option>
+                                <option value="Bags">Bags</option>
+                                <option value="Ltrs">Ltrs</option>
+                                <option value="Sq.Mtrs">Sq.Mtrs</option>
+                                <option value="Tons">Tons</option>
+                              </select>
                             </div>
                           </td>
                           <td style={{ padding: '6px 8px', verticalAlign: 'top' }}>
@@ -2050,17 +2071,37 @@ export default function DispatchManagement({
                 </div>
 
                 <div>
-                  <label className="form-label">Returned Quantity (Kg / Units) *</label>
-                  <input
-                    type="number"
-                    step="any"
-                    className="form-control"
-                    style={{ fontWeight: '800', color: '#d97706' }}
-                    placeholder="e.g. 500"
-                    value={returnedQty}
-                    onChange={e => setReturnedQty(e.target.value)}
-                    required
-                  />
+                  <label className="form-label">Returned Quantity & Unit *</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <input
+                      type="number"
+                      step="any"
+                      className="form-control"
+                      style={{ fontWeight: '800', color: '#d97706', flex: '1' }}
+                      placeholder="e.g. 500"
+                      value={returnedQty}
+                      onChange={e => setReturnedQty(e.target.value)}
+                      required
+                    />
+                    <select
+                      className="form-control"
+                      style={{ padding: '6px 8px', fontSize: '0.82rem', fontWeight: '700', width: '90px' }}
+                      value={returnUnit}
+                      onChange={e => setReturnUnit(e.target.value)}
+                    >
+                      <option value="Kg">Kg</option>
+                      <option value="Nos">Nos</option>
+                      <option value="Rolls">Rolls</option>
+                      <option value="Sets">Sets</option>
+                      <option value="Mtrs">Mtrs</option>
+                      <option value="Boxes">Boxes</option>
+                      <option value="Pcs">Pcs</option>
+                      <option value="Bags">Bags</option>
+                      <option value="Ltrs">Ltrs</option>
+                      <option value="Sq.Mtrs">Sq.Mtrs</option>
+                      <option value="Tons">Tons</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div>
