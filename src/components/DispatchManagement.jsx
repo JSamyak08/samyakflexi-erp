@@ -21,7 +21,9 @@ import {
   Layers, 
   ArrowUpRight,
   ShieldCheck,
-  Award
+  Award,
+  Sliders,
+  Copy
 } from 'lucide-react';
 import TablePagination, { usePagination } from './TablePagination';
 import DeliveryChallanPDF from './DeliveryChallanPDF';
@@ -298,6 +300,11 @@ export default function DispatchManagement({
 
   const [selectedCoaTemplateId, setSelectedCoaTemplateId] = useState(DEFAULT_MATERIAL_TEMPLATES[0].id);
 
+  // Material Structure Template Manager Modal States
+  const [isTemplateManagerOpen, setIsTemplateManagerOpen] = useState(false);
+  const [isTemplateEditModalOpen, setIsTemplateEditModalOpen] = useState(false);
+  const [editingTemplateForm, setEditingTemplateForm] = useState(null);
+
   const [coaNo, setCoaNo] = useState('');
   const [coaTestDate, setCoaTestDate] = useState('');
   const [coaCustomerName, setCoaCustomerName] = useState('');
@@ -336,35 +343,85 @@ export default function DispatchManagement({
     }
   };
 
-  // Handler to save current CoA material structure and test parameters as a new template
-  const handleSaveCurrentAsTemplate = () => {
-    const tplName = prompt("Enter a name for this Material Structure Template:", coaSpecification || "Custom Structure Template");
-    if (!tplName || !tplName.trim()) return;
-
-    const newTpl = {
-      id: `custom-tpl-${Date.now()}`,
-      name: tplName.trim(),
+  // Open Create New Template Editor
+  const handleOpenCreateTemplate = () => {
+    setEditingTemplateForm({
+      id: '',
+      name: '',
       isBuiltIn: false,
-      specification: coaSpecification,
-      filmType: coaFilmType,
-      thicknessMicron: coaThicknessMicron,
-      parameters: coaParameters.map(p => ({
-        parameter: p.parameter,
-        uom: p.uom,
-        standard: p.standard,
-        observation: ''
-      }))
-    };
+      specification: '2 layer (12 PET + 50 Poly)',
+      filmType: 'Laminated Packaging Film',
+      thicknessMicron: '62µ',
+      parameters: [
+        { srNo: 1, parameter: "Total Thickness", uom: "Micron", standard: "62 ( ± 5 % )" },
+        { srNo: 2, parameter: "Average GSM", uom: "g/m²", standard: "75 ( ± 3 % )" },
+        { srNo: 3, parameter: "Sealing Strength", uom: "Kgf/15mm", standard: "> 2.5" }
+      ]
+    });
+    setIsTemplateEditModalOpen(true);
+  };
 
-    const updated = [...coaTemplates, newTpl];
+  // Open Edit Template Editor
+  const handleOpenEditTemplate = (tpl) => {
+    setEditingTemplateForm({
+      ...tpl,
+      parameters: (tpl.parameters || []).map((p, idx) => ({
+        srNo: idx + 1,
+        parameter: p.parameter || '',
+        uom: p.uom || '—',
+        standard: p.standard || ''
+      }))
+    });
+    setIsTemplateEditModalOpen(true);
+  };
+
+  // Save Template from Editor (Create or Update)
+  const handleSaveTemplateFromEditor = (e) => {
+    if (e) e.preventDefault();
+    if (!editingTemplateForm || !editingTemplateForm.name.trim()) {
+      alert("Please enter a valid Template Name.");
+      return;
+    }
+
+    let updated;
+    if (editingTemplateForm.id) {
+      updated = coaTemplates.map(t => t.id === editingTemplateForm.id ? { ...editingTemplateForm } : t);
+    } else {
+      const newId = `custom-tpl-${Date.now()}`;
+      const newTpl = {
+        ...editingTemplateForm,
+        id: newId,
+        isBuiltIn: false
+      };
+      updated = [...coaTemplates, newTpl];
+      setSelectedCoaTemplateId(newId);
+    }
+
     setCoaTemplates(updated);
-    setSelectedCoaTemplateId(newTpl.id);
     try {
       localStorage.setItem('samyak_coa_templates', JSON.stringify(updated.filter(t => !t.isBuiltIn)));
-    } catch (e) {
-      console.error("Failed to save template to localStorage:", e);
+    } catch (err) {
+      console.error("Failed to save template to localStorage:", err);
     }
-    alert(`Material Structure Template "${newTpl.name}" saved successfully!`);
+    setIsTemplateEditModalOpen(false);
+    setEditingTemplateForm(null);
+  };
+
+  // Duplicate / Clone Template
+  const handleDuplicateTemplate = (tpl) => {
+    setEditingTemplateForm({
+      ...tpl,
+      id: '',
+      name: `${tpl.name} (Copy)`,
+      isBuiltIn: false,
+      parameters: (tpl.parameters || []).map((p, idx) => ({
+        srNo: idx + 1,
+        parameter: p.parameter || '',
+        uom: p.uom || '—',
+        standard: p.standard || ''
+      }))
+    });
+    setIsTemplateEditModalOpen(true);
   };
 
   // Handler to delete a custom template
@@ -389,6 +446,47 @@ export default function DispatchManagement({
         console.error("Failed to delete template from localStorage:", e);
       }
     }
+  };
+
+  // Helper functions for managing lab test parameters inside the Template Editor
+  const handleAddTemplateParam = () => {
+    if (!editingTemplateForm) return;
+    const currentParams = editingTemplateForm.parameters || [];
+    const newParam = {
+      srNo: currentParams.length + 1,
+      parameter: '',
+      uom: '—',
+      standard: ''
+    };
+    setEditingTemplateForm({
+      ...editingTemplateForm,
+      parameters: [...currentParams, newParam]
+    });
+  };
+
+  const handleRemoveTemplateParam = (index) => {
+    if (!editingTemplateForm) return;
+    const updated = (editingTemplateForm.parameters || [])
+      .filter((_, i) => i !== index)
+      .map((p, i) => ({ ...p, srNo: i + 1 }));
+    setEditingTemplateForm({
+      ...editingTemplateForm,
+      parameters: updated
+    });
+  };
+
+  const handleUpdateTemplateParam = (index, field, value) => {
+    if (!editingTemplateForm) return;
+    const updated = (editingTemplateForm.parameters || []).map((p, i) => {
+      if (i === index) {
+        return { ...p, [field]: value };
+      }
+      return p;
+    });
+    setEditingTemplateForm({
+      ...editingTemplateForm,
+      parameters: updated
+    });
   };
 
   // --------------------------------------------------------------------------
@@ -867,13 +965,22 @@ export default function DispatchManagement({
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '12px' }}>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
             <button 
               className="btn-primary" 
               onClick={handleOpenNewDcModal}
               style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', padding: '10px 18px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}
             >
               <Plus size={18} /> + Issue Delivery Challan
+            </button>
+
+            <button 
+              type="button"
+              className="btn-secondary"
+              onClick={() => setIsTemplateManagerOpen(true)}
+              style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(52, 211, 153, 0.4)', padding: '10px 18px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px', borderRadius: '8px', cursor: 'pointer' }}
+            >
+              <Sliders size={18} /> Material Structure Templates ({coaTemplates.length})
             </button>
 
             <button 
@@ -1179,6 +1286,40 @@ export default function DispatchManagement({
         {/* TAB 2: CERTIFICATE OF ANALYSIS (COA) TABLE */}
         {activeTab === 'coas' && (
           <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#ecfdf5', padding: '12px 16px', borderRadius: '10px', border: '1px solid #a7f3d0', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ background: '#047857', color: '#ffffff', width: '36px', height: '36px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <FlaskConical size={20} />
+                </div>
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: '800', color: '#065f46' }}>
+                    Quality Certificate of Analysis & Testing Management
+                  </h4>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '0.78rem', color: '#047857' }}>
+                    Generate laboratory test reports matching Samyak International Ltd official format and manage Material Structure Templates.
+                  </p>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                <button 
+                  type="button" 
+                  className="btn-secondary" 
+                  onClick={() => setIsTemplateManagerOpen(true)}
+                  style={{ background: '#ffffff', color: '#047857', border: '1px solid #6ee7b7', fontWeight: '700', fontSize: '0.82rem', padding: '7px 14px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
+                >
+                  <Sliders size={16} /> Manage Material Structure Templates ({coaTemplates.length})
+                </button>
+                <button 
+                  type="button" 
+                  className="btn-primary" 
+                  onClick={handleOpenNewCoaModal}
+                  style={{ background: 'linear-gradient(135deg, #047857 0%, #065f46 100%)', fontSize: '0.82rem', padding: '7px 14px', fontWeight: '700', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Plus size={16} /> + Generate New CoA
+                </button>
+              </div>
+            </div>
+
             <div style={{ overflowX: 'auto', width: '100%', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#ffffff', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
               <table className="data-table" style={{ width: '100%', minWidth: '1050px', margin: 0 }}>
                 <thead>
@@ -1918,71 +2059,27 @@ export default function DispatchManagement({
                 </div>
               </div>
 
-              {/* Material Structure Template Selector & Action Toolbar */}
-              <div style={{ 
-                background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)', 
-                padding: '12px 16px', 
-                borderRadius: '10px', 
-                border: '1px solid #bbf7d0', 
-                marginBottom: '16px',
-                display: 'flex',
-                flexWrap: 'wrap',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: '12px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1', minWidth: '280px' }}>
-                  <Layers size={18} style={{ color: '#166534' }} />
-                  <span style={{ fontSize: '0.82rem', fontWeight: '700', color: '#166534', whiteSpace: 'nowrap' }}>
-                    Material Structure Template:
-                  </span>
-                  <select 
-                    className="form-control" 
-                    style={{ fontSize: '0.82rem', fontWeight: '700', color: '#047857', background: '#ffffff', borderColor: '#86efac' }}
-                    value={selectedCoaTemplateId}
-                    onChange={e => handleSelectCoaTemplate(e.target.value)}
-                  >
-                    {coaTemplates.map(t => (
-                      <option key={t.id} value={t.id}>
-                        {t.name} {t.isBuiltIn ? '(Default System)' : '(Saved Custom)'}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <button 
-                    type="button" 
-                    className="btn-secondary" 
-                    style={{ fontSize: '0.76rem', padding: '5px 10px', background: '#ffffff', color: '#047857', border: '1px solid #86efac', fontWeight: '700' }}
-                    onClick={handleSaveCurrentAsTemplate}
-                    title="Save current structure specs & parameters as a new template"
-                  >
-                    <Plus size={14} /> Save Current as Template
-                  </button>
-                  {(() => {
-                    const currentTpl = coaTemplates.find(t => t.id === selectedCoaTemplateId);
-                    if (currentTpl && !currentTpl.isBuiltIn) {
-                      return (
-                        <button 
-                          type="button" 
-                          style={{ background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', padding: '5px 8px', borderRadius: '6px', cursor: 'pointer' }}
-                          onClick={() => handleDeleteCoaTemplate(selectedCoaTemplateId)}
-                          title="Delete this custom template"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      );
-                    }
-                    return null;
-                  })()}
-                </div>
-              </div>
-
               {/* Technical Specifications Grid */}
               <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
-                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '10px' }}>
-                  Product Structure & Physical Parameters
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                  <div style={{ fontSize: '0.74rem', color: '#475569', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Product Structure & Physical Parameters
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '0.74rem', fontWeight: '700', color: '#047857' }}>⚡ Structure Template Preset:</span>
+                    <select 
+                      className="form-control" 
+                      style={{ fontSize: '0.78rem', fontWeight: '700', padding: '3px 8px', color: '#047857', background: '#ecfdf5', borderColor: '#a7f3d0', width: 'auto', borderRadius: '6px' }}
+                      value={selectedCoaTemplateId}
+                      onChange={e => handleSelectCoaTemplate(e.target.value)}
+                    >
+                      {coaTemplates.map(t => (
+                        <option key={t.id} value={t.id}>
+                          {t.name} {t.isBuiltIn ? '(System Default)' : '(Custom)'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
                 <div className="form-grid">
                   <div>
@@ -2376,6 +2473,302 @@ export default function DispatchManagement({
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
               <button type="button" className="btn-secondary" onClick={() => setViewReturnHistoryDc(null)}>Close History</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* MODAL 5: MATERIAL STRUCTURE TEMPLATE MANAGER DIRECTORY               */}
+      {/* ==================================================================== */}
+      {isTemplateManagerOpen && (
+        <div className="modal-overlay" onClick={() => setIsTemplateManagerOpen(false)}>
+          <div className="glass-card modal-content" style={{ width: '920px', maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+            <div style={{ background: '#0f172a', padding: '18px 24px', margin: '-24px -24px 20px -24px', borderRadius: '16px 16px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#ffffff' }}>
+              <div>
+                <h3 style={{ fontSize: '1.18rem', fontWeight: '800', margin: 0, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Sliders size={20} color="#34d399" /> Material Structure Templates Directory
+                </h3>
+                <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0 0' }}>
+                  Manage pre-configured film structures, physical specifications, and lab test target parameters for Quality CoA generation.
+                </p>
+              </div>
+              <button type="button" className="modal-close-btn" onClick={() => setIsTemplateManagerOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', background: '#f8fafc', padding: '12px 16px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '0.82rem', color: '#475569', fontWeight: '600' }}>
+                Available Templates: <strong>{coaTemplates.length}</strong> ({coaTemplates.filter(t => t.isBuiltIn).length} System Default, {coaTemplates.filter(t => !t.isBuiltIn).length} Custom)
+              </div>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={handleOpenCreateTemplate}
+                style={{ background: 'linear-gradient(135deg, #047857 0%, #065f46 100%)', padding: '8px 16px', fontSize: '0.82rem', fontWeight: '700', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Plus size={16} /> Create New Template
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+              {coaTemplates.map((tpl) => (
+                <div
+                  key={tpl.id}
+                  style={{
+                    background: '#ffffff',
+                    border: tpl.id === selectedCoaTemplateId ? '2px solid #059669' : '1px solid #cbd5e1',
+                    borderRadius: '12px',
+                    padding: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.04)'
+                  }}
+                >
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '8px' }}>
+                      <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: '800', color: '#0f172a', lineHeight: '1.3' }}>
+                        {tpl.name}
+                      </h4>
+                      <span
+                        style={{
+                          fontSize: '0.7rem',
+                          fontWeight: '800',
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          whiteSpace: 'nowrap',
+                          background: tpl.isBuiltIn ? '#ecfdf5' : '#eff6ff',
+                          color: tpl.isBuiltIn ? '#047857' : '#1d4ed8',
+                          border: tpl.isBuiltIn ? '1px solid #a7f3d0' : '1px solid #bfdbfe'
+                        }}
+                      >
+                        {tpl.isBuiltIn ? 'System Built-In' : 'Custom Template'}
+                      </span>
+                    </div>
+
+                    <div style={{ fontSize: '0.8rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: '4px', background: '#f8fafc', padding: '10px 12px', borderRadius: '8px', margin: '8px 0 12px 0' }}>
+                      <div><strong>Film Type:</strong> {tpl.filmType || '—'}</div>
+                      <div><strong>Structure Spec:</strong> {tpl.specification || '—'}</div>
+                      <div><strong>Default Thickness:</strong> {tpl.thicknessMicron || '—'}</div>
+                      <div style={{ fontSize: '0.75rem', color: '#059669', fontWeight: '700', marginTop: '2px' }}>
+                        ✓ {tpl.parameters?.length || 0} Standard Lab Test Parameters Configured
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', paddingTop: '8px', borderTop: '1px solid #f1f5f9', marginTop: 'auto' }}>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ padding: '5px 10px', fontSize: '0.78rem', background: '#f0fdf4', color: '#047857', borderColor: '#bbf7d0', fontWeight: '700' }}
+                      onClick={() => {
+                        handleSelectCoaTemplate(tpl.id);
+                        setIsTemplateManagerOpen(false);
+                        handleOpenNewCoaModal();
+                      }}
+                      title="Use this template for generating a new CoA"
+                    >
+                      Use Preset
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ padding: '5px 8px', fontSize: '0.78rem' }}
+                      onClick={() => handleDuplicateTemplate(tpl)}
+                      title="Clone / Duplicate Template"
+                    >
+                      <Copy size={14} /> Clone
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ padding: '5px 8px', fontSize: '0.78rem' }}
+                      onClick={() => handleOpenEditTemplate(tpl)}
+                      title="Edit Template Properties & Parameters"
+                    >
+                      <Edit3 size={14} /> Edit
+                    </button>
+                    {!tpl.isBuiltIn && (
+                      <button
+                        type="button"
+                        className="btn-danger"
+                        style={{ padding: '5px 8px', fontSize: '0.78rem' }}
+                        onClick={() => handleDeleteCoaTemplate(tpl.id)}
+                        title="Delete Custom Template"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '12px', borderTop: '1px solid #e2e8f0' }}>
+              <button type="button" className="btn-secondary" onClick={() => setIsTemplateManagerOpen(false)}>
+                Close Directory
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* MODAL 6: CREATE / EDIT MATERIAL STRUCTURE TEMPLATE EDITOR            */}
+      {/* ==================================================================== */}
+      {isTemplateEditModalOpen && editingTemplateForm && (
+        <div className="modal-overlay" onClick={() => setIsTemplateEditModalOpen(false)}>
+          <div className="glass-card modal-content" style={{ width: '850px', maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+            <div style={{ background: '#0f172a', padding: '18px 24px', margin: '-24px -24px 20px -24px', borderRadius: '16px 16px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#ffffff' }}>
+              <div>
+                <h3 style={{ fontSize: '1.18rem', fontWeight: '800', margin: 0, color: '#ffffff' }}>
+                  {editingTemplateForm.id ? 'Edit Material Structure Template' : 'Create New Material Structure Template'}
+                </h3>
+                <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0 0' }}>
+                  Configure default film types, structure specifications, and standard lab test parameters.
+                </p>
+              </div>
+              <button type="button" className="modal-close-btn" onClick={() => setIsTemplateEditModalOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveTemplateFromEditor} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+              <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px', marginBottom: '16px' }}>
+                <div className="form-grid" style={{ marginBottom: '16px' }}>
+                  <div style={{ gridColumn: 'span 2' }}>
+                    <label className="form-label">Template Name *</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. 3 Layer: PET 12µ + MetPET 12µ + Poly 50µ"
+                      value={editingTemplateForm.name}
+                      onChange={e => setEditingTemplateForm({ ...editingTemplateForm, name: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label">Default Film Type</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. Laminated Packaging Film"
+                      value={editingTemplateForm.filmType || ''}
+                      onChange={e => setEditingTemplateForm({ ...editingTemplateForm, filmType: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label">Default Structure Specification</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. 3 layer (12 PET + 12 MetPET + 50 Poly)"
+                      value={editingTemplateForm.specification || ''}
+                      onChange={e => setEditingTemplateForm({ ...editingTemplateForm, specification: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label">Default Thickness (Micron)</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. 74µ"
+                      value={editingTemplateForm.thicknessMicron || ''}
+                      onChange={e => setEditingTemplateForm({ ...editingTemplateForm, thicknessMicron: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <div style={{ fontSize: '0.8rem', fontWeight: '800', color: '#0f172a', textTransform: 'uppercase' }}>
+                      Standard Laboratory Test Target Parameters ({editingTemplateForm.parameters?.length || 0})
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ fontSize: '0.78rem', padding: '4px 10px', background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontWeight: '700' }}
+                      onClick={handleAddTemplateParam}
+                    >
+                      + Add Test Parameter
+                    </button>
+                  </div>
+
+                  <div style={{ maxHeight: '280px', overflowY: 'auto' }}>
+                    <table className="data-table" style={{ width: '100%', fontSize: '0.82rem' }}>
+                      <thead>
+                        <tr style={{ background: '#e2e8f0' }}>
+                          <th style={{ padding: '6px 8px', width: '6%' }}>#</th>
+                          <th style={{ padding: '6px 8px', width: '36%' }}>Parameter Name</th>
+                          <th style={{ padding: '6px 8px', width: '22%' }}>Unit (UOM)</th>
+                          <th style={{ padding: '6px 8px', width: '30%' }}>Standard Target</th>
+                          <th style={{ padding: '6px 8px', textAlign: 'center', width: '6%' }}>Act</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(editingTemplateForm.parameters || []).map((param, index) => (
+                          <tr key={index}>
+                            <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: '700', color: '#64748b' }}>
+                              {index + 1}
+                            </td>
+                            <td style={{ padding: '6px 8px' }}>
+                              <input
+                                type="text"
+                                className="form-control"
+                                style={{ padding: '3px 6px', fontSize: '0.8rem' }}
+                                value={param.parameter}
+                                onChange={e => handleUpdateTemplateParam(index, 'parameter', e.target.value)}
+                                placeholder="Parameter Name"
+                              />
+                            </td>
+                            <td style={{ padding: '6px 8px' }}>
+                              <input
+                                type="text"
+                                className="form-control"
+                                style={{ padding: '3px 6px', fontSize: '0.8rem' }}
+                                value={param.uom}
+                                onChange={e => handleUpdateTemplateParam(index, 'uom', e.target.value)}
+                                placeholder="e.g. Micron, g/m²"
+                              />
+                            </td>
+                            <td style={{ padding: '6px 8px' }}>
+                              <input
+                                type="text"
+                                className="form-control"
+                                style={{ padding: '3px 6px', fontSize: '0.8rem' }}
+                                value={param.standard}
+                                onChange={e => handleUpdateTemplateParam(index, 'standard', e.target.value)}
+                                placeholder="e.g. 50 ( ± 5 % )"
+                              />
+                            </td>
+                            <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                              <button
+                                type="button"
+                                className="btn-danger"
+                                style={{ padding: '3px 6px' }}
+                                onClick={() => handleRemoveTemplateParam(index)}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', paddingTop: '12px', borderTop: '1px solid #e2e8f0' }}>
+                <button type="button" className="btn-secondary" onClick={() => setIsTemplateEditModalOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary" style={{ background: 'linear-gradient(135deg, #047857 0%, #065f46 100%)' }}>
+                  <CheckCircle2 size={18} /> Save Template Preset
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
