@@ -27,6 +27,10 @@ import TablePagination, { usePagination } from './TablePagination';
 import DeliveryChallanPDF from './DeliveryChallanPDF';
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import CertificateOfAnalysisPDF, { DEFAULT_COA_PARAMETERS } from './CertificateOfAnalysisPDF';
+import { generateDocRefNumber, getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
+import { formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
+import { COMPANY_DETAILS } from '../factoryStore';
+
 export function getChallanNatureBadge(nature) {
   const n = nature || 'Sale of Goods';
   switch (n) {
