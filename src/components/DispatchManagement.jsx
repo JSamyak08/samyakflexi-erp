@@ -27,9 +27,23 @@ import TablePagination, { usePagination } from './TablePagination';
 import DeliveryChallanPDF from './DeliveryChallanPDF';
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import CertificateOfAnalysisPDF, { DEFAULT_COA_PARAMETERS } from './CertificateOfAnalysisPDF';
-import { generateDocRefNumber, getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
-import { formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
-import { COMPANY_DETAILS } from '../factoryStore';
+export function getChallanNatureBadge(nature) {
+  const n = nature || 'Sale of Goods';
+  switch (n) {
+    case 'Sale of Goods':
+      return { bg: '#e0f2fe', color: '#0369a1', border: '#bae6fd', icon: '🛒', label: 'Sale of Goods' };
+    case 'Returnable Material':
+      return { bg: '#fff7ed', color: '#c2410c', border: '#ffedd5', icon: '🔄', label: 'Returnable Material' };
+    case 'Non-Returnable Material':
+      return { bg: '#f1f5f9', color: '#475569', border: '#cbd5e1', icon: '📦', label: 'Non-Returnable Material' };
+    case 'Job Work Material - Returnable':
+      return { bg: '#f5f3ff', color: '#6d28d9', border: '#ddd6fe', icon: '⚙️', label: 'Job Work (Returnable)' };
+    case 'Maintenance Material - Returnable':
+      return { bg: '#ecfdf5', color: '#047857', border: '#a7f3d0', icon: '🔧', label: 'Maintenance (Returnable)' };
+    default:
+      return { bg: '#e0f2fe', color: '#0369a1', border: '#bae6fd', icon: '✓', label: n };
+  }
+}
 
 export const DEFAULT_MATERIAL_TEMPLATES = [
   {
@@ -1045,18 +1059,26 @@ export default function DispatchManagement({
                             </div>
                             {dc.clientGstin && <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>GST: {dc.clientGstin}</div>}
                           </td>
-                          <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
-                            <span style={{
-                              fontSize: '0.74rem',
-                              fontWeight: '700',
-                              padding: '3px 8px',
-                              borderRadius: '6px',
-                              background: isReturnable ? '#fff7ed' : '#f1f5f9',
-                              color: isReturnable ? '#c2410c' : '#475569',
-                              border: `1px solid ${isReturnable ? '#fed7aa' : '#cbd5e1'}`
-                            }}>
-                              ✓ {dc.challanNature || 'Sale of Goods'}
-                            </span>
+                          <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                            {(() => {
+                              const badge = getChallanNatureBadge(dc.challanNature);
+                              return (
+                                <span style={{
+                                  fontSize: '0.74rem',
+                                  fontWeight: '700',
+                                  padding: '3px 8px',
+                                  borderRadius: '6px',
+                                  background: badge.bg,
+                                  color: badge.color,
+                                  border: `1px solid ${badge.border}`,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}>
+                                  <span>{badge.icon}</span> {badge.label}
+                                </span>
+                              );
+                            })()}
                           </td>
                           <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                             {isReturnable ? (
@@ -1411,46 +1433,57 @@ export default function DispatchManagement({
               </div>
 
               {/* Card 2: Purpose & Nature of Movement Checkmarks */}
-              <div style={{ background: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', marginBottom: '16px' }}>
-                <div style={{ fontSize: '0.76rem', color: '#334155', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <CheckCircle2 size={18} color="#0284c7" /> Challan Purpose & Nature of Movement (Select One) *
+              <div style={{ background: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', marginBottom: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                <div style={{ fontSize: '0.78rem', color: '#1e293b', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <CheckCircle2 size={18} color="#0284c7" /> Purpose of Goods Movement & Challan Nature *
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
                   {[
-                    { id: 'Sale of Goods', label: 'Sale of Goods', desc: 'Outright Sales Dispatch', color: '#0284c7' },
-                    { id: 'Returnable Material', label: 'Returnable Material', desc: 'General Returnable Goods', color: '#d97706' },
-                    { id: 'Non-Returnable Material', label: 'Non-Returnable Material', desc: 'Sample / Scrap / Non-Return', color: '#64748b' },
-                    { id: 'Job Work Material - Returnable', label: 'Job Work Material - Returnable', desc: 'Processing / Printing', color: '#7c3aed' },
-                    { id: 'Maintenance Material - Returnable', label: 'Maintenance Material - Returnable', desc: 'Cylinders / Repair Parts', color: '#059669' }
+                    { id: 'Sale of Goods', label: 'Sale of Goods', desc: 'Outright Sales Dispatch to Client', color: '#0284c7', icon: '🛒' },
+                    { id: 'Returnable Material', label: 'Returnable Material', desc: 'General Returnable Goods & Tools', color: '#d97706', icon: '🔄' },
+                    { id: 'Non-Returnable Material', label: 'Non-Returnable Material', desc: 'Samples, Scrap & Non-Return Items', color: '#475569', icon: '📦' },
+                    { id: 'Job Work Material - Returnable', label: 'Job Work Material', desc: 'Subcontracting & Processing (Returnable)', color: '#7c3aed', icon: '⚙️' },
+                    { id: 'Maintenance Material - Returnable', label: 'Maintenance Material', desc: 'Rotogravure Cylinders & Repair Parts', color: '#059669', icon: '🔧' }
                   ].map(nature => {
                     const isSelected = (dcChallanNature === nature.id);
                     return (
-                      <label key={nature.id} style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justify: 'space-between',
-                        padding: '12px',
-                        borderRadius: '10px',
-                        border: `2px solid ${isSelected ? nature.color : '#cbd5e1'}`,
-                        background: isSelected ? `${nature.color}0D` : '#f8fafc',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                        boxShadow: isSelected ? `0 2px 8px ${nature.color}20` : 'none'
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                          <input
-                            type="radio"
-                            name="challanNature"
-                            value={nature.id}
-                            checked={isSelected}
-                            onChange={e => setDcChallanNature(e.target.value)}
-                            style={{ accentColor: nature.color }}
-                          />
-                          <span style={{ fontSize: '0.82rem', fontWeight: isSelected ? '800' : '700', color: isSelected ? nature.color : '#1e293b' }}>
-                            ✓ {nature.label}
-                          </span>
+                      <label 
+                        key={nature.id} 
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          padding: '12px 14px',
+                          borderRadius: '10px',
+                          border: `2px solid ${isSelected ? nature.color : '#e2e8f0'}`,
+                          borderLeft: `5px solid ${nature.color}`,
+                          background: isSelected ? `${nature.color}10` : '#f8fafc',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                          boxShadow: isSelected ? `0 4px 12px ${nature.color}20` : 'none'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <input
+                              type="radio"
+                              name="challanNature"
+                              value={nature.id}
+                              checked={isSelected}
+                              onChange={e => setDcChallanNature(e.target.value)}
+                              style={{ accentColor: nature.color, width: '15px', height: '15px', cursor: 'pointer' }}
+                            />
+                            <span style={{ fontSize: '0.86rem', fontWeight: isSelected ? '800' : '700', color: isSelected ? nature.color : '#0f172a' }}>
+                              {nature.icon} {nature.label}
+                            </span>
+                          </div>
+                          {isSelected && (
+                            <span style={{ fontSize: '0.68rem', fontWeight: '800', background: nature.color, color: '#ffffff', padding: '1px 6px', borderRadius: '4px' }}>
+                              SELECTED
+                            </span>
+                          )}
                         </div>
-                        <div style={{ fontSize: '0.71rem', color: '#64748b', paddingLeft: '22px' }}>
+                        <div style={{ fontSize: '0.73rem', color: isSelected ? '#334155' : '#64748b', paddingLeft: '23px', lineHeight: '1.3' }}>
                           {nature.desc}
                         </div>
                       </label>
@@ -1516,96 +1549,115 @@ export default function DispatchManagement({
               </div>
 
               {/* Multiple Item Rows Section */}
-              <div style={{ border: '1px solid #cbd5e1', borderRadius: '10px', padding: '14px', marginBottom: '16px', background: '#ffffff' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                  <div style={{ fontWeight: '700', fontSize: '0.85rem', color: '#0f172a' }}>
-                    📦 Dispatched Item Rows & Rates
+              <div style={{ border: '1px solid #cbd5e1', borderRadius: '12px', padding: '16px', marginBottom: '16px', background: '#ffffff', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Package size={18} color="#0284c7" />
+                    <span style={{ fontWeight: '800', fontSize: '0.9rem', color: '#0f172a' }}>
+                      Dispatched Item Rows & Rates
+                    </span>
+                    <span style={{ background: '#e0f2fe', color: '#0369a1', fontSize: '0.75rem', fontWeight: '800', padding: '2px 8px', borderRadius: '12px' }}>
+                      {dcItems.length} {dcItems.length === 1 ? 'Item Row' : 'Item Rows'}
+                    </span>
                   </div>
+
                   <button 
                     type="button" 
                     className="btn-secondary" 
-                    style={{ fontSize: '0.78rem', padding: '4px 10px' }}
+                    style={{ fontSize: '0.8rem', padding: '6px 14px', fontWeight: '700', background: '#0284c7', color: '#ffffff', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
                     onClick={handleAddDcItemRow}
                   >
-                    <Plus size={14} /> Add Item Row
+                    <Plus size={15} /> Add Item Row
                   </button>
                 </div>
 
-                <div style={{ overflowX: 'auto', width: '100%', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#ffffff' }}>
-                  <table className="data-table" style={{ width: '100%', minWidth: '780px', margin: 0, fontSize: '0.82rem' }}>
+                <div style={{ overflowX: 'auto', width: '100%', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff' }}>
+                  <table className="data-table" style={{ width: '100%', minWidth: '820px', margin: 0, fontSize: '0.83rem', borderCollapse: 'collapse' }}>
                     <thead>
-                      <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                        <th style={{ width: '42%', padding: '8px 10px' }}>Item Title & Detailed Description *</th>
-                        <th style={{ width: '12%', padding: '8px 10px' }}>HSN / SAC</th>
-                        <th style={{ width: '13%', padding: '8px 10px' }}>Qty</th>
-                        <th style={{ width: '13%', padding: '8px 10px' }}>Rate (₹)</th>
-                        <th style={{ width: '15%', padding: '8px 10px', textAlign: 'right' }}>Amount (₹)</th>
-                        <th style={{ width: '5%', padding: '8px 5px', textAlign: 'center' }}></th>
+                      <tr style={{ background: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
+                        <th style={{ width: '4%', padding: '10px 6px', textAlign: 'center', fontSize: '0.75rem', fontWeight: '800', color: '#334155' }}>#</th>
+                        <th style={{ width: '43%', padding: '10px', fontSize: '0.75rem', fontWeight: '800', color: '#334155' }}>Item Title & Specification Details *</th>
+                        <th style={{ width: '11%', padding: '10px 8px', textAlign: 'center', fontSize: '0.75rem', fontWeight: '800', color: '#334155' }}>HSN / SAC</th>
+                        <th style={{ width: '20%', padding: '10px', fontSize: '0.75rem', fontWeight: '800', color: '#334155' }}>Quantity & UOM *</th>
+                        <th style={{ width: '10%', padding: '10px 8px', textAlign: 'right', fontSize: '0.75rem', fontWeight: '800', color: '#334155' }}>Rate (₹)</th>
+                        <th style={{ width: '12%', padding: '10px 10px', textAlign: 'right', fontSize: '0.75rem', fontWeight: '800', color: '#334155' }}>Amount (₹)</th>
+                        <th style={{ width: '4%', padding: '10px 6px', textAlign: 'center' }}></th>
                       </tr>
                     </thead>
                     <tbody>
                       {dcItems.map((item, idx) => (
-                        <tr key={item.id || idx}>
-                          <td style={{ padding: '6px 8px' }}>
+                        <tr key={item.id || idx} style={{ borderBottom: '1px solid #e2e8f0', background: idx % 2 === 0 ? '#ffffff' : '#fafafa' }}>
+                          <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: '800', color: '#64748b', verticalAlign: 'top', paddingTop: '14px' }}>
+                            {idx + 1}
+                          </td>
+
+                          <td style={{ padding: '10px', verticalAlign: 'top' }}>
                             {itemPresetOptions.length > 0 && (
-                              <select 
-                                className="form-control" 
-                                style={{ padding: '2px 6px', fontSize: '0.74rem', marginBottom: '4px', color: '#0284c7', background: '#f0f9ff', borderColor: '#bae6fd' }}
-                                onChange={e => {
-                                  const selectedPreset = itemPresetOptions.find(p => p.id === e.target.value);
-                                  if (selectedPreset) {
-                                    handleApplyPresetToDcRow(item.id, selectedPreset);
-                                  }
-                                }}
-                                value=""
-                              >
-                                <option value="">-- Load from Job Master / Cylinders --</option>
-                                {itemPresetOptions.map(p => (
-                                  <option key={p.id} value={p.id}>[{p.category}] {p.label}</option>
-                                ))}
-                              </select>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                                <span style={{ fontSize: '0.7rem', fontWeight: '800', color: '#0369a1', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>⚡ Preset:</span>
+                                <select 
+                                  className="form-control" 
+                                  style={{ padding: '2px 8px', fontSize: '0.75rem', color: '#0284c7', background: '#f0f9ff', borderColor: '#bae6fd', flex: 1, borderRadius: '4px', height: '26px' }}
+                                  onChange={e => {
+                                    const selectedPreset = itemPresetOptions.find(p => p.id === e.target.value);
+                                    if (selectedPreset) {
+                                      handleApplyPresetToDcRow(item.id, selectedPreset);
+                                    }
+                                  }}
+                                  value=""
+                                >
+                                  <option value="">-- Load Specs from Job Master / Cylinder Directory --</option>
+                                  {itemPresetOptions.map(p => (
+                                    <option key={p.id} value={p.id}>[{p.category}] {p.label}</option>
+                                  ))}
+                                </select>
+                              </div>
                             )}
                             <input 
                               type="text" 
                               className="form-control" 
-                              style={{ padding: '5px 8px', fontSize: '0.82rem', fontWeight: '700', marginBottom: '4px' }}
+                              style={{ padding: '6px 10px', fontSize: '0.85rem', fontWeight: '700', marginBottom: '6px', borderColor: '#cbd5e1' }}
                               value={item.description} 
                               onChange={e => handleUpdateDcItemRow(item.id, 'description', e.target.value)}
-                              placeholder="Item Name / Title (e.g. 250g PET/METPET Roll)..."
+                              placeholder="Item Name / Product Title (e.g. Britannia Bourbon 250g Printed Laminate Film)..."
                               required 
                             />
                             <textarea
                               rows={2}
                               className="form-control"
-                              style={{ padding: '4px 8px', fontSize: '0.78rem', color: '#475569' }}
+                              style={{ padding: '6px 10px', fontSize: '0.78rem', color: '#334155', borderColor: '#e2e8f0', lineHeight: '1.35', resize: 'vertical' }}
                               value={item.itemDetails || ''}
                               onChange={e => handleUpdateDcItemRow(item.id, 'itemDetails', e.target.value)}
-                              placeholder="Detailed Specification / Description / Notes..."
+                              placeholder="Detailed Specifications / Micron / Reel Dimensions / Pouch Size / Dispatch Notes..."
                             />
                           </td>
-                          <td style={{ padding: '6px 8px', verticalAlign: 'top' }}>
+
+                          <td style={{ padding: '10px 8px', verticalAlign: 'top' }}>
                             <input 
                               type="text" 
                               className="form-control" 
-                              style={{ padding: '5px 8px', fontSize: '0.82rem', textAlign: 'center', fontWeight: '600' }}
+                              style={{ padding: '6px 8px', fontSize: '0.82rem', textAlign: 'center', fontWeight: '700', fontFamily: 'monospace', borderColor: '#cbd5e1' }}
                               value={item.hsnSac} 
                               onChange={e => handleUpdateDcItemRow(item.id, 'hsnSac', e.target.value)}
+                              placeholder="3923"
                             />
                           </td>
-                          <td style={{ padding: '6px 8px', verticalAlign: 'top' }}>
+
+                          <td style={{ padding: '10px', verticalAlign: 'top' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                               <input 
                                 type="number" 
                                 step="any"
                                 className="form-control" 
-                                style={{ padding: '5px 6px', fontSize: '0.82rem', textAlign: 'right', fontWeight: '700', flex: '1' }}
+                                style={{ padding: '6px 8px', fontSize: '0.85rem', textAlign: 'right', fontWeight: '800', flex: '1', borderColor: '#cbd5e1' }}
                                 value={item.quantity} 
                                 onChange={e => handleUpdateDcItemRow(item.id, 'quantity', e.target.value)}
+                                placeholder="0.00"
                                 required 
                               />
                               <select 
                                 className="form-control" 
-                                style={{ padding: '4px 6px', fontSize: '0.78rem', fontWeight: '700', width: '85px', minWidth: '80px', background: '#f8fafc', borderColor: '#cbd5e1' }}
+                                style={{ padding: '6px 8px', fontSize: '0.8rem', fontWeight: '800', width: '90px', background: '#f8fafc', borderColor: '#cbd5e1', color: '#0f172a' }}
                                 value={item.unit || 'Kg'}
                                 onChange={e => handleUpdateDcItemRow(item.id, 'unit', e.target.value)}
                               >
@@ -1623,26 +1675,30 @@ export default function DispatchManagement({
                               </select>
                             </div>
                           </td>
-                          <td style={{ padding: '6px 8px', verticalAlign: 'top' }}>
+
+                          <td style={{ padding: '10px 8px', verticalAlign: 'top' }}>
                             <input 
                               type="number" 
                               step="any"
                               className="form-control" 
-                              style={{ padding: '5px 8px', fontSize: '0.82rem', textAlign: 'right', fontWeight: '700' }}
+                              style={{ padding: '6px 8px', fontSize: '0.85rem', textAlign: 'right', fontWeight: '700', borderColor: '#cbd5e1' }}
                               value={item.rate} 
                               onChange={e => handleUpdateDcItemRow(item.id, 'rate', e.target.value)}
+                              placeholder="0.00"
                             />
                           </td>
-                          <td style={{ padding: '6px 12px', textAlign: 'right', fontWeight: '800', color: '#0284c7', fontSize: '0.88rem', verticalAlign: 'top' }}>
+
+                          <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: '800', color: '#0284c7', fontSize: '0.9rem', verticalAlign: 'top', paddingTop: '14px' }}>
                             {formatINR(item.amount || (item.quantity * item.rate))}
                           </td>
-                          <td style={{ padding: '6px 8px', textAlign: 'center', verticalAlign: 'top' }}>
+
+                          <td style={{ padding: '10px 6px', textAlign: 'center', verticalAlign: 'top', paddingTop: '12px' }}>
                             {dcItems.length > 1 && (
                               <button 
                                 type="button" 
                                 onClick={() => handleRemoveDcItemRow(item.id)}
-                                style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '2px 4px' }}
-                                title="Delete Row"
+                                style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', color: '#dc2626', cursor: 'pointer', padding: '6px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                                title="Remove Item Row"
                               >
                                 <Trash2 size={16} />
                               </button>
