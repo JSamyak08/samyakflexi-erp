@@ -43,7 +43,6 @@ import {
   Barcode
 } from 'lucide-react';
 import { 
-  initialMachines, 
   calculatePrintingScheduleMetrics,
   isOrderOverdue,
   FILM_DENSITIES
@@ -87,7 +86,7 @@ export default function ProductionScheduler({
   orders = [],
   inventory = [],
   inventoryRolls = [],
-  machines = initialMachines,
+  machines = [],
   schedules = [],
   jobMasters = [],
   cylinders = [],

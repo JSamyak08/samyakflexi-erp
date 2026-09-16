@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
-import { COMPANY_DETAILS, initialClients, isLDFilm, getFilmSlitWidth } from '../factoryStore';
+import { COMPANY_DETAILS, isLDFilm, getFilmSlitWidth } from '../factoryStore';
 import { numberToWords, formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 
@@ -59,7 +59,7 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
 
   // Resolve Client Details dynamically from Client Directory / Job Master
   const targetClientName = calculationData?.clientName || clientName || "";
-  const clientStore = (clients && clients.length > 0) ? clients : initialClients;
+  const clientStore = (clients && clients.length > 0) ? clients : [];
 
   const matchedClient = 
     clientDetails || 

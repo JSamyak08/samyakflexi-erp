@@ -51,10 +51,7 @@ import {
   generateBarcodeId, 
   generateVendorId,
   generateInventoryId,
-  PACKAGING_MATERIAL_TYPES,
-  initialInventoryRolls, 
-  initialDispatchShipments,
-  initialStockAdjustments
+  PACKAGING_MATERIAL_TYPES
 } from '../factoryStore';
 
 export const INVENTORY_CATEGORIES = [
@@ -161,8 +158,8 @@ export default function InventoryManagement({
   onSaveInventoryItem,
   onSaveProductionRecord,
   onAddVendor,
-  inventoryRolls = initialInventoryRolls,
-  dispatchShipments = initialDispatchShipments,
+  inventoryRolls = [],
+  dispatchShipments = [],
   onAddRoll,
   onAddDispatchShipment,
   cylinders = [],
@@ -225,9 +222,9 @@ export default function InventoryManagement({
         // Clean up legacy hardcoded dummy data from local storage
         return parsed.filter(adj => !['ADJ-2026-001', 'ADJ-2026-002'].includes(adj.id));
       }
-      return initialStockAdjustments;
+      return [];
     } catch (e) {
-      return initialStockAdjustments;
+      return [];
     }
   });
 
@@ -2513,7 +2510,7 @@ export default function InventoryManagement({
   const stockPagination = usePagination(filteredInventory, 50);
   const grnPagination = usePagination(safeGrns, 50);
   const poPagination = usePagination(filteredPOs, 50);
-  const dispatchPagination = usePagination(dispatchShipments || initialDispatchShipments, 50);
+  const dispatchPagination = usePagination(dispatchShipments || [], 50);
   const recPagination = usePagination(filteredRecItems, 50);
 
   return (

@@ -27,18 +27,9 @@ export async function ensureValidSession() {
 }
 
 import { 
-  initialOrders, 
-  initialVendors, 
-  initialInventory, 
-  initialGRNs, 
-  initialUsers, 
-  initialProductionRecords,
-  initialClients,
-  initialJobMasters,
   FILM_DENSITIES,
   parseStandardDate
 } from '../factoryStore';
-import { initialCylinders } from '../dataStore';
 
 /**
  * Graceful Supabase Error Handler

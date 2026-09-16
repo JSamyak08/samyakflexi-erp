@@ -1,5 +1,4 @@
 import { supabase, isSupabaseConfigured } from './supabaseClient';
-import { initialUsers } from '../factoryStore';
 
 /**
  * Sign in user using Supabase Auth with fallback to Database and Local RBAC Directory
@@ -117,7 +116,7 @@ export async function signInUser(email, password) {
     }
   }
 
-  // 3. Third Tier: Check LocalStorage & Initial Seed Users Directory
+  // 3. Third Tier: Check LocalStorage User Directory
   try {
     let localUsers = [];
     try {
@@ -125,7 +124,7 @@ export async function signInUser(email, password) {
       if (stored) localUsers = JSON.parse(stored);
     } catch (e) {}
 
-    const allUsers = [...(Array.isArray(localUsers) ? localUsers : []), ...initialUsers];
+    const allUsers = Array.isArray(localUsers) ? localUsers : [];
     const matched = allUsers.find(u => 
       u && (
         (u.email && u.email.toLowerCase().trim() === cleanEmail) ||

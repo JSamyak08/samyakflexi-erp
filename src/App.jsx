@@ -1,29 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from './services/supabaseClient';
 import { 
-  initialOrders, 
-  initialVendors, 
-  initialInventory, 
-  initialGRNs,
-  initialUsers,
-  initialJobDataSheets,
-  initialProductionRecords,
-  initialMachines,
-  initialProductionSchedules,
   isReconciliationDue,
-  initialClients,
-  initialJobMasters,
-  initialInks,
-  initialEmployees,
-  initialAttendanceRecords,
-  initialSalaryAdvances,
   DEFAULT_ROLE_PERMISSIONS,
   isOrderOverdue,
   isOrderNearingDeadline,
   getOrderStatusInfo,
   FILM_DENSITIES
 } from './factoryStore';
-import { initialCylinders } from './dataStore';
 import { 
   LayoutDashboard, 
   Calculator, 
@@ -110,7 +94,6 @@ import {
 import { createUserInSupabaseAuth } from './services/authService';
 
 import JobMasterDirectory from './components/JobMasterDirectory';
-import { initialInventoryRolls, initialDispatchShipments } from './factoryStore';
 import { safeLocalStorageSet, safeLocalStorageGet, initSafeStorage, idbGet } from './utils/safeStorage';
 import './index.css';
 
@@ -302,7 +285,7 @@ export default function App() {
   const [vendors, setVendors] = useState(() => stripDummyRecords(loadLocalState('vendors', [])));
   const [inventory, setInventory] = useState(() => stripDummyRecords(loadLocalState('inventory', [])).map(sanitizeInventoryItem));
   const [grns, setGrns] = useState(() => stripDummyRecords(loadLocalState('grns', [])).map(sanitizeGRN));
-  const [users, setUsers] = useState(() => loadLocalState('users', initialUsers));
+  const [users, setUsers] = useState(() => loadLocalState('users', []));
   const [jobDataSheets, setJobDataSheets] = useState(() => stripDummyRecords(loadLocalState('job_datasheets', [])));
   const [cylinders, setCylinders] = useState(() => stripDummyRecords(loadLocalState('cylinders', [])));
   const [productionRecords, setProductionRecords] = useState(() => stripDummyRecords(loadLocalState('production_records', [])));
@@ -314,7 +297,7 @@ export default function App() {
   const [schedules, setSchedules] = useState(() => stripDummyRecords(loadLocalState('production_schedules', [])));
   const [clients, setClients] = useState(() => stripDummyRecords(loadLocalState('clients', [])));
   const [jobMasters, setJobMasters] = useState(() => stripDummyRecords(loadLocalState('job_masters', [])));
-  const [inks, setInks] = useState(() => loadLocalState('inks', initialInks));
+  const [inks, setInks] = useState(() => loadLocalState('inks', []));
   const [selectedJobMasterForPunch, setSelectedJobMasterForPunch] = useState(null);
   const [rolePermissions, setRolePermissions] = useState(() => loadLocalState('role_permissions', DEFAULT_ROLE_PERMISSIONS));
   const [indents, setIndents] = useState(() => stripDummyRecords(loadLocalState('material_indents', [])));
@@ -340,7 +323,7 @@ export default function App() {
   };
 
   const activeUsersList = useMemo(() => {
-    const list = [...(users || []).filter(u => u && u.id && !u.id.startsWith('USR-SETTING-')), ...initialUsers];
+    const list = (users || []).filter(u => u && u.id && !u.id.startsWith('USR-SETTING-'));
     const map = new Map();
     list.forEach(u => {
       if (!u || (!u.id && !u.email)) return;
@@ -1080,8 +1063,7 @@ export default function App() {
     if (!email) return null;
     const cleanEmail = email.toLowerCase().trim();
     let matched = (usersRef.current || []).find(u => u && u.email && u.email.toLowerCase().trim() === cleanEmail);
-    if (matched) return matched;
-    return initialUsers.find(u => u && u.email && u.email.toLowerCase().trim() === cleanEmail);
+    return matched || null;
   };
 
   // Initialize Supabase Auth state

@@ -29,7 +29,6 @@ import {
 } from 'lucide-react';
 import SalesQuotationPDF from './SalesQuotationPDF';
 import { 
-  initialSalesQuotations,
   calculateJobRawMaterials,
   isLDFilm,
   DEFAULT_DAILY_RATES,
@@ -200,9 +199,9 @@ export default function SalesManagement({
   const [quotations, setQuotations] = useState(() => {
     try {
       const saved = localStorage.getItem('samyak_erp_sales_quotations');
-      return saved ? JSON.parse(saved) : initialSalesQuotations;
+      return saved ? JSON.parse(saved) : [];
     } catch (e) {
-      return initialSalesQuotations;
+      return [];
     }
   });
 

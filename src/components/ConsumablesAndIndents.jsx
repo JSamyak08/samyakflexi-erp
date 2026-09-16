@@ -88,7 +88,7 @@ export default function ConsumablesAndIndents({
   // Vendors List Fallback
   const availableVendors = useMemo(() => {
     if (vendors && vendors.length > 0) return vendors;
-    return initialVendors;
+    return [];
   }, [vendors]);
 
   // ─── Dynamic Machine List ────────────────────────────────────────────────────

@@ -41,9 +41,6 @@ import {
   EMPLOYEE_DESIGNATIONS, 
   EMPLOYEE_STATUSES, 
   SHIFT_OPTIONS, 
-  initialEmployees, 
-  initialAttendanceRecords, 
-  initialSalaryAdvances,
   calculateEmployeeMonthlySalary
 } from '../factoryStore';
 import { 
