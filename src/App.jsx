@@ -340,11 +340,21 @@ export default function App() {
   };
 
   const activeUsersList = useMemo(() => {
-    const list = [...(users || []).filter(u => u.id && !u.id.startsWith('USR-SETTING-')), ...initialUsers];
+    const list = [...(users || []).filter(u => u && u.id && !u.id.startsWith('USR-SETTING-')), ...initialUsers];
     const map = new Map();
     list.forEach(u => {
-      if (u && (u.id || u.email) && !map.has(u.id || u.email)) {
-        map.set(u.id || u.email, u);
+      if (!u || (!u.id && !u.email)) return;
+      const emailKey = (u.email || '').toLowerCase().trim();
+      const key = emailKey || u.id;
+      if (!map.has(key)) {
+        map.set(key, u);
+      } else {
+        const existing = map.get(key);
+        const isExistingUuid = existing.id && existing.id.length > 20;
+        const isNewUuid = u.id && u.id.length > 20;
+        if (isNewUuid && !isExistingUuid) {
+          map.set(key, u);
+        }
       }
     });
     return Array.from(map.values());
@@ -705,10 +715,13 @@ export default function App() {
         setUsers(prev => {
           const map = new Map();
           supaUsers.forEach(u => {
-            if (u && (u.id || u.email)) map.set(u.id || u.email, u);
+            if (!u) return;
+            const key = (u.email || u.id || '').toLowerCase().trim();
+            if (key) map.set(key, u);
           });
           (prev || []).forEach(p => {
-            const key = p.id || p.email;
+            if (!p) return;
+            const key = (p.email || p.id || '').toLowerCase().trim();
             if (key && !map.has(key)) map.set(key, p);
           });
           const merged = Array.from(map.values());
