@@ -73,12 +73,20 @@ export default function ProductionRecordManagement({
   // Processing Cost Per Kg (Default from Settings: ₹ 25/kg)
   const [processingCostPerKg, setProcessingCostPerKg] = useState(25);
 
-  // Stage-wise Production Quantities (in kg) — Clean 0 defaults for data entry
-  const [qtyFirstPassL1, setQtyFirstPassL1] = useState(0);
-  const [qtySecondPassL2, setQtySecondPassL2] = useState(0);
-  const [qtyInspection, setQtyInspection] = useState(0);
-  const [qtySlitting, setQtySlitting] = useState(0);
-  const [qtyDispatch, setQtyDispatch] = useState(0);
+  // Stage-wise Production Quantities & Consumables (7 Stages)
+  const [qtyFirstPassL1, setQtyFirstPassL1] = useState(0); // Stage 1: Printing Output (kg)
+  const [qtyInspection, setQtyInspection] = useState(0); // Stage 2: Printing Inspection Output (kg)
+  const [qtyLaminationL1, setQtyLaminationL1] = useState(0); // Stage 3: First Pass L1 Output (kg)
+  const [adhesiveConsumedL1Kg, setAdhesiveConsumedL1Kg] = useState(0); // Stage 3: Adhesive Consumed (kg)
+  const [qtySecondPassL2, setQtySecondPassL2] = useState(0); // Stage 4: Second Pass L2 Output (kg)
+  const [laminationPlainSubstrateWastageL2Kg, setLaminationPlainSubstrateWastageL2Kg] = useState(0); // Stage 4: Lamination Scrap Pass 2 (kg)
+  const [adhesiveConsumedL2Kg, setAdhesiveConsumedL2Kg] = useState(0); // Stage 4: Adhesive Consumed Pass 2 (kg)
+  const [qtySlitting, setQtySlitting] = useState(0); // Stage 5: Slitting Finished Output (kg)
+  const [paperCoreConsumedKg, setPaperCoreConsumedKg] = useState(0); // Stage 5: Paper Core Consumed
+  const [qtyPouching, setQtyPouching] = useState(0); // Stage 6: Pouching Finished Output (kg / Pcs)
+  const [zipperConsumedKg, setZipperConsumedKg] = useState(0); // Stage 6: Zipper Quantity Consumed
+  const [pouchingScrapKg, setPouchingScrapKg] = useState(0); // Stage 6: Pouching Scrap (kg)
+  const [qtyDispatch, setQtyDispatch] = useState(0); // Stage 7: Final Dispatch Ready Quantity (kg)
 
   // Stage-wise Scrap & Wastage Breakdown fields (in kg) — Clean 0 defaults for data entry
   const [printingPlainSettingWastageKg, setPrintingPlainSettingWastageKg] = useState(0);
@@ -100,10 +108,18 @@ export default function ProductionRecordManagement({
     if (existingRec) {
       setSelectedRecord(existingRec);
       setMaterialsList(Array.isArray(existingRec.materialsList) ? existingRec.materialsList : []);
-      setQtyFirstPassL1(existingRec.qtyFirstPassL1 || 0);
-      setQtySecondPassL2(existingRec.qtySecondPassL2 || 0);
+      setQtyFirstPassL1(existingRec.qtyFirstPassL1 || existingRec.qtyPrinting || 0);
       setQtyInspection(existingRec.qtyInspection || 0);
+      setQtyLaminationL1(existingRec.qtyLaminationL1 || 0);
+      setAdhesiveConsumedL1Kg(existingRec.adhesiveConsumedL1Kg || 0);
+      setQtySecondPassL2(existingRec.qtySecondPassL2 || 0);
+      setLaminationPlainSubstrateWastageL2Kg(existingRec.laminationPlainSubstrateWastageL2Kg || 0);
+      setAdhesiveConsumedL2Kg(existingRec.adhesiveConsumedL2Kg || 0);
       setQtySlitting(existingRec.qtySlitting || 0);
+      setPaperCoreConsumedKg(existingRec.paperCoreConsumedKg || 0);
+      setQtyPouching(existingRec.qtyPouching || 0);
+      setZipperConsumedKg(existingRec.zipperConsumedKg || 0);
+      setPouchingScrapKg(existingRec.pouchingScrapKg || 0);
       setQtyDispatch(existingRec.qtyDispatch || 0);
       setProcessingCostPerKg(existingRec.processingCostPerKg || 25);
       setPrintingPlainSettingWastageKg(existingRec.printingPlainSettingWastageKg || 0);
@@ -196,9 +212,17 @@ export default function ProductionRecordManagement({
     }
 
     setQtyFirstPassL1(0);
-    setQtySecondPassL2(0);
     setQtyInspection(0);
+    setQtyLaminationL1(0);
+    setAdhesiveConsumedL1Kg(0);
+    setQtySecondPassL2(0);
+    setLaminationPlainSubstrateWastageL2Kg(0);
+    setAdhesiveConsumedL2Kg(0);
     setQtySlitting(0);
+    setPaperCoreConsumedKg(0);
+    setQtyPouching(0);
+    setZipperConsumedKg(0);
+    setPouchingScrapKg(0);
     setQtyDispatch(0);
     setPrintingPlainSettingWastageKg(0);
     setPrintingWastageKg(0);
@@ -460,20 +484,22 @@ export default function ProductionRecordManagement({
     };
   });
 
-  // Net Produced Quantity = Dispatch Ready Quantity (or Slitting / First Pass if dispatch unpopulated)
-  const totalNetQtyKg = parseFloat(qtyDispatch) || parseFloat(qtySlitting) || parseFloat(qtyFirstPassL1) || 0;
+  // Net Produced Quantity = Dispatch Ready Quantity (or Pouching / Slitting / Lamination / Inspection / Printing if unpopulated)
+  const totalNetQtyKg = parseFloat(qtyDispatch) || parseFloat(qtyPouching) || parseFloat(qtySlitting) || parseFloat(qtySecondPassL2) || parseFloat(qtyLaminationL1) || parseFloat(qtyInspection) || parseFloat(qtyFirstPassL1) || 0;
   const totalMaterialCostRs = calculatedMaterials.reduce((sum, m) => sum + m.totalMaterialCost, 0);
   
   // Total Processing Cost = Total Qty Produced x Processing Cost Per Kg
   const totalProcessingCostRs = totalNetQtyKg * (parseFloat(processingCostPerKg) || 0);
 
-  // Total Scrap Weight across 6 process wastage categories
+  // Total Scrap Weight across all stage process wastage categories
   const totalScrapQtyKg = (parseFloat(printingPlainSettingWastageKg) || 0) +
                          (parseFloat(printingWastageKg) || 0) +
-                         (parseFloat(laminationPlainSubstrateWastageKg) || 0) +
                          (parseFloat(printedWastageKg) || 0) +
+                         (parseFloat(laminationPlainSubstrateWastageKg) || 0) +
+                         (parseFloat(laminationPlainSubstrateWastageL2Kg) || 0) +
                          (parseFloat(laminateWastageKg) || 0) +
-                         (parseFloat(trimWastageKg) || 0);
+                         (parseFloat(trimWastageKg) || 0) +
+                         (parseFloat(pouchingScrapKg) || 0);
 
   // Cost Formula: (Total Qty Produced x Processing Cost Rate) + (Ingredients Cost)
   // Scrap Rate removed as per directive
@@ -579,11 +605,20 @@ export default function ProductionRecordManagement({
       dateFilled: new Date().toISOString().split('T')[0],
       materialsList: calculatedMaterials,
       
-      // Stage-wise Quantities
+      // Stage-wise Quantities & Consumables (7 Stages)
       qtyFirstPassL1: parseFloat(qtyFirstPassL1) || 0,
-      qtySecondPassL2: parseFloat(qtySecondPassL2) || 0,
+      qtyPrinting: parseFloat(qtyFirstPassL1) || 0,
       qtyInspection: parseFloat(qtyInspection) || 0,
+      qtyLaminationL1: parseFloat(qtyLaminationL1) || 0,
+      adhesiveConsumedL1Kg: parseFloat(adhesiveConsumedL1Kg) || 0,
+      qtySecondPassL2: parseFloat(qtySecondPassL2) || 0,
+      laminationPlainSubstrateWastageL2Kg: parseFloat(laminationPlainSubstrateWastageL2Kg) || 0,
+      adhesiveConsumedL2Kg: parseFloat(adhesiveConsumedL2Kg) || 0,
       qtySlitting: parseFloat(qtySlitting) || 0,
+      paperCoreConsumedKg: parseFloat(paperCoreConsumedKg) || 0,
+      qtyPouching: parseFloat(qtyPouching) || 0,
+      zipperConsumedKg: parseFloat(zipperConsumedKg) || 0,
+      pouchingScrapKg: parseFloat(pouchingScrapKg) || 0,
       qtyDispatch: parseFloat(qtyDispatch) || 0,
       totalProductionQtyKg: totalNetQtyKg,
 
@@ -597,6 +632,7 @@ export default function ProductionRecordManagement({
       laminationPlainSubstrateWastageKg: parseFloat(laminationPlainSubstrateWastageKg) || 0,
       printedWastageKg: parseFloat(printedWastageKg) || 0,
       laminateWastageKg: parseFloat(laminateWastageKg) || 0,
+      trimWastageKg: parseFloat(trimWastageKg) || 0,
       totalScrapQtyKg: totalScrapQtyKg,
       totalWastageKg: totalScrapQtyKg,
       grossProductionKg: totalJobMaterialOutputKg,
@@ -2427,15 +2463,15 @@ export default function ProductionRecordManagement({
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               
-              {/* STAGE 1: FIRST PASS L1 */}
+              {/* STAGE 1: PRINTING */}
               <div style={{ background: '#ffffff', border: '1px solid #bae6fd', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(2, 132, 199, 0.05)' }}>
                 <div style={{ background: '#f0f9ff', padding: '12px 20px', borderBottom: '1px solid #e0f2fe', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ fontWeight: '800', color: '#0369a1', fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <span style={{ background: '#0284c7', color: '#ffffff', width: '24px', height: '24px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: '900' }}>1</span>
-                    STAGE 1: FIRST PASS L1 (Printing & Surface Pass)
+                    Stage 1: Printing
                   </div>
                   <span className="badge badge-info" style={{ fontSize: '0.72rem', background: '#e0f2fe', color: '#0369a1' }}>
-                    Single / Surface & 2-Layer Jobs
+                    Printing Pass (Surface & Reverse)
                   </span>
                 </div>
 
@@ -2478,7 +2514,7 @@ export default function ProductionRecordManagement({
                   <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                       <label style={{ fontSize: '0.78rem', fontWeight: '800', color: '#0369a1', textTransform: 'uppercase', margin: 0 }}>
-                        🟢 First Pass L1 Output (kg) *
+                        🟢 Printing Output (kg) *
                       </label>
                       <WeighingScaleCaptureButton onCapture={(weight) => setQtyFirstPassL1(weight)} />
                     </div>
@@ -2492,7 +2528,7 @@ export default function ProductionRecordManagement({
                       required 
                     />
                     <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '6px' }}>
-                      Net usable roll weight after 1st printing pass
+                      Net usable roll weight after printing pass
                     </div>
                   </div>
 
@@ -2533,66 +2569,12 @@ export default function ProductionRecordManagement({
                 </div>
               </div>
 
-              {/* STAGE 2: SECOND PASS L2 */}
-              <div style={{ background: '#ffffff', border: '1px solid #f5d0fe', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(192, 38, 211, 0.04)' }}>
-                <div style={{ background: '#fdf4ff', padding: '12px 20px', borderBottom: '1px solid #fae8ff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ fontWeight: '800', color: '#86198f', fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ background: '#a21caf', color: '#ffffff', width: '24px', height: '24px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: '900' }}>2</span>
-                    STAGE 2: SECOND PASS L2 (Lamination Pass)
-                  </div>
-                  <span className="badge badge-warning" style={{ fontSize: '0.72rem', background: '#fae8ff', color: '#86198f', border: '1px solid #f5d0fe' }}>
-                    For 3-Layer Laminate Jobs Only
-                  </span>
-                </div>
-
-                <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1.1fr 1.9fr', gap: '24px' }}>
-                  <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                      <label style={{ fontSize: '0.78rem', fontWeight: '800', color: '#86198f', textTransform: 'uppercase', margin: 0 }}>
-                        🟢 Second Pass L2 Output (kg)
-                      </label>
-                      <WeighingScaleCaptureButton onCapture={(weight) => setQtySecondPassL2(weight)} />
-                    </div>
-                    <input 
-                      type="number" 
-                      step="0.1" 
-                      className="form-control" 
-                      style={{ fontWeight: '800', fontSize: '1.1rem', background: '#ffffff', color: '#86198f', border: '1.5px solid #e879f9' }} 
-                      value={qtySecondPassL2} 
-                      onChange={e => setQtySecondPassL2(e.target.value)} 
-                    />
-                    <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '6px' }}>
-                      Lamination roll output weight for 3rd layer
-                    </div>
-                  </div>
-
-                  <div style={{ background: '#fffbeb', padding: '14px 16px', borderRadius: '8px', border: '1px solid #fde68a' }}>
-                    <div style={{ fontSize: '0.75rem', fontWeight: '800', color: '#b45309', textTransform: 'uppercase', marginBottom: '10px' }}>
-                      🟠 Lamination Stage Scrap (kg)
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#78350f', display: 'block', marginBottom: '4px' }}>
-                        Lamination Plain Substrate Scrap (kg)
-                      </label>
-                      <input 
-                        type="number" 
-                        step="0.1" 
-                        className="form-control" 
-                        style={{ background: '#ffffff', fontWeight: '700', width: '60%' }} 
-                        value={laminationPlainSubstrateWastageKg} 
-                        onChange={e => setLaminationPlainSubstrateWastageKg(e.target.value)} 
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* STAGE 3: INSPECTION */}
+              {/* STAGE 2: PRINTING INSPECTION */}
               <div style={{ background: '#ffffff', border: '1px solid #fde68a', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(217, 119, 6, 0.04)' }}>
                 <div style={{ background: '#fffbeb', padding: '12px 20px', borderBottom: '1px solid #fef3c7', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ fontWeight: '800', color: '#b45309', fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ background: '#d97706', color: '#ffffff', width: '24px', height: '24px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: '900' }}>3</span>
-                    STAGE 3: INSPECTION (Quality Check Pass)
+                    <span style={{ background: '#d97706', color: '#ffffff', width: '24px', height: '24px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: '900' }}>2</span>
+                    STAGE 2: Printing Inspection (Quality Check Pass)
                   </div>
                   <span className="badge badge-us" style={{ fontSize: '0.72rem', background: '#fef3c7', color: '#b45309' }}>
                     Optional Quality Check Pass
@@ -2641,12 +2623,150 @@ export default function ProductionRecordManagement({
                 </div>
               </div>
 
-              {/* STAGE 4: SLITTING */}
+              {/* STAGE 3: FIRST PASS L1 (LAMINATION PASS 1) */}
+              <div style={{ background: '#ffffff', border: '1px solid #c7d2fe', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(99, 102, 241, 0.05)' }}>
+                <div style={{ background: '#eef2ff', padding: '12px 20px', borderBottom: '1px solid #e0e7ff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontWeight: '800', color: '#4338ca', fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ background: '#4f46e5', color: '#ffffff', width: '24px', height: '24px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: '900' }}>3</span>
+                    Stage 3: First Pass L1 (Lamination Pass 1)
+                  </div>
+                  <span className="badge badge-info" style={{ fontSize: '0.72rem', background: '#e0e7ff', color: '#4338ca' }}>
+                    2-Layer & 3-Layer Jobs
+                  </span>
+                </div>
+
+                <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1.1fr 1.9fr', gap: '24px' }}>
+                  <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <label style={{ fontSize: '0.78rem', fontWeight: '800', color: '#4338ca', textTransform: 'uppercase', margin: 0 }}>
+                        🟢 First Pass L1 Output (kg)
+                      </label>
+                      <WeighingScaleCaptureButton onCapture={(weight) => setQtyLaminationL1(weight)} />
+                    </div>
+                    <input 
+                      type="number" 
+                      step="0.1" 
+                      className="form-control" 
+                      style={{ fontWeight: '800', fontSize: '1.1rem', background: '#ffffff', color: '#4338ca', border: '1.5px solid #818cf8' }} 
+                      value={qtyLaminationL1} 
+                      onChange={e => setQtyLaminationL1(e.target.value)} 
+                    />
+                    <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '6px' }}>
+                      Lamination roll output weight for 1st lamination pass
+                    </div>
+                  </div>
+
+                  <div style={{ background: '#fffbeb', padding: '14px 16px', borderRadius: '8px', border: '1px solid #fde68a' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: '800', color: '#b45309', textTransform: 'uppercase', marginBottom: '10px' }}>
+                      🟠 Lamination Pass 1 Scrap & Consumables
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                      <div>
+                        <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#78350f', display: 'block', marginBottom: '4px' }}>
+                          Lamination Plain Substrate Scrap (kg)
+                        </label>
+                        <input 
+                          type="number" 
+                          step="0.1" 
+                          className="form-control" 
+                          style={{ background: '#ffffff', fontWeight: '700' }} 
+                          value={laminationPlainSubstrateWastageKg} 
+                          onChange={e => setLaminationPlainSubstrateWastageKg(e.target.value)} 
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#4338ca', display: 'block', marginBottom: '4px' }}>
+                          🧪 Adhesive Consumed (kg)
+                        </label>
+                        <input 
+                          type="number" 
+                          step="0.1" 
+                          className="form-control" 
+                          style={{ background: '#ffffff', fontWeight: '700', border: '1.5px solid #a5b4fc' }} 
+                          value={adhesiveConsumedL1Kg} 
+                          onChange={e => setAdhesiveConsumedL1Kg(e.target.value)} 
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* STAGE 4: SECOND PASS L2 (LAMINATION PASS 2) */}
+              <div style={{ background: '#ffffff', border: '1px solid #f5d0fe', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(192, 38, 211, 0.04)' }}>
+                <div style={{ background: '#fdf4ff', padding: '12px 20px', borderBottom: '1px solid #fae8ff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontWeight: '800', color: '#86198f', fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ background: '#a21caf', color: '#ffffff', width: '24px', height: '24px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: '900' }}>4</span>
+                    Stage 4: Second Pass L2 (Lamination Pass 2 - Optional - For 3 Layer Jobs Only)
+                  </div>
+                  <span className="badge badge-warning" style={{ fontSize: '0.72rem', background: '#fae8ff', color: '#86198f', border: '1px solid #f5d0fe' }}>
+                    For 3-Layer Laminate Jobs Only
+                  </span>
+                </div>
+
+                <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1.1fr 1.9fr', gap: '24px' }}>
+                  <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <label style={{ fontSize: '0.78rem', fontWeight: '800', color: '#86198f', textTransform: 'uppercase', margin: 0 }}>
+                        🟢 Second Pass L2 Output (kg)
+                      </label>
+                      <WeighingScaleCaptureButton onCapture={(weight) => setQtySecondPassL2(weight)} />
+                    </div>
+                    <input 
+                      type="number" 
+                      step="0.1" 
+                      className="form-control" 
+                      style={{ fontWeight: '800', fontSize: '1.1rem', background: '#ffffff', color: '#86198f', border: '1.5px solid #e879f9' }} 
+                      value={qtySecondPassL2} 
+                      onChange={e => setQtySecondPassL2(e.target.value)} 
+                    />
+                    <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '6px' }}>
+                      Lamination roll output weight for 3rd layer pass
+                    </div>
+                  </div>
+
+                  <div style={{ background: '#fffbeb', padding: '14px 16px', borderRadius: '8px', border: '1px solid #fde68a' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: '800', color: '#b45309', textTransform: 'uppercase', marginBottom: '10px' }}>
+                      🟠 Lamination Pass 2 Scrap & Consumables
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                      <div>
+                        <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#78350f', display: 'block', marginBottom: '4px' }}>
+                          Lamination Plain Substrate Scrap (kg)
+                        </label>
+                        <input 
+                          type="number" 
+                          step="0.1" 
+                          className="form-control" 
+                          style={{ background: '#ffffff', fontWeight: '700' }} 
+                          value={laminationPlainSubstrateWastageL2Kg} 
+                          onChange={e => setLaminationPlainSubstrateWastageL2Kg(e.target.value)} 
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#86198f', display: 'block', marginBottom: '4px' }}>
+                          🧪 Adhesive Consumed (kg)
+                        </label>
+                        <input 
+                          type="number" 
+                          step="0.1" 
+                          className="form-control" 
+                          style={{ background: '#ffffff', fontWeight: '700', border: '1.5px solid #f0abfc' }} 
+                          value={adhesiveConsumedL2Kg} 
+                          onChange={e => setAdhesiveConsumedL2Kg(e.target.value)} 
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* STAGE 5: SLITTING & REWINDING */}
               <div style={{ background: '#ffffff', border: '1px solid #a7f3d0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(5, 150, 105, 0.05)' }}>
                 <div style={{ background: '#ecfdf5', padding: '12px 20px', borderBottom: '1px solid #d1fae5', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ fontWeight: '800', color: '#047857', fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ background: '#059669', color: '#ffffff', width: '24px', height: '24px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: '900' }}>4</span>
-                    STAGE 4: SLITTING & REWINDING
+                    <span style={{ background: '#059669', color: '#ffffff', width: '24px', height: '24px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: '900' }}>5</span>
+                    STAGE 5: SLITTING & REWINDING
                   </div>
                   <span className="badge badge-success" style={{ fontSize: '0.72rem', background: '#d1fae5', color: '#047857' }}>
                     Reel Conversion Pass
@@ -2670,15 +2790,15 @@ export default function ProductionRecordManagement({
                       onChange={e => setQtySlitting(e.target.value)} 
                     />
                     <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '6px' }}>
-                      Total slit reels weight ready for packing
+                      Total slit reels weight ready for packing / pouching
                     </div>
                   </div>
 
                   <div style={{ background: '#fffbeb', padding: '14px 16px', borderRadius: '8px', border: '1px solid #fde68a' }}>
                     <div style={{ fontSize: '0.75rem', fontWeight: '800', color: '#b45309', textTransform: 'uppercase', marginBottom: '10px' }}>
-                      🟠 Slitting Stage Scrap (kg)
+                      🟠 Slitting Stage Scrap & Paper Core Consumed
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
                       <div>
                         <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#78350f', display: 'block', marginBottom: '4px' }}>
                           Laminate Wastage (kg)
@@ -2705,17 +2825,99 @@ export default function ProductionRecordManagement({
                           onChange={e => setTrimWastageKg(e.target.value)} 
                         />
                       </div>
+                      <div>
+                        <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#047857', display: 'block', marginBottom: '4px' }}>
+                          📦 Paper Core Consumed (kg / Pcs)
+                        </label>
+                        <input 
+                          type="number" 
+                          step="0.1" 
+                          className="form-control" 
+                          style={{ background: '#ffffff', fontWeight: '700', border: '1.5px solid #6ee7b7' }} 
+                          value={paperCoreConsumedKg} 
+                          onChange={e => setPaperCoreConsumedKg(e.target.value)} 
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* STAGE 5: DISPATCH READY */}
+              {/* STAGE 6: POUCHING (OPTIONAL - FOR POUCH FORM JOBS ONLY) */}
+              <div style={{ background: '#ffffff', border: '1px solid #99f6e4', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(13, 148, 136, 0.05)' }}>
+                <div style={{ background: '#f0fdfa', padding: '12px 20px', borderBottom: '1px solid #ccfbf1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontWeight: '800', color: '#0f766e', fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ background: '#0d9488', color: '#ffffff', width: '24px', height: '24px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: '900' }}>6</span>
+                    Stage 6: Pouching (Optional - For Pouch Form Jobs Only)
+                  </div>
+                  <span className="badge badge-info" style={{ fontSize: '0.72rem', background: '#ccfbf1', color: '#0f766e' }}>
+                    Pouch Form Jobs Only
+                  </span>
+                </div>
+
+                <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1.1fr 1.9fr', gap: '24px' }}>
+                  <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <label style={{ fontSize: '0.78rem', fontWeight: '800', color: '#0f766e', textTransform: 'uppercase', margin: 0 }}>
+                        🟢 Pouching Finished Output (kg / Pcs)
+                      </label>
+                      <WeighingScaleCaptureButton onCapture={(weight) => setQtyPouching(weight)} />
+                    </div>
+                    <input 
+                      type="number" 
+                      step="0.1" 
+                      className="form-control" 
+                      style={{ fontWeight: '800', fontSize: '1.1rem', background: '#ffffff', color: '#0f766e', border: '1.5px solid #2dd4bf' }} 
+                      value={qtyPouching} 
+                      onChange={e => setQtyPouching(e.target.value)} 
+                    />
+                    <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '6px' }}>
+                      Total finished pouch weight / count after pouch conversion
+                    </div>
+                  </div>
+
+                  <div style={{ background: '#fffbeb', padding: '14px 16px', borderRadius: '8px', border: '1px solid #fde68a' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: '800', color: '#b45309', textTransform: 'uppercase', marginBottom: '10px' }}>
+                      🟠 Pouching Consumables & Scrap
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                      <div>
+                        <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#0f766e', display: 'block', marginBottom: '4px' }}>
+                          Zipper Quantity Consumed (kg / m)
+                        </label>
+                        <input 
+                          type="number" 
+                          step="0.1" 
+                          className="form-control" 
+                          style={{ background: '#ffffff', fontWeight: '700', border: '1.5px solid #5eead4' }} 
+                          value={zipperConsumedKg} 
+                          onChange={e => setZipperConsumedKg(e.target.value)} 
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#78350f', display: 'block', marginBottom: '4px' }}>
+                          Pouching Scrap (kg)
+                        </label>
+                        <input 
+                          type="number" 
+                          step="0.1" 
+                          className="form-control" 
+                          style={{ background: '#ffffff', fontWeight: '700' }} 
+                          value={pouchingScrapKg} 
+                          onChange={e => setPouchingScrapKg(e.target.value)} 
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* STAGE 7: DISPATCH READY */}
               <div style={{ background: '#ffffff', border: '2px solid #059669', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(5, 150, 105, 0.1)' }}>
                 <div style={{ background: '#ecfdf5', padding: '14px 20px', borderBottom: '1.5px solid #a7f3d0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ fontWeight: '900', color: '#047857', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ background: '#059669', color: '#ffffff', width: '26px', height: '26px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', fontWeight: '900' }}>5</span>
-                    STAGE 5: FINAL DISPATCH READY QUANTITY
+                    <span style={{ background: '#059669', color: '#ffffff', width: '26px', height: '26px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', fontWeight: '900' }}>7</span>
+                    STAGE 7: FINAL DISPATCH READY QUANTITY
                   </div>
                   <span className="badge badge-success" style={{ fontSize: '0.75rem', background: '#059669', color: '#ffffff', padding: '3px 10px' }}>
                     Benchmark Output Weight
