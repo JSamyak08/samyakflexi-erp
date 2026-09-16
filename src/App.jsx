@@ -186,7 +186,8 @@ function stripDummyRecords(arr, idFields = ['id', 'orderId', 'jobId']) {
     'samyak_erp_employees',
     'samyak_erp_employee_attendance',
     'samyak_erp_salary_advances',
-    'samyak_erp_salary_payments'
+    'samyak_erp_salary_payments',
+    'samyak_erp_sfg_goods'
   ];
   for (const key of keysToClean) {
     try {
@@ -2827,7 +2828,7 @@ export default function App() {
                   <span className="nav-icon-box" style={{ color: '#8b5cf6' }}>
                     <Layers size={18} />
                   </span>
-                  <span>SFG Store</span>
+                  <span>SFG and FG Store</span>
                   <span className="nav-badge-pill nav-badge-neutral">
                     {(sfgGoods || []).length}
                   </span>

@@ -2761,22 +2761,6 @@ export default function InventoryManagement({
           </div>
 
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <button 
-              className="btn-primary" 
-              style={{ background: '#6d28d9', borderColor: '#6d28d9', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }} 
-              onClick={() => { setSfgFgModalMode('SFG'); setIsSfgFgModalOpen(true); }}
-              title="Create Semi-Finished Goods (SFG) master rolls linked to active job"
-            >
-              <Layers size={16} /> + Add SFG
-            </button>
-            <button 
-              className="btn-primary" 
-              style={{ background: '#059669', borderColor: '#059669', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }} 
-              onClick={() => { setSfgFgModalMode('FG'); setIsSfgFgModalOpen(true); }}
-              title="Create Finished Goods (FG) master rolls ready for slitting / dispatch"
-            >
-              <Package size={16} /> + Add FG
-            </button>
             <button className="btn-secondary" onClick={() => openIssueReturnModal('issue')}>
               <ArrowUpRight size={16} /> Issue / Return to Store
             </button>

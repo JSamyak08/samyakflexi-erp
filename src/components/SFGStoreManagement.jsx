@@ -45,7 +45,7 @@ export default function SFGStoreManagement({
   const [typeFilter, setTypeFilter] = useState('all');
 
   // Modals
-  const [isNewSfgModalOpen, setIsNewSfgModalOpen] = useState(false);
+  const [newGoodModalMode, setNewGoodModalMode] = useState(null); // 'SFG' | 'FG' | null
   const [selectedItemForConsume, setSelectedItemForConsume] = useState(null);
   const [selectedRollForBarcodeModal, setSelectedRollForBarcodeModal] = useState(null);
   const [viewHistoryItem, setViewHistoryItem] = useState(null);
@@ -74,6 +74,7 @@ export default function SFGStoreManagement({
         (item.sfgBatchCode && item.sfgBatchCode.toLowerCase().includes(sTerm)) ||
         (item.jobName && item.jobName.toLowerCase().includes(sTerm)) ||
         (item.jobCode && item.jobCode.toLowerCase().includes(sTerm)) ||
+        (item.orderId && item.orderId.toLowerCase().includes(sTerm)) ||
         (item.clientName && item.clientName.toLowerCase().includes(sTerm)) ||
         (item.filmType && item.filmType.toLowerCase().includes(sTerm)) ||
         (item.sfgType && item.sfgType.toLowerCase().includes(sTerm));
@@ -229,36 +230,59 @@ export default function SFGStoreManagement({
             </div>
             <div>
               <h1 style={{ fontSize: '1.6rem', fontWeight: '800', margin: 0, letterSpacing: '-0.02em', color: '#ffffff' }}>
-                Dedicated SFG Store & Inventory
+                SFG and FG Store
               </h1>
               <p style={{ fontSize: '0.88rem', color: '#94a3b8', margin: '2px 0 0 0' }}>
-                Centralized Semi-Finished Goods store for managing stock across all jobs with real-time process consumption tracking.
+                Centralized Semi-Finished Goods (SFG) & Finished Goods (FG) store for managing stock job-wise and order-wise with real-time process consumption tracking.
               </p>
             </div>
           </div>
         </div>
 
-        <button
-          onClick={() => setIsNewSfgModalOpen(true)}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '8px',
-            background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-            color: '#ffffff',
-            fontWeight: '700',
-            fontSize: '0.9rem',
-            padding: '12px 20px',
-            borderRadius: '10px',
-            border: 'none',
-            cursor: 'pointer',
-            boxShadow: '0 4px 14px rgba(37, 99, 235, 0.4)',
-            transition: 'all 0.2s ease'
-          }}
-        >
-          <Plus size={18} />
-          Create New SFG Batch
-        </button>
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+          <button
+            onClick={() => setNewGoodModalMode('SFG')}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              background: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)',
+              color: '#ffffff',
+              fontWeight: '700',
+              fontSize: '0.9rem',
+              padding: '12px 20px',
+              borderRadius: '10px',
+              border: 'none',
+              cursor: 'pointer',
+              boxShadow: '0 4px 14px rgba(124, 58, 237, 0.4)',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <Plus size={18} />
+            + Add SFG Batch
+          </button>
+          <button
+            onClick={() => setNewGoodModalMode('FG')}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+              color: '#ffffff',
+              fontWeight: '700',
+              fontSize: '0.9rem',
+              padding: '12px 20px',
+              borderRadius: '10px',
+              border: 'none',
+              cursor: 'pointer',
+              boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <Plus size={18} />
+            + Add FG Batch
+          </button>
+        </div>
       </div>
 
       {/* Metric Cards */}
@@ -268,7 +292,7 @@ export default function SFGStoreManagement({
         gap: '16px',
         marginBottom: '24px'
       }}>
-        {/* Total SFG Batches */}
+        {/* Total SFG & FG Batches */}
         <div style={{
           background: '#ffffff',
           border: '1px solid #e2e8f0',
@@ -277,14 +301,14 @@ export default function SFGStoreManagement({
           boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#64748b', fontSize: '0.85rem', fontWeight: '600' }}>
-            <span>Total SFG Batches</span>
+            <span>Total SFG & FG Batches</span>
             <Package size={18} color="#3b82f6" />
           </div>
           <div style={{ fontSize: '1.8rem', fontWeight: '800', color: '#0f172a', marginTop: '10px' }}>
             {metrics.totalBatches} <span style={{ fontSize: '0.9rem', fontWeight: '500', color: '#64748b' }}>Batches</span>
           </div>
           <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '4px' }}>
-            Across all active job press runs
+            Stored job-wise & order-wise
           </div>
         </div>
 
@@ -344,7 +368,7 @@ export default function SFGStoreManagement({
             {metrics.totalAvailableBalanceKg} <span style={{ fontSize: '0.9rem', fontWeight: '600', color: '#166534' }}>kg</span>
           </div>
           <div style={{ fontSize: '0.78rem', color: '#166534', marginTop: '4px', fontWeight: '600' }}>
-            Ready for Lamination / Slitting
+            Ready for Processing / Dispatch
           </div>
         </div>
       </div>
@@ -367,7 +391,7 @@ export default function SFGStoreManagement({
           <Search size={18} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
           <input
             type="text"
-            placeholder="Search by Job Name, Job Code, Client, Batch Barcode, Substrate..."
+            placeholder="Search by Job Name, Job Code, Order ID, Client, Batch Barcode, Substrate..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{
@@ -421,16 +445,23 @@ export default function SFGStoreManagement({
               cursor: 'pointer'
             }}
           >
-            <option value="all">All SFG Types</option>
-            <option value="Printed Rolls">Printed Rolls</option>
-            <option value="Laminated Rolls (First Pass) for Roll Form">Laminated Rolls (First Pass) - Roll</option>
-            <option value="Laminated Rolls (First Pass) for Pouch Form">Laminated Rolls (First Pass) - Pouch</option>
-            <option value="Laminated Rolls (Second Pass) for Pouch Form">Laminated Rolls (Second Pass) - Pouch</option>
+            <option value="all">All Stock Types (SFG & FG)</option>
+            <optgroup label="Semi-Finished Goods (SFG)">
+              <option value="Printed Rolls">Printed Rolls (SFG)</option>
+              <option value="Laminated Rolls (First Pass) for Roll Form">Laminated Rolls (First Pass) - Roll</option>
+              <option value="Laminated Rolls (First Pass) for Pouch Form">Laminated Rolls (First Pass) - Pouch</option>
+              <option value="Laminated Rolls (Second Pass) for Pouch Form">Laminated Rolls (Second Pass) - Pouch</option>
+            </optgroup>
+            <optgroup label="Finished Goods (FG)">
+              <option value="Slit Finished Reels">Slit Finished Reels (FG)</option>
+              <option value="Finished Pouches">Finished Pouches (FG)</option>
+              <option value="Finished Goods">Finished Goods (FG)</option>
+            </optgroup>
           </select>
         </div>
       </div>
 
-      {/* SFG Inventory Table */}
+      {/* SFG & FG Inventory Table */}
       <div style={{
         background: '#ffffff',
         border: '1px solid #e2e8f0',
@@ -442,11 +473,11 @@ export default function SFGStoreManagement({
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                <th style={{ padding: '14px 16px' }}>SFG Barcode / Batch</th>
+                <th style={{ padding: '14px 16px' }}>SFG / FG Barcode</th>
                 <th style={{ padding: '14px 16px' }}>Job Code & Name</th>
-                <th style={{ padding: '14px 16px' }}>Client</th>
+                <th style={{ padding: '14px 16px' }}>Order & Client</th>
                 <th style={{ padding: '14px 16px' }}>Substrate & Size</th>
-                <th style={{ padding: '14px 16px' }}>SFG Type</th>
+                <th style={{ padding: '14px 16px' }}>Stock Type</th>
                 <th style={{ padding: '14px 16px', textAlign: 'right' }}>Initial Net (kg)</th>
                 <th style={{ padding: '14px 16px', textAlign: 'right' }}>Consumed (kg)</th>
                 <th style={{ padding: '14px 16px', textAlign: 'right' }}>Available Balance (kg)</th>
@@ -460,8 +491,8 @@ export default function SFGStoreManagement({
                 <tr>
                   <td colSpan="11" style={{ padding: '48px', textAlign: 'center', color: '#94a3b8' }}>
                     <Layers size={36} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.5 }} />
-                    <div style={{ fontSize: '1rem', fontWeight: '600', color: '#475569' }}>No SFG inventory batches found</div>
-                    <div style={{ fontSize: '0.82rem', marginTop: '4px' }}>Click "Create New SFG Batch" or adjust filters to view items.</div>
+                    <div style={{ fontSize: '1rem', fontWeight: '600', color: '#475569' }}>No SFG or FG inventory batches found</div>
+                    <div style={{ fontSize: '0.82rem', marginTop: '4px' }}>Click "+ Add SFG Batch" or "+ Add FG Batch" to record stock job-wise & order-wise.</div>
                   </td>
                 </tr>
               ) : (
@@ -484,6 +515,8 @@ export default function SFGStoreManagement({
                     statusColor = '#64748b';
                     statusBorder = '#cbd5e1';
                   }
+
+                  const isFgType = (item.sfgType && (item.sfgType.includes('FG') || item.sfgType.includes('Finished') || item.sfgType.includes('Slit'))) || item.category === 'Finished Goods (FG)' || item.mode === 'FG';
 
                   return (
                     <tr key={item.id || item.sfgBatchCode} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s ease' }}>
@@ -527,9 +560,16 @@ export default function SFGStoreManagement({
                         )}
                       </td>
 
-                      {/* Client */}
-                      <td style={{ padding: '14px 16px', color: '#334155', fontWeight: '500' }}>
-                        {item.clientName || 'General Client'}
+                      {/* Order & Client */}
+                      <td style={{ padding: '14px 16px' }}>
+                        <div style={{ color: '#0f172a', fontWeight: '600' }}>
+                          {item.clientName || 'General Client'}
+                        </div>
+                        {item.orderId && (
+                          <div style={{ fontSize: '0.75rem', color: '#2563eb', fontWeight: '600', marginTop: '2px' }}>
+                            Order: #{item.orderId}
+                          </div>
+                        )}
                       </td>
 
                       {/* Substrate & Size */}
@@ -542,9 +582,19 @@ export default function SFGStoreManagement({
                         </div>
                       </td>
 
-                      {/* SFG Type */}
-                      <td style={{ padding: '14px 16px', fontSize: '0.8rem', color: '#475569' }}>
-                        {item.sfgType || 'Printed Rolls'}
+                      {/* SFG / FG Type */}
+                      <td style={{ padding: '14px 16px' }}>
+                        <span style={{
+                          fontSize: '0.75rem',
+                          fontWeight: '700',
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          background: isFgType ? '#ecfdf5' : '#f5f3ff',
+                          color: isFgType ? '#047857' : '#6d28d9',
+                          border: `1px solid ${isFgType ? '#a7f3d0' : '#ddd6fe'}`
+                        }}>
+                          {item.sfgType || (isFgType ? 'Finished Goods' : 'Printed Rolls')}
+                        </span>
                       </td>
 
                       {/* Initial Net Weight */}
@@ -616,14 +666,14 @@ export default function SFGStoreManagement({
                               transition: 'all 0.15s ease'
                             }}
                           >
-                            <Zap size={14} /> Consume SFG
+                            <Zap size={14} /> Consume
                           </button>
 
                           {Array.isArray(item.consumptionHistory) && item.consumptionHistory.length > 0 && (
                             <button
                               type="button"
                               onClick={() => setViewHistoryItem(item)}
-                              title="View SFG Consumption Log History"
+                              title="View Stock Consumption Log History"
                               style={{
                                 background: '#f1f5f9',
                                 color: '#475569',
@@ -701,11 +751,11 @@ export default function SFGStoreManagement({
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Zap size={20} color="#60a5fa" />
                   <h3 style={{ fontSize: '1.2rem', fontWeight: '800', margin: 0 }}>
-                    Consume SFG for Process
+                    Consume Material for Process
                   </h3>
                 </div>
                 <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '2px' }}>
-                  Record actual SFG material consumed for downstream lamination, slitting, or pouching
+                  Record actual SFG / FG material consumed for downstream lamination, slitting, pouching or dispatch
                 </div>
               </div>
               <button
@@ -733,7 +783,7 @@ export default function SFGStoreManagement({
                     <div style={{ fontWeight: '700', color: '#0f172a' }}>{selectedItemForConsume.jobName}</div>
                   </div>
                   <div>
-                    <span style={{ color: '#64748b', fontSize: '0.75rem' }}>SFG BATCH BARCODE:</span>
+                    <span style={{ color: '#64748b', fontSize: '0.75rem' }}>BATCH BARCODE:</span>
                     <div style={{ fontFamily: 'monospace', fontWeight: '700', color: '#2563eb' }}>{selectedItemForConsume.sfgBatchCode}</div>
                   </div>
                   <div>
@@ -842,6 +892,7 @@ export default function SFGStoreManagement({
                     <option value="Lamination (Pass 2)">Lamination (Pass 2)</option>
                     <option value="Slitting & Rewinding">Slitting & Rewinding</option>
                     <option value="Pouching / Bag Making">Pouching / Bag Making</option>
+                    <option value="Dispatch Packing">Dispatch Packing</option>
                     <option value="Printing (Pass 2)">Printing (Pass 2)</option>
                     <option value="QC Inspection & Rewinding">QC Inspection & Rewinding</option>
                     <option value="Custom Stage">Other Process Stage</option>
@@ -968,7 +1019,7 @@ export default function SFGStoreManagement({
                   alignItems: 'center'
                 }}>
                   <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#166534' }}>
-                    NEW REMAINING SFG BALANCE IN STOCK:
+                    NEW REMAINING STOCK BALANCE:
                   </span>
                   <span style={{ fontSize: '1.2rem', fontWeight: '900', color: '#14532d' }}>
                     {Math.max(
@@ -1062,7 +1113,7 @@ export default function SFGStoreManagement({
             }}>
               <div>
                 <h3 style={{ fontSize: '1.1rem', fontWeight: '800', margin: 0 }}>
-                  SFG Process Consumption History Log
+                  Stock Process Consumption History Log
                 </h3>
                 <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '2px' }}>
                   {viewHistoryItem.jobName} ({viewHistoryItem.sfgBatchCode})
@@ -1139,21 +1190,21 @@ export default function SFGStoreManagement({
       )}
 
       {/* ==================================================================== */}
-      {/* MODAL: CREATE NEW SFG BATCH                                           */}
+      {/* MODAL: CREATE NEW SFG OR FG BATCH                                     */}
       {/* ==================================================================== */}
-      {isNewSfgModalOpen && (
+      {newGoodModalMode && (
         <SFGFGEntryModal
-          mode="SFG"
+          mode={newGoodModalMode}
           orders={orders}
           jobMasters={jobMasters}
           machines={machines}
           currentUser={currentUser}
-          onClose={() => setIsNewSfgModalOpen(false)}
+          onClose={() => setNewGoodModalMode(null)}
           onSave={(inventoryItem, rolls) => {
             if (onSaveSFGGood) {
               onSaveSFGGood(inventoryItem);
             }
-            setIsNewSfgModalOpen(false);
+            setNewGoodModalMode(null);
           }}
         />
       )}
