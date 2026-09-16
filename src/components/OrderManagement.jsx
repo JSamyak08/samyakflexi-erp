@@ -202,6 +202,68 @@ export default function OrderManagement({
     return reqs;
   };
 
+  // Handler to edit Raw Material Size Width, Micron, Quantity or Preferred Vendor for any itemized requirement
+  const handleUpdateReqField = (orderId, reqId, field, value) => {
+    setOrders(prevOrders => {
+      return prevOrders.map(ord => {
+        if (ord.id !== orderId) return ord;
+
+        const currentReqs = getOrderMaterialRequirements(ord);
+        const updatedReqs = currentReqs.map(r => {
+          if (r.id !== reqId) return r;
+
+          let updatedWidth = r.widthMm;
+          let updatedMicron = r.micron;
+          let updatedQty = r.qtyKg;
+
+          if (field === 'widthMm') {
+            const newWidth = parseFloat(value);
+            const oldWidth = parseFloat(r.widthMm);
+            updatedWidth = isNaN(newWidth) ? value : newWidth;
+
+            // Recalculate weight proportionally if width changed
+            if (!isNaN(newWidth) && newWidth > 0 && !isNaN(oldWidth) && oldWidth > 0) {
+              const ratio = newWidth / oldWidth;
+              updatedQty = Math.round((r.qtyKg * ratio) * 10) / 10;
+            }
+          } else if (field === 'micron') {
+            const newMicron = parseFloat(value);
+            const oldMicron = parseFloat(r.micron);
+            updatedMicron = isNaN(newMicron) ? value : newMicron;
+
+            if (!isNaN(newMicron) && newMicron > 0 && !isNaN(oldMicron) && oldMicron > 0) {
+              const ratio = newMicron / oldMicron;
+              updatedQty = Math.round((r.qtyKg * ratio) * 10) / 10;
+            }
+          } else if (field === 'qtyKg') {
+            const newQty = parseFloat(value);
+            updatedQty = isNaN(newQty) ? value : newQty;
+          } else if (field === 'preferredVendor') {
+            return { ...r, preferredVendor: value };
+          }
+
+          return {
+            ...r,
+            widthMm: updatedWidth,
+            micron: updatedMicron,
+            qtyKg: updatedQty
+          };
+        });
+
+        const updatedOrder = {
+          ...ord,
+          materialRequirements: updatedReqs,
+          rawMaterialRequirements: updatedReqs
+        };
+
+        // Sync to Supabase
+        saveOrderToSupabase(updatedOrder).catch(console.warn);
+
+        return updatedOrder;
+      });
+    });
+  };
+
   const isAdmin = currentUser?.role === 'Admin';
   
   // Navigation SubTab: 'orders' | 'requirements'
@@ -1499,9 +1561,60 @@ export default function OrderManagement({
                                         />
                                       </td>
                                       <td style={{ fontWeight: '600' }}>{req.filmType}</td>
-                                      <td>{req.micron}</td>
-                                      <td>{req.widthMm}</td>
-                                      <td className="bold-val">{req.qtyKg} kg</td>
+                                      <td>
+                                        {req.widthMm !== '-' ? (
+                                          <input 
+                                            type="number"
+                                            className="form-control"
+                                            style={{ width: '60px', padding: '2px 4px', fontSize: '0.8rem', textAlign: 'center' }}
+                                            value={req.micron}
+                                            title="Edit Micron (µ)"
+                                            onChange={(e) => handleUpdateReqField(order.id, req.id, 'micron', e.target.value)}
+                                          />
+                                        ) : (
+                                          <span>{req.micron}</span>
+                                        )}
+                                      </td>
+                                      <td>
+                                        {req.widthMm !== '-' ? (
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                            <input 
+                                              type="number"
+                                              className="form-control"
+                                              style={{ 
+                                                width: '85px', 
+                                                padding: '3px 6px', 
+                                                fontSize: '0.82rem', 
+                                                fontWeight: '700', 
+                                                textAlign: 'center', 
+                                                borderColor: '#3b82f6', 
+                                                background: '#eff6ff',
+                                                borderRadius: '6px'
+                                              }}
+                                              value={req.widthMm}
+                                              title="Edit Raw Material Size / Width (mm). Weight will recalculate proportionally."
+                                              onChange={(e) => handleUpdateReqField(order.id, req.id, 'widthMm', e.target.value)}
+                                            />
+                                            <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '600' }}>mm</span>
+                                          </div>
+                                        ) : (
+                                          <span style={{ color: 'var(--text-muted)' }}>—</span>
+                                        )}
+                                      </td>
+                                      <td className="bold-val">
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                          <input 
+                                            type="number"
+                                            step="0.1"
+                                            className="form-control"
+                                            style={{ width: '75px', padding: '3px 6px', fontSize: '0.82rem', fontWeight: '700', textAlign: 'right', borderRadius: '6px' }}
+                                            value={req.qtyKg}
+                                            title="Edit Gross Required Weight (kg)"
+                                            onChange={(e) => handleUpdateReqField(order.id, req.id, 'qtyKg', e.target.value)}
+                                          />
+                                          <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '700' }}>kg</span>
+                                        </div>
+                                      </td>
 
                                       {/* Stock Check & Reservation Status */}
                                       <td>
@@ -1534,9 +1647,24 @@ export default function OrderManagement({
                                       </td>
 
                                       <td style={{ color: 'var(--text-secondary)' }}>
-                                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                          <Building2 size={13} /> {req.preferredVendor}
-                                        </span>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                          <Building2 size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                                          <select
+                                            className="form-control"
+                                            style={{ fontSize: '0.78rem', padding: '2px 4px', width: '140px', height: '28px' }}
+                                            value={req.preferredVendor || ''}
+                                            onChange={(e) => handleUpdateReqField(order.id, req.id, 'preferredVendor', e.target.value)}
+                                          >
+                                            <option value={req.preferredVendor}>{req.preferredVendor}</option>
+                                            {(vendors || []).map(v => (
+                                              (v.companyName || v.name) !== req.preferredVendor && (
+                                                <option key={v.id || (v.companyName || v.name)} value={v.companyName || v.name}>
+                                                  {v.companyName || v.name}
+                                                </option>
+                                              )
+                                            ))}
+                                          </select>
+                                        </div>
                                       </td>
                                       <td>
                                         {req.poIssued ? (
@@ -1862,15 +1990,50 @@ export default function OrderManagement({
 
                             {/* Gauge / Slit Width */}
                             <td>
-                              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                                {req.micron && req.micron !== '-' ? <span><strong>{req.micron}</strong> µ</span> : <span>—</span>}
-                                {req.widthMm && req.widthMm !== '-' ? <span> • <strong>{req.widthMm}</strong> mm</span> : ''}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem' }}>
+                                {req.micron && req.micron !== '-' ? <span><strong>{req.micron}</strong> µ</span> : null}
+                                {req.widthMm && req.widthMm !== '-' ? (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                    <span>•</span>
+                                    <input 
+                                      type="number"
+                                      className="form-control"
+                                      style={{ 
+                                        width: '78px', 
+                                        padding: '2px 4px', 
+                                        fontSize: '0.78rem', 
+                                        fontWeight: '700', 
+                                        textAlign: 'center',
+                                        borderColor: '#3b82f6',
+                                        background: '#eff6ff',
+                                        height: '26px'
+                                      }}
+                                      value={req.widthMm}
+                                      title="Edit Raw Material Width (mm)"
+                                      onChange={(e) => handleUpdateReqField(req.orderId, req.id, 'widthMm', e.target.value)}
+                                    />
+                                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>mm</span>
+                                  </div>
+                                ) : (
+                                  req.widthMm === '-' ? <span>—</span> : null
+                                )}
                               </div>
                             </td>
 
                             {/* Gross Req Kg */}
                             <td className="bold-val" style={{ whiteSpace: 'nowrap' }}>
-                              {(parseFloat(req.qtyKg) || 0).toLocaleString()} kg
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                <input 
+                                  type="number"
+                                  step="0.1"
+                                  className="form-control"
+                                  style={{ width: '75px', padding: '2px 4px', fontSize: '0.78rem', fontWeight: '700', textAlign: 'right', height: '26px' }}
+                                  value={req.qtyKg}
+                                  title="Edit Gross Required Weight (kg)"
+                                  onChange={(e) => handleUpdateReqField(req.orderId, req.id, 'qtyKg', e.target.value)}
+                                />
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>kg</span>
+                              </div>
                             </td>
 
                             {/* Stock Check & Reservation */}
@@ -1914,10 +2077,24 @@ export default function OrderManagement({
 
                             {/* Preferred Vendor */}
                             <td style={{ color: 'var(--text-secondary)' }}>
-                              <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.78rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.78rem' }}>
                                 <Building2 size={13} style={{ flexShrink: 0, color: 'var(--text-muted)' }} /> 
-                                <span style={{ fontWeight: '600' }}>{req.preferredVendor}</span>
-                              </span>
+                                <select
+                                  className="form-control"
+                                  style={{ fontSize: '0.76rem', padding: '2px 4px', width: '130px', height: '26px' }}
+                                  value={req.preferredVendor || ''}
+                                  onChange={(e) => handleUpdateReqField(req.orderId, req.id, 'preferredVendor', e.target.value)}
+                                >
+                                  <option value={req.preferredVendor}>{req.preferredVendor}</option>
+                                  {(vendors || []).map(v => (
+                                    (v.companyName || v.name) !== req.preferredVendor && (
+                                      <option key={v.id || (v.companyName || v.name)} value={v.companyName || v.name}>
+                                        {v.companyName || v.name}
+                                      </option>
+                                    )
+                                  ))}
+                                </select>
+                              </div>
                             </td>
 
                             {/* Target Dispatch */}
