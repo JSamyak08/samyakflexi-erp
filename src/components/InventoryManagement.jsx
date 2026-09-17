@@ -2190,8 +2190,9 @@ export default function InventoryManagement({
           return;
         }
 
-        // Robust CSV line parser supporting quotes and commas
-        const parseCSVLine = (lineStr) => {
+        // Multi-delimiter CSV line parser supporting quotes, commas, semicolons, and tabs
+        const parseCSVLine = (lineStr, delim = ',') => {
+          if (!lineStr) return [];
           const cells = [];
           let current = '';
           let inQuotes = false;
@@ -2204,7 +2205,7 @@ export default function InventoryManagement({
               } else {
                 inQuotes = !inQuotes;
               }
-            } else if (ch === ',' && !inQuotes) {
+            } else if (ch === delim && !inQuotes) {
               cells.push(current.trim().replace(/^["']|["']$/g, ''));
               current = '';
             } else {
@@ -2217,14 +2218,24 @@ export default function InventoryManagement({
 
         const parseCleanNum = (val) => {
           if (val === undefined || val === null) return NaN;
-          const s = String(val).trim();
+          let s = String(val).trim();
           if (!s) return NaN;
+          // Standardize European decimal commas if no dot present (e.g. "150,50")
+          if (s.includes(',') && !s.includes('.')) {
+            s = s.replace(',', '.');
+          }
           const cleaned = s.replace(/[^0-9.-]/g, '');
           const n = parseFloat(cleaned);
           return isNaN(n) ? NaN : n;
         };
 
-        const firstLineCells = parseCSVLine(rawLines[0]);
+        // Auto-detect CSV delimiter from first line (comma, semicolon, or tab)
+        const headerLine = rawLines[0];
+        let activeDelim = ',';
+        if (headerLine.includes('\t')) activeDelim = '\t';
+        else if (headerLine.includes(';') && (headerLine.split(';').length > headerLine.split(',').length)) activeDelim = ';';
+
+        const firstLineCells = parseCSVLine(headerLine, activeDelim);
         const headerMap = {};
         
         firstLineCells.forEach((h, idx) => {
@@ -2233,8 +2244,22 @@ export default function InventoryManagement({
           if (cleanH.includes('category')) {
             if (headerMap.category === undefined) headerMap.category = idx;
           }
-          // MUST check unitCost/rate/price BEFORE uom/unit to avoid 'unitcostrs' matching 'unit'!
-          else if (cleanH.includes('unitcost') || cleanH.includes('cost') || cleanH.includes('rate') || cleanH.includes('price') || cleanH.includes('unitprice')) {
+          // MUST check unitCost/rate/price/mrp/val BEFORE uom/unit to avoid 'unitcostrs' matching 'unit'!
+          else if (
+            cleanH.includes('unitcost') || 
+            cleanH.includes('cost') || 
+            cleanH.includes('rate') || 
+            cleanH.includes('price') || 
+            cleanH.includes('unitprice') ||
+            cleanH.includes('mrp') ||
+            cleanH.includes('amount') ||
+            cleanH.includes('val') ||
+            cleanH === 'rs' ||
+            cleanH.includes('rupee') ||
+            cleanH.includes('inr') ||
+            cleanH.includes('perunit') ||
+            cleanH.includes('perkg')
+          ) {
             if (headerMap.unitCost === undefined) headerMap.unitCost = idx;
           }
           // UOM / Unit of measure
@@ -2270,12 +2295,29 @@ export default function InventoryManagement({
           }
         });
 
+        // Fallback: If unitCost header was not explicitly matched, search for any unmapped index or index 11
+        if (headerMap.unitCost === undefined) {
+          const mappedIndices = new Set(Object.values(headerMap));
+          firstLineCells.forEach((h, idx) => {
+            if (!mappedIndices.has(idx)) {
+              const rawH = h.toLowerCase();
+              if (rawH.includes('cost') || rawH.includes('rate') || rawH.includes('price') || rawH.includes('unit') || rawH.includes('amt') || rawH.includes('val') || rawH.includes('rs') || rawH.includes('inr') || rawH.includes('₹')) {
+                headerMap.unitCost = idx;
+                mappedIndices.add(idx);
+              }
+            }
+          });
+          if (headerMap.unitCost === undefined && firstLineCells.length >= 12 && !mappedIndices.has(11)) {
+            headerMap.unitCost = 11;
+          }
+        }
+
         const hasNamedHeaders = Object.keys(headerMap).length >= 2;
         const startIndex = hasNamedHeaders ? 1 : 0;
 
         const parsed = [];
         for (let i = startIndex; i < rawLines.length; i++) {
-          const cells = parseCSVLine(rawLines[i]);
+          const cells = parseCSVLine(rawLines[i], activeDelim);
           
           // Skip completely empty lines or rows containing only blank commas (e.g., ",,,,,,,,")
           if (cells.length === 0 || cells.every(c => !c || c.trim() === '')) continue;
