@@ -202,7 +202,6 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
           {jobName && (
             <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '4px 10px', borderRadius: '4px', marginBottom: '8px', fontSize: '9.5px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span>Job / Product Reference: <strong>{jobName}</strong></span>
-              <span>Dispatched By: <strong>{dispatchedBy}</strong></span>
             </div>
           )}
 
@@ -460,29 +459,20 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
                   FOR SAMYAK INTERNATIONAL LIMITED (DISPATCH DEPT)
                 </div>
                 <div style={{ fontSize: '8.5px', color: '#64748b' }}>
-                  Authorised Dispatch Incharge Verification & Seal
+                  Authorised Verification & Seal
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '14px' }}>
                 <div style={{ textAlign: 'center' }}>
-                  {signatureImage ? (
-                    <img src={signatureImage} alt="Authorised Signature" style={{ height: '32px', objectFit: 'contain', display: 'block', margin: '0 auto 2px' }} />
-                  ) : (
-                    <div style={{ height: '28px', fontStyle: 'italic', fontSize: '10px', color: '#2563eb', fontWeight: 'bold' }}>
-                      Samyak Dispatch
-                    </div>
-                  )}
-                  <div style={{ borderTop: '1px dashed #94a3b8', width: '140px', paddingTop: '2px', fontSize: '8.5px', fontWeight: 'bold', color: '#1e293b' }}>
-                    {dispatchedBy || 'Authorised Signatory'}
+                  <div style={{ borderTop: '1px dashed #94a3b8', width: '160px', paddingTop: '2px', fontSize: '8.5px', fontWeight: 'bold', color: '#1e293b' }}>
+                    Plant Manager / HOD Signature
                   </div>
-                  <div style={{ fontSize: '7.5px', color: '#64748b' }}>Dispatch Department Head</div>
+                  <div style={{ fontSize: '7.5px', color: '#64748b' }}>Date & Time of Approval</div>
                 </div>
 
-                <div style={{ border: '1px solid #93c5fd', background: '#eff6ff', borderRadius: '4px', width: '75px', height: '44px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '7.5px', fontWeight: '900', color: '#1d4ed8' }}>SAMYAK INT. LTD</div>
-                  <div style={{ fontSize: '6.5px', color: '#2563eb', marginTop: '1px' }}>FACTORY DISPATCH</div>
-                  <div style={{ fontSize: '6px', color: '#64748b' }}>SEAL & STAMP</div>
+                <div style={{ border: '1px dashed #cbd5e1', width: '70px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '7.5px', color: '#94a3b8', textAlign: 'center' }}>
+                  Company Seal & Stamp
                 </div>
               </div>
             </div>

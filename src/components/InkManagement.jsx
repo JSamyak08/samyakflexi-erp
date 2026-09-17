@@ -333,6 +333,53 @@ export default function InkManagement({
     document.body.removeChild(link);
   };
 
+  const handleDownloadLiveInkCsv = () => {
+    const headers = [
+      "Product Code",
+      "Shade / Colour",
+      "Ink Type",
+      "Manufacturer",
+      "Supplier Name",
+      "Solid Content %",
+      "Solid Variation %",
+      "Price Per Kg (INR)",
+      "Stock Qty (Kg)",
+      "Reorder Level (Kg)",
+      "Solvent Type",
+      "Notes"
+    ];
+
+    const rows = (inks || []).map(ink => [
+      ink.productCode || '',
+      ink.shade || '',
+      ink.inkType || 'Reverse Ink',
+      ink.manufacturer || 'DIC Inks',
+      ink.supplierName || '',
+      ink.solidContentPct !== undefined ? ink.solidContentPct : 40,
+      ink.solidVariationPct !== undefined ? ink.solidVariationPct : 2,
+      ink.pricePerKg !== undefined ? ink.pricePerKg : 300,
+      ink.stockQtyKg !== undefined ? ink.stockQtyKg : 0,
+      ink.reorderLevelKg !== undefined ? ink.reorderLevelKg : 100,
+      ink.solventType || 'Ethyl Acetate + IPA',
+      ink.notes || ''
+    ]);
+
+    const csvContent = "\uFEFF" + [
+      headers.join(","),
+      ...rows.map(row => row.map(cell => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Live_Ink_Master_Directory_Samyak_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const handleBulkInkCsvUpload = (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
@@ -455,36 +502,83 @@ export default function InkManagement({
     if (bulkParsedInks.length === 0) return;
 
     let countAdded = 0;
-    bulkParsedInks.forEach((item, idx) => {
-      const inkObj = {
-        id: `INK-${Date.now()}-${idx}-${Math.floor(1000 + Math.random() * 9000)}`,
-        productCode: item.productCode,
-        shade: item.shade,
-        inkType: item.inkType,
-        manufacturer: item.manufacturer,
-        supplierId: item.supplierId,
-        supplierName: item.supplierName,
-        solidContentPct: item.solidContentPct,
-        solidVariationPct: item.solidVariationPct,
-        pricePerKg: item.pricePerKg,
-        stockQtyKg: item.stockQtyKg,
-        reorderLevelKg: item.reorderLevelKg,
-        unit: 'Kg',
-        solventType: item.solventType,
-        notes: item.notes,
-        priceHistory: [
-          { price: item.pricePerKg, date: new Date().toISOString().split('T')[0], reason: 'Bulk CSV Import' }
-        ],
-        createdAt: new Date().toISOString()
-      };
+    let countUpdated = 0;
 
-      if (onAddInk) {
-        onAddInk(inkObj);
-        countAdded++;
+    bulkParsedInks.forEach((item, idx) => {
+      const upperCode = (item.productCode || '').trim().toUpperCase();
+      const existingInk = (inks || []).find(i => (i.productCode || '').toUpperCase() === upperCode);
+
+      if (existingInk) {
+        const oldStock = parseFloat(existingInk.stockQtyKg) || 0;
+        const newStock = parseFloat(item.stockQtyKg) || 0;
+        const stockDiff = Math.round((newStock - oldStock) * 100) / 100;
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        const historyEntry = {
+          price: parseFloat(item.pricePerKg) || existingInk.pricePerKg || 0,
+          date: todayStr,
+          reason: 'Stock Adjustment (Bulk Upload)',
+          stockDiff: stockDiff,
+          oldStock,
+          newStock
+        };
+
+        const updatedInk = {
+          ...existingInk,
+          shade: item.shade || existingInk.shade,
+          inkType: item.inkType || existingInk.inkType,
+          manufacturer: item.manufacturer || existingInk.manufacturer,
+          supplierId: item.supplierId || existingInk.supplierId,
+          supplierName: item.supplierName || existingInk.supplierName,
+          solidContentPct: item.solidContentPct !== undefined ? item.solidContentPct : existingInk.solidContentPct,
+          solidVariationPct: item.solidVariationPct !== undefined ? item.solidVariationPct : existingInk.solidVariationPct,
+          pricePerKg: item.pricePerKg !== undefined ? item.pricePerKg : existingInk.pricePerKg,
+          stockQtyKg: newStock,
+          reorderLevelKg: item.reorderLevelKg !== undefined ? item.reorderLevelKg : existingInk.reorderLevelKg,
+          solventType: item.solventType || existingInk.solventType,
+          notes: item.notes || existingInk.notes,
+          priceHistory: [historyEntry, ...(existingInk.priceHistory || [])]
+        };
+
+        if (onUpdateInk) {
+          onUpdateInk(updatedInk);
+        }
+        countUpdated++;
+      } else {
+        const inkObj = {
+          id: `INK-${Date.now()}-${idx}-${Math.floor(1000 + Math.random() * 9000)}`,
+          productCode: item.productCode,
+          shade: item.shade,
+          inkType: item.inkType,
+          manufacturer: item.manufacturer,
+          supplierId: item.supplierId,
+          supplierName: item.supplierName,
+          solidContentPct: item.solidContentPct,
+          solidVariationPct: item.solidVariationPct,
+          pricePerKg: item.pricePerKg,
+          stockQtyKg: item.stockQtyKg,
+          reorderLevelKg: item.reorderLevelKg,
+          unit: 'Kg',
+          solventType: item.solventType,
+          notes: item.notes,
+          priceHistory: [
+            { price: item.pricePerKg, date: new Date().toISOString().split('T')[0], reason: 'Stock Adjustment (Bulk Upload)', stockDiff: item.stockQtyKg, newStock: item.stockQtyKg }
+          ],
+          createdAt: new Date().toISOString()
+        };
+
+        if (onAddInk) {
+          onAddInk(inkObj);
+          countAdded++;
+        }
       }
     });
 
-    alert(`✅ Success!\n\nImported ${countAdded} Ink Product Codes into Master Directory.`);
+    let msg = `✅ Bulk CSV Import Completed!\n`;
+    if (countAdded > 0) msg += `• ${countAdded} new Ink Product Code(s) added.\n`;
+    if (countUpdated > 0) msg += `• ${countUpdated} existing Ink record(s) updated (Stock Adjustments logged).\n`;
+    alert(msg);
+
     setIsBulkPreviewModalOpen(false);
     setBulkParsedInks([]);
   };
@@ -1040,6 +1134,16 @@ export default function InkManagement({
                   title="Download CSV Template with required headers"
                 >
                   <Download size={15} /> Download Sample CSV
+                </button>
+
+                <button 
+                  type="button" 
+                  className="btn-secondary" 
+                  onClick={handleDownloadLiveInkCsv} 
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', padding: '8px 14px', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontWeight: '700' }} 
+                  title="Export live Ink Master Directory list in CSV format for editing quantities or details"
+                >
+                  <Download size={15} /> Export Live Inks CSV
                 </button>
 
                 <label 
@@ -1970,6 +2074,54 @@ export default function InkManagement({
                         <tr>
                           <td colSpan="6" style={{ textAlign: 'center', padding: '16px', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
                             No job consumptions recorded for this ink yet.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              {/* Stock Adjustments & Price Rate History */}
+              <div>
+                <h4 style={{ fontSize: '0.92rem', fontWeight: '800', color: '#1e293b', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <RefreshCw size={16} style={{ color: '#7c3aed' }} /> Stock Adjustments & Purchase Rate History
+                </h4>
+                <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                  <table className="data-table" style={{ margin: 0 }}>
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Reason / Activity Source</th>
+                        <th>Purchase Rate (₹/Kg)</th>
+                        <th>Stock Variance (Kg)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(selectedInkForHistory.priceHistory || []).length > 0 ? (
+                        selectedInkForHistory.priceHistory.map((ph, idx) => (
+                          <tr key={idx}>
+                            <td style={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>{ph.date}</td>
+                            <td>
+                              <span className="badge" style={{
+                                fontSize: '0.72rem',
+                                background: (ph.reason || '').includes('Bulk Upload') ? '#f3e8ff' : '#f1f5f9',
+                                color: (ph.reason || '').includes('Bulk Upload') ? '#6b21a8' : '#334155',
+                                border: (ph.reason || '').includes('Bulk Upload') ? '1px solid #d8b4fe' : '1px solid #cbd5e1',
+                                fontWeight: '700'
+                              }}>
+                                {ph.reason || 'Stock / Price Update'}
+                              </span>
+                            </td>
+                            <td style={{ fontWeight: '700', color: '#4f46e5' }}>₹ {ph.price} / kg</td>
+                            <td style={{ fontWeight: '800', color: (ph.stockDiff || 0) > 0 ? '#059669' : ((ph.stockDiff || 0) < 0 ? '#dc2626' : '#64748b') }}>
+                              {ph.stockDiff !== undefined ? (ph.stockDiff > 0 ? `+${ph.stockDiff} kg` : `${ph.stockDiff} kg`) : '-'}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="4" style={{ textAlign: 'center', padding: '16px', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                            No stock or rate adjustment history recorded yet.
                           </td>
                         </tr>
                       )}

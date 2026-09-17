@@ -2143,6 +2143,57 @@ export default function InventoryManagement({
     URL.revokeObjectURL(url);
   };
 
+  // Export Live Raw Material Inventory List (CSV) for viewing/editing quantities
+  const handleDownloadLiveInventoryCSV = () => {
+    const headers = [
+      "InventoryID", "Category", "ItemName", "SubstrateOrGrade", "Micron", "WidthMm", 
+      "AvailableQty", "UOM", "Location", "ReorderLevel", "LastVendor", 
+      "LastBatch", "UnitCostRs"
+    ];
+
+    const rows = (safeInventory || []).map(item => {
+      const cat = item.category || 'Film Substrates';
+      const name = item.itemName || `${item.filmType || ''} ${item.micron ? item.micron + 'µ' : ''}`.trim();
+      const sub = item.substrateOrGrade || item.filmType || name;
+      const micron = item.micron !== undefined && item.micron !== '-' ? item.micron : '';
+      const width = item.widthMm !== undefined && item.widthMm !== '-' ? item.widthMm : '';
+      const qty = item.availableQtyKg !== undefined ? item.availableQtyKg : (item.availableQty !== undefined ? item.availableQty : 0);
+      const uom = item.unit || 'Kg';
+      const loc = item.location || 'Main Factory Store';
+      const reorder = item.reorderLevelKg !== undefined ? item.reorderLevelKg : (item.reorderLevel || 1000);
+      const vendor = item.lastVendor || item.vendor || '';
+      const batch = item.lastBatch || '';
+      const cost = item.unitPrice !== undefined ? item.unitPrice : (item.purchaseRatePerKg || 0);
+
+      return [
+        item.id || item.itemCode || '',
+        cat,
+        name,
+        sub,
+        micron,
+        width,
+        qty,
+        uom,
+        loc,
+        reorder,
+        vendor,
+        batch,
+        cost
+      ];
+    });
+
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(row => row.map(cell => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Live_Raw_Material_Inventory_Samyak_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   // Universal Bulk CSV Parser (Supports All Material Categories & Excel Encodings)
   const handleParseBulkCSV = (e) => {
     const file = e.target.files[0];
@@ -2250,7 +2301,10 @@ export default function InventoryManagement({
         firstLineCells.forEach((h, idx) => {
           const cleanH = h.toLowerCase().replace(/[^a-z0-9]/g, '');
           
-          if (cleanH.includes('category')) {
+          if (cleanH === 'id' || cleanH === 'inventoryid' || cleanH.includes('inventoryid') || cleanH.includes('itemcode') || cleanH.includes('stockid')) {
+            if (headerMap.inventoryId === undefined) headerMap.inventoryId = idx;
+          }
+          else if (cleanH.includes('category')) {
             if (headerMap.category === undefined) headerMap.category = idx;
           }
           // MUST check unitCost/rate/price BEFORE uom/unit to avoid 'unitcostrs' matching 'unit'!
@@ -2409,6 +2463,13 @@ export default function InventoryManagement({
           // Duplicate item detection against current inventory database
           const normRowName = (itemName || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
           const matchedItem = (safeInventory || []).find(inv => {
+            if (inventoryId) {
+              const invIdClean = String(inv.id || '').toLowerCase().trim();
+              const invCodeClean = String(inv.itemCode || '').toLowerCase().trim();
+              if (invIdClean === inventoryId.toLowerCase() || invCodeClean === inventoryId.toLowerCase()) {
+                return true;
+              }
+            }
             const invNameClean = (inv.itemName || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
             const invCodeClean = (inv.id || inv.itemCode || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
             if (normRowName && (invNameClean === normRowName || invCodeClean === normRowName)) return true;
@@ -2428,6 +2489,7 @@ export default function InventoryManagement({
           });
 
           parsed.push({
+            inventoryId: inventoryId || (matchedItem ? matchedItem.id : ''),
             category: category || 'Film Substrates',
             itemName: itemName.trim(),
             substrateOrGrade: (substrateGrade || itemName).trim(),
@@ -2442,7 +2504,7 @@ export default function InventoryManagement({
             lastBatch: batch || 'BULK-BATCH',
             unitPrice: isNaN(unitCost) ? 0 : unitCost,
             matchedItem: matchedItem || null,
-            importAction: matchedItem ? 'ADD_TO_EXISTING' : 'CREATE_NEW'
+            importAction: matchedItem ? 'UPDATE_EXISTING' : 'CREATE_NEW'
           });
         }
 
@@ -2480,30 +2542,65 @@ export default function InventoryManagement({
 
     let currentInv = [...(safeInventory || [])];
     let createdCount = 0;
-    let mergedCount = 0;
+    let updatedCount = 0;
+    let newAdjustments = [];
 
     bulkParsedRows.forEach(row => {
       const qtyNum = Number(row.availableQty) || 0;
 
-      if (row.importAction === 'ADD_TO_EXISTING' && row.matchedItem) {
-        // Merge stock into existing database item
+      if ((row.importAction === 'ADD_TO_EXISTING' || row.importAction === 'UPDATE_EXISTING') && row.matchedItem) {
+        // Merge or update stock in existing database item
         const targetIdx = currentInv.findIndex(inv => inv.id === row.matchedItem.id);
         if (targetIdx !== -1) {
           const existing = currentInv[targetIdx];
           const oldQty = Number(existing.availableQtyKg ?? existing.availableQty ?? 0);
-          const updatedQty = Math.round((oldQty + qtyNum) * 100) / 100;
           
+          let updatedQty = oldQty;
+          let variance = 0;
+
+          if (row.importAction === 'UPDATE_EXISTING') {
+            updatedQty = qtyNum;
+            variance = Math.round((updatedQty - oldQty) * 100) / 100;
+          } else {
+            // ADD_TO_EXISTING
+            updatedQty = Math.round((oldQty + qtyNum) * 100) / 100;
+            variance = qtyNum;
+          }
+
           currentInv[targetIdx] = {
             ...existing,
             availableQtyKg: updatedQty,
             availableQty: updatedQty,
             unitPrice: Number(row.unitPrice) > 0 ? Number(row.unitPrice) : (existing.unitPrice || 0),
             purchaseRatePerKg: Number(row.unitPrice) > 0 ? Number(row.unitPrice) : (existing.purchaseRatePerKg || 0),
+            location: row.location || existing.location || 'Main Factory Store',
+            reorderLevelKg: Number(row.reorderLevel) > 0 ? Number(row.reorderLevel) : (existing.reorderLevelKg || existing.reorderLevel || 1000),
+            reorderLevel: Number(row.reorderLevel) > 0 ? Number(row.reorderLevel) : (existing.reorderLevel || 1000),
             lastVendor: row.lastVendor || existing.lastVendor || existing.vendor,
             vendor: row.lastVendor || existing.vendor || existing.lastVendor,
             lastBatch: row.lastBatch || existing.lastBatch || 'BULK-BATCH'
           };
-          mergedCount++;
+
+          // Record stock ledger adjustment entry if quantity changed
+          if (Math.abs(variance) > 0.001) {
+            newAdjustments.push({
+              id: `ADJ-BULK-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+              itemId: existing.id,
+              itemCode: existing.itemCode || existing.id,
+              itemName: existing.itemName || `${existing.filmType || ''} ${existing.micron ? existing.micron + 'µ' : ''}`.trim(),
+              category: existing.category || 'Film Substrates',
+              filmType: existing.filmType || existing.substrateOrGrade || '',
+              micron: existing.micron || '-',
+              widthMm: existing.widthMm || '-',
+              date: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
+              type: 'Stock Adjustment (Bulk Upload)',
+              qtyKg: variance,
+              barcode: `ADJ-BULK-${Date.now()}`,
+              reason: 'Stock Adjustment (Bulk Upload)',
+              adjustedBy: currentUser?.name || 'Store Mgr Dilip Joshi'
+            });
+          }
+          updatedCount++;
         } else {
           // Fallback if missing
           const autoId = generateInventoryId(currentInv);
@@ -2572,12 +2669,20 @@ export default function InventoryManagement({
       }
     });
 
+    if (newAdjustments.length > 0) {
+      const updatedAdj = [...newAdjustments, ...stockLedgerAdjustments];
+      setStockLedgerAdjustments(updatedAdj);
+      try {
+        localStorage.setItem('samyak_erp_stock_adjustments', JSON.stringify(updatedAdj));
+      } catch (e) {}
+    }
+
     if (onUpdateInventory) {
       await onUpdateInventory(currentInv);
     }
 
     let summaryMsg = `✅ Bulk Inventory Import Completed Successfully!\n`;
-    if (mergedCount > 0) summaryMsg += `• ${mergedCount} existing item(s) updated with added stock quantity.\n`;
+    if (updatedCount > 0) summaryMsg += `• ${updatedCount} existing item(s) updated with new stock quantity & details (Stock Adjustments logged).\n`;
     if (createdCount > 0) summaryMsg += `• ${createdCount} new item(s) created in database.`;
     alert(summaryMsg);
 
@@ -3348,6 +3453,16 @@ export default function InventoryManagement({
                 onClick={handleDownloadBulkInventoryTemplate}
               >
                 <Download size={15} /> Download Sample CSV
+              </button>
+
+              <button 
+                type="button"
+                className="btn-secondary" 
+                style={{ fontSize: '0.8rem', padding: '6px 12px', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '5px' }}
+                onClick={handleDownloadLiveInventoryCSV}
+                title="Download live raw material inventory stock list in CSV format for editing quantities or details"
+              >
+                <Download size={15} /> Export Live Stock CSV
               </button>
 
               <button 
@@ -6862,13 +6977,14 @@ export default function InventoryManagement({
                                     padding: '2px 4px', 
                                     height: '28px',
                                     fontWeight: '700',
-                                    borderColor: row.importAction === 'ADD_TO_EXISTING' ? '#f59e0b' : '#3b82f6',
-                                    background: row.importAction === 'ADD_TO_EXISTING' ? '#fffbe6' : '#eff6ff',
-                                    color: row.importAction === 'ADD_TO_EXISTING' ? '#b45309' : '#1d4ed8'
+                                    borderColor: row.importAction === 'UPDATE_EXISTING' ? '#059669' : (row.importAction === 'ADD_TO_EXISTING' ? '#f59e0b' : '#3b82f6'),
+                                    background: row.importAction === 'UPDATE_EXISTING' ? '#ecfdf5' : (row.importAction === 'ADD_TO_EXISTING' ? '#fffbe6' : '#eff6ff'),
+                                    color: row.importAction === 'UPDATE_EXISTING' ? '#047857' : (row.importAction === 'ADD_TO_EXISTING' ? '#b45309' : '#1d4ed8')
                                   }}
-                                  value={row.importAction || 'ADD_TO_EXISTING'}
+                                  value={row.importAction || 'UPDATE_EXISTING'}
                                   onChange={(e) => handleRowActionChange(idx, e.target.value)}
                                 >
+                                  <option value="UPDATE_EXISTING">🔄 Update Quantity & Item Details</option>
                                   <option value="ADD_TO_EXISTING">➕ Add Qty to Existing Stock</option>
                                   <option value="CREATE_NEW">✨ Create New Separate Item</option>
                                 </select>

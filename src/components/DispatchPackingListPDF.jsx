@@ -161,7 +161,7 @@ export default function DispatchPackingListPDF({ shipment, company, onClose }) {
             <div>
               <div style={{ height: '40px' }} />
               <div style={{ borderTop: '1px solid #0f172a', paddingTop: '4px', fontWeight: '700' }}>
-                Dispatched By (Store Manager)
+                Plant Manager / HOD Signature
               </div>
             </div>
 
