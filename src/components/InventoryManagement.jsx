@@ -2215,29 +2215,59 @@ export default function InventoryManagement({
           return cells;
         };
 
+        const parseCleanNum = (val) => {
+          if (val === undefined || val === null) return NaN;
+          const s = String(val).trim();
+          if (!s) return NaN;
+          const cleaned = s.replace(/[^0-9.-]/g, '');
+          const n = parseFloat(cleaned);
+          return isNaN(n) ? NaN : n;
+        };
+
         const firstLineCells = parseCSVLine(rawLines[0]);
         const headerMap = {};
         
         firstLineCells.forEach((h, idx) => {
           const cleanH = h.toLowerCase().replace(/[^a-z0-9]/g, '');
-          if (cleanH.includes('category')) headerMap.category = idx;
-          else if (cleanH.includes('itemname') || cleanH.includes('item') || cleanH.includes('title') || cleanH.includes('description') || cleanH.includes('name')) {
-            if (headerMap.itemName === undefined) headerMap.itemName = idx;
+          
+          if (cleanH.includes('category')) {
+            if (headerMap.category === undefined) headerMap.category = idx;
+          }
+          // MUST check unitCost/rate/price BEFORE uom/unit to avoid 'unitcostrs' matching 'unit'!
+          else if (cleanH.includes('unitcost') || cleanH.includes('cost') || cleanH.includes('rate') || cleanH.includes('price') || cleanH.includes('unitprice')) {
+            if (headerMap.unitCost === undefined) headerMap.unitCost = idx;
+          }
+          // UOM / Unit of measure
+          else if (cleanH === 'uom' || cleanH.includes('uom') || cleanH.includes('unitofmeasure') || cleanH.includes('measure') || (cleanH.includes('unit') && !cleanH.includes('cost') && !cleanH.includes('price') && !cleanH.includes('rate'))) {
+            if (headerMap.uom === undefined) headerMap.uom = idx;
           }
           else if (cleanH.includes('substrate') || cleanH.includes('grade') || cleanH.includes('filmtype') || cleanH.includes('polymer')) {
             if (headerMap.substrateGrade === undefined) headerMap.substrateGrade = idx;
           }
-          else if (cleanH.includes('micron') || cleanH.includes('gauge')) headerMap.micron = idx;
-          else if (cleanH.includes('width')) headerMap.widthMm = idx;
+          else if (cleanH.includes('micron') || cleanH.includes('gauge')) {
+            if (headerMap.micron === undefined) headerMap.micron = idx;
+          }
+          else if (cleanH.includes('width')) {
+            if (headerMap.widthMm === undefined) headerMap.widthMm = idx;
+          }
           else if (cleanH.includes('availableqty') || cleanH.includes('qty') || cleanH.includes('quantity') || cleanH.includes('stock')) {
             if (headerMap.qty === undefined) headerMap.qty = idx;
           }
-          else if (cleanH.includes('uom') || cleanH.includes('unit')) headerMap.uom = idx;
-          else if (cleanH.includes('location') || cleanH.includes('bay') || cleanH.includes('rack')) headerMap.location = idx;
-          else if (cleanH.includes('reorder')) headerMap.reorder = idx;
-          else if (cleanH.includes('vendor') || cleanH.includes('supplier')) headerMap.vendor = idx;
-          else if (cleanH.includes('batch') || cleanH.includes('lot')) headerMap.batch = idx;
-          else if (cleanH.includes('unitcost') || cleanH.includes('cost') || cleanH.includes('rate') || cleanH.includes('price')) headerMap.unitCost = idx;
+          else if (cleanH.includes('location') || cleanH.includes('bay') || cleanH.includes('rack') || cleanH.includes('store')) {
+            if (headerMap.location === undefined) headerMap.location = idx;
+          }
+          else if (cleanH.includes('reorder')) {
+            if (headerMap.reorder === undefined) headerMap.reorder = idx;
+          }
+          else if (cleanH.includes('vendor') || cleanH.includes('supplier')) {
+            if (headerMap.vendor === undefined) headerMap.vendor = idx;
+          }
+          else if (cleanH.includes('batch') || cleanH.includes('lot')) {
+            if (headerMap.batch === undefined) headerMap.batch = idx;
+          }
+          else if (cleanH.includes('itemname') || cleanH.includes('item') || cleanH.includes('title') || cleanH.includes('description') || (cleanH.includes('name') && !cleanH.includes('vendor') && !cleanH.includes('supplier') && !cleanH.includes('client'))) {
+            if (headerMap.itemName === undefined) headerMap.itemName = idx;
+          }
         });
 
         const hasNamedHeaders = Object.keys(headerMap).length >= 2;
@@ -2267,29 +2297,29 @@ export default function InventoryManagement({
             category = headerMap.category !== undefined ? cells[headerMap.category] : '';
             itemName = headerMap.itemName !== undefined ? cells[headerMap.itemName] : '';
             substrateGrade = headerMap.substrateGrade !== undefined ? cells[headerMap.substrateGrade] : '';
-            micron = headerMap.micron !== undefined ? parseFloat(cells[headerMap.micron]) : 0;
-            widthMm = headerMap.widthMm !== undefined ? parseFloat(cells[headerMap.widthMm]) : 0;
-            qty = headerMap.qty !== undefined ? parseFloat(cells[headerMap.qty]) : NaN;
+            micron = headerMap.micron !== undefined ? (parseCleanNum(cells[headerMap.micron]) || 0) : 0;
+            widthMm = headerMap.widthMm !== undefined ? (parseCleanNum(cells[headerMap.widthMm]) || 0) : 0;
+            qty = headerMap.qty !== undefined ? parseCleanNum(cells[headerMap.qty]) : NaN;
             uom = headerMap.uom !== undefined ? (cells[headerMap.uom] || 'Kg') : 'Kg';
             location = headerMap.location !== undefined ? (cells[headerMap.location] || 'Main Factory Store') : 'Main Factory Store';
-            reorder = headerMap.reorder !== undefined ? (parseFloat(cells[headerMap.reorder]) || 1000) : 1000;
+            reorder = headerMap.reorder !== undefined ? (parseCleanNum(cells[headerMap.reorder]) || 1000) : 1000;
             vendor = headerMap.vendor !== undefined ? (cells[headerMap.vendor] || 'Local Vendor') : 'Local Vendor';
             batch = headerMap.batch !== undefined ? (cells[headerMap.batch] || 'BULK-BATCH') : 'BULK-BATCH';
-            unitCost = headerMap.unitCost !== undefined ? (parseFloat(cells[headerMap.unitCost]) || 0) : 0;
+            unitCost = headerMap.unitCost !== undefined ? (parseCleanNum(cells[headerMap.unitCost]) || 0) : 0;
           } else {
             // Positional template layout
             category = cells[0] || '';
             itemName = cells[1] || '';
             substrateGrade = cells[2] || '';
-            micron = parseFloat(cells[3]) || 0;
-            widthMm = parseFloat(cells[4]) || 0;
-            qty = parseFloat(cells[5]);
+            micron = parseCleanNum(cells[3]) || 0;
+            widthMm = parseCleanNum(cells[4]) || 0;
+            qty = parseCleanNum(cells[5]);
             uom = cells[6] || 'Kg';
             location = cells[7] || 'Main Factory Store';
-            reorder = parseFloat(cells[8]) || 1000;
+            reorder = parseCleanNum(cells[8]) || 1000;
             vendor = cells[9] || 'Local Vendor';
             batch = cells[10] || 'BULK-BATCH';
-            unitCost = parseFloat(cells[11]) || 0;
+            unitCost = parseCleanNum(cells[11]) || 0;
           }
 
           // Category auto-detection & fallback
@@ -2386,7 +2416,7 @@ export default function InventoryManagement({
         widthMm: Number(row.widthMm) || 0,
         density: FILM_DENSITIES[subGradeStr] || FILM_DENSITIES[row.filmType] || 1.0,
         unit: uomStr,
-        availableQtyKg: uomStr === 'Kg' ? qtyNum : 0,
+        availableQtyKg: qtyNum,
         availableQty: qtyNum,
         allocatedQtyKg: 0,
         location: row.location || 'Main Factory Store',
