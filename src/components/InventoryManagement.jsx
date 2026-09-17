@@ -2218,14 +2218,23 @@ export default function InventoryManagement({
 
         const parseCleanNum = (val) => {
           if (val === undefined || val === null) return NaN;
-          let s = String(val).trim();
+          const s = String(val).trim();
           if (!s) return NaN;
-          // Standardize European decimal commas if no dot present (e.g. "150,50")
-          if (s.includes(',') && !s.includes('.')) {
-            s = s.replace(',', '.');
+
+          // Remove currency symbols, units, spaces, and commas appropriately
+          let cleanedStr = s;
+          if (cleanedStr.includes(',') && cleanedStr.includes('.')) {
+            cleanedStr = cleanedStr.replace(/,/g, '');
+          } else if (cleanedStr.includes(',') && !cleanedStr.includes('.')) {
+            if (/,\d{1,2}$/.test(cleanedStr)) {
+              cleanedStr = cleanedStr.replace(',', '.');
+            } else {
+              cleanedStr = cleanedStr.replace(/,/g, '');
+            }
           }
-          const cleaned = s.replace(/[^0-9.-]/g, '');
-          const n = parseFloat(cleaned);
+
+          const numericOnly = cleanedStr.replace(/[^0-9.-]/g, '');
+          const n = parseFloat(numericOnly);
           return isNaN(n) ? NaN : n;
         };
 
@@ -2244,21 +2253,21 @@ export default function InventoryManagement({
           if (cleanH.includes('category')) {
             if (headerMap.category === undefined) headerMap.category = idx;
           }
-          // MUST check unitCost/rate/price/mrp/val BEFORE uom/unit to avoid 'unitcostrs' matching 'unit'!
+          // MUST check unitCost/rate/price BEFORE uom/unit to avoid 'unitcostrs' matching 'unit'!
           else if (
             cleanH.includes('unitcost') || 
             cleanH.includes('cost') || 
             cleanH.includes('rate') || 
             cleanH.includes('price') || 
             cleanH.includes('unitprice') ||
-            cleanH.includes('mrp') ||
-            cleanH.includes('amount') ||
-            cleanH.includes('val') ||
-            cleanH === 'rs' ||
-            cleanH.includes('rupee') ||
-            cleanH.includes('inr') ||
-            cleanH.includes('perunit') ||
-            cleanH.includes('perkg')
+            cleanH.includes('purchaserate') ||
+            cleanH.includes('purchaseprice') ||
+            cleanH.includes('purchasecost') ||
+            cleanH.includes('landedcost') ||
+            cleanH.includes('landingcost') ||
+            cleanH.includes('basicrate') ||
+            cleanH.includes('basiccost') ||
+            cleanH.includes('mrp')
           ) {
             if (headerMap.unitCost === undefined) headerMap.unitCost = idx;
           }
@@ -2301,7 +2310,7 @@ export default function InventoryManagement({
           firstLineCells.forEach((h, idx) => {
             if (!mappedIndices.has(idx)) {
               const rawH = h.toLowerCase();
-              if (rawH.includes('cost') || rawH.includes('rate') || rawH.includes('price') || rawH.includes('unit') || rawH.includes('amt') || rawH.includes('val') || rawH.includes('rs') || rawH.includes('inr') || rawH.includes('₹')) {
+              if (rawH.includes('cost') || rawH.includes('rate') || rawH.includes('price') || rawH.includes('unit') || rawH.includes('amt') || rawH.includes('rs') || rawH.includes('inr') || rawH.includes('₹')) {
                 headerMap.unitCost = idx;
                 mappedIndices.add(idx);
               }
