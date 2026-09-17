@@ -2397,6 +2397,27 @@ export default function InventoryManagement({
           }
           if (qty < 0) continue;
 
+          // Duplicate item detection against current inventory database
+          const normRowName = (itemName || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+          const matchedItem = (safeInventory || []).find(inv => {
+            const invNameClean = (inv.itemName || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+            const invCodeClean = (inv.id || inv.itemCode || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+            if (normRowName && (invNameClean === normRowName || invCodeClean === normRowName)) return true;
+            
+            // Check film spec match (filmType/grade + micron + width)
+            const cat = category || 'Film Substrates';
+            if (cat === 'Film Substrates' && inv.category === 'Film Substrates') {
+              const rowFilmGrade = (substrateGrade || itemName || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+              const invFilmGrade = (inv.substrateOrGrade || inv.filmType || inv.itemName || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+              if (rowFilmGrade && rowFilmGrade === invFilmGrade) {
+                if (Number(micron) === Number(inv.micron) && Number(widthMm) === Number(inv.widthMm)) {
+                  return true;
+                }
+              }
+            }
+            return false;
+          });
+
           parsed.push({
             category: category || 'Film Substrates',
             itemName: itemName.trim(),
@@ -2410,7 +2431,9 @@ export default function InventoryManagement({
             reorderLevel: isNaN(reorder) ? 1000 : reorder,
             lastVendor: vendor || 'Local Vendor',
             lastBatch: batch || 'BULK-BATCH',
-            unitPrice: isNaN(unitCost) ? 0 : unitCost
+            unitPrice: isNaN(unitCost) ? 0 : unitCost,
+            matchedItem: matchedItem || null,
+            importAction: matchedItem ? 'ADD_TO_EXISTING' : 'CREATE_NEW'
           });
         }
 
@@ -2429,6 +2452,16 @@ export default function InventoryManagement({
     e.target.value = '';
   };
 
+  const handleRowActionChange = (index, newAction) => {
+    setBulkParsedRows(prev => {
+      const next = [...prev];
+      if (next[index]) {
+        next[index] = { ...next[index], importAction: newAction };
+      }
+      return next;
+    });
+  };
+
   // Confirm Import & Save Items Directly to Database
   const handleConfirmBulkImport = async () => {
     if (bulkParsedRows.length === 0) {
@@ -2436,51 +2469,109 @@ export default function InventoryManagement({
       return;
     }
 
-    const currentInv = safeInventory || [];
-    const newItems = [];
+    let currentInv = [...(safeInventory || [])];
+    let createdCount = 0;
+    let mergedCount = 0;
 
     bulkParsedRows.forEach(row => {
-      const autoId = generateInventoryId([...currentInv, ...newItems]);
       const qtyNum = Number(row.availableQty) || 0;
-      const uomStr = row.unit || 'Kg';
-      const subGradeStr = row.substrateOrGrade || row.filmType || row.itemName || '';
-      
-      const itemObj = {
-        id: autoId,
-        itemCode: autoId,
-        category: row.category || bulkCategory || 'Film Substrates',
-        itemName: row.itemName || `${subGradeStr} ${row.micron ? row.micron + 'µ' : ''}`.trim(),
-        substrateOrGrade: subGradeStr,
-        filmType: subGradeStr,
-        grade: subGradeStr,
-        subType: subGradeStr,
-        micron: Number(row.micron) || 0,
-        widthMm: Number(row.widthMm) || 0,
-        density: FILM_DENSITIES[subGradeStr] || FILM_DENSITIES[row.filmType] || 1.0,
-        unit: uomStr,
-        availableQtyKg: qtyNum,
-        availableQty: qtyNum,
-        allocatedQtyKg: 0,
-        location: row.location || 'Main Factory Store',
-        reorderLevelKg: Number(row.reorderLevel) || 1000,
-        reorderLevel: Number(row.reorderLevel) || 1000,
-        lastVendor: row.lastVendor || 'Local Vendor',
-        vendor: row.lastVendor || 'Local Vendor',
-        lastBatch: row.lastBatch || 'BULK-BATCH',
-        unitPrice: Number(row.unitPrice) || 0,
-        purchaseRatePerKg: Number(row.unitPrice) || 0,
-        createdDate: new Date().toISOString()
-      };
-      newItems.push(itemObj);
+
+      if (row.importAction === 'ADD_TO_EXISTING' && row.matchedItem) {
+        // Merge stock into existing database item
+        const targetIdx = currentInv.findIndex(inv => inv.id === row.matchedItem.id);
+        if (targetIdx !== -1) {
+          const existing = currentInv[targetIdx];
+          const oldQty = Number(existing.availableQtyKg ?? existing.availableQty ?? 0);
+          const updatedQty = Math.round((oldQty + qtyNum) * 100) / 100;
+          
+          currentInv[targetIdx] = {
+            ...existing,
+            availableQtyKg: updatedQty,
+            availableQty: updatedQty,
+            unitPrice: Number(row.unitPrice) > 0 ? Number(row.unitPrice) : (existing.unitPrice || 0),
+            purchaseRatePerKg: Number(row.unitPrice) > 0 ? Number(row.unitPrice) : (existing.purchaseRatePerKg || 0),
+            lastVendor: row.lastVendor || existing.lastVendor || existing.vendor,
+            vendor: row.lastVendor || existing.vendor || existing.lastVendor,
+            lastBatch: row.lastBatch || existing.lastBatch || 'BULK-BATCH'
+          };
+          mergedCount++;
+        } else {
+          // Fallback if missing
+          const autoId = generateInventoryId(currentInv);
+          const subGradeStr = row.substrateOrGrade || row.filmType || row.itemName || '';
+          const itemObj = {
+            id: autoId,
+            itemCode: autoId,
+            category: row.category || bulkCategory || 'Film Substrates',
+            itemName: row.itemName || `${subGradeStr} ${row.micron ? row.micron + 'µ' : ''}`.trim(),
+            substrateOrGrade: subGradeStr,
+            filmType: subGradeStr,
+            grade: subGradeStr,
+            subType: subGradeStr,
+            micron: Number(row.micron) || 0,
+            widthMm: Number(row.widthMm) || 0,
+            density: FILM_DENSITIES[subGradeStr] || FILM_DENSITIES[row.filmType] || 1.0,
+            unit: row.unit || 'Kg',
+            availableQtyKg: qtyNum,
+            availableQty: qtyNum,
+            allocatedQtyKg: 0,
+            location: row.location || 'Main Factory Store',
+            reorderLevelKg: Number(row.reorderLevel) || 1000,
+            reorderLevel: Number(row.reorderLevel) || 1000,
+            lastVendor: row.lastVendor || 'Local Vendor',
+            vendor: row.lastVendor || 'Local Vendor',
+            lastBatch: row.lastBatch || 'BULK-BATCH',
+            unitPrice: Number(row.unitPrice) || 0,
+            purchaseRatePerKg: Number(row.unitPrice) || 0,
+            createdDate: new Date().toISOString()
+          };
+          currentInv.push(itemObj);
+          createdCount++;
+        }
+      } else {
+        // Create New Separate Item
+        const autoId = generateInventoryId(currentInv);
+        const subGradeStr = row.substrateOrGrade || row.filmType || row.itemName || '';
+        const itemObj = {
+          id: autoId,
+          itemCode: autoId,
+          category: row.category || bulkCategory || 'Film Substrates',
+          itemName: row.itemName || `${subGradeStr} ${row.micron ? row.micron + 'µ' : ''}`.trim(),
+          substrateOrGrade: subGradeStr,
+          filmType: subGradeStr,
+          grade: subGradeStr,
+          subType: subGradeStr,
+          micron: Number(row.micron) || 0,
+          widthMm: Number(row.widthMm) || 0,
+          density: FILM_DENSITIES[subGradeStr] || FILM_DENSITIES[row.filmType] || 1.0,
+          unit: row.unit || 'Kg',
+          availableQtyKg: qtyNum,
+          availableQty: qtyNum,
+          allocatedQtyKg: 0,
+          location: row.location || 'Main Factory Store',
+          reorderLevelKg: Number(row.reorderLevel) || 1000,
+          reorderLevel: Number(row.reorderLevel) || 1000,
+          lastVendor: row.lastVendor || 'Local Vendor',
+          vendor: row.lastVendor || 'Local Vendor',
+          lastBatch: row.lastBatch || 'BULK-BATCH',
+          unitPrice: Number(row.unitPrice) || 0,
+          purchaseRatePerKg: Number(row.unitPrice) || 0,
+          createdDate: new Date().toISOString()
+        };
+        currentInv.push(itemObj);
+        createdCount++;
+      }
     });
 
-    const updatedInv = [...currentInv, ...newItems];
-
     if (onUpdateInventory) {
-      await onUpdateInventory(updatedInv);
+      await onUpdateInventory(currentInv);
     }
 
-    alert(`Successfully imported ${newItems.length} inventory material stock items directly into the Database!`);
+    let summaryMsg = `✅ Bulk Inventory Import Completed Successfully!\n`;
+    if (mergedCount > 0) summaryMsg += `• ${mergedCount} existing item(s) updated with added stock quantity.\n`;
+    if (createdCount > 0) summaryMsg += `• ${createdCount} new item(s) created in database.`;
+    alert(summaryMsg);
+
     setIsBulkModalOpen(false);
     setBulkParsedRows([]);
     setBulkFileName('');
@@ -6697,51 +6788,95 @@ export default function InventoryManagement({
             )}
 
             {/* Step 3: Parsed Data Live Preview Table */}
-            {bulkParsedRows.length > 0 && (
-              <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px', background: '#ffffff', marginBottom: '20px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                  <div style={{ fontWeight: '800', fontSize: '0.9rem', color: '#0f172a' }}>
-                    📋 Parsed Material Stock Items ({bulkParsedRows.length} Rows Ready for Database Import)
-                  </div>
-                  <span style={{ fontSize: '0.78rem', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', padding: '3px 8px', borderRadius: '4px', fontWeight: '700' }}>
-                    Category: {bulkCategory}
-                  </span>
-                </div>
+            {bulkParsedRows.length > 0 && (() => {
+              const duplicateCount = bulkParsedRows.filter(r => r.matchedItem).length;
 
-                <div style={{ maxHeight: '250px', overflowY: 'auto', border: '1px solid #cbd5e1', borderRadius: '8px' }}>
-                  <table className="data-table" style={{ width: '100%', margin: 0, fontSize: '0.8rem' }}>
-                    <thead>
-                      <tr style={{ background: '#f8fafc' }}>
-                        <th>#</th>
-                        <th>Category</th>
-                        <th>Item Name / Title</th>
-                        <th>Grade / Substrate</th>
-                        <th>Qty</th>
-                        <th>UOM</th>
-                        <th>Location</th>
-                        <th>Vendor</th>
-                        <th>Unit Cost (₹)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {bulkParsedRows.map((row, idx) => (
-                        <tr key={idx}>
-                          <td>{idx + 1}</td>
-                          <td><span className="badge badge-subtle">{row.category}</span></td>
-                          <td><strong>{row.itemName}</strong></td>
-                          <td><span className="badge" style={{ background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', fontSize: '0.72rem', fontWeight: '700' }}>{row.substrateOrGrade || row.filmType || '-'}</span></td>
-                          <td style={{ fontWeight: '800', color: '#0284c7' }}>{row.availableQty}</td>
-                          <td>{row.unit}</td>
-                          <td>{row.location}</td>
-                          <td>{row.lastVendor}</td>
-                          <td>₹ {row.unitPrice}</td>
+              return (
+                <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px', background: '#ffffff', marginBottom: '20px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <div style={{ fontWeight: '800', fontSize: '0.9rem', color: '#0f172a' }}>
+                      📋 Parsed Material Stock Items ({bulkParsedRows.length} Rows Ready for Database Import)
+                    </div>
+                    <span style={{ fontSize: '0.78rem', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', padding: '3px 8px', borderRadius: '4px', fontWeight: '700' }}>
+                      Category: {bulkCategory}
+                    </span>
+                  </div>
+
+                  {/* Duplicate Detection Alert Banner */}
+                  {duplicateCount > 0 && (
+                    <div style={{ background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: '8px', padding: '10px 14px', marginBottom: '12px', fontSize: '0.84rem', color: '#d48806', fontWeight: '600' }}>
+                      ⚠️ <strong>{duplicateCount} Duplicate Item(s) Detected!</strong> We found matching items already in your Inventory Database. By default, new quantities will be added to existing item stock balances. You can change any row action below to create a separate new item instead.
+                    </div>
+                  )}
+
+                  <div style={{ maxHeight: '280px', overflowY: 'auto', border: '1px solid #cbd5e1', borderRadius: '8px' }}>
+                    <table className="data-table" style={{ width: '100%', margin: 0, fontSize: '0.8rem' }}>
+                      <thead>
+                        <tr style={{ background: '#f8fafc' }}>
+                          <th>#</th>
+                          <th>Category</th>
+                          <th>Item Name / Title</th>
+                          <th>Grade / Substrate</th>
+                          <th>Qty</th>
+                          <th>UOM</th>
+                          <th>Location</th>
+                          <th>Vendor</th>
+                          <th>Unit Cost (₹)</th>
+                          <th style={{ minWidth: '200px' }}>Import Action (Duplicate Handling)</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {bulkParsedRows.map((row, idx) => (
+                          <tr key={idx} style={{ background: row.matchedItem ? '#fffdf5' : 'transparent' }}>
+                            <td>{idx + 1}</td>
+                            <td><span className="badge badge-subtle">{row.category}</span></td>
+                            <td>
+                              <strong>{row.itemName}</strong>
+                              {row.matchedItem && (
+                                <div style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fcd34d', padding: '2px 6px', borderRadius: '4px', fontSize: '0.71rem', marginTop: '3px', fontWeight: '700', width: 'fit-content' }}>
+                                  ⚠️ Matches Existing: {row.matchedItem.itemName || row.matchedItem.id} (Current: {row.matchedItem.availableQtyKg ?? row.matchedItem.availableQty ?? 0} {row.matchedItem.unit || 'Kg'})
+                                </div>
+                              )}
+                            </td>
+                            <td><span className="badge" style={{ background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', fontSize: '0.72rem', fontWeight: '700' }}>{row.substrateOrGrade || row.filmType || '-'}</span></td>
+                            <td style={{ fontWeight: '800', color: '#0284c7' }}>{row.availableQty}</td>
+                            <td>{row.unit}</td>
+                            <td>{row.location}</td>
+                            <td>{row.lastVendor}</td>
+                            <td>₹ {row.unitPrice}</td>
+                            <td>
+                              {row.matchedItem ? (
+                                <select 
+                                  className="form-control"
+                                  style={{ 
+                                    fontSize: '0.75rem', 
+                                    padding: '2px 4px', 
+                                    height: '28px',
+                                    fontWeight: '700',
+                                    borderColor: row.importAction === 'ADD_TO_EXISTING' ? '#f59e0b' : '#3b82f6',
+                                    background: row.importAction === 'ADD_TO_EXISTING' ? '#fffbe6' : '#eff6ff',
+                                    color: row.importAction === 'ADD_TO_EXISTING' ? '#b45309' : '#1d4ed8'
+                                  }}
+                                  value={row.importAction || 'ADD_TO_EXISTING'}
+                                  onChange={(e) => handleRowActionChange(idx, e.target.value)}
+                                >
+                                  <option value="ADD_TO_EXISTING">➕ Add Qty to Existing Stock</option>
+                                  <option value="CREATE_NEW">✨ Create New Separate Item</option>
+                                </select>
+                              ) : (
+                                <span style={{ fontSize: '0.74rem', color: '#166534', background: '#dcfce7', border: '1px solid #86efac', padding: '2px 6px', borderRadius: '4px', fontWeight: '700' }}>
+                                  ✨ New Item
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Action Footer */}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', paddingTop: '12px', borderTop: '1px solid #e2e8f0' }}>
