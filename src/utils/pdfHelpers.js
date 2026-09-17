@@ -57,10 +57,12 @@ export function numberToWords(num) {
  */
 export function formatINR(amount) {
   const num = parseFloat(amount) || 0;
-  return '₹' + num.toLocaleString('en-IN', {
+  const isNegative = num < 0;
+  const formatted = Math.abs(num).toLocaleString('en-IN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   });
+  return (isNegative ? '- ₹' : '₹') + formatted;
 }
 
 /**
@@ -104,6 +106,9 @@ export function calculateGSTBreakdown(gstin = '', address = '', taxableAmount = 
     const cgstAmount = (taxable * halfRate) / 100;
     const sgstAmount = (taxable * halfRate) / 100;
     const totalGstAmount = cgstAmount + sgstAmount;
+    const rawGrandTotal = taxable + totalGstAmount;
+    const roundedGrandTotal = Math.round(rawGrandTotal);
+    const roundOff = +(roundedGrandTotal - rawGrandTotal).toFixed(2);
     
     return {
       isIntraState: true,
@@ -116,10 +121,15 @@ export function calculateGSTBreakdown(gstin = '', address = '', taxableAmount = 
       igstRatePct: 0,
       igstAmount: 0,
       totalGstAmount: totalGstAmount,
-      grandTotal: taxable + totalGstAmount
+      rawGrandTotal: rawGrandTotal,
+      roundOff: roundOff,
+      grandTotal: roundedGrandTotal
     };
   } else {
     const igstAmount = (taxable * ratePct) / 100;
+    const rawGrandTotal = taxable + igstAmount;
+    const roundedGrandTotal = Math.round(rawGrandTotal);
+    const roundOff = +(roundedGrandTotal - rawGrandTotal).toFixed(2);
     
     return {
       isIntraState: false,
@@ -132,7 +142,9 @@ export function calculateGSTBreakdown(gstin = '', address = '', taxableAmount = 
       igstRatePct: ratePct,
       igstAmount: igstAmount,
       totalGstAmount: igstAmount,
-      grandTotal: taxable + igstAmount
+      rawGrandTotal: rawGrandTotal,
+      roundOff: roundOff,
+      grandTotal: roundedGrandTotal
     };
   }
 }

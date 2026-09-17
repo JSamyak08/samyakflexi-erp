@@ -320,6 +320,14 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
                     </td>
                   </tr>
                 )}
+                {gstCalc.roundOff !== undefined && (
+                  <tr>
+                    <td style={{ padding: '3px 8px', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>Round-off (+/-):</td>
+                    <td style={{ padding: '3px 8px', borderBottom: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '500', color: gstCalc.roundOff > 0 ? '#059669' : (gstCalc.roundOff < 0 ? '#dc2626' : '#475569') }}>
+                      {gstCalc.roundOff > 0 ? `+ ${formatINR(gstCalc.roundOff)}` : formatINR(gstCalc.roundOff)}
+                    </td>
+                  </tr>
+                )}
                 <tr style={{ background: '#f1f5f9', fontWeight: 'bold', fontSize: '10.5px' }}>
                   <td style={{ padding: '5px 8px', color: '#0f172a' }}>Grand Total Value:</td>
                   <td style={{ padding: '5px 8px', textAlign: 'right', color: '#0284c7' }}>
