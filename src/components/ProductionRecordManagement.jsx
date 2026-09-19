@@ -510,6 +510,105 @@ export default function ProductionRecordManagement({
   const overallScrapPctOfOutput = totalJobMaterialOutputKg > 0 ? Number(((totalScrapQtyKg / totalJobMaterialOutputKg) * 100).toFixed(1)) : 0;
   const overallScrapPctOfDispatch = totalNetQtyKg > 0 ? Number(((totalScrapQtyKg / totalNetQtyKg) * 100).toFixed(1)) : 0;
 
+  // Audit unfilled / 0 value metrics across stages & materials for confirmation screen warning
+  const unfilledWarnings = useMemo(() => {
+    const warnings = [];
+
+    // 1. Stage 7 Dispatch Ready Output (Critical)
+    if (!parseFloat(qtyDispatch) || parseFloat(qtyDispatch) <= 0) {
+      warnings.push({
+        stage: 'Stage 7: Dispatch',
+        field: 'Dispatch Ready Quantity',
+        message: 'Final Dispatch Ready Quantity is 0 kg (Unentered).'
+      });
+    }
+
+    // 2. Stage 1 Printing Output
+    if (!parseFloat(qtyFirstPassL1) || parseFloat(qtyFirstPassL1) <= 0) {
+      warnings.push({
+        stage: 'Stage 1: Printing',
+        field: 'Printing Output',
+        message: 'Printing Finished Output is 0 kg.'
+      });
+    }
+
+    // 3. Stage 3 Lamination L1 Output
+    if (!parseFloat(qtyLaminationL1) || parseFloat(qtyLaminationL1) <= 0) {
+      warnings.push({
+        stage: 'Stage 3: Lamination L1',
+        field: 'Lamination L1 Output',
+        message: 'Lamination Pass 1 Output is 0 kg.'
+      });
+    }
+
+    // 4. Stage 5 Slitting Output
+    if (!parseFloat(qtySlitting) || parseFloat(qtySlitting) <= 0) {
+      warnings.push({
+        stage: 'Stage 5: Slitting',
+        field: 'Slitting Output',
+        message: 'Slitting Finished Output is 0 kg.'
+      });
+    }
+
+    // 5. Consumables
+    if (!parseFloat(paperCoreConsumedKg) || parseFloat(paperCoreConsumedKg) <= 0) {
+      warnings.push({
+        stage: 'Stage 5: Slitting',
+        field: 'Paper Core Consumed',
+        message: 'Paper Core Consumed is 0 kg.'
+      });
+    }
+
+    if (!parseFloat(adhesiveConsumedL1Kg) || parseFloat(adhesiveConsumedL1Kg) <= 0) {
+      warnings.push({
+        stage: 'Stage 3: Lamination L1',
+        field: 'Adhesive Consumed (L1)',
+        message: 'Lamination Pass 1 Adhesive Consumed is 0 kg.'
+      });
+    }
+
+    // 6. Process Scrap
+    if (totalScrapQtyKg <= 0) {
+      warnings.push({
+        stage: 'Process Scrap',
+        field: 'Total Scrap Logged',
+        message: 'No process scrap / wastage logged across any stage (0.0 kg total).'
+      });
+    }
+
+    // 7. Ingredient Materials
+    calculatedMaterials.forEach(m => {
+      if ((parseFloat(m.netConsumedQtyKg) || 0) <= 0) {
+        warnings.push({
+          stage: 'Materials',
+          field: `${m.filmType} Consumption`,
+          message: `Net consumed quantity for ${m.filmType} (${m.itemName}) is 0 kg.`
+        });
+      }
+    });
+
+    // 8. Processing Cost Rate
+    if (!parseFloat(processingCostPerKg) || parseFloat(processingCostPerKg) <= 0) {
+      warnings.push({
+        stage: 'Costing',
+        field: 'Processing Rate',
+        message: 'Processing Cost Rate is set to ₹0 / kg.'
+      });
+    }
+
+    return warnings;
+  }, [
+    qtyDispatch,
+    qtyFirstPassL1,
+    qtyLaminationL1,
+    qtySlitting,
+    paperCoreConsumedKg,
+    adhesiveConsumedL1Kg,
+    totalScrapQtyKg,
+    calculatedMaterials,
+    processingCostPerKg
+  ]);
+
   // Handle Scrap Disposal Submission
   const handleAddScrapDisposal = (e) => {
     e.preventDefault();
@@ -3040,46 +3139,234 @@ export default function ProductionRecordManagement({
         </form>
       )}
 
-      {/* DETAILED CONFIRMATION POPUP MODAL */}
+      {/* DETAILED CONFIRMATION POPUP MODAL WITH FIELD WARNING AUDIT */}
       {isConfirmModalOpen && (
         <div className="modal-overlay" onClick={() => setIsConfirmModalOpen(false)}>
-          <div className="glass-card modal-content" style={{ width: '750px', maxWidth: '95vw', padding: '28px' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ fontSize: '1.3rem', fontWeight: '800', marginBottom: '8px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <FileSpreadsheet style={{ color: 'var(--primary-brand)' }} /> Confirm Job Production Record Submission
-            </h3>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '20px' }}>
-              Please review stage production quantities, specification variations, material consumption, and process scrap generation before submitting for Admin approval.
-            </p>
+          <div className="glass-card modal-content" style={{ width: '880px', maxWidth: '95vw', maxHeight: '92vh', overflowY: 'auto', padding: '28px' }} onClick={e => e.stopPropagation()}>
+            
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.3rem', fontWeight: '800', margin: 0, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <FileSpreadsheet style={{ color: 'var(--primary-brand)' }} /> Confirm Job Production Record Submission
+                </h3>
+                <p style={{ fontSize: '0.83rem', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
+                  Please review the stage-by-stage metric summary, material consumptions, scrap generation, and field warnings before submitting for Admin approval.
+                </p>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setIsConfirmModalOpen(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* FIELD COMPLETION & WARNING AUDIT BANNER */}
+            {unfilledWarnings.length > 0 ? (
+              <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '10px', padding: '14px 16px', marginBottom: '20px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#c2410c', fontWeight: '800', fontSize: '0.88rem', marginBottom: '10px' }}>
+                  <AlertCircle size={18} />
+                  Attention: {unfilledWarnings.length} Field(s) / Metrics Not Filled or Set to Zero
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))', gap: '8px' }}>
+                  {unfilledWarnings.map((warn, idx) => (
+                    <div key={idx} style={{ background: '#ffffff', border: '1px solid #ffedd5', padding: '6px 10px', borderRadius: '6px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ background: '#ffedd5', color: '#9a3412', fontWeight: '700', padding: '2px 6px', borderRadius: '4px', fontSize: '0.68rem', whiteSpace: 'nowrap' }}>
+                        {warn.stage}
+                      </span>
+                      <span style={{ color: '#7c2d12', fontWeight: '600' }}>{warn.message}</span>
+                    </div>
+                  ))}
+                </div>
+                <p style={{ fontSize: '0.75rem', color: '#9a3412', marginTop: '10px', margin: 0, fontStyle: 'italic' }}>
+                  💡 You can click <strong>"← Go Back & Add / Edit Values"</strong> to enter missing data, or proceed to submit if these zero values are intentional.
+                </p>
+              </div>
+            ) : (
+              <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '10px', padding: '12px 16px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px', color: '#047857', fontSize: '0.85rem', fontWeight: '700' }}>
+                <ShieldCheck size={20} style={{ color: '#059669' }} />
+                All Key Stage Metrics, Materials & Consumables Completed Successfully!
+              </div>
+            )}
 
             {/* Job & Client Meta Header */}
-            <div style={{ background: '#f8fafc', padding: '16px 20px', borderRadius: '10px', marginBottom: '20px', border: '1px solid #e2e8f0', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', fontSize: '0.85rem' }}>
-              <div><span style={{ color: 'var(--text-muted)' }}>Job ID / Order:</span> <strong style={{ color: 'var(--primary-brand)' }}>{selectedOrder?.id}</strong></div>
-              <div><span style={{ color: 'var(--text-muted)' }}>Job Name:</span> <strong>{selectedOrder?.jobName}</strong></div>
-              <div><span style={{ color: 'var(--text-muted)' }}>Customer / Client:</span> <strong>{selectedOrder?.clientName}</strong></div>
-              <div><span style={{ color: 'var(--text-muted)' }}>Recorded By:</span> <strong>{currentUser.name} ({currentUser.role})</strong></div>
+            <div style={{ background: '#f8fafc', padding: '14px 18px', borderRadius: '10px', marginBottom: '20px', border: '1px solid #e2e8f0', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', fontSize: '0.83rem' }}>
+              <div><span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.72rem' }}>JOB ID / ORDER</span> <strong style={{ color: 'var(--primary-brand)', fontSize: '0.95rem' }}>{selectedOrder?.id}</strong></div>
+              <div><span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.72rem' }}>JOB NAME</span> <strong style={{ fontSize: '0.9rem' }}>{selectedOrder?.jobName}</strong></div>
+              <div><span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.72rem' }}>CLIENT / CUSTOMER</span> <strong>{selectedOrder?.clientName}</strong></div>
+              <div><span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.72rem' }}>ORDER TARGET QTY</span> <strong>{(selectedOrder?.orderQtyKg || 0).toLocaleString()} kg</strong></div>
+              <div><span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.72rem' }}>RECORDED BY</span> <strong>{currentUser.name} ({currentUser.role})</strong></div>
+            </div>
+
+            {/* STAGE-BY-STAGE PRODUCTION & CONSUMABLES SUMMARY */}
+            <div style={{ marginBottom: '20px' }}>
+              <h4 style={{ fontSize: '0.85rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Package size={15} /> Stage-wise Output Quantities & Consumables Summary
+              </h4>
+              <div style={{ border: '1px solid #cbd5e1', borderRadius: '8px', overflow: 'hidden' }}>
+                <table className="data-table" style={{ fontSize: '0.78rem', margin: 0 }}>
+                  <thead>
+                    <tr style={{ background: '#f1f5f9' }}>
+                      <th>Stage Name</th>
+                      <th>Finished / Output Qty</th>
+                      <th>Consumables Used</th>
+                      <th>Process Scrap Logged</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {/* Stage 1: Printing */}
+                    <tr>
+                      <td style={{ fontWeight: '700' }}>Stage 1: Printing</td>
+                      <td style={{ fontWeight: '700', color: (parseFloat(qtyFirstPassL1) || 0) > 0 ? '#0f172a' : '#c2410c' }}>
+                        {qtyFirstPassL1 || 0} kg
+                      </td>
+                      <td style={{ color: 'var(--text-muted)' }}>Inks & Solvent</td>
+                      <td>
+                        {((parseFloat(printingPlainSettingWastageKg) || 0) + (parseFloat(printingWastageKg) || 0)).toFixed(1)} kg
+                      </td>
+                      <td>
+                        {(parseFloat(qtyFirstPassL1) || 0) > 0 ? (
+                          <span className="badge badge-us" style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontSize: '0.68rem' }}>✓ Filled</span>
+                        ) : (
+                          <span className="badge badge-warning" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontSize: '0.68rem' }}>⚠️ 0 kg</span>
+                        )}
+                      </td>
+                    </tr>
+
+                    {/* Stage 2: Printing Inspection */}
+                    <tr>
+                      <td style={{ fontWeight: '700' }}>Stage 2: Inspection</td>
+                      <td style={{ fontWeight: '700' }}>{qtyInspection || 0} kg</td>
+                      <td style={{ color: 'var(--text-muted)' }}>—</td>
+                      <td>—</td>
+                      <td>
+                        {(parseFloat(qtyInspection) || 0) > 0 ? (
+                          <span className="badge badge-us" style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontSize: '0.68rem' }}>✓ Filled</span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>Optional</span>
+                        )}
+                      </td>
+                    </tr>
+
+                    {/* Stage 3: Lamination Pass 1 */}
+                    <tr>
+                      <td style={{ fontWeight: '700' }}>Stage 3: Lamination L1</td>
+                      <td style={{ fontWeight: '700', color: (parseFloat(qtyLaminationL1) || 0) > 0 ? '#0f172a' : '#c2410c' }}>
+                        {qtyLaminationL1 || 0} kg
+                      </td>
+                      <td>Adhesive: <strong>{adhesiveConsumedL1Kg || 0} kg</strong></td>
+                      <td>
+                        {((parseFloat(laminationPlainSubstrateWastageKg) || 0) + (parseFloat(printedWastageKg) || 0)).toFixed(1)} kg
+                      </td>
+                      <td>
+                        {(parseFloat(qtyLaminationL1) || 0) > 0 ? (
+                          <span className="badge badge-us" style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontSize: '0.68rem' }}>✓ Filled</span>
+                        ) : (
+                          <span className="badge badge-warning" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontSize: '0.68rem' }}>⚠️ 0 kg</span>
+                        )}
+                      </td>
+                    </tr>
+
+                    {/* Stage 4: Lamination Pass 2 */}
+                    <tr>
+                      <td style={{ fontWeight: '700' }}>Stage 4: Lamination L2</td>
+                      <td style={{ fontWeight: '700' }}>{qtySecondPassL2 || 0} kg</td>
+                      <td>Adhesive L2: <strong>{adhesiveConsumedL2Kg || 0} kg</strong></td>
+                      <td>{(parseFloat(laminationPlainSubstrateWastageL2Kg) || 0).toFixed(1)} kg</td>
+                      <td>
+                        {(parseFloat(qtySecondPassL2) || 0) > 0 ? (
+                          <span className="badge badge-us" style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontSize: '0.68rem' }}>✓ Filled</span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>0 kg / Optional</span>
+                        )}
+                      </td>
+                    </tr>
+
+                    {/* Stage 5: Slitting */}
+                    <tr>
+                      <td style={{ fontWeight: '700' }}>Stage 5: Slitting</td>
+                      <td style={{ fontWeight: '700', color: (parseFloat(qtySlitting) || 0) > 0 ? '#0f172a' : '#c2410c' }}>
+                        {qtySlitting || 0} kg
+                      </td>
+                      <td>Paper Core: <strong>{paperCoreConsumedKg || 0} kg</strong></td>
+                      <td>
+                        {((parseFloat(laminateWastageKg) || 0) + (parseFloat(trimWastageKg) || 0)).toFixed(1)} kg
+                      </td>
+                      <td>
+                        {(parseFloat(qtySlitting) || 0) > 0 ? (
+                          <span className="badge badge-us" style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontSize: '0.68rem' }}>✓ Filled</span>
+                        ) : (
+                          <span className="badge badge-warning" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontSize: '0.68rem' }}>⚠️ 0 kg</span>
+                        )}
+                      </td>
+                    </tr>
+
+                    {/* Stage 6: Pouching */}
+                    <tr>
+                      <td style={{ fontWeight: '700' }}>Stage 6: Pouching</td>
+                      <td style={{ fontWeight: '700' }}>{qtyPouching || 0} kg/pcs</td>
+                      <td>Zipper: <strong>{zipperConsumedKg || 0} kg</strong></td>
+                      <td>{(parseFloat(pouchingScrapKg) || 0).toFixed(1)} kg</td>
+                      <td>
+                        {(parseFloat(qtyPouching) || 0) > 0 ? (
+                          <span className="badge badge-us" style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontSize: '0.68rem' }}>✓ Filled</span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>Roll Form / 0 kg</span>
+                        )}
+                      </td>
+                    </tr>
+
+                    {/* Stage 7: Final Dispatch Ready */}
+                    <tr style={{ background: '#f8fafc', fontWeight: 'bold' }}>
+                      <td style={{ fontWeight: '800', color: '#0369a1' }}>Stage 7: Final Dispatch Ready</td>
+                      <td style={{ fontWeight: '900', fontSize: '0.9rem', color: (parseFloat(qtyDispatch) || 0) > 0 ? '#059669' : '#dc2626' }}>
+                        {qtyDispatch || 0} kg
+                      </td>
+                      <td style={{ color: 'var(--text-muted)' }}>Final Packaging</td>
+                      <td style={{ fontWeight: '800', color: '#b45309' }}>
+                        Total Scrap: {totalScrapQtyKg.toFixed(1)} kg ({overallScrapPctOfDispatch}%)
+                      </td>
+                      <td>
+                        {(parseFloat(qtyDispatch) || 0) > 0 ? (
+                          <span className="badge badge-us" style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontSize: '0.68rem' }}>✓ READY</span>
+                        ) : (
+                          <span className="badge badge-danger" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', fontSize: '0.68rem' }}>🚨 UNENTERED (0 kg)</span>
+                        )}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             {/* Itemized Material Usage & Spec Variation Preview */}
             <div style={{ marginBottom: '20px' }}>
               <h4 style={{ fontSize: '0.85rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                📦 Consumed Materials & Spec Variations ({calculatedMaterials.length} Lines)
+                📦 Consumed Ingredients & Substrates ({calculatedMaterials.length} Lines)
               </h4>
-              <div style={{ maxHeight: '170px', overflowY: 'auto', border: '1px solid #cbd5e1', borderRadius: '8px' }}>
-                <table className="data-table" style={{ fontSize: '0.78rem' }}>
+              <div style={{ maxHeight: '160px', overflowY: 'auto', border: '1px solid #cbd5e1', borderRadius: '8px' }}>
+                <table className="data-table" style={{ fontSize: '0.78rem', margin: 0 }}>
                   <thead>
                     <tr style={{ background: '#f1f5f9' }}>
-                      <th>Material</th>
+                      <th>Substrate / Film Type</th>
                       <th>Spec Variation vs Job Master</th>
                       <th>Issued</th>
                       <th>Returned</th>
                       <th>Net Consumed</th>
-                      <th>Total Cost</th>
+                      <th>Unit Rate</th>
+                      <th>Total Material Cost</th>
                     </tr>
                   </thead>
                   <tbody>
                     {calculatedMaterials.map((m, idx) => (
                       <tr key={idx}>
-                        <td style={{ fontWeight: '600' }}>{m.filmType}</td>
+                        <td style={{ fontWeight: '600' }}>
+                          {m.filmType}
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{m.itemName}</div>
+                        </td>
                         <td>
                           {m.hasVariation ? (
                             <span className="badge badge-warning" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontSize: '0.68rem' }}>
@@ -3097,7 +3384,11 @@ export default function ProductionRecordManagement({
                         <td style={{ color: (parseFloat(m.returnQtyKg) || 0) > 0 ? '#047857' : 'inherit', fontWeight: '600' }}>
                           {m.returnQtyKg || 0} kg
                         </td>
-                        <td style={{ fontWeight: '700' }}>{m.netConsumedQtyKg} kg</td>
+                        <td style={{ fontWeight: '700', color: m.netConsumedQtyKg > 0 ? '#0f172a' : '#c2410c' }}>
+                          {m.netConsumedQtyKg} kg
+                          {m.netConsumedQtyKg === 0 && <span style={{ fontSize: '0.65rem', color: '#c2410c', display: 'block' }}>⚠️ Unconsumed</span>}
+                        </td>
+                        <td>₹ {(parseFloat(m.unitPricePerKg) || 0).toLocaleString()}/kg</td>
                         <td style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>₹ {(m.totalMaterialCost ?? 0).toLocaleString()}</td>
                       </tr>
                     ))}
@@ -3106,37 +3397,45 @@ export default function ProductionRecordManagement({
               </div>
             </div>
 
-            {/* Costing & Scrap Summary Box */}
+            {/* Costing & Financial Summary Box */}
             <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '16px 20px', borderRadius: '10px', marginBottom: '24px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', fontSize: '0.85rem', marginBottom: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', fontSize: '0.85rem', marginBottom: '12px' }}>
                 <div>Dispatch Ready Produced Qty: <strong>{(totalNetQtyKg ?? 0).toLocaleString()} kg</strong></div>
-                <div>Total Ingredients Cost (Sum from table above): <strong>₹ {totalMaterialCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
-                <div>Processing Cost (₹ {processingCostPerKg}/kg): <strong>₹ {totalProcessingCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
+                <div>Total Ingredients Cost: <strong>₹ {totalMaterialCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
+                <div>Processing Rate: <strong>₹ {processingCostPerKg}/kg</strong></div>
+                <div>Total Processing Cost: <strong>₹ {totalProcessingCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
                 <div>Total Scrap Generated: <strong style={{ color: '#b45309' }}>{totalScrapQtyKg.toFixed(1)} kg ({overallScrapPctOfDispatch}% of dispatch)</strong></div>
               </div>
 
               <div style={{ borderTop: '1px solid #6ee7b7', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontWeight: '800', color: '#065f46', fontSize: '0.9rem' }}>TOTAL COST OF PRODUCTION:</span>
-                <span style={{ fontSize: '1.5rem', fontWeight: '900', color: '#047857' }}>
+                <span style={{ fontWeight: '800', color: '#065f46', fontSize: '0.95rem' }}>TOTAL COST OF PRODUCTION:</span>
+                <span style={{ fontSize: '1.6rem', fontWeight: '900', color: '#047857' }}>
                   ₹ {finalProductionCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </span>
               </div>
             </div>
 
             {/* Modal Actions */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-              <button type="button" className="btn-secondary" style={{ padding: '8px 16px' }} onClick={() => setIsConfirmModalOpen(false)}>
-                ← Review & Edit
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+              <button 
+                type="button" 
+                className="btn-secondary" 
+                style={{ padding: '10px 18px', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '6px' }} 
+                onClick={() => setIsConfirmModalOpen(false)}
+              >
+                ← Go Back & Add / Edit Values
               </button>
+
               <button 
                 type="button" 
                 className="btn-primary" 
-                style={{ background: '#059669', borderColor: '#059669', padding: '8px 20px', fontSize: '0.88rem' }}
+                style={{ background: '#059669', borderColor: '#059669', padding: '10px 24px', fontSize: '0.9rem' }}
                 onClick={handleFinalSubmitRecord}
               >
-                <CheckCircle2 size={16} /> Confirm & Submit to Admin
+                <CheckCircle2 size={18} /> Confirm & Submit for Admin Approval
               </button>
             </div>
+
           </div>
         </div>
       )}
