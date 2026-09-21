@@ -388,11 +388,13 @@ export function sanitizeInventoryItem(rawItem) {
     category === 'Machine Spare Parts' ? 'Nos' : 'Kg'
   );
 
+  const resolvedUnit = rawItem.unit || rawItem.unit_of_measure || extractedMeta.unit || fallbackUnit;
+
   const cleanItemName = rawName || (isFilm && filmType ? `${filmType} ${micron}µ (${widthMm}mm)` : `${category} Stock Item`);
 
   return {
-    ...rawItem,
     ...extractedMeta,
+    ...rawItem,
     id: String(rawItem.id || rawItem.item_code || 'INVT-0001'),
     itemCode: rawItem.itemCode || rawItem.item_code || String(rawItem.id),
     itemName: cleanItemName,
@@ -400,7 +402,7 @@ export function sanitizeInventoryItem(rawItem) {
     filmType: isFilm ? filmType : '',
     micron: micron,
     widthMm: widthMm,
-    unit: rawItem.unit || extractedMeta.unit || fallbackUnit,
+    unit: resolvedUnit,
     availableQtyKg: Number(rawItem.availableQtyKg ?? rawItem.stock_qty_kg ?? extractedMeta.availableQtyKg ?? 0) || 0,
     allocatedQtyKg: Number(rawItem.allocatedQtyKg ?? extractedMeta.allocatedQtyKg ?? 0) || 0,
     reorderLevelKg: Number(rawItem.reorderLevelKg ?? extractedMeta.reorderLevelKg ?? 100) || 100,
@@ -408,13 +410,13 @@ export function sanitizeInventoryItem(rawItem) {
     location: rawItem.location || extractedMeta.location || 'Store Bay',
     lastVendor: rawItem.lastVendor || extractedMeta.lastVendor || '',
     lastBatch: rawItem.lastBatch || extractedMeta.lastBatch || '',
-    density: extractedMeta.density !== undefined ? extractedMeta.density : (rawItem.density || (isFilm ? 1.4 : 1.0)),
+    density: rawItem.density !== undefined ? rawItem.density : (extractedMeta.density !== undefined ? extractedMeta.density : (isFilm ? 1.4 : 1.0)),
     substrateOrGrade: rawItem.substrateOrGrade || rawItem.substrate_grade || extractedMeta.substrateOrGrade || (isFilm ? filmType : (rawItem.grade || rawItem.subType || '')),
     grade: rawItem.grade || extractedMeta.grade || (isFilm ? filmType : ''),
     subType: rawItem.subType || extractedMeta.subType || '',
     shade: rawItem.shade || extractedMeta.shade || '',
     dimensions: rawItem.dimensions || extractedMeta.dimensions || '',
-    lastUpdated: extractedMeta.lastUpdated || rawItem.lastUpdated || new Date().toISOString()
+    lastUpdated: rawItem.lastUpdated || extractedMeta.lastUpdated || new Date().toISOString()
   };
 }
 

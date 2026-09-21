@@ -1270,7 +1270,8 @@ export default function InventoryManagement({
       category === 'Safety Gear (PPE)' ? 'Boxes' : 
       category === 'Machine Spare Parts' ? 'Nos' : 'Kg'
     );
-    setEditUnit(item.unit || fallbackUnit);
+    const normalizedUom = item.unit ? (item.unit === 'Boxes / Cartons' ? 'Boxes' : item.unit) : fallbackUnit;
+    setEditUnit(normalizedUom);
     
     // Pre-fill Film / Sub-type attributes
     setEditFilmType(item.filmType && FILM_DENSITIES[item.filmType] ? item.filmType : (subOrGrade && FILM_DENSITIES[subOrGrade] ? subOrGrade : 'PET'));
@@ -1780,13 +1781,9 @@ export default function InventoryManagement({
     };
 
     const resolveUOM = (item, roll, grn) => {
-      const cat = (item?.category || roll?.category || grn?.category || '').toLowerCase();
-      const explicit = roll?.unit || item?.unit || grn?.unit;
-      if (explicit && explicit !== 'Pcs') return explicit;
-      if (cat.includes('film') || cat.includes('chemical') || cat.includes('solvent') || cat.includes('ink') || cat.includes('adhesive') || cat.includes('resin') || (roll?.barcodeId || '').startsWith('RM-BC') || (roll?.barcodeId || '').startsWith('CON-BC')) {
-        return (explicit === 'Ltr' || explicit === 'Kg') ? explicit : 'Kg';
-      }
-      return explicit || 'Kg';
+      const explicit = item?.unit || roll?.unit || grn?.unit;
+      if (explicit && explicit.trim()) return explicit;
+      return 'Kg';
     };
 
     let targetItem = null;
