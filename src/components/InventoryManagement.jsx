@@ -42,7 +42,9 @@ import BarcodePrinterModal from './BarcodePrinterModal';
 import DispatchPackingListPDF from './DispatchPackingListPDF';
 import TablePagination, { usePagination } from './TablePagination';
 import SFGFGEntryModal, { SFG_TYPES, FG_TYPES } from './SFGFGEntryModal';
-import { getNextDocRefNumber, generateDocRefNumber } from '../services/settingsService';
+import { getNextDocRefNumber, generateDocRefNumber, getInventoryAgeingSettings } from '../services/settingsService';
+import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo, sortBatchesByFifo } from '../utils/fifoUtils';
+
 import { sanitizeInventoryItem, sanitizeGRN } from '../services/supabaseDataService';
 import { 
   isReconciliationDue, 
@@ -173,9 +175,22 @@ export default function InventoryManagement({
   const [isSfgFgModalOpen, setIsSfgFgModalOpen] = useState(false);
   const [sfgFgModalMode, setSfgFgModalMode] = useState('SFG'); // 'SFG' | 'FG'
 
-  // Sanitize all inventory and GRN records to guarantee zero envelope leakage into UI
-  const safeInventory = useMemo(() => (inventory || []).map(sanitizeInventoryItem), [inventory]);
+  // Inventory Ageing Settings Configuration & FIFO Metrics
+  const ageingSettings = useMemo(() => getInventoryAgeingSettings(), []);
+
+  // Sanitize all inventory and GRN records, applying FIFO sorting (oldest inventory first)
+  const safeInventory = useMemo(() => {
+    const sanitized = (inventory || []).map(sanitizeInventoryItem);
+    return sortInventoryByFifo(sanitized);
+  }, [inventory]);
+
   const safeGrns = useMemo(() => (grns || []).map(sanitizeGRN), [grns]);
+
+  // Calculate items exceeding category ageing limits
+  const overAgedItemsCount = useMemo(() => {
+    return safeInventory.filter(item => isItemOverAged(item, ageingSettings)).length;
+  }, [safeInventory, ageingSettings]);
+
 
   // Auto-set tab and select item if urlParams is provided
   useEffect(() => {
@@ -754,8 +769,14 @@ export default function InventoryManagement({
       });
     }
 
-    return batches;
+    // Sort batches strictly by FIFO (oldest inward date first) and append FIFO badges
+    const sorted = sortBatchesByFifo(batches);
+    return sorted.map((b, idx) => ({
+      ...b,
+      label: idx === 0 ? `🌟 [FIFO CONSUME FIRST] ${b.label}` : b.label
+    }));
   }, [selectedInvItem, safeGrns, inventoryRolls]);
+
 
   // Ledger Modal Pagination State
   const [ledgerCurrentPage, setLedgerCurrentPage] = useState(1);
@@ -2698,13 +2719,18 @@ export default function InventoryManagement({
   });
 
   const filteredInventory = (safeInventory || []).filter(i => {
-    // 1. Category Filter
+    // 1. Category / Over-Aged Filter
     if (stockCategoryFilter && stockCategoryFilter !== 'ALL') {
-      const itemCat = i.category || 'Film Substrates';
-      if (itemCat !== stockCategoryFilter) {
-        return false;
+      if (stockCategoryFilter === 'OVERAGED') {
+        if (!isItemOverAged(i, ageingSettings)) return false;
+      } else {
+        const itemCat = i.category || 'Film Substrates';
+        if (itemCat !== stockCategoryFilter) {
+          return false;
+        }
       }
     }
+
 
     // 2. Search Text Filter
     if (!searchTerm || !searchTerm.trim()) return true;
@@ -3398,6 +3424,46 @@ export default function InventoryManagement({
       {/* TAB 1: STOCK REGISTER */}
       {activeTab === 'stock' && (
         <div className="glass-panel" style={{ padding: '24px' }}>
+          {/* Over-Aged Inventory Warning Banner */}
+          {overAgedItemsCount > 0 && (
+            <div style={{
+              background: 'linear-gradient(135deg, #fff5f5 0%, #fef2f2 100%)',
+              border: '1px solid #fecaca',
+              borderLeft: '4px solid #dc2626',
+              borderRadius: '10px',
+              padding: '14px 18px',
+              marginBottom: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '12px',
+              boxShadow: '0 2px 6px -2px rgba(220, 38, 38, 0.08)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ background: '#fee2e2', color: '#dc2626', padding: '10px', borderRadius: '10px' }}>
+                  <Clock size={22} />
+                </div>
+                <div>
+                  <h4 style={{ fontSize: '0.95rem', fontWeight: '800', color: '#991b1b', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    ⚠️ Inventory Ageing Warning Alert ({overAgedItemsCount} Item{overAgedItemsCount === 1 ? '' : 's'} Over-Aged)
+                  </h4>
+                  <p style={{ fontSize: '0.82rem', color: '#7f1d1d', margin: '2px 0 0' }}>
+                    {overAgedItemsCount} stock item(s) have exceeded their category-wise maximum storage age limit. All older stock must be issued and consumed first per FIFO policy.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ background: '#dc2626', color: '#ffffff', border: 'none', fontWeight: '800', fontSize: '0.78rem', padding: '6px 14px', borderRadius: '6px', cursor: 'pointer' }}
+                onClick={() => setStockCategoryFilter(prev => prev === 'OVERAGED' ? 'ALL' : 'OVERAGED')}
+              >
+                {stockCategoryFilter === 'OVERAGED' ? 'Show All Stock Items' : `⚠️ Filter ${overAgedItemsCount} Over-Aged Item(s)`}
+              </button>
+            </div>
+          )}
+
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '16px' }}>
             <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
               <div style={{ position: 'relative', width: '280px' }}>
@@ -3422,6 +3488,11 @@ export default function InventoryManagement({
                   onChange={e => setStockCategoryFilter(e.target.value)}
                 >
                   <option value="ALL">🌐 All Inventory Item Categories</option>
+                  {overAgedItemsCount > 0 && (
+                    <option value="OVERAGED" style={{ color: '#dc2626', fontWeight: '800' }}>
+                      ⚠️ Over-Aged Stock Items ({overAgedItemsCount})
+                    </option>
+                  )}
                   <option value="Film Substrates">Film Substrates (PET, LDPE, BOPP)</option>
                   <option value="Printing Inks">Printing Inks</option>
                   <option value="Chemicals & Solvents">Chemicals & Solvents</option>
@@ -3435,6 +3506,7 @@ export default function InventoryManagement({
                 </select>
               </div>
             </div>
+
 
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
               <button 
@@ -3518,6 +3590,10 @@ export default function InventoryManagement({
                   const itemValuation = availQty * rate;
                   const subGrade = item.substrateOrGrade || item.substrateGrade || item.filmType || item.grade || item.subType || '-';
 
+                  const ageInDays = getItemAgeInDays(item);
+                  const isOverAged = isItemOverAged(item, ageingSettings);
+                  const catThreshold = getCategoryAgeingThreshold(item.category, ageingSettings);
+
                   // Pending QC matching for this item
                   const pendingGRNs = (safeGrns || []).filter(g => 
                     (g.status === 'Pending QC' || g.status === 'Pending') && 
@@ -3529,7 +3605,7 @@ export default function InventoryManagement({
                   const pendingQcQty = pendingGRNs.reduce((sum, g) => sum + (Number(g.netWeightKg) || 0), 0);
 
                   return (
-                    <tr key={item.id}>
+                    <tr key={item.id} style={{ background: isOverAged ? '#fff5f5' : 'transparent' }}>
                       <td style={{ fontWeight: '700', color: 'var(--accent-color)' }}>{item.id}</td>
                       <td>
                         <button 
@@ -3629,7 +3705,23 @@ export default function InventoryManagement({
                             )}
                           </div>
                         )}
+
+                        {/* Ageing & FIFO Badge */}
+                        {isOverAged ? (
+                          <div style={{ marginTop: '4px' }}>
+                            <span className="badge" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', fontSize: '0.68rem', fontWeight: '800', padding: '2px 6px', display: 'inline-block' }}>
+                              ⚠️ OVER-AGED ({ageInDays}d &gt; {catThreshold}d)
+                            </span>
+                          </div>
+                        ) : (
+                          <div style={{ marginTop: '4px' }}>
+                            <span className="badge" style={{ background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', fontSize: '0.68rem', fontWeight: '700', padding: '2px 6px', display: 'inline-block' }}>
+                              📜 FIFO Stock ({ageInDays}d)
+                            </span>
+                          </div>
+                        )}
                       </td>
+
                       <td>
                         <div style={{ display: 'flex', gap: '6px' }}>
                           <button 

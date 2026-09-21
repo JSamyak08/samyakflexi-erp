@@ -28,6 +28,8 @@ import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import SFGFGEntryModal from './SFGFGEntryModal';
 import TablePagination, { usePagination } from './TablePagination';
+import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo } from '../utils/fifoUtils';
+import { getInventoryAgeingSettings } from '../services/settingsService';
 
 export default function SFGStoreManagement({
   sfgGoods = [],
@@ -44,6 +46,9 @@ export default function SFGStoreManagement({
   const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'In Stock (WIP)', 'Partially Consumed', 'Fully Consumed'
   const [typeFilter, setTypeFilter] = useState('all');
 
+  // Inventory Ageing Settings Configuration
+  const ageingSettings = useMemo(() => getInventoryAgeingSettings(), []);
+
   // Modals
   const [newGoodModalMode, setNewGoodModalMode] = useState(null); // 'SFG' | 'FG' | null
   const [selectedItemForConsume, setSelectedItemForConsume] = useState(null);
@@ -59,11 +64,12 @@ export default function SFGStoreManagement({
   const [notes, setNotes] = useState('');
   const [formError, setFormError] = useState('');
 
-  // Combined & Prepared SFG items (merging sfgGoods with any SFG-designated inventory items if needed)
+  // Combined & Prepared SFG items with FIFO Sorting (oldest first)
   const allSfgItems = useMemo(() => {
     const list = Array.isArray(sfgGoods) ? [...sfgGoods] : [];
-    return list;
+    return sortInventoryByFifo(list);
   }, [sfgGoods]);
+
 
   // Filtered Items
   const filteredItems = useMemo(() => {
@@ -641,7 +647,29 @@ export default function SFGStoreManagement({
                         }}>
                           {item.status || 'In Stock (WIP)'}
                         </span>
+
+                        {(() => {
+                          const catName = isFgType ? "Finished Goods (FG)" : "Semi-Finished Goods (SFG)";
+                          const ageInDays = getItemAgeInDays(item);
+                          const threshold = getCategoryAgeingThreshold(catName, ageingSettings);
+                          const isOverAged = ageInDays > threshold;
+
+                          return isOverAged ? (
+                            <div style={{ marginTop: '4px' }}>
+                              <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', fontSize: '0.68rem', fontWeight: '800', padding: '2px 6px', borderRadius: '4px', display: 'inline-block' }}>
+                                ⚠️ OVER-AGED ({ageInDays}d &gt; {threshold}d)
+                              </span>
+                            </div>
+                          ) : (
+                            <div style={{ marginTop: '4px' }}>
+                              <span style={{ background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', fontSize: '0.68rem', fontWeight: '700', padding: '2px 6px', borderRadius: '4px', display: 'inline-block' }}>
+                                📜 FIFO ({ageInDays}d)
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </td>
+
 
                       {/* Actions */}
                       <td style={{ padding: '14px 16px', textAlign: 'center' }}>

@@ -32,8 +32,10 @@ import {
 } from 'lucide-react';
 import TablePagination, { usePagination } from './TablePagination';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
-import { generateDocRefNumber, getNextDocRefNumber } from '../services/settingsService';
+import { generateDocRefNumber, getNextDocRefNumber, getInventoryAgeingSettings } from '../services/settingsService';
+import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo } from '../utils/fifoUtils';
 import { notifyPurchaseOrderIssued } from '../services/emailService';
+
 
 export default function InkManagement({
   urlParams = {},
@@ -826,9 +828,9 @@ export default function InkManagement({
     });
   }, [inks, inventory, grns, storeIssueTransactions]);
 
-  // Filtering Ink Directory
+  // Filtering & FIFO Sorting Ink Directory (Oldest stock first)
   const filteredInks = useMemo(() => {
-    return (enrichedInks || []).filter(i => {
+    const list = (enrichedInks || []).filter(i => {
       const matchSearch = (i.productCode || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                           (i.shade || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                           (i.manufacturer || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -843,7 +845,9 @@ export default function InkManagement({
 
       return matchSearch && matchType && matchSupplier && matchStock;
     });
+    return sortInventoryByFifo(list);
   }, [enrichedInks, searchTerm, filterType, filterSupplier, filterStockStatus]);
+
 
   const pagination = usePagination(filteredInks, 10);
 

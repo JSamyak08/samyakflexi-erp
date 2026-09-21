@@ -55,13 +55,16 @@ import {
   saveEmailTemplates,
   resetEmailTemplates,
   DEFAULT_EMAIL_TEMPLATES,
-  interpolateTemplate
+  interpolateTemplate,
+  getInventoryAgeingSettings,
+  saveInventoryAgeingSettings,
+  DEFAULT_AGEING_SETTINGS
 } from '../services/settingsService';
 import { sendERPEmailNotification, buildEmailTemplate } from '../services/emailService';
 
 export default function DocumentSettings({ machines = [], onSaveMachine, onUpdateMachine, onDeleteMachine }) {
   // Navigation Sub-tab State
-  const [activeTab, setActiveTab] = useState('general'); // 'general', 'email_config', 'email_templates'
+  const [activeTab, setActiveTab] = useState('general'); // 'general', 'inventory_ageing', 'email_config', 'email_templates'
 
   // General Settings State
   const [logoImage, setLogoImage] = useState(() => getCompanyLogo());
@@ -70,6 +73,10 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
   const [termsState, setTermsState] = useState(() => getDocumentTerms());
   const [ratesState, setRatesState] = useState(() => getProcessingRates());
   const [coaSignatoriesState, setCoaSignatoriesState] = useState(() => getCoaSignatories());
+
+  // Inventory Ageing Settings State
+  const [ageingSettings, setAgeingSettings] = useState(() => getInventoryAgeingSettings());
+
 
   // Email Gateway & Routing State
   const [emailSettings, setEmailSettings] = useState(() => getEmailSettings());
@@ -220,6 +227,28 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     saveDocumentTerms({ ...DEFAULT_DOCUMENT_TERMS });
     triggerSaveNotification();
   };
+
+  // Inventory Ageing Handlers
+  const handleAgeingCategoryChange = (category, value) => {
+    const num = Math.max(1, parseInt(value, 10) || 0);
+    setAgeingSettings(prev => ({
+      ...prev,
+      [category]: num
+    }));
+  };
+
+  const handleSaveAgeingSettings = (e) => {
+    if (e) e.preventDefault();
+    saveInventoryAgeingSettings(ageingSettings);
+    triggerSaveNotification();
+  };
+
+  const handleResetAgeingSettings = () => {
+    setAgeingSettings({ ...DEFAULT_AGEING_SETTINGS });
+    saveInventoryAgeingSettings({ ...DEFAULT_AGEING_SETTINGS });
+    triggerSaveNotification();
+  };
+
 
   const openAddMachineModal = () => {
     setEditingMachine({ isNew: true, id: `MAC-2026-${Date.now()}` });
@@ -489,6 +518,14 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
               </button>
               <button
                 type="button"
+                className={`tab-button ${activeTab === 'inventory_ageing' ? 'active' : ''}`}
+                style={{ padding: '6px 14px', fontSize: '0.82rem', fontWeight: '700', borderRadius: '6px', cursor: 'pointer', border: 'none', background: activeTab === 'inventory_ageing' ? '#ffffff' : 'transparent', color: activeTab === 'inventory_ageing' ? '#0f172a' : '#64748b', boxShadow: activeTab === 'inventory_ageing' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}
+                onClick={() => setActiveTab('inventory_ageing')}
+              >
+                ⏳ Inventory Ageing & FIFO
+              </button>
+              <button
+                type="button"
                 className={`tab-button ${activeTab === 'email_config' ? 'active' : ''}`}
                 style={{ padding: '6px 14px', fontSize: '0.82rem', fontWeight: '700', borderRadius: '6px', cursor: 'pointer', border: 'none', background: activeTab === 'email_config' ? '#ffffff' : 'transparent', color: activeTab === 'email_config' ? '#0f172a' : '#64748b', boxShadow: activeTab === 'email_config' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}
                 onClick={() => setActiveTab('email_config')}
@@ -503,6 +540,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
               >
                 ✉️ Email Templates & Live Preview
               </button>
+
             </div>
           </div>
         </div>
@@ -817,6 +855,118 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
           </div>
         </>
       )}
+
+      {/* ========================================================================= */}
+      {/* TAB: INVENTORY AGEING ALERTS & FIFO CONSUMPTION SETTINGS */}
+      {/* ========================================================================= */}
+      {activeTab === 'inventory_ageing' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <form onSubmit={handleSaveAgeingSettings} className="glass-panel" style={{ padding: '28px' }}>
+            <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '16px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: '900', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Clock size={22} style={{ color: '#0284c7' }} /> Inventory Ageing Alert Thresholds & FIFO Rules
+                </h3>
+                <p style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '2px' }}>
+                  Set maximum storage days before an Ageing Alert is triggered for each inventory category. All older stock is prioritized for consumption first (FIFO).
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button type="button" className="btn-secondary" onClick={handleResetAgeingSettings} style={{ fontSize: '0.8rem' }}>
+                  <RefreshCw size={14} /> Reset Defaults
+                </button>
+                <button type="submit" className="btn-primary" style={{ fontSize: '0.85rem' }}>
+                  <Check size={16} /> Save Ageing Settings
+                </button>
+              </div>
+            </div>
+
+            {/* FIFO Enforcement Switch Banner */}
+            <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '12px', padding: '16px 20px', marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ background: '#e0f2fe', color: '#0284c7', padding: '10px', borderRadius: '10px' }}>
+                  <AlertTriangle size={20} />
+                </div>
+                <div>
+                  <h4 style={{ fontSize: '0.95rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                    Strict FIFO Consumption & Over-Aged Stock Warnings
+                  </h4>
+                  <p style={{ fontSize: '0.82rem', color: '#475569', margin: '2px 0 0' }}>
+                    When enabled, the ERP will warn store operators if attempting to issue a newer batch when older stock of the same item exists.
+                  </p>
+                </div>
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '0.85rem' }}>
+                <input
+                  type="checkbox"
+                  checked={!!ageingSettings.enforceFifoStrictly}
+                  onChange={e => setAgeingSettings(prev => ({ ...prev, enforceFifoStrictly: e.target.checked }))}
+                  style={{ width: '18px', height: '18px', accentColor: '#0284c7' }}
+                />
+                Enforce Strict FIFO Warning
+              </label>
+            </div>
+
+            {/* Category Threshold Grid */}
+            <h4 style={{ fontSize: '1rem', fontWeight: '800', color: '#0f172a', marginBottom: '16px' }}>
+              Category-wise Max Allowed Storage Days
+            </h4>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+              {[
+                { key: "Film Substrates", label: "Film Substrates (PET, BOPP, LDPE, MetPET)", icon: "🎞️" },
+                { key: "Semi-Finished Goods (SFG)", label: "Semi-Finished Goods (SFG Rolls)", icon: "🔄" },
+                { key: "Finished Goods (FG)", label: "Finished Goods (FG / Pouches / Rolls)", icon: "📦" },
+                { key: "Printing Inks", label: "Printing Inks (NC, Vinyl, PU Inks)", icon: "🎨" },
+                { key: "Chemicals & Solvents", label: "Chemicals & Solvents (Ethyl Acetate, Toluene)", icon: "🧪" },
+                { key: "Adhesives & Hardener", label: "Adhesives & Hardener", icon: "💧" },
+                { key: "Doctor Blades & Wipers", label: "Doctor Blades & Wipers", icon: "🔪" },
+                { key: "Rollers & Sleeves", label: "Rollers & Sleeves", icon: "🛞" },
+                { key: "Machine Spare Parts", label: "Machine Spare Parts", icon: "⚙️" },
+                { key: "Lubricants & Oils", label: "Lubricants & Oils", icon: "🛢️" },
+                { key: "Tapes & Consumables", label: "Tapes & Consumables", icon: "🏷️" },
+                { key: "Safety Gear (PPE)", label: "Safety Gear (PPE)", icon: "🥽" },
+                { key: "Packaging & Cores", label: "Packaging Materials & Paper Cores", icon: "📦" },
+                { key: "Rotogravure Cylinders", label: "Rotogravure Cylinders", icon: "🛢️" },
+                { key: "Other Raw Materials", label: "Other Raw Materials", icon: "🧱" },
+                { key: "defaultDays", label: "Default Fallback (Uncategorized Stock)", icon: "⏱️" }
+              ].map(cat => (
+                <div key={cat.key} style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', boxShadow: '0 1px 2px rgba(0,0,0,0.03)' }}>
+                  <div>
+                    <div style={{ fontSize: '0.85rem', fontWeight: '700', color: '#0f172a' }}>
+                      <span style={{ marginRight: '6px' }}>{cat.icon}</span> {cat.label}
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>
+                      Alert triggered after storage &gt; {ageingSettings[cat.key] !== undefined ? ageingSettings[cat.key] : 90} days
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <input
+                      type="number"
+                      min="1"
+                      max="1095"
+                      className="form-control"
+                      style={{ width: '80px', padding: '6px 10px', textAlign: 'center', fontWeight: '800', fontSize: '0.9rem' }}
+                      value={ageingSettings[cat.key] !== undefined ? ageingSettings[cat.key] : 90}
+                      onChange={e => handleAgeingCategoryChange(cat.key, e.target.value)}
+                    />
+                    <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: '600' }}>Days</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '20px' }}>
+              <button type="button" className="btn-secondary" onClick={handleResetAgeingSettings}>
+                Reset to Defaults
+              </button>
+              <button type="submit" className="btn-primary">
+                <Check size={16} /> Save All Ageing Settings
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
 
       {/* ========================================================================= */}
       {/* TAB 2: SMTP SERVER CONFIGURATION & DEPARTMENT ROUTING */}

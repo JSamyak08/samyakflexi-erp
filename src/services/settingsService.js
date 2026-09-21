@@ -8,14 +8,36 @@ const SIGNATURE_STORAGE_KEY = 'samyak_authorised_signature';
 const PREFIX_STORAGE_KEY = 'samyak_doc_prefixes';
 const TERMS_STORAGE_KEY = 'samyak_doc_terms';
 const COA_SIGNATORIES_STORAGE_KEY = 'samyak_coa_signatories';
+const AGEING_SETTINGS_STORAGE_KEY = 'samyak_inventory_ageing_settings';
 
 export const DEFAULT_COA_SIGNATORIES = {
   preparedByLabel: 'PREPARED BY / QUALITY CONTROL CHEMIST',
   approvedByLabel: 'APPROVED BY / QUALITY ASSURANCE HEAD'
 };
 
+export const DEFAULT_AGEING_SETTINGS = {
+  "Film Substrates": 90,
+  "Semi-Finished Goods (SFG)": 30,
+  "Finished Goods (FG)": 60,
+  "Printing Inks": 180,
+  "Chemicals & Solvents": 180,
+  "Adhesives & Hardener": 90,
+  "Doctor Blades & Wipers": 180,
+  "Rollers & Sleeves": 365,
+  "Machine Spare Parts": 365,
+  "Lubricants & Oils": 180,
+  "Tapes & Consumables": 180,
+  "Safety Gear (PPE)": 365,
+  "Packaging & Cores": 180,
+  "Other Raw Materials": 90,
+  "Rotogravure Cylinders": 365,
+  defaultDays: 90,
+  enforceFifoStrictly: true
+};
+
 import { compressImageDataUrl, safeLocalStorageSet } from '../utils/safeStorage';
 import { saveSystemSetting, saveEmailSettingsToSupabase, saveEmailTemplatesToSupabase } from './supabaseDataService';
+
 
 
 /**
@@ -357,6 +379,32 @@ export function saveProcessingRates(rates) {
     console.error("Failed to save processing rates", e);
   }
 }
+
+/**
+ * Get inventory ageing threshold configuration (days per category)
+ */
+export function getInventoryAgeingSettings() {
+  try {
+    const saved = localStorage.getItem(AGEING_SETTINGS_STORAGE_KEY);
+    if (!saved) return { ...DEFAULT_AGEING_SETTINGS };
+    return { ...DEFAULT_AGEING_SETTINGS, ...JSON.parse(saved) };
+  } catch (e) {
+    return { ...DEFAULT_AGEING_SETTINGS };
+  }
+}
+
+/**
+ * Save inventory ageing threshold configuration
+ */
+export function saveInventoryAgeingSettings(settings) {
+  try {
+    localStorage.setItem(AGEING_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    saveSystemSetting('inventory_ageing_settings', settings).catch(() => {});
+  } catch (e) {
+    console.error("Failed to save inventory ageing settings", e);
+  }
+}
+
 
 // ============================================================================
 // EMAIL CONFIGURATION & VISUAL TEMPLATE MANAGEMENT
