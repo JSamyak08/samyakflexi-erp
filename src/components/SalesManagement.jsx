@@ -184,11 +184,13 @@ export default function SalesManagement({
   orders = [],
   clients = [],
   jobMasters = [],
+  cylinders = [],
   currentUser,
   userRole = "Sales Manager",
   onAddOrder,
   onAddJobMaster,
-  onAddClient
+  onAddClient,
+  onAddCylinder
 }) {
   const isSalesAuthorized = useMemo(() => {
     if (!currentUser && !userRole) return true;
@@ -233,6 +235,11 @@ export default function SalesManagement({
 
   // PDF Preview State
   const [activeQuotationForPDF, setActiveQuotationForPDF] = useState(null);
+
+  // OCN Conversion Confirmation Modal State
+  const [ocnConvertModalQtn, setOcnConvertModalQtn] = useState(null);
+  const [ocnDocRefNo, setOcnDocRefNo] = useState('');
+  const [ocnConvertFormData, setOcnConvertFormData] = useState([]);
 
   // Form State for Create / Edit / Amend Quotation
   const [editingQuotationId, setEditingQuotationId] = useState(null);
@@ -626,211 +633,321 @@ export default function SalesManagement({
     await deleteSalesQuotationFromSupabase(id);
   };
 
-  // Convert Sales Quotation to Order Confirmation Note (OCN) & Job Master
-  const handleConvertToOCN = (qtn) => {
-    if (qtn.status.includes('Confirmed')) {
+  // Open Interactive Convert to OCN Confirmation & Job Punching Modal
+  const handleOpenOcnConvertModal = (qtn) => {
+    if (qtn.status && qtn.status.includes('Confirmed')) {
       alert(`Quotation ${qtn.quotationNo} is already converted to OCN ${qtn.ocnRefNo}!`);
       return;
     }
 
-    if (!window.confirm(`Are you sure you want to convert Sales Quotation "${qtn.quotationNo}" into an official Order Confirmation Note (OCN)?\n\nThis will automatically:\n1. Generate a new Order Confirmation Note (OCN)\n2. Link order to database across Order Management, Cylinders & Production.`)) {
-      return;
-    }
-
     const ocnNo = getNextDocRefNumber('ocn');
-    const mainItem = (qtn.items && qtn.items[0]) || {};
-    const isCylinderQuote = mainItem.materialFormat === 'Rotogravure Cylinder';
+    setOcnDocRefNo(ocnNo);
 
-    const orderId = `ORD-2026-${Math.floor(100 + Math.random() * 900)}`;
-    const printWidthMm = parseFloat(mainItem.printWidthMm) || 1000;
-    const repeatLengthMm = parseFloat(mainItem.repeatLengthMm) || 400;
-
-    let layers = [];
-    let materialRequirements = [];
-    let calcResults = null;
-    let orderType = 'Reel';
-    let structure = mainItem.description || mainItem.structure || 'Rotogravure Cylinder Set';
-
-    if (isCylinderQuote) {
-      orderType = 'Rotogravure Cylinder';
-      // For Rotogravure Cylinder quotes, NO film requirements exist!
-      layers = [];
-      materialRequirements = [];
-
-      // Auto-create / Sync Cylinder record in Cylinders database
-      const cylinderSku = mainItem.skuCode || `CYL-${qtn.clientName.substring(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
-      const engraverName = mainItem.engravuresName || qtn.engraverName || 'Jindal Engravers, Mathura';
-      const cylinderCost = mainItem.ratePerUom ? `₹ ${parseFloat(mainItem.ratePerUom).toLocaleString()}` : (qtn.cylinderTerms || '₹ 35,000');
+    // Build editable form data for each line item in quotation
+    const rawItems = (qtn.items && qtn.items.length > 0) ? qtn.items : [qtn];
+    const itemsData = rawItems.map((it, idx) => {
+      const isCylinder = it.materialFormat === 'Rotogravure Cylinder';
       
-      const newCyl = {
-        id: `CYL-REC-${Date.now()}`,
-        sku: cylinderSku,
-        jobName: mainItem.jobTitle || mainItem.description || 'Rotogravure Cylinder Set',
-        clientGroup: qtn.clientName,
-        colorsCount: parseInt(mainItem.colorsCount) || 8,
-        cylinderCost: cylinderCost,
-        engravuresName: engraverName,
-        costBorneBy: 'Client (100%)',
-        status: 'Under Engraving',
-        poIssued: false,
-        created_at: new Date().toISOString()
-      };
-
-      if (onAddCylinder) {
-        onAddCylinder(newCyl);
-      }
-    } else {
-      orderType = (mainItem.materialFormat || '').toLowerCase().includes('pouch') ? 'Pouching' : 'Reel';
-      layers = (mainItem.layers && mainItem.layers.length > 0)
-        ? mainItem.layers
-        : [
-            { id: 1, filmType: 'PET', micron: 12 },
-            { id: 2, filmType: 'Natural LD GP Film', micron: 40 }
+      let layersData = [];
+      if (it.layers && it.layers.length > 0) {
+        layersData = it.layers.map((l, lIdx) => ({
+          id: l.id || (lIdx + 1),
+          filmType: l.filmType || 'PET',
+          micron: parseFloat(l.micron) || 12,
+          ratePerKg: parseFloat(l.ratePerKg || l.rate || DEFAULT_DAILY_RATES[l.filmType] || 125)
+        }));
+      } else {
+        const str = (it.structure || getStructureString(it) || '').toLowerCase();
+        if (str.includes('metpet')) {
+          layersData = [
+            { id: 1, filmType: 'PET', micron: 12, ratePerKg: 125 },
+            { id: 2, filmType: 'METPET', micron: 12, ratePerKg: 140 },
+            { id: 3, filmType: 'Natural GP LD', micron: 70, ratePerKg: 115 }
           ];
+        } else if (str.includes('bopp')) {
+          layersData = [
+            { id: 1, filmType: 'BOPP Natural', micron: 20, ratePerKg: 130 },
+            { id: 2, filmType: 'Metalised BOPP', micron: 18, ratePerKg: 145 },
+            { id: 3, filmType: 'Natural GP LD', micron: 40, ratePerKg: 115 }
+          ];
+        } else {
+          layersData = [
+            { id: 1, filmType: 'PET', micron: 12, ratePerKg: 125 },
+            { id: 2, filmType: 'Natural GP LD', micron: 70, ratePerKg: 115 }
+          ];
+        }
+      }
 
-      structure = mainItem.structure || getStructureString(mainItem) || layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
-
-      // Run full material calculation engine for standard printed flexible packaging
-      calcResults = calculateJobRawMaterials({
-        printWidthMm,
-        repeatLengthMm,
-        orderQtyKg: parseFloat(mainItem.quantity) || 2000,
-        orderType,
+      return {
+        itemIndex: idx,
+        jobMasterId: it.jobMasterId || '',
+        jobTitle: it.jobTitle || it.description || qtn.jobName || 'Custom Packaging Job',
+        printWidthMm: parseFloat(it.printWidthMm) || 1000,
+        repeatLengthMm: parseFloat(it.repeatLengthMm) || 400,
+        quantityKg: parseFloat(it.quantity) || 1000,
+        ratePerUom: parseFloat(it.ratePerUom) || 250,
+        materialFormat: it.materialFormat || 'Roll Form',
+        targetDeliveryDate: qtn.estimatedDeliveryDate || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        structure: it.structure || getStructureString(it) || layersData.map(l => `${l.filmType} ${l.micron}µ`).join(' / '),
+        layers: layersData,
+        inkPrice: parseFloat(it.inkPrice) || 220,
+        adhesivePrice: parseFloat(it.adhesivePrice) || 240,
         inkGsm: 1.5,
         adhesiveGsm: 1.5,
-        layers,
-        filmPrices: DEFAULT_DAILY_RATES,
-        inkPrice: DEFAULT_PROCESSING_RATES.liquidInkPrice,
-        adhesivePrice: DEFAULT_PROCESSING_RATES.adhesivePrice
-      });
+        isCylinderOrder: isCylinder,
+        engraverName: it.engravuresName || qtn.engraverName || 'Jindal Engravers, Mathura',
+        colorsCount: parseInt(it.colorsCount) || 8,
+        cylinderCost: parseFloat(it.totalAmount) || (parseFloat(it.quantity) * parseFloat(it.ratePerUom)) || 35000
+      };
+    });
 
-      if (calcResults && calcResults.layerResults) {
-        calcResults.layerResults.forEach((layer, idx) => {
-          materialRequirements.push({
-            id: `REQ-${orderId}-${idx + 1}`,
-            filmType: layer.filmType,
-            micron: layer.micron,
-            widthMm: layer.widthMm,
-            qtyKg: parseFloat((layer.grossKg || 0).toFixed(2)),
-            preferredVendor: isLDFilm(layer.filmType) ? 'Malwa Extrusions Pvt Ltd' : 'FlexiPoly Films Ltd',
-            poIssued: false,
-            poNumber: ''
-          });
-        });
+    setOcnConvertFormData(itemsData);
+    setOcnConvertModalQtn(qtn);
+  };
 
-        if (calcResults.inkDetails && calcResults.inkDetails.grossKg > 0) {
-          materialRequirements.push({
-            id: `REQ-${orderId}-INK`,
-            filmType: 'Liquid Inks',
-            micron: '-',
-            widthMm: '-',
-            qtyKg: parseFloat(calcResults.inkDetails.grossKg.toFixed(2)),
-            preferredVendor: 'Siegwerk Inks Ltd',
-            poIssued: false,
-            poNumber: ''
-          });
-        }
-
-        if (calcResults.adhesiveDetails && calcResults.adhesiveDetails.grossKg > 0) {
-          materialRequirements.push({
-            id: `REQ-${orderId}-ADH`,
-            filmType: 'Solvent-less Adhesive',
-            micron: '-',
-            widthMm: '-',
-            qtyKg: parseFloat(calcResults.adhesiveDetails.grossKg.toFixed(2)),
-            preferredVendor: 'Siegwerk Inks Ltd',
-            poIssued: false,
-            poNumber: ''
-          });
-        }
+  const handleUpdateOcnItemField = (itemIdx, field, value) => {
+    setOcnConvertFormData(prev => prev.map((item, idx) => {
+      if (idx === itemIdx) {
+        return { ...item, [field]: value };
       }
-    }
+      return item;
+    }));
+  };
 
-    // 1. Locate existing Job Master or Create new Job Master if standard packaging job
-    let effectiveJobMaster = null;
-    if (!isCylinderQuote) {
-      const existingJM = (jobMasters || []).find(j => 
-        (mainItem.jobMasterId && j.id === mainItem.jobMasterId) ||
-        (j.jobName && mainItem.jobTitle && j.jobName.toLowerCase().trim() === mainItem.jobTitle.toLowerCase().trim())
-      );
+  const handleUpdateOcnLayerField = (itemIdx, layerIdx, field, value) => {
+    setOcnConvertFormData(prev => prev.map((item, idx) => {
+      if (idx === itemIdx) {
+        const updatedLayers = item.layers.map((l, lIdx) => {
+          if (lIdx === layerIdx) {
+            return { ...l, [field]: value };
+          }
+          return l;
+        });
+        const newStructure = updatedLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
+        return { ...item, layers: updatedLayers, structure: newStructure };
+      }
+      return item;
+    }));
+  };
 
-      effectiveJobMaster = existingJM;
-      if (!effectiveJobMaster) {
-        effectiveJobMaster = {
-          id: mainItem.jobMasterId || `JM-2026-${Math.floor(100 + Math.random() * 900)}`,
-          skuCode: mainItem.skuCode || `SKU-${qtn.clientName.substring(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`,
-          jobName: mainItem.jobTitle || 'Custom Flexible Packaging Job',
-          clientName: qtn.clientName,
-          structure,
-          printWidthMm,
-          repeatLengthMm,
-          pouchOpenWidth: 120,
-          pouchHeight: 160,
-          materialFormat: mainItem.materialFormat || 'Roll Form',
-          layers,
-          cylinderSku: `CYL-${qtn.clientName.substring(0, 3).toUpperCase()}-001`,
-          cylinderCost: qtn.cylinderTerms || '₹ 35,000',
-          colorsCount: 6,
-          engravuresName: 'Acme Rotogravure Engravers',
+  const handleAddOcnLayer = (itemIdx) => {
+    setOcnConvertFormData(prev => prev.map((item, idx) => {
+      if (idx === itemIdx) {
+        const newLayer = {
+          id: item.layers.length + 1,
+          filmType: 'Natural GP LD',
+          micron: 40,
+          ratePerKg: 115
+        };
+        const updatedLayers = [...item.layers, newLayer];
+        const newStructure = updatedLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
+        return { ...item, layers: updatedLayers, structure: newStructure };
+      }
+      return item;
+    }));
+  };
+
+  const handleRemoveOcnLayer = (itemIdx, layerIdx) => {
+    setOcnConvertFormData(prev => prev.map((item, idx) => {
+      if (idx === itemIdx) {
+        const updatedLayers = item.layers.filter((_, lIdx) => lIdx !== layerIdx);
+        const newStructure = updatedLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
+        return { ...item, layers: updatedLayers, structure: newStructure };
+      }
+      return item;
+    }));
+  };
+
+  const handleConfirmAndPunchOCN = () => {
+    if (!ocnConvertModalQtn || !ocnConvertFormData || ocnConvertFormData.length === 0) return;
+
+    const qtn = ocnConvertModalQtn;
+    const ocnNo = ocnDocRefNo || getNextDocRefNumber('ocn');
+
+    let createdOrderIds = [];
+
+    ocnConvertFormData.forEach((item, itemIdx) => {
+      const isCylinderQuote = item.isCylinderOrder || item.materialFormat === 'Rotogravure Cylinder';
+      const orderId = `ORD-2026-${Math.floor(100 + Math.random() * 900)}`;
+      createdOrderIds.push(orderId);
+
+      const printWidthMm = parseFloat(item.printWidthMm) || 1000;
+      const repeatLengthMm = parseFloat(item.repeatLengthMm) || 400;
+      const orderQtyKg = parseFloat(item.quantityKg) || 1000;
+      const sellingPricePerKg = parseFloat(item.ratePerUom) || 250;
+      const orderType = item.materialFormat.toLowerCase().includes('pouch') ? 'Pouching' : 'Reel';
+
+      let layers = item.layers || [];
+      let materialRequirements = [];
+      let calcResults = null;
+      let structure = item.structure || layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ') || 'Custom Flexible Packaging';
+
+      if (isCylinderQuote) {
+        const cylinderSku = `CYL-${qtn.clientName.substring(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
+        const engraverName = item.engraverName || 'Jindal Engravers, Mathura';
+        const cylinderCost = `₹ ${parseFloat(item.cylinderCost || 35000).toLocaleString()}`;
+
+        const newCyl = {
+          id: `CYL-REC-${Date.now()}-${itemIdx}`,
+          sku: cylinderSku,
+          jobName: item.jobTitle || 'Rotogravure Cylinder Set',
+          clientGroup: qtn.clientName,
+          colorsCount: parseInt(item.colorsCount) || 8,
+          cylinderCost: cylinderCost,
+          engravuresName: engraverName,
           costBorneBy: 'Client (100%)',
-          utilisationLimit: 10000,
-          creationDate: new Date().toISOString().split('T')[0]
+          status: 'Under Engraving',
+          poIssued: false,
+          created_at: new Date().toISOString()
         };
 
-        if (onAddJobMaster) {
-          onAddJobMaster(effectiveJobMaster);
+        if (onAddCylinder) {
+          onAddCylinder(newCyl);
+        }
+      } else {
+        // Run full material calculation engine with confirmed pre-costing rates
+        calcResults = calculateJobRawMaterials({
+          jobName: item.jobTitle,
+          printWidthMm,
+          repeatLengthMm,
+          orderQtyKg,
+          orderType,
+          inkGsm: parseFloat(item.inkGsm) || 1.5,
+          adhesiveGsm: parseFloat(item.adhesiveGsm) || 1.5,
+          layers: layers.map(l => ({
+            ...l,
+            pricePerKg: parseFloat(l.ratePerKg) || DEFAULT_DAILY_RATES[l.filmType] || 125
+          })),
+          inkPrice: parseFloat(item.inkPrice) || 220,
+          adhesivePrice: parseFloat(item.adhesivePrice) || 240
+        });
+
+        if (calcResults && calcResults.layerResults) {
+          calcResults.layerResults.forEach((layer, idx) => {
+            materialRequirements.push({
+              id: `REQ-${orderId}-${idx + 1}`,
+              filmType: layer.filmType,
+              micron: layer.micron,
+              widthMm: layer.widthMm,
+              qtyKg: parseFloat((layer.grossKg || 0).toFixed(2)),
+              preferredVendor: isLDFilm(layer.filmType) ? 'Malwa Extrusions Pvt Ltd' : 'FlexiPoly Films Ltd',
+              poIssued: false,
+              poNumber: ''
+            });
+          });
+
+          if (calcResults.inkDetails && calcResults.inkDetails.grossKg > 0) {
+            materialRequirements.push({
+              id: `REQ-${orderId}-INK`,
+              filmType: 'Liquid Inks',
+              micron: '-',
+              widthMm: '-',
+              qtyKg: parseFloat(calcResults.inkDetails.grossKg.toFixed(2)),
+              preferredVendor: 'Siegwerk Inks Ltd',
+              poIssued: false,
+              poNumber: ''
+            });
+          }
+
+          if (calcResults.adhesiveDetails && calcResults.adhesiveDetails.grossKg > 0) {
+            materialRequirements.push({
+              id: `REQ-${orderId}-ADH`,
+              filmType: 'Solvent-less Adhesive',
+              micron: '-',
+              widthMm: '-',
+              qtyKg: parseFloat(calcResults.adhesiveDetails.grossKg.toFixed(2)),
+              preferredVendor: 'Siegwerk Inks Ltd',
+              poIssued: false,
+              poNumber: ''
+            });
+          }
         }
       }
-    }
 
-    const orderQtyKg = parseFloat(mainItem.quantity) || 1;
+      // Auto-create / Link Job Master
+      let effectiveJobMaster = null;
+      if (!isCylinderQuote) {
+        const existingJM = (jobMasters || []).find(j => 
+          (item.jobMasterId && j.id === item.jobMasterId) ||
+          (j.jobName && item.jobTitle && j.jobName.toLowerCase().trim() === item.jobTitle.toLowerCase().trim())
+        );
 
-    // 2. Create Order in Order Management System with exact required fields
-    const newOrder = {
-      id: orderId,
-      ocnNumber: ocnNo,
-      jobMasterId: effectiveJobMaster ? effectiveJobMaster.id : null,
-      jobName: mainItem.jobTitle || (isCylinderQuote ? (mainItem.description || 'Rotogravure Cylinder Set') : (effectiveJobMaster?.jobName || 'Custom Job')),
-      clientName: qtn.clientName,
-      orderQtyKg,
-      quantityKg: orderQtyKg,
-      orderType: isCylinderQuote ? 'Rotogravure Cylinder' : orderType,
-      materialFormat: mainItem.materialFormat || 'Roll Form',
-      isCylinderOrder: isCylinderQuote,
-      sellingPricePerKg: parseFloat(mainItem.ratePerUom) || 250,
-      printWidthMm,
-      repeatLengthMm,
-      structure,
-      layers,
-      jobDetails: { layers, printWidthMm, repeatLengthMm, structure },
-      cylinderDetails: isCylinderQuote ? {
-        sku: mainItem.skuCode || `CYL-${qtn.clientName.substring(0, 3).toUpperCase()}-001`,
-        jobName: mainItem.jobTitle || mainItem.description || 'Rotogravure Cylinder Set',
-        description: mainItem.description || mainItem.structure || 'Rotogravure Cylinder Set',
-        quantity: orderQtyKg,
-        rate: parseFloat(mainItem.ratePerUom) || 0,
-        totalAmount: mainItem.totalAmount || (orderQtyKg * (parseFloat(mainItem.ratePerUom) || 0)),
-        engraverName: mainItem.engravuresName || qtn.engraverName || 'Jindal Engravers, Mathura',
-        colorsCount: parseInt(mainItem.colorsCount) || 8,
-        status: 'Under Engraving'
-      } : null,
-      engraverName: isCylinderQuote ? (mainItem.engravuresName || qtn.engraverName || 'Jindal Engravers, Mathura') : undefined,
-      orderDate: new Date().toISOString().split('T')[0],
-      targetDeliveryDate: qtn.estimatedDeliveryDate,
-      deliveryDate: qtn.estimatedDeliveryDate,
-      poNumber: `PO-QTN-${qtn.quotationNo}`,
-      poIssued: false,
-      status: isCylinderQuote ? 'Under Engraving' : 'Confirmed',
-      materialRequirements,
-      rawMaterialRequirements: materialRequirements,
-      calculationDetails: calcResults
-    };
+        effectiveJobMaster = existingJM;
+        if (!effectiveJobMaster) {
+          effectiveJobMaster = {
+            id: item.jobMasterId || `JM-2026-${Math.floor(100 + Math.random() * 900)}`,
+            skuCode: `SKU-${qtn.clientName.substring(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`,
+            jobName: item.jobTitle || 'Custom Flexible Packaging Job',
+            clientName: qtn.clientName,
+            structure,
+            printWidthMm,
+            repeatLengthMm,
+            pouchOpenWidth: 120,
+            pouchHeight: 160,
+            materialFormat: item.materialFormat || 'Roll Form',
+            layers,
+            cylinderSku: `CYL-${qtn.clientName.substring(0, 3).toUpperCase()}-001`,
+            cylinderCost: qtn.cylinderTerms || '₹ 35,000',
+            colorsCount: 6,
+            engravuresName: 'Acme Rotogravure Engravers',
+            costBorneBy: 'Client (100%)',
+            utilisationLimit: 10000,
+            creationDate: new Date().toISOString().split('T')[0]
+          };
 
-    if (onAddOrder) {
-      onAddOrder(newOrder);
-    }
+          if (onAddJobMaster) {
+            onAddJobMaster(effectiveJobMaster);
+          }
+        }
+      }
 
-    // 3. Update Quotation Status
+      // Create Order
+      const newOrder = {
+        id: orderId,
+        ocnNumber: ocnNo,
+        jobMasterId: effectiveJobMaster ? effectiveJobMaster.id : null,
+        jobName: item.jobTitle,
+        clientName: qtn.clientName,
+        orderQtyKg,
+        quantityKg: orderQtyKg,
+        orderType: isCylinderQuote ? 'Rotogravure Cylinder' : orderType,
+        materialFormat: item.materialFormat || 'Roll Form',
+        isCylinderOrder: isCylinderQuote,
+        sellingPricePerKg,
+        printWidthMm,
+        repeatLengthMm,
+        structure,
+        layers,
+        jobDetails: { layers, printWidthMm, repeatLengthMm, structure },
+        cylinderDetails: isCylinderQuote ? {
+          sku: `CYL-${qtn.clientName.substring(0, 3).toUpperCase()}-001`,
+          jobName: item.jobTitle,
+          description: item.jobTitle,
+          quantity: orderQtyKg,
+          rate: sellingPricePerKg,
+          totalAmount: item.cylinderCost || 35000,
+          engraverName: item.engraverName || 'Jindal Engravers, Mathura',
+          colorsCount: parseInt(item.colorsCount) || 8,
+          status: 'Under Engraving'
+        } : null,
+        engraverName: isCylinderQuote ? (item.engraverName || 'Jindal Engravers, Mathura') : undefined,
+        orderDate: new Date().toISOString().split('T')[0],
+        targetDeliveryDate: item.targetDeliveryDate || qtn.estimatedDeliveryDate,
+        deliveryDate: item.targetDeliveryDate || qtn.estimatedDeliveryDate,
+        poNumber: `PO-QTN-${qtn.quotationNo}`,
+        poIssued: false,
+        status: isCylinderQuote ? 'Under Engraving' : 'Confirmed',
+        materialRequirements,
+        rawMaterialRequirements: materialRequirements,
+        calculationDetails: calcResults
+      };
+
+      if (onAddOrder) {
+        onAddOrder(newOrder);
+      }
+    });
+
+    // Update Quotation Status
     let updatedTarget = null;
     const updatedQuotations = quotations.map(q => {
       if (q.id === qtn.id) {
@@ -850,12 +967,14 @@ export default function SalesManagement({
       localStorage.setItem('samyak_erp_sales_quotations', JSON.stringify(updatedQuotations));
     } catch (err) {}
 
-    // Live sync converted quotation status to Supabase
     if (updatedTarget) {
       saveSalesQuotationToSupabase(updatedTarget);
     }
 
-    alert(`🎉 SUCCESS!\n\nSales Quotation ${qtn.quotationNo} has been CONVERTED to Order Confirmation Note (${ocnNo}).\n\n- Job Master "${effectiveJobMaster.jobName}" (${effectiveJobMaster.id}) ${existingJM ? 'linked' : 'created'} in Job Master Directory.\n- Order ${orderId} is now LIVE across Production, Inventory & Cylinder scheduling!`);
+    setOcnConvertModalQtn(null);
+    setOcnConvertFormData([]);
+
+    alert(`🎉 SUCCESS!\n\nSales Quotation ${qtn.quotationNo} has been CONVERTED to Order Confirmation Note (${ocnNo}).\n\n- Order ${createdOrderIds.join(', ')} is now LIVE across Production, Inventory & Cylinder scheduling!`);
   };
 
   // Filtered Quotations
@@ -1110,7 +1229,7 @@ export default function SalesManagement({
                               <button 
                                 className="btn-primary" 
                                 style={{ padding: '4px 10px', fontSize: '0.75rem', background: 'linear-gradient(135deg, #047857 0%, #065f46 100%)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                                onClick={() => handleConvertToOCN(qtn)}
+                                onClick={() => handleOpenOcnConvertModal(qtn)}
                                 title="Convert Sales Quotation to Order Confirmation Note & Job Master"
                               >
                                 <ArrowRight size={13} /> Convert to OCN
@@ -2009,6 +2128,367 @@ export default function SalesManagement({
           quotationData={activeQuotationForPDF} 
           onClose={() => setActiveQuotationForPDF(null)} 
         />
+      )}
+
+      {/* OVERLAY: CONVERT TO OCN & PRE-COSTING CONFIRMATION MODAL */}
+      {ocnConvertModalQtn && (
+        <div className="modal-overlay" style={{ zIndex: 1100 }}>
+          <div className="modal-content" style={{ width: '92vw', maxWidth: '1100px', maxHeight: '92vh', overflowY: 'auto', padding: '24px' }}>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#047857', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <ShoppingBag size={22} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                    Convert Quotation to OCN & Pre-Costing Job Punching
+                  </h3>
+                  <span style={{ fontSize: '0.82rem', color: '#64748b' }}>
+                    Quotation Ref: <strong>{ocnConvertModalQtn.quotationNo}</strong> | Client: <strong>{ocnConvertModalQtn.clientName}</strong> | Generated OCN: <strong style={{ color: '#047857' }}>{ocnDocRefNo}</strong>
+                  </span>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                className="btn-secondary" 
+                style={{ padding: '6px 12px', border: 'none', background: '#f1f5f9', borderRadius: '8px', cursor: 'pointer' }}
+                onClick={() => setOcnConvertModalQtn(null)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Confirmation Form for Each Job Item */}
+            {ocnConvertFormData.map((item, itemIdx) => {
+              const calc = !item.isCylinderOrder ? calculateJobRawMaterials({
+                jobName: item.jobTitle,
+                printWidthMm: parseFloat(item.printWidthMm) || 1000,
+                repeatLengthMm: parseFloat(item.repeatLengthMm) || 400,
+                orderQtyKg: parseFloat(item.quantityKg) || 1000,
+                orderType: item.materialFormat.toLowerCase().includes('pouch') ? 'Pouching' : 'Reel',
+                inkGsm: parseFloat(item.inkGsm) || 1.5,
+                adhesiveGsm: parseFloat(item.adhesiveGsm) || 1.5,
+                layers: (item.layers || []).map(l => ({
+                  ...l,
+                  pricePerKg: parseFloat(l.ratePerKg) || DEFAULT_DAILY_RATES[l.filmType] || 125
+                })),
+                inkPrice: parseFloat(item.inkPrice) || 220,
+                adhesivePrice: parseFloat(item.adhesivePrice) || 240
+              }) : null;
+
+              const totalSellingVal = (parseFloat(item.quantityKg) || 0) * (parseFloat(item.ratePerUom) || 0);
+              const totalMatCost = calc ? calc.totalCost : 0;
+              const grossMargin = totalSellingVal - totalMatCost;
+              const marginPct = totalSellingVal > 0 ? ((grossMargin / totalSellingVal) * 100).toFixed(1) : 0;
+
+              return (
+                <div key={itemIdx} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '12px', padding: '18px', marginBottom: '20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ background: '#0284c7', color: '#ffffff', fontSize: '0.78rem', fontWeight: '800', padding: '2px 8px', borderRadius: '4px' }}>
+                        JOB #{itemIdx + 1}
+                      </span>
+                      <strong style={{ fontSize: '1rem', color: '#0f172a' }}>{item.jobTitle}</strong>
+                    </div>
+                    <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '600' }}>
+                      Format: <strong style={{ color: '#0f172a' }}>{item.materialFormat}</strong>
+                    </span>
+                  </div>
+
+                  {/* Form Fields Grid */}
+                  <div className="form-grid-3" style={{ gap: '14px', marginBottom: '16px' }}>
+                    <div>
+                      <label className="form-label">Job Title / Product Name *</label>
+                      <input 
+                        type="text" 
+                        className="form-control" 
+                        value={item.jobTitle} 
+                        onChange={e => handleUpdateOcnItemField(itemIdx, 'jobTitle', e.target.value)} 
+                      />
+                    </div>
+
+                    <div>
+                      <label className="form-label">Film Width (mm) *</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <input 
+                          type="number" 
+                          className="form-control" 
+                          style={{ fontWeight: '700', color: '#0284c7' }}
+                          value={item.printWidthMm} 
+                          onChange={e => handleUpdateOcnItemField(itemIdx, 'printWidthMm', e.target.value)} 
+                        />
+                        <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '600' }}>mm</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="form-label">Repeat Length / Size (mm)</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <input 
+                          type="number" 
+                          className="form-control" 
+                          value={item.repeatLengthMm} 
+                          onChange={e => handleUpdateOcnItemField(itemIdx, 'repeatLengthMm', e.target.value)} 
+                        />
+                        <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '600' }}>mm</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="form-label">Order Quantity (Kg) *</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <input 
+                          type="number" 
+                          className="form-control" 
+                          style={{ fontWeight: '700' }}
+                          value={item.quantityKg} 
+                          onChange={e => handleUpdateOcnItemField(itemIdx, 'quantityKg', e.target.value)} 
+                        />
+                        <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '600' }}>kg</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="form-label">Packaging Form *</label>
+                      <select 
+                        className="form-control" 
+                        value={item.materialFormat} 
+                        onChange={e => handleUpdateOcnItemField(itemIdx, 'materialFormat', e.target.value)}
+                      >
+                        <option value="Roll Form">Roll Form (Reel)</option>
+                        <option value="Standup Zipper Pouch Form">Standup Zipper Pouch Form</option>
+                        <option value="Center Seal Pouch Form">Center Seal Pouch Form</option>
+                        <option value="Side Seal Pouch Form">Side Seal Pouch Form</option>
+                        <option value="Quad Seal Pouch Form">Quad Seal Pouch Form</option>
+                        <option value="Rotogravure Cylinder">Rotogravure Cylinder</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="form-label">Target Delivery Date *</label>
+                      <input 
+                        type="date" 
+                        className="form-control" 
+                        style={{ fontWeight: '700' }}
+                        value={item.targetDeliveryDate} 
+                        onChange={e => handleUpdateOcnItemField(itemIdx, 'targetDeliveryDate', e.target.value)} 
+                      />
+                    </div>
+
+                    <div>
+                      <label className="form-label">Quoted Selling Rate (₹/kg) *</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#047857' }}>₹</span>
+                        <input 
+                          type="number" 
+                          className="form-control" 
+                          style={{ fontWeight: '700', color: '#047857' }}
+                          value={item.ratePerUom} 
+                          onChange={e => handleUpdateOcnItemField(itemIdx, 'ratePerUom', e.target.value)} 
+                        />
+                        <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '600' }}>/kg</span>
+                      </div>
+                    </div>
+
+                    <div className="form-group-full">
+                      <label className="form-label">Film Structure (Pre-filled as per Quote)</label>
+                      <input 
+                        type="text" 
+                        className="form-control" 
+                        style={{ fontWeight: '700', background: '#ffffff' }}
+                        value={item.structure} 
+                        onChange={e => handleUpdateOcnItemField(itemIdx, 'structure', e.target.value)} 
+                      />
+                    </div>
+                  </div>
+
+                  {/* Non-cylinder orders: Pre-Costing Raw Material Rates & Breakdown */}
+                  {!item.isCylinderOrder && (
+                    <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px', marginBottom: '14px' }}>
+                      <h4 style={{ fontSize: '0.85rem', fontWeight: '800', color: '#0f172a', textTransform: 'uppercase', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Layers size={15} style={{ color: '#0284c7' }} /> Pre-Costing Raw Material Daily Rates (₹/kg) & Structure Layers
+                      </h4>
+
+                      <div style={{ overflowX: 'auto', marginBottom: '10px' }}>
+                        <table className="data-table" style={{ fontSize: '0.8rem' }}>
+                          <thead>
+                            <tr style={{ background: '#f1f5f9' }}>
+                              <th style={{ width: '60px' }}>Layer</th>
+                              <th>Film Grade / Type</th>
+                              <th>Micron (µ)</th>
+                              <th>Slit Width (mm)</th>
+                              <th>Raw Material Rate (₹/kg) *</th>
+                              <th>Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {item.layers.map((l, lIdx) => (
+                              <tr key={lIdx}>
+                                <td style={{ fontWeight: '700', textAlign: 'center' }}>L{lIdx + 1}</td>
+                                <td>
+                                  <select 
+                                    className="form-control" 
+                                    style={{ padding: '2px 6px', fontSize: '0.78rem' }}
+                                    value={l.filmType} 
+                                    onChange={e => handleUpdateOcnLayerField(itemIdx, lIdx, 'filmType', e.target.value)}
+                                  >
+                                    {Object.keys(DEFAULT_DAILY_RATES).map(ft => (
+                                      <option key={ft} value={ft}>{ft}</option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td>
+                                  <input 
+                                    type="number" 
+                                    className="form-control" 
+                                    style={{ width: '70px', padding: '2px 6px', textAlign: 'center', fontWeight: '700' }}
+                                    value={l.micron} 
+                                    onChange={e => handleUpdateOcnLayerField(itemIdx, lIdx, 'micron', e.target.value)}
+                                  />
+                                </td>
+                                <td style={{ fontWeight: '600' }}>
+                                  {getFilmSlitWidth(l.filmType, item.printWidthMm)} mm
+                                </td>
+                                <td>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                    <span style={{ fontSize: '0.78rem', fontWeight: '700', color: '#0284c7' }}>₹</span>
+                                    <input 
+                                      type="number" 
+                                      className="form-control" 
+                                      style={{ width: '90px', padding: '2px 6px', fontWeight: '700', color: '#0284c7', textAlign: 'right' }}
+                                      value={l.ratePerKg} 
+                                      onChange={e => handleUpdateOcnLayerField(itemIdx, lIdx, 'ratePerKg', e.target.value)}
+                                    />
+                                    <span style={{ fontSize: '0.75rem', color: '#64748b' }}>/kg</span>
+                                  </div>
+                                </td>
+                                <td>
+                                  {item.layers.length > 1 && (
+                                    <button 
+                                      type="button" 
+                                      className="btn-secondary" 
+                                      style={{ padding: '2px 6px', color: '#dc2626' }}
+                                      onClick={() => handleRemoveOcnLayer(itemIdx, lIdx)}
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <button 
+                        type="button" 
+                        className="btn-secondary" 
+                        style={{ fontSize: '0.75rem', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '4px', marginBottom: '12px' }}
+                        onClick={() => handleAddOcnLayer(itemIdx)}
+                      >
+                        <Plus size={13} /> Add Film Structure Layer
+                      </button>
+
+                      {/* Inks & Adhesive Pre-Costing Rates */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                        <div>
+                          <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#475569', display: 'block', marginBottom: '2px' }}>
+                            Liquid Ink Rate (₹/kg)
+                          </label>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                            <span style={{ fontSize: '0.8rem', fontWeight: '700', color: '#0284c7' }}>₹</span>
+                            <input 
+                              type="number" 
+                              className="form-control" 
+                              style={{ padding: '3px 6px', fontSize: '0.8rem', fontWeight: '700' }}
+                              value={item.inkPrice} 
+                              onChange={e => handleUpdateOcnItemField(itemIdx, 'inkPrice', e.target.value)} 
+                            />
+                            <span style={{ fontSize: '0.74rem', color: '#64748b' }}>/kg</span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#475569', display: 'block', marginBottom: '2px' }}>
+                            Solvent-less Adhesive Rate (₹/kg)
+                          </label>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                            <span style={{ fontSize: '0.8rem', fontWeight: '700', color: '#0284c7' }}>₹</span>
+                            <input 
+                              type="number" 
+                              className="form-control" 
+                              style={{ padding: '3px 6px', fontSize: '0.8rem', fontWeight: '700' }}
+                              value={item.adhesivePrice} 
+                              onChange={e => handleUpdateOcnItemField(itemIdx, 'adhesivePrice', e.target.value)} 
+                            />
+                            <span style={{ fontSize: '0.74rem', color: '#64748b' }}>/kg</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Pre-Costing Summary Card */}
+                  {!item.isCylinderOrder && calc && (
+                    <div style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)', border: '1px solid #a7f3d0', borderRadius: '10px', padding: '14px' }}>
+                      <h4 style={{ fontSize: '0.85rem', fontWeight: '800', color: '#047857', textTransform: 'uppercase', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <TrendingUp size={15} /> Pre-Costing & Profitability Summary
+                      </h4>
+                      
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px' }}>
+                        <div>
+                          <span style={{ fontSize: '0.72rem', color: '#065f46', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Total Selling Value</span>
+                          <strong style={{ fontSize: '1rem', color: '#047857' }}>₹ {totalSellingVal.toLocaleString()}</strong>
+                        </div>
+
+                        <div>
+                          <span style={{ fontSize: '0.72rem', color: '#065f46', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Raw Material Cost</span>
+                          <strong style={{ fontSize: '1rem', color: '#b91c1c' }}>₹ {totalMatCost.toLocaleString()}</strong>
+                        </div>
+
+                        <div>
+                          <span style={{ fontSize: '0.72rem', color: '#065f46', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Gross Pre-Cost Margin</span>
+                          <strong style={{ fontSize: '1rem', color: grossMargin >= 0 ? '#047857' : '#dc2626' }}>
+                            ₹ {grossMargin.toLocaleString()} ({marginPct}%)
+                          </strong>
+                        </div>
+
+                        <div>
+                          <span style={{ fontSize: '0.72rem', color: '#065f46', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Material Cost / Kg</span>
+                          <strong style={{ fontSize: '0.92rem', color: '#0f172a' }}>
+                            ₹ {(calc.costPerKg || 0).toFixed(2)} / kg
+                          </strong>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Modal Actions */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '10px', paddingTop: '14px', borderTop: '1px solid #e2e8f0' }}>
+              <button 
+                type="button" 
+                className="btn-secondary" 
+                style={{ padding: '8px 18px', fontWeight: '600', cursor: 'pointer' }}
+                onClick={() => setOcnConvertModalQtn(null)}
+              >
+                Cancel
+              </button>
+
+              <button 
+                type="button" 
+                className="btn-primary" 
+                style={{ padding: '10px 24px', fontWeight: '800', background: 'linear-gradient(135deg, #047857 0%, #065f46 100%)', display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
+                onClick={handleConfirmAndPunchOCN}
+              >
+                <CheckCircle2 size={18} /> Confirm Specs & Punch Order to OCN
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>
