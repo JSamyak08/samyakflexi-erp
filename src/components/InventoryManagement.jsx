@@ -178,18 +178,19 @@ export default function InventoryManagement({
   // Inventory Ageing Settings Configuration & FIFO Metrics
   const ageingSettings = useMemo(() => getInventoryAgeingSettings(), []);
 
-  // Sanitize all inventory and GRN records, applying FIFO sorting (oldest inventory first)
+  const safeGrns = useMemo(() => (grns || []).map(sanitizeGRN), [grns]);
+
+  // Sanitize all inventory and GRN records, applying FIFO sorting by true oldest inward date
   const safeInventory = useMemo(() => {
     const sanitized = (inventory || []).map(sanitizeInventoryItem);
-    return sortInventoryByFifo(sanitized);
-  }, [inventory]);
-
-  const safeGrns = useMemo(() => (grns || []).map(sanitizeGRN), [grns]);
+    return sortInventoryByFifo(sanitized, safeGrns, inventoryRolls);
+  }, [inventory, safeGrns, inventoryRolls]);
 
   // Calculate items exceeding category ageing limits
   const overAgedItemsCount = useMemo(() => {
-    return safeInventory.filter(item => isItemOverAged(item, ageingSettings)).length;
-  }, [safeInventory, ageingSettings]);
+    return safeInventory.filter(item => isItemOverAged(item, ageingSettings, safeGrns, inventoryRolls)).length;
+  }, [safeInventory, ageingSettings, safeGrns, inventoryRolls]);
+
 
 
   // Auto-set tab and select item if urlParams is provided
@@ -3590,9 +3591,11 @@ export default function InventoryManagement({
                   const itemValuation = availQty * rate;
                   const subGrade = item.substrateOrGrade || item.substrateGrade || item.filmType || item.grade || item.subType || '-';
 
-                  const ageInDays = getItemAgeInDays(item);
-                  const isOverAged = isItemOverAged(item, ageingSettings);
+                  const oldestDate = getItemInwardDate(item, safeGrns, inventoryRolls);
+                  const ageInDays = getItemAgeInDays(item, safeGrns, inventoryRolls);
+                  const isOverAged = isItemOverAged(item, ageingSettings, safeGrns, inventoryRolls);
                   const catThreshold = getCategoryAgeingThreshold(item.category, ageingSettings);
+                  const formattedInwardDate = oldestDate ? oldestDate.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
 
                   // Pending QC matching for this item
                   const pendingGRNs = (safeGrns || []).filter(g => 
@@ -3709,18 +3712,21 @@ export default function InventoryManagement({
                         {/* Ageing & FIFO Badge */}
                         {isOverAged ? (
                           <div style={{ marginTop: '4px' }}>
-                            <span className="badge" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', fontSize: '0.68rem', fontWeight: '800', padding: '2px 6px', display: 'inline-block' }}>
+                            <span className="badge" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', fontSize: '0.68rem', fontWeight: '800', padding: '2px 6px', display: 'inline-block' }} title={`Oldest Inward Date: ${formattedInwardDate || 'N/A'}`}>
                               ⚠️ OVER-AGED ({ageInDays}d &gt; {catThreshold}d)
                             </span>
+                            {formattedInwardDate && <div style={{ fontSize: '0.65rem', color: '#991b1b', fontWeight: '700', marginTop: '1px' }}>Inward: {formattedInwardDate}</div>}
                           </div>
                         ) : (
                           <div style={{ marginTop: '4px' }}>
-                            <span className="badge" style={{ background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', fontSize: '0.68rem', fontWeight: '700', padding: '2px 6px', display: 'inline-block' }}>
-                              📜 FIFO Stock ({ageInDays}d)
+                            <span className="badge" style={{ background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', fontSize: '0.68rem', fontWeight: '700', padding: '2px 6px', display: 'inline-block' }} title={`Oldest Inward Date: ${formattedInwardDate || 'N/A'}`}>
+                              📜 FIFO Stock ({ageInDays === 0 ? 'Recd Today' : `${ageInDays}d Old`})
                             </span>
+                            {formattedInwardDate && <div style={{ fontSize: '0.65rem', color: '#0369a1', fontWeight: '600', marginTop: '1px' }}>Inward: {formattedInwardDate}</div>}
                           </div>
                         )}
                       </td>
+
 
                       <td>
                         <div style={{ display: 'flex', gap: '6px' }}>
