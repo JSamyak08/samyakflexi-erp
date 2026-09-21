@@ -407,6 +407,8 @@ ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS printing TEXT DEFAULT 'R
 ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS invoice_to TEXT DEFAULT 'Samyak International Ltd';
 ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS shell_size TEXT;
 ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS pet_size TEXT;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS ink_gsm NUMERIC DEFAULT 1.5;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS adhesive_gsm NUMERIC DEFAULT 1.5;
 
 -- Ensure all columns exist on cylinders
 ALTER TABLE public.cylinders ADD COLUMN IF NOT EXISTS approved_by_head BOOLEAN DEFAULT false;
@@ -439,6 +441,8 @@ ALTER TABLE public.cylinders ADD COLUMN IF NOT EXISTS pet_size TEXT;
 
 -- Ensure all columns exist on orders
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS wastage_percentage NUMERIC DEFAULT 5;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS ink_gsm NUMERIC DEFAULT 1.5;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS adhesive_gsm NUMERIC DEFAULT 1.5;
 
 -- Ensure all scrap & wastage columns exist on production_records
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS client_name TEXT;
@@ -465,6 +469,11 @@ ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS approval_date TEX
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS notes TEXT;
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS materials_list JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS process_logs JSONB;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS actual_ink_gsm NUMERIC;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS actual_adhesive_gsm NUMERIC;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS target_ink_gsm NUMERIC DEFAULT 1.5;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS target_adhesive_gsm NUMERIC DEFAULT 1.5;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS ink_gsm_in_speed NUMERIC;
 
 -- VIEW: HIGH SCRAP & WASTAGE AUDIT REGISTRY (threshold >= 5.0%)
 CREATE OR REPLACE VIEW public.high_scrap_audit_registry AS
