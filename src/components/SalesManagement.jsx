@@ -2178,8 +2178,8 @@ export default function SalesManagement({
                 adhesivePrice: parseFloat(item.adhesivePrice) || 240
               }) : null;
 
-              const totalSellingVal = (parseFloat(item.quantityKg) || 0) * (parseFloat(item.ratePerUom) || 0);
-              const totalMatCost = calc ? calc.totalCost : 0;
+              const totalSellingVal = Math.round((parseFloat(item.quantityKg) || 0) * (parseFloat(item.ratePerUom) || 0));
+              const totalMatCost = Math.round((calc && !isNaN(Number(calc.totalCost))) ? Number(calc.totalCost) : 0);
               const grossMargin = totalSellingVal - totalMatCost;
               const marginPct = totalSellingVal > 0 ? ((grossMargin / totalSellingVal) * 100).toFixed(1) : 0;
 
@@ -2440,18 +2440,18 @@ export default function SalesManagement({
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px' }}>
                         <div>
                           <span style={{ fontSize: '0.72rem', color: '#065f46', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Total Selling Value</span>
-                          <strong style={{ fontSize: '1rem', color: '#047857' }}>₹ {totalSellingVal.toLocaleString()}</strong>
+                          <strong style={{ fontSize: '1rem', color: '#047857' }}>₹ {(totalSellingVal || 0).toLocaleString('en-IN')}</strong>
                         </div>
 
                         <div>
                           <span style={{ fontSize: '0.72rem', color: '#065f46', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Raw Material Cost</span>
-                          <strong style={{ fontSize: '1rem', color: '#b91c1c' }}>₹ {totalMatCost.toLocaleString()}</strong>
+                          <strong style={{ fontSize: '1rem', color: '#b91c1c' }}>₹ {(totalMatCost || 0).toLocaleString('en-IN')}</strong>
                         </div>
 
                         <div>
                           <span style={{ fontSize: '0.72rem', color: '#065f46', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Gross Pre-Cost Margin</span>
-                          <strong style={{ fontSize: '1rem', color: grossMargin >= 0 ? '#047857' : '#dc2626' }}>
-                            ₹ {grossMargin.toLocaleString()} ({marginPct}%)
+                          <strong style={{ fontSize: '1rem', color: (grossMargin || 0) >= 0 ? '#047857' : '#dc2626' }}>
+                            ₹ {(grossMargin || 0).toLocaleString('en-IN')} ({marginPct}%)
                           </strong>
                         </div>
 
