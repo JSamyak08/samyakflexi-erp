@@ -55,8 +55,8 @@ export default function Preloader({ onComplete }) {
       flexDirection: 'column',
       justifyContent: 'center',
       alignItems: 'center',
-      background: 'radial-gradient(circle at 50% 35%, #0f172a 0%, #020617 100%)',
-      color: '#ffffff',
+      background: 'radial-gradient(circle at 50% 35%, #ffffff 0%, #f1f5f9 60%, #e2e8f0 100%)',
+      color: '#0f172a',
       fontFamily: "'Outfit', 'Inter', system-ui, -apple-system, sans-serif",
       padding: '24px',
       overflow: 'hidden'
@@ -67,25 +67,25 @@ export default function Preloader({ onComplete }) {
         top: '25%',
         left: '50%',
         transform: 'translate(-50%, -50%)',
-        width: '380px',
-        height: '380px',
-        background: 'radial-gradient(circle, rgba(2, 132, 199, 0.18) 0%, rgba(16, 185, 129, 0.05) 50%, transparent 75%)',
+        width: '420px',
+        height: '420px',
+        background: 'radial-gradient(circle, rgba(2, 132, 199, 0.12) 0%, rgba(16, 185, 129, 0.08) 50%, transparent 75%)',
         borderRadius: '50%',
-        filter: 'blur(40px)',
+        filter: 'blur(50px)',
         pointerEvents: 'none'
       }}></div>
 
-      {/* Main Glassmorphism Card */}
+      {/* Main Light Glassmorphism Card */}
       <div style={{
         width: '100%',
         maxWidth: '460px',
-        background: 'rgba(15, 23, 42, 0.75)',
-        backdropFilter: 'blur(16px)',
-        WebkitBackdropFilter: 'blur(16px)',
-        border: '1px solid rgba(255, 255, 255, 0.12)',
+        background: 'rgba(255, 255, 255, 0.88)',
+        backdropFilter: 'blur(20px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+        border: '1px solid rgba(226, 232, 240, 0.9)',
         borderRadius: '24px',
         padding: '36px 32px',
-        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6), 0 0 30px rgba(2, 132, 199, 0.15)',
+        boxShadow: '0 20px 40px -15px rgba(15, 23, 42, 0.1), 0 0 25px rgba(2, 132, 199, 0.08), 0 1px 3px rgba(0, 0, 0, 0.05)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -106,8 +106,8 @@ export default function Preloader({ onComplete }) {
             inset: '-10px',
             borderRadius: '50%',
             background: 'conic-gradient(from 0deg, #0284c7, #06b6d4, #10b981, #0284c7)',
-            opacity: 0.4,
-            filter: 'blur(12px)',
+            opacity: 0.35,
+            filter: 'blur(10px)',
             animation: 'spin 6s linear infinite'
           }}></div>
 
@@ -116,11 +116,12 @@ export default function Preloader({ onComplete }) {
             height: '84px',
             borderRadius: '20px',
             background: '#ffffff',
+            border: '1px solid #e2e8f0',
             padding: '10px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
+            boxShadow: '0 10px 25px rgba(15, 23, 42, 0.1)',
             position: 'relative',
             zIndex: 1
           }}>
@@ -139,7 +140,7 @@ export default function Preloader({ onComplete }) {
           fontWeight: '900',
           letterSpacing: '0.02em',
           margin: 0,
-          background: 'linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%)',
+          background: 'linear-gradient(135deg, #0f172a 0%, #334155 100%)',
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent'
         }}>
@@ -148,7 +149,7 @@ export default function Preloader({ onComplete }) {
         <div style={{
           fontSize: '0.78rem',
           fontWeight: '700',
-          color: '#38bdf8',
+          color: '#0284c7',
           letterSpacing: '0.12em',
           textTransform: 'uppercase',
           marginTop: '4px',
@@ -157,7 +158,7 @@ export default function Preloader({ onComplete }) {
           alignItems: 'center',
           gap: '6px'
         }}>
-          <Sparkles size={13} style={{ color: '#34d399' }} /> Flexi-ERP Enterprise Operating System
+          <Sparkles size={13} style={{ color: '#059669' }} /> Flexi-ERP Enterprise Operating System
         </div>
 
         {/* Percentage Counter Badge */}
@@ -173,24 +174,24 @@ export default function Preloader({ onComplete }) {
             fontWeight: '900',
             lineHeight: 1,
             fontVariantNumeric: 'tabular-nums',
-            background: 'linear-gradient(135deg, #38bdf8 0%, #34d399 100%)',
+            background: 'linear-gradient(135deg, #0284c7 0%, #059669 100%)',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent'
           }}>
             {progress}
           </span>
-          <span style={{ fontSize: '1.2rem', fontWeight: '800', color: '#38bdf8' }}>%</span>
+          <span style={{ fontSize: '1.2rem', fontWeight: '800', color: '#0284c7' }}>%</span>
         </div>
 
         {/* Progress Bar Container */}
         <div style={{
           width: '100%',
           height: '10px',
-          background: 'rgba(255, 255, 255, 0.08)',
+          background: '#e2e8f0',
           borderRadius: '999px',
           overflow: 'hidden',
           position: 'relative',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
+          border: '1px solid #cbd5e1',
           marginBottom: '16px',
           padding: '1px'
         }}>
@@ -199,7 +200,7 @@ export default function Preloader({ onComplete }) {
             height: '100%',
             borderRadius: '999px',
             background: 'linear-gradient(90deg, #0284c7 0%, #06b6d4 50%, #10b981 100%)',
-            boxShadow: '0 0 16px rgba(56, 189, 248, 0.8)',
+            boxShadow: '0 0 12px rgba(2, 132, 199, 0.4)',
             transition: 'width 0.08s ease-out',
             position: 'relative',
             overflow: 'hidden'
@@ -211,7 +212,7 @@ export default function Preloader({ onComplete }) {
               left: 0,
               right: 0,
               bottom: 0,
-              background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%)',
+              background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.7) 50%, transparent 100%)',
               animation: 'shimmer 1.5s infinite'
             }}></div>
           </div>
@@ -225,13 +226,13 @@ export default function Preloader({ onComplete }) {
           justifyContent: 'center',
           gap: '8px',
           fontSize: '0.82rem',
-          color: '#94a3b8',
+          color: '#475569',
           fontWeight: '600'
         }}>
-          {currentStep === 1 && <Cpu size={14} style={{ color: '#38bdf8' }} />}
-          {currentStep === 2 && <Database size={14} style={{ color: '#06b6d4' }} />}
-          {currentStep === 3 && <Sparkles size={14} style={{ color: '#34d399' }} />}
-          {currentStep === 4 && <ShieldCheck size={14} style={{ color: '#a7f3d0' }} />}
+          {currentStep === 1 && <Cpu size={14} style={{ color: '#0284c7' }} />}
+          {currentStep === 2 && <Database size={14} style={{ color: '#0891b2' }} />}
+          {currentStep === 3 && <Sparkles size={14} style={{ color: '#059669' }} />}
+          {currentStep === 4 && <ShieldCheck size={14} style={{ color: '#16a34a' }} />}
           {currentStep === 5 && <CheckCircle2 size={14} style={{ color: '#10b981' }} />}
           <span>{statusMessage}</span>
         </div>
@@ -244,35 +245,35 @@ export default function Preloader({ onComplete }) {
           gap: '12px',
           marginTop: '24px',
           paddingTop: '16px',
-          borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+          borderTop: '1px solid #e2e8f0',
           width: '100%'
         }}>
           <span style={{
             fontSize: '0.68rem',
             fontWeight: '700',
-            color: progress >= 25 ? '#34d399' : '#64748b',
+            color: progress >= 25 ? '#059669' : '#94a3b8',
             display: 'flex',
             alignItems: 'center',
             gap: '4px'
           }}>
             {progress >= 25 ? '✓' : '•'} DB Active
           </span>
-          <span style={{ color: '#334155' }}>|</span>
+          <span style={{ color: '#cbd5e1' }}>|</span>
           <span style={{
             fontSize: '0.68rem',
             fontWeight: '700',
-            color: progress >= 50 ? '#34d399' : '#64748b',
+            color: progress >= 50 ? '#059669' : '#94a3b8',
             display: 'flex',
             alignItems: 'center',
             gap: '4px'
           }}>
             {progress >= 50 ? '✓' : '•'} Modules Loaded
           </span>
-          <span style={{ color: '#334155' }}>|</span>
+          <span style={{ color: '#cbd5e1' }}>|</span>
           <span style={{
             fontSize: '0.68rem',
             fontWeight: '700',
-            color: progress >= 90 ? '#34d399' : '#64748b',
+            color: progress >= 90 ? '#059669' : '#94a3b8',
             display: 'flex',
             alignItems: 'center',
             gap: '4px'
