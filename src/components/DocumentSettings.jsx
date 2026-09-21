@@ -28,7 +28,8 @@ import {
   Globe,
   Key,
   AlertCircle,
-  Clock
+  Clock,
+  AlertTriangle
 } from 'lucide-react';
 import { 
   getCompanyLogo,
