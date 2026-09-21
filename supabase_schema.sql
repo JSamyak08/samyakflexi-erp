@@ -476,7 +476,8 @@ ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS target_adhesive_g
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS ink_gsm_in_speed NUMERIC;
 
 -- VIEW: HIGH SCRAP & WASTAGE AUDIT REGISTRY (threshold >= 5.0%)
-CREATE OR REPLACE VIEW public.high_scrap_audit_registry AS
+DROP VIEW IF EXISTS public.high_scrap_audit_registry CASCADE;
+CREATE VIEW public.high_scrap_audit_registry AS
 SELECT 
     pr.id AS record_id,
     pr.order_id,
