@@ -27,7 +27,8 @@ import {
   Server,
   Globe,
   Key,
-  AlertCircle
+  AlertCircle,
+  Clock
 } from 'lucide-react';
 import { 
   getCompanyLogo,
