@@ -5089,26 +5089,39 @@ export default function InventoryManagement({
               </div>
 
               {/* Breakdown Callout Box */}
-              <div style={{ 
-                background: 'linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%)', 
-                padding: '12px 16px', 
-                borderRadius: '10px', 
-                border: '1px solid #a7f3d0',
-                color: '#065f46',
-                fontSize: '0.81rem',
-                lineHeight: '1.45',
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: '10px'
-              }}>
-                <div style={{ background: '#d1fae5', padding: '6px', borderRadius: '8px', color: '#047857', marginTop: '2px' }}>
-                  <BarcodeIcon size={18} />
-                </div>
-                <div>
-                  <strong style={{ color: '#047857', display: 'block', marginBottom: '2px' }}>Inward Package Breakdown & Barcode Generation:</strong>
-                  <strong>{grnWeightKg || 0} {grnCategory === 'Film Substrates' ? 'Kg' : grnUnit}</strong> total across <strong>{grnRolls || 1} {grnPackagingType}(s)</strong> = <strong>{( (parseFloat(grnWeightKg) || 0) / Math.max(1, parseInt(grnRolls) || 1) ).toFixed(2)} {grnCategory === 'Film Substrates' ? 'Kg' : grnUnit}</strong> per {grnPackagingType}. (1 barcode sticker will be generated per {grnPackagingType}).
-                </div>
-              </div>
+              {(() => {
+                const effectiveNetWeight = grnCalculatedTotals.totalNet > 0 
+                  ? grnCalculatedTotals.totalNet 
+                  : (parseFloat(grnWeightKg) || 0);
+                const effectivePkgCount = grnCalculatedTotals.count > 0 
+                  ? grnCalculatedTotals.count 
+                  : (parseInt(grnRolls) || 1);
+                const avgPerPkg = (effectiveNetWeight / Math.max(1, effectivePkgCount)).toFixed(2);
+                const unitDisplay = grnCategory === 'Film Substrates' ? 'Kg' : grnUnit;
+
+                return (
+                  <div style={{ 
+                    background: 'linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%)', 
+                    padding: '12px 16px', 
+                    borderRadius: '10px', 
+                    border: '1px solid #a7f3d0',
+                    color: '#065f46',
+                    fontSize: '0.81rem',
+                    lineHeight: '1.45',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '10px'
+                  }}>
+                    <div style={{ background: '#d1fae5', padding: '6px', borderRadius: '8px', color: '#047857', marginTop: '2px' }}>
+                      <BarcodeIcon size={18} />
+                    </div>
+                    <div>
+                      <strong style={{ color: '#047857', display: 'block', marginBottom: '2px' }}>Inward Package Breakdown & Barcode Generation:</strong>
+                      <strong>{effectiveNetWeight} {unitDisplay}</strong> total across <strong>{effectivePkgCount} {grnPackagingType}(s)</strong> = <strong>{avgPerPkg} {unitDisplay}</strong> per {grnPackagingType}. ({effectivePkgCount} barcode sticker{effectivePkgCount > 1 ? 's' : ''} will be generated for {effectivePkgCount > 1 ? 'these' : 'this'} {grnPackagingType}).
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Sticky Bottom Actions Footer */}
               <div className="modal-footer-bar">
