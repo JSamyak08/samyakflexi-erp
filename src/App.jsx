@@ -220,6 +220,7 @@ export default function App() {
   const [sessionProfile, setSessionProfile] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(!isSupaConfigured);
+  const [isSigningIn, setIsSigningIn] = useState(false);
 
   // Route & Navigation State
   const [routeInfo, setRouteInfo] = useState(() => getRouteFromUrl());
@@ -1175,6 +1176,7 @@ export default function App() {
 
   // Login Handler (for UI updates, authService handles Supabase login)
   const handleLogin = (user) => {
+    setIsSigningIn(true);
     logAudit('AUTH', 'User Management', `User ${user?.name || user?.email || 'User'} signed in to the system`, user?.id);
     setSessionProfile(user);
     setCurrentUser(user);
@@ -2536,9 +2538,9 @@ export default function App() {
     handleTabChange('job_punching');
   };
 
-  // Render Loading Screen with Company Logo & Percentage Status Bar
-  if (!isAuthReady) {
-    return <Preloader />;
+  // Render Loading Screen with Company Logo & Percentage Status Bar on initial load or during sign-in
+  if (!isAuthReady || isSigningIn) {
+    return <Preloader onComplete={() => setIsSigningIn(false)} />;
   }
 
   // Render Authentication Screen if user is not signed in
