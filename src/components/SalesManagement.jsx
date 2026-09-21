@@ -31,6 +31,7 @@ import SalesQuotationPDF from './SalesQuotationPDF';
 import { 
   calculateJobRawMaterials,
   isLDFilm,
+  getFilmSlitWidth,
   DEFAULT_DAILY_RATES,
   DEFAULT_PROCESSING_RATES
 } from '../factoryStore';
