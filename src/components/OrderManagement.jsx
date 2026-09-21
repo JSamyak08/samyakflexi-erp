@@ -1295,12 +1295,12 @@ export default function OrderManagement({
                     >
                       <div className="order-card-header-grid">
                         {/* Chevron Toggle */}
-                        <div style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
+                        <div style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                           {isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
                         </div>
 
                         {/* Left Column: Job Details */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '0' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '0', flex: '1 1 280px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                             <span className="order-id-badge" style={{ 
                               background: isOverdue ? 'rgba(239, 68, 68, 0.15)' : (isNearing ? 'rgba(245, 158, 11, 0.15)' : 'var(--accent-light)'),
@@ -1309,7 +1309,7 @@ export default function OrderManagement({
                             }}>
                               {order.id}
                             </span>
-                            <h3 style={{ fontSize: '1.05rem', fontWeight: '800', margin: '0', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '380px' }} title={order.jobName}>
+                            <h3 style={{ fontSize: '1.05rem', fontWeight: '800', margin: '0', wordBreak: 'break-word', color: 'var(--text-primary)' }} title={order.jobName}>
                               {order.jobName}
                             </h3>
                             {isOverdue && <span className="badge-delayed-tag">OVERDUE</span>}
@@ -1346,78 +1346,82 @@ export default function OrderManagement({
                           </div>
                         </div>
 
-                        {/* Middle Column: Target Date */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: '600' }}>Target Delivery</span>
-                          <span style={{ 
-                            fontWeight: '800', 
-                            fontSize: '0.92rem', 
-                            color: isOverdue ? '#dc2626' : (isNearing ? '#b45309' : 'var(--text-primary)') 
-                          }}>
-                            {order.targetDeliveryDate}
-                          </span>
-                        </div>
+                        {/* Right Container: Target Date, Status & Actions */}
+                        <div className="order-card-meta-actions">
+                          {/* Target Date */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', minWidth: '95px' }}>
+                            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: '600', whiteSpace: 'nowrap' }}>Target Delivery</span>
+                            <span style={{ 
+                              fontWeight: '800', 
+                              fontSize: '0.92rem', 
+                              whiteSpace: 'nowrap',
+                              color: isOverdue ? '#dc2626' : (isNearing ? '#b45309' : 'var(--text-primary)') 
+                            }}>
+                              {order.targetDeliveryDate}
+                            </span>
+                          </div>
 
-                        {/* Middle-Right Column: Status */}
-                        <div style={{ display: 'flex', alignItems: 'center' }}>
-                          {order.status === 'On Hold' ? (
-                            <span className="badge badge-warning" style={{ fontSize: '0.75rem', padding: '4px 10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: '95px', textAlign: 'center' }}>
-                              ⏸️ ON HOLD
-                            </span>
-                          ) : isOverdue ? (
-                            <span className="badge badge-warning" style={{ background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', fontSize: '0.75rem', padding: '4px 10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: '95px', textAlign: 'center' }}>
-                              ⚠️ OVERDUE
-                            </span>
-                          ) : isNearing ? (
-                            <span className="badge badge-warning" style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', fontSize: '0.75rem', padding: '4px 10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: '95px', textAlign: 'center' }}>
-                              ⏳ NEARING DEADLINE
-                            </span>
-                          ) : (
-                            <span className="badge badge-us" style={{ fontSize: '0.75rem', padding: '4px 10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: '95px', textAlign: 'center' }}>
-                              {order.status || 'In Progress'}
-                            </span>
-                          )}
-                        </div>
+                          {/* Status */}
+                          <div style={{ display: 'flex', alignItems: 'center', minWidth: '95px' }}>
+                            {order.status === 'On Hold' ? (
+                              <span className="badge badge-warning" style={{ fontSize: '0.75rem', padding: '4px 10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: '95px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                ⏸️ ON HOLD
+                              </span>
+                            ) : isOverdue ? (
+                              <span className="badge badge-warning" style={{ background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', fontSize: '0.75rem', padding: '4px 10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: '95px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                ⚠️ OVERDUE
+                              </span>
+                            ) : isNearing ? (
+                              <span className="badge badge-warning" style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', fontSize: '0.75rem', padding: '4px 10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: '95px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                ⏳ NEARING DEADLINE
+                              </span>
+                            ) : (
+                              <span className="badge badge-us" style={{ fontSize: '0.75rem', padding: '4px 10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: '95px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                {order.status || 'In Progress'}
+                              </span>
+                            )}
+                          </div>
 
-                        {/* Right Column: Actions */}
-                        <div 
-                          className="order-card-right-section"
-                          style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}
-                          onClick={e => e.stopPropagation()}
-                        >
-                          {order.status !== 'Completed' && (
-                            <button 
-                              className="btn-secondary" 
-                              style={{ padding: '6px 12px', fontSize: '0.78rem', color: '#047857', borderColor: '#a7f3d0', background: '#ecfdf5', borderRadius: '6px', fontWeight: '600' }}
-                              onClick={(e) => handleMarkJobCompleted(order, e)}
-                              title="Mark Job Completed (Requires Approved Production Record)"
-                            >
-                              <CheckCircle2 size={13} /> Complete
-                            </button>
-                          )}
-
-                          {isAdmin && (
-                            <>
+                          {/* Actions */}
+                          <div 
+                            className="order-card-right-section"
+                            style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                            onClick={e => e.stopPropagation()}
+                          >
+                            {order.status !== 'Completed' && (
                               <button 
                                 className="btn-secondary" 
-                                style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '6px', fontWeight: '600' }}
-                                onClick={(e) => handleToggleHoldOrder(order, e)}
-                                title={order.status === 'On Hold' ? 'Resume Order' : 'Put Order On Hold'}
+                                style={{ padding: '6px 12px', fontSize: '0.78rem', color: '#047857', borderColor: '#a7f3d0', background: '#ecfdf5', borderRadius: '6px', fontWeight: '600', whiteSpace: 'nowrap' }}
+                                onClick={(e) => handleMarkJobCompleted(order, e)}
+                                title="Mark Job Completed (Requires Approved Production Record)"
                               >
-                                {order.status === 'On Hold' ? <PlayCircle size={13} /> : <PauseCircle size={13} />}
-                                {order.status === 'On Hold' ? 'Resume' : 'Hold'}
+                                <CheckCircle2 size={13} /> Complete
                               </button>
+                            )}
 
-                              <button 
-                                className="btn-secondary" 
-                                style={{ padding: '6px 12px', fontSize: '0.78rem', color: '#dc2626', borderColor: '#fecaca', borderRadius: '6px', fontWeight: '600' }}
-                                onClick={(e) => handleDeleteOrderClick(order, e)}
-                                title="Delete Order"
-                              >
-                                <Trash2 size={13} /> Delete
-                              </button>
-                            </>
-                          )}
+                            {isAdmin && (
+                              <>
+                                <button 
+                                  className="btn-secondary" 
+                                  style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '6px', fontWeight: '600', whiteSpace: 'nowrap' }}
+                                  onClick={(e) => handleToggleHoldOrder(order, e)}
+                                  title={order.status === 'On Hold' ? 'Resume Order' : 'Put Order On Hold'}
+                                >
+                                  {order.status === 'On Hold' ? <PlayCircle size={13} /> : <PauseCircle size={13} />}
+                                  {order.status === 'On Hold' ? 'Resume' : 'Hold'}
+                                </button>
+
+                                <button 
+                                  className="btn-secondary" 
+                                  style={{ padding: '6px 12px', fontSize: '0.78rem', color: '#dc2626', borderColor: '#fecaca', borderRadius: '6px', fontWeight: '600', whiteSpace: 'nowrap' }}
+                                  onClick={(e) => handleDeleteOrderClick(order, e)}
+                                  title="Delete Order"
+                                >
+                                  <Trash2 size={13} /> Delete
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1531,172 +1535,175 @@ export default function OrderManagement({
                               </button>
                             </div>
 
-                            <table className="data-table" style={{ fontSize: '0.82rem' }}>
-                              <thead>
-                                <tr style={{ background: '#f8fafc' }}>
-                                  <th style={{ width: '40px' }}>Select</th>
-                                  <th>Material Description</th>
-                                  <th>Micron (µ)</th>
-                                  <th>Width (mm)</th>
-                                  <th>Gross Required (Kg)</th>
-                                  <th style={{ minWidth: '220px' }}>Stock Check & Reservation</th>
-                                  <th style={{ color: '#2563eb' }}>Balance Qty for PO (Kg)</th>
-                                  <th>Preferred Vendor</th>
-                                  <th>PO Status</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {reqs.map(req => {
-                                  const isChecked = !!selectedReqIds[req.id];
-                                  const stockInfo = getStockCheckForReq(req);
+                            <div className="table-responsive-wrapper" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', width: '100%', borderRadius: '8px', border: '1px solid var(--border-color)', background: '#ffffff' }}>
+                              <table className="data-table" style={{ fontSize: '0.82rem', minWidth: '980px', width: '100%', margin: 0 }}>
+                                <thead>
+                                  <tr style={{ background: '#f8fafc' }}>
+                                    <th style={{ width: '40px', whiteSpace: 'nowrap', textAlign: 'center' }}>Select</th>
+                                    <th style={{ whiteSpace: 'nowrap', minWidth: '130px' }}>Material Description</th>
+                                    <th style={{ whiteSpace: 'nowrap', minWidth: '85px' }}>Micron (µ)</th>
+                                    <th style={{ whiteSpace: 'nowrap', minWidth: '125px' }}>Width (mm)</th>
+                                    <th style={{ whiteSpace: 'nowrap', minWidth: '125px' }}>Gross Required (Kg)</th>
+                                    <th style={{ whiteSpace: 'nowrap', minWidth: '220px' }}>Stock Check & Reservation</th>
+                                    <th style={{ whiteSpace: 'nowrap', minWidth: '130px', color: '#2563eb' }}>Balance Qty for PO (Kg)</th>
+                                    <th style={{ whiteSpace: 'nowrap', minWidth: '170px' }}>Preferred Vendor</th>
+                                    <th style={{ whiteSpace: 'nowrap', minWidth: '130px' }}>PO Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {reqs.map(req => {
+                                    const isChecked = !!selectedReqIds[req.id];
+                                    const stockInfo = getStockCheckForReq(req);
 
-                                  return (
-                                    <tr key={req.id} style={{ background: isChecked ? '#eff6ff' : 'transparent' }}>
-                                      <td>
-                                        <input 
-                                          type="checkbox"
-                                          style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-                                          checked={isChecked}
-                                          onChange={() => toggleSelectReq(req.id)}
-                                        />
-                                      </td>
-                                      <td style={{ fontWeight: '600' }}>{req.filmType}</td>
-                                      <td>
-                                        {req.widthMm !== '-' ? (
+                                    return (
+                                      <tr key={req.id} style={{ background: isChecked ? '#eff6ff' : 'transparent' }}>
+                                        <td style={{ textAlign: 'center' }}>
                                           <input 
-                                            type="number"
-                                            className="form-control"
-                                            style={{ width: '60px', padding: '2px 4px', fontSize: '0.8rem', textAlign: 'center' }}
-                                            value={req.micron}
-                                            title="Edit Micron (µ)"
-                                            onChange={(e) => handleUpdateReqField(order.id, req.id, 'micron', e.target.value)}
+                                            type="checkbox"
+                                            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                            checked={isChecked}
+                                            onChange={() => toggleSelectReq(req.id)}
                                           />
-                                        ) : (
-                                          <span>{req.micron}</span>
-                                        )}
-                                      </td>
-                                      <td>
-                                        {req.widthMm !== '-' ? (
-                                          <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                        </td>
+                                        <td style={{ fontWeight: '600', whiteSpace: 'nowrap' }}>{req.filmType}</td>
+                                        <td>
+                                          {req.widthMm !== '-' ? (
                                             <input 
                                               type="number"
                                               className="form-control"
-                                              style={{ 
-                                                width: '85px', 
-                                                padding: '3px 6px', 
-                                                fontSize: '0.82rem', 
-                                                fontWeight: '700', 
-                                                textAlign: 'center', 
-                                                borderColor: '#3b82f6', 
-                                                background: '#eff6ff',
-                                                borderRadius: '6px'
-                                              }}
-                                              value={req.widthMm}
-                                              title="Edit Raw Material Size / Width (mm). Weight will recalculate proportionally."
-                                              onChange={(e) => handleUpdateReqField(order.id, req.id, 'widthMm', e.target.value)}
+                                              style={{ width: '60px', padding: '2px 4px', fontSize: '0.8rem', textAlign: 'center' }}
+                                              value={req.micron}
+                                              title="Edit Micron (µ)"
+                                              onChange={(e) => handleUpdateReqField(order.id, req.id, 'micron', e.target.value)}
                                             />
-                                            <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '600' }}>mm</span>
-                                          </div>
-                                        ) : (
-                                          <span style={{ color: 'var(--text-muted)' }}>—</span>
-                                        )}
-                                      </td>
-                                      <td className="bold-val">
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                          <input 
-                                            type="number"
-                                            step="0.1"
-                                            className="form-control"
-                                            style={{ width: '75px', padding: '3px 6px', fontSize: '0.82rem', fontWeight: '700', textAlign: 'right', borderRadius: '6px' }}
-                                            value={req.qtyKg}
-                                            title="Edit Gross Required Weight (kg)"
-                                            onChange={(e) => handleUpdateReqField(order.id, req.id, 'qtyKg', e.target.value)}
-                                          />
-                                          <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '700' }}>kg</span>
-                                        </div>
-                                      </td>
-
-                                      {/* Stock Check & Reservation Status */}
-                                      <td>
-                                        {stockInfo.isFullyAvailable ? (
-                                          <div style={{ background: '#dcfce7', border: '1px solid #86efac', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#15803d' }}>
-                                            <strong>✅ {stockInfo.reservedKg} kg / {stockInfo.reqQty} kg in stock</strong>
-                                            <div style={{ fontSize: '0.7rem', color: '#166534' }}>
-                                              Fully Reserved for Order (No PO Required)
+                                          ) : (
+                                            <span>{req.micron}</span>
+                                          )}
+                                        </td>
+                                        <td>
+                                          {req.widthMm !== '-' ? (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                              <input 
+                                                type="number"
+                                                className="form-control"
+                                                style={{ 
+                                                  width: '85px', 
+                                                  padding: '3px 6px', 
+                                                  fontSize: '0.82rem', 
+                                                  fontWeight: '700', 
+                                                  textAlign: 'center', 
+                                                  borderColor: '#3b82f6', 
+                                                  background: '#eff6ff',
+                                                  borderRadius: '6px'
+                                                }}
+                                                value={req.widthMm}
+                                                title="Edit Raw Material Size / Width (mm). Weight will recalculate proportionally."
+                                                onChange={(e) => handleUpdateReqField(order.id, req.id, 'widthMm', e.target.value)}
+                                              />
+                                              <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '600' }}>mm</span>
                                             </div>
+                                          ) : (
+                                            <span style={{ color: 'var(--text-muted)' }}>—</span>
+                                          )}
+                                        </td>
+                                        <td className="bold-val">
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                            <input 
+                                              type="number"
+                                              step="0.1"
+                                              className="form-control"
+                                              style={{ width: '75px', padding: '3px 6px', fontSize: '0.82rem', fontWeight: '700', textAlign: 'right', borderRadius: '6px' }}
+                                              value={req.qtyKg}
+                                              title="Edit Gross Required Weight (kg)"
+                                              onChange={(e) => handleUpdateReqField(order.id, req.id, 'qtyKg', e.target.value)}
+                                            />
+                                            <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '700' }}>kg</span>
                                           </div>
-                                        ) : stockInfo.isPartiallyAvailable ? (
-                                          <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#047857' }}>
-                                            <strong>🟢 {stockInfo.reservedKg} kg out of {stockInfo.reqQty} kg available</strong>
-                                            <div style={{ fontSize: '0.7rem', color: '#065f46' }}>
-                                              {stockInfo.reservedKg} kg Reserved for Order
+                                        </td>
+
+                                        {/* Stock Check & Reservation Status */}
+                                        <td>
+                                          {stockInfo.isFullyAvailable ? (
+                                            <div style={{ background: '#dcfce7', border: '1px solid #86efac', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#15803d', whiteSpace: 'nowrap' }}>
+                                              <strong>✅ {stockInfo.reservedKg} kg / {stockInfo.reqQty} kg in stock</strong>
+                                              <div style={{ fontSize: '0.7rem', color: '#166534' }}>
+                                                Fully Reserved for Order (No PO Required)
+                                              </div>
                                             </div>
-                                          </div>
-                                        ) : (
-                                          <div style={{ background: '#fffbe6', border: '1px solid #ffe58f', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#d48806' }}>
-                                            <span>⚠️ 0 kg in stock (Full {stockInfo.reqQty} kg needed)</span>
-                                          </div>
-                                        )}
-                                      </td>
+                                          ) : stockInfo.isPartiallyAvailable ? (
+                                            <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#047857', whiteSpace: 'nowrap' }}>
+                                              <strong>🟢 {stockInfo.reservedKg} kg out of {stockInfo.reqQty} kg available</strong>
+                                              <div style={{ fontSize: '0.7rem', color: '#065f46' }}>
+                                                {stockInfo.reservedKg} kg Reserved for Order
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            <div style={{ background: '#fffbe6', border: '1px solid #ffe58f', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#d48806', whiteSpace: 'nowrap' }}>
+                                              <span>⚠️ 0 kg in stock (Full {stockInfo.reqQty} kg needed)</span>
+                                            </div>
+                                          )}
+                                        </td>
 
-                                      {/* Balance Quantity Only to Order */}
-                                      <td>
-                                        <span className="badge" style={{ background: stockInfo.balanceKg > 0 ? '#e0f2fe' : '#f1f5f9', color: stockInfo.balanceKg > 0 ? '#0369a1' : '#64748b', fontWeight: '800', fontSize: '0.85rem' }}>
-                                          {stockInfo.balanceKg} kg
-                                        </span>
-                                      </td>
+                                        {/* Balance Quantity Only to Order */}
+                                        <td>
+                                          <span className="badge" style={{ background: stockInfo.balanceKg > 0 ? '#e0f2fe' : '#f1f5f9', color: stockInfo.balanceKg > 0 ? '#0369a1' : '#64748b', fontWeight: '800', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                                            {stockInfo.balanceKg} kg
+                                          </span>
+                                        </td>
 
-                                      <td style={{ color: 'var(--text-secondary)' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                          <Building2 size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-                                          <select
-                                            className="form-control"
-                                            style={{ fontSize: '0.78rem', padding: '2px 4px', width: '140px', height: '28px' }}
-                                            value={req.preferredVendor || ''}
-                                            onChange={(e) => handleUpdateReqField(order.id, req.id, 'preferredVendor', e.target.value)}
-                                          >
-                                            <option value={req.preferredVendor}>{req.preferredVendor}</option>
-                                            {(vendors || []).map(v => (
-                                              (v.companyName || v.name) !== req.preferredVendor && (
-                                                <option key={v.id || (v.companyName || v.name)} value={v.companyName || v.name}>
-                                                  {v.companyName || v.name}
-                                                </option>
-                                              )
-                                            ))}
-                                          </select>
-                                        </div>
-                                      </td>
-                                      <td>
-                                        {req.poIssued ? (
-                                          <button 
-                                            type="button"
-                                            className="btn-secondary" 
-                                            style={{ 
-                                              display: 'inline-flex', 
-                                              alignItems: 'center', 
-                                              gap: '4px', 
-                                              padding: '4px 8px', 
-                                              fontSize: '0.75rem', 
-                                              fontWeight: '700', 
-                                              color: '#047857', 
-                                              borderColor: '#a7f3d0', 
-                                              background: '#ecfdf5', 
-                                              cursor: 'pointer' 
-                                            }}
-                                            onClick={(e) => handleViewPoPdf(req.poNumber || order.poNumber || 'PO-2026-101', e)}
-                                            title="Click to View, Print & Download Purchase Order PDF"
-                                          >
-                                            <FileText size={13} /> {req.poNumber || order.poNumber || 'PO-2026-101'}
-                                          </button>
-                                        ) : (
-                                          <span className="badge badge-warning">Pending PO</span>
-                                        )}
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
+                                        <td style={{ color: 'var(--text-secondary)' }}>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            <Building2 size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                                            <select
+                                              className="form-control"
+                                              style={{ fontSize: '0.78rem', padding: '2px 4px', width: '140px', height: '28px' }}
+                                              value={req.preferredVendor || ''}
+                                              onChange={(e) => handleUpdateReqField(order.id, req.id, 'preferredVendor', e.target.value)}
+                                            >
+                                              <option value={req.preferredVendor}>{req.preferredVendor}</option>
+                                              {(vendors || []).map(v => (
+                                                (v.companyName || v.name) !== req.preferredVendor && (
+                                                  <option key={v.id || (v.companyName || v.name)} value={v.companyName || v.name}>
+                                                    {v.companyName || v.name}
+                                                  </option>
+                                                )
+                                              ))}
+                                            </select>
+                                          </div>
+                                        </td>
+                                        <td>
+                                          {req.poIssued ? (
+                                            <button 
+                                              type="button"
+                                              className="btn-secondary" 
+                                              style={{ 
+                                                display: 'inline-flex', 
+                                                alignItems: 'center', 
+                                                gap: '4px', 
+                                                padding: '4px 8px', 
+                                                fontSize: '0.75rem', 
+                                                fontWeight: '700', 
+                                                color: '#047857', 
+                                                borderColor: '#a7f3d0', 
+                                                background: '#ecfdf5', 
+                                                cursor: 'pointer',
+                                                whiteSpace: 'nowrap'
+                                              }}
+                                              onClick={(e) => handleViewPoPdf(req.poNumber || order.poNumber || 'PO-2026-101', e)}
+                                              title="Click to View, Print & Download Purchase Order PDF"
+                                            >
+                                              <FileText size={13} /> {req.poNumber || order.poNumber || 'PO-2026-101'}
+                                            </button>
+                                          ) : (
+                                            <span className="badge badge-warning" style={{ whiteSpace: 'nowrap' }}>Pending PO</span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
                           </>
                         )}
                       </div>

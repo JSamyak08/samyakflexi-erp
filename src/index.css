@@ -1901,13 +1901,21 @@ html, body {
   margin-left: 4px;
 }
 
-/* Order card grid layout for precise alignment */
+/* Order card layout for precise alignment & full responsiveness */
 .order-card-header-grid {
-  display: grid;
-  grid-template-columns: 24px 2.2fr 1fr 0.9fr auto;
+  display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 16px;
   width: 100%;
+  flex-wrap: wrap;
+}
+
+.order-card-meta-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-left: auto;
 }
 
 .order-id-badge {
@@ -1982,8 +1990,7 @@ html, body {
   }
 
   .order-card-header-grid {
-    grid-template-columns: 24px 1.8fr 1fr auto;
-    gap: 16px;
+    gap: 12px;
   }
 
   /* Scheduler Card in Tablet */
@@ -2104,19 +2111,25 @@ html, body {
 
   /* Order card on mobile */
   .order-card-header-grid {
-    grid-template-columns: 24px 1fr !important;
-    gap: 12px !important;
+    gap: 10px !important;
+  }
+
+  .order-card-meta-actions {
+    width: 100%;
+    justify-content: space-between;
+    margin-top: 6px;
+    border-top: 1px dashed var(--border-color);
+    padding-top: 10px;
+    margin-left: 0 !important;
   }
   
   .order-card-right-section {
-    grid-column: 2;
-    flex-direction: column;
-    align-items: flex-start !important;
-    gap: 12px !important;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center !important;
+    gap: 8px !important;
     width: 100%;
-    margin-top: 8px;
-    border-top: 1px dashed var(--border-color);
-    padding-top: 12px;
+    margin-top: 4px;
   }
 
   /* Scheduler Card on Mobile */
