@@ -62,6 +62,7 @@ import DispatchManagement from './components/DispatchManagement';
 import SFGStoreManagement from './components/SFGStoreManagement';
 import WeighingScaleWidget from './components/WeighingScaleWidget';
 import UniversalBarcodeScannerModal from './components/UniversalBarcodeScannerModal';
+import Preloader from './components/Preloader';
 import { fetchAuditLogsFromSupabase, saveAuditLogToSupabase, createAuditEntry, pruneOldAuditLogs } from './services/auditLogger';
 import { getRouteFromUrl, getTabFromUrl, pushSlugState } from './utils/slugRouter';
 import { isSupabaseConfigured } from './services/supabaseClient';
@@ -2535,16 +2536,9 @@ export default function App() {
     handleTabChange('job_punching');
   };
 
-  // Render Loading Screen if auth state is not initialized
+  // Render Loading Screen with Company Logo & Percentage Status Bar
   if (!isAuthReady) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: 'var(--bg-main)' }}>
-        <div style={{ color: 'var(--text-primary)', fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div className="spinner" style={{ width: '24px', height: '24px', border: '3px solid var(--primary-brand)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
-          Authenticating with Supabase...
-        </div>
-      </div>
-    );
+    return <Preloader />;
   }
 
   // Render Authentication Screen if user is not signed in
