@@ -2392,8 +2392,25 @@ export default function SalesManagement({
                         <Plus size={13} /> Add Film Structure Layer
                       </button>
 
-                      {/* Inks & Adhesive Pre-Costing Rates */}
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                      {/* Inks & Adhesive Pre-Costing Rates & GSM Specs */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                        <div>
+                          <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#475569', display: 'block', marginBottom: '2px' }}>
+                            Dry Ink GSM (g/m²)
+                          </label>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                            <input 
+                              type="number" 
+                              step="0.1"
+                              className="form-control" 
+                              style={{ padding: '3px 6px', fontSize: '0.8rem', fontWeight: '700' }}
+                              value={item.inkGsm} 
+                              onChange={e => handleUpdateOcnItemField(itemIdx, 'inkGsm', e.target.value)} 
+                            />
+                            <span style={{ fontSize: '0.74rem', color: '#64748b' }}>g/m²</span>
+                          </div>
+                        </div>
+
                         <div>
                           <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#475569', display: 'block', marginBottom: '2px' }}>
                             Liquid Ink Rate (₹/kg)
@@ -2408,6 +2425,23 @@ export default function SalesManagement({
                               onChange={e => handleUpdateOcnItemField(itemIdx, 'inkPrice', e.target.value)} 
                             />
                             <span style={{ fontSize: '0.74rem', color: '#64748b' }}>/kg</span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#475569', display: 'block', marginBottom: '2px' }}>
+                            Adhesive Coat GSM (g/m²)
+                          </label>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                            <input 
+                              type="number" 
+                              step="0.1"
+                              className="form-control" 
+                              style={{ padding: '3px 6px', fontSize: '0.8rem', fontWeight: '700' }}
+                              value={item.adhesiveGsm} 
+                              onChange={e => handleUpdateOcnItemField(itemIdx, 'adhesiveGsm', e.target.value)} 
+                            />
+                            <span style={{ fontSize: '0.74rem', color: '#64748b' }}>g/m²</span>
                           </div>
                         </div>
 
