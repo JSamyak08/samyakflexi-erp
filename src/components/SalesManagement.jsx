@@ -887,6 +887,8 @@ export default function SalesManagement({
             pouchHeight: 160,
             materialFormat: item.materialFormat || 'Roll Form',
             layers,
+            inkGsm: parseFloat(item.inkGsm) || 1.5,
+            adhesiveGsm: parseFloat(item.adhesiveGsm) || 1.5,
             cylinderSku: `CYL-${qtn.clientName.substring(0, 3).toUpperCase()}-001`,
             cylinderCost: qtn.cylinderTerms || '₹ 35,000',
             colorsCount: 6,

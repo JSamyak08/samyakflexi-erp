@@ -465,6 +465,8 @@ export default function JobMasterDirectory({
   const [engravuresName, setEngravuresName] = useState('');
   const [utilisationLimit, setUtilisationLimit] = useState(10000);
   const [processRouting, setProcessRouting] = useState([]);
+  const [inkGsm, setInkGsm] = useState('1.5');
+  const [adhesiveGsm, setAdhesiveGsm] = useState('1.5');
 
   // Helper: Auto-generate Process Routing based on layers and available machinery
   const generateDefaultRouting = (layersList = layers, availableMachines = machines) => {
@@ -849,6 +851,8 @@ export default function JobMasterDirectory({
     setSlittingMark('Yes');
     setTrackerLine('Yes');
     setSpecialInstructions('');
+    setInkGsm('1.5');
+    setAdhesiveGsm('1.5');
     const defaultFilm = availableFilmTypes[0] || 'PET';
     const initLayers = [
       { id: Date.now(), filmType: defaultFilm, micron: 12 },
@@ -917,6 +921,8 @@ export default function JobMasterDirectory({
     setSlittingMark(job.slittingMark || 'Yes');
     setTrackerLine(job.trackerLine || 'Yes');
     setSpecialInstructions(job.specialInstructions || '');
+    setInkGsm(job.inkGsm ? String(job.inkGsm) : '1.5');
+    setAdhesiveGsm(job.adhesiveGsm ? String(job.adhesiveGsm) : '1.5');
     
     let currentLayers = [];
     if (job.layers && job.layers.length > 0) {
@@ -989,6 +995,8 @@ export default function JobMasterDirectory({
         pouchOpenWidth: parseFloat(pouchOpenWidth) || 0,
         pouchHeight: parseFloat(pouchHeight) || 0,
         layers,
+        inkGsm: parseFloat(inkGsm) || 1.5,
+        adhesiveGsm: parseFloat(adhesiveGsm) || 1.5,
         processRouting: sanitizedRouting,
         cylinderSku: skuCode.trim(),
         cylinderCost: `₹ ${parseInt(cylinderCost || 0).toLocaleString()}`,
@@ -1024,6 +1032,8 @@ export default function JobMasterDirectory({
       pouchOpenWidth: parseFloat(pouchOpenWidth) || 0,
       pouchHeight: parseFloat(pouchHeight) || 0,
       layers,
+      inkGsm: parseFloat(inkGsm) || 1.5,
+      adhesiveGsm: parseFloat(adhesiveGsm) || 1.5,
       processRouting: sanitizedRouting,
       cylinderSku: skuCode.trim(),
       cylinderCost: `₹ ${parseInt(cylinderCost || 0).toLocaleString()}`,
@@ -1612,6 +1622,43 @@ export default function JobMasterDirectory({
 
                 <div className="form-group"><label>Max Utilisation Limit (Kg)</label><input type="number" className="form-control" value={utilisationLimit} onChange={e => setUtilisationLimit(e.target.value)} /></div>
 
+                {/* Pre-Costing Target GSMs Section */}
+                <div style={{ gridColumn: 'span 2', background: '#eff6ff', padding: '16px', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
+                  <h4 style={{ fontSize: '0.9rem', fontWeight: '800', color: '#1e40af', marginBottom: '12px', borderBottom: '1px solid #dbeafe', paddingBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Layers size={16} /> Pre-Costing Target GSMs (Ink & Adhesive)
+                  </h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div className="form-group">
+                      <label style={{ fontSize: '0.8rem', fontWeight: '700', color: '#1e3a8a' }}>Pre-Costing Dry Ink GSM (g/m²)</label>
+                      <input 
+                        type="number" 
+                        step="0.05"
+                        min="0"
+                        className="form-control" 
+                        style={{ padding: '6px 10px', fontSize: '0.85rem' }} 
+                        value={inkGsm} 
+                        onChange={e => setInkGsm(e.target.value)} 
+                        placeholder="e.g. 1.5" 
+                      />
+                      <div style={{ fontSize: '0.72rem', color: '#3b82f6', marginTop: '2px' }}>Used for printing ink consumption pre-costing target (Default: 1.5 g/m²)</div>
+                    </div>
+                    <div className="form-group">
+                      <label style={{ fontSize: '0.8rem', fontWeight: '700', color: '#1e3a8a' }}>Pre-Costing Adhesive GSM (g/m²)</label>
+                      <input 
+                        type="number" 
+                        step="0.05"
+                        min="0"
+                        className="form-control" 
+                        style={{ padding: '6px 10px', fontSize: '0.85rem' }} 
+                        value={adhesiveGsm} 
+                        onChange={e => setAdhesiveGsm(e.target.value)} 
+                        placeholder="e.g. 1.5" 
+                      />
+                      <div style={{ fontSize: '0.72rem', color: '#3b82f6', marginTop: '2px' }}>Used for solventless/solvent adhesive target per ply (Default: 1.5 g/m²)</div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Press Marks & Quality Guidelines Section */}
                 <div style={{ gridColumn: 'span 2', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
                   <h4 style={{ fontSize: '0.9rem', fontWeight: '800', color: '#0f172a', marginBottom: '12px', borderBottom: '1px solid #e2e8f0', paddingBottom: '6px' }}>
@@ -2115,6 +2162,18 @@ export default function JobMasterDirectory({
                 })()}
                 </tbody>
               </table>
+
+              {/* Pre-Costing Target Ink & Adhesive GSM Specifications */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px', background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <div>
+                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Pre-Costing Target Dry Ink GSM</span>
+                  <strong style={{ fontSize: '0.95rem', color: '#0284c7' }}>{selectedJob.inkGsm || 1.5} g/m²</strong>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Pre-Costing Target Adhesive GSM</span>
+                  <strong style={{ fontSize: '0.95rem', color: '#0284c7' }}>{selectedJob.adhesiveGsm || 1.5} g/m²</strong>
+                </div>
+              </div>
             </div>
 
             {/* Process Routing & Machinery Sequence Panel */}

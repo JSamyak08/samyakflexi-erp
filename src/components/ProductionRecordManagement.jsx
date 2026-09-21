@@ -96,9 +96,21 @@ export default function ProductionRecordManagement({
   const [laminateWastageKg, setLaminateWastageKg] = useState(0);
   const [trimWastageKg, setTrimWastageKg] = useState(0);
 
+  // Target & Actual Ink / Adhesive GSM fields
+  const [actualInkGsm, setActualInkGsm] = useState('');
+  const [actualAdhesiveGsm, setActualAdhesiveGsm] = useState('');
+  const [targetInkGsm, setTargetInkGsm] = useState('1.5');
+  const [targetAdhesiveGsm, setTargetAdhesiveGsm] = useState('1.5');
+
   // Helper to open 'Start Production' for a specific punched job/order — pulls actual store issues & Job Master
   const handleStartProductionForOrder = (ord) => {
     setSelectedOrder(ord);
+
+    const linkedJm = (jobMasters || []).find(j => 
+      j.id === ord.jobMasterId || (j.jobName || '').toLowerCase().trim() === (ord.jobName || '').toLowerCase().trim()
+    );
+    const defaultTargetInk = linkedJm?.inkGsm || ord?.inkGsm || 1.5;
+    const defaultTargetAdhesive = linkedJm?.adhesiveGsm || ord?.adhesiveGsm || 1.5;
 
     // 1. Check if an existing production record already exists for this order/job
     const existingRec = (productionRecords || []).find(r => 
@@ -129,6 +141,12 @@ export default function ProductionRecordManagement({
       setLaminateWastageKg(existingRec.laminateWastageKg || 0);
       setTrimWastageKg(existingRec.trimWastageKg || 0);
       setRecordNotes(existingRec.notes || '');
+
+      setActualInkGsm(existingRec.actualInkGsm !== undefined && existingRec.actualInkGsm !== null ? String(existingRec.actualInkGsm) : (existingRec.inkGsmInSpeed ? String(existingRec.inkGsmInSpeed) : ''));
+      setActualAdhesiveGsm(existingRec.actualAdhesiveGsm !== undefined && existingRec.actualAdhesiveGsm !== null ? String(existingRec.actualAdhesiveGsm) : '');
+      setTargetInkGsm(String(existingRec.targetInkGsm || existingRec.inkGsm || defaultTargetInk));
+      setTargetAdhesiveGsm(String(existingRec.targetAdhesiveGsm || existingRec.adhesiveGsm || defaultTargetAdhesive));
+
       setActiveTab('new_record');
       pushSlugState('production_records', { id: existingRec.id, tab: 'list' });
       return;
@@ -230,6 +248,10 @@ export default function ProductionRecordManagement({
     setPrintedWastageKg(0);
     setLaminateWastageKg(0);
     setTrimWastageKg(0);
+    setActualInkGsm('');
+    setActualAdhesiveGsm('');
+    setTargetInkGsm(String(defaultTargetInk));
+    setTargetAdhesiveGsm(String(defaultTargetAdhesive));
     setRecordNotes('');
     setActiveTab('new_record');
     pushSlugState('production_records', { orderId: ord.id, tab: 'new_record' });
@@ -741,6 +763,13 @@ export default function ProductionRecordManagement({
       wastagePercentage: overallScrapPctOfOutput,
       scrapWastagePct: overallScrapPctOfOutput,
       finalProductionCostRs: finalProductionCostRs,
+
+      // Target & Actual Ink & Adhesive GSMs
+      actualInkGsm: actualInkGsm !== '' && !isNaN(parseFloat(actualInkGsm)) ? parseFloat(actualInkGsm) : null,
+      actualAdhesiveGsm: actualAdhesiveGsm !== '' && !isNaN(parseFloat(actualAdhesiveGsm)) ? parseFloat(actualAdhesiveGsm) : null,
+      targetInkGsm: parseFloat(targetInkGsm) || 1.5,
+      targetAdhesiveGsm: parseFloat(targetAdhesiveGsm) || 1.5,
+      inkGsmInSpeed: actualInkGsm !== '' && !isNaN(parseFloat(actualInkGsm)) ? parseFloat(actualInkGsm) : (parseFloat(targetInkGsm) || 1.5),
 
       status: "Filled by Plant Manager",
       filledBy: `${currentUser.name} (${currentUser.role})`,
@@ -2712,6 +2741,31 @@ export default function ProductionRecordManagement({
                     <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '6px' }}>
                       Net usable roll weight after printing pass
                     </div>
+
+                    {/* Actual Ink GSM input by Operator */}
+                    <div style={{ marginTop: '12px', padding: '10px 12px', background: '#f0f9ff', borderRadius: '6px', border: '1px solid #bae6fd' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <label style={{ fontSize: '0.75rem', fontWeight: '800', color: '#0369a1', margin: 0 }}>
+                          🎨 Actual Dry Ink GSM (g/m²)
+                        </label>
+                        <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#0284c7', background: '#e0f2fe', padding: '1px 6px', borderRadius: '4px' }}>
+                          Target: {targetInkGsm || 1.5} GSM
+                        </span>
+                      </div>
+                      <input 
+                        type="number" 
+                        step="0.05" 
+                        min="0"
+                        className="form-control" 
+                        style={{ fontWeight: '700', fontSize: '0.95rem', background: '#ffffff', color: '#0369a1', borderColor: '#0284c7' }} 
+                        value={actualInkGsm} 
+                        onChange={e => setActualInkGsm(e.target.value)} 
+                        placeholder={`e.g. ${targetInkGsm || 1.5}`}
+                      />
+                      <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '4px' }}>
+                        Input by Machine Operator during printing job run
+                      </div>
+                    </div>
                   </div>
 
                   {/* Right Column: Process Scrap */}
@@ -2835,6 +2889,31 @@ export default function ProductionRecordManagement({
                     />
                     <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '6px' }}>
                       Lamination roll output weight for 1st lamination pass
+                    </div>
+
+                    {/* Actual Adhesive GSM input by Operator */}
+                    <div style={{ marginTop: '12px', padding: '10px 12px', background: '#eef2ff', borderRadius: '6px', border: '1px solid #c7d2fe' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <label style={{ fontSize: '0.75rem', fontWeight: '800', color: '#4338ca', margin: 0 }}>
+                          🧪 Actual Adhesive GSM (g/m²)
+                        </label>
+                        <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#4338ca', background: '#e0e7ff', padding: '1px 6px', borderRadius: '4px' }}>
+                          Target: {targetAdhesiveGsm || 1.5} GSM
+                        </span>
+                      </div>
+                      <input 
+                        type="number" 
+                        step="0.05" 
+                        min="0"
+                        className="form-control" 
+                        style={{ fontWeight: '700', fontSize: '0.95rem', background: '#ffffff', color: '#4338ca', borderColor: '#818cf8' }} 
+                        value={actualAdhesiveGsm} 
+                        onChange={e => setActualAdhesiveGsm(e.target.value)} 
+                        placeholder={`e.g. ${targetAdhesiveGsm || 1.5}`}
+                      />
+                      <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '4px' }}>
+                        Input by Machine Operator during lamination job run
+                      </div>
                     </div>
                   </div>
 
