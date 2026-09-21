@@ -198,6 +198,9 @@ export const calculateJobRawMaterials = ({
     orderQtyKg,
     orderType,
     wastagePct,
+    totalCost: totalRawMaterialCost,
+    totalRawMaterialCost,
+    costPerKg: parseFloat(costPerKg) || 0,
     totalLaminateGsm: parseFloat(totalLaminateGsm.toFixed(2)),
     totalAreaSqm: Math.round(totalAreaSqm),
     layerResults,
@@ -219,7 +222,7 @@ export const calculateJobRawMaterials = ({
       totalFilmNetKg: parseFloat(totalFilmNetKg.toFixed(2)),
       totalFilmGrossKg: parseFloat(totalFilmGrossKg.toFixed(2)),
       totalRawMaterialCost,
-      costPerKg
+      costPerKg: parseFloat(costPerKg) || 0
     }
   };
 };

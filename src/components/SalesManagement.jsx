@@ -2179,9 +2179,10 @@ export default function SalesManagement({
               }) : null;
 
               const totalSellingVal = Math.round((parseFloat(item.quantityKg) || 0) * (parseFloat(item.ratePerUom) || 0));
-              const totalMatCost = Math.round((calc && !isNaN(Number(calc.totalCost))) ? Number(calc.totalCost) : 0);
+              const totalMatCost = Math.round(calc ? (calc.totalCost || calc.totalRawMaterialCost || (calc.summary && calc.summary.totalRawMaterialCost) || 0) : 0);
               const grossMargin = totalSellingVal - totalMatCost;
               const marginPct = totalSellingVal > 0 ? ((grossMargin / totalSellingVal) * 100).toFixed(1) : 0;
+              const matCostPerKgVal = calc ? (parseFloat(calc.costPerKg) || parseFloat(calc.summary && calc.summary.costPerKg) || ((parseFloat(item.quantityKg) || 0) > 0 ? totalMatCost / parseFloat(item.quantityKg) : 0)) : 0;
 
               return (
                 <div key={itemIdx} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '12px', padding: '18px', marginBottom: '20px' }}>
@@ -2458,7 +2459,7 @@ export default function SalesManagement({
                         <div>
                           <span style={{ fontSize: '0.72rem', color: '#065f46', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Material Cost / Kg</span>
                           <strong style={{ fontSize: '0.92rem', color: '#0f172a' }}>
-                            ₹ {(calc.costPerKg || 0).toFixed(2)} / kg
+                            ₹ {matCostPerKgVal.toFixed(2)} / kg
                           </strong>
                         </div>
                       </div>
