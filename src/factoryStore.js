@@ -95,8 +95,8 @@ export const DEFAULT_PROCESSING_RATES = {
  */
 export const getWastagePercentage = (orderQtyKg, isPouching = false) => {
   const qty = parseFloat(orderQtyKg) || 0;
-  if (qty >= 2000) return 4.5;
-  if (qty >= 1000) return 5.0;
+  if (qty >= 2000) return isPouching ? 5.0 : 4.5;
+  if (qty >= 1000) return isPouching ? 6.0 : 5.0;
   if (qty <= 500) {
     return isPouching ? 8.0 : 7.0;
   }
@@ -120,7 +120,7 @@ export const calculateJobRawMaterials = ({
   inkPrice = 1500,
   adhesivePrice = 270
 }) => {
-  const isPouching = orderType === "Pouching";
+  const isPouching = orderType === "Pouching" || String(orderType).toLowerCase().includes('pouch');
   const wastagePct = getWastagePercentage(orderQtyKg, isPouching);
 
   // 1. Calculate GSM for each film layer
@@ -190,6 +190,7 @@ export const calculateJobRawMaterials = ({
 
   const totalRawMaterialCost = Math.round(totalFilmCost + totalInkCost + totalAdhesiveCost);
   const costPerKg = orderQtyKg > 0 ? (totalRawMaterialCost / orderQtyKg).toFixed(2) : 0;
+  const wastageKg = Math.round(totalFilmGrossKg - totalFilmNetKg);
 
   return {
     jobName,
@@ -198,6 +199,7 @@ export const calculateJobRawMaterials = ({
     orderQtyKg,
     orderType,
     wastagePct,
+    wastageKg,
     totalCost: totalRawMaterialCost,
     totalRawMaterialCost,
     costPerKg: parseFloat(costPerKg) || 0,
@@ -222,7 +224,9 @@ export const calculateJobRawMaterials = ({
       totalFilmNetKg: parseFloat(totalFilmNetKg.toFixed(2)),
       totalFilmGrossKg: parseFloat(totalFilmGrossKg.toFixed(2)),
       totalRawMaterialCost,
-      costPerKg: parseFloat(costPerKg) || 0
+      costPerKg: parseFloat(costPerKg) || 0,
+      wastagePct,
+      wastageKg
     }
   };
 };

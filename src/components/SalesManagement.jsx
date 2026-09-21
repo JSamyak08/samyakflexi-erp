@@ -2462,6 +2462,13 @@ export default function SalesManagement({
                             ₹ {matCostPerKgVal.toFixed(2)} / kg
                           </strong>
                         </div>
+
+                        <div>
+                          <span style={{ fontSize: '0.72rem', color: '#065f46', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Applied Wastage Rule</span>
+                          <span className="badge badge-warning" style={{ fontSize: '0.85rem', fontWeight: '800', marginTop: '2px', display: 'inline-block' }}>
+                            {calc.wastagePct}% (Auto Tier)
+                          </span>
+                        </div>
                       </div>
                     </div>
                   )}
