@@ -158,6 +158,7 @@ export default function InventoryManagement({
   onUpdateGRN, 
   onUpdateInventory,
   onSaveInventoryItem,
+  onDeleteInventoryItem,
   onSaveProductionRecord,
   onAddVendor,
   inventoryRolls = [],
@@ -1370,24 +1371,33 @@ export default function InventoryManagement({
       });
     }
 
-    if (onUpdateInventory) {
+    const itemWithId = editingStockItem.isNew 
+      ? { id: editingStockItem.id || generateInventoryId(inventory), ...itemPayload }
+      : { ...editingStockItem, ...itemPayload };
+
+    if (onSaveInventoryItem) {
+      onSaveInventoryItem(itemWithId);
+    } else if (onUpdateInventory) {
       onUpdateInventory(updatedInv);
     }
 
     const actionText = editingStockItem.isNew ? 'created' : 'updated';
-    const itemId = editingStockItem.id;
+    const itemId = itemWithId.id;
     setEditingStockItem(null);
     alert(`Stock item ${itemId} (${finalItemName}) ${actionText} successfully!`);
   };
 
-  const handleDeleteStockItem = (item) => {
+  const handleDeleteStockItem = async (item) => {
+    if (!item || !item.id) return;
     const displayName = item.itemName || `${item.filmType || 'Item'} ${item.micron && item.micron !== '-' ? item.micron + 'µ' : ''}`;
     if (window.confirm(`Are you sure you want to permanently delete stock item "${item.id} - ${displayName}"?`)) {
-      const updatedInv = inventory.filter(i => i.id !== item.id);
-      if (onUpdateInventory) {
+      if (onDeleteInventoryItem) {
+        await onDeleteInventoryItem(item.id);
+      } else if (onUpdateInventory) {
+        const updatedInv = inventory.filter(i => String(i.id) !== String(item.id));
         onUpdateInventory(updatedInv);
       }
-      alert(`Stock item ${item.id} deleted.`);
+      alert(`Stock item ${item.id} deleted successfully.`);
     }
   };
 

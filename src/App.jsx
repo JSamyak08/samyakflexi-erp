@@ -571,21 +571,14 @@ export default function App() {
 
       if (Array.isArray(supaInv)) {
         const cleanSupa = stripDummyRecords(supaInv).map(sanitizeInventoryItem);
-        setInventory(prev => {
-          const map = new Map();
-          cleanSupa.forEach(i => { if (i && i.id) map.set(String(i.id), sanitizeInventoryItem(i)); });
-          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(String(p.id))) map.set(String(p.id), sanitizeInventoryItem(p)); });
-          const merged = Array.from(map.values()).map(sanitizeInventoryItem);
-          safeLocalStorageSet('samyak_erp_inventory', merged);
+        setInventory(cleanSupa);
+        safeLocalStorageSet('samyak_erp_inventory', cleanSupa);
 
-          // Auto self-heal: If any item in Supabase has dirty envelope or JSON string in itemName, re-save with clean mapped payload
-          merged.forEach(item => {
-            if (item && item.itemName && (item.itemName.includes('|||') || item.itemName.startsWith('{'))) {
-              saveInventoryItemToSupabase(sanitizeInventoryItem(item)).catch(console.warn);
-            }
-          });
-
-          return merged;
+        // Auto self-heal: If any item in Supabase has dirty envelope or JSON string in itemName, re-save with clean mapped payload
+        cleanSupa.forEach(item => {
+          if (item && item.itemName && (item.itemName.includes('|||') || item.itemName.startsWith('{'))) {
+            saveInventoryItemToSupabase(sanitizeInventoryItem(item)).catch(console.warn);
+          }
         });
         supaInv.filter(isDummyRecord).forEach(d => deleteInventoryItemFromSupabase(d.id).catch(console.warn));
       }
@@ -816,41 +809,6 @@ export default function App() {
           });
           const merged = Array.from(map.values());
           safeLocalStorageSet('samyak_erp_inks', merged);
-
-          // Synchronize each ink into inventory under category 'Printing Inks & Toners'
-          setInventory(prevInv => {
-            let updatedInv = [...(prevInv || [])];
-            let modified = false;
-            merged.forEach(ink => {
-              const invId = ink.productCode || ink.id;
-              const exists = updatedInv.some(i => i.id === invId || i.itemCode === ink.productCode);
-              if (!exists) {
-                const newInvItem = sanitizeInventoryItem({
-                  id: invId,
-                  itemCode: ink.productCode || invId,
-                  itemName: `${ink.manufacturer || 'DIC Inks'} ${ink.shade} (${ink.inkType || 'Reverse Ink'})`,
-                  category: 'Printing Inks',
-                  unit: 'Kg',
-                  availableQtyKg: Number(ink.stockQtyKg !== undefined ? ink.stockQtyKg : 200),
-                  allocatedQtyKg: 0,
-                  reorderLevelKg: Number(ink.reorderLevelKg || 50),
-                  unitPrice: Number(ink.pricePerKg || 300),
-                  purchaseRatePerKg: Number(ink.pricePerKg || 300),
-                  location: 'Ink Store Room',
-                  lastVendor: ink.manufacturer || ink.supplierName || 'DIC Inks',
-                  lastBatch: `LOT-${ink.productCode}`,
-                  micron: '-',
-                  widthMm: '-'
-                });
-                updatedInv.push(newInvItem);
-                saveInventoryItemToSupabase(newInvItem).catch(console.warn);
-                modified = true;
-              }
-            });
-            if (modified) safeLocalStorageSet('samyak_erp_inventory', updatedInv);
-            return modified ? updatedInv : prevInv;
-          });
-
           return merged;
         });
       }
@@ -1816,16 +1774,18 @@ export default function App() {
 
   const handleSaveInventoryItem = async (item) => {
     if (!item) return;
+    const cleanItem = sanitizeInventoryItem(item);
     setInventory(prev => {
-      const exists = prev.some(i => String(i.id) === String(item.id));
-      if (exists) {
-        return prev.map(i => String(i.id) === String(item.id) ? { ...i, ...item } : i);
-      }
-      return [item, ...prev];
+      const exists = prev.some(i => String(i.id) === String(cleanItem.id));
+      const updated = exists
+        ? prev.map(i => String(i.id) === String(cleanItem.id) ? { ...i, ...cleanItem } : i)
+        : [cleanItem, ...prev];
+      safeLocalStorageSet('samyak_erp_inventory', updated);
+      return updated;
     });
-    logAudit('UPDATE', 'Inventory', `Saved stock item ${item.itemCode || item.id} - "${item.itemName}" (${item.availableQtyKg} ${item.unit || 'Kg'})`, item.id);
+    logAudit('UPDATE', 'Inventory', `Saved stock item ${cleanItem.itemCode || cleanItem.id} - "${cleanItem.itemName}" (${cleanItem.availableQtyKg} ${cleanItem.unit || 'Kg'})`, cleanItem.id);
     try {
-      await saveInventoryItemToSupabase(item);
+      await saveInventoryItemToSupabase(cleanItem);
     } catch (err) {
       console.warn("[Sync Notice] Inventory item saved. Supabase notice:", err);
     }
@@ -1833,7 +1793,11 @@ export default function App() {
 
   const handleDeleteInventoryItem = async (itemId) => {
     if (!itemId) return;
-    setInventory(prev => prev.filter(i => String(i.id) !== String(itemId)));
+    setInventory(prev => {
+      const updated = prev.filter(i => String(i.id) !== String(itemId));
+      safeLocalStorageSet('samyak_erp_inventory', updated);
+      return updated;
+    });
     logAudit('DELETE', 'Inventory', `Deleted inventory item ${itemId}`, itemId);
     try {
       await deleteInventoryItemFromSupabase(itemId);
@@ -2380,32 +2344,37 @@ export default function App() {
 
   // Ink Management Handlers & Inventory Synchronization
   const syncInkToInventory = (ink, overrideStock = null) => {
+    if (!ink) return;
     const invId = ink.productCode || ink.id;
-    const invItem = {
-      id: invId,
-      itemCode: ink.productCode || invId,
-      itemName: `${ink.manufacturer || 'DIC Inks'} ${ink.shade} (${ink.inkType || 'Reverse Ink'})`,
-      category: 'Printing Inks',
-      unit: 'Kg',
-      availableQtyKg: overrideStock !== null ? Number(overrideStock) : (ink.stockQtyKg !== undefined ? Number(ink.stockQtyKg) : 200),
-      allocatedQtyKg: 0,
-      reorderLevelKg: Number(ink.reorderLevelKg || 50),
-      unitPrice: Number(ink.pricePerKg || 300),
-      purchaseRatePerKg: Number(ink.pricePerKg || 300),
-      location: 'Ink Store Room',
-      lastVendor: ink.manufacturer || ink.supplierName || 'DIC Inks',
-      lastBatch: `LOT-${ink.productCode}`,
-      micron: '-',
-      widthMm: '-'
-    };
     setInventory(prev => {
-      const exists = prev.some(i => i.id === invId || i.itemCode === ink.productCode);
+      const exists = (prev || []).some(i => i.id === invId || i.itemCode === ink.productCode);
+      if (!exists && overrideStock === null) return prev;
+
+      const invItem = sanitizeInventoryItem({
+        id: invId,
+        itemCode: ink.productCode || invId,
+        itemName: `${ink.manufacturer || 'DIC Inks'} ${ink.shade} (${ink.inkType || 'Reverse Ink'})`,
+        category: 'Printing Inks',
+        unit: 'Kg',
+        availableQtyKg: overrideStock !== null ? Number(overrideStock) : (ink.stockQtyKg !== undefined ? Number(ink.stockQtyKg) : 0),
+        allocatedQtyKg: 0,
+        reorderLevelKg: Number(ink.reorderLevelKg || 50),
+        unitPrice: Number(ink.pricePerKg || 300),
+        purchaseRatePerKg: Number(ink.pricePerKg || 300),
+        location: 'Ink Store Room',
+        lastVendor: ink.manufacturer || ink.supplierName || 'DIC Inks',
+        lastBatch: `LOT-${ink.productCode}`,
+        micron: '-',
+        widthMm: '-'
+      });
+
       const updated = exists 
         ? prev.map(i => (i.id === invId || i.itemCode === ink.productCode) ? { ...i, ...invItem, availableQtyKg: overrideStock !== null ? Number(overrideStock) : i.availableQtyKg } : i)
         : [invItem, ...prev];
+
+      saveInventoryItemToSupabase(invItem).catch(console.warn);
       return updated.map(sanitizeInventoryItem);
     });
-    saveInventoryItemToSupabase(invItem).catch(console.warn);
   };
 
   const handleAddInk = async (newInk) => {
