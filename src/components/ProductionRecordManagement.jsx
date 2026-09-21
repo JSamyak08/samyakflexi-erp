@@ -29,7 +29,7 @@ import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import CylinderJobCardForm from '../CylinderJobCardForm';
 import SFGFGEntryModal from './SFGFGEntryModal';
-import { DEFAULT_DAILY_RATES, generateBarcodeId } from '../factoryStore';
+import { DEFAULT_DAILY_RATES, generateBarcodeId, calculateJobRawMaterials, calculatePreVsPostCosting } from '../factoryStore';
 import { notifyProductionRecordSubmitted, notifyProductionRecordApproved, notifyOverWastageAlert } from '../services/emailService';
 import { pushSlugState } from '../utils/slugRouter';
 
@@ -1243,34 +1243,68 @@ export default function ProductionRecordManagement({
                   </tr>
                 ) : (
                   filteredRecords.map(rec => {
-                    const linkedOrder = orders.find(o => o.id === rec.orderId || o.jobName === rec.jobName) || {};
-                    const sellingPrice = linkedOrder.sellingPricePerKg || 245;
-                    const revenue = Math.round((rec.totalProductionQtyKg || 1000) * sellingPrice);
-                    const actualCost = rec.finalProductionCostRs || 0;
-                    const profitRs = revenue - actualCost;
-                    const marginPct = revenue > 0 ? ((profitRs / revenue) * 100).toFixed(1) : 0;
+                    const linkedOrder = orders.find(o => 
+                      (rec.orderId && String(o.id) === String(rec.orderId)) ||
+                      (rec.jobCode && String(o.jobCode || '').toUpperCase() === String(rec.jobCode).toUpperCase()) ||
+                      (rec.jobName && (o.jobName || '').toLowerCase().trim() === (rec.jobName || '').toLowerCase().trim())
+                    ) || {};
+
+                    const matchingJobMaster = jobMasters.find(j => 
+                      (rec.jobMasterId && String(j.id) === String(rec.jobMasterId)) ||
+                      (rec.jobCode && String(j.jobCode || '').toUpperCase() === String(rec.jobCode).toUpperCase()) ||
+                      (rec.jobName && (j.jobName || '').toLowerCase().trim() === (rec.jobName || '').toLowerCase().trim())
+                    ) || {};
+
+                    const sellingPrice = Number(
+                      rec.sellingPricePerKg ||
+                      linkedOrder.sellingPricePerKg || 
+                      linkedOrder.pricePerKg || 
+                      linkedOrder.rate || 
+                      linkedOrder.unitPrice || 
+                      linkedOrder.orderRatePerKg ||
+                      matchingJobMaster.sellingPricePerKg ||
+                      matchingJobMaster.pricePerKg ||
+                      0
+                    );
+
+                    const actualQty = Number(rec.totalProductionQtyKg || rec.qtyDispatch || rec.qtySecondPassL2 || rec.qtyFirstPassL1 || 0);
+                    const revenue = sellingPrice > 0 && actualQty > 0 ? Math.round(actualQty * sellingPrice) : 0;
+                    const actualCost = Number(rec.finalProductionCostRs || rec.totalProductionCostRs || 0);
+                    const profitRs = revenue > 0 ? revenue - actualCost : 0;
+                    const marginPct = revenue > 0 ? ((profitRs / revenue) * 100).toFixed(1) : null;
+                    const jobMasterDisplay = rec.jobMasterId || matchingJobMaster.id || matchingJobMaster.jobCode || null;
 
                     return (
                       <tr key={rec.id}>
                         <td style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>{rec.orderId}</td>
                         <td>
                           <div style={{ fontWeight: '600' }}>{rec.jobName}</div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{rec.clientName} • <span style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>{rec.jobMasterId || 'JM-2026-089'}</span></div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                            {rec.clientName} {jobMasterDisplay ? `• ${jobMasterDisplay}` : ''}
+                          </div>
                         </td>
                         <td>{rec.dateFilled}</td>
-                        <td style={{ fontWeight: '600' }}>{(rec.totalProductionQtyKg ?? 0).toLocaleString()} kg</td>
+                        <td style={{ fontWeight: '600' }}>{actualQty > 0 ? actualQty.toLocaleString() : 0} kg</td>
                         <td>₹ {(rec.totalMaterialCostRs ?? 0).toLocaleString()}</td>
                         <td style={{ fontWeight: '700', color: '#047857' }}>₹ {(rec.finalProductionCostRs ?? 0).toLocaleString()}</td>
                         
                         {/* Admin Only Profitability Column */}
                         {isAdmin && (
                           <td>
-                            <div style={{ fontWeight: '800', color: profitRs > 0 ? '#047857' : '#dc2626', fontSize: '0.85rem' }}>
-                              ₹ {profitRs.toLocaleString('en-IN')} ({marginPct}%)
-                            </div>
-                            <span className={`badge ${marginPct >= 15 ? 'badge-success' : marginPct >= 5 ? 'badge-info' : 'badge-danger'}`} style={{ fontSize: '0.7rem', padding: '1px 6px' }}>
-                              {marginPct >= 15 ? 'HIGH MARGIN' : marginPct >= 5 ? 'MODERATE' : 'THIN / LOSS'}
-                            </span>
+                            {revenue > 0 ? (
+                              <>
+                                <div style={{ fontWeight: '800', color: profitRs >= 0 ? '#047857' : '#dc2626', fontSize: '0.85rem' }}>
+                                  ₹ {profitRs.toLocaleString('en-IN')} ({marginPct}%)
+                                </div>
+                                <span className={`badge ${Number(marginPct) >= 20 ? 'badge-success' : Number(marginPct) >= 10 ? 'badge-info' : Number(marginPct) >= 0 ? 'badge-warning' : 'badge-danger'}`} style={{ fontSize: '0.7rem', padding: '1px 6px' }}>
+                                  {Number(marginPct) >= 20 ? 'HIGH MARGIN' : Number(marginPct) >= 10 ? 'GOOD MARGIN' : Number(marginPct) >= 0 ? 'THIN MARGIN' : 'COST OVERRUN'}
+                                </span>
+                              </>
+                            ) : (
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                — (Rate Not Set)
+                              </span>
+                            )}
                           </td>
                         )}
 
@@ -1929,40 +1963,93 @@ export default function ProductionRecordManagement({
               </div>
 
               {(() => {
-                // Calculate Profitability & Variances strictly from REAL data
+                // Calculate Profitability & Variances strictly from REAL database datapoints
                 const linkedOrder = orders.find(o => 
                   (selectedRecord.orderId && String(o.id) === String(selectedRecord.orderId)) ||
                   (selectedRecord.jobCode && String(o.jobCode || '').toUpperCase() === String(selectedRecord.jobCode).toUpperCase()) ||
                   (selectedRecord.jobName && (o.jobName || '').toLowerCase().trim() === (selectedRecord.jobName || '').toLowerCase().trim())
                 ) || null;
 
-                const preCosting = linkedOrder?.calculationDetails || linkedOrder?.preCosting || null;
-                const sellingPricePerKg = Number(linkedOrder?.sellingPricePerKg || linkedOrder?.pricePerKg || linkedOrder?.unitPrice || linkedOrder?.rate || selectedRecord?.sellingPricePerKg || 0);
+                const linkedJobMaster = jobMasters.find(j => 
+                  (selectedRecord.jobMasterId && String(j.id) === String(selectedRecord.jobMasterId)) ||
+                  (selectedRecord.jobCode && String(j.jobCode || '').toUpperCase() === String(selectedRecord.jobCode).toUpperCase()) ||
+                  (selectedRecord.jobName && (j.jobName || '').toLowerCase().trim() === (selectedRecord.jobName || '').toLowerCase().trim())
+                ) || null;
+
                 const actualQtyKg = Number(selectedRecord.totalProductionQtyKg || selectedRecord.qtyDispatch || selectedRecord.qtySecondPassL2 || selectedRecord.qtyFirstPassL1 || 0);
                 const targetOrderQtyKg = Number(linkedOrder?.orderQtyKg || linkedOrder?.quantityKg || linkedOrder?.jobQuantityKg || actualQtyKg || 0);
 
+                const sellingPricePerKg = Number(
+                  selectedRecord.sellingPricePerKg ||
+                  linkedOrder?.sellingPricePerKg ||
+                  linkedOrder?.pricePerKg ||
+                  linkedOrder?.rate ||
+                  linkedOrder?.unitPrice ||
+                  linkedOrder?.orderRatePerKg ||
+                  linkedJobMaster?.sellingPricePerKg ||
+                  linkedJobMaster?.pricePerKg ||
+                  (linkedOrder?.totalAmount && targetOrderQtyKg > 0 ? (linkedOrder.totalAmount / targetOrderQtyKg) : 0) ||
+                  0
+                );
+
                 const materials = selectedRecord.materialsList || [];
-                const actualMaterialCost = materials.reduce((sum, m) => sum + (parseFloat(m.totalMaterialCost) || 0), 0);
-                const actualProcCost = parseFloat(selectedRecord.processingCostRs) || 0;
+                const filmsCost = materials.filter(m => 
+                  (m.filmType || m.category || m.itemName || '').toLowerCase().includes('film') || 
+                  (m.filmType || '').match(/pet|bopp|ldpe|poly|cpp|foil|met/i)
+                ).reduce((a, b) => a + (parseFloat(b.totalMaterialCost) || 0), 0);
+
+                const inksSolventsCost = materials.filter(m => 
+                  (m.filmType || m.category || m.itemName || '').toLowerCase().includes('ink') || 
+                  (m.filmType || m.category || m.itemName || '').toLowerCase().includes('solvent') || 
+                  (m.filmType || '').match(/ea|cy|mg|ye|bl|wh|reducer|retarder|ethyl/i)
+                ).reduce((a, b) => a + (parseFloat(b.totalMaterialCost) || 0), 0);
+
+                const adhesiveLoggedCost = materials.filter(m => 
+                  (m.filmType || m.category || m.itemName || '').toLowerCase().includes('adhesive') || 
+                  (m.filmType || m.category || m.itemName || '').toLowerCase().includes('hardener') || 
+                  (m.filmType || '').match(/adh|hard|polyurethane/i)
+                ).reduce((a, b) => a + (parseFloat(b.totalMaterialCost) || 0), 0);
+
+                const totalAdhesiveConsumedKg = (parseFloat(selectedRecord.adhesiveConsumedL1Kg) || 0) + (parseFloat(selectedRecord.adhesiveConsumedL2Kg) || 0);
+                const adhesiveCost = adhesiveLoggedCost > 0 ? adhesiveLoggedCost : (totalAdhesiveConsumedKg * 270);
+
+                const actualProcCost = parseFloat(selectedRecord.totalProcessingCostRs) || parseFloat(selectedRecord.processingCostRs) || (actualQtyKg * (parseFloat(selectedRecord.processingCostPerKg) || 25));
+                const actualMaterialCost = filmsCost + inksSolventsCost + adhesiveCost;
                 const actualProductionCost = Number(selectedRecord.finalProductionCostRs || selectedRecord.totalProductionCostRs || 0) || (actualMaterialCost + actualProcCost);
 
                 const totalGrossRevenue = actualQtyKg > 0 && sellingPricePerKg > 0 ? Math.round(actualQtyKg * sellingPricePerKg) : 0;
                 const netProfitRs = totalGrossRevenue > 0 ? totalGrossRevenue - actualProductionCost : 0;
-                const profitMarginPct = totalGrossRevenue > 0 ? ((netProfitRs / totalGrossRevenue) * 100).toFixed(1) : 0;
+                const profitMarginPct = totalGrossRevenue > 0 ? ((netProfitRs / totalGrossRevenue) * 100).toFixed(1) : null;
 
-                // Quoted Pre-Costing Target (strictly from linked order pre-costing, zero dummy data)
+                // Dynamic Pre-Costing Target from Orders / Job Masters
+                let preCosting = linkedOrder?.calculationDetails || linkedOrder?.preCosting || linkedJobMaster?.calculationDetails || linkedJobMaster?.preCosting || null;
+
+                if (!preCosting && linkedJobMaster?.layers?.length > 0 && typeof calculateJobRawMaterials === 'function') {
+                  try {
+                    preCosting = calculateJobRawMaterials({
+                      jobName: selectedRecord.jobName,
+                      printWidthMm: linkedJobMaster.printWidthMm || 1000,
+                      repeatLengthMm: linkedJobMaster.repeatLengthMm || 400,
+                      orderQtyKg: targetOrderQtyKg > 0 ? targetOrderQtyKg : 1000,
+                      layers: linkedJobMaster.layers
+                    });
+                  } catch (err) {
+                    console.warn("Dynamic pre-costing calculation warning:", err);
+                  }
+                }
+
                 const hasPreCosting = Boolean(preCosting && (preCosting.summary || preCosting.totalRawMaterialCost || preCosting.grandTotalCost || preCosting.estimatedCost));
                 const estRawMaterialCost = hasPreCosting ? Number(preCosting.summary?.totalRawMaterialCost || preCosting.totalRawMaterialCost || preCosting.rawMaterialCost || 0) : 0;
                 const estProcessingCost = hasPreCosting ? Number(preCosting.summary?.totalProcessingCost || preCosting.totalProcessingCost || preCosting.processingCost || 0) : 0;
-                const estTotalCost = hasPreCosting ? (estRawMaterialCost + estProcessingCost || Number(preCosting.summary?.grandTotalCost || preCosting.grandTotalCost || 0)) : 0;
+                const estTotalCost = hasPreCosting ? (estRawMaterialCost + estProcessingCost || Number(preCosting.summary?.grandTotalCost || preCosting.grandTotalCost || preCosting.estimatedCost || 0)) : 0;
 
                 const costVarianceRs = hasPreCosting && estTotalCost > 0 ? actualProductionCost - estTotalCost : 0;
                 const costVariancePct = hasPreCosting && estTotalCost > 0 ? ((costVarianceRs / estTotalCost) * 100).toFixed(1) : null;
 
-                const isHighProfit = totalGrossRevenue > 0 && profitMarginPct >= 20;
-                const isModerateProfit = totalGrossRevenue > 0 && profitMarginPct >= 10 && profitMarginPct < 20;
-                const isLowProfit = totalGrossRevenue > 0 && profitMarginPct >= 0 && profitMarginPct < 10;
-                const isLoss = totalGrossRevenue > 0 && profitMarginPct < 0;
+                const isHighProfit = totalGrossRevenue > 0 && Number(profitMarginPct) >= 20;
+                const isModerateProfit = totalGrossRevenue > 0 && Number(profitMarginPct) >= 10 && Number(profitMarginPct) < 20;
+                const isLowProfit = totalGrossRevenue > 0 && Number(profitMarginPct) >= 0 && Number(profitMarginPct) < 10;
+                const isLoss = totalGrossRevenue > 0 && Number(profitMarginPct) < 0;
 
                 return (
                   <div>
@@ -1981,10 +2068,10 @@ export default function ProductionRecordManagement({
                       <div className="glass-card" style={{ padding: '16px', background: '#ffffff' }}>
                         <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: '700' }}>QUOTED TARGET COST</div>
                         <div style={{ fontSize: '1.3rem', fontWeight: '800', color: 'var(--text-primary)', marginTop: '4px' }}>
-                          {hasPreCosting && estTotalCost > 0 ? `₹ ${Math.round(estTotalCost).toLocaleString('en-IN')}` : '— (No Pre-Costing)'}
+                          {hasPreCosting && estTotalCost > 0 ? `₹ ${Math.round(estTotalCost).toLocaleString('en-IN')}` : '— (No Pre-Costing Target)'}
                         </div>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                          {hasPreCosting && targetOrderQtyKg > 0 ? `Pre-Cost Rate: ₹ ${(estTotalCost / targetOrderQtyKg).toFixed(2)}/kg` : 'Quotation pre-costing not attached'}
+                          {hasPreCosting && targetOrderQtyKg > 0 ? `Pre-Cost Rate: ₹ ${(estTotalCost / targetOrderQtyKg).toFixed(2)}/kg` : 'No pre-costing target attached'}
                         </div>
                       </div>
 
@@ -2014,7 +2101,7 @@ export default function ProductionRecordManagement({
                             </span>
                           ) : (
                             <span className="badge badge-secondary" style={{ fontSize: '0.72rem', padding: '2px 8px' }}>
-                              Set selling price to compute margin
+                              Set selling price in Order to compute margin
                             </span>
                           )}
                         </div>
@@ -2037,10 +2124,6 @@ export default function ProductionRecordManagement({
                       </thead>
                       <tbody>
                         {(() => {
-                          const filmsCost = materials.filter(m => (m.filmType || m.category || '').toLowerCase().includes('film') || (m.filmType || '').match(/pet|bopp|ldpe|poly|cpp|foil|met/i)).reduce((a, b) => a + (b.totalMaterialCost || 0), 0);
-                          const inksSolventsCost = materials.filter(m => (m.filmType || m.category || '').toLowerCase().includes('ink') || (m.filmType || m.category || '').toLowerCase().includes('solvent') || (m.filmType || '').match(/ea|cy|mg|ye|bl|wh|reducer|retarder|ethyl/i)).reduce((a, b) => a + (b.totalMaterialCost || 0), 0);
-                          const adhesiveCost = materials.filter(m => (m.filmType || m.category || '').toLowerCase().includes('adhesive') || (m.filmType || m.category || '').toLowerCase().includes('hardener') || (m.filmType || '').match(/adh|hard|polyurethane/i)).reduce((a, b) => a + (b.totalMaterialCost || 0), 0);
-
                           const estFilmCost = hasPreCosting ? Number(preCosting.summary?.totalFilmCost || (preCosting.summary?.totalFilmGrossKg && preCosting.summary?.avgFilmRate ? preCosting.summary.totalFilmGrossKg * preCosting.summary.avgFilmRate : (preCosting.filmDetails?.totalCost || 0))) : 0;
                           const estInkCost = hasPreCosting ? Number(preCosting.summary?.totalInkCost || (preCosting.inkDetails?.grossKg && preCosting.inkDetails?.ratePerKg ? preCosting.inkDetails.grossKg * preCosting.inkDetails.ratePerKg : (preCosting.inkDetails?.totalCost || 0))) : 0;
                           const estAdhesiveCost = hasPreCosting ? Number(preCosting.summary?.totalAdhesiveCost || (preCosting.adhesiveDetails?.grossKg && preCosting.adhesiveDetails?.ratePerKg ? preCosting.adhesiveDetails.grossKg * preCosting.adhesiveDetails.ratePerKg : (preCosting.adhesiveDetails?.totalCost || 0))) : 0;

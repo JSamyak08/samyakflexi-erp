@@ -240,12 +240,12 @@ export const initialJobDataSheets = [];
  * Pre-Costing vs Post-Costing Variance & Profitability Calculator
  */
 export const calculatePreVsPostCosting = (preCosting = {}, actualData = {}) => {
-  const sellingPricePerKg = parseFloat(actualData.sellingPricePerKg) || 240;
-  const orderQtyKg = parseFloat(preCosting.orderQtyKg) || 1000;
+  const sellingPricePerKg = parseFloat(actualData.sellingPricePerKg) || parseFloat(preCosting.sellingPricePerKg) || 0;
+  const orderQtyKg = parseFloat(preCosting.orderQtyKg) || parseFloat(actualData.orderQtyKg) || parseFloat(actualData.totalProductionQtyKg) || 0;
 
   // Estimated Raw Material Cost (Pre-Costing)
-  const estTotalCost = preCosting.summary?.totalRawMaterialCost || 180000;
-  const estCostPerKg = parseFloat(preCosting.summary?.costPerKg) || (estTotalCost / orderQtyKg);
+  const estTotalCost = parseFloat(preCosting.summary?.totalRawMaterialCost) || parseFloat(preCosting.summary?.grandTotalCost) || parseFloat(preCosting.grandTotalCost) || parseFloat(preCosting.totalCost) || 0;
+  const estCostPerKg = orderQtyKg > 0 && estTotalCost > 0 ? (estTotalCost / orderQtyKg) : 0;
 
   // Actual Consumed Quantities (Post-Costing)
   let actualFilmCost = 0;
@@ -256,38 +256,39 @@ export const calculatePreVsPostCosting = (preCosting = {}, actualData = {}) => {
       const key = `Layer ${idx + 1} (${layer.filmType} ${layer.micron}µ)`;
       const actualKg = parseFloat(actualData.actualFilmConsumedKg[key]) || layer.grossKg || 0;
       actualFilmGrossKg += actualKg;
-      actualFilmCost += actualKg * layer.pricePerKg;
+      actualFilmCost += actualKg * (layer.pricePerKg || 0);
     });
   } else {
-    actualFilmGrossKg = preCosting.summary?.totalFilmGrossKg || 0;
-    actualFilmCost = actualFilmGrossKg * 130;
+    actualFilmGrossKg = parseFloat(actualData.actualFilmGrossKg) || preCosting.summary?.totalFilmGrossKg || 0;
+    actualFilmCost = parseFloat(actualData.actualFilmCost) || (actualFilmGrossKg * (preCosting.summary?.avgFilmRate || 0));
   }
 
   const actualInkKg = parseFloat(actualData.actualInkConsumedKg) || preCosting.inkDetails?.grossKg || 0;
-  const actualInkPrice = preCosting.inkDetails?.pricePerKg || 1500;
-  const actualInkCost = actualInkKg * actualInkPrice;
+  const actualInkPrice = parseFloat(actualData.actualInkPrice) || preCosting.inkDetails?.pricePerKg || 0;
+  const actualInkCost = parseFloat(actualData.actualInkCost) || (actualInkKg * actualInkPrice);
 
   const actualSolventKg = parseFloat(actualData.actualSolventsConsumedKg) || 0;
-  const actualSolventCost = actualSolventKg * 110; // Solvents ~ ₹110/kg
+  const actualSolventPrice = parseFloat(actualData.actualSolventPrice) || 0;
+  const actualSolventCost = parseFloat(actualData.actualSolventCost) || (actualSolventKg * actualSolventPrice);
 
   const actualAdhesiveKg = parseFloat(actualData.actualAdhesiveConsumedKg) || preCosting.adhesiveDetails?.grossKg || 0;
-  const actualAdhesivePrice = preCosting.adhesiveDetails?.pricePerKg || 270;
-  const actualAdhesiveCost = actualAdhesiveKg * actualAdhesivePrice;
+  const actualAdhesivePrice = parseFloat(actualData.actualAdhesivePrice) || preCosting.adhesiveDetails?.pricePerKg || 0;
+  const actualAdhesiveCost = parseFloat(actualData.actualAdhesiveCost) || (actualAdhesiveKg * actualAdhesivePrice);
 
-  const actualTotalCost = Math.round(actualFilmCost + actualInkCost + actualSolventCost + actualAdhesiveCost);
+  const actualTotalCost = parseFloat(actualData.totalProductionCostRs) || Math.round(actualFilmCost + actualInkCost + actualSolventCost + actualAdhesiveCost);
   const actualCostPerKg = orderQtyKg > 0 ? (actualTotalCost / orderQtyKg).toFixed(2) : 0;
 
   // Variances
-  const costVariance = actualTotalCost - estTotalCost; // Positive = Over budget
+  const costVariance = estTotalCost > 0 ? actualTotalCost - estTotalCost : 0; // Positive = Over budget
   const costVariancePct = estTotalCost > 0 ? ((costVariance / estTotalCost) * 100).toFixed(1) : 0;
 
   // Profitability
-  const totalGrossRevenue = Math.round(orderQtyKg * sellingPricePerKg);
-  const estGrossProfit = Math.round(totalGrossRevenue - estTotalCost);
-  const estProfitMarginPct = totalGrossRevenue > 0 ? ((estGrossProfit / totalGrossRevenue) * 100).toFixed(1) : 0;
+  const totalGrossRevenue = sellingPricePerKg > 0 && orderQtyKg > 0 ? Math.round(orderQtyKg * sellingPricePerKg) : 0;
+  const estGrossProfit = totalGrossRevenue > 0 && estTotalCost > 0 ? Math.round(totalGrossRevenue - estTotalCost) : 0;
+  const estProfitMarginPct = totalGrossRevenue > 0 && estTotalCost > 0 ? ((estGrossProfit / totalGrossRevenue) * 100).toFixed(1) : 0;
 
-  const actualGrossProfit = Math.round(totalGrossRevenue - actualTotalCost);
-  const actualProfitMarginPct = totalGrossRevenue > 0 ? ((actualGrossProfit / totalGrossRevenue) * 100).toFixed(1) : 0;
+  const actualGrossProfit = totalGrossRevenue > 0 && actualTotalCost > 0 ? Math.round(totalGrossRevenue - actualTotalCost) : 0;
+  const actualProfitMarginPct = totalGrossRevenue > 0 && actualTotalCost > 0 ? ((actualGrossProfit / totalGrossRevenue) * 100).toFixed(1) : 0;
 
   return {
     orderQtyKg,
