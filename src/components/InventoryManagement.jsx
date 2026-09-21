@@ -447,7 +447,7 @@ export default function InventoryManagement({
     }
 
     const matchedOrder = (orders || []).find(o => o.jobName === dispatchJobName);
-    const orderId = matchedOrder ? matchedOrder.id : `ORD-2026-${Math.floor(100 + Math.random() * 900)}`;
+    const orderId = matchedOrder ? matchedOrder.id : getNextDocRefNumber('order');
 
     const totalNetWeight = dispatchRollsList.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
     const totalGrossWeight = dispatchRollsList.reduce((sum, r) => sum + (parseFloat(r.grossWeightKg) || 0), 0);

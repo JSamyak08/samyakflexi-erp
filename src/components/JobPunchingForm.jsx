@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import OrderConfirmationPDF from './OrderConfirmationPDF';
 import { notifyOrderPunched } from '../services/emailService';
-import { getProcessingRates, saveProcessingRates } from '../services/settingsService';
+import { getProcessingRates, saveProcessingRates, getNextDocRefNumber } from '../services/settingsService';
 
 export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, initialJobMasterData, clients = [], jobMasters = [] }) {
   // Form State
@@ -330,7 +330,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
     targetDate.setDate(targetDate.getDate() + parseInt(targetDeliveryDays || 10));
 
     const newOrder = {
-      id: `ORD-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+      id: getNextDocRefNumber('order'),
       jobName,
       clientName,
       orderType: orderType || 'Pouching',

@@ -84,6 +84,8 @@ export function clearCompanyLogo() {
 
 
 export const DEFAULT_PREFIXES = {
+  orderPrefix: 'ORD-2026-',
+  orderCounter: 101,
   poPrefix: 'SIL/PO/26-27/',
   poCounter: 246,
   ocnPrefix: 'SIL/OCN/26-27/',
@@ -263,7 +265,12 @@ export function saveCoaSignatories(signatoryConfig) {
 export function generateDocRefNumber(type, customNumber) {
   const config = getDocumentPrefixes();
   
-  if (type === 'po') {
+  if (type === 'order') {
+    const num = customNumber !== undefined ? customNumber : (config.orderCounter || 101);
+    const prefix = config.orderPrefix || 'ORD-2026-';
+    const formattedNum = String(num).padStart(3, '0');
+    return `${prefix}${formattedNum}`;
+  } else if (type === 'po') {
     const num = customNumber !== undefined ? customNumber : config.poCounter;
     return `${config.poPrefix}${num}`;
   } else if (type === 'ocn') {
@@ -303,7 +310,10 @@ export function getNextDocRefNumber(type) {
   let num = 101;
   let key = '';
   
-  if (type === 'po') {
+  if (type === 'order') {
+    num = config.orderCounter || 101;
+    key = 'orderCounter';
+  } else if (type === 'po') {
     num = config.poCounter || 246;
     key = 'poCounter';
   } else if (type === 'ocn') {

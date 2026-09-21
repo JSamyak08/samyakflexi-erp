@@ -38,6 +38,7 @@ import {
   clearAuthorisedSignature, 
   getDocumentPrefixes, 
   saveDocumentPrefixes,
+  generateDocRefNumber,
   DEFAULT_PREFIXES,
   getDocumentTerms,
   saveDocumentTerms,
@@ -672,6 +673,40 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
 
             <form onSubmit={handleSavePrefixes}>
               <div className="form-grid-3" style={{ gap: '16px' }}>
+                <div style={{ gridColumn: 'span 3', background: '#eff6ff', padding: '14px 16px', borderRadius: '8px', border: '1px solid #bfdbfe', marginBottom: '4px' }}>
+                  <label className="form-label" style={{ fontWeight: '800', color: '#1e3a8a', fontSize: '0.9rem', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Hash size={16} style={{ color: '#2563eb' }} /> Production Order Number (ORD-YEAR-###) Prefix & Start Counter Setting
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: '12px', alignItems: 'center' }}>
+                    <div>
+                      <span style={{ fontSize: '0.74rem', color: '#1e40af', fontWeight: '700', display: 'block', marginBottom: '4px' }}>Order Series Prefix (e.g. ORD-2026-)</span>
+                      <input 
+                        type="text" 
+                        className="form-control" 
+                        style={{ fontWeight: '700', background: '#ffffff' }}
+                        value={prefixState.orderPrefix || 'ORD-2026-'} 
+                        onChange={e => handlePrefixChange('orderPrefix', e.target.value)} 
+                        required 
+                      />
+                    </div>
+                    <div>
+                      <span style={{ fontSize: '0.74rem', color: '#1e40af', fontWeight: '700', display: 'block', marginBottom: '4px' }}>Next Sequential #</span>
+                      <input 
+                        type="number" 
+                        min="1"
+                        className="form-control" 
+                        style={{ fontWeight: '800', background: '#ffffff', color: '#1e3a8a' }} 
+                        value={prefixState.orderCounter !== undefined ? prefixState.orderCounter : 101} 
+                        onChange={e => handlePrefixChange('orderCounter', parseInt(e.target.value) || 1)} 
+                        required 
+                      />
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#2563eb', marginTop: '6px', fontWeight: '600' }}>
+                    Preview Next Order ID: <code style={{ background: '#dbeafe', padding: '2px 8px', borderRadius: '4px', fontWeight: '800', color: '#1e3a8a' }}>{generateDocRefNumber('order', prefixState.orderCounter || 101)}</code>
+                  </div>
+                </div>
+
                 <div>
                   <label className="form-label">Purchase Order Prefix & Counter</label>
                   <div style={{ display: 'flex', gap: '8px' }}>

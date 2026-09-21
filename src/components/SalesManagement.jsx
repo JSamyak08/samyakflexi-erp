@@ -769,7 +769,7 @@ export default function SalesManagement({
 
     ocnConvertFormData.forEach((item, itemIdx) => {
       const isCylinderQuote = item.isCylinderOrder || item.materialFormat === 'Rotogravure Cylinder';
-      const orderId = `ORD-2026-${Math.floor(100 + Math.random() * 900)}`;
+      const orderId = getNextDocRefNumber('order');
       createdOrderIds.push(orderId);
 
       const printWidthMm = parseFloat(item.printWidthMm) || 1000;

@@ -2033,7 +2033,7 @@ export default function App() {
 
     if (!existingOrder) {
       const ocnNo = getNextDocRefNumber('ocn');
-      const orderId = `ORD-2026-${Math.floor(100 + Math.random() * 900)}`;
+      const orderId = getNextDocRefNumber('order');
       const numericCost = parseFloat(String(cyl.cylinderCost || '').replace(/[^0-9.]/g, '')) || 35000;
       
       const cylOrder = {
