@@ -36,7 +36,7 @@ export const DEFAULT_AGEING_SETTINGS = {
 };
 
 import { compressImageDataUrl, safeLocalStorageSet } from '../utils/safeStorage';
-import { saveSystemSetting, saveEmailSettingsToSupabase, saveEmailTemplatesToSupabase } from './supabaseDataService';
+import { saveSystemSetting, saveEmailSettingsToSupabase, saveEmailTemplatesToSupabase, fetchFilmSubstratesFromSupabase, saveFilmSubstratesToSupabase } from './supabaseDataService';
 
 
 
@@ -770,9 +770,23 @@ export function getFilmSubstrates() {
 export async function saveFilmSubstrates(substratesList) {
   try {
     safeLocalStorageSet(FILM_SUBSTRATES_STORAGE_KEY, JSON.stringify(substratesList));
-    await saveSystemSetting('film_substrates_master', JSON.stringify(substratesList));
+    await saveFilmSubstratesToSupabase(substratesList);
   } catch (e) {
     console.error("Failed to save film substrates master settings", e);
   }
 }
+
+export async function loadFilmSubstratesFromSupabase() {
+  try {
+    const remoteSubstrates = await fetchFilmSubstratesFromSupabase();
+    if (remoteSubstrates && Array.isArray(remoteSubstrates) && remoteSubstrates.length > 0) {
+      safeLocalStorageSet(FILM_SUBSTRATES_STORAGE_KEY, JSON.stringify(remoteSubstrates));
+      return remoteSubstrates;
+    }
+  } catch (e) {
+    console.warn("Could not load film substrates from Supabase:", e.message);
+  }
+  return getFilmSubstrates();
+}
+
 

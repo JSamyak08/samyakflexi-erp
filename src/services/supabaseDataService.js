@@ -2148,21 +2148,30 @@ export async function saveSystemSetting(key, value) {
   if (!isSupabaseConfigured()) return;
   try {
     await ensureValidSession();
+    const strVal = typeof value === 'object' ? JSON.stringify(value) : String(value);
+
+    // 1. Save to system_settings table
+    const { error: sysErr } = await supabase
+      .from('system_settings')
+      .upsert({ setting_key: key, setting_value: strVal, updated_at: new Date().toISOString() }, { onConflict: 'setting_key' });
+
+    if (sysErr) {
+      console.warn(`[System Setting] Note on system_settings table write for '${key}':`, sysErr.message);
+    } else {
+      console.log(`[System Setting] Successfully synced setting '${key}' to system_settings table.`);
+    }
+
+    // 2. Sync to users table fallback
     const payload = {
       id: `USR-SETTING-${key}`,
       username: `setting_${key}`,
-      full_name: typeof value === 'object' ? JSON.stringify(value) : String(value),
+      full_name: strVal,
       email: `setting_${key}@samyak.com`,
       role: 'System',
       department: 'System',
       active: true
     };
-    const { error } = await supabase.from('users').upsert(payload, { onConflict: 'id' });
-    if (error) {
-      console.error(`[System Setting] Failed to save setting '${key}':`, error.message);
-    } else {
-      console.log(`[System Setting] Successfully synced setting '${key}' to database.`);
-    }
+    await supabase.from('users').upsert(payload, { onConflict: 'id' });
   } catch (err) {
     console.warn(`[System Setting] Exception saving setting '${key}':`, err.message);
   }
@@ -2171,6 +2180,22 @@ export async function saveSystemSetting(key, value) {
 export async function fetchSystemSetting(key) {
   if (!isSupabaseConfigured()) return null;
   try {
+    // 1. Fetch from system_settings table
+    const { data: sysData, error: sysErr } = await supabase
+      .from('system_settings')
+      .select('setting_value')
+      .eq('setting_key', key)
+      .maybeSingle();
+
+    if (sysData && sysData.setting_value) {
+      try {
+        return JSON.parse(sysData.setting_value);
+      } catch (e) {
+        return sysData.setting_value;
+      }
+    }
+
+    // 2. Fallback to users table
     const { data, error } = await supabase
       .from('users')
       .select('full_name')
@@ -2188,6 +2213,58 @@ export async function fetchSystemSetting(key) {
     console.warn(`[System Setting] Exception fetching setting '${key}':`, err.message);
   }
   return null;
+}
+
+export async function fetchFilmSubstratesFromSupabase() {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    // 1. Dedicated film_substrates table
+    const { data, error } = await supabase.from('film_substrates').select('*').order('name');
+    if (!error && Array.isArray(data) && data.length > 0) {
+      return data.map(item => ({
+        id: item.id || `sub-${item.name}`,
+        name: item.name,
+        density: Number(item.density) || 1.0,
+        category: item.category || 'Film Substrates',
+        description: item.description || ''
+      }));
+    }
+
+    // 2. System settings key
+    const settingVal = await fetchSystemSetting('film_substrates_master');
+    if (settingVal) {
+      const list = typeof settingVal === 'string' ? JSON.parse(settingVal) : settingVal;
+      if (Array.isArray(list) && list.length > 0) return list;
+    }
+  } catch (e) {
+    console.warn("[Film Substrates] Exception fetching film substrates from Supabase:", e.message);
+  }
+  return null;
+}
+
+export async function saveFilmSubstratesToSupabase(substratesList) {
+  if (!isSupabaseConfigured() || !Array.isArray(substratesList)) return;
+  try {
+    await ensureValidSession();
+    // 1. Save to system_settings
+    await saveSystemSetting('film_substrates_master', substratesList);
+
+    // 2. Sync to film_substrates dedicated table
+    const payloads = substratesList.map(item => ({
+      id: String(item.id || `sub-${item.name}`),
+      name: item.name,
+      density: Number(item.density) || 1.0,
+      category: item.category || 'Film Substrates',
+      description: item.description || '',
+      updated_at: new Date().toISOString()
+    }));
+    const { error } = await supabase.from('film_substrates').upsert(payloads, { onConflict: 'id' });
+    if (error) {
+      console.warn("[Film Substrates] Dedicated table upsert notice:", error.message);
+    }
+  } catch (e) {
+    console.warn("[Film Substrates] Failed to save film substrates to Supabase:", e.message);
+  }
 }
 
 export async function saveRolePermissionsToSupabase(rolePermissions) {

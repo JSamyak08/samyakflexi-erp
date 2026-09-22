@@ -64,6 +64,7 @@ import {
   DEFAULT_AGEING_SETTINGS,
   getFilmSubstrates,
   saveFilmSubstrates,
+  loadFilmSubstratesFromSupabase,
   DEFAULT_FILM_SUBSTRATES
 } from '../services/settingsService';
 import { sendERPEmailNotification, buildEmailTemplate } from '../services/emailService';
@@ -85,6 +86,16 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
 
   // Film Substrates Master State
   const [filmSubstrates, setFilmSubstrates] = useState(() => getFilmSubstrates());
+
+  useEffect(() => {
+    let isMounted = true;
+    loadFilmSubstratesFromSupabase().then(remote => {
+      if (isMounted && remote && Array.isArray(remote) && remote.length > 0) {
+        setFilmSubstrates(remote);
+      }
+    });
+    return () => { isMounted = false; };
+  }, []);
   const [isSubstrateModalOpen, setIsSubstrateModalOpen] = useState(false);
   const [editingSubstrate, setEditingSubstrate] = useState(null);
   const [subName, setSubName] = useState('');

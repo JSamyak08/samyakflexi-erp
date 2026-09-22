@@ -583,6 +583,34 @@ CREATE TABLE IF NOT EXISTS public.email_templates (
     last_updated TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 19. FILM SUBSTRATES & PHYSICAL DENSITY MASTER TABLE
+CREATE TABLE IF NOT EXISTS public.film_substrates (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    density NUMERIC(6, 4) NOT NULL DEFAULT 1.0000,
+    category TEXT DEFAULT 'Film Substrates',
+    description TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Seed default film substrates master values
+INSERT INTO public.film_substrates (id, name, density, category, description) VALUES
+  ('sub-1', 'PET', 1.40, 'Polyester', 'Standard Biaxially-oriented PET film'),
+  ('sub-2', 'METPET', 1.40, 'Metallized Film', 'Metallized Polyester film for high barrier'),
+  ('sub-3', 'BOPP', 0.91, 'Polypropylene', 'Biaxially Oriented Polypropylene Film'),
+  ('sub-4', 'Metalised BOPP', 0.91, 'Metallized Film', 'Metallized BOPP film for barrier packaging'),
+  ('sub-5', 'Pearlised BOPP', 0.70, 'Polypropylene', 'Cavitated / Pearlised BOPP film for ice creams & confectionery'),
+  ('sub-6', 'Matte BOPP', 0.91, 'Polypropylene', 'Matte finish BOPP film for premium tactile feel'),
+  ('sub-7', 'CPP', 0.91, 'Polypropylene', 'Cast Polypropylene film for lamination & sealing'),
+  ('sub-8', 'Metalised CPP', 0.91, 'Metallized Film', 'Metallized Cast Polypropylene film'),
+  ('sub-9', 'LDPE', 0.93, 'Polyethylene', 'Low Density Polyethylene film'),
+  ('sub-10', 'LLDPE', 0.94, 'Polyethylene', 'Linear Low Density Polyethylene film for heavy dart strength'),
+  ('sub-11', 'PVC', 1.38, 'Vinyl', 'Polyvinyl Chloride shrink sleeve film'),
+  ('sub-12', 'Aluminium Foil', 2.70, 'Foil & Metal', 'Pure Aluminium barrier foil'),
+  ('sub-13', 'Paper', 0.80, 'Cellulosic Paper', 'Flexible packaging kraft / maplitho paper')
+ON CONFLICT (id) DO NOTHING;
+
 
 -- Enable Row Level Security (RLS) & Grant Permissive Access to Anon & Authenticated Roles for Internal ERP
 DO $$ 

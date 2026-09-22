@@ -90,6 +90,7 @@ import {
   fetchSFGGoodsFromSupabase, saveSFGGoodToSupabase, deleteSFGGoodFromSupabase,
   fetchDeliveryChallansFromSupabase, saveDeliveryChallanToSupabase, deleteDeliveryChallanFromSupabase,
   fetchCertificatesOfAnalysisFromSupabase, saveCertificateOfAnalysisToSupabase, deleteCertificateOfAnalysisFromSupabase,
+  fetchFilmSubstratesFromSupabase,
   fetchSystemSetting, saveSystemSetting
 } from './services/supabaseDataService';
 import { createUserInSupabaseAuth } from './services/authService';
@@ -500,7 +501,7 @@ export default function App() {
       // Fetch schema-independent system settings & lifted store states
       const [
         dbPrefixes, dbTerms, dbLogo, dbSignature,
-        dbIndents, dbIssues, dbConsumables, dbStoreTx
+        dbIndents, dbIssues, dbConsumables, dbStoreTx, dbFilmSubstrates
       ] = await Promise.all([
         fetchSafe(() => fetchSystemSetting('doc_prefixes'), 'Prefixes'),
         fetchSafe(() => fetchSystemSetting('doc_terms'), 'Terms'),
@@ -509,7 +510,8 @@ export default function App() {
         fetchSafe(() => fetchSystemSetting('material_indents'), 'Indents'),
         fetchSafe(() => fetchSystemSetting('machine_issues'), 'Machine Issues'),
         fetchSafe(() => fetchSystemSetting('consumables'), 'Consumables'),
-        fetchSafe(() => fetchSystemSetting('store_issue_transactions'), 'Store Issue Transactions')
+        fetchSafe(() => fetchSystemSetting('store_issue_transactions'), 'Store Issue Transactions'),
+        fetchSafe(fetchFilmSubstratesFromSupabase, 'Film Substrates Master')
       ]);
 
       if (!isMounted) return;
@@ -526,6 +528,9 @@ export default function App() {
       if (dbIssues && Array.isArray(dbIssues)) setMachineIssues(dbIssues);
       if (dbConsumables && Array.isArray(dbConsumables)) setConsumables(dbConsumables);
       if (dbStoreTx && Array.isArray(dbStoreTx)) setStoreIssueTransactions(stripDummyRecords(dbStoreTx));
+      if (dbFilmSubstrates && Array.isArray(dbFilmSubstrates) && dbFilmSubstrates.length > 0) {
+        safeLocalStorageSet('samyak_film_substrates_master', JSON.stringify(dbFilmSubstrates));
+      }
 
       if (Array.isArray(supaOrders)) {
         const cleanSupa = stripDummyRecords(supaOrders);
