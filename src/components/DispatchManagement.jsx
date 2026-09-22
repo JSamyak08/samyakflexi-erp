@@ -46,6 +46,8 @@ export function getChallanNatureBadge(nature) {
       return { bg: '#f5f3ff', color: '#6d28d9', border: '#ddd6fe', icon: '⚙️', label: 'Job Work (Returnable)' };
     case 'Maintenance Material - Returnable':
       return { bg: '#ecfdf5', color: '#047857', border: '#a7f3d0', icon: '🔧', label: 'Maintenance (Returnable)' };
+    case 'QC Reject - Return to Vendor':
+      return { bg: '#fef2f2', color: '#b91c1c', border: '#fecaca', icon: '🛑', label: 'QC Reject (Return to Vendor)' };
     default:
       return { bg: '#e0f2fe', color: '#0369a1', border: '#bae6fd', icon: '✓', label: n };
   }
@@ -213,6 +215,7 @@ export default function DispatchManagement({
   const [dcTransporterName, setDcTransporterName] = useState('');
   const [dcDriverPhone, setDcDriverPhone] = useState('');
   const [dcPoRefNo, setDcPoRefNo] = useState('');
+  const [dcDebitNoteNo, setDcDebitNoteNo] = useState('');
   const [dcJobName, setDcJobName] = useState('');
   const [dcChallanNature, setDcChallanNature] = useState('Returnable Material');
   const [dcFreightCharges, setDcFreightCharges] = useState(0);
@@ -516,6 +519,7 @@ export default function DispatchManagement({
     setDcTransporterName('');
     setDcDriverPhone('');
     setDcPoRefNo('');
+    setDcDebitNoteNo('');
     setDcJobName('');
     setDcChallanNature('Sale of Goods');
     setDcFreightCharges(0);
@@ -549,6 +553,7 @@ export default function DispatchManagement({
     setDcTransporterName(dc.transporterName || '');
     setDcDriverPhone(dc.driverPhone || '');
     setDcPoRefNo(dc.poRefNo || '');
+    setDcDebitNoteNo(dc.debitNoteNo || '');
     setDcJobName(dc.jobName || '');
     setDcChallanNature(dc.challanNature || dc.movementType || 'Sale of Goods');
     setDcFreightCharges(dc.freightCharges || 0);
@@ -568,9 +573,14 @@ export default function DispatchManagement({
       const matched = (vendors || []).find(v => (v.name || v.vendorName || v.companyName) === partyNameStr);
       if (matched) {
         setDcClientAddress(matched.address || matched.factoryAddress || matched.registeredAddress || matched.officeAddress || '');
-        setDcClientGstin(matched.gstin || matched.gstNumber || '');
+        setDcClientGstin(matched.gstin || matched.gstNumber || matched.gst || '');
         setDcClientContactPerson(matched.contactPerson || matched.contactName || '');
         setDcClientPhone(matched.phone || matched.contactNo || matched.mobile || '');
+      } else {
+        setDcClientAddress('');
+        setDcClientGstin('');
+        setDcClientContactPerson('');
+        setDcClientPhone('');
       }
     } else {
       const matched = (clients || []).find(c => (c.name || c.companyName || c.clientName) === partyNameStr);
@@ -579,6 +589,11 @@ export default function DispatchManagement({
         setDcClientGstin(matched.gstin || matched.gstNumber || '');
         setDcClientContactPerson(matched.contactPerson || matched.contactName || '');
         setDcClientPhone(matched.phone || matched.contactNo || matched.mobile || '');
+      } else {
+        setDcClientAddress('');
+        setDcClientGstin('');
+        setDcClientContactPerson('');
+        setDcClientPhone('');
       }
     }
   };
@@ -616,6 +631,11 @@ export default function DispatchManagement({
   const handleSaveDcSubmit = (e) => {
     e.preventDefault();
 
+    if (dcChallanNature === 'QC Reject - Return to Vendor' && !dcDebitNoteNo.trim()) {
+      alert('Debit Note Number is mandatory for "QC Reject - Return to Vendor" delivery challans.');
+      return;
+    }
+
     const finalChallanNo = editingDcId ? dcChallanNo : getNextDocRefNumber('dc');
 
     const subtotalItems = dcItems.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
@@ -645,6 +665,7 @@ export default function DispatchManagement({
       transporterName: dcTransporterName,
       driverPhone: dcDriverPhone,
       poRefNo: dcPoRefNo,
+      debitNoteNo: dcDebitNoteNo,
       jobName: dcJobName,
       challanNature: dcChallanNature,
       freightCharges: freightAmount,
@@ -1174,20 +1195,27 @@ export default function DispatchManagement({
                             {(() => {
                               const badge = getChallanNatureBadge(dc.challanNature);
                               return (
-                                <span style={{
-                                  fontSize: '0.74rem',
-                                  fontWeight: '700',
-                                  padding: '3px 8px',
-                                  borderRadius: '6px',
-                                  background: badge.bg,
-                                  color: badge.color,
-                                  border: `1px solid ${badge.border}`,
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px'
-                                }}>
-                                  <span>{badge.icon}</span> {badge.label}
-                                </span>
+                                <>
+                                  <span style={{
+                                    fontSize: '0.74rem',
+                                    fontWeight: '700',
+                                    padding: '3px 8px',
+                                    borderRadius: '6px',
+                                    background: badge.bg,
+                                    color: badge.color,
+                                    border: `1px solid ${badge.border}`,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                  }}>
+                                    <span>{badge.icon}</span> {badge.label}
+                                  </span>
+                                  {dc.debitNoteNo && (
+                                    <div style={{ fontSize: '0.72rem', color: '#b91c1c', fontWeight: '800', marginTop: '4px' }}>
+                                      DN #: {dc.debitNoteNo}
+                                    </div>
+                                  )}
+                                </>
                               );
                             })()}
                           </td>
@@ -1588,7 +1616,8 @@ export default function DispatchManagement({
                     { id: 'Returnable Material', label: 'Returnable Material', desc: 'General Returnable Goods & Tools', color: '#d97706', icon: '🔄' },
                     { id: 'Non-Returnable Material', label: 'Non-Returnable Material', desc: 'Samples, Scrap & Non-Return Items', color: '#475569', icon: '📦' },
                     { id: 'Job Work Material - Returnable', label: 'Job Work Material', desc: 'Subcontracting & Processing (Returnable)', color: '#7c3aed', icon: '⚙️' },
-                    { id: 'Maintenance Material - Returnable', label: 'Maintenance Material', desc: 'Rotogravure Cylinders & Repair Parts', color: '#059669', icon: '🔧' }
+                    { id: 'Maintenance Material - Returnable', label: 'Maintenance Material', desc: 'Rotogravure Cylinders & Repair Parts', color: '#059669', icon: '🔧' },
+                    { id: 'QC Reject - Return to Vendor', label: 'QC Reject - Return to Vendor', desc: 'QC Rejected Material Returned to Vendor (Non-Returnable)', color: '#dc2626', icon: '🛑' }
                   ].map(nature => {
                     const isSelected = (dcChallanNature === nature.id);
                     return (
@@ -1615,7 +1644,16 @@ export default function DispatchManagement({
                               name="challanNature"
                               value={nature.id}
                               checked={isSelected}
-                              onChange={e => setDcChallanNature(e.target.value)}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setDcChallanNature(val);
+                                if (val === 'QC Reject - Return to Vendor' && dcPartyType !== 'Vendor') {
+                                  setDcPartyType('Vendor');
+                                  if (vendors && vendors.length > 0) {
+                                    handlePartySelectChange('Vendor', vendors[0].name || vendors[0].vendorName || vendors[0].companyName || '');
+                                  }
+                                }
+                              }}
                               style={{ accentColor: nature.color, width: '15px', height: '15px', cursor: 'pointer' }}
                             />
                             <span style={{ fontSize: '0.86rem', fontWeight: isSelected ? '800' : '700', color: isSelected ? nature.color : '#0f172a' }}>
@@ -1635,6 +1673,33 @@ export default function DispatchManagement({
                     );
                   })}
                 </div>
+
+                {dcChallanNature === 'QC Reject - Return to Vendor' && (
+                  <div style={{ marginTop: '14px', background: '#fef2f2', border: '1px solid #fecaca', padding: '14px 16px', borderRadius: '10px', boxShadow: '0 2px 6px rgba(220, 38, 38, 0.08)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', color: '#991b1b', fontWeight: '800', fontSize: '0.85rem' }}>
+                      <span style={{ fontSize: '1.1rem' }}>🛑</span> Mandatory Debit Note Requirement
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px', alignItems: 'center' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '800', color: '#7f1d1d', marginBottom: '4px' }}>
+                          Debit Note Number *
+                        </label>
+                        <input 
+                          type="text" 
+                          className="form-control" 
+                          placeholder="e.g. DN-2026-088 or DN/VEN/042"
+                          value={dcDebitNoteNo} 
+                          onChange={e => setDcDebitNoteNo(e.target.value)} 
+                          required
+                          style={{ borderColor: '#ef4444', backgroundColor: '#ffffff', fontWeight: '700', color: '#991b1b' }}
+                        />
+                      </div>
+                      <div style={{ fontSize: '0.74rem', color: '#991b1b', lineHeight: '1.4', background: '#ffffff80', padding: '8px 12px', borderRadius: '6px', border: '1px solid #fca5a5' }}>
+                        Non-Returnable Material QC Rejection requires a mandatory Debit Note Number to process vendor return accounting and inventory adjustment.
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Card 3: Logistics & Consignee Details */}

@@ -49,6 +49,7 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
     transporterName = "Self / Direct Truck Delivery",
     driverPhone = "+91 91110 99887",
     poRefNo = "PO-BRIT-2026-991",
+    debitNoteNo = "",
     jobName = "Britannia Bourbon 250g Printed Laminate Film",
     challanNature = "Returnable Material",
     freightCharges = 0,
@@ -70,7 +71,8 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
     'Non-Returnable Material',
     'Sale of Goods',
     'Job Work Material - Returnable',
-    'Maintenance Material - Returnable'
+    'Maintenance Material - Returnable',
+    'QC Reject - Return to Vendor'
   ];
 
   // Calculate row amounts & tax breakdowns
@@ -144,12 +146,12 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
           </div>
 
           {/* Purpose of Goods Movement / Challan Nature Bar (Only Selected Choice) */}
-          <div style={{ border: '1px solid #cbd5e1', background: '#f8fafc', padding: '4px 10px', borderRadius: '4px', marginBottom: '6px', fontSize: '9px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontWeight: '800', color: '#334155', textTransform: 'uppercase', fontSize: '8px', letterSpacing: '0.5px' }}>
+          <div style={{ border: `1px solid ${selectedNature === 'QC Reject - Return to Vendor' ? '#fecaca' : '#cbd5e1'}`, background: selectedNature === 'QC Reject - Return to Vendor' ? '#fff5f5' : '#f8fafc', padding: '4px 10px', borderRadius: '4px', marginBottom: '6px', fontSize: '9px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontWeight: '800', color: selectedNature === 'QC Reject - Return to Vendor' ? '#991b1b' : '#334155', textTransform: 'uppercase', fontSize: '8px', letterSpacing: '0.5px' }}>
               PURPOSE OF GOODS MOVEMENT / CHALLAN NATURE:
             </span>
-            <span style={{ fontWeight: '800', color: '#0369a1', background: '#e0f2fe', border: '1px solid #bae6fd', padding: '2px 8px', borderRadius: '4px', fontSize: '9.5px' }}>
-              ✓ {selectedNature}
+            <span style={{ fontWeight: '800', color: selectedNature === 'QC Reject - Return to Vendor' ? '#b91c1c' : '#0369a1', background: selectedNature === 'QC Reject - Return to Vendor' ? '#fef2f2' : '#e0f2fe', border: `1px solid ${selectedNature === 'QC Reject - Return to Vendor' ? '#fecaca' : '#bae6fd'}`, padding: '2px 8px', borderRadius: '4px', fontSize: '9.5px' }}>
+              {selectedNature === 'QC Reject - Return to Vendor' ? '🛑' : '✓'} {selectedNature} {debitNoteNo ? `• Debit Note #: ${debitNoteNo}` : ''}
             </span>
           </div>
 
@@ -193,6 +195,11 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
                   <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px' }}>Transporter: {transporterName || 'Direct Dispatch'}</div>
                   <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px' }}>Driver Contact: {driverPhone || '—'}</div>
                   <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px' }}>Client PO Ref #: {poRefNo || 'N/A'}</div>
+                  {debitNoteNo && (
+                    <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px', color: '#b91c1c' }}>
+                      Debit Note #: <strong>{debitNoteNo}</strong>
+                    </div>
+                  )}
                 </td>
               </tr>
             </tbody>
