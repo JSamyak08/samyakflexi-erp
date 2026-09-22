@@ -18,22 +18,72 @@ export const COMPANY_DETAILS = {
 export const FILM_DENSITIES = {
   "PET": 1.40,
   "METPET": 1.40,
+  "Met PET": 1.40,
+  "Metalised PET": 1.40,
+  "PET Film": 1.40,
   "Natural LD GP Film": 0.93,
   "Milky LD GP Film": 0.93,
   "Natural LD Metallocene Film": 0.935,
   "Milky LD Metallocene Film": 0.935,
   "Milky Atta (High Dart) Film": 0.94,
   "LDPE": 0.93,
+  "LLDPE": 0.94,
+  "LDPE Film": 0.93,
   "Natural GP LD": 0.93,
   "White LD": 0.93,
+  "BOPP": 0.91,
+  "BOPP Film": 0.91,
   "BOPP Natural": 0.91,
+  "Plain BOPP": 0.91,
   "Matte Finish BOPP": 0.91,
+  "Matte BOPP": 0.91,
   "Metalised BOPP": 0.91,
+  "METBOPP": 0.91,
   "Pearlised BOPP": 0.70,
+  "CPP": 0.91,
+  "CPP Film": 0.91,
   "CPP Natural": 0.91,
   "Metalised CPP": 0.91,
+  "METCPP": 0.91,
+  "PVC": 1.38,
+  "PVC Shrink": 1.38,
   "Paper": 0.80,
-  "Aluminium Foil": 2.70
+  "Aluminium Foil": 2.70,
+  "Alu Foil": 2.70,
+  "Foil": 2.70
+};
+
+export const getFilmSubstrateDensity = (filmTypeStr) => {
+  if (!filmTypeStr) return 1.40;
+  const rawKey = String(filmTypeStr).trim();
+  if (FILM_DENSITIES[rawKey]) return FILM_DENSITIES[rawKey];
+  
+  const cleanKey = rawKey.toLowerCase();
+  if (cleanKey.includes('pearl')) return 0.70;
+  if (cleanKey.includes('alu') || cleanKey.includes('foil')) return 2.70;
+  if (cleanKey.includes('pvc')) return 1.38;
+  if (cleanKey.includes('pet')) return 1.40;
+  if (cleanKey.includes('bopp')) return 0.91;
+  if (cleanKey.includes('cpp')) return 0.91;
+  if (cleanKey.includes('metallocene')) return 0.935;
+  if (cleanKey.includes('atta') || cleanKey.includes('lldpe')) return 0.94;
+  if (cleanKey.includes('ld') || cleanKey.includes('pe')) return 0.93;
+  if (cleanKey.includes('paper')) return 0.80;
+
+  return 1.40;
+};
+
+export const calculateFilmRollLength = (netWeightKg, widthMm, micronGauge, filmTypeStr) => {
+  const wt = parseFloat(netWeightKg);
+  const w = parseFloat(widthMm);
+  const m = parseFloat(micronGauge);
+  const density = getFilmSubstrateDensity(filmTypeStr);
+
+  if (!isNaN(wt) && wt > 0 && !isNaN(w) && w > 0 && !isNaN(m) && m > 0 && density > 0) {
+    // Formula: Length (Meters) = (NetWeight_kg * 1,000,000) / (Width_mm * Micron * Density_g_cc)
+    return Math.round((wt * 1000000) / (w * m * density));
+  }
+  return '';
 };
 
 export const DEFAULT_DAILY_RATES = {

@@ -23,7 +23,7 @@ import {
   ShieldAlert
 } from 'lucide-react';
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
-import { FILM_DENSITIES, COMPANY_DETAILS } from '../factoryStore';
+import { FILM_DENSITIES, getFilmSubstrateDensity, calculateFilmRollLength, COMPANY_DETAILS } from '../factoryStore';
 
 export const SFG_TYPES = [
   'Printed Rolls',
@@ -178,7 +178,7 @@ export default function SFGFGEntryModal({
     const m = parseFloat(micron || jobMicron || 0);
     const wt = parseFloat(netKg);
     const densityKey = filmType || jobFilmType || 'PET';
-    const density = FILM_DENSITIES[densityKey] || 1.40;
+    const density = getFilmSubstrateDensity(densityKey);
     if (w > 0 && m > 0 && wt > 0 && density > 0) {
       return Math.round((wt * 1000000) / (w * m * density));
     }

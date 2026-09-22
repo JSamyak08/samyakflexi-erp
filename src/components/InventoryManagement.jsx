@@ -49,6 +49,8 @@ import { sanitizeInventoryItem, sanitizeGRN } from '../services/supabaseDataServ
 import { 
   isReconciliationDue, 
   FILM_DENSITIES, 
+  getFilmSubstrateDensity,
+  calculateFilmRollLength,
   DEFAULT_DAILY_RATES,
   generateBarcodeId, 
   generateVendorId,
@@ -534,29 +536,65 @@ export default function InventoryManagement({
   ]);
   const [grnDefaultTare, setGrnDefaultTare] = useState(0);
 
-  // Helper to calculate theoretical film roll length in meters based on width, micron, density, and net weight
-  const calculateFilmRollLength = (netWeight, width, micronVal, filmTypeVal) => {
-    const w = parseFloat(width || grnWidthMm);
-    const m = parseFloat(micronVal || grnMicron);
-    const wt = parseFloat(netWeight);
-    const density = FILM_DENSITIES[filmTypeVal || grnFilmType] || 1.40;
-    if (w > 0 && m > 0 && wt > 0 && density > 0) {
-      return Math.round((wt * 1000000) / (w * m * density));
+  // Recalculate estimated roll length (meters) dynamically across all rows when common film specs change
+  const recalculateAllRollLengths = (customFilmType, customMicron, customWidth) => {
+    const activeType = customFilmType !== undefined ? customFilmType : grnFilmType;
+    const activeMicron = customMicron !== undefined ? customMicron : grnMicron;
+    const activeWidth = customWidth !== undefined ? customWidth : grnWidthMm;
+
+    setGrnItemsList(prev => prev.map(item => {
+      const net = parseFloat(item.netWeightKg);
+      if (!isNaN(net) && net > 0) {
+        return {
+          ...item,
+          lengthMeters: calculateFilmRollLength(net, activeWidth, activeMicron, activeType)
+        };
+      }
+      return item;
+    }));
+  };
+
+  const handleFilmTypeChange = (newFilmType) => {
+    setGrnFilmType(newFilmType);
+    if (grnCategory === 'Film Substrates') {
+      recalculateAllRollLengths(newFilmType, grnMicron, grnWidthMm);
     }
-    return '';
+  };
+
+  const handleMicronChange = (newMicron) => {
+    setGrnMicron(newMicron);
+    if (grnCategory === 'Film Substrates') {
+      recalculateAllRollLengths(grnFilmType, newMicron, grnWidthMm);
+    }
+  };
+
+  const handleWidthChange = (newWidth) => {
+    setGrnWidthMm(newWidth);
+    if (grnCategory === 'Film Substrates') {
+      recalculateAllRollLengths(grnFilmType, grnMicron, newWidth);
+    }
   };
 
   // Add individual roll / container row
   const handleAddGrnItemRow = (initialData = {}) => {
     const newId = `item-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+    const gross = parseFloat(initialData.grossWeightKg) || 0;
+    const tare = parseFloat(initialData.tareWeightKg) ?? (grnDefaultTare || 0);
+    const net = parseFloat(initialData.netWeightKg) || (gross > 0 ? Math.max(0, gross - tare) : 0);
+    const calculatedLen = initialData.lengthMeters ?? (
+      (grnCategory === 'Film Substrates' && net > 0)
+        ? calculateFilmRollLength(net, grnWidthMm, grnMicron, grnFilmType)
+        : ''
+    );
+
     setGrnItemsList(prev => [
       ...prev,
       {
         id: newId,
         grossWeightKg: initialData.grossWeightKg ?? '',
-        tareWeightKg: initialData.tareWeightKg ?? (grnDefaultTare || 0),
+        tareWeightKg: tare,
         netWeightKg: initialData.netWeightKg ?? '',
-        lengthMeters: initialData.lengthMeters ?? '',
+        lengthMeters: calculatedLen,
         vendorRollNo: initialData.vendorRollNo ?? '',
         notes: ''
       }
@@ -4715,19 +4753,23 @@ export default function InventoryManagement({
                     <>
                       <div className="form-group">
                         <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>Film Substrate</label>
-                        <select className="form-control" value={grnFilmType} onChange={e => setGrnFilmType(e.target.value)}>
-                          {Object.keys(FILM_DENSITIES).map(type => <option key={type} value={type}>{type}</option>)}
+                        <select className="form-control" value={grnFilmType} onChange={e => handleFilmTypeChange(e.target.value)}>
+                          {Object.keys(FILM_DENSITIES).map(type => (
+                            <option key={type} value={type}>
+                              {type} ({getFilmSubstrateDensity(type)} g/cc)
+                            </option>
+                          ))}
                         </select>
                       </div>
 
                       <div className="form-group">
                         <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>Micron Gauge (µ)</label>
-                        <input type="number" className="form-control" placeholder="e.g. 12" value={grnMicron} onChange={e => setGrnMicron(e.target.value)} />
+                        <input type="number" className="form-control" placeholder="e.g. 12" value={grnMicron} onChange={e => handleMicronChange(e.target.value)} />
                       </div>
 
                       <div className="form-group">
                         <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>Slit Width (mm)</label>
-                        <input type="number" className="form-control" placeholder="e.g. 1000" value={grnWidthMm} onChange={e => setGrnWidthMm(e.target.value)} />
+                        <input type="number" className="form-control" placeholder="e.g. 1000" value={grnWidthMm} onChange={e => handleWidthChange(e.target.value)} />
                       </div>
 
                       <div className="form-group">
@@ -4877,7 +4919,12 @@ export default function InventoryManagement({
                         <th style={{ padding: '8px 10px', width: '95px' }}>Tare / Core (kg)</th>
                         <th style={{ padding: '8px 10px', width: '160px' }}>Net Weight ({grnCategory === 'Film Substrates' ? 'Kg' : grnUnit}) *</th>
                         {grnCategory === 'Film Substrates' && (
-                          <th style={{ padding: '8px 10px', width: '110px' }}>Est. Length (m)</th>
+                          <th style={{ padding: '8px 10px', width: '130px' }}>
+                            Est. Length (m)
+                            <span style={{ display: 'block', fontSize: '0.62rem', fontWeight: '400', textTransform: 'none', color: '#94a3b8' }}>
+                              ({getFilmSubstrateDensity(grnFilmType)} g/cc)
+                            </span>
+                          </th>
                         )}
                         <th style={{ padding: '8px 10px' }}>Vendor {grnPackagingType} / Lot #</th>
                         <th style={{ padding: '8px 8px', width: '45px', textAlign: 'center' }}></th>
@@ -4989,18 +5036,20 @@ export default function InventoryManagement({
                                   type="number"
                                   step="1"
                                   style={{ 
-                                    width: '75px', 
+                                    width: '85px', 
                                     padding: '4px 6px', 
-                                    fontSize: '0.8rem', 
+                                    fontSize: '0.82rem', 
                                     borderRadius: '4px', 
                                     border: '1px solid #cbd5e1', 
                                     textAlign: 'right',
-                                    color: '#475569'
+                                    fontWeight: '700',
+                                    color: '#0369a1',
+                                    background: '#f0f9ff'
                                   }}
                                   placeholder="m"
                                   value={item.lengthMeters}
                                   onChange={e => handleUpdateGrnItemRow(item.id, 'lengthMeters', e.target.value)}
-                                  title="Calculated theoretical length based on width & gauge"
+                                  title={`Theoretical Length = (Net Weight ${item.netWeightKg || 0}kg × 1,000,000) / (${grnWidthMm || 1000}mm × ${grnMicron || 12}µ × ${getFilmSubstrateDensity(grnFilmType)} g/cc)`}
                                 />
                               </td>
                             )}
