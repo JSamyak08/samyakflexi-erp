@@ -1781,85 +1781,120 @@ export default function DispatchManagement({
                   </button>
                 </div>
 
-                <div style={{ overflowX: 'auto', width: '100%', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff' }}>
-                  <table className="data-table" style={{ width: '100%', minWidth: '820px', margin: 0, fontSize: '0.83rem', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr style={{ background: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
-                        <th style={{ width: '4%', padding: '10px 6px', textAlign: 'center', fontSize: '0.75rem', fontWeight: '800', color: '#334155' }}>#</th>
-                        <th style={{ width: '43%', padding: '10px', fontSize: '0.75rem', fontWeight: '800', color: '#334155' }}>Item Title & Specification Details *</th>
-                        <th style={{ width: '11%', padding: '10px 8px', textAlign: 'center', fontSize: '0.75rem', fontWeight: '800', color: '#334155' }}>HSN / SAC</th>
-                        <th style={{ width: '20%', padding: '10px', fontSize: '0.75rem', fontWeight: '800', color: '#334155' }}>Quantity & UOM *</th>
-                        <th style={{ width: '10%', padding: '10px 8px', textAlign: 'right', fontSize: '0.75rem', fontWeight: '800', color: '#334155' }}>Rate (₹)</th>
-                        <th style={{ width: '12%', padding: '10px 10px', textAlign: 'right', fontSize: '0.75rem', fontWeight: '800', color: '#334155' }}>Amount (₹)</th>
-                        <th style={{ width: '4%', padding: '10px 6px', textAlign: 'center' }}></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {dcItems.map((item, idx) => (
-                        <tr key={item.id || idx} style={{ borderBottom: '1px solid #e2e8f0', background: idx % 2 === 0 ? '#ffffff' : '#fafafa' }}>
-                          <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: '800', color: '#64748b', verticalAlign: 'top', paddingTop: '14px' }}>
-                            {idx + 1}
-                          </td>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {dcItems.map((item, idx) => (
+                    <div 
+                      key={item.id || idx} 
+                      style={{
+                        background: idx % 2 === 0 ? '#ffffff' : '#f8fafc',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '10px',
+                        padding: '14px 16px',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      {/* Item Row Header Bar */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', paddingBottom: '10px', borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', flex: 1 }}>
+                          <span style={{ background: '#0284c7', color: '#ffffff', fontWeight: '800', fontSize: '0.78rem', padding: '3px 10px', borderRadius: '6px' }}>
+                            Item #{idx + 1}
+                          </span>
+                          {itemPresetOptions.length > 0 && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1 1 280px', maxWidth: '520px' }}>
+                              <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#0369a1', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>⚡ Preset:</span>
+                              <select 
+                                className="form-control" 
+                                style={{ padding: '4px 8px', fontSize: '0.78rem', color: '#0284c7', background: '#f0f9ff', borderColor: '#bae6fd', borderRadius: '6px', height: '30px', fontWeight: '600' }}
+                                onChange={e => {
+                                  const selectedPreset = itemPresetOptions.find(p => p.id === e.target.value);
+                                  if (selectedPreset) {
+                                    handleApplyPresetToDcRow(item.id, selectedPreset);
+                                  }
+                                }}
+                                value=""
+                              >
+                                <option value="">-- Load Specs from Job Master / Cylinder Directory --</option>
+                                {itemPresetOptions.map(p => (
+                                  <option key={p.id} value={p.id}>[{p.category}] {p.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                        </div>
 
-                          <td style={{ padding: '10px', verticalAlign: 'top' }}>
-                            {itemPresetOptions.length > 0 && (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-                                <span style={{ fontSize: '0.7rem', fontWeight: '800', color: '#0369a1', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>⚡ Preset:</span>
-                                <select 
-                                  className="form-control" 
-                                  style={{ padding: '2px 8px', fontSize: '0.75rem', color: '#0284c7', background: '#f0f9ff', borderColor: '#bae6fd', flex: 1, borderRadius: '4px', height: '26px' }}
-                                  onChange={e => {
-                                    const selectedPreset = itemPresetOptions.find(p => p.id === e.target.value);
-                                    if (selectedPreset) {
-                                      handleApplyPresetToDcRow(item.id, selectedPreset);
-                                    }
-                                  }}
-                                  value=""
-                                >
-                                  <option value="">-- Load Specs from Job Master / Cylinder Directory --</option>
-                                  {itemPresetOptions.map(p => (
-                                    <option key={p.id} value={p.id}>[{p.category}] {p.label}</option>
-                                  ))}
-                                </select>
-                              </div>
-                            )}
+                        {dcItems.length > 1 && (
+                          <button 
+                            type="button" 
+                            onClick={() => handleRemoveDcItemRow(item.id)}
+                            style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', color: '#dc2626', cursor: 'pointer', padding: '5px 10px', fontSize: '0.75rem', fontWeight: '700', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                            title="Remove Item Row"
+                          >
+                            <Trash2 size={14} /> Remove Item
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Item Details Inputs Grid */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '12px' }}>
+                        {/* Title & Detailed Specs */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '800', color: '#1e293b', marginBottom: '4px' }}>
+                              Item Name / Product Title *
+                            </label>
                             <input 
                               type="text" 
                               className="form-control" 
-                              style={{ padding: '6px 10px', fontSize: '0.85rem', fontWeight: '700', marginBottom: '6px', borderColor: '#cbd5e1' }}
+                              style={{ padding: '8px 12px', fontSize: '0.86rem', fontWeight: '700', borderColor: '#cbd5e1' }}
                               value={item.description} 
                               onChange={e => handleUpdateDcItemRow(item.id, 'description', e.target.value)}
-                              placeholder="Item Name / Product Title (e.g. Britannia Bourbon 250g Printed Laminate Film)..."
+                              placeholder="e.g. Britannia Bourbon 250g Printed Laminate Film Roll..."
                               required 
                             />
-                            <textarea
-                              rows={2}
+                          </div>
+
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>
+                              Detailed Specifications & Dispatch Notes
+                            </label>
+                            <input
+                              type="text"
                               className="form-control"
-                              style={{ padding: '6px 10px', fontSize: '0.78rem', color: '#334155', borderColor: '#e2e8f0', lineHeight: '1.35', resize: 'vertical' }}
+                              style={{ padding: '8px 12px', fontSize: '0.82rem', color: '#334155', borderColor: '#cbd5e1' }}
                               value={item.itemDetails || ''}
                               onChange={e => handleUpdateDcItemRow(item.id, 'itemDetails', e.target.value)}
-                              placeholder="Detailed Specifications / Micron / Reel Dimensions / Pouch Size / Dispatch Notes..."
+                              placeholder="e.g. 12 PET + 50 LD, Reel Width 450mm, Core 76mm..."
                             />
-                          </td>
+                          </div>
+                        </div>
 
-                          <td style={{ padding: '10px 8px', verticalAlign: 'top' }}>
+                        {/* HSN, Quantity & UOM, Rate, Amount */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px', alignItems: 'end' }}>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>
+                              HSN / SAC
+                            </label>
                             <input 
                               type="text" 
                               className="form-control" 
-                              style={{ padding: '6px 8px', fontSize: '0.82rem', textAlign: 'center', fontWeight: '700', fontFamily: 'monospace', borderColor: '#cbd5e1' }}
+                              style={{ padding: '8px 10px', fontSize: '0.84rem', textAlign: 'center', fontWeight: '700', fontFamily: 'monospace', borderColor: '#cbd5e1' }}
                               value={item.hsnSac} 
                               onChange={e => handleUpdateDcItemRow(item.id, 'hsnSac', e.target.value)}
                               placeholder="3923"
                             />
-                          </td>
+                          </div>
 
-                          <td style={{ padding: '10px', verticalAlign: 'top' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <div style={{ minWidth: '180px' }}>
+                            <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>
+                              Dispatch Quantity & UOM *
+                            </label>
+                            <div style={{ display: 'flex', gap: '6px' }}>
                               <input 
                                 type="number" 
                                 step="any"
                                 className="form-control" 
-                                style={{ padding: '6px 8px', fontSize: '0.85rem', textAlign: 'right', fontWeight: '800', flex: '1', borderColor: '#cbd5e1' }}
+                                style={{ padding: '8px 10px', fontSize: '0.88rem', textAlign: 'right', fontWeight: '800', flex: '1', borderColor: '#cbd5e1' }}
                                 value={item.quantity} 
                                 onChange={e => handleUpdateDcItemRow(item.id, 'quantity', e.target.value)}
                                 placeholder="0.00"
@@ -1867,7 +1902,7 @@ export default function DispatchManagement({
                               />
                               <select 
                                 className="form-control" 
-                                style={{ padding: '6px 8px', fontSize: '0.8rem', fontWeight: '800', width: '90px', background: '#f8fafc', borderColor: '#cbd5e1', color: '#0f172a' }}
+                                style={{ padding: '8px 10px', fontSize: '0.82rem', fontWeight: '800', width: '90px', background: '#f8fafc', borderColor: '#cbd5e1', color: '#0f172a' }}
                                 value={item.unit || 'Kg'}
                                 onChange={e => handleUpdateDcItemRow(item.id, 'unit', e.target.value)}
                               >
@@ -1884,40 +1919,35 @@ export default function DispatchManagement({
                                 <option value="Tons">Tons</option>
                               </select>
                             </div>
-                          </td>
+                          </div>
 
-                          <td style={{ padding: '10px 8px', verticalAlign: 'top' }}>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>
+                              Unit Rate (₹)
+                            </label>
                             <input 
                               type="number" 
                               step="any"
                               className="form-control" 
-                              style={{ padding: '6px 8px', fontSize: '0.85rem', textAlign: 'right', fontWeight: '700', borderColor: '#cbd5e1' }}
+                              style={{ padding: '8px 10px', fontSize: '0.86rem', textAlign: 'right', fontWeight: '700', borderColor: '#cbd5e1' }}
                               value={item.rate} 
                               onChange={e => handleUpdateDcItemRow(item.id, 'rate', e.target.value)}
                               placeholder="0.00"
                             />
-                          </td>
+                          </div>
 
-                          <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: '800', color: '#0284c7', fontSize: '0.9rem', verticalAlign: 'top', paddingTop: '14px' }}>
-                            {formatINR(item.amount || (item.quantity * item.rate))}
-                          </td>
-
-                          <td style={{ padding: '10px 6px', textAlign: 'center', verticalAlign: 'top', paddingTop: '12px' }}>
-                            {dcItems.length > 1 && (
-                              <button 
-                                type="button" 
-                                onClick={() => handleRemoveDcItemRow(item.id)}
-                                style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', color: '#dc2626', cursor: 'pointer', padding: '6px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-                                title="Remove Item Row"
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '800', color: '#0284c7', marginBottom: '4px' }}>
+                              Row Amount (₹)
+                            </label>
+                            <div style={{ padding: '8px 10px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '6px', textAlign: 'right', fontWeight: '800', color: '#0284c7', fontSize: '0.9rem' }}>
+                              {formatINR(item.amount || (item.quantity * item.rate))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
 
                 {/* Freight Charges Row & Subtotal & GST Calculation */}
