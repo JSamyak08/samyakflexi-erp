@@ -1795,17 +1795,17 @@ export default function DispatchManagement({
                       }}
                     >
                       {/* Item Row Header Bar */}
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', paddingBottom: '10px', borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '8px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', flex: 1 }}>
-                          <span style={{ background: '#0284c7', color: '#ffffff', fontWeight: '800', fontSize: '0.78rem', padding: '3px 10px', borderRadius: '6px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', paddingBottom: '10px', borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', flex: '1 1 240px', minWidth: 0 }}>
+                          <span style={{ background: '#0284c7', color: '#ffffff', fontWeight: '800', fontSize: '0.78rem', padding: '3px 10px', borderRadius: '6px', whiteSpace: 'nowrap' }}>
                             Item #{idx + 1}
                           </span>
                           {itemPresetOptions.length > 0 && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1 1 280px', maxWidth: '520px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1 1 200px', minWidth: 0, maxWidth: '100%' }}>
                               <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#0369a1', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>⚡ Preset:</span>
                               <select 
                                 className="form-control" 
-                                style={{ padding: '4px 8px', fontSize: '0.78rem', color: '#0284c7', background: '#f0f9ff', borderColor: '#bae6fd', borderRadius: '6px', height: '30px', fontWeight: '600' }}
+                                style={{ padding: '4px 8px', fontSize: '0.78rem', color: '#0284c7', background: '#f0f9ff', borderColor: '#bae6fd', borderRadius: '6px', height: '30px', fontWeight: '600', flex: 1, minWidth: 0 }}
                                 onChange={e => {
                                   const selectedPreset = itemPresetOptions.find(p => p.id === e.target.value);
                                   if (selectedPreset) {
@@ -1836,10 +1836,10 @@ export default function DispatchManagement({
                       </div>
 
                       {/* Item Details Inputs Grid */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '12px' }}>
-                        {/* Title & Detailed Specs */}
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
-                          <div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                        {/* Row 1: Item Name (3 parts) + HSN / SAC (1 part) */}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                          <div style={{ flex: '3 1 260px' }}>
                             <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '800', color: '#1e293b', marginBottom: '4px' }}>
                               Item Name / Product Title *
                             </label>
@@ -1854,25 +1854,8 @@ export default function DispatchManagement({
                             />
                           </div>
 
-                          <div>
-                            <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>
-                              Detailed Specifications & Dispatch Notes
-                            </label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              style={{ padding: '8px 12px', fontSize: '0.82rem', color: '#334155', borderColor: '#cbd5e1' }}
-                              value={item.itemDetails || ''}
-                              onChange={e => handleUpdateDcItemRow(item.id, 'itemDetails', e.target.value)}
-                              placeholder="e.g. 12 PET + 50 LD, Reel Width 450mm, Core 76mm..."
-                            />
-                          </div>
-                        </div>
-
-                        {/* HSN, Quantity & UOM, Rate, Amount */}
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px', alignItems: 'end' }}>
-                          <div>
-                            <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>
+                          <div style={{ flex: '1 1 120px' }}>
+                            <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '800', color: '#334155', marginBottom: '4px' }}>
                               HSN / SAC
                             </label>
                             <input 
@@ -1884,7 +1867,10 @@ export default function DispatchManagement({
                               placeholder="3923"
                             />
                           </div>
+                        </div>
 
+                        {/* Row 2: Dispatch Quantity, UOM Type, Unit Rate, Row Amount */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px', alignItems: 'end' }}>
                           <div>
                             <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>
                               Dispatch Quantity *
@@ -1948,6 +1934,21 @@ export default function DispatchManagement({
                               {formatINR(item.amount || (item.quantity * item.rate))}
                             </div>
                           </div>
+                        </div>
+
+                        {/* Row 3: Detailed Specifications & Notes (Full Width below) */}
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>
+                            Detailed Specifications & Dispatch Notes
+                          </label>
+                          <input
+                            type="text"
+                            className="form-control"
+                            style={{ padding: '8px 12px', fontSize: '0.82rem', color: '#334155', borderColor: '#cbd5e1', width: '100%' }}
+                            value={item.itemDetails || ''}
+                            onChange={e => handleUpdateDcItemRow(item.id, 'itemDetails', e.target.value)}
+                            placeholder="e.g. 12 PET + 50 LD, Reel Width 450mm, Core 76mm, Net Wt 1250kg..."
+                          />
                         </div>
                       </div>
                     </div>
