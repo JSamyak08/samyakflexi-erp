@@ -15,50 +15,32 @@ export const COMPANY_DETAILS = {
 
 
 
-export const FILM_DENSITIES = {
-  "PET": 1.40,
-  "METPET": 1.40,
-  "Met PET": 1.40,
-  "Metalised PET": 1.40,
-  "PET Film": 1.40,
-  "Natural LD GP Film": 0.93,
-  "Milky LD GP Film": 0.93,
-  "Natural LD Metallocene Film": 0.935,
-  "Milky LD Metallocene Film": 0.935,
-  "Milky Atta (High Dart) Film": 0.94,
-  "LDPE": 0.93,
-  "LLDPE": 0.94,
-  "LDPE Film": 0.93,
-  "Natural GP LD": 0.93,
-  "White LD": 0.93,
-  "BOPP": 0.91,
-  "BOPP Film": 0.91,
-  "BOPP Natural": 0.91,
-  "Plain BOPP": 0.91,
-  "Matte Finish BOPP": 0.91,
-  "Matte BOPP": 0.91,
-  "Metalised BOPP": 0.91,
-  "METBOPP": 0.91,
-  "Pearlised BOPP": 0.70,
-  "CPP": 0.91,
-  "CPP Film": 0.91,
-  "CPP Natural": 0.91,
-  "Metalised CPP": 0.91,
-  "METCPP": 0.91,
-  "PVC": 1.38,
-  "PVC Shrink": 1.38,
-  "Paper": 0.80,
-  "Aluminium Foil": 2.70,
-  "Alu Foil": 2.70,
-  "Foil": 2.70
+import { getFilmSubstrates } from './services/settingsService';
+
+export const getFilmSubstrateMap = () => {
+  const substrates = getFilmSubstrates();
+  const map = {};
+  if (Array.isArray(substrates)) {
+    substrates.forEach(s => {
+      if (s && s.name) {
+        map[s.name] = parseFloat(s.density) || 1.40;
+      }
+    });
+  }
+  return map;
 };
 
 export const getFilmSubstrateDensity = (filmTypeStr) => {
   if (!filmTypeStr) return 1.40;
   const rawKey = String(filmTypeStr).trim();
-  if (FILM_DENSITIES[rawKey]) return FILM_DENSITIES[rawKey];
+  const currentMap = getFilmSubstrateMap();
+  
+  if (currentMap[rawKey] !== undefined) return currentMap[rawKey];
   
   const cleanKey = rawKey.toLowerCase();
+  const matchingKey = Object.keys(currentMap).find(k => k.toLowerCase() === cleanKey);
+  if (matchingKey) return currentMap[matchingKey];
+
   if (cleanKey.includes('pearl')) return 0.70;
   if (cleanKey.includes('alu') || cleanKey.includes('foil')) return 2.70;
   if (cleanKey.includes('pvc')) return 1.38;
@@ -72,6 +54,28 @@ export const getFilmSubstrateDensity = (filmTypeStr) => {
 
   return 1.40;
 };
+
+// Proxy to make FILM_DENSITIES dynamically reflect system settings without breaking Object.keys() or property lookups
+export const FILM_DENSITIES = new Proxy({}, {
+  get(target, prop) {
+    if (prop === 'then' || typeof prop === 'symbol') return undefined;
+    return getFilmSubstrateDensity(prop);
+  },
+  ownKeys() {
+    return Object.keys(getFilmSubstrateMap());
+  },
+  getOwnPropertyDescriptor(target, prop) {
+    const currentMap = getFilmSubstrateMap();
+    if (prop in currentMap) {
+      return {
+        enumerable: true,
+        configurable: true,
+        value: currentMap[prop]
+      };
+    }
+    return undefined;
+  }
+});
 
 export const calculateFilmRollLength = (netWeightKg, widthMm, micronGauge, filmTypeStr) => {
   const wt = parseFloat(netWeightKg);

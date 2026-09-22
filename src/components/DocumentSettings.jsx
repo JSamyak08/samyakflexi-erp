@@ -61,7 +61,10 @@ import {
   interpolateTemplate,
   getInventoryAgeingSettings,
   saveInventoryAgeingSettings,
-  DEFAULT_AGEING_SETTINGS
+  DEFAULT_AGEING_SETTINGS,
+  getFilmSubstrates,
+  saveFilmSubstrates,
+  DEFAULT_FILM_SUBSTRATES
 } from '../services/settingsService';
 import { sendERPEmailNotification, buildEmailTemplate } from '../services/emailService';
 
@@ -79,6 +82,94 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
 
   // Inventory Ageing Settings State
   const [ageingSettings, setAgeingSettings] = useState(() => getInventoryAgeingSettings());
+
+  // Film Substrates Master State
+  const [filmSubstrates, setFilmSubstrates] = useState(() => getFilmSubstrates());
+  const [isSubstrateModalOpen, setIsSubstrateModalOpen] = useState(false);
+  const [editingSubstrate, setEditingSubstrate] = useState(null);
+  const [subName, setSubName] = useState('');
+  const [subDensity, setSubDensity] = useState('');
+  const [subCategory, setSubCategory] = useState('Polyester');
+  const [subDescription, setSubDescription] = useState('');
+
+  const handleOpenSubstrateModal = (sub = null) => {
+    if (sub) {
+      setEditingSubstrate(sub);
+      setSubName(sub.name || '');
+      setSubDensity(sub.density !== undefined ? sub.density : '');
+      setSubCategory(sub.category || 'Polyester');
+      setSubDescription(sub.description || '');
+    } else {
+      setEditingSubstrate(null);
+      setSubName('');
+      setSubDensity('');
+      setSubCategory('Polyester');
+      setSubDescription('');
+    }
+    setIsSubstrateModalOpen(true);
+  };
+
+  const handleSaveSubstrateSubmit = (e) => {
+    e.preventDefault();
+    if (!subName.trim() || !subDensity || parseFloat(subDensity) <= 0) {
+      alert("Substrate Name and a valid Density (> 0 g/cm³) are required!");
+      return;
+    }
+
+    const cleanName = subName.trim();
+    const cleanDensity = parseFloat(parseFloat(subDensity).toFixed(4));
+    const cleanCat = subCategory.trim() || 'Polyester';
+    const cleanDesc = subDescription.trim();
+
+    let updated = [];
+    if (editingSubstrate) {
+      updated = filmSubstrates.map(s => {
+        if (s.id === editingSubstrate.id || (s.name && s.name.toLowerCase() === editingSubstrate.name.toLowerCase())) {
+          return {
+            ...s,
+            name: cleanName,
+            density: cleanDensity,
+            category: cleanCat,
+            description: cleanDesc
+          };
+        }
+        return s;
+      });
+    } else {
+      if (filmSubstrates.some(s => s.name && s.name.toLowerCase() === cleanName.toLowerCase())) {
+        alert(`A substrate named "${cleanName}" already exists! Please edit the existing entry.`);
+        return;
+      }
+      const newSub = {
+        id: `sub-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+        name: cleanName,
+        density: cleanDensity,
+        category: cleanCat,
+        description: cleanDesc
+      };
+      updated = [...filmSubstrates, newSub];
+    }
+
+    setFilmSubstrates(updated);
+    saveFilmSubstrates(updated);
+    setIsSubstrateModalOpen(false);
+    triggerSaveNotification();
+  };
+
+  const handleDeleteSubstrateItem = (id, name) => {
+    if (!window.confirm(`Are you sure you want to delete film substrate "${name}"?`)) return;
+    const updated = filmSubstrates.filter(s => s.id !== id && s.name !== name);
+    setFilmSubstrates(updated);
+    saveFilmSubstrates(updated);
+    triggerSaveNotification();
+  };
+
+  const handleResetSubstratesToDefault = () => {
+    if (!window.confirm("Reset all Film Substrates to ERP factory defaults (PET, METPET, BOPP, LDPE, Aluminium Foil, etc.)? Custom substrates will be reset.")) return;
+    setFilmSubstrates(DEFAULT_FILM_SUBSTRATES);
+    saveFilmSubstrates(DEFAULT_FILM_SUBSTRATES);
+    triggerSaveNotification();
+  };
 
 
   // Email Gateway & Routing State
@@ -518,6 +609,14 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                 onClick={() => setActiveTab('general')}
               >
                 📄 Document Specs
+              </button>
+              <button
+                type="button"
+                className={`tab-button ${activeTab === 'film_substrates' ? 'active' : ''}`}
+                style={{ padding: '6px 14px', fontSize: '0.82rem', fontWeight: '700', borderRadius: '6px', cursor: 'pointer', border: 'none', background: activeTab === 'film_substrates' ? '#ffffff' : 'transparent', color: activeTab === 'film_substrates' ? '#0f172a' : '#64748b', boxShadow: activeTab === 'film_substrates' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}
+                onClick={() => setActiveTab('film_substrates')}
+              >
+                🎞️ Film Substrates & Densities
               </button>
               <button
                 type="button"
@@ -1510,6 +1609,194 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                 <button type="button" className="btn-secondary" onClick={() => setEditingMachine(null)}>Cancel</button>
                 <button type="submit" className="btn-primary">
                   <Check size={16} /> Save Machine Specs
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* ========================================================================= */}
+      {/* TAB 5: FILM SUBSTRATES & DENSITIES MASTER DATA */}
+      {/* ========================================================================= */}
+      {activeTab === 'film_substrates' && (
+        <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '12px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                🎞️ Film Substrates & Physical Density Master
+              </h3>
+              <p style={{ margin: '4px 0 0 0', fontSize: '0.83rem', color: '#64748b' }}>
+                System-wide controlled list of film substrate types and physical densities (g/cm³). Controlled from settings and used across Inward GRN, Job Master, Cylinder Cards, and Production Meterage calculations.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ fontSize: '0.8rem', fontWeight: '700', padding: '7px 12px' }}
+                onClick={handleResetSubstratesToDefault}
+                title="Restore factory default substrates list"
+              >
+                <RefreshCw size={14} style={{ marginRight: '6px' }} /> Reset to Defaults
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                style={{ fontSize: '0.8rem', fontWeight: '700', padding: '7px 14px', background: '#0284c7', borderColor: '#0284c7' }}
+                onClick={() => handleOpenSubstrateModal()}
+              >
+                <Plus size={15} style={{ marginRight: '6px' }} /> Add Film Substrate
+              </button>
+            </div>
+          </div>
+
+          {/* Substrates Table */}
+          <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+              <thead>
+                <tr style={{ background: '#0f172a', color: '#ffffff', textAlign: 'left', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  <th style={{ padding: '10px 14px', width: '50px' }}>#</th>
+                  <th style={{ padding: '10px 14px' }}>Substrate Name</th>
+                  <th style={{ padding: '10px 14px', width: '150px' }}>Density (g/cm³)</th>
+                  <th style={{ padding: '10px 14px', width: '160px' }}>Substrate Family</th>
+                  <th style={{ padding: '10px 14px' }}>Application Description</th>
+                  <th style={{ padding: '10px 14px', width: '100px', textAlign: 'center' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filmSubstrates.map((sub, idx) => (
+                  <tr key={sub.id || idx} style={{ borderBottom: '1px solid #f1f5f9', background: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                    <td style={{ padding: '10px 14px', fontWeight: '700', color: '#64748b' }}>{idx + 1}</td>
+                    <td style={{ padding: '10px 14px', fontWeight: '800', color: '#0f172a' }}>{sub.name}</td>
+                    <td style={{ padding: '10px 14px' }}>
+                      <span style={{ fontWeight: '800', color: '#0369a1', background: '#e0f2fe', padding: '3px 10px', borderRadius: '6px', fontSize: '0.82rem', fontFamily: 'monospace' }}>
+                        {sub.density} g/cm³
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px 14px' }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#475569', background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '2px 8px', borderRadius: '4px' }}>
+                        {sub.category || 'Flexible Film'}
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px 14px', color: '#64748b', fontSize: '0.82rem' }}>{sub.description || '—'}</td>
+                    <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                      <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenSubstrateModal(sub)}
+                          style={{ border: 'none', background: 'transparent', color: '#0284c7', cursor: 'pointer', padding: '4px' }}
+                          title="Edit Substrate"
+                        >
+                          <Edit3 size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteSubstrateItem(sub.id, sub.name)}
+                          style={{ border: 'none', background: 'transparent', color: '#ef4444', cursor: 'pointer', padding: '4px' }}
+                          title="Delete Substrate"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Add/Edit Film Substrate */}
+      {isSubstrateModalOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '16px' }}>
+          <div style={{ background: '#ffffff', borderRadius: '14px', width: '100%', maxWidth: '520px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', border: '1px solid #cbd5e1' }}>
+            <div style={{ background: '#0f172a', color: '#ffffff', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '800', fontSize: '1rem' }}>
+                🎞️ {editingSubstrate ? 'Edit Film Substrate' : 'Add New Film Substrate'}
+              </div>
+              <button type="button" onClick={() => setIsSubstrateModalOpen(false)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveSubstrateSubmit} style={{ padding: '20px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                    Substrate Name <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    className="form-control"
+                    placeholder="e.g. PET / BOPP / LLDPE / Metallized BOPP"
+                    value={subName}
+                    onChange={e => setSubName(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                    Specific Density (g/cm³) <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    min="0.1"
+                    max="10"
+                    required
+                    className="form-control"
+                    placeholder="e.g. 1.40 (PET) / 0.91 (BOPP) / 0.93 (LDPE) / 2.70 (Foil)"
+                    value={subDensity}
+                    onChange={e => setSubDensity(e.target.value)}
+                  />
+                  <span style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                    Used directly in formula: Length (M) = (Weight_kg × 1,000,000) / (Width_mm × Micron × Density_g_cc)
+                  </span>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                    Material Category
+                  </label>
+                  <select
+                    className="form-control"
+                    value={subCategory}
+                    onChange={e => setSubCategory(e.target.value)}
+                  >
+                    <option value="Polyester">Polyester (PET)</option>
+                    <option value="Polypropylene">Polypropylene (BOPP/CPP)</option>
+                    <option value="Polyethylene">Polyethylene (LDPE/LLDPE/HDPE)</option>
+                    <option value="Metallized Film">Metallized Film (METPET/METBOPP/METCPP)</option>
+                    <option value="Foil & Metal">Foil & Metal (Aluminium Foil)</option>
+                    <option value="Cellulosic Paper">Cellulosic Paper (Kraft/Maplitho)</option>
+                    <option value="Vinyl">Vinyl (PVC)</option>
+                    <option value="Bio / Specialty">Bio / Specialty Substrate</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                    Description / Application Notes
+                  </label>
+                  <textarea
+                    rows="2"
+                    className="form-control"
+                    placeholder="e.g. High clarity Biaxially-oriented polyester film for primary flexible packaging"
+                    value={subDescription}
+                    onChange={e => setSubDescription(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
+                <button type="button" className="btn-secondary" onClick={() => setIsSubstrateModalOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary" style={{ background: '#0284c7', borderColor: '#0284c7' }}>
+                  <Check size={16} style={{ marginRight: '6px' }} /> {editingSubstrate ? 'Save Changes' : 'Add Substrate'}
                 </button>
               </div>
             </form>
