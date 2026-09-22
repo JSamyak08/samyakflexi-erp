@@ -1885,40 +1885,44 @@ export default function DispatchManagement({
                             />
                           </div>
 
-                          <div style={{ minWidth: '180px' }}>
+                          <div>
                             <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>
-                              Dispatch Quantity & UOM *
+                              Dispatch Quantity *
                             </label>
-                            <div style={{ display: 'flex', gap: '6px' }}>
-                              <input 
-                                type="number" 
-                                step="any"
-                                className="form-control" 
-                                style={{ padding: '8px 10px', fontSize: '0.88rem', textAlign: 'right', fontWeight: '800', flex: '1', borderColor: '#cbd5e1' }}
-                                value={item.quantity} 
-                                onChange={e => handleUpdateDcItemRow(item.id, 'quantity', e.target.value)}
-                                placeholder="0.00"
-                                required 
-                              />
-                              <select 
-                                className="form-control" 
-                                style={{ padding: '8px 10px', fontSize: '0.82rem', fontWeight: '800', width: '90px', background: '#f8fafc', borderColor: '#cbd5e1', color: '#0f172a' }}
-                                value={item.unit || 'Kg'}
-                                onChange={e => handleUpdateDcItemRow(item.id, 'unit', e.target.value)}
-                              >
-                                <option value="Kg">Kg</option>
-                                <option value="Nos">Nos</option>
-                                <option value="Rolls">Rolls</option>
-                                <option value="Sets">Sets</option>
-                                <option value="Mtrs">Mtrs</option>
-                                <option value="Boxes">Boxes</option>
-                                <option value="Pcs">Pcs</option>
-                                <option value="Bags">Bags</option>
-                                <option value="Ltrs">Ltrs</option>
-                                <option value="Sq.Mtrs">Sq.Mtrs</option>
-                                <option value="Tons">Tons</option>
-                              </select>
-                            </div>
+                            <input 
+                              type="number" 
+                              step="any"
+                              className="form-control" 
+                              style={{ padding: '8px 10px', fontSize: '0.88rem', textAlign: 'right', fontWeight: '800', borderColor: '#cbd5e1' }}
+                              value={item.quantity} 
+                              onChange={e => handleUpdateDcItemRow(item.id, 'quantity', e.target.value)}
+                              placeholder="0.00"
+                              required 
+                            />
+                          </div>
+
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>
+                              UOM Type *
+                            </label>
+                            <select 
+                              className="form-control" 
+                              style={{ padding: '8px 10px', fontSize: '0.82rem', fontWeight: '800', background: '#ffffff', borderColor: '#cbd5e1', color: '#0f172a' }}
+                              value={item.unit || 'Kg'}
+                              onChange={e => handleUpdateDcItemRow(item.id, 'unit', e.target.value)}
+                            >
+                              <option value="Kg">Kg</option>
+                              <option value="Nos">Nos</option>
+                              <option value="Rolls">Rolls</option>
+                              <option value="Sets">Sets</option>
+                              <option value="Mtrs">Mtrs</option>
+                              <option value="Boxes">Boxes</option>
+                              <option value="Pcs">Pcs</option>
+                              <option value="Bags">Bags</option>
+                              <option value="Ltrs">Ltrs</option>
+                              <option value="Sq.Mtrs">Sq.Mtrs</option>
+                              <option value="Tons">Tons</option>
+                            </select>
                           </div>
 
                           <div>
