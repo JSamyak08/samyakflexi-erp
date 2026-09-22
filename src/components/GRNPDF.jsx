@@ -258,27 +258,29 @@ export default function GRNPDF({ grnData, onClose }) {
               </div>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '8.5px' }} className="items-table">
                 <thead>
-                  <tr style={{ background: '#f1f5f9' }}>
-                    <th style={{ width: '8%', textAlign: 'center' }}>Unit #</th>
-                    <th style={{ width: '18%', textAlign: 'center' }}>Vendor Ref / Lot #</th>
-                    <th style={{ width: '18%', textAlign: 'right' }}>Gross Wt (Kg)</th>
-                    <th style={{ width: '18%', textAlign: 'right' }}>Tare / Core Wt (Kg)</th>
-                    <th style={{ width: '18%', textAlign: 'right' }}>Net Weight (Kg)</th>
-                    <th style={{ width: '20%', textAlign: 'right' }}>Est. Length (m)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {itemsBreakdown.map((item, idx) => (
-                    <tr key={idx}>
-                      <td style={{ textAlign: 'center', fontWeight: '700' }}>{packagingType} #{item.unitNo || (idx + 1)}</td>
-                      <td style={{ textAlign: 'center' }}>{item.vendorRollNo || '—'}</td>
-                      <td style={{ textAlign: 'right' }}>{item.grossWeightKg ? `${item.grossWeightKg} kg` : '—'}</td>
-                      <td style={{ textAlign: 'right' }}>{item.tareWeightKg ? `${item.tareWeightKg} kg` : '0 kg'}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#047857' }}>{(parseFloat(item.netWeightKg) || 0).toLocaleString()} kg</td>
-                      <td style={{ textAlign: 'right' }}>{item.lengthMeters ? `${item.lengthMeters.toLocaleString()} m` : '—'}</td>
+                    <tr style={{ background: '#f1f5f9' }}>
+                      <td style={{ width: '8%', textAlign: 'center', fontWeight: 'bold' }}>Unit #</td>
+                      <td style={{ width: '22%', textAlign: 'center', fontWeight: 'bold' }}>System Barcode ID</td>
+                      <td style={{ width: '14%', textAlign: 'center', fontWeight: 'bold' }}>Vendor Ref / Lot #</td>
+                      <td style={{ width: '14%', textAlign: 'right', fontWeight: 'bold' }}>Gross Wt (Kg)</td>
+                      <td style={{ width: '14%', textAlign: 'right', fontWeight: 'bold' }}>Tare Wt (Kg)</td>
+                      <td style={{ width: '14%', textAlign: 'right', fontWeight: 'bold' }}>Net Wt (Kg)</td>
+                      <td style={{ width: '14%', textAlign: 'right', fontWeight: 'bold' }}>Est. Length (m)</td>
                     </tr>
-                  ))}
-                </tbody>
+                  </thead>
+                  <tbody>
+                    {itemsBreakdown.map((item, idx) => (
+                      <tr key={idx}>
+                        <td style={{ textAlign: 'center', fontWeight: '700' }}>{packagingType} #{item.unitNo || (idx + 1)}</td>
+                        <td style={{ textAlign: 'center', fontFamily: 'monospace', fontWeight: '700', color: '#1e3a8a' }}>{item.barcodeId || '—'}</td>
+                        <td style={{ textAlign: 'center' }}>{item.vendorRollNo || '—'}</td>
+                        <td style={{ textAlign: 'right' }}>{item.grossWeightKg ? `${item.grossWeightKg} kg` : '—'}</td>
+                        <td style={{ textAlign: 'right' }}>{item.tareWeightKg ? `${item.tareWeightKg} kg` : '0 kg'}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#047857' }}>{(parseFloat(item.netWeightKg) || 0).toLocaleString()} kg</td>
+                        <td style={{ textAlign: 'right' }}>{item.lengthMeters ? `${item.lengthMeters.toLocaleString()} m` : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
               </table>
             </div>
           )}

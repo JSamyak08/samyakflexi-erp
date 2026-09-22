@@ -2158,10 +2158,12 @@ export default function App() {
   };
 
   const handleAddRoll = async (newRoll) => {
-    setInventoryRolls(prev => [newRoll, ...prev.filter(r => r.id !== newRoll.id)]);
-    logAudit('CREATE', 'Inventory Rolls', `Generated child roll barcode ${newRoll.barcodeId || newRoll.id} (${newRoll.netWeightKg} kg)`, newRoll.id);
+    const rollId = newRoll.barcodeId || newRoll.id;
+    const cleanRoll = { ...newRoll, id: rollId, barcodeId: rollId };
+    setInventoryRolls(prev => [cleanRoll, ...prev.filter(r => (r.barcodeId || r.id) !== rollId)]);
+    logAudit('CREATE', 'Inventory Rolls', `Generated child roll barcode ${rollId} (${newRoll.netWeightKg} kg)`, rollId);
     try {
-      await saveInventoryRollToSupabase(newRoll);
+      await saveInventoryRollToSupabase(cleanRoll);
     } catch (err) {
       console.warn("[Sync Notice] Roll saved locally. Supabase notice:", err);
     }

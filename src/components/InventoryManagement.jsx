@@ -738,6 +738,24 @@ export default function InventoryManagement({
       if (!seenBatchKeys.has(batchKey)) {
         seenBatchKeys.add(batchKey);
         const rateVal = Number(g.purchaseRatePerKg || g.unitPrice || g.purchaseRate || selectedInvItem.unitPrice || 0);
+        const matchingRolls = (inventoryRolls || []).filter(r => 
+          (r.grnNo && g.grnNo && r.grnNo === g.grnNo) ||
+          (r.grn_no && g.grnNo && r.grn_no === g.grnNo)
+        );
+
+        let gBarcode = '';
+        if (matchingRolls.length > 0) {
+          gBarcode = matchingRolls.map(r => r.barcodeId || r.id).filter(Boolean).join(', ');
+        } else if (Array.isArray(g.itemsBreakdown) && g.itemsBreakdown.some(b => b.barcodeId)) {
+          gBarcode = g.itemsBreakdown.map(b => b.barcodeId).filter(Boolean).join(', ');
+        } else if (Array.isArray(g.barcodes) && g.barcodes.length > 0) {
+          gBarcode = g.barcodes.join(', ');
+        } else if (g.barcodeId) {
+          gBarcode = g.barcodeId;
+        } else {
+          gBarcode = g.batchNo || `BAR-GRN-${g.grnNo}`;
+        }
+
         batches.push({
           id: batchKey,
           batchNo: g.batchNo || `GRN-${g.grnNo}`,
@@ -747,8 +765,8 @@ export default function InventoryManagement({
           availableQty: Number(g.netWeightKg || 0),
           unit: g.unit || selectedInvItem.unit || 'Kg',
           date: g.receivedDate || '',
-          barcode: g.batchNo || `BAR-GRN-${g.grnNo}`,
-          label: `GRN #${g.grnNo} • Batch: ${g.batchNo || 'Main Lot'} • Supplier: ${g.vendorName || 'Vendor'} • Inward Qty: ${g.netWeightKg || 0} ${g.unit || 'Kg'} • Rate: ₹${rateVal}/${g.unit || 'Kg'}`
+          barcode: gBarcode,
+          label: `GRN #${g.grnNo} • Barcode: ${gBarcode} • Batch: ${g.batchNo || 'Main Lot'} • Supplier: ${g.vendorName || 'Vendor'} • Inward Qty: ${g.netWeightKg || 0} ${g.unit || 'Kg'} • Rate: ₹${rateVal}/${g.unit || 'Kg'}`
         });
       }
     });
@@ -1441,8 +1459,38 @@ export default function InventoryManagement({
     const rateVal = parseFloat(grnPurchaseRate) || 0;
 
     const isCylinderCategory = grnCategory === 'Rotogravure Cylinders';
+    const grnDocNo = getNextDocRefNumber('grn');
+    const grnCode = grnDocNo.replace('GRN-', '');
+
+    // Pre-calculate individual roll/unit breakdown and barcodeId for each item
+    const preparedItemsBreakdown = itemsToSave.map((item, index) => {
+      const i = index + 1;
+      const itemGross = parseFloat(item.grossWeightKg) || 0;
+      const itemTare = parseFloat(item.tareWeightKg) || 0;
+      const itemNet = parseFloat(item.netWeightKg) || (itemGross > 0 ? Math.max(0, itemGross - itemTare) : Number((totalNetQty / unitCount).toFixed(2)));
+      const itemLength = parseFloat(item.lengthMeters) || (isFilm ? calculateFilmRollLength(itemNet, grnWidthMm, grnMicron, grnFilmType) : null);
+      const itemVendorRoll = (item.vendorRollNo || '').trim();
+
+      const barcodeId = unitCount > 1 
+        ? `${isFilm ? 'RM-BC' : 'CON-BC'}-${grnCode}-${i}` 
+        : generateBarcodeId(isFilm ? 'RM-BC' : 'CON-BC');
+
+      return {
+        unitNo: i,
+        barcodeId: barcodeId,
+        grossWeightKg: itemGross,
+        tareWeightKg: itemTare,
+        netWeightKg: itemNet,
+        lengthMeters: itemLength > 0 ? itemLength : 0,
+        vendorRollNo: itemVendorRoll
+      };
+    });
+
+    const allBarcodes = preparedItemsBreakdown.map(b => b.barcodeId);
+    const barcodeSummaryStr = allBarcodes.join(', ');
+
     const newGRN = {
-      grnNo: getNextDocRefNumber('grn'),
+      grnNo: grnDocNo,
       poNumber: grnPoNo,
       vendorName: grnVendor,
       invoiceNo: grnInvoiceNo,
@@ -1459,14 +1507,9 @@ export default function InventoryManagement({
       netWeightKg: totalNetQty,
       grossWeightKg: totalGrossQty,
       tareWeightKg: totalTareQty,
-      itemsBreakdown: itemsToSave.map((item, idx) => ({
-        unitNo: idx + 1,
-        grossWeightKg: parseFloat(item.grossWeightKg) || 0,
-        tareWeightKg: parseFloat(item.tareWeightKg) || 0,
-        netWeightKg: parseFloat(item.netWeightKg) || 0,
-        lengthMeters: parseFloat(item.lengthMeters) || 0,
-        vendorRollNo: item.vendorRollNo || ''
-      })),
+      itemsBreakdown: preparedItemsBreakdown,
+      barcodes: allBarcodes,
+      barcodeId: barcodeSummaryStr,
       purchaseRatePerKg: rateVal,
       purchaseRate: rateVal,
       unitPrice: rateVal,
@@ -1519,24 +1562,12 @@ export default function InventoryManagement({
     }
 
     // Generate individual barcode stickers for each box / roll / container unit received with its DISTINCT net weight!
-    const newRolls = [];
-    const grnCode = newGRN.grnNo.replace('GRN-', '');
-    itemsToSave.forEach((item, index) => {
-      const i = index + 1;
-      const itemGross = parseFloat(item.grossWeightKg) || 0;
-      const itemTare = parseFloat(item.tareWeightKg) || 0;
-      const itemNet = parseFloat(item.netWeightKg) || (itemGross > 0 ? Math.max(0, itemGross - itemTare) : Number((totalNetQty / unitCount).toFixed(2)));
-      const itemLength = parseFloat(item.lengthMeters) || (isFilm ? calculateFilmRollLength(itemNet, grnWidthMm, grnMicron, grnFilmType) : null);
-      const itemVendorRoll = (item.vendorRollNo || '').trim();
-
-      const barcodeId = unitCount > 1 
-        ? `${isFilm ? 'RM-BC' : 'CON-BC'}-${grnCode}-${i}` 
-        : generateBarcodeId(isFilm ? 'RM-BC' : 'CON-BC');
-
+    const newRolls = preparedItemsBreakdown.map((item) => {
       const rollObj = {
-        barcodeId,
+        id: item.barcodeId,
+        barcodeId: item.barcodeId,
         grnNo: newGRN.grnNo,
-        unitNo: i,
+        unitNo: item.unitNo,
         totalUnits: unitCount,
         rollType: isFilm ? 'RAW_MATERIAL' : 'CONSUMABLE_ITEM',
         itemId: grnSelectedStockItemId || generateInventoryId(inventory),
@@ -1551,12 +1582,12 @@ export default function InventoryManagement({
         vendorName: grnVendor,
         invoiceNo: grnInvoiceNo,
         batchNo: grnBatchNo,
-        vendorRollNo: itemVendorRoll || null,
-        grossWeightKg: itemGross > 0 ? itemGross : null,
-        tareWeightKg: itemTare > 0 ? itemTare : null,
-        netWeightKg: itemNet,
-        availableWeightKg: itemNet,
-        lengthMeters: itemLength > 0 ? itemLength : null,
+        vendorRollNo: item.vendorRollNo || null,
+        grossWeightKg: item.grossWeightKg > 0 ? item.grossWeightKg : null,
+        tareWeightKg: item.tareWeightKg > 0 ? item.tareWeightKg : null,
+        netWeightKg: item.netWeightKg,
+        availableWeightKg: item.netWeightKg,
+        lengthMeters: item.lengthMeters > 0 ? item.lengthMeters : null,
         purchaseRatePerKg: rateVal,
         purchaseRate: rateVal,
         unitPrice: rateVal,
@@ -1565,8 +1596,10 @@ export default function InventoryManagement({
         status: isCylinderCategory ? 'In Stock' : 'Pending QC',
         qcStatus: isCylinderCategory ? 'Approved' : 'Pending QC'
       };
-      newRolls.push(rollObj);
+      return rollObj;
+    });
 
+    newRolls.forEach(rollObj => {
       if (onAddRoll) {
         onAddRoll(rollObj);
       }
@@ -6032,6 +6065,28 @@ export default function InventoryManagement({
           const isPending = !isApproved && (g.status === 'Pending QC' || g.status === 'Pending' || !g.status);
           const rate = Number(g.purchaseRatePerKg || g.purchaseRate || g.unitPrice || item.unitPrice || item.purchaseRatePerKg || (DEFAULT_DAILY_RATES[g.filmType] || 0));
           const qty = g.netWeightKg || 0;
+          // Find actual child rolls associated with this GRN
+          const matchingRolls = (inventoryRolls || []).filter(r => 
+            (r.grnNo && g.grnNo && r.grnNo === g.grnNo) ||
+            (r.grn_no && g.grnNo && r.grn_no === g.grnNo) ||
+            (r.grnNo && g.id && r.grnNo === g.id)
+          );
+
+          let resolvedBarcode = '';
+          if (customBarcodesMap[txId]) {
+            resolvedBarcode = customBarcodesMap[txId];
+          } else if (matchingRolls.length > 0) {
+            resolvedBarcode = matchingRolls.map(r => r.barcodeId || r.id).filter(Boolean).join(', ');
+          } else if (Array.isArray(g.itemsBreakdown) && g.itemsBreakdown.some(b => b.barcodeId)) {
+            resolvedBarcode = g.itemsBreakdown.map(b => b.barcodeId).filter(Boolean).join(', ');
+          } else if (Array.isArray(g.barcodes) && g.barcodes.length > 0) {
+            resolvedBarcode = g.barcodes.join(', ');
+          } else if (g.barcodeId) {
+            resolvedBarcode = g.barcodeId;
+          } else {
+            resolvedBarcode = g.batchNo || `BAR-GRN-${g.grnNo}`;
+          }
+
           return {
             txId,
             category: 'inward',
@@ -6048,11 +6103,11 @@ export default function InventoryManagement({
             ratePerKg: rate,
             unitPrice: rate,
             totalValue: qty * rate,
-            barcode: customBarcodesMap[txId] || g.batchNo || `BAR-GRN-${g.grnNo}`,
+            barcode: resolvedBarcode,
             batchNo: g.batchNo || `GRN-${g.grnNo}`,
             invoiceNo: g.invoiceNo || '',
             status: g.status || 'Pending QC',
-            notes: `${g.rollsReceived || 1} pkg/roll(s) | Batch: ${g.batchNo || 'N/A'}`
+            notes: `${g.rollsReceived || matchingRolls.length || 1} pkg/roll(s) | Barcode: ${resolvedBarcode}`
           };
         });
 
