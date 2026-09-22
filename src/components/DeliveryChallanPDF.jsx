@@ -90,7 +90,23 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
   const subtotalTaxable = subtotalItems + freightAmt;
 
   const gstCalc = calculateGSTBreakdown(clientGstin, clientAddress, subtotalTaxable, gstRatePct, COMPANY_DETAILS.gstin, taxType);
-  const totalQtyKg = itemRows.reduce((sum, item) => sum + (parseFloat(item.quantity) || 0), 0);
+
+  // Dynamic Total Quantity & UOM calculation
+  const formattedTotalQty = (() => {
+    if (!itemRows || itemRows.length === 0) return '0.00 Kg';
+
+    const qtyByUnit = {};
+    itemRows.forEach(item => {
+      const uom = (item.unit || item.uom || 'Kg').trim();
+      const qty = parseFloat(item.quantity) || 0;
+      qtyByUnit[uom] = (qtyByUnit[uom] || 0) + qty;
+    });
+
+    const entries = Object.entries(qtyByUnit);
+    if (entries.length === 0) return '0.00 Kg';
+
+    return entries.map(([uom, qty]) => `${qty.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${uom}`).join(', ');
+  })();
 
   const selectedNature = challanData.challanNature || challanData.movementType || challanData.natureOfMovement || "Sale of Goods";
 
@@ -281,7 +297,7 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
                 <tr>
                   <td style={{ padding: '3px 8px', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>Total Net Qty:</td>
                   <td style={{ padding: '3px 8px', borderBottom: '1px solid #e2e8f0', textAlign: 'right', fontWeight: 'bold' }}>
-                    {totalQtyKg.toFixed(2)} Kg
+                    {formattedTotalQty}
                   </td>
                 </tr>
                 <tr>
