@@ -466,7 +466,7 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
                   RECEIVING COMPANY ACKNOWLEDGEMENT & STAMP
                 </div>
                 <div style={{ fontSize: '8.5px', color: '#64748b' }}>
-                  Received the above flexible packaging material in good condition and correct quantity.
+                  Received the above material in good condition and correct quantity.
                 </div>
               </div>
 
