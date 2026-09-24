@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS public.cylinders (
 -- 6. PRODUCTION RECORDS TABLE
 CREATE TABLE IF NOT EXISTS public.production_records (
     id TEXT PRIMARY KEY,
-    order_id TEXT REFERENCES public.orders(id),
+    order_id TEXT REFERENCES public.orders(id) ON DELETE CASCADE,
     job_name TEXT NOT NULL,
     operator_name TEXT,
     shift TEXT,
@@ -132,7 +132,7 @@ CREATE TABLE IF NOT EXISTS public.users (
 -- 8. JOB DATA SHEETS TABLE
 CREATE TABLE IF NOT EXISTS public.job_datasheets (
     id TEXT PRIMARY KEY,
-    job_id TEXT REFERENCES public.orders(id),
+    job_id TEXT REFERENCES public.orders(id) ON DELETE CASCADE,
     job_name TEXT NOT NULL,
     client_name TEXT NOT NULL,
     completion_date DATE DEFAULT CURRENT_DATE,

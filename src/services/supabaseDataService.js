@@ -164,8 +164,15 @@ export async function saveOrderToSupabase(order) {
 
 
 export async function deleteOrderFromSupabase(orderId) {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !orderId) return;
   await ensureValidSession();
+  try {
+    // Clean up dependent production records & job datasheets to avoid foreign key violations
+    await supabase.from('production_records').delete().eq('order_id', orderId);
+    await supabase.from('job_datasheets').delete().eq('job_id', orderId);
+  } catch (e) {
+    console.warn('[orders] Linked records deletion notice:', e.message);
+  }
   const { error } = await supabase.from('orders').delete().eq('id', orderId);
   handleSupabaseError(error, 'orders');
 }
