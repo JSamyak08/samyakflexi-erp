@@ -152,8 +152,11 @@ export async function saveOrderToSupabase(order) {
     client_name: order.clientName || 'General Client',
     order_type: order.orderType || 'Reel',
     order_qty_kg: Number(order.orderQtyKg) || 0,
+    delivery_date: targetDateVal,
     target_delivery_date: targetDateVal,
-    status: order.status || 'Scheduled'
+    status: order.status || 'Scheduled',
+    job_details: jobDetails,
+    raw_material_requirements: matReqs
   };
 
   const { error } = await supabase.from('orders').upsert(payload, { onConflict: 'id' });

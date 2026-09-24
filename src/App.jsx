@@ -534,30 +534,8 @@ export default function App() {
 
       if (Array.isArray(supaOrders)) {
         const cleanSupa = stripDummyRecords(supaOrders);
-        setOrders(prev => {
-          const map = new Map();
-          cleanSupa.forEach(o => { if (o && o.id) map.set(o.id, o); });
-          (prev || []).forEach(p => {
-            if (p && p.id && !isDummyRecord(p)) {
-              if (!map.has(p.id)) {
-                map.set(p.id, p);
-                saveOrderToSupabase(p).catch(console.warn);
-              } else {
-                const existing = map.get(p.id);
-                map.set(p.id, {
-                  ...p,
-                  ...existing,
-                  layers: (existing.layers && existing.layers.length > 0) ? existing.layers : (p.layers || []),
-                  calculationDetails: existing.calculationDetails || p.calculationDetails || null,
-                  materialRequirements: (existing.materialRequirements && existing.materialRequirements.length > 0) ? existing.materialRequirements : (p.materialRequirements || [])
-                });
-              }
-            }
-          });
-          const merged = Array.from(map.values());
-          safeLocalStorageSet('samyak_erp_orders', merged);
-          return merged;
-        });
+        setOrders(cleanSupa);
+        safeLocalStorageSet('samyak_erp_orders', cleanSupa);
         supaOrders.filter(isDummyRecord).forEach(d => deleteOrderFromSupabase(d.id).catch(console.warn));
       }
 
