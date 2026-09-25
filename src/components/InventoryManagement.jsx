@@ -45,7 +45,7 @@ import SFGFGEntryModal, { SFG_TYPES, FG_TYPES } from './SFGFGEntryModal';
 import { getNextDocRefNumber, generateDocRefNumber, getInventoryAgeingSettings } from '../services/settingsService';
 import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo, sortBatchesByFifo, getItemInwardDate } from '../utils/fifoUtils';
 
-import { sanitizeInventoryItem, sanitizeGRN } from '../services/supabaseDataService';
+import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName } from '../services/supabaseDataService';
 import { 
   isReconciliationDue, 
   FILM_DENSITIES, 
@@ -552,6 +552,7 @@ export default function InventoryManagement({
     setGrnFilmType(newFilmType);
     if (grnCategory === 'Film Substrates') {
       recalculateAllRollLengths(newFilmType, grnMicron, grnWidthMm);
+      setGrnItemName(formatFilmItemName(newFilmType, grnWidthMm, grnMicron));
     }
   };
 
@@ -559,6 +560,7 @@ export default function InventoryManagement({
     setGrnMicron(newMicron);
     if (grnCategory === 'Film Substrates') {
       recalculateAllRollLengths(grnFilmType, newMicron, grnWidthMm);
+      setGrnItemName(formatFilmItemName(grnFilmType, grnWidthMm, newMicron));
     }
   };
 
@@ -566,6 +568,7 @@ export default function InventoryManagement({
     setGrnWidthMm(newWidth);
     if (grnCategory === 'Film Substrates') {
       recalculateAllRollLengths(grnFilmType, grnMicron, newWidth);
+      setGrnItemName(formatFilmItemName(grnFilmType, newWidth, grnMicron));
     }
   };
 
@@ -1140,16 +1143,21 @@ export default function InventoryManagement({
     const filmTypeVal = firstItem.filmType || 'PET';
     const micronVal = firstItem.micron || 12;
     const widthVal = firstItem.widthMm || 1000;
+    const categoryVal = po.category || 'Film Substrates';
     
     setGrnPoNo(po.poNumber || '');
     setGrnVendor(po.vendor?.companyName || po.vendorName || po.vendor?.name || '');
-    setGrnCategory(po.category || 'Film Substrates');
+    setGrnCategory(categoryVal);
     setGrnFilmType(filmTypeVal);
     setGrnMicron(micronVal);
     setGrnWidthMm(widthVal);
     setGrnWeightKg(poQty);
     setGrnPurchaseRate(firstItem.rate || 140);
-    setGrnItemName(firstItem.itemDesc || firstItem.description || '');
+    
+    const generatedTitle = categoryVal === 'Film Substrates'
+      ? formatFilmItemName(filmTypeVal, widthVal, micronVal)
+      : (firstItem.itemDesc || firstItem.description || `${categoryVal} Inward Item`).replace(/µ/g, 'Micron');
+    setGrnItemName(generatedTitle);
     setGrnRolls('1');
     
     const initialLen = calculateFilmRollLength(poQty, widthVal, micronVal, filmTypeVal);
@@ -1171,7 +1179,10 @@ export default function InventoryManagement({
 
   const handleSelectStockItemForGrn = (item) => {
     if (!item) return;
-    const title = item.itemName || `${item.filmType || ''} ${item.micron && item.micron !== '-' ? item.micron + 'µ' : ''} ${item.widthMm && item.widthMm !== '-' ? '(' + item.widthMm + 'mm)' : ''}`.trim();
+    const isFilm = (item.category || 'Film Substrates') === 'Film Substrates';
+    const title = isFilm
+      ? formatFilmItemName(item.filmType, item.widthMm, item.micron, item.itemName)
+      : (item.itemName ? item.itemName.replace(/µ/g, 'Micron') : `${item.category || 'Stock'} Item`);
     
     setGrnSelectedStockItemId(item.id);
     setGrnItemName(title);
@@ -1216,7 +1227,11 @@ export default function InventoryManagement({
     if (preselectedItem) {
       handleSelectStockItemForGrn(preselectedItem);
     } else {
-      setGrnItemName('');
+      setGrnCategory('Film Substrates');
+      setGrnFilmType('PET');
+      setGrnMicron(12);
+      setGrnWidthMm(1000);
+      setGrnItemName(formatFilmItemName('PET', 1000, 12));
       setGrnItemSearchTerm('');
       setGrnSelectedStockItemId('');
       setIsGrnItemDropdownOpen(false);
@@ -1366,9 +1381,11 @@ export default function InventoryManagement({
       ? (editFilmType || editSubstrateOrGrade || 'PET') 
       : (editSubstrateOrGrade.trim() || editSubType.trim() || '');
     const defaultGeneratedName = isFilm
-      ? `${finalSubstrateOrGrade} ${editMicron}µ (${editWidthMm}mm Width)`
+      ? formatFilmItemName(finalSubstrateOrGrade, editWidthMm, editMicron)
       : `${editCategory} - ${finalSubstrateOrGrade || 'Item'}`;
-    const finalItemName = editItemName.trim() || defaultGeneratedName;
+    const finalItemName = isFilm
+      ? formatFilmItemName(finalSubstrateOrGrade, editWidthMm, editMicron)
+      : (editItemName.trim().replace(/µ/g, 'Micron') || defaultGeneratedName);
     const rateVal = parseFloat(editUnitPrice) || 0;
     const availQty = parseFloat(editAvailableQty) || 0;
     const valuation = Number((availQty * rateVal).toFixed(2));
@@ -1435,7 +1452,7 @@ export default function InventoryManagement({
 
   const handleDeleteStockItem = async (item) => {
     if (!item || !item.id) return;
-    const displayName = item.itemName || `${item.filmType || 'Item'} ${item.micron && item.micron !== '-' ? item.micron + 'µ' : ''}`;
+    const displayName = item.itemName || `${item.filmType || 'Item'} ${item.micron && item.micron !== '-' ? item.micron + ' Micron' : ''}`;
     if (window.confirm(`Are you sure you want to permanently delete stock item "${item.id} - ${displayName}"?`)) {
       if (onDeleteInventoryItem) {
         await onDeleteInventoryItem(item.id);
@@ -1468,9 +1485,9 @@ export default function InventoryManagement({
     }
 
     const isFilm = grnCategory === 'Film Substrates';
-    const itemName = grnItemName.trim() || (isFilm 
-      ? `${grnFilmType} ${grnMicron}µ (${grnWidthMm}mm)` 
-      : `${grnCategory} Inward Item`);
+    const itemName = isFilm 
+      ? formatFilmItemName(grnFilmType, grnWidthMm, grnMicron) 
+      : (grnItemName.trim().replace(/µ/g, 'Micron') || `${grnCategory} Inward Item`);
 
     // Ensure we have valid items in grnItemsList
     const itemsToSave = (grnItemsList && grnItemsList.length > 0) ? grnItemsList : [
@@ -3663,7 +3680,9 @@ export default function InventoryManagement({
                 {stockPagination.paginatedItems.map(item => {
                   const isLow = (item.availableQtyKg ?? 0) <= (item.reorderLevelKg ?? 100);
                   const isFilm = (item.category || 'Film Substrates') === 'Film Substrates';
-                  const title = item.itemName || (isFilm ? `${item.filmType} (${item.micron}µ x ${item.widthMm}mm)` : (item.category || item.filmType || 'Stock Item'));
+                  const title = isFilm 
+                    ? formatFilmItemName(item.filmType, item.widthMm, item.micron, item.itemName) 
+                    : (item.itemName ? item.itemName.replace(/µ/g, 'Micron') : (item.category || item.filmType || 'Stock Item'));
                   const unitStr = item.unit || 'kg';
                   const rate = parseFloat(item.unitPrice || item.purchaseRatePerKg) || 0;
                   const availQty = parseFloat(item.availableQtyKg) || 0;
@@ -3723,7 +3742,7 @@ export default function InventoryManagement({
                         </span>
                       </td>
                       <td style={{ fontSize: '0.85rem' }}>
-                        {isFilm ? `${item.micron}µ × ${item.widthMm}mm` : (item.widthMm && item.widthMm !== '-' ? `${item.widthMm}mm` : '-')}
+                        {isFilm ? `${item.micron} Micron × ${item.widthMm}mm` : (item.widthMm && item.widthMm !== '-' ? `${item.widthMm}mm` : '-')}
                       </td>
                       <td style={{ fontSize: '1.1rem', fontWeight: '800', color: isLow ? (availQty === 0 && pendingQcQty > 0 ? '#d97706' : '#ef4444') : '#047857' }}>
                         {(item.availableQtyKg ?? 0).toLocaleString()} {unitStr}
@@ -4764,7 +4783,7 @@ export default function InventoryManagement({
                       </div>
 
                       <div className="form-group">
-                        <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>Micron Gauge (µ)</label>
+                        <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>Micron Gauge (Micron)</label>
                         <input type="number" className="form-control" placeholder="e.g. 12" value={grnMicron} onChange={e => handleMicronChange(e.target.value)} />
                       </div>
 
@@ -5860,7 +5879,7 @@ export default function InventoryManagement({
                 {editCategory === 'Film Substrates' ? (
                   <div className="form-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
                     <div className="form-group">
-                      <label>Micron Gauge (µ) *</label>
+                      <label>Micron Gauge (Micron) *</label>
                       <input 
                         type="number" 
                         step="0.1"

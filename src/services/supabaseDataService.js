@@ -360,9 +360,36 @@ export async function deleteClientFromSupabase(clientId) {
 
 
 // ============================================================================
-// ============================================================================
 // 3. INVENTORY & RAW MATERIALS / CONSUMABLES
 // ============================================================================
+
+export function formatFilmItemName(filmType, widthMm, micron, rawName = '') {
+  let fType = String(filmType || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/gi, '');
+  let width = String(widthMm || '').replace(/[^0-9.]/g, '');
+  let mic = String(micron || '').replace(/[^0-9.]/g, '');
+
+  if ((!fType || !width || !mic) && rawName) {
+    const cleanRaw = String(rawName).replace(/µ/g, 'Micron');
+    if (!fType) {
+      const matchType = cleanRaw.match(/^(PET|BOPP|METPET|CPP|LDPE|LLDPE|POLY|BON|PVC|ALU)/i);
+      fType = matchType ? matchType[1].toUpperCase() : cleanRaw.split(/[\s-]/)[0].toUpperCase();
+    }
+    if (!width) {
+      const matchWidth = cleanRaw.match(/(\d+)\s*(mm|width)/i);
+      if (matchWidth) width = matchWidth[1];
+    }
+    if (!mic) {
+      const matchMicron = cleanRaw.match(/(\d+)\s*(micron|mic|µ)/i);
+      if (matchMicron) mic = matchMicron[1];
+    }
+  }
+
+  fType = fType || 'PET';
+  width = width || '1000';
+  mic = mic || '12';
+
+  return `${fType}-${width}-${mic}`;
+}
 
 export function sanitizeInventoryItem(rawItem) {
   if (!rawItem || typeof rawItem !== 'object') return rawItem;
@@ -429,7 +456,7 @@ export function sanitizeInventoryItem(rawItem) {
 
   const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films';
 
-  const filmType = isFilm ? (extractedMeta.filmType || rawItem.filmType || (rawName ? rawName.split(' ')[0] : 'PET')) : '';
+  const filmType = isFilm ? (extractedMeta.filmType || rawItem.filmType || (rawName ? rawName.split(/[\s-]/)[0] : 'PET')) : '';
   const micron = isFilm 
     ? ((extractedMeta.micron !== undefined && extractedMeta.micron !== null && extractedMeta.micron !== '-') ? extractedMeta.micron : (rawItem.micron && rawItem.micron !== '-' ? rawItem.micron : 12)) 
     : '-';
@@ -447,7 +474,9 @@ export function sanitizeInventoryItem(rawItem) {
 
   const resolvedUnit = rawItem.unit || rawItem.unit_of_measure || extractedMeta.unit || fallbackUnit;
 
-  const cleanItemName = rawName || (isFilm && filmType ? `${filmType} ${micron}µ (${widthMm}mm)` : `${category} Stock Item`);
+  const cleanItemName = isFilm 
+    ? formatFilmItemName(filmType, widthMm, micron, rawName) 
+    : (rawName ? rawName.replace(/µ/g, 'Micron') : `${category} Stock Item`);
 
   return {
     ...extractedMeta,
