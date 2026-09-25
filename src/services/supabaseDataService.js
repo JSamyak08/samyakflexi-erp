@@ -185,7 +185,10 @@ export async function deleteOrderFromSupabase(orderId) {
     console.warn('[orders] Linked records deletion notice:', e.message);
   }
   const { error } = await supabase.from('orders').delete().eq('id', orderId);
-  handleSupabaseError(error, 'orders');
+  if (error) {
+    console.error('[Supabase Delete Order Error]:', error.message || error);
+    handleSupabaseError(error, 'orders');
+  }
 }
 
 // ============================================================================
