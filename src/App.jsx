@@ -317,6 +317,8 @@ export default function App() {
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [ordersError, setOrdersError] = useState(null);
+  const [isDataLoading, setIsDataLoading] = useState(true);
+  const [isDataFetched, setIsDataFetched] = useState(false);
   const [deletingOrderId, setDeletingOrderId] = useState(null);
   const deletedOrderIdsRef = useRef(new Set());
   const ordersFetchVersion = useRef(0);
@@ -433,10 +435,19 @@ export default function App() {
 
   // Fetch all tables from Supabase on initial load or credential changes
   useEffect(() => {
-    if (!isSupaActive || !isAuthReady || !isAuthenticated) return;
+    if (!isSupaActive || !isAuthReady || !isAuthenticated) {
+      if (!isSupaActive) {
+        setIsDataLoading(false);
+        setIsDataFetched(true);
+      }
+      return;
+    }
 
     let isMounted = true;
     async function loadSupabaseData() {
+      setIsDataLoading(true);
+      setIsDataFetched(false);
+
       const fetchSafe = async (fn, label) => {
         try {
           const res = await fn();
@@ -452,7 +463,7 @@ export default function App() {
       setOrdersLoading(true);
       setOrdersError(null);
 
-      (async () => {
+      const ordersTask = (async () => {
         try {
           console.log('[ORDERS][FETCH] Starting Supabase fetch');
           const supaOrders = await fetchOrders();
@@ -477,12 +488,14 @@ export default function App() {
       })();
 
       let [
+        _ordersRes,
         supaVendors, supaInv, supaGRNs, supaCyls, 
         supaProd, supaUsers, supaSheets, supaRolls, supaShipments,
         supaMachines, supaSchedules, supaClients, supaJobMasters,
         supaInks, supaEmployees, supaAttendance, supaAdvances,
         supaRolePerms, supaAuditLogs, supaSFG, supaDCs, supaCoAs
       ] = await Promise.all([
+        ordersTask,
         fetchSafe(fetchVendors, 'Vendors'),
         fetchSafe(fetchInventory, 'Inventory'),
         fetchSafe(fetchGRNs, 'GRNs'),
@@ -652,6 +665,11 @@ export default function App() {
 
       if (supaRolePerms && typeof supaRolePerms === 'object' && Object.keys(supaRolePerms).length > 0) {
         setRolePermissions(supaRolePerms);
+      }
+
+      if (isMounted) {
+        setIsDataLoading(false);
+        setIsDataFetched(true);
       }
     }
 
@@ -2152,9 +2170,25 @@ export default function App() {
     handleTabChange('job_punching');
   };
 
-  // Render Loading Screen with Company Logo & Percentage Status Bar on initial load or during sign-in
-  if (!isAuthReady || isSigningIn) {
-    return <Preloader onComplete={() => setIsSigningIn(false)} />;
+  const isDataReady = databaseStatus !== 'checking' && (!isAuthenticated || isDataFetched || (!isDataLoading && !ordersLoading));
+
+  // Render Loading Screen with Company Logo & Percentage Status Bar on initial load, DB connection check, data fetch, or sign-in
+  if (!isAuthReady || isSigningIn || (isAuthenticated && !isDataReady)) {
+    return (
+      <Preloader 
+        isReady={isAuthReady && !isSigningIn && isDataReady}
+        statusText={
+          databaseStatus === 'checking'
+            ? 'Connecting to Supabase Cloud Database...'
+            : (isDataLoading || ordersLoading)
+              ? 'Loading Job Masters, Inventory & Production Records...'
+              : undefined
+        }
+        onComplete={() => {
+          setIsSigningIn(false);
+        }} 
+      />
+    );
   }
 
   // Render Authentication Screen if user is not signed in

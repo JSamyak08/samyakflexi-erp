@@ -1,50 +1,70 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { getCompanyLogo } from '../services/settingsService';
 import { ShieldCheck, Database, Cpu, Sparkles, CheckCircle2 } from 'lucide-react';
 
-export default function Preloader({ onComplete }) {
+export default function Preloader({ onComplete, isReady = true, statusText }) {
   const [progress, setProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState('Initializing ERP Core Modules...');
   const [currentStep, setCurrentStep] = useState(1);
   const logoUrl = getCompanyLogo();
+  const completedCalledRef = useRef(false);
 
   useEffect(() => {
-    const startTime = Date.now();
-    const duration = 1800; // 1.8 seconds total smooth loading sequence
-
     const interval = setInterval(() => {
-      const elapsed = Date.now() - startTime;
-      const pct = Math.min(100, Math.floor((elapsed / duration) * 100));
-
-      setProgress(pct);
-
-      if (pct < 25) {
-        setStatusMessage('Initializing ERP Core System & Security Rules...');
-        setCurrentStep(1);
-      } else if (pct < 50) {
-        setStatusMessage('Connecting to Supabase Cloud Database & Storage...');
-        setCurrentStep(2);
-      } else if (pct < 75) {
-        setStatusMessage('Loading Job Masters, Inventory & Production Records...');
-        setCurrentStep(3);
-      } else if (pct < 95) {
-        setStatusMessage('Verifying User Auth Session & System Access...');
-        setCurrentStep(4);
-      } else {
-        setStatusMessage('Preparing Factory Dashboard...');
-        setCurrentStep(5);
-      }
-
-      if (pct >= 100) {
-        clearInterval(interval);
-        if (onComplete) {
-          setTimeout(onComplete, 200);
+      setProgress(prev => {
+        let next;
+        if (!isReady) {
+          // While DB connection or data fetching is pending, cap smooth progress at 92%
+          if (prev < 25) next = prev + 2;
+          else if (prev < 55) next = prev + 1.5;
+          else if (prev < 90) next = prev + 1;
+          else next = Math.min(92, prev + 0.2);
+        } else {
+          // Once DB connected and initial data fetched, quickly advance to 100%
+          next = Math.min(100, prev + (prev < 90 ? 8 : 4));
         }
-      }
+
+        const pct = Math.floor(next);
+
+        if (statusText) {
+          setStatusMessage(statusText);
+          if (pct >= 90) setCurrentStep(5);
+          else if (pct >= 60) setCurrentStep(3);
+          else if (pct >= 30) setCurrentStep(2);
+          else setCurrentStep(1);
+        } else {
+          if (pct < 25) {
+            setStatusMessage('Initializing ERP Core System & Security Rules...');
+            setCurrentStep(1);
+          } else if (pct < 55) {
+            setStatusMessage('Connecting to Supabase Cloud Database & Storage...');
+            setCurrentStep(2);
+          } else if (pct < 90) {
+            setStatusMessage('Loading Job Masters, Inventory & Production Records...');
+            setCurrentStep(3);
+          } else if (pct < 98) {
+            setStatusMessage('Verifying User Auth Session & System Access...');
+            setCurrentStep(4);
+          } else {
+            setStatusMessage('Preparing Factory Dashboard...');
+            setCurrentStep(5);
+          }
+        }
+
+        if (pct >= 100) {
+          clearInterval(interval);
+          if (onComplete && !completedCalledRef.current) {
+            completedCalledRef.current = true;
+            setTimeout(onComplete, 150);
+          }
+        }
+
+        return next;
+      });
     }, 30);
 
     return () => clearInterval(interval);
-  }, [onComplete]);
+  }, [isReady, statusText, onComplete]);
 
   return (
     <div style={{
