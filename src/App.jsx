@@ -266,8 +266,12 @@ export default function App() {
     }
   }, [isAuthenticated, currentUser, isAuthReady, activeTab]);
 
-  // Helper to load state safely from localStorage or fallback
+  // Helper to load state safely from localStorage or fallback.
+  // SECURITY GUARD: Never expose cached ERP business data in memory before user authentication.
   const loadLocalState = (key, fallbackDefault) => {
+    if (!isAuthenticated && key !== 'role_permissions') {
+      return fallbackDefault;
+    }
     try {
       const storageKey = key.startsWith('samyak_erp_') ? key : `samyak_erp_${key}`;
       const parsed = safeLocalStorageGet(storageKey, null);
@@ -286,43 +290,70 @@ export default function App() {
     return fallbackDefault;
   };
 
-  // SUPABASE DATABASE IS THE SINGLE SOURCE OF TRUTH FOR ORDERS.
-  // Orders start empty (loading state) and are hydrated ONLY from Supabase.
-  // Never initialize orders from localStorage or IndexedDB.
+  // ZERO PRE-AUTH DATA LEAKAGE SECURITY ARCHITECTURE:
+  // All sensitive ERP business data starts strictly EMPTY until user authentication is verified.
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [ordersError, setOrdersError] = useState(null);
   const [deletingOrderId, setDeletingOrderId] = useState(null);
   const deletedOrderIdsRef = useRef(new Set());
   const ordersFetchVersion = useRef(0);
-  const [vendors, setVendors] = useState(() => stripDummyRecords(loadLocalState('vendors', [])));
-  const [inventory, setInventory] = useState(() => stripDummyRecords(loadLocalState('inventory', [])).map(sanitizeInventoryItem));
-  const [grns, setGrns] = useState(() => stripDummyRecords(loadLocalState('grns', [])).map(sanitizeGRN));
-  const [users, setUsers] = useState(() => loadLocalState('users', []));
-  const [jobDataSheets, setJobDataSheets] = useState(() => stripDummyRecords(loadLocalState('job_datasheets', [])));
-  const [cylinders, setCylinders] = useState(() => stripDummyRecords(loadLocalState('cylinders', [])));
-  const [productionRecords, setProductionRecords] = useState(() => stripDummyRecords(loadLocalState('production_records', [])));
-  const [inventoryRolls, setInventoryRolls] = useState(() => stripDummyRecords(loadLocalState('inventory_rolls', [])));
-  const [dispatchShipments, setDispatchShipments] = useState(() => stripDummyRecords(loadLocalState('dispatch_shipments', [])));
-  const [deliveryChallans, setDeliveryChallans] = useState(() => stripDummyRecords(loadLocalState('delivery_challans', [])));
-  const [certificateOfAnalyses, setCertificateOfAnalyses] = useState(() => stripDummyRecords(loadLocalState('certificate_of_analyses', [])));
-  const [machines, setMachines] = useState(() => stripDummyRecords(loadLocalState('printing_machines', [])));
-  const [schedules, setSchedules] = useState(() => stripDummyRecords(loadLocalState('production_schedules', [])));
-  const [clients, setClients] = useState(() => stripDummyRecords(loadLocalState('clients', [])));
-  const [jobMasters, setJobMasters] = useState(() => stripDummyRecords(loadLocalState('job_masters', [])));
-  const [inks, setInks] = useState(() => loadLocalState('inks', []));
+
+  const [vendors, setVendors] = useState([]);
+  const [inventory, setInventory] = useState([]);
+  const [grns, setGrns] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [jobDataSheets, setJobDataSheets] = useState([]);
+  const [cylinders, setCylinders] = useState([]);
+  const [productionRecords, setProductionRecords] = useState([]);
+  const [inventoryRolls, setInventoryRolls] = useState([]);
+  const [dispatchShipments, setDispatchShipments] = useState([]);
+  const [deliveryChallans, setDeliveryChallans] = useState([]);
+  const [certificateOfAnalyses, setCertificateOfAnalyses] = useState([]);
+  const [machines, setMachines] = useState([]);
+  const [schedules, setSchedules] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [jobMasters, setJobMasters] = useState([]);
+  const [inks, setInks] = useState([]);
   const [selectedJobMasterForPunch, setSelectedJobMasterForPunch] = useState(null);
   const [rolePermissions, setRolePermissions] = useState(() => loadLocalState('role_permissions', DEFAULT_ROLE_PERMISSIONS));
-  const [indents, setIndents] = useState(() => stripDummyRecords(loadLocalState('material_indents', [])));
-  const [machineIssues, setMachineIssues] = useState(() => stripDummyRecords(loadLocalState('machine_issues', [])));
-  const [consumables, setConsumables] = useState(() => stripDummyRecords(loadLocalState('consumables', [])));
-  const [storeIssueTransactions, setStoreIssueTransactions] = useState(() => stripDummyRecords(loadLocalState('store_issue_transactions', [])));
-  const [auditLogs, setAuditLogs] = useState(() => pruneOldAuditLogs(loadLocalState('audit_logs', [])));
-  const [employees, setEmployees] = useState(() => stripDummyRecords(loadLocalState('employees', [])));
-  const [employeeAttendance, setEmployeeAttendance] = useState(() => stripDummyRecords(loadLocalState('employee_attendance', [])));
-  const [salaryAdvances, setSalaryAdvances] = useState(() => stripDummyRecords(loadLocalState('salary_advances', [])));
-  const [salaryPayments, setSalaryPayments] = useState(() => stripDummyRecords(loadLocalState('salary_payments', [])));
-  const [sfgGoods, setSfgGoods] = useState(() => stripDummyRecords(loadLocalState('sfg_goods', [])));
+  const [indents, setIndents] = useState([]);
+  const [machineIssues, setMachineIssues] = useState([]);
+  const [consumables, setConsumables] = useState([]);
+  const [storeIssueTransactions, setStoreIssueTransactions] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [employeeAttendance, setEmployeeAttendance] = useState([]);
+  const [salaryAdvances, setSalaryAdvances] = useState([]);
+  const [salaryPayments, setSalaryPayments] = useState([]);
+  const [sfgGoods, setSfgGoods] = useState([]);
+
+  // Hydrate local offline cache ONLY AFTER authentication succeeds
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    try {
+      const v = loadLocalState('vendors', null); if (v) setVendors(stripDummyRecords(v));
+      const inv = loadLocalState('inventory', null); if (inv) setInventory(stripDummyRecords(inv).map(sanitizeInventoryItem));
+      const g = loadLocalState('grns', null); if (g) setGrns(stripDummyRecords(g).map(sanitizeGRN));
+      const u = loadLocalState('users', null); if (u) setUsers(u);
+      const jds = loadLocalState('job_datasheets', null); if (jds) setJobDataSheets(stripDummyRecords(jds));
+      const cyl = loadLocalState('cylinders', null); if (cyl) setCylinders(stripDummyRecords(cyl));
+      const pr = loadLocalState('production_records', null); if (pr) setProductionRecords(stripDummyRecords(pr));
+      const ir = loadLocalState('inventory_rolls', null); if (ir) setInventoryRolls(stripDummyRecords(ir));
+      const ds = loadLocalState('dispatch_shipments', null); if (ds) setDispatchShipments(stripDummyRecords(ds));
+      const dc = loadLocalState('delivery_challans', null); if (dc) setDeliveryChallans(stripDummyRecords(dc));
+      const coa = loadLocalState('certificate_of_analyses', null); if (coa) setCertificateOfAnalyses(stripDummyRecords(coa));
+      const m = loadLocalState('printing_machines', null); if (m) setMachines(stripDummyRecords(m));
+      const ps = loadLocalState('production_schedules', null); if (ps) setSchedules(stripDummyRecords(ps));
+      const c = loadLocalState('clients', null); if (c) setClients(stripDummyRecords(c));
+      const jm = loadLocalState('job_masters', null); if (jm) setJobMasters(stripDummyRecords(jm));
+      const ik = loadLocalState('inks', null); if (ik) setInks(ik);
+      const emp = loadLocalState('employees', null); if (emp) setEmployees(stripDummyRecords(emp));
+      const sfg = loadLocalState('sfg_goods', null); if (sfg) setSfgGoods(stripDummyRecords(sfg));
+    } catch (e) {
+      console.warn('[Security Hydration] Error:', e);
+    }
+  }, [isAuthenticated]);
 
 
   const logAudit = async (actionType, moduleName, details, targetId = null) => {
@@ -1150,6 +1181,35 @@ export default function App() {
     setSessionProfile(null);
     setCurrentUser(null);
     setIsAuthenticated(false);
+
+    // PURGE IN-MEMORY ERP DATA ON LOGOUT (ZERO LEAKAGE AT REST OR IN MEMORY)
+    setOrders([]);
+    setVendors([]);
+    setInventory([]);
+    setGrns([]);
+    setUsers([]);
+    setJobDataSheets([]);
+    setCylinders([]);
+    setProductionRecords([]);
+    setInventoryRolls([]);
+    setDispatchShipments([]);
+    setDeliveryChallans([]);
+    setCertificateOfAnalyses([]);
+    setMachines([]);
+    setSchedules([]);
+    setClients([]);
+    setJobMasters([]);
+    setInks([]);
+    setIndents([]);
+    setMachineIssues([]);
+    setConsumables([]);
+    setStoreIssueTransactions([]);
+    setEmployees([]);
+    setEmployeeAttendance([]);
+    setSalaryAdvances([]);
+    setSalaryPayments([]);
+    setSfgGoods([]);
+
     if (typeof window !== 'undefined') {
       window.history.replaceState({ tab: 'login' }, '', '/login');
     }
@@ -2546,7 +2606,7 @@ export default function App() {
         return updated;
       });
     };
-    return <AuthScreen users={users} onLogin={handleLogin} onUpdatePassword={handleUpdatePassword} />;
+    return <AuthScreen onLogin={handleLogin} onUpdatePassword={handleUpdatePassword} />;
   }
 
   return (

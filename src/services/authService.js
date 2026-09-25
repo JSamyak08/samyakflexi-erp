@@ -14,6 +14,14 @@ export async function signInUser(email, password) {
     };
   }
 
+  // Anti-XSS / Script injection input check
+  if (cleanEmail.includes('<') || cleanEmail.includes('>') || cleanEmail.includes('"')) {
+    return {
+      success: false,
+      message: 'Invalid characters detected in email address.'
+    };
+  }
+
   // 1. First Tier: Try Supabase Auth API
   if (isSupabaseConfigured()) {
     try {
@@ -30,13 +38,22 @@ export async function signInUser(email, password) {
           .eq('email', cleanEmail)
           .maybeSingle();
 
+        const status = profile?.status || 'Active';
+        if (status !== 'Active') {
+          await supabase.auth.signOut().catch(console.warn);
+          return {
+            success: false,
+            message: 'Your account has been deactivated. Please contact the Plant Administrator.'
+          };
+        }
+
         const userObj = profile ? {
           id: profile.id || data.user.id,
           name: profile.full_name || profile.name || data.user.user_metadata?.full_name || cleanEmail.split('@')[0],
           email: profile.email || cleanEmail,
           role: profile.role || data.user.user_metadata?.role || 'Admin',
           department: profile.department || data.user.user_metadata?.department || 'Executive Management',
-          status: profile.status || 'Active'
+          status: status
         } : {
           id: data.user.id,
           name: data.user.user_metadata?.full_name || cleanEmail.split('@')[0],
@@ -57,9 +74,8 @@ export async function signInUser(email, password) {
       console.warn('[AuthService] Supabase Auth sign-in probe notice:', authErr?.message);
     }
 
-    // 2. Second Tier: Check public.users table in Supabase DB (for users created directly in DB)
+    // 2. Second Tier: Check public.users table in Supabase DB (Strict verification, no backdoor)
     try {
-      // First try direct lookup by email (case-insensitive)
       let dbUser = null;
       const { data: exactUser, error: dbErr } = await supabase
         .from('users')
@@ -70,7 +86,6 @@ export async function signInUser(email, password) {
       if (!dbErr && exactUser) {
         dbUser = exactUser;
       } else {
-        // Fallback: search all users table or username matching
         const { data: allDbUsers } = await supabase
           .from('users')
           .select('*');
@@ -84,15 +99,15 @@ export async function signInUser(email, password) {
       }
 
       if (dbUser) {
+        if (dbUser.status && dbUser.status !== 'Active' && dbUser.active === false) {
+          return {
+            success: false,
+            message: 'Your account has been deactivated. Please contact the Plant Administrator.'
+          };
+        }
+
         const storedPass = (dbUser.password_hash || dbUser.password || dbUser.pass || '').trim();
-        // Check matching passwords
-        const isPasswordCorrect = (
-          (storedPass && storedPass === inputPassword) ||
-          (cleanEmail === 'mohit.namdev@samyakinternational.in' && (inputPassword === 'SIL#31Mohit' || inputPassword === 'password123')) ||
-          (cleanEmail === 'samyak.jain@samyakinternational.in' && (inputPassword === 'Sam@233994' || inputPassword === 'password123')) ||
-          inputPassword === 'password123' || 
-          inputPassword === 'Sam@233994'
-        );
+        const isPasswordCorrect = Boolean(storedPass && storedPass === inputPassword);
 
         if (isPasswordCorrect) {
           const userObj = {
@@ -101,7 +116,7 @@ export async function signInUser(email, password) {
             email: dbUser.email || cleanEmail,
             role: dbUser.role || 'Admin',
             department: dbUser.department || 'Operations',
-            status: dbUser.status || (dbUser.active !== false ? 'Active' : 'Inactive')
+            status: dbUser.status || 'Active'
           };
 
           return {
@@ -116,7 +131,7 @@ export async function signInUser(email, password) {
     }
   }
 
-  // 3. Third Tier: Check LocalStorage User Directory
+  // 3. Third Tier: Check Local RBAC Directory (Strict verification, no backdoor)
   try {
     let localUsers = [];
     try {
@@ -133,14 +148,15 @@ export async function signInUser(email, password) {
     );
 
     if (matched) {
-      const expectedPass = (matched.password || matched.password_hash || 'password123').trim();
-      const isMatch = (
-        inputPassword === expectedPass ||
-        (cleanEmail === 'mohit.namdev@samyakinternational.in' && (inputPassword === 'SIL#31Mohit' || inputPassword === 'password123')) ||
-        (cleanEmail === 'samyak.jain@samyakinternational.in' && (inputPassword === 'Sam@233994' || inputPassword === 'password123')) ||
-        inputPassword === 'password123' ||
-        inputPassword === 'Sam@233994'
-      );
+      if (matched.status && matched.status !== 'Active') {
+        return {
+          success: false,
+          message: 'Your account has been deactivated. Please contact the Plant Administrator.'
+        };
+      }
+
+      const expectedPass = (matched.password || matched.password_hash || '').trim();
+      const isMatch = Boolean(expectedPass && expectedPass === inputPassword);
 
       if (isMatch) {
         const userObj = {
@@ -165,7 +181,7 @@ export async function signInUser(email, password) {
 
   return {
     success: false,
-    message: 'Invalid work email or password. Please verify your credentials or contact the Plant Admin.'
+    message: 'Invalid work email or password. Access denied.'
   };
 }
 

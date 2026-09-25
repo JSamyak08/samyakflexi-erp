@@ -20,7 +20,7 @@ import { isSupabaseConfigured } from '../services/supabaseClient';
 import { updateUserPasswordInDB } from '../services/supabaseDataService';
 
 
-export default function AuthScreen({ users = [], onLogin, onUpdatePassword }) {
+export default function AuthScreen({ onLogin, onUpdatePassword }) {
 
   const [viewMode, setViewMode] = useState('signin'); // 'signin', 'forgot_password', 'code_sent'
   const isSupabaseActive = isSupabaseConfigured();
@@ -32,6 +32,46 @@ export default function AuthScreen({ users = [], onLogin, onUpdatePassword }) {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  // Rate-limiting / Brute force protection state
+  const [failedAttempts, setFailedAttempts] = useState(() => {
+    try {
+      return parseInt(sessionStorage.getItem('auth_failed_attempts') || '0', 10);
+    } catch (e) { return 0; }
+  });
+
+  const [lockoutUntil, setLockoutUntil] = useState(() => {
+    try {
+      return parseInt(sessionStorage.getItem('auth_lockout_until') || '0', 10);
+    } catch (e) { return 0; }
+  });
+
+  const [lockoutSeconds, setLockoutSeconds] = useState(0);
+
+  // Lockout countdown timer
+  React.useEffect(() => {
+    if (lockoutUntil <= Date.now()) {
+      setLockoutSeconds(0);
+      return;
+    }
+    const updateTimer = () => {
+      const remaining = Math.ceil((lockoutUntil - Date.now()) / 1000);
+      if (remaining <= 0) {
+        setLockoutSeconds(0);
+        setLockoutUntil(0);
+        setFailedAttempts(0);
+        try {
+          sessionStorage.removeItem('auth_lockout_until');
+          sessionStorage.removeItem('auth_failed_attempts');
+        } catch (e) {}
+      } else {
+        setLockoutSeconds(remaining);
+      }
+    };
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [lockoutUntil]);
+
   // Recovery State
   const [recoveryEmail, setRecoveryEmail] = useState('');
   const [recoverySuccessMsg, setRecoverySuccessMsg] = useState('');
@@ -40,28 +80,60 @@ export default function AuthScreen({ users = [], onLogin, onUpdatePassword }) {
   const [newPassword, setNewPassword] = useState('');
   const [passwordResetDone, setPasswordResetDone] = useState(false);
 
-  // Sign In Handler
+  // Sign In Handler with Rate Limiting & Lockout Guard
   const handleSignIn = async (e) => {
     e.preventDefault();
     setError('');
 
-    if (!email.trim()) {
+    // Check Lockout
+    if (lockoutUntil > Date.now()) {
+      const remaining = Math.ceil((lockoutUntil - Date.now()) / 1000);
+      setError(`🔒 Login locked due to multiple failed attempts. Please try again in ${remaining}s.`);
+      return;
+    }
+
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const cleanPassword = (password || '').trim();
+
+    if (!cleanEmail) {
       setError('Please enter your work email address.');
       return;
     }
-    if (!password.trim()) {
+    if (!cleanPassword) {
       setError('Please enter your account password.');
       return;
     }
 
     setIsLoading(true);
-    const response = await signInUser(email, password);
+    const response = await signInUser(cleanEmail, cleanPassword);
     setIsLoading(false);
 
     if (response.success && response.user) {
+      // Clear brute-force counters on successful sign-in
+      setFailedAttempts(0);
+      setLockoutUntil(0);
+      try {
+        sessionStorage.removeItem('auth_failed_attempts');
+        sessionStorage.removeItem('auth_lockout_until');
+      } catch (e) {}
       onLogin(response.user);
     } else {
-      setError(response.message || 'Authentication failed.');
+      const newCount = failedAttempts + 1;
+      setFailedAttempts(newCount);
+      try {
+        sessionStorage.setItem('auth_failed_attempts', String(newCount));
+      } catch (e) {}
+
+      if (newCount >= 5) {
+        const until = Date.now() + 5 * 60 * 1000; // 5-minute lockout
+        setLockoutUntil(until);
+        try {
+          sessionStorage.setItem('auth_lockout_until', String(until));
+        } catch (e) {}
+        setError('🔒 Too many failed login attempts (5/5). Account sign-in locked for 5 minutes.');
+      } else {
+        setError(`${response.message || 'Authentication failed.'} (Failed attempt ${newCount}/5)`);
+      }
     }
   };
 
