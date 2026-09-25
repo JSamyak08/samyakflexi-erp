@@ -698,7 +698,8 @@ export default function SalesManagement({
         isCylinderOrder: isCylinder,
         engraverName: it.engravuresName || qtn.engraverName || 'Jindal Engravers, Mathura',
         colorsCount: parseInt(it.colorsCount) || 8,
-        cylinderCost: parseFloat(it.totalAmount) || (parseFloat(it.quantity) * parseFloat(it.ratePerUom)) || 35000
+        cylinderCost: parseFloat(it.totalAmount) || (parseFloat(it.quantity) * parseFloat(it.ratePerUom)) || 35000,
+        orderComments: qtn.notes || qtn.comments || qtn.orderComments || ''
       };
     });
 
@@ -921,7 +922,9 @@ export default function SalesManagement({
         repeatLengthMm,
         structure,
         layers,
-        jobDetails: { layers, printWidthMm, repeatLengthMm, structure },
+        orderComments: item.orderComments || '',
+        comments: item.orderComments || '',
+        jobDetails: { layers, printWidthMm, repeatLengthMm, structure, orderComments: item.orderComments || '', comments: item.orderComments || '' },
         cylinderDetails: isCylinderQuote ? {
           sku: `CYL-${qtn.clientName.substring(0, 3).toUpperCase()}-001`,
           jobName: item.jobTitle,
@@ -2303,6 +2306,18 @@ export default function SalesManagement({
                         style={{ fontWeight: '700', background: '#ffffff' }}
                         value={item.structure} 
                         onChange={e => handleUpdateOcnItemField(itemIdx, 'structure', e.target.value)} 
+                      />
+                    </div>
+
+                    <div className="form-group-full" style={{ marginTop: '10px' }}>
+                      <label className="form-label" style={{ fontWeight: '700', color: '#0f172a' }}>Comments for the Order (Production / Special Instructions)</label>
+                      <textarea 
+                        className="form-control" 
+                        rows="2"
+                        style={{ padding: '8px 12px', fontSize: '0.85rem' }}
+                        value={item.orderComments || ''} 
+                        onChange={e => handleUpdateOcnItemField(itemIdx, 'orderComments', e.target.value)} 
+                        placeholder="Enter any order comments or special instructions for production..."
                       />
                     </div>
                   </div>

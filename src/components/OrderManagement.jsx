@@ -1344,6 +1344,12 @@ export default function OrderManagement({
                               </span>
                             </span>
                           </div>
+
+                          {(order.orderComments || order.comments || order.notes || order.jobDetails?.orderComments || order.jobDetails?.comments) && (
+                            <div style={{ marginTop: '4px', fontSize: '0.78rem', background: '#fffbebf0', color: '#92400e', border: '1px solid #fde68a', borderRadius: '6px', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '600' }}>
+                              <span>💬 <strong>Comment:</strong> {order.orderComments || order.comments || order.notes || order.jobDetails?.orderComments || order.jobDetails?.comments}</span>
+                            </div>
+                          )}
                         </div>
 
                         {/* Right Container: Target Date, Status & Actions */}

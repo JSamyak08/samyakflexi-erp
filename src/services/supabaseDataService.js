@@ -81,6 +81,7 @@ export async function fetchOrders() {
       const jd = meta.jobDetails || o.job_details || {};
       const matReqs = meta.raw_material_requirements || o.raw_material_requirements || [];
       const layerList = jd.layers || jd.calculationDetails?.layerResults || o.layers || [];
+      const commentsVal = jd.orderComments || jd.comments || jd.notes || o.notes || o.comments || o.job_details?.orderComments || o.job_details?.comments || '';
 
       return {
         id: o.id,
@@ -100,9 +101,12 @@ export async function fetchOrders() {
         colorsCount: jd.colorsCount || o.colors_count || 6,
         poIssued: jd.poIssued || false,
         poNumber: jd.poNumber || '',
+        orderComments: commentsVal,
+        comments: commentsVal,
+        notes: commentsVal,
         layers: layerList,
         calculationDetails: jd.calculationDetails || null,
-        jobDetails: jd,
+        jobDetails: { ...jd, orderComments: commentsVal, comments: commentsVal },
         materialRequirements: matReqs,
         rawMaterialRequirements: matReqs
       };
@@ -122,6 +126,8 @@ export async function saveOrderToSupabase(order) {
   const parsedTarget = parseStandardDate(order.targetDeliveryDate || order.deliveryDate);
   const targetDateVal = parsedTarget ? parsedTarget.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
 
+  const commentsVal = (order.orderComments || order.comments || order.notes || order.jobDetails?.orderComments || order.jobDetails?.comments || '').trim();
+
   const jobDetails = {
     ...(order.jobDetails || {}),
     structure: order.structure || order.jobDetails?.structure || '—',
@@ -134,6 +140,8 @@ export async function saveOrderToSupabase(order) {
     calculationDetails: order.calculationDetails || order.jobDetails?.calculationDetails || null,
     poIssued: order.poIssued || false,
     poNumber: order.poNumber || '',
+    orderComments: commentsVal,
+    comments: commentsVal,
     layers: order.layers || order.jobDetails?.layers || null
   };
 

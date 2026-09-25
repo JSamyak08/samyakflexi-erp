@@ -1556,6 +1556,11 @@ export default function ProductionScheduler({
                         <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
                           <Building2 size={13} /> {order.clientName || 'Direct Client'}
                         </div>
+                        {(order.orderComments || order.comments || order.notes || order.jobDetails?.orderComments || order.jobDetails?.comments) && (
+                          <div style={{ marginTop: '6px', fontSize: '0.78rem', background: '#fffbebf0', color: '#92400e', border: '1px solid #fde68a', borderRadius: '6px', padding: '4px 8px', fontWeight: '600' }}>
+                            💬 <strong>Comment:</strong> {order.orderComments || order.comments || order.notes || order.jobDetails?.orderComments || order.jobDetails?.comments}
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -2100,6 +2105,18 @@ export default function ProductionScheduler({
                     {activeRunningJob.structure}
                   </strong>
                 </div>
+
+                {/* Comments for the Order / Special Production Instructions */}
+                {(activeRunningJob.orderComments || activeRunningJob.comments || activeRunningJob.notes || activeRunningJob.jobDetails?.orderComments || activeRunningJob.jobDetails?.comments) && (
+                  <div style={{ marginTop: '14px', background: '#fffbebf0', padding: '12px 14px', borderRadius: '8px', border: '1px solid #fde68a' }}>
+                    <span style={{ fontSize: '0.72rem', color: '#b45309', fontWeight: '800', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      💬 Comments for the Order / Production Notes:
+                    </span>
+                    <p style={{ fontSize: '0.88rem', color: '#78350f', fontWeight: '600', margin: '4px 0 0 0', whiteSpace: 'pre-wrap' }}>
+                      {activeRunningJob.orderComments || activeRunningJob.comments || activeRunningJob.notes || activeRunningJob.jobDetails?.orderComments || activeRunningJob.jobDetails?.comments}
+                    </p>
+                  </div>
+                )}
 
                 {/* Cylinder Color Sequence (If Available) */}
                 {Array.isArray(activeRunningJob.cylinderColors) && activeRunningJob.cylinderColors.length > 0 && (

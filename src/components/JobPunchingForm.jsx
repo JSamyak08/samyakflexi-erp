@@ -32,6 +32,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
   const [orderType, setOrderType] = useState('Pouching'); // Reel or Pouching
   const [inkGsm, setInkGsm] = useState(1.5);
   const [adhesiveGsm, setAdhesiveGsm] = useState(1.5);
+  const [orderComments, setOrderComments] = useState('');
 
   // Editable Processing Prices State (loaded from System Settings baseline, editable inline)
   const [inkPrice, setInkPrice] = useState(() => getProcessingRates().liquidInkPrice || DEFAULT_PROCESSING_RATES.liquidInkPrice);
@@ -342,6 +343,9 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       repeatLengthMm: parseFloat(repeatLengthMm),
       colorsCount: parseInt(colorsCount),
       status: 'In Progress',
+      orderComments,
+      comments: orderComments,
+      jobDetails: { layers, printWidthMm: parseFloat(printWidthMm), repeatLengthMm: parseFloat(repeatLengthMm), structure: layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / '), orderComments, comments: orderComments },
       wastagePct: parseFloat(calculationResults.wastagePct) || 5,
       wastageKg: parseFloat(calculationResults.wastageKg) || 0,
       layers,
@@ -594,6 +598,18 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
                 className="form-control"
                 value={targetDeliveryDays}
                 onChange={e => setTargetDeliveryDays(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group" style={{ gridColumn: 'span 2' }}>
+              <label style={{ fontWeight: '700', color: '#0f172a' }}>Comments for the Order (Production / Special Instructions)</label>
+              <textarea 
+                className="form-control"
+                rows="2"
+                style={{ padding: '8px 12px', fontSize: '0.85rem' }}
+                value={orderComments}
+                onChange={e => setOrderComments(e.target.value)}
+                placeholder="e.g. Special ink shade requirement, high tension rewind needed, express delivery instructions..."
               />
             </div>
           </div>
