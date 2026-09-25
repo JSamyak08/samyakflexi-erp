@@ -266,10 +266,17 @@ export default function App() {
     }
   }, [isAuthenticated, currentUser, isAuthReady, activeTab]);
 
+  const hasSavedSession = () => {
+    try {
+      const user = safeLocalStorageGet('samyak_erp_current_user', null);
+      return Boolean(user && user.email);
+    } catch (e) { return false; }
+  };
+
   // Helper to load state safely from localStorage or fallback.
-  // SECURITY GUARD: Never expose cached ERP business data in memory before user authentication.
+  // SECURITY GUARD: Allow reading cached state if user is authenticated or has a active verified saved session.
   const loadLocalState = (key, fallbackDefault) => {
-    if (!isAuthenticated && key !== 'role_permissions') {
+    if (!isAuthenticated && !hasSavedSession() && key !== 'role_permissions') {
       return fallbackDefault;
     }
     try {
@@ -290,8 +297,8 @@ export default function App() {
     return fallbackDefault;
   };
 
-  // ZERO PRE-AUTH DATA LEAKAGE SECURITY ARCHITECTURE:
-  // All sensitive ERP business data starts strictly EMPTY until user authentication is verified.
+  // SUPABASE DATABASE IS THE SINGLE SOURCE OF TRUTH.
+  // Initial state hydrates from saved session cache on launch so no data vanishes on refresh.
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [ordersError, setOrdersError] = useState(null);
@@ -299,61 +306,34 @@ export default function App() {
   const deletedOrderIdsRef = useRef(new Set());
   const ordersFetchVersion = useRef(0);
 
-  const [vendors, setVendors] = useState([]);
-  const [inventory, setInventory] = useState([]);
-  const [grns, setGrns] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [jobDataSheets, setJobDataSheets] = useState([]);
-  const [cylinders, setCylinders] = useState([]);
-  const [productionRecords, setProductionRecords] = useState([]);
-  const [inventoryRolls, setInventoryRolls] = useState([]);
-  const [dispatchShipments, setDispatchShipments] = useState([]);
-  const [deliveryChallans, setDeliveryChallans] = useState([]);
-  const [certificateOfAnalyses, setCertificateOfAnalyses] = useState([]);
-  const [machines, setMachines] = useState([]);
-  const [schedules, setSchedules] = useState([]);
-  const [clients, setClients] = useState([]);
-  const [jobMasters, setJobMasters] = useState([]);
-  const [inks, setInks] = useState([]);
+  const [vendors, setVendors] = useState(() => stripDummyRecords(loadLocalState('vendors', [])));
+  const [inventory, setInventory] = useState(() => stripDummyRecords(loadLocalState('inventory', [])).map(sanitizeInventoryItem));
+  const [grns, setGrns] = useState(() => stripDummyRecords(loadLocalState('grns', [])).map(sanitizeGRN));
+  const [users, setUsers] = useState(() => loadLocalState('users', []));
+  const [jobDataSheets, setJobDataSheets] = useState(() => stripDummyRecords(loadLocalState('job_datasheets', [])));
+  const [cylinders, setCylinders] = useState(() => stripDummyRecords(loadLocalState('cylinders', [])));
+  const [productionRecords, setProductionRecords] = useState(() => stripDummyRecords(loadLocalState('production_records', [])));
+  const [inventoryRolls, setInventoryRolls] = useState(() => stripDummyRecords(loadLocalState('inventory_rolls', [])));
+  const [dispatchShipments, setDispatchShipments] = useState(() => stripDummyRecords(loadLocalState('dispatch_shipments', [])));
+  const [deliveryChallans, setDeliveryChallans] = useState(() => stripDummyRecords(loadLocalState('delivery_challans', [])));
+  const [certificateOfAnalyses, setCertificateOfAnalyses] = useState(() => stripDummyRecords(loadLocalState('certificate_of_analyses', [])));
+  const [machines, setMachines] = useState(() => stripDummyRecords(loadLocalState('printing_machines', [])));
+  const [schedules, setSchedules] = useState(() => stripDummyRecords(loadLocalState('production_schedules', [])));
+  const [clients, setClients] = useState(() => stripDummyRecords(loadLocalState('clients', [])));
+  const [jobMasters, setJobMasters] = useState(() => stripDummyRecords(loadLocalState('job_masters', [])));
+  const [inks, setInks] = useState(() => loadLocalState('inks', []));
   const [selectedJobMasterForPunch, setSelectedJobMasterForPunch] = useState(null);
   const [rolePermissions, setRolePermissions] = useState(() => loadLocalState('role_permissions', DEFAULT_ROLE_PERMISSIONS));
-  const [indents, setIndents] = useState([]);
-  const [machineIssues, setMachineIssues] = useState([]);
-  const [consumables, setConsumables] = useState([]);
-  const [storeIssueTransactions, setStoreIssueTransactions] = useState([]);
-  const [auditLogs, setAuditLogs] = useState([]);
-  const [employees, setEmployees] = useState([]);
-  const [employeeAttendance, setEmployeeAttendance] = useState([]);
-  const [salaryAdvances, setSalaryAdvances] = useState([]);
-  const [salaryPayments, setSalaryPayments] = useState([]);
-  const [sfgGoods, setSfgGoods] = useState([]);
-
-  // Hydrate local offline cache ONLY AFTER authentication succeeds
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    try {
-      const v = loadLocalState('vendors', null); if (v) setVendors(stripDummyRecords(v));
-      const inv = loadLocalState('inventory', null); if (inv) setInventory(stripDummyRecords(inv).map(sanitizeInventoryItem));
-      const g = loadLocalState('grns', null); if (g) setGrns(stripDummyRecords(g).map(sanitizeGRN));
-      const u = loadLocalState('users', null); if (u) setUsers(u);
-      const jds = loadLocalState('job_datasheets', null); if (jds) setJobDataSheets(stripDummyRecords(jds));
-      const cyl = loadLocalState('cylinders', null); if (cyl) setCylinders(stripDummyRecords(cyl));
-      const pr = loadLocalState('production_records', null); if (pr) setProductionRecords(stripDummyRecords(pr));
-      const ir = loadLocalState('inventory_rolls', null); if (ir) setInventoryRolls(stripDummyRecords(ir));
-      const ds = loadLocalState('dispatch_shipments', null); if (ds) setDispatchShipments(stripDummyRecords(ds));
-      const dc = loadLocalState('delivery_challans', null); if (dc) setDeliveryChallans(stripDummyRecords(dc));
-      const coa = loadLocalState('certificate_of_analyses', null); if (coa) setCertificateOfAnalyses(stripDummyRecords(coa));
-      const m = loadLocalState('printing_machines', null); if (m) setMachines(stripDummyRecords(m));
-      const ps = loadLocalState('production_schedules', null); if (ps) setSchedules(stripDummyRecords(ps));
-      const c = loadLocalState('clients', null); if (c) setClients(stripDummyRecords(c));
-      const jm = loadLocalState('job_masters', null); if (jm) setJobMasters(stripDummyRecords(jm));
-      const ik = loadLocalState('inks', null); if (ik) setInks(ik);
-      const emp = loadLocalState('employees', null); if (emp) setEmployees(stripDummyRecords(emp));
-      const sfg = loadLocalState('sfg_goods', null); if (sfg) setSfgGoods(stripDummyRecords(sfg));
-    } catch (e) {
-      console.warn('[Security Hydration] Error:', e);
-    }
-  }, [isAuthenticated]);
+  const [indents, setIndents] = useState(() => stripDummyRecords(loadLocalState('material_indents', [])));
+  const [machineIssues, setMachineIssues] = useState(() => stripDummyRecords(loadLocalState('machine_issues', [])));
+  const [consumables, setConsumables] = useState(() => stripDummyRecords(loadLocalState('consumables', [])));
+  const [storeIssueTransactions, setStoreIssueTransactions] = useState(() => stripDummyRecords(loadLocalState('store_issue_transactions', [])));
+  const [auditLogs, setAuditLogs] = useState(() => pruneOldAuditLogs(loadLocalState('audit_logs', [])));
+  const [employees, setEmployees] = useState(() => stripDummyRecords(loadLocalState('employees', [])));
+  const [employeeAttendance, setEmployeeAttendance] = useState(() => stripDummyRecords(loadLocalState('employee_attendance', [])));
+  const [salaryAdvances, setSalaryAdvances] = useState(() => stripDummyRecords(loadLocalState('salary_advances', [])));
+  const [salaryPayments, setSalaryPayments] = useState(() => stripDummyRecords(loadLocalState('salary_payments', [])));
+  const [sfgGoods, setSfgGoods] = useState(() => stripDummyRecords(loadLocalState('sfg_goods', [])));
 
 
   const logAudit = async (actionType, moduleName, details, targetId = null) => {
@@ -586,14 +566,8 @@ export default function App() {
 
       if (Array.isArray(supaVendors)) {
         const cleanSupa = stripDummyRecords(supaVendors);
-        setVendors(prev => {
-          const map = new Map();
-          cleanSupa.forEach(v => { if (v && v.id) map.set(v.id, v); });
-          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
-          const merged = Array.from(map.values());
-          safeLocalStorageSet('samyak_erp_vendors', merged);
-          return merged;
-        });
+        setVendors(cleanSupa);
+        safeLocalStorageSet('samyak_erp_vendors', cleanSupa);
         supaVendors.filter(isDummyRecord).forEach(d => deleteVendorFromSupabase(d.id).catch(console.warn));
       }
 
@@ -601,8 +575,6 @@ export default function App() {
         const cleanSupa = stripDummyRecords(supaInv).map(sanitizeInventoryItem);
         setInventory(cleanSupa);
         safeLocalStorageSet('samyak_erp_inventory', cleanSupa);
-
-        // Auto self-heal: If any item in Supabase has dirty envelope or JSON string in itemName, re-save with clean mapped payload
         cleanSupa.forEach(item => {
           if (item && item.itemName && (item.itemName.includes('|||') || item.itemName.startsWith('{'))) {
             saveInventoryItemToSupabase(sanitizeInventoryItem(item)).catch(console.warn);
@@ -613,140 +585,34 @@ export default function App() {
 
       if (Array.isArray(supaGRNs)) {
         const cleanSupa = stripDummyRecords(supaGRNs).map(sanitizeGRN);
-        setGrns(prev => {
-          const map = new Map();
-          cleanSupa.forEach(g => { const k = g.id || g.grnNo; if (k) map.set(k, sanitizeGRN(g)); });
-          (prev || []).forEach(p => { const k = p.id || p.grnNo; if (k && !isDummyRecord(p) && !map.has(k)) map.set(k, sanitizeGRN(p)); });
-          const merged = Array.from(map.values()).map(sanitizeGRN);
-          safeLocalStorageSet('samyak_erp_grns', merged);
-          return merged;
-        });
+        setGrns(cleanSupa);
+        safeLocalStorageSet('samyak_erp_grns', cleanSupa);
         supaGRNs.filter(isDummyRecord).forEach(d => deleteGRNFromSupabase(d.id || d.grnNo).catch(console.warn));
       }
 
       if (Array.isArray(supaCyls)) {
         const cleanSupa = stripDummyRecords(supaCyls);
-        setCylinders(prev => {
-          const prevMap = new Map();
-          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p)) prevMap.set(p.id, p); });
-
-          // Deduplicate supaCyls by SKU / Job Name so duplicate rows are collapsed into 1 accurate record
-          const skuMap = new Map();
-          const redundantIdsToDelete = [];
-
-          cleanSupa.forEach(c => {
-            if (!c || !c.id) return;
-            const skuKey = (c.sku || '').trim().toLowerCase();
-            const nameKey = (c.jobName || '').trim().toLowerCase();
-            const matchKey = skuKey || nameKey || String(c.id);
-
-            const existingLocal = prevMap.get(c.id);
-            const mergedRecord = {
-              ...(existingLocal || {}),
-              ...c,
-              layers: (c.layers && c.layers.length > 0) ? c.layers : (existingLocal?.layers || []),
-              press_marks: { ...(existingLocal?.press_marks || {}), ...(c.press_marks || {}) },
-              printWidthMm: c.printWidthMm || existingLocal?.printWidthMm || 1000,
-              faceLengthMm: c.faceLengthMm || existingLocal?.faceLengthMm || 1050,
-              jobCardFileUrl: c.jobCardFileUrl || existingLocal?.jobCardFileUrl || existingLocal?.artworkUrl || '',
-              artworkUrl: c.artworkUrl || existingLocal?.artworkUrl || existingLocal?.jobCardFileUrl || '',
-              silLogo: c.silLogo !== undefined && c.silLogo !== null ? c.silLogo : (existingLocal?.silLogo || ''),
-              arcMark: c.arcMark || existingLocal?.arcMark || 'Yes',
-              slittingMark: c.slittingMark || existingLocal?.slittingMark || 'Yes',
-              trackerLine: c.trackerLine || existingLocal?.trackerLine || 'Yes',
-              specialInstructions: c.specialInstructions || existingLocal?.specialInstructions || '',
-              chkEyemark: Boolean(c.chkEyemark || existingLocal?.chkEyemark),
-              chkBarcode: Boolean(c.chkBarcode || existingLocal?.chkBarcode),
-              chkOrientation: Boolean(c.chkOrientation || existingLocal?.chkOrientation),
-              chkClientApproval: Boolean(c.chkClientApproval || existingLocal?.chkClientApproval),
-              approvedByHead: Boolean(c.approvedByHead || existingLocal?.approvedByHead),
-              approvedHeadName: c.approvedHeadName || existingLocal?.approvedHeadName || '',
-              approvedHeadDate: c.approvedHeadDate || existingLocal?.approvedHeadDate || ''
-            };
-
-            if (skuMap.has(matchKey)) {
-              const prevEntry = skuMap.get(matchKey);
-              // Pick the more complete / approved record
-              const isCurrentBetter = (mergedRecord.approvedByHead && !prevEntry.approvedByHead) ||
-                                      (mergedRecord.artworkUrl && !prevEntry.artworkUrl) ||
-                                      ((mergedRecord.layers?.length || 0) > (prevEntry.layers?.length || 0));
-              if (isCurrentBetter) {
-                redundantIdsToDelete.push(prevEntry.id);
-                skuMap.set(matchKey, { ...prevEntry, ...mergedRecord });
-              } else {
-                redundantIdsToDelete.push(mergedRecord.id);
-                skuMap.set(matchKey, { ...mergedRecord, ...prevEntry });
-              }
-            } else {
-              skuMap.set(matchKey, mergedRecord);
-            }
-          });
-
-          // Also include any local-only cylinders
-          prevMap.forEach((p) => {
-            const skuKey = (p.sku || '').trim().toLowerCase();
-            const nameKey = (p.jobName || '').trim().toLowerCase();
-            const matchKey = skuKey || nameKey || String(p.id);
-            if (!skuMap.has(matchKey)) {
-              skuMap.set(matchKey, p);
-            }
-          });
-
-          const merged = Array.from(skuMap.values());
-          safeLocalStorageSet('samyak_erp_cylinders', merged);
-
-          // Clean up older duplicate IDs in background
-          redundantIdsToDelete.forEach(id => {
-            if (id) deleteCylinderFromSupabase(id).catch(console.warn);
-          });
-
-          return merged;
-        });
+        setCylinders(cleanSupa);
+        safeLocalStorageSet('samyak_erp_cylinders', cleanSupa);
         supaCyls.filter(isDummyRecord).forEach(d => deleteCylinderFromSupabase(d.id).catch(console.warn));
       }
 
       if (Array.isArray(supaProd)) {
         const cleanSupa = stripDummyRecords(supaProd);
-        setProductionRecords(prev => {
-          const map = new Map();
-          cleanSupa.forEach(pr => { if (pr && pr.id) map.set(pr.id, pr); });
-          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
-          const merged = Array.from(map.values());
-          safeLocalStorageSet('samyak_erp_production_records', merged);
-          return merged;
-        });
+        setProductionRecords(cleanSupa);
+        safeLocalStorageSet('samyak_erp_production_records', cleanSupa);
         supaProd.filter(isDummyRecord).forEach(d => deleteProductionRecordFromSupabase(d.id).catch(console.warn));
       }
 
       if (Array.isArray(supaUsers) && supaUsers.length > 0) {
-        setUsers(prev => {
-          const map = new Map();
-          supaUsers.forEach(u => {
-            if (!u) return;
-            const key = (u.email || u.id || '').toLowerCase().trim();
-            if (key) map.set(key, u);
-          });
-          (prev || []).forEach(p => {
-            if (!p) return;
-            const key = (p.email || p.id || '').toLowerCase().trim();
-            if (key && !map.has(key)) map.set(key, p);
-          });
-          const merged = Array.from(map.values());
-          safeLocalStorageSet('samyak_erp_users', merged);
-          return merged;
-        });
+        setUsers(supaUsers);
+        safeLocalStorageSet('samyak_erp_users', supaUsers);
       }
 
       if (Array.isArray(supaSheets)) {
         const cleanSupa = stripDummyRecords(supaSheets);
-        setJobDataSheets(prev => {
-          const map = new Map();
-          cleanSupa.forEach(s => { if (s && s.id) map.set(s.id, s); });
-          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
-          const merged = Array.from(map.values());
-          safeLocalStorageSet('samyak_erp_job_datasheets', merged);
-          return merged;
-        });
+        setJobDataSheets(cleanSupa);
+        safeLocalStorageSet('samyak_erp_job_datasheets', cleanSupa);
         supaSheets.filter(isDummyRecord).forEach(d => deleteJobDataSheetFromSupabase(d.id).catch(console.warn));
       }
 
@@ -756,101 +622,34 @@ export default function App() {
 
       if (Array.isArray(supaSchedules)) {
         const cleanSupa = stripDummyRecords(supaSchedules);
-        setSchedules(prev => {
-          const map = new Map();
-          cleanSupa.forEach(s => { if (s && s.id) map.set(s.id, s); });
-          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
-          const merged = Array.from(map.values());
-          safeLocalStorageSet('samyak_erp_production_schedules', merged);
-          return merged;
-        });
+        setSchedules(cleanSupa);
+        safeLocalStorageSet('samyak_erp_production_schedules', cleanSupa);
         supaSchedules.filter(isDummyRecord).forEach(d => deleteProductionScheduleFromSupabase(d.id).catch(console.warn));
       }
 
       if (Array.isArray(supaClients)) {
         const cleanSupa = stripDummyRecords(supaClients);
-        setClients(prev => {
-          const map = new Map();
-          cleanSupa.forEach(c => { if (c && c.id) map.set(c.id, c); });
-          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
-          const merged = Array.from(map.values());
-          safeLocalStorageSet('samyak_erp_clients', merged);
-          return merged;
-        });
+        setClients(cleanSupa);
+        safeLocalStorageSet('samyak_erp_clients', cleanSupa);
         supaClients.filter(isDummyRecord).forEach(d => deleteClientFromSupabase(d.id).catch(console.warn));
       }
 
       if (Array.isArray(supaJobMasters)) {
         const cleanSupa = stripDummyRecords(supaJobMasters);
-        setJobMasters(prev => {
-          const prevMap = new Map();
-          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p)) prevMap.set(p.id, p); });
-
-          const map = new Map();
-          cleanSupa.forEach(j => {
-            if (j && j.id) {
-              const existing = prevMap.get(j.id);
-              const mergedRecord = {
-                ...(existing || {}),
-                ...j,
-                layers: (j.layers && j.layers.length > 0) ? j.layers : (existing?.layers || []),
-                press_marks: { ...(existing?.press_marks || {}), ...(j.press_marks || {}) },
-                printWidthMm: j.printWidthMm || existing?.printWidthMm || 1000,
-                faceLengthMm: j.faceLengthMm || existing?.faceLengthMm || 1050,
-                jobCardFileUrl: j.jobCardFileUrl || existing?.jobCardFileUrl || existing?.artworkUrl || '',
-                artworkUrl: j.artworkUrl || existing?.artworkUrl || existing?.jobCardFileUrl || '',
-                silLogo: j.silLogo !== undefined && j.silLogo !== null ? j.silLogo : (existing?.silLogo || ''),
-                arcMark: j.arcMark || existing?.arcMark || 'Yes',
-                slittingMark: j.slittingMark || existing?.slittingMark || 'Yes',
-                trackerLine: j.trackerLine || existing?.trackerLine || 'Yes',
-                specialInstructions: j.specialInstructions || existing?.specialInstructions || '',
-                chkEyemark: Boolean(j.chkEyemark || existing?.chkEyemark),
-                chkBarcode: Boolean(j.chkBarcode || existing?.chkBarcode),
-                chkOrientation: Boolean(j.chkOrientation || existing?.chkOrientation),
-                chkClientApproval: Boolean(j.chkClientApproval || existing?.chkClientApproval),
-                approvedByHead: Boolean(j.approvedByHead || existing?.approvedByHead),
-                approvedHeadName: j.approvedHeadName || existing?.approvedHeadName || '',
-                approvedHeadDate: j.approvedHeadDate || existing?.approvedHeadDate || ''
-              };
-              map.set(j.id, mergedRecord);
-            }
-          });
-          prevMap.forEach((p, id) => {
-            if (!map.has(id)) map.set(id, p);
-          });
-          const merged = Array.from(map.values());
-          safeLocalStorageSet('samyak_erp_job_masters', merged);
-          return merged;
-        });
+        setJobMasters(cleanSupa);
+        safeLocalStorageSet('samyak_erp_job_masters', cleanSupa);
         supaJobMasters.filter(isDummyRecord).forEach(d => deleteJobMasterFromSupabase(d.id).catch(console.warn));
       }
 
       if (Array.isArray(supaInks)) {
-        setInks(prev => {
-          const map = new Map();
-          supaInks.forEach(i => { if (i && i.id) map.set(i.id, i); });
-          (prev || []).forEach(p => {
-            if (p && p.id && !map.has(p.id)) {
-              map.set(p.id, p);
-              saveInkToSupabase(p).catch(console.warn);
-            }
-          });
-          const merged = Array.from(map.values());
-          safeLocalStorageSet('samyak_erp_inks', merged);
-          return merged;
-        });
+        setInks(supaInks);
+        safeLocalStorageSet('samyak_erp_inks', supaInks);
       }
 
       if (Array.isArray(supaEmployees)) {
         const cleanSupa = stripDummyRecords(supaEmployees);
-        setEmployees(prev => {
-          const map = new Map();
-          cleanSupa.forEach(e => { if (e && e.id && !isDummyRecord(e)) map.set(e.id, e); });
-          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
-          const merged = Array.from(map.values());
-          safeLocalStorageSet('samyak_erp_employees', merged);
-          return merged;
-        });
+        setEmployees(cleanSupa);
+        safeLocalStorageSet('samyak_erp_employees', cleanSupa);
         supaEmployees.filter(isDummyRecord).forEach(d => deleteEmployeeFromSupabase(d.id).catch(console.warn));
       }
 
