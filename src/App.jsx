@@ -448,228 +448,251 @@ export default function App() {
       setIsDataLoading(true);
       setIsDataFetched(false);
 
+      // Failsafe timer: Ensure loading state unlocks after 4 seconds max no matter what
+      const failsafeTimer = setTimeout(() => {
+        if (isMounted) {
+          console.warn('[Supabase Load Failsafe] 4s elapsed, unlocking UI.');
+          setIsDataLoading(false);
+          setOrdersLoading(false);
+          setIsDataFetched(true);
+        }
+      }, 4000);
+
+      const fetchWithTimeout = (promise, ms = 4000) => {
+        return Promise.race([
+          promise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Fetch timeout')), ms))
+        ]);
+      };
+
       const fetchSafe = async (fn, label) => {
         try {
-          const res = await fn();
+          const res = await fetchWithTimeout(fn(), 4000);
           return res;
         } catch (e) {
-          console.warn(`[Supabase Load Error] ${label}:`, e);
+          console.warn(`[Supabase Load Notice] ${label}:`, e?.message || e);
           return null;
         }
       };
 
-      // Dedicated Order fetch with strict error handling & request versioning
-      const currentOrdersVersion = ++ordersFetchVersion.current;
-      setOrdersLoading(true);
-      setOrdersError(null);
+      try {
+        // Dedicated Order fetch with strict error handling & request versioning
+        const currentOrdersVersion = ++ordersFetchVersion.current;
+        setOrdersLoading(true);
+        setOrdersError(null);
 
-      const ordersTask = (async () => {
-        try {
-          console.log('[ORDERS][FETCH] Starting Supabase fetch');
-          const supaOrders = await fetchOrders();
-          console.log(`[ORDERS][FETCH] Received ${supaOrders ? supaOrders.length : 0} records`);
-          if (isMounted && currentOrdersVersion === ordersFetchVersion.current) {
-            const cleanSupa = stripDummyRecords(supaOrders).filter(
-              o => o && o.id && !deletedOrderIdsRef.current.has(o.id)
-            );
-            setOrders(cleanSupa);
-            setOrdersLoading(false);
+        const ordersTask = (async () => {
+          try {
+            console.log('[ORDERS][FETCH] Starting Supabase fetch');
+            const supaOrders = await fetchWithTimeout(fetchOrders(), 4000);
+            console.log(`[ORDERS][FETCH] Received ${supaOrders ? supaOrders.length : 0} records`);
+            if (isMounted && currentOrdersVersion === ordersFetchVersion.current) {
+              const cleanSupa = stripDummyRecords(supaOrders).filter(
+                o => o && o.id && !deletedOrderIdsRef.current.has(o.id)
+              );
+              setOrders(cleanSupa);
+              setOrdersLoading(false);
 
-            // Clean up any legacy dummy records from DB in background
-            supaOrders.filter(isDummyRecord).forEach(d => deleteOrderFromSupabase(d.id).catch(console.warn));
+              // Clean up any legacy dummy records from DB in background
+              supaOrders.filter(isDummyRecord).forEach(d => deleteOrderFromSupabase(d.id).catch(console.warn));
+            }
+          } catch (err) {
+            console.error('[ORDERS][FETCH] Failed to load from Supabase:', err);
+            if (isMounted && currentOrdersVersion === ordersFetchVersion.current) {
+              setOrdersError(err.message || 'Failed to fetch orders from Supabase.');
+              setOrdersLoading(false);
+            }
           }
-        } catch (err) {
-          console.error('[ORDERS][FETCH] Failed to load from Supabase:', err);
-          if (isMounted && currentOrdersVersion === ordersFetchVersion.current) {
-            setOrdersError(err.message || 'Failed to fetch orders from Supabase.');
-            setOrdersLoading(false);
-          }
+        })();
+
+        let [
+          _ordersRes,
+          supaVendors, supaInv, supaGRNs, supaCyls, 
+          supaProd, supaUsers, supaSheets, supaRolls, supaShipments,
+          supaMachines, supaSchedules, supaClients, supaJobMasters,
+          supaInks, supaEmployees, supaAttendance, supaAdvances,
+          supaRolePerms, supaAuditLogs, supaSFG, supaDCs, supaCoAs
+        ] = await Promise.all([
+          ordersTask,
+          fetchSafe(fetchVendors, 'Vendors'),
+          fetchSafe(fetchInventory, 'Inventory'),
+          fetchSafe(fetchGRNs, 'GRNs'),
+          fetchSafe(fetchCylinders, 'Cylinders'),
+          fetchSafe(fetchProductionRecords, 'Production Records'),
+          fetchSafe(fetchUsers, 'Users'),
+          fetchSafe(fetchJobDataSheets, 'Job Data Sheets'),
+          fetchSafe(fetchInventoryRolls, 'Inventory Rolls'),
+          fetchSafe(fetchDispatchShipments, 'Dispatch Shipments'),
+          fetchSafe(fetchPrintingMachines, 'Printing Machines'),
+          fetchSafe(fetchProductionSchedules, 'Production Schedules'),
+          fetchSafe(fetchClients, 'Clients'),
+          fetchSafe(fetchJobMasters, 'Job Masters'),
+          fetchSafe(fetchInks, 'Inks'),
+          fetchSafe(fetchEmployeesFromSupabase, 'Employees'),
+          fetchSafe(fetchEmployeeAttendanceFromSupabase, 'Attendance'),
+          fetchSafe(fetchSalaryAdvancesFromSupabase, 'Salary Advances'),
+          fetchSafe(fetchSalaryPaymentsFromSupabase, 'Salary Payments'),
+          fetchSafe(fetchRolePermissionsFromSupabase, 'Role Permissions'),
+          fetchSafe(fetchAuditLogsFromSupabase, 'Audit Logs'),
+          fetchSafe(fetchSFGGoodsFromSupabase, 'SFG Goods'),
+          fetchSafe(fetchDeliveryChallansFromSupabase, 'Delivery Challans'),
+          fetchSafe(fetchCertificatesOfAnalysisFromSupabase, 'Certificates of Analysis')
+        ]);
+
+
+        // Fetch schema-independent system settings & lifted store states
+        const [
+          dbPrefixes, dbTerms, dbLogo, dbSignature,
+          dbIndents, dbIssues, dbConsumables, dbStoreTx, dbFilmSubstrates
+        ] = await Promise.all([
+          fetchSafe(() => fetchSystemSetting('doc_prefixes'), 'Prefixes'),
+          fetchSafe(() => fetchSystemSetting('doc_terms'), 'Terms'),
+          fetchSafe(() => fetchSystemSetting('company_logo'), 'Logo'),
+          fetchSafe(() => fetchSystemSetting('auth_signature'), 'Signature'),
+          fetchSafe(() => fetchSystemSetting('material_indents'), 'Indents'),
+          fetchSafe(() => fetchSystemSetting('machine_issues'), 'Machine Issues'),
+          fetchSafe(() => fetchSystemSetting('consumables'), 'Consumables'),
+          fetchSafe(() => fetchSystemSetting('store_issue_transactions'), 'Store Issue Transactions'),
+          fetchSafe(fetchFilmSubstratesFromSupabase, 'Film Substrates Master')
+        ]);
+
+        if (!isMounted) return;
+
+        if (Array.isArray(supaSFG) && supaSFG.length > 0) setSfgGoods(stripDummyRecords(supaSFG));
+        if (Array.isArray(supaDCs) && supaDCs.length > 0) setDeliveryChallans(stripDummyRecords(supaDCs));
+        if (Array.isArray(supaCoAs) && supaCoAs.length > 0) setCertificateOfAnalyses(stripDummyRecords(supaCoAs));
+        if (Array.isArray(supaAuditLogs)) setAuditLogs(pruneOldAuditLogs(supaAuditLogs));
+        if (dbPrefixes) safeLocalStorageSet('samyak_doc_prefixes', dbPrefixes);
+        if (dbTerms) safeLocalStorageSet('samyak_doc_terms', dbTerms);
+        if (dbLogo) safeLocalStorageSet('samyak_company_logo', dbLogo);
+        if (dbSignature) safeLocalStorageSet('samyak_authorised_signature', dbSignature);
+        if (dbIndents && Array.isArray(dbIndents)) setIndents(dbIndents);
+        if (dbIssues && Array.isArray(dbIssues)) setMachineIssues(dbIssues);
+        if (dbConsumables && Array.isArray(dbConsumables)) setConsumables(dbConsumables);
+        if (dbStoreTx && Array.isArray(dbStoreTx)) setStoreIssueTransactions(stripDummyRecords(dbStoreTx));
+        if (dbFilmSubstrates && Array.isArray(dbFilmSubstrates) && dbFilmSubstrates.length > 0) {
+          safeLocalStorageSet('samyak_film_substrates_master', JSON.stringify(dbFilmSubstrates));
         }
-      })();
 
-      let [
-        _ordersRes,
-        supaVendors, supaInv, supaGRNs, supaCyls, 
-        supaProd, supaUsers, supaSheets, supaRolls, supaShipments,
-        supaMachines, supaSchedules, supaClients, supaJobMasters,
-        supaInks, supaEmployees, supaAttendance, supaAdvances,
-        supaRolePerms, supaAuditLogs, supaSFG, supaDCs, supaCoAs
-      ] = await Promise.all([
-        ordersTask,
-        fetchSafe(fetchVendors, 'Vendors'),
-        fetchSafe(fetchInventory, 'Inventory'),
-        fetchSafe(fetchGRNs, 'GRNs'),
-        fetchSafe(fetchCylinders, 'Cylinders'),
-        fetchSafe(fetchProductionRecords, 'Production Records'),
-        fetchSafe(fetchUsers, 'Users'),
-        fetchSafe(fetchJobDataSheets, 'Job Data Sheets'),
-        fetchSafe(fetchInventoryRolls, 'Inventory Rolls'),
-        fetchSafe(fetchDispatchShipments, 'Dispatch Shipments'),
-        fetchSafe(fetchPrintingMachines, 'Printing Machines'),
-        fetchSafe(fetchProductionSchedules, 'Production Schedules'),
-        fetchSafe(fetchClients, 'Clients'),
-        fetchSafe(fetchJobMasters, 'Job Masters'),
-        fetchSafe(fetchInks, 'Inks'),
-        fetchSafe(fetchEmployeesFromSupabase, 'Employees'),
-        fetchSafe(fetchEmployeeAttendanceFromSupabase, 'Attendance'),
-        fetchSafe(fetchSalaryAdvancesFromSupabase, 'Salary Advances'),
-        fetchSafe(fetchSalaryPaymentsFromSupabase, 'Salary Payments'),
-        fetchSafe(fetchRolePermissionsFromSupabase, 'Role Permissions'),
-        fetchSafe(fetchAuditLogsFromSupabase, 'Audit Logs'),
-        fetchSafe(fetchSFGGoodsFromSupabase, 'SFG Goods'),
-        fetchSafe(fetchDeliveryChallansFromSupabase, 'Delivery Challans'),
-        fetchSafe(fetchCertificatesOfAnalysisFromSupabase, 'Certificates of Analysis')
-      ]);
+        if (Array.isArray(supaVendors)) {
+          const cleanSupa = stripDummyRecords(supaVendors);
+          setVendors(cleanSupa);
+          supaVendors.filter(isDummyRecord).forEach(d => deleteVendorFromSupabase(d.id).catch(console.warn));
+        }
 
+        if (Array.isArray(supaInv)) {
+          const cleanSupa = stripDummyRecords(supaInv).map(sanitizeInventoryItem);
+          setInventory(cleanSupa);
+          cleanSupa.forEach(item => {
+            if (item && item.itemName && (item.itemName.includes('|||') || item.itemName.startsWith('{'))) {
+              saveInventoryItemToSupabase(sanitizeInventoryItem(item)).catch(console.warn);
+            }
+          });
+          supaInv.filter(isDummyRecord).forEach(d => deleteInventoryItemFromSupabase(d.id).catch(console.warn));
+        }
 
-      // Fetch schema-independent system settings & lifted store states
-      const [
-        dbPrefixes, dbTerms, dbLogo, dbSignature,
-        dbIndents, dbIssues, dbConsumables, dbStoreTx, dbFilmSubstrates
-      ] = await Promise.all([
-        fetchSafe(() => fetchSystemSetting('doc_prefixes'), 'Prefixes'),
-        fetchSafe(() => fetchSystemSetting('doc_terms'), 'Terms'),
-        fetchSafe(() => fetchSystemSetting('company_logo'), 'Logo'),
-        fetchSafe(() => fetchSystemSetting('auth_signature'), 'Signature'),
-        fetchSafe(() => fetchSystemSetting('material_indents'), 'Indents'),
-        fetchSafe(() => fetchSystemSetting('machine_issues'), 'Machine Issues'),
-        fetchSafe(() => fetchSystemSetting('consumables'), 'Consumables'),
-        fetchSafe(() => fetchSystemSetting('store_issue_transactions'), 'Store Issue Transactions'),
-        fetchSafe(fetchFilmSubstratesFromSupabase, 'Film Substrates Master')
-      ]);
+        if (Array.isArray(supaGRNs)) {
+          const cleanSupa = stripDummyRecords(supaGRNs).map(sanitizeGRN);
+          setGrns(cleanSupa);
+          supaGRNs.filter(isDummyRecord).forEach(d => deleteGRNFromSupabase(d.id || d.grnNo).catch(console.warn));
+        }
 
-      if (!isMounted) return;
+        if (Array.isArray(supaCyls)) {
+          const cleanSupa = stripDummyRecords(supaCyls);
+          setCylinders(cleanSupa);
+          supaCyls.filter(isDummyRecord).forEach(d => deleteCylinderFromSupabase(d.id).catch(console.warn));
+        }
 
-      if (Array.isArray(supaSFG) && supaSFG.length > 0) setSfgGoods(stripDummyRecords(supaSFG));
-      if (Array.isArray(supaDCs) && supaDCs.length > 0) setDeliveryChallans(stripDummyRecords(supaDCs));
-      if (Array.isArray(supaCoAs) && supaCoAs.length > 0) setCertificateOfAnalyses(stripDummyRecords(supaCoAs));
-      if (Array.isArray(supaAuditLogs)) setAuditLogs(pruneOldAuditLogs(supaAuditLogs));
-      if (dbPrefixes) safeLocalStorageSet('samyak_doc_prefixes', dbPrefixes);
-      if (dbTerms) safeLocalStorageSet('samyak_doc_terms', dbTerms);
-      if (dbLogo) safeLocalStorageSet('samyak_company_logo', dbLogo);
-      if (dbSignature) safeLocalStorageSet('samyak_authorised_signature', dbSignature);
-      if (dbIndents && Array.isArray(dbIndents)) setIndents(dbIndents);
-      if (dbIssues && Array.isArray(dbIssues)) setMachineIssues(dbIssues);
-      if (dbConsumables && Array.isArray(dbConsumables)) setConsumables(dbConsumables);
-      if (dbStoreTx && Array.isArray(dbStoreTx)) setStoreIssueTransactions(stripDummyRecords(dbStoreTx));
-      if (dbFilmSubstrates && Array.isArray(dbFilmSubstrates) && dbFilmSubstrates.length > 0) {
-        safeLocalStorageSet('samyak_film_substrates_master', JSON.stringify(dbFilmSubstrates));
-      }
+        if (Array.isArray(supaProd)) {
+          const cleanSupa = stripDummyRecords(supaProd);
+          setProductionRecords(cleanSupa);
+          supaProd.filter(isDummyRecord).forEach(d => deleteProductionRecordFromSupabase(d.id).catch(console.warn));
+        }
 
-      if (Array.isArray(supaVendors)) {
-        const cleanSupa = stripDummyRecords(supaVendors);
-        setVendors(cleanSupa);
-        supaVendors.filter(isDummyRecord).forEach(d => deleteVendorFromSupabase(d.id).catch(console.warn));
-      }
+        if (Array.isArray(supaUsers) && supaUsers.length > 0) {
+          setUsers(supaUsers);
+        }
 
-      if (Array.isArray(supaInv)) {
-        const cleanSupa = stripDummyRecords(supaInv).map(sanitizeInventoryItem);
-        setInventory(cleanSupa);
-        cleanSupa.forEach(item => {
-          if (item && item.itemName && (item.itemName.includes('|||') || item.itemName.startsWith('{'))) {
-            saveInventoryItemToSupabase(sanitizeInventoryItem(item)).catch(console.warn);
-          }
-        });
-        supaInv.filter(isDummyRecord).forEach(d => deleteInventoryItemFromSupabase(d.id).catch(console.warn));
-      }
+        if (Array.isArray(supaSheets)) {
+          const cleanSupa = stripDummyRecords(supaSheets);
+          setJobDataSheets(cleanSupa);
+          supaSheets.filter(isDummyRecord).forEach(d => deleteJobDataSheetFromSupabase(d.id).catch(console.warn));
+        }
 
-      if (Array.isArray(supaGRNs)) {
-        const cleanSupa = stripDummyRecords(supaGRNs).map(sanitizeGRN);
-        setGrns(cleanSupa);
-        supaGRNs.filter(isDummyRecord).forEach(d => deleteGRNFromSupabase(d.id || d.grnNo).catch(console.warn));
-      }
+        if (Array.isArray(supaRolls)) setInventoryRolls(stripDummyRecords(supaRolls));
+        if (Array.isArray(supaShipments)) setDispatchShipments(stripDummyRecords(supaShipments));
+        if (Array.isArray(supaMachines)) setMachines(stripDummyRecords(supaMachines));
 
-      if (Array.isArray(supaCyls)) {
-        const cleanSupa = stripDummyRecords(supaCyls);
-        setCylinders(cleanSupa);
-        supaCyls.filter(isDummyRecord).forEach(d => deleteCylinderFromSupabase(d.id).catch(console.warn));
-      }
+        if (Array.isArray(supaSchedules)) {
+          const cleanSupa = stripDummyRecords(supaSchedules);
+          setSchedules(cleanSupa);
+          supaSchedules.filter(isDummyRecord).forEach(d => deleteProductionScheduleFromSupabase(d.id).catch(console.warn));
+        }
 
-      if (Array.isArray(supaProd)) {
-        const cleanSupa = stripDummyRecords(supaProd);
-        setProductionRecords(cleanSupa);
-        supaProd.filter(isDummyRecord).forEach(d => deleteProductionRecordFromSupabase(d.id).catch(console.warn));
-      }
+        if (Array.isArray(supaClients)) {
+          const cleanSupa = stripDummyRecords(supaClients);
+          setClients(cleanSupa);
+          supaClients.filter(isDummyRecord).forEach(d => deleteClientFromSupabase(d.id).catch(console.warn));
+        }
 
-      if (Array.isArray(supaUsers) && supaUsers.length > 0) {
-        setUsers(supaUsers);
-      }
+        if (Array.isArray(supaJobMasters)) {
+          const cleanSupa = stripDummyRecords(supaJobMasters);
+          setJobMasters(cleanSupa);
+          supaJobMasters.filter(isDummyRecord).forEach(d => deleteJobMasterFromSupabase(d.id).catch(console.warn));
+        }
 
-      if (Array.isArray(supaSheets)) {
-        const cleanSupa = stripDummyRecords(supaSheets);
-        setJobDataSheets(cleanSupa);
-        supaSheets.filter(isDummyRecord).forEach(d => deleteJobDataSheetFromSupabase(d.id).catch(console.warn));
-      }
+        if (Array.isArray(supaInks)) {
+          setInks(supaInks);
+        }
 
-      if (Array.isArray(supaRolls)) setInventoryRolls(stripDummyRecords(supaRolls));
-      if (Array.isArray(supaShipments)) setDispatchShipments(stripDummyRecords(supaShipments));
-      if (Array.isArray(supaMachines)) setMachines(stripDummyRecords(supaMachines));
+        if (Array.isArray(supaEmployees)) {
+          const cleanSupa = stripDummyRecords(supaEmployees);
+          setEmployees(cleanSupa);
+          supaEmployees.filter(isDummyRecord).forEach(d => deleteEmployeeFromSupabase(d.id).catch(console.warn));
+        }
 
-      if (Array.isArray(supaSchedules)) {
-        const cleanSupa = stripDummyRecords(supaSchedules);
-        setSchedules(cleanSupa);
-        supaSchedules.filter(isDummyRecord).forEach(d => deleteProductionScheduleFromSupabase(d.id).catch(console.warn));
-      }
+        if (Array.isArray(supaAttendance)) {
+          const cleanSupa = stripDummyRecords(supaAttendance);
+          setEmployeeAttendance(prev => {
+            const map = new Map();
+            cleanSupa.forEach(a => { if (a && a.id && !isDummyRecord(a)) map.set(a.id, a); });
+            (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
+            return Array.from(map.values());
+          });
+        }
 
-      if (Array.isArray(supaClients)) {
-        const cleanSupa = stripDummyRecords(supaClients);
-        setClients(cleanSupa);
-        supaClients.filter(isDummyRecord).forEach(d => deleteClientFromSupabase(d.id).catch(console.warn));
-      }
+        if (Array.isArray(supaAdvances)) {
+          const cleanSupa = stripDummyRecords(supaAdvances);
+          setSalaryAdvances(prev => {
+            const map = new Map();
+            cleanSupa.forEach(adv => { if (adv && adv.id && !isDummyRecord(adv)) map.set(adv.id, adv); });
+            (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
+            return Array.from(map.values());
+          });
+        }
 
-      if (Array.isArray(supaJobMasters)) {
-        const cleanSupa = stripDummyRecords(supaJobMasters);
-        setJobMasters(cleanSupa);
-        supaJobMasters.filter(isDummyRecord).forEach(d => deleteJobMasterFromSupabase(d.id).catch(console.warn));
-      }
+        if (Array.isArray(supaPayments)) {
+          const cleanSupa = stripDummyRecords(supaPayments);
+          setSalaryPayments(prev => {
+            const map = new Map();
+            cleanSupa.forEach(pay => { if (pay && pay.id && !isDummyRecord(pay)) map.set(pay.id, pay); });
+            (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
+            return Array.from(map.values());
+          });
+        }
 
-      if (Array.isArray(supaInks)) {
-        setInks(supaInks);
-      }
-
-      if (Array.isArray(supaEmployees)) {
-        const cleanSupa = stripDummyRecords(supaEmployees);
-        setEmployees(cleanSupa);
-        supaEmployees.filter(isDummyRecord).forEach(d => deleteEmployeeFromSupabase(d.id).catch(console.warn));
-      }
-
-      if (Array.isArray(supaAttendance)) {
-        const cleanSupa = stripDummyRecords(supaAttendance);
-        setEmployeeAttendance(prev => {
-          const map = new Map();
-          cleanSupa.forEach(a => { if (a && a.id && !isDummyRecord(a)) map.set(a.id, a); });
-          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
-          return Array.from(map.values());
-        });
-      }
-
-      if (Array.isArray(supaAdvances)) {
-        const cleanSupa = stripDummyRecords(supaAdvances);
-        setSalaryAdvances(prev => {
-          const map = new Map();
-          cleanSupa.forEach(adv => { if (adv && adv.id && !isDummyRecord(adv)) map.set(adv.id, adv); });
-          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
-          return Array.from(map.values());
-        });
-      }
-
-      if (Array.isArray(supaPayments)) {
-        const cleanSupa = stripDummyRecords(supaPayments);
-        setSalaryPayments(prev => {
-          const map = new Map();
-          cleanSupa.forEach(pay => { if (pay && pay.id && !isDummyRecord(pay)) map.set(pay.id, pay); });
-          (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
-          return Array.from(map.values());
-        });
-      }
-
-      if (supaRolePerms && typeof supaRolePerms === 'object' && Object.keys(supaRolePerms).length > 0) {
-        setRolePermissions(supaRolePerms);
-      }
-
-      if (isMounted) {
-        setIsDataLoading(false);
-        setIsDataFetched(true);
+        if (supaRolePerms && typeof supaRolePerms === 'object' && Object.keys(supaRolePerms).length > 0) {
+          setRolePermissions(supaRolePerms);
+        }
+      } catch (err) {
+        console.error('[Supabase Load Error]', err);
+      } finally {
+        clearTimeout(failsafeTimer);
+        if (isMounted) {
+          setIsDataLoading(false);
+          setOrdersLoading(false);
+          setIsDataFetched(true);
+        }
       }
     }
 

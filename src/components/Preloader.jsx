@@ -9,6 +9,14 @@ export default function Preloader({ onComplete, isReady = true, statusText }) {
   const logoUrl = getCompanyLogo();
   const completedCalledRef = useRef(false);
 
+  // Failsafe timer: Ensure preloader NEVER gets stuck indefinitely (max 3.5s timeout)
+  useEffect(() => {
+    const forceTimer = setTimeout(() => {
+      setProgress(100);
+    }, 3500);
+    return () => clearTimeout(forceTimer);
+  }, []);
+
   useEffect(() => {
     const interval = setInterval(() => {
       setProgress(prev => {
