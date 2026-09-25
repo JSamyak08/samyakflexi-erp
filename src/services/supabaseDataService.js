@@ -391,6 +391,81 @@ export function formatFilmItemName(filmType, widthMm, micron, rawName = '') {
   return `${fType}-${width}-${mic}`;
 }
 
+export function normalizeFilmType(filmType) {
+  if (!filmType) return '';
+  return String(filmType)
+    .toUpperCase()
+    .replace(/film/gi, '')
+    .replace(/substrates?/gi, '')
+    .replace(/[^A-Z0-9]/gi, '')
+    .trim();
+}
+
+export function findMatchingInventoryItem(inventoryList = [], target = {}) {
+  if (!Array.isArray(inventoryList) || inventoryList.length === 0 || !target) return null;
+
+  const { stockItemId, itemId, filmType, micron, widthMm, itemName, category } = target;
+
+  // 1. Direct ID / itemCode match
+  if (stockItemId || itemId) {
+    const targetId = String(stockItemId || itemId);
+    const directMatch = inventoryList.find(i => String(i.id) === targetId || String(i.itemCode) === targetId);
+    if (directMatch) return directMatch;
+  }
+
+  const isFilm = (category === 'Film Substrates') || (filmType && filmType !== '-');
+  const targetMicron = parseFloat(micron);
+  const targetWidth = parseFloat(widthMm);
+
+  if (isFilm && !isNaN(targetMicron) && !isNaN(targetWidth) && targetMicron > 0 && targetWidth > 0) {
+    const normTargetFilm = normalizeFilmType(filmType);
+    const formattedTargetName = formatFilmItemName(filmType, widthMm, micron).toLowerCase();
+
+    const specMatch = inventoryList.find(i => {
+      const normItemFilm = normalizeFilmType(i.filmType || i.substrateOrGrade || i.substrateGrade);
+      const itemMicron = parseFloat(i.micron);
+      const itemWidth = parseFloat(i.widthMm);
+
+      if (normItemFilm === normTargetFilm && itemMicron === targetMicron && itemWidth === targetWidth) {
+        return true;
+      }
+      const formattedItemName = formatFilmItemName(i.filmType || i.substrateOrGrade, i.widthMm, i.micron, i.itemName).toLowerCase();
+      if (formattedItemName === formattedTargetName) {
+        return true;
+      }
+      if ((i.itemName || '').trim().toLowerCase() === formattedTargetName) {
+        return true;
+      }
+      return false;
+    });
+
+    if (specMatch) return specMatch;
+  }
+
+  // 2. Non-Film or Item Name Exact Match
+  if (itemName && String(itemName).trim()) {
+    const cleanTargetName = String(itemName).trim().replace(/µ/g, 'Micron').toLowerCase();
+    const cleanTargetCat = (category || '').trim().toLowerCase();
+
+    const nameMatch = inventoryList.find(i => {
+      const cleanItemName = (i.itemName || '').trim().replace(/µ/g, 'Micron').toLowerCase();
+      const cleanItemCat = (i.category || '').trim().toLowerCase();
+
+      if (cleanItemName === cleanTargetName) {
+        if (!cleanTargetCat || !cleanItemCat || cleanTargetCat === cleanItemCat) {
+          return true;
+        }
+      }
+      return false;
+    });
+
+    if (nameMatch) return nameMatch;
+  }
+
+  return null;
+}
+
+
 export function sanitizeInventoryItem(rawItem) {
   if (!rawItem || typeof rawItem !== 'object') return rawItem;
 

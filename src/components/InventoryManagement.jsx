@@ -2410,28 +2410,6 @@ export default function InventoryManagement({
           else if (cleanH.includes('category')) {
             if (headerMap.category === undefined) headerMap.category = idx;
           }
-          // MUST check unitCost/rate/price BEFORE uom/unit to avoid 'unitcostrs' matching 'unit'!
-          else if (
-            cleanH.includes('unitcost') || 
-            cleanH.includes('cost') || 
-            cleanH.includes('rate') || 
-            cleanH.includes('price') || 
-            cleanH.includes('unitprice') ||
-            cleanH.includes('purchaserate') ||
-            cleanH.includes('purchaseprice') ||
-            cleanH.includes('purchasecost') ||
-            cleanH.includes('landedcost') ||
-            cleanH.includes('landingcost') ||
-            cleanH.includes('basicrate') ||
-            cleanH.includes('basiccost') ||
-            cleanH.includes('mrp')
-          ) {
-            if (headerMap.unitCost === undefined) headerMap.unitCost = idx;
-          }
-          // UOM / Unit of measure
-          else if (cleanH === 'uom' || cleanH.includes('uom') || cleanH.includes('unitofmeasure') || cleanH.includes('measure') || (cleanH.includes('unit') && !cleanH.includes('cost') && !cleanH.includes('price') && !cleanH.includes('rate'))) {
-            if (headerMap.uom === undefined) headerMap.uom = idx;
-          }
           else if (cleanH.includes('substrate') || cleanH.includes('grade') || cleanH.includes('filmtype') || cleanH.includes('polymer')) {
             if (headerMap.substrateGrade === undefined) headerMap.substrateGrade = idx;
           }
@@ -2441,8 +2419,31 @@ export default function InventoryManagement({
           else if (cleanH.includes('width')) {
             if (headerMap.widthMm === undefined) headerMap.widthMm = idx;
           }
-          else if (cleanH.includes('availableqty') || cleanH.includes('qty') || cleanH.includes('quantity') || cleanH.includes('stock')) {
+          else if (cleanH.includes('availableqty') || cleanH.includes('qty') || cleanH.includes('quantity') || (cleanH.includes('stock') && !cleanH.includes('id') && !cleanH.includes('reorder'))) {
             if (headerMap.qty === undefined) headerMap.qty = idx;
+          }
+          // MUST check unitCost/rate/price BEFORE uom/unit to avoid 'unitcostrs' matching 'unit'!
+          else if (
+            cleanH.includes('unitcost') || 
+            cleanH.includes('unitprice') ||
+            cleanH.includes('purchaserate') ||
+            cleanH.includes('purchaseprice') ||
+            cleanH.includes('purchasecost') ||
+            cleanH.includes('landedcost') ||
+            cleanH.includes('landingcost') ||
+            cleanH.includes('basicrate') ||
+            cleanH.includes('basiccost') ||
+            cleanH.includes('mrp') ||
+            cleanH.includes('unitcostrs') ||
+            cleanH.includes('cost') ||
+            cleanH.includes('price') ||
+            (cleanH.includes('rate') && !cleanH.includes('substrate') && !cleanH.includes('grade') && !cleanH.includes('reorder'))
+          ) {
+            if (headerMap.unitCost === undefined) headerMap.unitCost = idx;
+          }
+          // UOM / Unit of measure
+          else if (cleanH === 'uom' || cleanH.includes('uom') || cleanH.includes('unitofmeasure') || cleanH.includes('measure') || (cleanH.includes('unit') && !cleanH.includes('cost') && !cleanH.includes('price') && !cleanH.includes('rate'))) {
+            if (headerMap.uom === undefined) headerMap.uom = idx;
           }
           else if (cleanH.includes('location') || cleanH.includes('bay') || cleanH.includes('rack') || cleanH.includes('store')) {
             if (headerMap.location === undefined) headerMap.location = idx;
@@ -2461,20 +2462,32 @@ export default function InventoryManagement({
           }
         });
 
-        // Fallback: If unitCost header was not explicitly matched, search for any unmapped index or index 11
+        // Fallback: If unitCost header was not explicitly matched, search for any unmapped index or index 12 / 11
         if (headerMap.unitCost === undefined) {
           const mappedIndices = new Set(Object.values(headerMap));
           firstLineCells.forEach((h, idx) => {
             if (!mappedIndices.has(idx)) {
-              const rawH = h.toLowerCase();
-              if (rawH.includes('cost') || rawH.includes('rate') || rawH.includes('price') || rawH.includes('unit') || rawH.includes('amt') || rawH.includes('rs') || rawH.includes('inr') || rawH.includes('₹')) {
+              const rawH = h.toLowerCase().replace(/[^a-z0-9]/g, '');
+              if (
+                rawH.includes('cost') || 
+                rawH.includes('price') || 
+                rawH.includes('amt') || 
+                rawH.includes('rs') || 
+                rawH.includes('inr') || 
+                rawH.includes('₹') ||
+                (rawH.includes('rate') && !rawH.includes('substrate') && !rawH.includes('grade'))
+              ) {
                 headerMap.unitCost = idx;
                 mappedIndices.add(idx);
               }
             }
           });
-          if (headerMap.unitCost === undefined && firstLineCells.length >= 12 && !mappedIndices.has(11)) {
-            headerMap.unitCost = 11;
+          if (headerMap.unitCost === undefined) {
+            if (firstLineCells.length >= 13 && !mappedIndices.has(12)) {
+              headerMap.unitCost = 12;
+            } else if (firstLineCells.length >= 12 && !mappedIndices.has(11)) {
+              headerMap.unitCost = 11;
+            }
           }
         }
 
