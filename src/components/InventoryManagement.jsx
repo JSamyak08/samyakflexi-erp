@@ -189,6 +189,80 @@ export default function InventoryManagement({
     return sortInventoryByFifo(sanitized, safeGrns, inventoryRolls);
   }, [inventory, safeGrns, inventoryRolls]);
 
+  // Group inventory items by Item Name / Specs so films of same 'Item Name' but different Inventory Code/ID are consolidated into the same Item row
+  const groupedInventory = useMemo(() => {
+    const rawList = safeInventory || [];
+    const groupsMap = new Map();
+
+    rawList.forEach(item => {
+      const isFilm = (item.category || 'Film Substrates') === 'Film Substrates';
+      const cleanName = (item.itemName || '').trim();
+      const filmType = (item.filmType || '').trim();
+      const micron = item.micron !== undefined && item.micron !== null ? String(item.micron).trim() : '';
+      const width = item.widthMm !== undefined && item.widthMm !== null ? String(item.widthMm).trim() : '';
+
+      let groupKey = '';
+      if (isFilm) {
+        const stdTitle = formatFilmItemName(filmType, width, micron, cleanName);
+        groupKey = `FILM_${stdTitle.toLowerCase().replace(/\s+/g, '')}`;
+      } else if (cleanName) {
+        groupKey = `ITEM_${cleanName.toLowerCase().replace(/\s+/g, '')}`;
+      } else {
+        groupKey = `ITEM_${(item.category || item.id || '').toLowerCase().replace(/\s+/g, '')}`;
+      }
+
+      if (!groupsMap.has(groupKey)) {
+        groupsMap.set(groupKey, {
+          ...item,
+          primaryId: item.id,
+          allInventoryIds: [item.id],
+          subItems: [item],
+          availableQtyKg: Number(item.availableQtyKg || 0),
+          allocatedQtyKg: Number(item.allocatedQtyKg || 0),
+          reorderLevelKg: Number(item.reorderLevelKg || 100),
+          totalValuation: (parseFloat(item.availableQtyKg) || 0) * (parseFloat(item.unitPrice || item.purchaseRatePerKg) || 0),
+          allLocations: new Set(item.location ? [item.location] : []),
+          allVendors: new Set(item.lastVendor || item.vendor ? [item.lastVendor || item.vendor] : []),
+          allBatches: new Set(item.lastBatch ? [item.lastBatch] : []),
+        });
+      } else {
+        const existing = groupsMap.get(groupKey);
+        existing.subItems.push(item);
+        if (!existing.allInventoryIds.includes(item.id)) {
+          existing.allInventoryIds.push(item.id);
+        }
+        existing.availableQtyKg = Number((existing.availableQtyKg + (parseFloat(item.availableQtyKg) || 0)).toFixed(2));
+        existing.allocatedQtyKg = Number((existing.allocatedQtyKg + (parseFloat(item.allocatedQtyKg) || 0)).toFixed(2));
+        existing.reorderLevelKg = Math.max(existing.reorderLevelKg, Number(item.reorderLevelKg || 0));
+        existing.totalValuation += (parseFloat(item.availableQtyKg) || 0) * (parseFloat(item.unitPrice || item.purchaseRatePerKg) || 0);
+        if (item.location) existing.allLocations.add(item.location);
+        if (item.lastVendor || item.vendor) existing.allVendors.add(item.lastVendor || item.vendor);
+        if (item.lastBatch) existing.allBatches.add(item.lastBatch);
+        if (parseFloat(item.unitPrice || item.purchaseRatePerKg) > 0) {
+          existing.unitPrice = parseFloat(item.unitPrice || item.purchaseRatePerKg);
+          existing.purchaseRatePerKg = parseFloat(item.unitPrice || item.purchaseRatePerKg);
+        }
+      }
+    });
+
+    return Array.from(groupsMap.values()).map(grp => {
+      const location = Array.from(grp.allLocations).join(', ') || grp.location || 'Bay A';
+      const lastVendor = Array.from(grp.allVendors).pop() || grp.lastVendor || 'Supplier';
+      const lastBatch = Array.from(grp.allBatches).pop() || grp.lastBatch || 'N/A';
+      const unitPrice = grp.availableQtyKg > 0 ? (grp.totalValuation / grp.availableQtyKg) : (grp.unitPrice || 0);
+
+      return {
+        ...grp,
+        location,
+        lastVendor,
+        lastBatch,
+        unitPrice: Number(unitPrice.toFixed(2)),
+        purchaseRatePerKg: Number(unitPrice.toFixed(2)),
+        purchaseValuation: Number(grp.totalValuation.toFixed(2))
+      };
+    });
+  }, [safeInventory]);
+
   // Calculate items exceeding category ageing limits
   const overAgedItemsCount = useMemo(() => {
     return safeInventory.filter(item => isItemOverAged(item, ageingSettings, safeGrns, inventoryRolls)).length;
@@ -1452,15 +1526,18 @@ export default function InventoryManagement({
 
   const handleDeleteStockItem = async (item) => {
     if (!item || !item.id) return;
+    const targetIds = item.allInventoryIds && item.allInventoryIds.length > 0 ? item.allInventoryIds : [item.id];
     const displayName = item.itemName || `${item.filmType || 'Item'} ${item.micron && item.micron !== '-' ? item.micron + ' Micron' : ''}`;
-    if (window.confirm(`Are you sure you want to permanently delete stock item "${item.id} - ${displayName}"?`)) {
+    if (window.confirm(`Are you sure you want to permanently delete stock item "${displayName}" (${targetIds.join(', ')})?`)) {
       if (onDeleteInventoryItem) {
-        await onDeleteInventoryItem(item.id);
+        for (const id of targetIds) {
+          await onDeleteInventoryItem(id);
+        }
       } else if (onUpdateInventory) {
-        const updatedInv = inventory.filter(i => String(i.id) !== String(item.id));
+        const updatedInv = inventory.filter(i => !targetIds.includes(String(i.id)));
         onUpdateInventory(updatedInv);
       }
-      alert(`Stock item ${item.id} deleted successfully.`);
+      alert(`Stock item "${displayName}" deleted successfully.`);
     }
   };
 
@@ -2828,11 +2905,12 @@ export default function InventoryManagement({
     return st.includes('pending') || st === 'awaiting qc clearance' || st === 'awaiting qc';
   });
 
-  const filteredInventory = (safeInventory || []).filter(i => {
+  const filteredInventory = (groupedInventory || []).filter(i => {
     // 1. Category / Over-Aged Filter
     if (stockCategoryFilter && stockCategoryFilter !== 'ALL') {
       if (stockCategoryFilter === 'OVERAGED') {
-        if (!isItemOverAged(i, ageingSettings)) return false;
+        const hasOverAged = (i.subItems || [i]).some(sub => isItemOverAged(sub, ageingSettings, safeGrns, inventoryRolls));
+        if (!hasOverAged) return false;
       } else {
         const itemCat = i.category || 'Film Substrates';
         if (itemCat !== stockCategoryFilter) {
@@ -2851,8 +2929,9 @@ export default function InventoryManagement({
     const location = (i.location || '').toLowerCase();
     const itemCode = (i.itemCode || '').toLowerCase();
     const id = (i.id || '').toLowerCase();
+    const allIds = (i.allInventoryIds || []).join(' ').toLowerCase();
     const category = (i.category || 'Film Substrates').toLowerCase();
-    const vendor = (i.vendor || '').toLowerCase();
+    const vendor = (i.lastVendor || i.vendor || '').toLowerCase();
     const micronStr = i.micron ? `${i.micron}` : '';
     const widthStr = i.widthMm ? `${i.widthMm}` : '';
 
@@ -2862,6 +2941,7 @@ export default function InventoryManagement({
       location.includes(term) ||
       itemCode.includes(term) ||
       id.includes(term) ||
+      allIds.includes(term) ||
       category.includes(term) ||
       vendor.includes(term) ||
       micronStr.includes(term) ||
@@ -3720,7 +3800,16 @@ export default function InventoryManagement({
 
                   return (
                     <tr key={item.id} style={{ background: isOverAged ? '#fff5f5' : 'transparent' }}>
-                      <td style={{ fontWeight: '700', color: 'var(--accent-color)' }}>{item.id}</td>
+                      <td style={{ fontWeight: '700', color: 'var(--accent-color)' }}>
+                        <div>{item.primaryId || item.id}</div>
+                        {item.subItems && item.subItems.length > 1 && (
+                          <div style={{ fontSize: '0.7rem', color: '#4b5563', fontWeight: '600', marginTop: '2px' }} title={`Grouped Inventory Codes/IDs: ${item.allInventoryIds.join(', ')}`}>
+                            <span className="badge" style={{ background: '#f3f4f6', color: '#374151', border: '1px solid #d1d5db', padding: '1px 5px', fontSize: '0.68rem', fontWeight: '700' }}>
+                              +{item.subItems.length - 1} inward lots
+                            </span>
+                          </div>
+                        )}
+                      </td>
                       <td>
                         <button 
                           style={{ 
@@ -6081,62 +6170,66 @@ export default function InventoryManagement({
         // Universal Item Matcher for Films, Inks, Solvents, Adhesives, Blades, Tapes, PPE & Spares
         const isItemMatch = (candidate, target) => {
           if (!candidate || !target) return false;
-          // 1. Direct ID / Code match
-          if (candidate.itemId && (candidate.itemId === target.id || candidate.itemId === target.itemCode)) return true;
-          if (candidate.id && (candidate.id === target.id || candidate.id === target.itemCode)) return true;
-          if (candidate.itemCode && (candidate.itemCode === target.itemCode || candidate.itemCode === target.id)) return true;
+          const targetList = target.subItems && target.subItems.length > 0 ? [target, ...target.subItems] : [target];
 
-          // 2. Strict Item Name match
-          const cName = (candidate.itemName || candidate.filmType || '').trim().toLowerCase();
-          const tName = (target.itemName || target.filmType || '').trim().toLowerCase();
-          if (cName && tName && (cName === tName)) return true;
+          return targetList.some(t => {
+            // 1. Direct ID / Code match
+            if (candidate.itemId && (candidate.itemId === t.id || candidate.itemId === t.itemCode)) return true;
+            if (candidate.id && (candidate.id === t.id || candidate.id === t.itemCode)) return true;
+            if (candidate.itemCode && (candidate.itemCode === t.itemCode || candidate.itemCode === t.id)) return true;
 
-          // 3. Category & Film / Substrate match
-          const isTargetFilm = (target.category || 'Film Substrates') === 'Film Substrates';
-          const isCandidateFilm = (candidate.category || 'Film Substrates') === 'Film Substrates' || 
-            ['PET', 'METPET', 'BOPP', 'LDPE', 'CPP', 'POLY', 'LD'].some(f => (candidate.filmType || '').toUpperCase().includes(f));
+            // 2. Strict Item Name match
+            const cName = (candidate.itemName || candidate.filmType || '').trim().toLowerCase();
+            const tName = (t.itemName || t.filmType || '').trim().toLowerCase();
+            if (cName && tName && (cName === tName)) return true;
 
-          if (isTargetFilm && isCandidateFilm) {
-            const normalizeFilm = (str) => (str || '')
-              .toLowerCase()
-              .replace(/film/g, '')
-              .replace(/substrates?/g, '')
-              .replace(/\s+/g, ' ')
-              .trim();
-            const cFilm = normalizeFilm(candidate.filmType);
-            const tFilm = normalizeFilm(target.filmType);
-            const filmMatches = cFilm === tFilm || (cFilm && tFilm && (cFilm.includes(tFilm) || tFilm.includes(cFilm)));
-            
-            // Numeric specs check
-            const cMicron = parseFloat(candidate.micron);
-            const tMicron = parseFloat(target.micron);
-            const micronMatches = (isNaN(cMicron) && isNaN(tMicron)) || (cMicron === tMicron) || !target.micron || target.micron === '-';
+            // 3. Category & Film / Substrate match
+            const isTargetFilm = (t.category || 'Film Substrates') === 'Film Substrates';
+            const isCandidateFilm = (candidate.category || 'Film Substrates') === 'Film Substrates' || 
+              ['PET', 'METPET', 'BOPP', 'LDPE', 'CPP', 'POLY', 'LD'].some(f => (candidate.filmType || '').toUpperCase().includes(f));
 
-            const cWidth = parseFloat(candidate.widthMm);
-            const tWidth = parseFloat(target.widthMm);
-            const widthMatches = (isNaN(cWidth) && isNaN(tWidth)) || (cWidth === tWidth) || !target.widthMm || target.widthMm === '-';
+            if (isTargetFilm && isCandidateFilm) {
+              const normalizeFilm = (str) => (str || '')
+                .toLowerCase()
+                .replace(/film/g, '')
+                .replace(/substrates?/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+              const cFilm = normalizeFilm(candidate.filmType);
+              const tFilm = normalizeFilm(t.filmType);
+              const filmMatches = cFilm === tFilm || (cFilm && tFilm && (cFilm.includes(tFilm) || tFilm.includes(cFilm)));
+              
+              // Numeric specs check
+              const cMicron = parseFloat(candidate.micron);
+              const tMicron = parseFloat(t.micron);
+              const micronMatches = (isNaN(cMicron) && isNaN(tMicron)) || (cMicron === tMicron) || !t.micron || t.micron === '-';
 
-            if (filmMatches && micronMatches && widthMatches) return true;
-          }
+              const cWidth = parseFloat(candidate.widthMm);
+              const tWidth = parseFloat(t.widthMm);
+              const widthMatches = (isNaN(cWidth) && isNaN(tWidth)) || (cWidth === tWidth) || !t.widthMm || t.widthMm === '-';
 
-          // 4. Non-Film Category Match (Inks, Solvents, Adhesives, Blades, PPE, Spares)
-          if (!isTargetFilm) {
-            const cCat = (candidate.category || '').toLowerCase();
-            const tCat = (target.category || '').toLowerCase();
-            if (cCat && tCat && cCat === tCat) {
-              if (cName && tName && (cName.includes(tName) || tName.includes(cName))) return true;
+              if (filmMatches && micronMatches && widthMatches) return true;
             }
-            if (cName && tName) {
-              if (tName.includes('ink') && cName.includes('ink')) return true;
-              if (tName.includes('solvent') && cName.includes('solvent')) return true;
-              if (tName.includes('adhesive') && cName.includes('adhesive')) return true;
-              if (tName.includes('blade') && cName.includes('blade')) return true;
-              if (tName.includes('tape') && cName.includes('tape')) return true;
-              if (tName.includes('glove') && cName.includes('glove')) return true;
-            }
-          }
 
-          return false;
+            // 4. Non-Film Category Match (Inks, Solvents, Adhesives, Blades, PPE, Spares)
+            if (!isTargetFilm) {
+              const cCat = (candidate.category || '').toLowerCase();
+              const tCat = (t.category || '').toLowerCase();
+              if (cCat && tCat && cCat === tCat) {
+                if (cName && tName && (cName.includes(tName) || tName.includes(cName))) return true;
+              }
+              if (cName && tName) {
+                if (tName.includes('ink') && cName.includes('ink')) return true;
+                if (tName.includes('solvent') && cName.includes('solvent')) return true;
+                if (tName.includes('adhesive') && cName.includes('adhesive')) return true;
+                if (tName.includes('blade') && cName.includes('blade')) return true;
+                if (tName.includes('tape') && cName.includes('tape')) return true;
+                if (tName.includes('glove') && cName.includes('glove')) return true;
+              }
+            }
+
+            return false;
+          });
         };
 
         // 1. Gather Inward Receipts (GRNs)
@@ -6192,6 +6285,45 @@ export default function InventoryManagement({
             notes: `${g.rollsReceived || matchingRolls.length || 1} pkg/roll(s) | Barcode: ${resolvedBarcode}`
           };
         });
+
+        // 1b. Ensure sub-items / inward lots with distinct inward dates appear in inwardTxLines
+        if (item.subItems && item.subItems.length > 0) {
+          item.subItems.forEach(sub => {
+            const alreadyIncluded = matchingGRNs.some(g => 
+              (g.stockItemId && String(g.stockItemId) === String(sub.id)) || 
+              (g.itemId && String(g.itemId) === String(sub.id))
+            );
+            if (!alreadyIncluded && sub.availableQtyKg > 0) {
+              const txId = `INVT_LOT_${sub.id}`;
+              const oldestDate = getItemInwardDate(sub, safeGrns, inventoryRolls);
+              const inDate = sub.inwardDate || sub.receivedDate || sub.created_at || (oldestDate ? oldestDate.toISOString().split('T')[0] : '2026-09-25');
+              const rate = parseFloat(sub.unitPrice || sub.purchaseRatePerKg) || itemActualUnitPrice;
+              const barcodeVal = sub.barcodeId || sub.barcode || sub.lastBatch || generateBarcodeId('RM-BC');
+              
+              inwardTxLines.push({
+                txId,
+                category: 'inward',
+                type: '📥 Direct Inward Lot',
+                isPendingQC: false,
+                date: inDate,
+                refNo: sub.id,
+                subRef: sub.itemCode ? `Code: ${sub.itemCode}` : 'Stock Inward Lot',
+                partyName: sub.lastVendor || sub.vendor || 'Supplier',
+                subParty: `Location: ${sub.location || 'Bay A'}`,
+                inwardQtyKg: sub.availableQtyKg,
+                outwardQtyKg: 0,
+                adjQtyKg: 0,
+                ratePerKg: rate,
+                unitPrice: rate,
+                totalValue: sub.availableQtyKg * rate,
+                barcode: barcodeVal,
+                batchNo: sub.lastBatch || `BATCH-${sub.id}`,
+                status: 'In Stock',
+                notes: `Inward Lot ${sub.id} (${sub.availableQtyKg} kg) | Inward Date: ${inDate}`
+              });
+            }
+          });
+        }
 
         // 2. Gather Job Material Consumptions from Production Records
         const jobUsageLines = [];

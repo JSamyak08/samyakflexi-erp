@@ -153,13 +153,29 @@ export default function UniversalBarcodeScannerModal({
     const grnExtract = query.replace(/^(con|rm)-bc-/, '').replace(/-\d+$/, '');
 
     // 1. Inventory Rolls & Inward Packages Search (Highest Priority for Barcodes)
-    const matchedRoll = (inventoryRolls || []).find(r => {
-      const bId = (r.barcodeId || r.id || '').toLowerCase();
-      const bNo = (r.batchNo || r.lotNo || '').toLowerCase();
-      const invNo = (r.invoiceNo || '').toLowerCase();
-      const rGrn = (r.grnNo || r.grn_no || '').toLowerCase();
-      return bId === query || bId.includes(query) || (bNo && bNo === query) || (invNo && invNo === query) || (rGrn && rGrn === query);
+    // Pass 1: Strict Exact Match on Barcode ID or Roll ID
+    let matchedRoll = (inventoryRolls || []).find(r => {
+      const bId = (r.barcodeId || r.id || '').trim().toLowerCase();
+      return bId === query;
     });
+
+    // Pass 2: Exact Match on Batch Number, Invoice Number, or GRN Number
+    if (!matchedRoll) {
+      matchedRoll = (inventoryRolls || []).find(r => {
+        const bNo = (r.batchNo || r.lotNo || '').trim().toLowerCase();
+        const invNo = (r.invoiceNo || '').trim().toLowerCase();
+        const rGrn = (r.grnNo || r.grn_no || '').trim().toLowerCase();
+        return (bNo && bNo === query) || (invNo && invNo === query) || (rGrn && rGrn === query);
+      });
+    }
+
+    // Pass 3: Fallback Partial Match (ONLY if query length >= 4 and no exact match exists)
+    if (!matchedRoll && query.length >= 4) {
+      matchedRoll = (inventoryRolls || []).find(r => {
+        const bId = (r.barcodeId || r.id || '').trim().toLowerCase();
+        return bId.includes(query);
+      });
+    }
 
     if (matchedRoll) {
       // Find linked GRN across grns list to backfill any missing inward metadata
