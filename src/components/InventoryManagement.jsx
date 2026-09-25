@@ -2217,18 +2217,18 @@ export default function InventoryManagement({
   // Download Universal Bulk Inventory CSV Template (Covers All Material Categories)
   const handleDownloadBulkInventoryTemplate = () => {
     const headers = [
-      "Category", "ItemName", "SubstrateOrGrade", "Micron", "WidthMm", 
+      "InventoryID", "Category", "ItemName", "SubstrateOrGrade", "Micron", "WidthMm", 
       "AvailableQty", "UOM", "Location", "ReorderLevel", "LastVendor", 
       "LastBatch", "UnitCostRs"
     ];
     const sampleRows = [
-      ["Film Substrates", "PET Film 12 Micron", "PET", "12", "1000", "2500", "Kg", "Bay A - Rack 1", "1000", "FlexiPoly Films Ltd", "BATCH-PET-101", "135"],
-      ["Film Substrates", "Natural LD GP Film", "Natural LD GP Film", "35", "1005", "4200", "Kg", "Bay B - Extrusion", "1500", "Malwa Extrusions Pvt Ltd", "BATCH-LD-303", "115"],
-      ["Printing Inks", "Cyan Solvent Printing Ink", "Cyan Process Ink", "", "", "450", "Kg", "Ink Store Bay 1", "200", "Siegwerk Inks Ltd", "INK-CY-882", "240"],
-      ["Chemicals & Solvents", "Ethyl Acetate Solvent Grade", "Ethyl Acetate", "", "", "1200", "Litres", "Solvent Yard Tank 2", "500", "Gujarat Solvents", "SOL-EA-991", "85"],
-      ["Adhesives & Hardener", "Solventless Lamination Adhesive", "SL Adhesive", "", "", "600", "Kg", "Lamination Store", "250", "Henkel Adhesives", "ADH-SL-441", "270"],
-      ["Packaging & Cores", "Paper Core Pipes 3 Inch", "3 Inch Paper Core", "", "", "1500", "Nos", "Core Pipe Bay 3", "300", "Indore Core Pipes", "CORE-3IN-012", "45"],
-      ["Tapes & Consumables", "Stretch Film Packaging Roll 23u", "Stretch Film", "23", "500", "80", "Rolls", "Dispatch Store", "30", "3M Packaging", "TAP-ST-330", "120"]
+      ["INVT-1001", "Film Substrates", "PET Film 12 Micron", "PET", "12", "1000", "2500", "Kg", "Bay A - Rack 1", "1000", "FlexiPoly Films Ltd", "BATCH-PET-101", "135"],
+      ["INVT-1002", "Film Substrates", "Natural LD GP Film", "Natural LD GP Film", "35", "1005", "4200", "Kg", "Bay B - Extrusion", "1500", "Malwa Extrusions Pvt Ltd", "BATCH-LD-303", "115"],
+      ["INVT-1003", "Printing Inks", "Cyan Solvent Printing Ink", "Cyan Process Ink", "", "", "450", "Kg", "Ink Store Bay 1", "200", "Siegwerk Inks Ltd", "INK-CY-882", "240"],
+      ["INVT-1004", "Chemicals & Solvents", "Ethyl Acetate Solvent Grade", "Ethyl Acetate", "", "", "1200", "Litres", "Solvent Yard Tank 2", "500", "Gujarat Solvents", "SOL-EA-991", "85"],
+      ["INVT-1005", "Adhesives & Hardener", "Solventless Lamination Adhesive", "SL Adhesive", "", "", "600", "Kg", "Lamination Store", "250", "Henkel Adhesives", "ADH-SL-441", "270"],
+      ["INVT-1006", "Packaging & Cores", "Paper Core Pipes 3 Inch", "3 Inch Paper Core", "", "", "1500", "Nos", "Core Pipe Bay 3", "300", "Indore Core Pipes", "CORE-3IN-012", "45"],
+      ["INVT-1007", "Tapes & Consumables", "Stretch Film Packaging Roll 23u", "Stretch Film", "23", "500", "80", "Rolls", "Dispatch Store", "30", "3M Packaging", "TAP-ST-330", "120"]
     ];
 
     const csvContent = "\uFEFF" + [headers.join(","), ...sampleRows.map(e => e.join(","))].join("\n");
@@ -2485,6 +2485,7 @@ export default function InventoryManagement({
           // Skip completely empty lines or rows containing only blank commas (e.g., ",,,,,,,,")
           if (cells.length === 0 || cells.every(c => !c || c.trim() === '')) continue;
 
+          let inventoryId = '';
           let category = '';
           let itemName = '';
           let substrateGrade = '';
@@ -2499,6 +2500,7 @@ export default function InventoryManagement({
           let unitCost = 0;
 
           if (hasNamedHeaders) {
+            inventoryId = headerMap.inventoryId !== undefined ? (cells[headerMap.inventoryId] || '').trim() : '';
             category = headerMap.category !== undefined ? cells[headerMap.category] : '';
             itemName = headerMap.itemName !== undefined ? cells[headerMap.itemName] : '';
             substrateGrade = headerMap.substrateGrade !== undefined ? cells[headerMap.substrateGrade] : '';
@@ -2512,19 +2514,35 @@ export default function InventoryManagement({
             batch = headerMap.batch !== undefined ? (cells[headerMap.batch] || 'BULK-BATCH') : 'BULK-BATCH';
             unitCost = headerMap.unitCost !== undefined ? (parseCleanNum(cells[headerMap.unitCost]) || 0) : 0;
           } else {
-            // Positional template layout
-            category = cells[0] || '';
-            itemName = cells[1] || '';
-            substrateGrade = cells[2] || '';
-            micron = parseCleanNum(cells[3]) || 0;
-            widthMm = parseCleanNum(cells[4]) || 0;
-            qty = parseCleanNum(cells[5]);
-            uom = cells[6] || 'Kg';
-            location = cells[7] || 'Main Factory Store';
-            reorder = parseCleanNum(cells[8]) || 1000;
-            vendor = cells[9] || 'Local Vendor';
-            batch = cells[10] || 'BULK-BATCH';
-            unitCost = parseCleanNum(cells[11]) || 0;
+            // Positional layout: Check if 13-column (starts with InventoryID) or 12-column
+            if (cells.length >= 13 || (cells[0] && (cells[0].toLowerCase().startsWith('inv') || cells[0].toLowerCase().startsWith('sku') || cells[0].toLowerCase().startsWith('id')))) {
+              inventoryId = cells[0] || '';
+              category = cells[1] || '';
+              itemName = cells[2] || '';
+              substrateGrade = cells[3] || '';
+              micron = parseCleanNum(cells[4]) || 0;
+              widthMm = parseCleanNum(cells[5]) || 0;
+              qty = parseCleanNum(cells[6]);
+              uom = cells[7] || 'Kg';
+              location = cells[8] || 'Main Factory Store';
+              reorder = parseCleanNum(cells[9]) || 1000;
+              vendor = cells[10] || 'Local Vendor';
+              batch = cells[11] || 'BULK-BATCH';
+              unitCost = parseCleanNum(cells[12]) || 0;
+            } else {
+              category = cells[0] || '';
+              itemName = cells[1] || '';
+              substrateGrade = cells[2] || '';
+              micron = parseCleanNum(cells[3]) || 0;
+              widthMm = parseCleanNum(cells[4]) || 0;
+              qty = parseCleanNum(cells[5]);
+              uom = cells[6] || 'Kg';
+              location = cells[7] || 'Main Factory Store';
+              reorder = parseCleanNum(cells[8]) || 1000;
+              vendor = cells[9] || 'Local Vendor';
+              batch = cells[10] || 'BULK-BATCH';
+              unitCost = parseCleanNum(cells[11]) || 0;
+            }
           }
 
           // Category auto-detection & fallback
@@ -2736,11 +2754,11 @@ export default function InventoryManagement({
         }
       } else {
         // Create New Separate Item
-        const autoId = generateInventoryId(currentInv);
+        const finalId = (row.inventoryId && !currentInv.some(i => i.id === row.inventoryId)) ? row.inventoryId : generateInventoryId(currentInv);
         const subGradeStr = row.substrateOrGrade || row.filmType || row.itemName || '';
         const itemObj = {
-          id: autoId,
-          itemCode: autoId,
+          id: finalId,
+          itemCode: finalId,
           category: row.category || bulkCategory || 'Film Substrates',
           itemName: row.itemName || `${subGradeStr} ${row.micron ? row.micron + 'µ' : ''}`.trim(),
           substrateOrGrade: subGradeStr,
@@ -7160,6 +7178,7 @@ export default function InventoryManagement({
                       <thead>
                         <tr style={{ background: '#f8fafc' }}>
                           <th>#</th>
+                          <th>Inventory ID</th>
                           <th>Category</th>
                           <th>Item Name / Title</th>
                           <th>Grade / Substrate</th>
@@ -7175,6 +7194,7 @@ export default function InventoryManagement({
                         {bulkParsedRows.map((row, idx) => (
                           <tr key={idx} style={{ background: row.matchedItem ? '#fffdf5' : 'transparent' }}>
                             <td>{idx + 1}</td>
+                            <td><span className="badge" style={{ background: '#f1f5f9', color: '#1e293b', fontWeight: '700', fontSize: '0.74rem' }}>{row.inventoryId || (row.matchedItem ? row.matchedItem.id : 'Auto')}</span></td>
                             <td><span className="badge badge-subtle">{row.category}</span></td>
                             <td>
                               <strong>{row.itemName}</strong>
