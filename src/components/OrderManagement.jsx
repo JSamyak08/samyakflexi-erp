@@ -204,64 +204,62 @@ export default function OrderManagement({
 
   // Handler to edit Raw Material Size Width, Micron, Quantity or Preferred Vendor for any itemized requirement
   const handleUpdateReqField = (orderId, reqId, field, value) => {
-    setOrders(prevOrders => {
-      return prevOrders.map(ord => {
-        if (ord.id !== orderId) return ord;
+    const ord = orders.find(o => o.id === orderId);
+    if (!ord) return;
 
-        const currentReqs = getOrderMaterialRequirements(ord);
-        const updatedReqs = currentReqs.map(r => {
-          if (r.id !== reqId) return r;
+    const currentReqs = getOrderMaterialRequirements(ord);
+    const updatedReqs = currentReqs.map(r => {
+      if (r.id !== reqId) return r;
 
-          let updatedWidth = r.widthMm;
-          let updatedMicron = r.micron;
-          let updatedQty = r.qtyKg;
+      let updatedWidth = r.widthMm;
+      let updatedMicron = r.micron;
+      let updatedQty = r.qtyKg;
 
-          if (field === 'widthMm') {
-            const newWidth = parseFloat(value);
-            const oldWidth = parseFloat(r.widthMm);
-            updatedWidth = isNaN(newWidth) ? value : newWidth;
+      if (field === 'widthMm') {
+        const newWidth = parseFloat(value);
+        const oldWidth = parseFloat(r.widthMm);
+        updatedWidth = isNaN(newWidth) ? value : newWidth;
 
-            // Recalculate weight proportionally if width changed
-            if (!isNaN(newWidth) && newWidth > 0 && !isNaN(oldWidth) && oldWidth > 0) {
-              const ratio = newWidth / oldWidth;
-              updatedQty = Math.round((r.qtyKg * ratio) * 10) / 10;
-            }
-          } else if (field === 'micron') {
-            const newMicron = parseFloat(value);
-            const oldMicron = parseFloat(r.micron);
-            updatedMicron = isNaN(newMicron) ? value : newMicron;
+        // Recalculate weight proportionally if width changed
+        if (!isNaN(newWidth) && newWidth > 0 && !isNaN(oldWidth) && oldWidth > 0) {
+          const ratio = newWidth / oldWidth;
+          updatedQty = Math.round((r.qtyKg * ratio) * 10) / 10;
+        }
+      } else if (field === 'micron') {
+        const newMicron = parseFloat(value);
+        const oldMicron = parseFloat(r.micron);
+        updatedMicron = isNaN(newMicron) ? value : newMicron;
 
-            if (!isNaN(newMicron) && newMicron > 0 && !isNaN(oldMicron) && oldMicron > 0) {
-              const ratio = newMicron / oldMicron;
-              updatedQty = Math.round((r.qtyKg * ratio) * 10) / 10;
-            }
-          } else if (field === 'qtyKg') {
-            const newQty = parseFloat(value);
-            updatedQty = isNaN(newQty) ? value : newQty;
-          } else if (field === 'preferredVendor') {
-            return { ...r, preferredVendor: value };
-          }
+        if (!isNaN(newMicron) && newMicron > 0 && !isNaN(oldMicron) && oldMicron > 0) {
+          const ratio = newMicron / oldMicron;
+          updatedQty = Math.round((r.qtyKg * ratio) * 10) / 10;
+        }
+      } else if (field === 'qtyKg') {
+        const newQty = parseFloat(value);
+        updatedQty = isNaN(newQty) ? value : newQty;
+      } else if (field === 'preferredVendor') {
+        return { ...r, preferredVendor: value };
+      }
 
-          return {
-            ...r,
-            widthMm: updatedWidth,
-            micron: updatedMicron,
-            qtyKg: updatedQty
-          };
-        });
-
-        const updatedOrder = {
-          ...ord,
-          materialRequirements: updatedReqs,
-          rawMaterialRequirements: updatedReqs
-        };
-
-        // Sync to Supabase
-        saveOrderToSupabase(updatedOrder).catch(console.warn);
-
-        return updatedOrder;
-      });
+      return {
+        ...r,
+        widthMm: updatedWidth,
+        micron: updatedMicron,
+        qtyKg: updatedQty
+      };
     });
+
+    const updatedOrder = {
+      ...ord,
+      materialRequirements: updatedReqs,
+      rawMaterialRequirements: updatedReqs
+    };
+
+    if (onUpdateOrder) {
+      onUpdateOrder(updatedOrder);
+    } else {
+      saveOrderToSupabase(updatedOrder).catch(err => console.error('[ORDERS][DB WRITE] Requirement update failed:', err));
+    }
   };
 
   const isAdmin = currentUser?.role === 'Admin';

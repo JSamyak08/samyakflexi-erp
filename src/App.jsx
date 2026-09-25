@@ -171,8 +171,11 @@ function stripDummyRecords(arr, idFields = ['id', 'orderId', 'jobId']) {
  */
 (function purgeDummyDataFromStorage() {
   if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    localStorage.removeItem('samyak_erp_orders');
+    localStorage.removeItem('orders');
+  } catch (e) { /* ignore */ }
   const keysToClean = [
-    'samyak_erp_orders',
     'samyak_erp_production_records',
     'samyak_erp_production_schedules',
     'samyak_erp_inventory',
@@ -283,9 +286,15 @@ export default function App() {
     return fallbackDefault;
   };
 
-  // Hydrate initial state safely from localStorage (if present), or empty array default.
-  // stripDummyRecords ensures no legacy seed data from development ever enters production state.
-  const [orders, setOrders] = useState(() => stripDummyRecords(loadLocalState('orders', [])));
+  // SUPABASE DATABASE IS THE SINGLE SOURCE OF TRUTH FOR ORDERS.
+  // Orders start empty (loading state) and are hydrated ONLY from Supabase.
+  // Never initialize orders from localStorage or IndexedDB.
+  const [orders, setOrders] = useState([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
+  const [ordersError, setOrdersError] = useState(null);
+  const [deletingOrderId, setDeletingOrderId] = useState(null);
+  const deletedOrderIdsRef = useRef(new Set());
+  const ordersFetchVersion = useRef(0);
   const [vendors, setVendors] = useState(() => stripDummyRecords(loadLocalState('vendors', [])));
   const [inventory, setInventory] = useState(() => stripDummyRecords(loadLocalState('inventory', [])).map(sanitizeInventoryItem));
   const [grns, setGrns] = useState(() => stripDummyRecords(loadLocalState('grns', [])).map(sanitizeGRN));
@@ -381,8 +390,8 @@ export default function App() {
     return () => window.removeEventListener('supabase-credentials-changed', handleCredentialsChanged);
   }, []);
 
-  // Sync state to safe storage (IndexedDB + sanitized localStorage) whenever modified
-  useEffect(() => { safeLocalStorageSet('samyak_erp_orders', orders); }, [orders]);
+  // Sync non-transactional reference state to safe storage (IndexedDB + sanitized localStorage)
+  // ORDERS ARE EXCLUDED: Supabase is single source of truth for orders.
   useEffect(() => { safeLocalStorageSet('samyak_erp_vendors', vendors); }, [vendors]);
   useEffect(() => { safeLocalStorageSet('samyak_erp_inventory', inventory); }, [inventory]);
   useEffect(() => { safeLocalStorageSet('samyak_erp_grns', grns); }, [grns]);
@@ -410,17 +419,12 @@ export default function App() {
   useEffect(() => { safeLocalStorageSet('samyak_erp_salary_advances', salaryAdvances); }, [salaryAdvances]);
   useEffect(() => { safeLocalStorageSet('samyak_erp_sfg_goods', sfgGoods); }, [sfgGoods]);
 
-
-  // Asynchronously hydrate any full artwork assets from IndexedDB if needed on mount
+  // IndexedDB hydration: DO NOT hydrate orders from IndexedDB.
   useEffect(() => {
     let isMounted = true;
     async function hydrateIdbAssets() {
       try {
-        const storedOrders = await idbGet('samyak_erp_orders');
-        if (isMounted && storedOrders && Array.isArray(storedOrders) && storedOrders.length > 0) {
-          const clean = stripDummyRecords(storedOrders);
-          if (clean.length > 0) setOrders(clean);
-        }
+        // IndexedDB is retained for non-order binary/artwork assets if needed
       } catch (err) {
         console.warn('Idb hydration error:', err);
       }
@@ -428,24 +432,6 @@ export default function App() {
     hydrateIdbAssets();
     return () => { isMounted = false; };
   }, []);
-
-  // ============================================================================
-  // WRITE-THROUGH CACHE: Persist all key state to localStorage on every change.
-  // This guarantees data is available on refresh before Supabase finishes loading.
-  // ============================================================================
-  useEffect(() => { safeLocalStorageSet('samyak_erp_orders', orders); }, [orders]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_vendors', vendors); }, [vendors]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_inventory', inventory); }, [inventory]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_grns', grns); }, [grns]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_cylinders', cylinders); }, [cylinders]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_production_records', productionRecords); }, [productionRecords]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_job_datasheets', jobDataSheets); }, [jobDataSheets]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_inventory_rolls', inventoryRolls); }, [inventoryRolls]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_dispatch_shipments', dispatchShipments); }, [dispatchShipments]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_printing_machines', machines); }, [machines]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_production_schedules', schedules); }, [schedules]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_clients', clients); }, [clients]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_job_masters', jobMasters); }, [jobMasters]);
 
 
   // Fetch all tables from Supabase on initial load or credential changes
@@ -464,14 +450,42 @@ export default function App() {
         }
       };
 
+      // Dedicated Order fetch with strict error handling & request versioning
+      const currentOrdersVersion = ++ordersFetchVersion.current;
+      setOrdersLoading(true);
+      setOrdersError(null);
+
+      (async () => {
+        try {
+          console.log('[ORDERS][FETCH] Starting Supabase fetch');
+          const supaOrders = await fetchOrders();
+          console.log(`[ORDERS][FETCH] Received ${supaOrders ? supaOrders.length : 0} records`);
+          if (isMounted && currentOrdersVersion === ordersFetchVersion.current) {
+            const cleanSupa = stripDummyRecords(supaOrders).filter(
+              o => o && o.id && !deletedOrderIdsRef.current.has(o.id)
+            );
+            setOrders(cleanSupa);
+            setOrdersLoading(false);
+
+            // Clean up any legacy dummy records from DB in background
+            supaOrders.filter(isDummyRecord).forEach(d => deleteOrderFromSupabase(d.id).catch(console.warn));
+          }
+        } catch (err) {
+          console.error('[ORDERS][FETCH] Failed to load from Supabase:', err);
+          if (isMounted && currentOrdersVersion === ordersFetchVersion.current) {
+            setOrdersError(err.message || 'Failed to fetch orders from Supabase.');
+            setOrdersLoading(false);
+          }
+        }
+      })();
+
       let [
-        supaOrders, supaVendors, supaInv, supaGRNs, supaCyls, 
+        supaVendors, supaInv, supaGRNs, supaCyls, 
         supaProd, supaUsers, supaSheets, supaRolls, supaShipments,
         supaMachines, supaSchedules, supaClients, supaJobMasters,
         supaInks, supaEmployees, supaAttendance, supaAdvances,
         supaRolePerms, supaAuditLogs, supaSFG, supaDCs, supaCoAs
       ] = await Promise.all([
-        fetchSafe(fetchOrders, 'Orders'),
         fetchSafe(fetchVendors, 'Vendors'),
         fetchSafe(fetchInventory, 'Inventory'),
         fetchSafe(fetchGRNs, 'GRNs'),
@@ -1527,24 +1541,32 @@ export default function App() {
     }
   };
 
-  // Handlers for state updates (Preserves local state + async Supabase sync)
+  // Handlers for state updates (Supabase Authoritative for Orders)
   const handleAddOrder = async (newOrder) => {
-    setOrders(prev => [newOrder, ...prev.filter(o => o.id !== newOrder.id)]);
-    logAudit('CREATE', 'Orders', `Punched job order ${newOrder.id} - "${newOrder.jobName}" for client "${newOrder.clientName}" (${newOrder.orderQtyKg} kg)`, newOrder.id);
+    console.log(`[ORDERS][CREATE] Starting orderId=${newOrder?.id}`);
     try {
       await saveOrderToSupabase(newOrder);
+      console.log(`[ORDERS][DB WRITE] UPSERT orderId=${newOrder?.id} successful`);
+      setOrders(prev => [newOrder, ...prev.filter(o => o.id !== newOrder.id)]);
+      await logAudit('CREATE', 'Orders', `Punched job order ${newOrder.id} - "${newOrder.jobName}" for client "${newOrder.clientName}" (${newOrder.orderQtyKg} kg)`, newOrder.id);
     } catch (err) {
-      console.warn("[Sync Notice] Order saved locally. Supabase notice:", err);
+      console.error('[ORDERS][CREATE] Failed to create order in Supabase:', err);
+      alert(`Failed to save order ${newOrder?.id} to Supabase database: ${err.message || err}`);
+      throw err;
     }
   };
 
   const handleUpdateOrder = async (updatedOrder) => {
-    setOrders(prev => prev.map(o => o.id === updatedOrder.id ? updatedOrder : o));
-    logAudit('UPDATE', 'Orders', `Updated order details/status for ${updatedOrder.id} - "${updatedOrder.jobName}" (${updatedOrder.status})`, updatedOrder.id);
+    console.log(`[ORDERS][UPDATE] Starting orderId=${updatedOrder?.id}`);
     try {
       await saveOrderToSupabase(updatedOrder);
+      console.log(`[ORDERS][DB WRITE] UPSERT orderId=${updatedOrder?.id} successful`);
+      setOrders(prev => prev.map(o => o.id === updatedOrder.id ? updatedOrder : o));
+      await logAudit('UPDATE', 'Orders', `Updated order details/status for ${updatedOrder.id} - "${updatedOrder.jobName}" (${updatedOrder.status})`, updatedOrder.id);
     } catch (err) {
-      console.warn("[Sync Notice] Order updated locally. Supabase notice:", err);
+      console.error('[ORDERS][UPDATE] Failed to update order in Supabase:', err);
+      alert(`Failed to update order ${updatedOrder?.id} in Supabase database: ${err.message || err}`);
+      throw err;
     }
   };
   const handleUpdateOrderStatus = handleUpdateOrder;
@@ -1695,12 +1717,25 @@ export default function App() {
   };
 
   const handleDeleteOrder = async (orderId) => {
-    setOrders(prev => prev.filter(o => o.id !== orderId));
-    logAudit('DELETE', 'Orders', `Deleted job order record ${orderId}`, orderId);
+    if (!orderId) return;
     try {
-      await deleteOrderFromSupabase(orderId);
+      setDeletingOrderId(orderId);
+      deletedOrderIdsRef.current.add(orderId);
+      console.log(`[ORDERS][DELETE] Starting delete orderId=${orderId}`);
+
+      const res = await deleteOrderFromSupabase(orderId);
+      if (res && res.success) {
+        console.log(`[ORDERS][DELETE] Supabase deletion successful orderId=${orderId}`);
+        // Only after Supabase confirms deletion:
+        setOrders(prev => prev.filter(o => o.id !== orderId));
+        await logAudit('DELETE', 'Orders', `Deleted job order record ${orderId}`, orderId);
+      }
     } catch (err) {
-      console.warn("[Sync Notice] Order deleted locally. Supabase notice:", err);
+      console.error('[ORDERS][DELETE] Delete failed:', err);
+      deletedOrderIdsRef.current.delete(orderId);
+      alert(`Failed to delete order ${orderId} from Supabase database: ${err.message || err}`);
+    } finally {
+      setDeletingOrderId(null);
     }
   };
 

@@ -60,10 +60,13 @@ export function handleSupabaseError(error, contextName) {
 
 export async function fetchOrders() {
   if (!isSupabaseConfigured()) return [];
+  console.log('[ORDERS][FETCH] Starting Supabase fetch');
   try {
     const { data, error } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
     if (error) throw error;
     if (!data) return [];
+
+    console.log(`[ORDERS][FETCH] Received ${data.length} records from Supabase`);
 
     return data.map(o => {
       let jobName = o.job_name || 'Untitled Job';
@@ -112,17 +115,18 @@ export async function fetchOrders() {
       };
     });
   } catch (err) {
-    console.error("Error fetching orders from Supabase:", err);
-    return [];
+    console.error("[ORDERS][FETCH] Error fetching orders from Supabase:", err);
+    throw err;
   }
 }
 
 
 export async function saveOrderToSupabase(order) {
-  if (!isSupabaseConfigured()) {
+  if (!isSupabaseConfigured() || !order) {
     return;
   }
   await ensureValidSession();
+  console.log(`[ORDERS][DB WRITE] UPSERT orderId=${order.id}`);
   const parsedTarget = parseStandardDate(order.targetDeliveryDate || order.deliveryDate);
   const targetDateVal = parsedTarget ? parsedTarget.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
 
@@ -169,26 +173,40 @@ export async function saveOrderToSupabase(order) {
 
   const { error } = await supabase.from('orders').upsert(payload, { onConflict: 'id' });
   if (error) {
+    console.error(`[ORDERS][DB WRITE Error] orderId=${order.id}:`, error);
     handleSupabaseError(error, 'orders');
+    throw error;
   }
 }
 
 
 export async function deleteOrderFromSupabase(orderId) {
-  if (!isSupabaseConfigured() || !orderId) return;
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
+  if (!orderId) {
+    throw new Error("Cannot delete order: orderId is missing.");
+  }
   await ensureValidSession();
+  console.log(`[ORDERS][DELETE] Starting delete orderId=${orderId}`);
+
   try {
     // Clean up dependent production records & job datasheets to avoid foreign key violations
     await supabase.from('production_records').delete().eq('order_id', orderId);
     await supabase.from('job_datasheets').delete().eq('job_id', orderId);
   } catch (e) {
-    console.warn('[orders] Linked records deletion notice:', e.message);
+    console.warn('[ORDERS][DELETE] Linked records cleanup notice:', e.message);
   }
+
   const { error } = await supabase.from('orders').delete().eq('id', orderId);
   if (error) {
-    console.error('[Supabase Delete Order Error]:', error.message || error);
+    console.error(`[ORDERS][DELETE] Supabase deletion failed for orderId=${orderId}:`, error);
     handleSupabaseError(error, 'orders');
+    throw error;
   }
+
+  console.log(`[ORDERS][DELETE] Supabase deletion successful orderId=${orderId}`);
+  return { success: true };
 }
 
 // ============================================================================
