@@ -6257,10 +6257,12 @@ export default function InventoryManagement({
             resolvedBarcode = g.itemsBreakdown.map(b => b.barcodeId).filter(Boolean).join(', ');
           } else if (Array.isArray(g.barcodes) && g.barcodes.length > 0) {
             resolvedBarcode = g.barcodes.join(', ');
-          } else if (g.barcodeId) {
+          } else if (g.barcodeId && (g.barcodeId.startsWith('RM-BC') || g.barcodeId.startsWith('CON-BC'))) {
             resolvedBarcode = g.barcodeId;
           } else {
-            resolvedBarcode = g.batchNo || `BAR-GRN-${g.grnNo}`;
+            const isFilmGRN = (g.category || 'Film Substrates') === 'Film Substrates';
+            const specSuffix = isFilmGRN && g.widthMm && g.widthMm !== '-' ? `-${g.micron || '12'}M${g.widthMm}W` : '';
+            resolvedBarcode = `${isFilmGRN ? 'RM-BC' : 'CON-BC'}-${g.grnNo || g.id}${specSuffix}`;
           }
 
           return {
@@ -6299,7 +6301,22 @@ export default function InventoryManagement({
               const oldestDate = getItemInwardDate(sub, safeGrns, inventoryRolls);
               const inDate = sub.inwardDate || sub.receivedDate || sub.created_at || (oldestDate ? oldestDate.toISOString().split('T')[0] : '2026-09-25');
               const rate = parseFloat(sub.unitPrice || sub.purchaseRatePerKg) || itemActualUnitPrice;
-              const barcodeVal = sub.barcodeId || sub.barcode || sub.lastBatch || generateBarcodeId('RM-BC');
+              
+              const isFilmSub = (sub.category || 'Film Substrates') === 'Film Substrates';
+              const filmPrefix = isFilmSub ? 'RM-BC' : 'CON-BC';
+              let barcodeVal = '';
+              if (customBarcodesMap[txId]) {
+                barcodeVal = customBarcodesMap[txId];
+              } else if (sub.barcodeId && (sub.barcodeId.startsWith('RM-BC') || sub.barcodeId.startsWith('CON-BC'))) {
+                barcodeVal = sub.barcodeId;
+              } else if (sub.barcode && (sub.barcode.startsWith('RM-BC') || sub.barcode.startsWith('CON-BC'))) {
+                barcodeVal = sub.barcode;
+              } else {
+                const specSuffix = isFilmSub && sub.widthMm && sub.widthMm !== '-' 
+                  ? `-${sub.micron || '12'}M${sub.widthMm}W` 
+                  : '';
+                barcodeVal = `${filmPrefix}-${sub.id}${specSuffix}`;
+              }
               
               inwardTxLines.push({
                 txId,
