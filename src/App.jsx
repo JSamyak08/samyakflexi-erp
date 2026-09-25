@@ -2643,33 +2643,32 @@ export default function App() {
 
           {/* Top Bar Active User & Logout Controls (ACCOUNT / ROLE SWITCHER) */}
           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-            {/* Database Health Badge */}
+            {/* Database Health Badge - Concise Icon & Status Dot */}
             <div 
               onClick={() => runDatabaseHealthCheck()}
               style={{ 
                 display: 'flex', 
                 alignItems: 'center', 
+                justifyContent: 'center',
                 gap: '6px', 
-                padding: '6px 12px', 
+                padding: '6px 10px', 
                 borderRadius: '20px', 
-                fontSize: '0.8rem', 
-                fontWeight: '700',
                 cursor: 'pointer',
                 background: databaseStatus === 'connected' ? '#ecfdf5' : (databaseStatus === 'checking' ? '#fef3c7' : '#fef2f2'),
                 color: databaseStatus === 'connected' ? '#047857' : (databaseStatus === 'checking' ? '#b45309' : '#dc2626'),
                 border: `1px solid ${databaseStatus === 'connected' ? '#a7f3d0' : (databaseStatus === 'checking' ? '#fde68a' : '#fecaca')}`,
                 transition: 'all 0.2s ease'
               }}
-              title={`Supabase PostgreSQL: ${databaseStatus}. Click to test connection.`}
+              title={`Database Status: ${databaseStatus.toUpperCase()} (Supabase PostgreSQL). Click to test connection.`}
             >
+              <Database size={16} style={{ color: databaseStatus === 'connected' ? '#059669' : (databaseStatus === 'checking' ? '#d97706' : '#dc2626') }} />
               <span style={{
-                width: '8px',
-                height: '8px',
+                width: '7px',
+                height: '7px',
                 borderRadius: '50%',
                 backgroundColor: databaseStatus === 'connected' ? '#10b981' : (databaseStatus === 'checking' ? '#f59e0b' : '#ef4444'),
                 boxShadow: databaseStatus === 'connected' ? '0 0 6px #10b981' : 'none'
               }} />
-              <span>{databaseStatus === 'connected' ? 'DB Connected' : (databaseStatus === 'checking' ? 'Checking DB...' : 'DB Disconnected')}</span>
             </div>
 
             <WeighingScaleWidget />
