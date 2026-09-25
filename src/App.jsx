@@ -36,7 +36,8 @@ import {
   ArrowRight,
   ScanBarcode,
   Coins,
-  Clock
+  Clock,
+  RefreshCw
 } from 'lucide-react';
 
 import AuthScreen from './components/AuthScreen';
@@ -65,7 +66,7 @@ import UniversalBarcodeScannerModal from './components/UniversalBarcodeScannerMo
 import Preloader from './components/Preloader';
 import { fetchAuditLogsFromSupabase, saveAuditLogToSupabase, createAuditEntry, pruneOldAuditLogs } from './services/auditLogger';
 import { getRouteFromUrl, getTabFromUrl, pushSlugState } from './utils/slugRouter';
-import { isSupabaseConfigured } from './services/supabaseClient';
+import { isSupabaseConfigured, checkSupabaseConnection } from './services/supabaseClient';
 import { 
   fetchOrders, saveOrderToSupabase, deleteOrderFromSupabase,
   fetchVendors, saveVendorToSupabase, deleteVendorFromSupabase,
@@ -169,43 +170,47 @@ function stripDummyRecords(arr, idFields = ['id', 'orderId', 'jobId']) {
  * One-time boot cleanup: purges dummy IDs from ALL localStorage keys.
  * Runs synchronously before any React state initializes.
  */
-(function purgeDummyDataFromStorage() {
+// ============================================================================
+// PERMANENT BOOT-TIME PURGE: Disable all local data persistence for transactional ERP data.
+// Strip all legacy cached transactional keys from localStorage on boot.
+// ============================================================================
+(function purgeTransactionalLocalStorage() {
   if (typeof window === 'undefined' || !window.localStorage) return;
-  try {
-    localStorage.removeItem('samyak_erp_orders');
-    localStorage.removeItem('orders');
-  } catch (e) { /* ignore */ }
-  const keysToClean = [
-    'samyak_erp_production_records',
-    'samyak_erp_production_schedules',
-    'samyak_erp_inventory',
-    'samyak_erp_grns',
-    'samyak_erp_vendors',
-    'samyak_erp_clients',
-    'samyak_erp_job_masters',
-    'samyak_erp_printing_machines',
-    'samyak_erp_cylinders',
-    'samyak_erp_inventory_rolls',
-    'samyak_erp_dispatch_shipments',
-    'samyak_erp_job_datasheets',
-    'samyak_erp_employees',
-    'samyak_erp_employee_attendance',
-    'samyak_erp_salary_advances',
-    'samyak_erp_salary_payments',
-    'samyak_erp_sfg_goods'
+  const keysToRemove = [
+    'samyak_erp_orders', 'orders',
+    'samyak_erp_vendors', 'vendors',
+    'samyak_erp_clients', 'clients',
+    'samyak_erp_inventory', 'inventory',
+    'samyak_erp_grns', 'grns',
+    'samyak_erp_cylinders', 'cylinders',
+    'samyak_erp_production_records', 'production_records',
+    'samyak_erp_production_schedules', 'production_schedules',
+    'samyak_erp_job_datasheets', 'job_datasheets',
+    'samyak_erp_inventory_rolls', 'inventory_rolls',
+    'samyak_erp_dispatch_shipments', 'dispatch_shipments',
+    'samyak_erp_printing_machines', 'printing_machines',
+    'samyak_erp_job_masters', 'job_masters',
+    'samyak_erp_sales_quotations', 'sales_quotations',
+    'samyak_erp_inks', 'inks',
+    'samyak_erp_employees', 'employees',
+    'samyak_erp_employee_attendance', 'employee_attendance',
+    'samyak_erp_salary_advances', 'salary_advances',
+    'samyak_erp_salary_payments', 'salary_payments',
+    'samyak_erp_sfg_goods', 'sfg_goods',
+    'samyak_erp_delivery_challans', 'delivery_challans',
+    'samyak_erp_certificate_of_analyses', 'certificate_of_analyses',
+    'samyak_erp_material_indents', 'material_indents',
+    'samyak_erp_machine_issues', 'machine_issues',
+    'samyak_erp_consumables', 'consumables',
+    'samyak_erp_store_issue_transactions', 'store_issue_transactions',
+    'samyak_erp_issued_pos',
+    'samyak_erp_custom_barcodes',
+    'samyak_erp_stock_adjustments',
+    'samyak_po_discrepancy_resolutions',
+    'samyak_erp_scrap_disposals'
   ];
-  for (const key of keysToClean) {
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) continue;
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) continue;
-      const cleaned = parsed.filter(item => !isDummyRecord(item));
-      if (cleaned.length !== parsed.length) {
-        localStorage.setItem(key, JSON.stringify(cleaned));
-        console.log(`[Boot Purge] Removed ${parsed.length - cleaned.length} dummy record(s) from ${key}`);
-      }
-    } catch (e) { /* ignore */ }
+  for (const k of keysToRemove) {
+    try { localStorage.removeItem(k); } catch (e) {}
   }
 })();
 
@@ -215,9 +220,43 @@ initSafeStorage();
 
 
 export default function App() {
-  // Shared Global State with dual-persistence (Supabase Authoritative + localStorage fallback)
   const isSupaConfigured = isSupabaseConfigured();
   const [isSupaActive, setIsSupaActive] = useState(isSupaConfigured);
+
+  // Database Connection Health State (Supabase PostgreSQL is sole source of truth)
+  const [databaseStatus, setDatabaseStatus] = useState('checking'); // 'checking' | 'connected' | 'disconnected'
+  const [databaseErrorMessage, setDatabaseErrorMessage] = useState(null);
+
+  const runDatabaseHealthCheck = async () => {
+    try {
+      const res = await checkSupabaseConnection();
+      if (res && res.connected) {
+        setDatabaseStatus('connected');
+        setDatabaseErrorMessage(null);
+      } else {
+        setDatabaseStatus('disconnected');
+        setDatabaseErrorMessage(res?.message || res?.error || 'Supabase PostgreSQL database is unreachable. Read-only mode activated.');
+      }
+    } catch (err) {
+      setDatabaseStatus('disconnected');
+      setDatabaseErrorMessage(err.message || 'Database health check failed.');
+    }
+  };
+
+  useEffect(() => {
+    runDatabaseHealthCheck();
+    const interval = setInterval(runDatabaseHealthCheck, 15000); // 15-second polling interval
+    return () => clearInterval(interval);
+  }, []);
+
+  // Guard function to enforce active DB connection before any transactional write
+  const requireDatabaseConnection = (actionName = 'perform this action') => {
+    if (databaseStatus !== 'connected') {
+      const msg = `Database connection is lost/disconnected. ERP is currently in Database Disconnected / Read-Only Mode. Cannot ${actionName}.`;
+      alert(msg);
+      throw new Error(msg);
+    }
+  };
 
   // Authentication & Active User Session State
   const [currentUser, setCurrentUser] = useState(null);
@@ -273,32 +312,8 @@ export default function App() {
     } catch (e) { return false; }
   };
 
-  // Helper to load state safely from localStorage or fallback.
-  // SECURITY GUARD: Allow reading cached state if user is authenticated or has a active verified saved session.
-  const loadLocalState = (key, fallbackDefault) => {
-    if (!isAuthenticated && !hasSavedSession() && key !== 'role_permissions') {
-      return fallbackDefault;
-    }
-    try {
-      const storageKey = key.startsWith('samyak_erp_') ? key : `samyak_erp_${key}`;
-      const parsed = safeLocalStorageGet(storageKey, null);
-      if (parsed !== null && parsed !== undefined) {
-        if (Array.isArray(fallbackDefault)) {
-          if (Array.isArray(parsed)) return parsed;
-        } else if (typeof fallbackDefault === 'object' && fallbackDefault !== null) {
-          if (typeof parsed === 'object' && parsed !== null) return parsed;
-        } else {
-          return parsed;
-        }
-      }
-    } catch (e) {
-      console.warn(`Failed to parse localStorage key ${key}`, e);
-    }
-    return fallbackDefault;
-  };
-
   // SUPABASE DATABASE IS THE SINGLE SOURCE OF TRUTH.
-  // Initial state hydrates from saved session cache on launch so no data vanishes on refresh.
+  // All transactional entity states initialize to empty arrays []. Zero local storage caching or offline fallback.
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [ordersError, setOrdersError] = useState(null);
@@ -306,34 +321,34 @@ export default function App() {
   const deletedOrderIdsRef = useRef(new Set());
   const ordersFetchVersion = useRef(0);
 
-  const [vendors, setVendors] = useState(() => stripDummyRecords(loadLocalState('vendors', [])));
-  const [inventory, setInventory] = useState(() => stripDummyRecords(loadLocalState('inventory', [])).map(sanitizeInventoryItem));
-  const [grns, setGrns] = useState(() => stripDummyRecords(loadLocalState('grns', [])).map(sanitizeGRN));
-  const [users, setUsers] = useState(() => loadLocalState('users', []));
-  const [jobDataSheets, setJobDataSheets] = useState(() => stripDummyRecords(loadLocalState('job_datasheets', [])));
-  const [cylinders, setCylinders] = useState(() => stripDummyRecords(loadLocalState('cylinders', [])));
-  const [productionRecords, setProductionRecords] = useState(() => stripDummyRecords(loadLocalState('production_records', [])));
-  const [inventoryRolls, setInventoryRolls] = useState(() => stripDummyRecords(loadLocalState('inventory_rolls', [])));
-  const [dispatchShipments, setDispatchShipments] = useState(() => stripDummyRecords(loadLocalState('dispatch_shipments', [])));
-  const [deliveryChallans, setDeliveryChallans] = useState(() => stripDummyRecords(loadLocalState('delivery_challans', [])));
-  const [certificateOfAnalyses, setCertificateOfAnalyses] = useState(() => stripDummyRecords(loadLocalState('certificate_of_analyses', [])));
-  const [machines, setMachines] = useState(() => stripDummyRecords(loadLocalState('printing_machines', [])));
-  const [schedules, setSchedules] = useState(() => stripDummyRecords(loadLocalState('production_schedules', [])));
-  const [clients, setClients] = useState(() => stripDummyRecords(loadLocalState('clients', [])));
-  const [jobMasters, setJobMasters] = useState(() => stripDummyRecords(loadLocalState('job_masters', [])));
-  const [inks, setInks] = useState(() => loadLocalState('inks', []));
+  const [vendors, setVendors] = useState([]);
+  const [inventory, setInventory] = useState([]);
+  const [grns, setGrns] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [jobDataSheets, setJobDataSheets] = useState([]);
+  const [cylinders, setCylinders] = useState([]);
+  const [productionRecords, setProductionRecords] = useState([]);
+  const [inventoryRolls, setInventoryRolls] = useState([]);
+  const [dispatchShipments, setDispatchShipments] = useState([]);
+  const [deliveryChallans, setDeliveryChallans] = useState([]);
+  const [certificateOfAnalyses, setCertificateOfAnalyses] = useState([]);
+  const [machines, setMachines] = useState([]);
+  const [schedules, setSchedules] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [jobMasters, setJobMasters] = useState([]);
+  const [inks, setInks] = useState([]);
   const [selectedJobMasterForPunch, setSelectedJobMasterForPunch] = useState(null);
-  const [rolePermissions, setRolePermissions] = useState(() => loadLocalState('role_permissions', DEFAULT_ROLE_PERMISSIONS));
-  const [indents, setIndents] = useState(() => stripDummyRecords(loadLocalState('material_indents', [])));
-  const [machineIssues, setMachineIssues] = useState(() => stripDummyRecords(loadLocalState('machine_issues', [])));
-  const [consumables, setConsumables] = useState(() => stripDummyRecords(loadLocalState('consumables', [])));
-  const [storeIssueTransactions, setStoreIssueTransactions] = useState(() => stripDummyRecords(loadLocalState('store_issue_transactions', [])));
-  const [auditLogs, setAuditLogs] = useState(() => pruneOldAuditLogs(loadLocalState('audit_logs', [])));
-  const [employees, setEmployees] = useState(() => stripDummyRecords(loadLocalState('employees', [])));
-  const [employeeAttendance, setEmployeeAttendance] = useState(() => stripDummyRecords(loadLocalState('employee_attendance', [])));
-  const [salaryAdvances, setSalaryAdvances] = useState(() => stripDummyRecords(loadLocalState('salary_advances', [])));
-  const [salaryPayments, setSalaryPayments] = useState(() => stripDummyRecords(loadLocalState('salary_payments', [])));
-  const [sfgGoods, setSfgGoods] = useState(() => stripDummyRecords(loadLocalState('sfg_goods', [])));
+  const [rolePermissions, setRolePermissions] = useState(DEFAULT_ROLE_PERMISSIONS);
+  const [indents, setIndents] = useState([]);
+  const [machineIssues, setMachineIssues] = useState([]);
+  const [consumables, setConsumables] = useState([]);
+  const [storeIssueTransactions, setStoreIssueTransactions] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [employeeAttendance, setEmployeeAttendance] = useState([]);
+  const [salaryAdvances, setSalaryAdvances] = useState([]);
+  const [salaryPayments, setSalaryPayments] = useState([]);
+  const [sfgGoods, setSfgGoods] = useState([]);
 
 
   const logAudit = async (actionType, moduleName, details, targetId = null) => {
@@ -400,35 +415,6 @@ export default function App() {
     window.addEventListener('supabase-credentials-changed', handleCredentialsChanged);
     return () => window.removeEventListener('supabase-credentials-changed', handleCredentialsChanged);
   }, []);
-
-  // Sync non-transactional reference state to safe storage (IndexedDB + sanitized localStorage)
-  // ORDERS ARE EXCLUDED: Supabase is single source of truth for orders.
-  useEffect(() => { safeLocalStorageSet('samyak_erp_vendors', vendors); }, [vendors]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_inventory', inventory); }, [inventory]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_grns', grns); }, [grns]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_users', users); }, [users]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_job_datasheets', jobDataSheets); }, [jobDataSheets]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_cylinders', cylinders); }, [cylinders]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_production_records', productionRecords); }, [productionRecords]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_inventory_rolls', inventoryRolls); }, [inventoryRolls]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_dispatch_shipments', dispatchShipments); }, [dispatchShipments]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_delivery_challans', deliveryChallans); }, [deliveryChallans]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_certificate_of_analyses', certificateOfAnalyses); }, [certificateOfAnalyses]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_printing_machines', machines); }, [machines]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_production_schedules', schedules); }, [schedules]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_clients', clients); }, [clients]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_job_masters', jobMasters); }, [jobMasters]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_inks', inks); }, [inks]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_role_permissions', rolePermissions); }, [rolePermissions]);
-
-  useEffect(() => { safeLocalStorageSet('samyak_erp_material_indents', indents); }, [indents]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_machine_issues', machineIssues); }, [machineIssues]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_consumables', consumables); }, [consumables]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_store_issue_transactions', storeIssueTransactions); }, [storeIssueTransactions]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_employees', employees); }, [employees]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_employee_attendance', employeeAttendance); }, [employeeAttendance]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_salary_advances', salaryAdvances); }, [salaryAdvances]);
-  useEffect(() => { safeLocalStorageSet('samyak_erp_sfg_goods', sfgGoods); }, [sfgGoods]);
 
   // IndexedDB hydration: DO NOT hydrate orders from IndexedDB.
   useEffect(() => {
@@ -560,21 +546,18 @@ export default function App() {
       if (Array.isArray(supaOrders)) {
         const cleanSupa = stripDummyRecords(supaOrders);
         setOrders(cleanSupa);
-        safeLocalStorageSet('samyak_erp_orders', cleanSupa);
         supaOrders.filter(isDummyRecord).forEach(d => deleteOrderFromSupabase(d.id).catch(console.warn));
       }
 
       if (Array.isArray(supaVendors)) {
         const cleanSupa = stripDummyRecords(supaVendors);
         setVendors(cleanSupa);
-        safeLocalStorageSet('samyak_erp_vendors', cleanSupa);
         supaVendors.filter(isDummyRecord).forEach(d => deleteVendorFromSupabase(d.id).catch(console.warn));
       }
 
       if (Array.isArray(supaInv)) {
         const cleanSupa = stripDummyRecords(supaInv).map(sanitizeInventoryItem);
         setInventory(cleanSupa);
-        safeLocalStorageSet('samyak_erp_inventory', cleanSupa);
         cleanSupa.forEach(item => {
           if (item && item.itemName && (item.itemName.includes('|||') || item.itemName.startsWith('{'))) {
             saveInventoryItemToSupabase(sanitizeInventoryItem(item)).catch(console.warn);
@@ -586,33 +569,28 @@ export default function App() {
       if (Array.isArray(supaGRNs)) {
         const cleanSupa = stripDummyRecords(supaGRNs).map(sanitizeGRN);
         setGrns(cleanSupa);
-        safeLocalStorageSet('samyak_erp_grns', cleanSupa);
         supaGRNs.filter(isDummyRecord).forEach(d => deleteGRNFromSupabase(d.id || d.grnNo).catch(console.warn));
       }
 
       if (Array.isArray(supaCyls)) {
         const cleanSupa = stripDummyRecords(supaCyls);
         setCylinders(cleanSupa);
-        safeLocalStorageSet('samyak_erp_cylinders', cleanSupa);
         supaCyls.filter(isDummyRecord).forEach(d => deleteCylinderFromSupabase(d.id).catch(console.warn));
       }
 
       if (Array.isArray(supaProd)) {
         const cleanSupa = stripDummyRecords(supaProd);
         setProductionRecords(cleanSupa);
-        safeLocalStorageSet('samyak_erp_production_records', cleanSupa);
         supaProd.filter(isDummyRecord).forEach(d => deleteProductionRecordFromSupabase(d.id).catch(console.warn));
       }
 
       if (Array.isArray(supaUsers) && supaUsers.length > 0) {
         setUsers(supaUsers);
-        safeLocalStorageSet('samyak_erp_users', supaUsers);
       }
 
       if (Array.isArray(supaSheets)) {
         const cleanSupa = stripDummyRecords(supaSheets);
         setJobDataSheets(cleanSupa);
-        safeLocalStorageSet('samyak_erp_job_datasheets', cleanSupa);
         supaSheets.filter(isDummyRecord).forEach(d => deleteJobDataSheetFromSupabase(d.id).catch(console.warn));
       }
 
@@ -623,33 +601,28 @@ export default function App() {
       if (Array.isArray(supaSchedules)) {
         const cleanSupa = stripDummyRecords(supaSchedules);
         setSchedules(cleanSupa);
-        safeLocalStorageSet('samyak_erp_production_schedules', cleanSupa);
         supaSchedules.filter(isDummyRecord).forEach(d => deleteProductionScheduleFromSupabase(d.id).catch(console.warn));
       }
 
       if (Array.isArray(supaClients)) {
         const cleanSupa = stripDummyRecords(supaClients);
         setClients(cleanSupa);
-        safeLocalStorageSet('samyak_erp_clients', cleanSupa);
         supaClients.filter(isDummyRecord).forEach(d => deleteClientFromSupabase(d.id).catch(console.warn));
       }
 
       if (Array.isArray(supaJobMasters)) {
         const cleanSupa = stripDummyRecords(supaJobMasters);
         setJobMasters(cleanSupa);
-        safeLocalStorageSet('samyak_erp_job_masters', cleanSupa);
         supaJobMasters.filter(isDummyRecord).forEach(d => deleteJobMasterFromSupabase(d.id).catch(console.warn));
       }
 
       if (Array.isArray(supaInks)) {
         setInks(supaInks);
-        safeLocalStorageSet('samyak_erp_inks', supaInks);
       }
 
       if (Array.isArray(supaEmployees)) {
         const cleanSupa = stripDummyRecords(supaEmployees);
         setEmployees(cleanSupa);
-        safeLocalStorageSet('samyak_erp_employees', cleanSupa);
         supaEmployees.filter(isDummyRecord).forEach(d => deleteEmployeeFromSupabase(d.id).catch(console.warn));
       }
 
@@ -659,9 +632,7 @@ export default function App() {
           const map = new Map();
           cleanSupa.forEach(a => { if (a && a.id && !isDummyRecord(a)) map.set(a.id, a); });
           (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
-          const merged = Array.from(map.values());
-          safeLocalStorageSet('samyak_erp_employee_attendance', merged);
-          return merged;
+          return Array.from(map.values());
         });
       }
 
@@ -671,9 +642,7 @@ export default function App() {
           const map = new Map();
           cleanSupa.forEach(adv => { if (adv && adv.id && !isDummyRecord(adv)) map.set(adv.id, adv); });
           (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
-          const merged = Array.from(map.values());
-          safeLocalStorageSet('samyak_erp_salary_advances', merged);
-          return merged;
+          return Array.from(map.values());
         });
       }
 
@@ -683,15 +652,12 @@ export default function App() {
           const map = new Map();
           cleanSupa.forEach(pay => { if (pay && pay.id && !isDummyRecord(pay)) map.set(pay.id, pay); });
           (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
-          const merged = Array.from(map.values());
-          safeLocalStorageSet('samyak_erp_salary_payments', merged);
-          return merged;
+          return Array.from(map.values());
         });
       }
 
       if (supaRolePerms && typeof supaRolePerms === 'object' && Object.keys(supaRolePerms).length > 0) {
         setRolePermissions(supaRolePerms);
-        safeLocalStorageSet('samyak_erp_role_permissions', supaRolePerms);
       }
     }
 
@@ -799,7 +765,8 @@ export default function App() {
     };
   }, [isSupaActive, isAuthReady, isAuthenticated]);
 
-  const handleSaveMachine = (newMachine) => {
+  const handleSaveMachine = async (newMachine) => {
+    requireDatabaseConnection('save printing machine');
     const typePrefixMap = {
       Rotogravure: 'PRINT', Flexographic: 'PRINT', Digital: 'PRINT',
       Laminator: 'LAM', Slitter: 'SLT', Pouching: 'PCH',
@@ -810,21 +777,25 @@ export default function App() {
       ...newMachine,
       id: newMachine.id || `MAC-${prefix}-${Date.now().toString(36).toUpperCase().slice(-4)}`
     };
+    await savePrintingMachineToSupabase(machineWithId);
     setMachines(prev => [machineWithId, ...prev.filter(m => m.id !== machineWithId.id)]);
-    savePrintingMachineToSupabase(machineWithId);
   };
 
-  const handleUpdateMachine = (updatedMachine) => {
+  const handleUpdateMachine = async (updatedMachine) => {
+    requireDatabaseConnection('update printing machine');
+    await savePrintingMachineToSupabase(updatedMachine);
     setMachines(prev => prev.map(m => m.id === updatedMachine.id ? updatedMachine : m));
-    savePrintingMachineToSupabase(updatedMachine);
   };
 
-  const handleDeleteMachine = (machineId) => {
+  const handleDeleteMachine = async (machineId) => {
+    requireDatabaseConnection('delete printing machine');
+    await deletePrintingMachineFromSupabase(machineId);
     setMachines(prev => prev.filter(m => m.id !== machineId));
-    deletePrintingMachineFromSupabase(machineId);
   };
 
-  const handleSaveSchedule = (newSchedule) => {
+  const handleSaveSchedule = async (newSchedule) => {
+    requireDatabaseConnection('save production schedule');
+    await saveProductionScheduleToSupabase(newSchedule);
     setSchedules(prev => {
       const idx = prev.findIndex(s => s.id === newSchedule.id || s.orderId === newSchedule.orderId);
       if (idx >= 0) {
@@ -834,12 +805,12 @@ export default function App() {
       }
       return [newSchedule, ...prev];
     });
-    saveProductionScheduleToSupabase(newSchedule);
   };
 
-  const handleDeleteSchedule = (scheduleId) => {
+  const handleDeleteSchedule = async (scheduleId) => {
+    requireDatabaseConnection('delete production schedule');
+    await deleteProductionScheduleFromSupabase(scheduleId);
     setSchedules(prev => prev.filter(s => s.id !== scheduleId));
-    deleteProductionScheduleFromSupabase(scheduleId);
   };
 
   const usersRef = useRef(users);
@@ -1103,9 +1074,11 @@ export default function App() {
 
 
   // Handlers for Production Records
-  const handleSaveProductionRecord = (newRecord) => {
+  const handleSaveProductionRecord = async (newRecord) => {
+    requireDatabaseConnection('save production record');
+    await saveProductionRecordToSupabase(newRecord);
+
     setProductionRecords(prev => [newRecord, ...prev.filter(r => r.orderId !== newRecord.orderId)]);
-    saveProductionRecordToSupabase(newRecord);
     logAudit('CREATE', 'Production Records', `Logged production record ${newRecord.id} for "${newRecord.jobName}" (Usable: ${newRecord.netUsableKg} kg, Wastage: ${newRecord.totalWastageKg} kg)`, newRecord.id);
 
     // Update Inventory available stock for materials consumed
@@ -1155,24 +1128,23 @@ export default function App() {
     }
   };
 
-  const handleApproveProductionRecord = (recordId, adminName) => {
-    setProductionRecords(prev => prev.map(r => {
-      if (r.id === recordId) {
-        const updated = {
-          ...r,
-          status: 'Approved by Admin',
-          approvedBy: adminName,
-          approvalDate: new Date().toLocaleString()
-        };
-        saveProductionRecordToSupabase(updated);
-        logAudit('UPDATE', 'Production Records', `Plant manager approval granted for production record ${recordId} by ${adminName}`, recordId);
-        return updated;
-      }
-      return r;
-    }));
+  const handleApproveProductionRecord = async (recordId, adminName) => {
+    requireDatabaseConnection('approve production record');
+    const existing = (productionRecords || []).find(r => r.id === recordId);
+    if (!existing) return;
+    const updated = {
+      ...existing,
+      status: 'Approved by Admin',
+      approvedBy: adminName,
+      approvalDate: new Date().toLocaleString()
+    };
+    await saveProductionRecordToSupabase(updated);
+    setProductionRecords(prev => prev.map(r => r.id === recordId ? updated : r));
+    logAudit('UPDATE', 'Production Records', `Plant manager approval granted for production record ${recordId} by ${adminName}`, recordId);
   };
 
   const handleStoreIssueReturn = async ({ item, issueType, qty, jobName, user, notes, barcode, unitPrice, batchNo, vendorName, grnNo }) => {
+    requireDatabaseConnection('store issue/return');
     if (!item || !qty || qty <= 0 || !jobName) return;
 
     const unitStr = item.unit || 'Kg';
@@ -1201,13 +1173,13 @@ export default function App() {
       }
       return i;
     });
-    setInventory(updatedInv);
     const updatedItem = updatedInv.find(i => i.id === item.id);
     if (updatedItem) {
-      saveInventoryItemToSupabase(updatedItem).catch(console.warn);
+      await saveInventoryItemToSupabase(updatedItem);
     }
+    setInventory(updatedInv);
 
-    // 2. Record Transaction in storeIssueTransactions with exact batch and purchase rate
+    // 2. Record Transaction in storeIssueTransactions
     const newTx = {
       id: `ISS-${Date.now()}`,
       itemId: item.id,
@@ -1217,7 +1189,7 @@ export default function App() {
       micron: item.micron || '-',
       widthMm: item.widthMm || '-',
       category: item.category || 'Film Substrates',
-      issueType: issueType, // 'issue' | 'return'
+      issueType: issueType,
       jobName: jobName,
       qtyKg: qty,
       unit: unitStr,
@@ -1235,10 +1207,8 @@ export default function App() {
     };
 
     const newTxList = [newTx, ...storeIssueTransactions];
+    await saveSystemSetting('store_issue_transactions', newTxList);
     setStoreIssueTransactions(newTxList);
-    try {
-      await saveSystemSetting('store_issue_transactions', newTxList);
-    } catch (e) {}
 
     // 3. Update / Earmark the Production Record of this Job
     const targetOrder = (orders || []).find(o => 
@@ -1247,117 +1217,116 @@ export default function App() {
     const orderId = targetOrder ? targetOrder.id : jobName;
     const clientName = targetOrder ? targetOrder.clientName : '';
 
+    const existingIdx = (productionRecords || []).findIndex(r => 
+      r.orderId === orderId || (r.jobName && r.jobName.trim().toLowerCase() === jobName.trim().toLowerCase())
+    );
+
+    let targetRecord;
+    if (existingIdx >= 0) {
+      targetRecord = { ...productionRecords[existingIdx] };
+    } else {
+      targetRecord = {
+        id: `REC-${Date.now()}`,
+        orderId: orderId,
+        jobName: jobName,
+        clientName: clientName,
+        dateFilled: new Date().toISOString().split('T')[0],
+        materialsList: [],
+        qtyFirstPassL1: 0,
+        qtySecondPassL2: 0,
+        qtyInspection: 0,
+        qtySlitting: 0,
+        qtyDispatch: 0,
+        totalProductionQtyKg: 0,
+        totalMaterialCostRs: 0,
+        processingCostPerKg: 25,
+        totalProcessingCostRs: 0,
+        printingPlainSettingWastageKg: 0,
+        printingWastageKg: 0,
+        laminationPlainSubstrateWastageKg: 0,
+        printedWastageKg: 0,
+        laminateWastageKg: 0,
+        trimWastageKg: 0,
+        totalScrapQtyKg: 0,
+        overallScrapPctOfOutput: 0,
+        overallScrapPctOfDispatch: 0,
+        finalProductionCostRs: 0,
+        status: "In Progress",
+        filledBy: user || currentUser?.name || "Store Issue Auto-Sync",
+        approvedBy: "",
+        approvalDate: "",
+        notes: `Material issued from store on ${new Date().toLocaleDateString()}`
+      };
+    }
+
+    let currentMaterials = Array.isArray(targetRecord.materialsList) ? [...targetRecord.materialsList] : [];
+    const matIdx = currentMaterials.findIndex(m => 
+      (m.itemId && m.itemId === item.id) ||
+      (m.itemName && m.itemName.toLowerCase().trim() === itemNameStr.toLowerCase().trim()) ||
+      (m.filmType && m.filmType.toLowerCase().trim() === (item.filmType || item.itemName || '').toLowerCase().trim())
+    );
+
+    const itemRate = rateVal > 0 ? rateVal : (parseFloat(item.unitPrice || item.purchaseRatePerKg) || 0);
+
+    if (matIdx >= 0) {
+      const existingMat = currentMaterials[matIdx];
+      const currIssued = parseFloat(existingMat.issueQtyKg) || 0;
+      const currReturned = parseFloat(existingMat.returnQtyKg) || 0;
+
+      const newIssued = issueType === 'issue' ? currIssued + qty : currIssued;
+      const newReturned = issueType === 'return' ? currReturned + qty : currReturned;
+      const netConsumed = Math.max(0, newIssued - newReturned);
+      const matRate = itemRate > 0 ? itemRate : (parseFloat(existingMat.unitPricePerKg) || 0);
+
+      currentMaterials[matIdx] = {
+        ...existingMat,
+        itemId: item.id,
+        itemCode: item.itemCode || existingMat.itemCode,
+        itemName: itemNameStr,
+        unit: unitStr,
+        issueQtyKg: newIssued,
+        returnQtyKg: newReturned,
+        netConsumedQtyKg: netConsumed,
+        unitPricePerKg: matRate,
+        totalMaterialCost: netConsumed * matRate,
+        batchNo: batchNo || existingMat.batchNo || item.lastBatch || '',
+        vendorName: vendorName || existingMat.vendorName || item.lastVendor || ''
+      };
+    } else {
+      const issuedQty = issueType === 'issue' ? qty : 0;
+      const returnedQty = issueType === 'return' ? qty : 0;
+      const netConsumed = Math.max(0, issuedQty - returnedQty);
+
+      currentMaterials.push({
+        id: `mat-${Date.now()}-${currentMaterials.length + 1}`,
+        itemId: item.id,
+        itemCode: item.itemCode || item.id,
+        itemName: itemNameStr,
+        filmType: item.itemName || item.filmType || item.category || 'Material',
+        category: item.category || 'Raw Material',
+        micron: item.micron || '-',
+        widthMm: item.widthMm || '-',
+        unit: unitStr,
+        barcode: barcode || batchNo || item.lastBatch || `BAR-ISS-${item.id}`,
+        issueQtyKg: issuedQty,
+        returnQtyKg: returnedQty,
+        netConsumedQtyKg: netConsumed,
+        unitPricePerKg: itemRate,
+        totalMaterialCost: netConsumed * itemRate,
+        batchNo: batchNo || item.lastBatch || '',
+        vendorName: vendorName || item.lastVendor || '',
+        jobMasterFilmType: item.filmType || item.itemName,
+        jobMasterMicron: item.micron && item.micron !== '-' ? Number(item.micron) : 0,
+        jobMasterWidthMm: item.widthMm && item.widthMm !== '-' ? Number(item.widthMm) : 0
+      });
+    }
+
+    targetRecord.materialsList = currentMaterials;
+    targetRecord.totalMaterialCostRs = currentMaterials.reduce((sum, m) => sum + (parseFloat(m.totalMaterialCost) || 0), 0);
+    targetRecord.finalProductionCostRs = (parseFloat(targetRecord.totalProcessingCostRs) || 0) + targetRecord.totalMaterialCostRs;
+
+    await saveProductionRecordToSupabase(targetRecord);
     setProductionRecords(prevRecords => {
-      const existingIdx = prevRecords.findIndex(r => 
-        r.orderId === orderId || (r.jobName && r.jobName.trim().toLowerCase() === jobName.trim().toLowerCase())
-      );
-
-      let targetRecord;
-      if (existingIdx >= 0) {
-        targetRecord = { ...prevRecords[existingIdx] };
-      } else {
-        targetRecord = {
-          id: `REC-${Date.now()}`,
-          orderId: orderId,
-          jobName: jobName,
-          clientName: clientName,
-          dateFilled: new Date().toISOString().split('T')[0],
-          materialsList: [],
-          qtyFirstPassL1: 0,
-          qtySecondPassL2: 0,
-          qtyInspection: 0,
-          qtySlitting: 0,
-          qtyDispatch: 0,
-          totalProductionQtyKg: 0,
-          totalMaterialCostRs: 0,
-          processingCostPerKg: 25,
-          totalProcessingCostRs: 0,
-          printingPlainSettingWastageKg: 0,
-          printingWastageKg: 0,
-          laminationPlainSubstrateWastageKg: 0,
-          printedWastageKg: 0,
-          laminateWastageKg: 0,
-          trimWastageKg: 0,
-          totalScrapQtyKg: 0,
-          overallScrapPctOfOutput: 0,
-          overallScrapPctOfDispatch: 0,
-          finalProductionCostRs: 0,
-          status: "In Progress",
-          filledBy: user || currentUser?.name || "Store Issue Auto-Sync",
-          approvedBy: "",
-          approvalDate: "",
-          notes: `Material issued from store on ${new Date().toLocaleDateString()}`
-        };
-      }
-
-      let currentMaterials = Array.isArray(targetRecord.materialsList) ? [...targetRecord.materialsList] : [];
-      const matIdx = currentMaterials.findIndex(m => 
-        (m.itemId && m.itemId === item.id) ||
-        (m.itemName && m.itemName.toLowerCase().trim() === itemNameStr.toLowerCase().trim()) ||
-        (m.filmType && m.filmType.toLowerCase().trim() === (item.filmType || item.itemName || '').toLowerCase().trim())
-      );
-
-      const itemRate = rateVal > 0 ? rateVal : (parseFloat(item.unitPrice || item.purchaseRatePerKg) || 0);
-
-      if (matIdx >= 0) {
-        const existingMat = currentMaterials[matIdx];
-        const currIssued = parseFloat(existingMat.issueQtyKg) || 0;
-        const currReturned = parseFloat(existingMat.returnQtyKg) || 0;
-
-        const newIssued = issueType === 'issue' ? currIssued + qty : currIssued;
-        const newReturned = issueType === 'return' ? currReturned + qty : currReturned;
-        const netConsumed = Math.max(0, newIssued - newReturned);
-        const matRate = itemRate > 0 ? itemRate : (parseFloat(existingMat.unitPricePerKg) || 0);
-
-        currentMaterials[matIdx] = {
-          ...existingMat,
-          itemId: item.id,
-          itemCode: item.itemCode || existingMat.itemCode,
-          itemName: itemNameStr,
-          unit: unitStr,
-          issueQtyKg: newIssued,
-          returnQtyKg: newReturned,
-          netConsumedQtyKg: netConsumed,
-          unitPricePerKg: matRate,
-          totalMaterialCost: netConsumed * matRate,
-          batchNo: batchNo || existingMat.batchNo || item.lastBatch || '',
-          vendorName: vendorName || existingMat.vendorName || item.lastVendor || ''
-        };
-      } else {
-        const issuedQty = issueType === 'issue' ? qty : 0;
-        const returnedQty = issueType === 'return' ? qty : 0;
-        const netConsumed = Math.max(0, issuedQty - returnedQty);
-
-        currentMaterials.push({
-          id: `mat-${Date.now()}-${currentMaterials.length + 1}`,
-          itemId: item.id,
-          itemCode: item.itemCode || item.id,
-          itemName: itemNameStr,
-          filmType: item.itemName || item.filmType || item.category || 'Material',
-          category: item.category || 'Raw Material',
-          micron: item.micron || '-',
-          widthMm: item.widthMm || '-',
-          unit: unitStr,
-          barcode: barcode || batchNo || item.lastBatch || `BAR-ISS-${item.id}`,
-          issueQtyKg: issuedQty,
-          returnQtyKg: returnedQty,
-          netConsumedQtyKg: netConsumed,
-          unitPricePerKg: itemRate,
-          totalMaterialCost: netConsumed * itemRate,
-          batchNo: batchNo || item.lastBatch || '',
-          vendorName: vendorName || item.lastVendor || '',
-          jobMasterFilmType: item.filmType || item.itemName,
-          jobMasterMicron: item.micron && item.micron !== '-' ? Number(item.micron) : 0,
-          jobMasterWidthMm: item.widthMm && item.widthMm !== '-' ? Number(item.widthMm) : 0
-        });
-      }
-
-      targetRecord.materialsList = currentMaterials;
-      targetRecord.totalMaterialCostRs = currentMaterials.reduce((sum, m) => sum + (parseFloat(m.totalMaterialCost) || 0), 0);
-      targetRecord.finalProductionCostRs = (parseFloat(targetRecord.totalProcessingCostRs) || 0) + targetRecord.totalMaterialCostRs;
-
-      saveProductionRecordToSupabase(targetRecord).catch(console.warn);
-
       if (existingIdx >= 0) {
         const updatedAll = [...prevRecords];
         updatedAll[existingIdx] = targetRecord;
@@ -1371,33 +1340,24 @@ export default function App() {
   };
 
   const handleUpdateConsumables = async (newConsumables) => {
+    requireDatabaseConnection('update consumables');
+    await saveSystemSetting('consumables', newConsumables);
     setConsumables(newConsumables);
     logAudit('UPDATE', 'Consumable Store', `Updated consumable store inventory levels`, 'CONSUMABLES');
-    try {
-      await saveSystemSetting('consumables', newConsumables);
-    } catch (err) {
-      console.warn("[Sync Notice] Consumables updated locally. Supabase notice:", err);
-    }
   };
 
   const handleUpdateIndents = async (newIndents) => {
+    requireDatabaseConnection('update material indents');
+    await saveSystemSetting('material_indents', newIndents);
     setIndents(newIndents);
     logAudit('UPDATE', 'Material Indents', `Updated plant material indents / purchase requisitions`, 'INDENTS');
-    try {
-      await saveSystemSetting('material_indents', newIndents);
-    } catch (err) {
-      console.warn("[Sync Notice] Indents updated locally. Supabase notice:", err);
-    }
   };
 
   const handleUpdateMachineIssues = async (newIssues) => {
+    requireDatabaseConnection('update machine stock issue');
+    await saveSystemSetting('machine_issues', newIssues);
     setMachineIssues(newIssues);
     logAudit('UPDATE', 'Machine Stock Issue', `Recorded stock item issue to machine`, 'ISSUES');
-    try {
-      await saveSystemSetting('machine_issues', newIssues);
-    } catch (err) {
-      console.warn("[Sync Notice] Machine issues updated locally. Supabase notice:", err);
-    }
   };
 
   // Handlers for state updates (Supabase Authoritative for Orders)
@@ -1599,267 +1559,162 @@ export default function App() {
   };
 
   const handleAddVendor = async (newVendor) => {
+    requireDatabaseConnection('save vendor');
+    await saveVendorToSupabase(newVendor);
     setVendors(prev => [...prev.filter(v => v.id !== newVendor.id), newVendor]);
     logAudit('CREATE', 'Vendors', `Saved vendor record "${newVendor.name || newVendor.companyName}" (${newVendor.id})`, newVendor.id);
-    try {
-      await saveVendorToSupabase(newVendor);
-    } catch (err) {
-      console.warn("[Sync Notice] Vendor saved locally. Supabase notice:", err);
-    }
   };
 
   const handleDeleteVendor = async (vendorId) => {
+    requireDatabaseConnection('delete vendor');
+    await deleteVendorFromSupabase(vendorId);
     setVendors(prev => prev.filter(v => v.id !== vendorId));
     logAudit('DELETE', 'Vendors', `Deleted vendor directory entry ${vendorId}`, vendorId);
-    try {
-      await deleteVendorFromSupabase(vendorId);
-    } catch (err) {
-      console.warn("[Sync Notice] Vendor deleted locally. Supabase notice:", err);
-    }
   };
 
   const handleAddGRN = async (newGRN) => {
+    requireDatabaseConnection('create GRN');
+    await saveGRNToSupabase(newGRN);
     setGrns(prev => [newGRN, ...prev.filter(g => g.grnNo !== newGRN.grnNo)]);
     logAudit('CREATE', 'GRN Inward', `Issued GRN ${newGRN.grnNo} for "${newGRN.itemName}" (${newGRN.receivedQtyKg} kg) from ${newGRN.vendorName}`, newGRN.grnNo);
-    try {
-      await saveGRNToSupabase(newGRN);
-    } catch (err) {
-      console.warn("[Sync Notice] GRN saved locally. Supabase notice:", err);
-    }
   };
 
   const handleUpdateGRN = async (updatedGRN) => {
+    requireDatabaseConnection('update GRN');
+    await saveGRNToSupabase(updatedGRN);
     setGrns(prev => prev.map(g => g.grnNo === updatedGRN.grnNo ? updatedGRN : g));
     logAudit('UPDATE', 'GRN Inward', `Updated GRN ${updatedGRN.grnNo} status to "${updatedGRN.status}"`, updatedGRN.grnNo);
-    try {
-      await saveGRNToSupabase(updatedGRN);
-    } catch (err) {
-      console.warn("[Sync Notice] GRN updated locally. Supabase notice:", err);
-    }
   };
 
   const handleUpdateInventory = async (newInventory) => {
-    setInventory(newInventory);
+    requireDatabaseConnection('update inventory');
     if (Array.isArray(newInventory)) {
-      try {
-        await saveInventoryBatchToSupabase(newInventory);
-      } catch (err) {
-        console.warn("[Sync Notice] Inventory updated. Supabase notice:", err);
-      }
+      await saveInventoryBatchToSupabase(newInventory);
     }
+    setInventory(newInventory);
   };
 
   const handleSaveInventoryItem = async (item) => {
     if (!item) return;
+    requireDatabaseConnection('save inventory item');
     const cleanItem = sanitizeInventoryItem(item);
+    await saveInventoryItemToSupabase(cleanItem);
     setInventory(prev => {
       const exists = prev.some(i => String(i.id) === String(cleanItem.id));
-      const updated = exists
+      return exists
         ? prev.map(i => String(i.id) === String(cleanItem.id) ? { ...i, ...cleanItem } : i)
         : [cleanItem, ...prev];
-      safeLocalStorageSet('samyak_erp_inventory', updated);
-      return updated;
     });
     logAudit('UPDATE', 'Inventory', `Saved stock item ${cleanItem.itemCode || cleanItem.id} - "${cleanItem.itemName}" (${cleanItem.availableQtyKg} ${cleanItem.unit || 'Kg'})`, cleanItem.id);
-    try {
-      await saveInventoryItemToSupabase(cleanItem);
-    } catch (err) {
-      console.warn("[Sync Notice] Inventory item saved. Supabase notice:", err);
-    }
   };
 
   const handleDeleteInventoryItem = async (itemId) => {
     if (!itemId) return;
-    setInventory(prev => {
-      const updated = prev.filter(i => String(i.id) !== String(itemId));
-      safeLocalStorageSet('samyak_erp_inventory', updated);
-      return updated;
-    });
+    requireDatabaseConnection('delete inventory item');
+    await deleteInventoryItemFromSupabase(itemId);
+    setInventory(prev => prev.filter(i => String(i.id) !== String(itemId)));
     logAudit('DELETE', 'Inventory', `Deleted inventory item ${itemId}`, itemId);
-    try {
-      await deleteInventoryItemFromSupabase(itemId);
-    } catch (err) {
-      console.warn("[Sync Notice] Inventory item deleted. Supabase notice:", err);
-    }
   };
 
   const handleAddUser = async (newUser) => {
-    setUsers(prev => {
-      const updated = [...prev.filter(u => u.id !== newUser.id), newUser];
-      safeLocalStorageSet('samyak_erp_users', updated);
-      return updated;
+    requireDatabaseConnection('create user');
+    const authResult = await createUserInSupabaseAuth({
+      email: newUser.email,
+      password: newUser.password || 'password123',
+      name: newUser.name,
+      role: newUser.role,
+      department: newUser.department
     });
-    logAudit('CREATE', 'User Management', `Created user account for ${newUser.name} (${newUser.email}) - Role: ${newUser.role}`, newUser.id);
-    try {
-      // 1. Register in Supabase Auth so they can log in with email+password
-      const authResult = await createUserInSupabaseAuth({
-        email: newUser.email,
-        password: newUser.password || 'password123',
-        name: newUser.name,
-        role: newUser.role,
-        department: newUser.department
-      });
-      if (!authResult.success && !authResult.alreadyExists) {
-        console.warn('[UserOnboard] Supabase Auth registration issue:', authResult.message);
-      }
-      // 2. Save full profile (including password_hash) to public.users table
-      await saveUserToSupabase(newUser);
-    } catch (err) {
-      console.warn("[Sync Notice] User saved locally. Supabase notice:", err);
+    if (!authResult.success && !authResult.alreadyExists) {
+      console.warn('[UserOnboard] Supabase Auth registration issue:', authResult.message);
     }
+    await saveUserToSupabase(newUser);
+    setUsers(prev => [...prev.filter(u => u.id !== newUser.id), newUser]);
+    logAudit('CREATE', 'User Management', `Created user account for ${newUser.name} (${newUser.email}) - Role: ${newUser.role}`, newUser.id);
   };
 
   const handleUpdateUser = async (updatedUser) => {
-    setUsers(prev => {
-      const updated = prev.map(u => u.id === updatedUser.id ? updatedUser : u);
-      safeLocalStorageSet('samyak_erp_users', updated);
-      return updated;
-    });
+    requireDatabaseConnection('update user');
+    await saveUserToSupabase(updatedUser);
+    setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
     logAudit('UPDATE', 'User Management', `Updated user account/permissions for ${updatedUser.name} (${updatedUser.email}) - Role: ${updatedUser.role}`, updatedUser.id);
-    try {
-      // Save full profile including the updated password_hash
-      await saveUserToSupabase(updatedUser);
-    } catch (err) {
-      console.warn("[Sync Notice] User updated locally. Supabase notice:", err);
-    }
   };
 
   const handleDeleteUser = async (userId) => {
-    setUsers(prev => {
-      const updated = prev.filter(u => u.id !== userId);
-      safeLocalStorageSet('samyak_erp_users', updated);
-      return updated;
-    });
+    requireDatabaseConnection('delete user');
+    await deleteUserFromSupabase(userId);
+    setUsers(prev => prev.filter(u => u.id !== userId));
     logAudit('DELETE', 'User Management', `Deleted user account ${userId}`, userId);
-    try {
-      await deleteUserFromSupabase(userId);
-    } catch (err) {
-      console.warn("[Sync Notice] User deleted locally. Supabase notice:", err);
-    }
   };
 
   const handleAddEmployee = async (newEmp) => {
-    setEmployees(prev => {
-      const updated = [newEmp, ...prev.filter(e => e.id !== newEmp.id)];
-      safeLocalStorageSet('samyak_erp_employees', updated);
-      return updated;
-    });
+    requireDatabaseConnection('add employee');
+    await saveEmployeeToSupabase(newEmp);
+    setEmployees(prev => [newEmp, ...prev.filter(e => e.id !== newEmp.id)]);
     logAudit('CREATE', 'Employee Management', `Onboarded employee ${newEmp.fullName} (${newEmp.empCode || newEmp.id}) in ${newEmp.department}`, newEmp.id);
-    try {
-      await saveEmployeeToSupabase(newEmp);
-    } catch (err) {
-      console.warn("[Sync Notice] Employee saved locally. Supabase notice:", err);
-    }
   };
 
   const handleUpdateEmployee = async (updatedEmp) => {
-    setEmployees(prev => {
-      const updated = prev.map(e => e.id === updatedEmp.id ? updatedEmp : e);
-      safeLocalStorageSet('samyak_erp_employees', updated);
-      return updated;
-    });
+    requireDatabaseConnection('update employee');
+    await saveEmployeeToSupabase(updatedEmp);
+    setEmployees(prev => prev.map(e => e.id === updatedEmp.id ? updatedEmp : e));
     logAudit('UPDATE', 'Employee Management', `Updated employee ${updatedEmp.fullName} (${updatedEmp.empCode || updatedEmp.id})`, updatedEmp.id);
-    try {
-      await saveEmployeeToSupabase(updatedEmp);
-    } catch (err) {
-      console.warn("[Sync Notice] Employee updated locally. Supabase notice:", err);
-    }
   };
 
   const handleDeleteEmployee = async (empId) => {
-    setEmployees(prev => {
-      const updated = prev.filter(e => e.id !== empId);
-      safeLocalStorageSet('samyak_erp_employees', updated);
-      return updated;
-    });
+    requireDatabaseConnection('delete employee');
+    await deleteEmployeeFromSupabase(empId);
+    setEmployees(prev => prev.filter(e => e.id !== empId));
     logAudit('DELETE', 'Employee Management', `Deleted employee record ${empId}`, empId);
-    try {
-      await deleteEmployeeFromSupabase(empId);
-    } catch (err) {
-      console.warn("[Sync Notice] Employee deleted locally. Supabase notice:", err);
-    }
   };
 
   const handleSaveAttendance = async (record) => {
+    requireDatabaseConnection('save attendance');
+    await saveEmployeeAttendanceToSupabase(record);
     setEmployeeAttendance(prev => {
       const idx = prev.findIndex(a => a.id === record.id || (a.employeeId === record.employeeId && a.date === record.date));
-      let updated;
       if (idx >= 0) {
-        updated = [...prev];
+        const updated = [...prev];
         updated[idx] = record;
-      } else {
-        updated = [record, ...prev];
+        return updated;
       }
-      safeLocalStorageSet('samyak_erp_employee_attendance', updated);
-      return updated;
+      return [record, ...prev];
     });
-    try {
-      await saveEmployeeAttendanceToSupabase(record);
-    } catch (err) {
-      console.warn("[Sync Notice] Attendance saved locally. Supabase notice:", err);
-    }
   };
 
   const handleSaveSalaryAdvance = async (newAdv) => {
-    setSalaryAdvances(prev => {
-      const updated = [newAdv, ...prev.filter(a => a.id !== newAdv.id)];
-      safeLocalStorageSet('samyak_erp_salary_advances', updated);
-      return updated;
-    });
+    requireDatabaseConnection('save salary advance');
+    await saveSalaryAdvanceToSupabase(newAdv);
+    setSalaryAdvances(prev => [newAdv, ...prev.filter(a => a.id !== newAdv.id)]);
     logAudit('CREATE', 'Employee Management', `Requested advance of ₹${newAdv.advanceAmount} for ${newAdv.employeeName}`, newAdv.id);
-    try {
-      await saveSalaryAdvanceToSupabase(newAdv);
-    } catch (err) {
-      console.warn("[Sync Notice] Salary Advance saved locally. Supabase notice:", err);
-    }
   };
 
   const handleUpdateSalaryAdvance = async (updatedAdv) => {
-    setSalaryAdvances(prev => {
-      const updated = prev.map(a => a.id === updatedAdv.id ? updatedAdv : a);
-      safeLocalStorageSet('samyak_erp_salary_advances', updated);
-      return updated;
-    });
+    requireDatabaseConnection('update salary advance');
+    await saveSalaryAdvanceToSupabase(updatedAdv);
+    setSalaryAdvances(prev => prev.map(a => a.id === updatedAdv.id ? updatedAdv : a));
     logAudit('UPDATE', 'Employee Management', `Updated advance status for ${updatedAdv.employeeName} to ${updatedAdv.status}`, updatedAdv.id);
-    try {
-      await saveSalaryAdvanceToSupabase(updatedAdv);
-    } catch (err) {
-      console.warn("[Sync Notice] Salary Advance updated locally. Supabase notice:", err);
-    }
   };
 
   const handleSaveSalaryPayment = async (newPayment) => {
-    setSalaryPayments(prev => {
-      const updated = [newPayment, ...prev.filter(p => p.id !== newPayment.id)];
-      safeLocalStorageSet('samyak_erp_salary_payments', updated);
-      return updated;
-    });
+    requireDatabaseConnection('save salary payment');
+    await saveSalaryPaymentToSupabase(newPayment);
+    setSalaryPayments(prev => [newPayment, ...prev.filter(p => p.id !== newPayment.id)]);
     logAudit('PAYMENT', 'Employee Management', `Disbursed ${newPayment.monthKey} salary of ₹${(newPayment.netAmountPaid || 0).toLocaleString()} to ${newPayment.employeeName} (${newPayment.paymentMode}) on ${newPayment.paymentDate} at ${newPayment.paymentTime}`, newPayment.id);
-    try {
-      await saveSalaryPaymentToSupabase(newPayment);
-    } catch (err) {
-      console.warn("[Sync Notice] Salary Payment saved locally. Supabase notice:", err);
-    }
   };
 
   const handleAddJobDataSheet = async (newSheet) => {
+    requireDatabaseConnection('create job datasheet');
+    await saveJobDataSheetToSupabase(newSheet);
     setJobDataSheets(prev => [newSheet, ...prev.filter(s => s.id !== newSheet.id)]);
     logAudit('CREATE', 'Job Data Sheets', `Created job datasheet ${newSheet.id} for "${newSheet.jobName}"`, newSheet.id);
-    try {
-      await saveJobDataSheetToSupabase(newSheet);
-    } catch (err) {
-      console.warn("[Sync Notice] Job Data Sheet saved locally. Supabase notice:", err);
-    }
   };
 
   const handleDeleteJobDataSheet = async (sheetId) => {
+    requireDatabaseConnection('delete job datasheet');
+    await deleteJobDataSheetFromSupabase(sheetId);
     setJobDataSheets(prev => prev.filter(s => s.id !== sheetId));
     logAudit('DELETE', 'Job Data Sheets', `Deleted job datasheet ${sheetId}`, sheetId);
-    try {
-      await deleteJobDataSheetFromSupabase(sheetId);
-    } catch (err) {
-      console.warn("[Sync Notice] Job Data Sheet deleted locally. Supabase notice:", err);
-    }
   };
 
   const syncCylinderToOrderManagement = (cyl) => {
@@ -1919,6 +1774,8 @@ export default function App() {
 
   const handleAddCylinder = async (newCyl) => {
     if (!newCyl) return;
+    requireDatabaseConnection('add cylinder');
+    await saveCylinderToSupabase(newCyl);
     const targetSku = (newCyl.sku || '').trim().toLowerCase();
     const targetJobName = (newCyl.jobName || '').trim().toLowerCase();
 
@@ -1945,19 +1802,13 @@ export default function App() {
     });
 
     logAudit('CREATE', 'Cylinders', `Saved rotogravure cylinder ${newCyl.sku} for "${newCyl.jobName}"`, newCyl.id);
-    
-    // Sync to Order Management if status is Under Engraving
     syncCylinderToOrderManagement(newCyl);
-
-    try {
-      await saveCylinderToSupabase(newCyl);
-    } catch (err) {
-      console.warn("[Sync Notice] Cylinder saved locally. Supabase notice:", err);
-    }
   };
 
   const handleBatchAddCylinders = async (newCylList) => {
     if (!Array.isArray(newCylList) || newCylList.length === 0) return;
+    requireDatabaseConnection('batch add cylinders');
+    await saveCylinderBatchToSupabase(newCylList);
     setCylinders(prev => {
       const map = new Map();
       (prev || []).forEach(c => {
@@ -1971,22 +1822,16 @@ export default function App() {
           map.set(k, { ...(existing || {}), ...c });
         }
       });
-      const merged = Array.from(map.values());
-      safeLocalStorageSet('samyak_erp_cylinders', merged);
-      return merged;
+      return Array.from(map.values());
     });
 
     logAudit('CREATE', 'Cylinders', `Bulk uploaded ${newCylList.length} cylinder job(s) via CSV`, 'BULK_CSV');
-
-    try {
-      await saveCylinderBatchToSupabase(newCylList);
-    } catch (err) {
-      console.warn("[Sync Notice] Batch cylinders saved locally. Supabase notice:", err);
-    }
   };
 
   const handleUpdateCylinder = async (updatedCyl) => {
     if (!updatedCyl) return;
+    requireDatabaseConnection('update cylinder');
+    await saveCylinderToSupabase(updatedCyl);
     const targetSku = (updatedCyl.sku || '').trim().toLowerCase();
     const targetJobName = (updatedCyl.jobName || '').trim().toLowerCase();
 
@@ -2013,153 +1858,106 @@ export default function App() {
     });
 
     logAudit('UPDATE', 'Cylinders', `Updated rotogravure cylinder ${updatedCyl.sku} for "${updatedCyl.jobName}"`, updatedCyl.id);
-    
-    // Sync to Order Management if status is Under Engraving
     syncCylinderToOrderManagement(updatedCyl);
-
-    try {
-      await saveCylinderToSupabase(updatedCyl);
-    } catch (err) {
-      console.warn("[Sync Notice] Cylinder updated locally. Supabase notice:", err);
-    }
   };
 
   const handleDeleteCylinder = async (cylId) => {
+    requireDatabaseConnection('delete cylinder');
+    await deleteCylinderFromSupabase(cylId);
     setCylinders(prev => prev.filter(c => c.id !== cylId));
     logAudit('DELETE', 'Cylinders', `Deleted rotogravure cylinder ${cylId}`, cylId);
-    try {
-      await deleteCylinderFromSupabase(cylId);
-    } catch (err) {
-      console.warn("[Sync Notice] Cylinder deleted locally. Supabase notice:", err);
-    }
   };
 
   const handleAddRoll = async (newRoll) => {
+    requireDatabaseConnection('add inventory roll');
     const rollId = newRoll.barcodeId || newRoll.id;
     const cleanRoll = { ...newRoll, id: rollId, barcodeId: rollId };
+    await saveInventoryRollToSupabase(cleanRoll);
     setInventoryRolls(prev => [cleanRoll, ...prev.filter(r => (r.barcodeId || r.id) !== rollId)]);
     logAudit('CREATE', 'Inventory Rolls', `Generated child roll barcode ${rollId} (${newRoll.netWeightKg} kg)`, rollId);
-    try {
-      await saveInventoryRollToSupabase(cleanRoll);
-    } catch (err) {
-      console.warn("[Sync Notice] Roll saved locally. Supabase notice:", err);
-    }
   };
 
   const handleAddDispatchShipment = async (newShipment) => {
+    requireDatabaseConnection('create dispatch shipment');
+    await saveDispatchShipmentToSupabase(newShipment);
     setDispatchShipments(prev => [newShipment, ...prev.filter(s => s.id !== newShipment.id)]);
     logAudit('CREATE', 'Dispatch', `Created client dispatch shipment ${newShipment.id} for "${newShipment.clientName}"`, newShipment.id);
-    try {
-      await saveDispatchShipmentToSupabase(newShipment);
-    } catch (err) {
-      console.warn("[Sync Notice] Dispatch shipment saved locally. Supabase notice:", err);
-    }
   };
 
   const handleSaveDeliveryChallan = async (newDc) => {
+    requireDatabaseConnection('save delivery challan');
+    await saveDeliveryChallanToSupabase(newDc);
     setDeliveryChallans(prev => [newDc, ...prev.filter(d => d.id !== newDc.id)]);
     logAudit('CREATE', 'Dispatch', `Issued Delivery Challan ${newDc.challanNo} for "${newDc.clientName}"`, newDc.id);
-    try {
-      await saveDeliveryChallanToSupabase(newDc);
-    } catch (err) {
-      console.warn("[Sync Notice] Delivery Challan saved locally. Supabase notice:", err);
-    }
   };
 
   const handleDeleteDeliveryChallan = async (id) => {
-    const updated = deliveryChallans.filter(d => d.id !== id);
-    setDeliveryChallans(updated);
+    requireDatabaseConnection('delete delivery challan');
+    await deleteDeliveryChallanFromSupabase(id);
+    setDeliveryChallans(prev => prev.filter(d => d.id !== id));
     logAudit('DELETE', 'Dispatch', `Deleted Delivery Challan ${id}`, id);
-    try {
-      await deleteDeliveryChallanFromSupabase(id);
-    } catch (err) {
-      console.warn("[Sync Notice] Delivery Challan deleted locally. Supabase notice:", err);
-    }
   };
 
   const handleSaveCoA = async (newCoa) => {
+    requireDatabaseConnection('save CoA');
+    await saveCertificateOfAnalysisToSupabase(newCoa);
     setCertificateOfAnalyses(prev => [newCoa, ...prev.filter(c => c.id !== newCoa.id)]);
     logAudit('CREATE', 'Quality', `Generated Quality CoA ${newCoa.coaNo} for "${newCoa.jobName}"`, newCoa.id);
-    try {
-      await saveCertificateOfAnalysisToSupabase(newCoa);
-    } catch (err) {
-      console.warn("[Sync Notice] CoA saved locally. Supabase notice:", err);
-    }
   };
 
   const handleDeleteCoA = async (id) => {
-    const updated = certificateOfAnalyses.filter(c => c.id !== id);
-    setCertificateOfAnalyses(updated);
+    requireDatabaseConnection('delete CoA');
+    await deleteCertificateOfAnalysisFromSupabase(id);
+    setCertificateOfAnalyses(prev => prev.filter(c => c.id !== id));
     logAudit('DELETE', 'Quality', `Deleted Quality CoA ${id}`, id);
-    try {
-      await deleteCertificateOfAnalysisFromSupabase(id);
-    } catch (err) {
-      console.warn("[Sync Notice] CoA deleted locally. Supabase notice:", err);
-    }
   };
 
   const handleAddClient = async (newClient) => {
+    requireDatabaseConnection('add client');
+    await saveClientToSupabase(newClient);
     setClients(prev => [...prev.filter(c => c.id !== newClient.id), newClient]);
     logAudit('CREATE', 'Clients', `Saved client directory entry "${newClient.name}" (${newClient.id})`, newClient.id);
-    try {
-      await saveClientToSupabase(newClient);
-    } catch (err) {
-      console.warn("[Sync Notice] Client saved locally. Supabase notice:", err);
-    }
   };
 
   const handleUpdateClient = async (updatedClient) => {
+    requireDatabaseConnection('update client');
+    await saveClientToSupabase(updatedClient);
     setClients(prev => prev.map(c => c.id === updatedClient.id ? updatedClient : c));
     logAudit('UPDATE', 'Clients', `Updated client directory entry "${updatedClient.name}" (${updatedClient.id})`, updatedClient.id);
-    try {
-      await saveClientToSupabase(updatedClient);
-    } catch (err) {
-      console.warn("[Sync Notice] Client updated locally. Supabase notice:", err);
-    }
   };
 
   const handleDeleteClient = async (clientId) => {
+    requireDatabaseConnection('delete client');
+    await deleteClientFromSupabase(clientId);
     setClients(prev => prev.filter(c => c.id !== clientId));
     logAudit('DELETE', 'Clients', `Deleted client directory entry ${clientId}`, clientId);
-    try {
-      await deleteClientFromSupabase(clientId);
-    } catch (err) {
-      console.warn("[Sync Notice] Client deleted locally. Supabase notice:", err);
-    }
   };
 
   const handleAddJobMaster = async (newJobMaster) => {
+    requireDatabaseConnection('add job master');
+    await saveJobMasterToSupabase(newJobMaster);
     setJobMasters(prev => [...prev.filter(j => j.id !== newJobMaster.id), newJobMaster]);
     logAudit('CREATE', 'Job Masters', `Created job master template "${newJobMaster.jobName}" (${newJobMaster.id})`, newJobMaster.id);
-    try {
-      await saveJobMasterToSupabase(newJobMaster);
-    } catch (err) {
-      console.warn("[Sync Notice] Job Master saved locally. Supabase notice:", err);
-    }
   };
 
   const handleUpdateJobMaster = async (updatedJobMaster) => {
+    requireDatabaseConnection('update job master');
+    await saveJobMasterToSupabase(updatedJobMaster);
     setJobMasters(prev => prev.map(j => j.id === updatedJobMaster.id ? updatedJobMaster : j));
     logAudit('UPDATE', 'Job Masters', `Updated job master template "${updatedJobMaster.jobName}" (${updatedJobMaster.id})`, updatedJobMaster.id);
-    try {
-      await saveJobMasterToSupabase(updatedJobMaster);
-    } catch (err) {
-      console.warn("[Sync Notice] Job Master updated locally. Supabase notice:", err);
-    }
   };
 
   const handleDeleteJobMaster = async (jobMasterId) => {
+    requireDatabaseConnection('delete job master');
+    await deleteJobMasterFromSupabase(jobMasterId);
     setJobMasters(prev => prev.filter(j => j.id !== jobMasterId));
     logAudit('DELETE', 'Job Masters', `Deleted job master record ${jobMasterId}`, jobMasterId);
-    try {
-      await deleteJobMasterFromSupabase(jobMasterId);
-    } catch (err) {
-      console.warn("[Sync Notice] Job Master deleted locally. Supabase notice:", err);
-    }
   };
 
   const handleBatchAddJobMasters = async (newJmList) => {
     if (!Array.isArray(newJmList) || newJmList.length === 0) return;
+    requireDatabaseConnection('batch add job masters');
+    await saveJobMasterBatchToSupabase(newJmList);
     setJobMasters(prev => {
       const map = new Map();
       (prev || []).forEach(j => {
@@ -2173,18 +1971,10 @@ export default function App() {
           map.set(k, { ...(existing || {}), ...j });
         }
       });
-      const merged = Array.from(map.values());
-      safeLocalStorageSet('samyak_erp_job_masters', merged);
-      return merged;
+      return Array.from(map.values());
     });
 
     logAudit('CREATE', 'Job Masters', `Bulk uploaded ${newJmList.length} Job Master template(s) via CSV`, 'BULK_CSV');
-
-    try {
-      await saveJobMasterBatchToSupabase(newJmList);
-    } catch (err) {
-      console.warn("[Sync Notice] Batch Job Masters saved locally. Supabase notice:", err);
-    }
   };
 
   const handleLinkCylinderToJobMaster = async (cylinderId, jobMasterId) => {
@@ -2257,52 +2047,42 @@ export default function App() {
   };
 
   const handleAddInk = async (newInk) => {
+    requireDatabaseConnection('add ink');
+    await saveInkToSupabase(newInk);
     setInks(prev => [newInk, ...prev.filter(i => i.id !== newInk.id)]);
     syncInkToInventory(newInk, newInk.stockQtyKg);
     logAudit('CREATE', 'Ink Management', `Added ink product code "${newInk.productCode}" - ${newInk.shade} (${newInk.inkType}, ${newInk.solidContentPct}% solid)`, newInk.id);
-    try {
-      await saveInkToSupabase(newInk);
-    } catch (err) {
-      console.warn("[Sync Notice] Ink saved locally. Supabase notice:", err);
-    }
   };
 
   const handleUpdateInk = async (updatedInk) => {
+    requireDatabaseConnection('update ink');
+    await saveInkToSupabase(updatedInk);
     setInks(prev => prev.map(i => i.id === updatedInk.id ? updatedInk : i));
     syncInkToInventory(updatedInk);
     logAudit('UPDATE', 'Ink Management', `Updated ink product code "${updatedInk.productCode}" - ${updatedInk.shade}`, updatedInk.id);
-    try {
-      await saveInkToSupabase(updatedInk);
-    } catch (err) {
-      console.warn("[Sync Notice] Ink updated locally. Supabase notice:", err);
-    }
   };
 
   const handleUpdateInkPrice = async (updatedInk, newPrice, reason) => {
+    requireDatabaseConnection('update ink price');
+    await saveInkToSupabase(updatedInk);
     setInks(prev => prev.map(i => i.id === updatedInk.id ? updatedInk : i));
     syncInkToInventory({ ...updatedInk, pricePerKg: newPrice });
     logAudit('UPDATE', 'Ink Management', `Updated rate for ink "${updatedInk.productCode}" (${updatedInk.shade}) to ₹${newPrice}/kg. Reason: ${reason}`, updatedInk.id);
-    try {
-      await saveInkToSupabase(updatedInk);
-    } catch (err) {
-      console.warn("[Sync Notice] Ink rate updated locally. Supabase notice:", err);
-    }
   };
 
   const handleDeleteInk = async (inkId) => {
+    requireDatabaseConnection('delete ink');
+    await deleteInkFromSupabase(inkId);
+    await deleteInventoryItemFromSupabase(inkId);
     setInks(prev => prev.filter(i => i.id !== inkId));
     setInventory(prev => prev.filter(i => i.id !== inkId && i.itemCode !== inkId));
     logAudit('DELETE', 'Ink Management', `Deleted ink product code ${inkId}`, inkId);
-    try {
-      await deleteInkFromSupabase(inkId);
-      await deleteInventoryItemFromSupabase(inkId);
-    } catch (err) {
-      console.warn("[Sync Notice] Ink deleted locally. Supabase notice:", err);
-    }
   };
 
   // SFG Store & Consumed SFG Handlers
   const handleSaveSFGGood = async (item) => {
+    requireDatabaseConnection('save SFG item');
+    await saveSFGGoodToSupabase(item);
     setSfgGoods(prev => {
       const idx = prev.findIndex(s => s.id === item.id || s.sfgBatchCode === item.sfgBatchCode);
       if (idx >= 0) {
@@ -2313,15 +2093,12 @@ export default function App() {
       return [item, ...prev];
     });
     logAudit('CREATE', 'SFG Store', `Saved SFG Batch "${item.sfgBatchCode}" for job "${item.jobName}"`, item.id || item.sfgBatchCode);
-    try {
-      await saveSFGGoodToSupabase(item);
-    } catch (err) {
-      console.warn("[Sync Notice] SFG item saved locally. Supabase notice:", err);
-    }
   };
 
   const handleConsumeSFG = async (updatedSfgItem, logEntry) => {
-    // 1. Update SFG Goods State & Supabase
+    requireDatabaseConnection('consume SFG item');
+    await saveSFGGoodToSupabase(updatedSfgItem);
+
     setSfgGoods(prev => {
       const idx = prev.findIndex(s => s.id === updatedSfgItem.id || s.sfgBatchCode === updatedSfgItem.sfgBatchCode);
       if (idx >= 0) {
@@ -2331,7 +2108,6 @@ export default function App() {
       }
       return [updatedSfgItem, ...prev];
     });
-    saveSFGGoodToSupabase(updatedSfgItem).catch(console.warn);
 
     // 2. Sync to Job's Production Record
     const targetOrderId = updatedSfgItem.orderId || logEntry.orderId;
@@ -2348,10 +2124,9 @@ export default function App() {
         ...matchedRec,
         sfgConsumptions: [logEntry, ...existingLogs]
       };
+      await saveProductionRecordToSupabase(updatedRec);
       setProductionRecords(prev => prev.map(r => r.id === updatedRec.id ? updatedRec : r));
-      saveProductionRecordToSupabase(updatedRec).catch(console.warn);
     } else {
-      // Create new production record shell for this job
       const newRec = {
         id: `PROD-REC-${Date.now()}`,
         orderId: targetOrderId || `ORD-${Date.now()}`,
@@ -2363,21 +2138,18 @@ export default function App() {
         dateFilled: logEntry.date || new Date().toISOString().split('T')[0],
         sfgConsumptions: [logEntry]
       };
+      await saveProductionRecordToSupabase(newRec);
       setProductionRecords(prev => [newRec, ...prev]);
-      saveProductionRecordToSupabase(newRec).catch(console.warn);
     }
 
     logAudit('UPDATE', 'SFG Store', `Consumed ${logEntry.consumedKg} kg SFG from batch "${updatedSfgItem.sfgBatchCode}" for stage "${logEntry.targetProcess}". Remaining Balance: ${updatedSfgItem.availableKg} kg`, updatedSfgItem.sfgBatchCode);
   };
 
   const handleDeleteSFGGood = async (sfgId) => {
+    requireDatabaseConnection('delete SFG item');
+    await deleteSFGGoodFromSupabase(sfgId);
     setSfgGoods(prev => prev.filter(s => s.id !== sfgId && s.sfgBatchCode !== sfgId));
     logAudit('DELETE', 'SFG Store', `Deleted SFG record ${sfgId}`, sfgId);
-    try {
-      await deleteSFGGoodFromSupabase(sfgId);
-    } catch (err) {
-      console.warn("[Sync Notice] SFG item deleted locally. Supabase notice:", err);
-    }
   };
 
 
@@ -2395,15 +2167,11 @@ export default function App() {
   if (!isAuthenticated || !currentUser) {
     // Callback: update password in local state after OTP-verified reset
     const handleUpdatePassword = (email, newPassword) => {
-      setUsers(prev => {
-        const updated = prev.map(u =>
-          u.email?.toLowerCase().trim() === email?.toLowerCase().trim()
-            ? { ...u, password: newPassword }
-            : u
-        );
-        safeLocalStorageSet('samyak_erp_users', updated);
-        return updated;
-      });
+      setUsers(prev => prev.map(u =>
+        u.email?.toLowerCase().trim() === email?.toLowerCase().trim()
+          ? { ...u, password: newPassword }
+          : u
+      ));
     };
     return <AuthScreen onLogin={handleLogin} onUpdatePassword={handleUpdatePassword} />;
   }
@@ -2881,6 +2649,35 @@ export default function App() {
 
           {/* Top Bar Active User & Logout Controls (ACCOUNT / ROLE SWITCHER) */}
           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+            {/* Database Health Badge */}
+            <div 
+              onClick={() => runDatabaseHealthCheck()}
+              style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '6px', 
+                padding: '6px 12px', 
+                borderRadius: '20px', 
+                fontSize: '0.8rem', 
+                fontWeight: '700',
+                cursor: 'pointer',
+                background: databaseStatus === 'connected' ? '#ecfdf5' : (databaseStatus === 'checking' ? '#fef3c7' : '#fef2f2'),
+                color: databaseStatus === 'connected' ? '#047857' : (databaseStatus === 'checking' ? '#b45309' : '#dc2626'),
+                border: `1px solid ${databaseStatus === 'connected' ? '#a7f3d0' : (databaseStatus === 'checking' ? '#fde68a' : '#fecaca')}`,
+                transition: 'all 0.2s ease'
+              }}
+              title={`Supabase PostgreSQL: ${databaseStatus}. Click to test connection.`}
+            >
+              <span style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                backgroundColor: databaseStatus === 'connected' ? '#10b981' : (databaseStatus === 'checking' ? '#f59e0b' : '#ef4444'),
+                boxShadow: databaseStatus === 'connected' ? '0 0 6px #10b981' : 'none'
+              }} />
+              <span>{databaseStatus === 'connected' ? 'DB Connected' : (databaseStatus === 'checking' ? 'Checking DB...' : 'DB Disconnected')}</span>
+            </div>
+
             <WeighingScaleWidget />
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#ffffff', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem' }}>
               <UserCheck size={16} style={{ color: 'var(--primary-brand)' }} />
@@ -2920,10 +2717,57 @@ export default function App() {
             <button className="btn-signout" onClick={handleLogout} title="Sign Out of Session">
               <LogOut size={16} /> Sign Out
             </button>
-
-
           </div>
         </div>
+
+        {/* Database Disconnected / Read-Only Banner */}
+        {databaseStatus !== 'connected' && (
+          <div style={{
+            background: '#fef2f2',
+            border: '1px solid #fecaca',
+            borderRadius: '8px',
+            padding: '12px 18px',
+            margin: '0 0 16px 0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '12px',
+            boxShadow: '0 2px 4px rgba(239, 68, 68, 0.08)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <AlertTriangle size={20} style={{ color: '#dc2626', flexShrink: 0 }} />
+              <div>
+                <div style={{ fontWeight: '700', color: '#991b1b', fontSize: '0.9rem' }}>
+                  DATABASE DISCONNECTED / READ-ONLY MODE
+                </div>
+                <div style={{ color: '#b91c1c', fontSize: '0.8rem', marginTop: '2px' }}>
+                  Supabase PostgreSQL connection is unavailable. All write operations, forms, and updates are disabled to prevent data corruption.
+                  {databaseErrorMessage && ` (${databaseErrorMessage})`}
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => runDatabaseHealthCheck()}
+              style={{
+                background: '#dc2626',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '6px 14px',
+                fontWeight: '700',
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              <RefreshCw size={14} className={databaseStatus === 'checking' ? 'spin' : ''} />
+              {databaseStatus === 'checking' ? 'Testing...' : 'Retry Connection'}
+            </button>
+          </div>
+        )}
 
         {!isTabAllowed(activeTab) && (
           <div className="glass-panel" style={{ padding: '40px', textAlign: 'center', background: '#fffbeb', border: '1px solid #fde68a', margin: '20px 0' }}>

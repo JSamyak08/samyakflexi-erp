@@ -1169,11 +1169,6 @@ export default function JobMasterDirectory({
       onAddJobMaster(updatedJob);
     }
 
-    try {
-      const updatedJobs = jobMasters.map(j => j.id === updatedJob.id ? updatedJob : j);
-      localStorage.setItem('samyak_erp_job_masters', JSON.stringify(updatedJobs));
-    } catch (e) {}
-
     saveJobMasterToSupabase(updatedJob);
     if (targetCylinder) {
       if (onUpdateCylinder) {
@@ -1207,9 +1202,6 @@ export default function JobMasterDirectory({
 
       setSelectedJob(updatedJob);
       if (onAddJobMaster) onAddJobMaster(updatedJob);
-      try {
-        localStorage.setItem('samyak_erp_job_masters', JSON.stringify(jobMasters.map(j => j.id === updatedJob.id ? updatedJob : j)));
-      } catch (err) {}
       saveJobMasterToSupabase(updatedJob);
       alert(`File "${file.name}" linked to Job Master ${selectedJob.id} successfully!`);
     };
@@ -1228,9 +1220,6 @@ export default function JobMasterDirectory({
 
     setSelectedJob(updatedJob);
     if (onAddJobMaster) onAddJobMaster(updatedJob);
-    try {
-      localStorage.setItem('samyak_erp_job_masters', JSON.stringify(jobMasters.map(j => j.id === updatedJob.id ? updatedJob : j)));
-    } catch (err) {}
     saveJobMasterToSupabase(updatedJob);
   };
 

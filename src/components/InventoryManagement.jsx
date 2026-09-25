@@ -334,9 +334,6 @@ export default function InventoryManagement({
     if (!newBarcodeStr.trim()) return;
     const updated = { ...customBarcodesMap, [txId]: newBarcodeStr.trim() };
     setCustomBarcodesMap(updated);
-    try {
-      localStorage.setItem('samyak_erp_custom_barcodes', JSON.stringify(updated));
-    } catch (e) {}
     setEditingTxId(null);
     setEditingBarcodeVal('');
   };
@@ -367,9 +364,6 @@ export default function InventoryManagement({
 
     const updated = [newAdj, ...stockLedgerAdjustments];
     setStockLedgerAdjustments(updated);
-    try {
-      localStorage.setItem('samyak_erp_stock_adjustments', JSON.stringify(updated));
-    } catch (err) {}
 
     // Update item available stock in main inventory list for the specific item
     if (onUpdateInventory) {
@@ -1056,11 +1050,6 @@ export default function InventoryManagement({
       [po.poNumber]: resolutionObj
     };
     setPoResolutions(updatedResolutions);
-    try {
-      localStorage.setItem('samyak_po_discrepancy_resolutions', JSON.stringify(updatedResolutions));
-    } catch (e) {
-      console.error(e);
-    }
 
     // 2. If Option 2 (Enforce PO Rate): update matching GRN in safeGrns / grns
     if (mismatch.grnNo && grns && Array.isArray(grns)) {
@@ -2203,9 +2192,6 @@ export default function InventoryManagement({
     if (newAdjustments.length > 0) {
       const updatedAdj = [...newAdjustments, ...stockLedgerAdjustments];
       setStockLedgerAdjustments(updatedAdj);
-      try {
-        localStorage.setItem('samyak_erp_stock_adjustments', JSON.stringify(updatedAdj));
-      } catch (e) {}
     }
 
     if (onUpdateInventory) {
@@ -2790,9 +2776,6 @@ export default function InventoryManagement({
     if (newAdjustments.length > 0) {
       const updatedAdj = [...newAdjustments, ...stockLedgerAdjustments];
       setStockLedgerAdjustments(updatedAdj);
-      try {
-        localStorage.setItem('samyak_erp_stock_adjustments', JSON.stringify(updatedAdj));
-      } catch (e) {}
     }
 
     if (onUpdateInventory) {

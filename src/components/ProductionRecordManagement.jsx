@@ -651,11 +651,6 @@ export default function ProductionRecordManagement({
 
     const updated = [newDisposal, ...scrapDisposals];
     setScrapDisposals(updated);
-    try {
-      localStorage.setItem('samyak_erp_scrap_disposals', JSON.stringify(updated));
-    } catch (err) {
-      console.warn("Disposal storage warning:", err);
-    }
 
     setDisposeQtyKg('');
     setDisposeVendor('');

@@ -208,16 +208,12 @@ export default function SalesManagement({
     }
   });
 
-  // Fetch sales quotations from Supabase on mount
   useEffect(() => {
     let isMounted = true;
     async function loadData() {
       const remote = await fetchSalesQuotations();
-      if (isMounted && remote && remote.length > 0) {
+      if (isMounted && remote && Array.isArray(remote)) {
         setQuotations(remote);
-        try {
-          localStorage.setItem('samyak_erp_sales_quotations', JSON.stringify(remote));
-        } catch (e) {}
       }
     }
     loadData();
@@ -546,7 +542,7 @@ export default function SalesManagement({
   };
 
   // Save Sales Quotation
-  const handleSaveQuotation = (e) => {
+  const handleSaveQuotation = async (e) => {
     e.preventDefault();
     if (!selectedClientName || items.length === 0) {
       alert("Client Name and at least 1 Product Item are required!");
@@ -610,13 +606,9 @@ export default function SalesManagement({
       updatedList = [newQtn, ...quotations];
     }
 
-    setQuotations(updatedList);
-    try {
-      localStorage.setItem('samyak_erp_sales_quotations', JSON.stringify(updatedList));
-    } catch (err) {}
-
     // Live sync to Supabase PostgreSQL table
-    saveSalesQuotationToSupabase(newQtn);
+    await saveSalesQuotationToSupabase(newQtn);
+    setQuotations(updatedList);
 
     setActiveSubTab('list');
     setActiveQuotationForPDF(newQtn); // Open PDF preview!
@@ -626,12 +618,9 @@ export default function SalesManagement({
   // Delete Sales Quotation
   const handleDeleteQuotation = async (id) => {
     if (!window.confirm("Are you sure you want to delete this Sales Quotation?")) return;
+    await deleteSalesQuotationFromSupabase(id);
     const updated = quotations.filter(q => q.id !== id);
     setQuotations(updated);
-    try {
-      localStorage.setItem('samyak_erp_sales_quotations', JSON.stringify(updated));
-    } catch (e) {}
-    await deleteSalesQuotationFromSupabase(id);
   };
 
   // Open Interactive Convert to OCN Confirmation & Job Punching Modal
@@ -760,7 +749,7 @@ export default function SalesManagement({
     }));
   };
 
-  const handleConfirmAndPunchOCN = () => {
+  const handleConfirmAndPunchOCN = async () => {
     if (!ocnConvertModalQtn || !ocnConvertFormData || ocnConvertFormData.length === 0) return;
 
     const qtn = ocnConvertModalQtn;
@@ -968,14 +957,10 @@ export default function SalesManagement({
       return q;
     });
 
-    setQuotations(updatedQuotations);
-    try {
-      localStorage.setItem('samyak_erp_sales_quotations', JSON.stringify(updatedQuotations));
-    } catch (err) {}
-
     if (updatedTarget) {
-      saveSalesQuotationToSupabase(updatedTarget);
+      await saveSalesQuotationToSupabase(updatedTarget);
     }
+    setQuotations(updatedQuotations);
 
     setOcnConvertModalQtn(null);
     setOcnConvertFormData([]);

@@ -26,7 +26,7 @@ import PurchaseOrderPDF from './PurchaseOrderPDF';
 import TablePagination, { usePagination } from './TablePagination';
 import { pushSlugState } from '../utils/slugRouter';
 import { calculateJobRawMaterials, isOrderOverdue, isOrderNearingDeadline, getOrderStatusInfo } from '../factoryStore';
-import { saveOrderToSupabase } from '../services/supabaseDataService';
+import { saveOrderToSupabase, fetchSystemSetting, saveSystemSetting } from '../services/supabaseDataService';
 import { getNextDocRefNumber } from '../services/settingsService';
 
 export default function OrderManagement({ 
@@ -486,23 +486,31 @@ export default function OrderManagement({
   const [poRemarks, setPoRemarks] = useState('Raw material must strictly conform to specified micron gauge and slit width. COA required upon delivery.');
   const [editablePoItems, setEditablePoItems] = useState([]);
 
-  // Cache for generated PO documents
-  const [issuedPoStore, setIssuedPoStore] = useState(() => {
-    try {
-      const saved = localStorage.getItem('samyak_erp_issued_pos');
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
+  // Cache for generated PO documents via Supabase
+  const [issuedPoStore, setIssuedPoStore] = useState({});
 
   useEffect(() => {
+    let active = true;
+    async function loadPoStore() {
+      try {
+        const remote = await fetchSystemSetting('samyak_erp_issued_pos');
+        if (active && remote && typeof remote === 'object') {
+          setIssuedPoStore(remote);
+        }
+      } catch (e) {}
+    }
+    loadPoStore();
+    return () => { active = false; };
+  }, []);
+
+  const saveIssuedPoStore = async (newStore) => {
+    setIssuedPoStore(newStore);
     try {
-      localStorage.setItem('samyak_erp_issued_pos', JSON.stringify(issuedPoStore));
+      await saveSystemSetting('samyak_erp_issued_pos', newStore);
     } catch (e) {
       console.warn("Failed to save issued PO store", e);
     }
-  }, [issuedPoStore]);
+  };
 
   // Generated PO PDF preview state
   const [activePoPdfData, setActivePoPdfData] = useState(null);
@@ -668,10 +676,10 @@ export default function OrderManagement({
       remarks: 'Engraved cylinders must strictly conform to electronic proof & job specifications. Dynamic balancing test report & proof print required upon delivery.'
     };
 
-    setIssuedPoStore(prev => ({
-      ...prev,
+    saveIssuedPoStore({
+      ...issuedPoStore,
       [poNo]: poData
-    }));
+    });
 
     // Update order status
     onUpdateOrder({
@@ -859,10 +867,10 @@ export default function OrderManagement({
       remarks: poRemarks
     };
 
-    setIssuedPoStore(prev => ({
-      ...prev,
+    saveIssuedPoStore({
+      ...issuedPoStore,
       [poNo]: poData
-    }));
+    });
 
     // Update PO status in orders state & database
     orders.forEach(order => {

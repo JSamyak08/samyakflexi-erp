@@ -12,17 +12,16 @@ export { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl
  * Throws an error if unauthenticated, preventing 401s on database writes.
  */
 export async function ensureValidSession() {
-  if (!isSupabaseConfigured()) return; // Local fallback mode ignores auth
+  if (!isSupabaseConfigured()) {
+    throw new Error('[Supabase Auth] Supabase URL or Key is not configured.');
+  }
   try {
     const { data: { session }, error } = await supabase.auth.getSession();
     if (error) {
-      console.warn('[Supabase Auth] Could not verify session:', error.message, '- proceeding with anon key.');
-    }
-    if (!session) {
-      console.warn('[Supabase Auth] No active session found - proceeding with anon key (RLS is disabled).');
+      console.warn('[Supabase Auth] Session verification error:', error.message);
     }
   } catch (e) {
-    console.warn('[Supabase Auth] Session check failed, proceeding anyway:', e.message);
+    console.warn('[Supabase Auth] Session check notice:', e.message);
   }
 }
 
@@ -32,24 +31,11 @@ import {
 } from '../factoryStore';
 
 /**
- * Graceful Supabase Error Handler
- * Suppresses blocking UI exceptions if a table is not created in Supabase yet,
- * allowing local ERP in-memory state to operate smoothly.
+ * Strict Supabase Error Handler
+ * Throws errors cleanly so UI can enter Database Disconnected / Read-Only mode.
  */
 export function handleSupabaseError(error, contextName) {
   if (!error) return;
-
-  const isMissingTable = 
-    error.message?.includes('schema cache') || 
-    error.message?.includes('does not exist') || 
-    error.code === 'PGRST204' || 
-    error.code === '42P01';
-
-  if (isMissingTable) {
-    console.warn(`[Supabase Sync Notice] Table '${contextName}' is not created in Supabase yet. Saved locally in ERP state.`);
-    return;
-  }
-
   console.error(`[Supabase Sync Error] ${contextName}:`, error);
   throw error;
 }
@@ -59,7 +45,9 @@ export function handleSupabaseError(error, contextName) {
 // ============================================================================
 
 export async function fetchOrders() {
-  if (!isSupabaseConfigured()) return [];
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
   console.log('[ORDERS][FETCH] Starting Supabase fetch');
   try {
     const { data, error } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
@@ -123,7 +111,7 @@ export async function fetchOrders() {
 
 export async function saveOrderToSupabase(order) {
   if (!isSupabaseConfigured() || !order) {
-    return;
+    throw new Error("Cannot save order: Supabase database connection is not available.");
   }
   await ensureValidSession();
   console.log(`[ORDERS][DB WRITE] UPSERT orderId=${order.id}`);
@@ -175,7 +163,6 @@ export async function saveOrderToSupabase(order) {
   if (error) {
     console.error(`[ORDERS][DB WRITE Error] orderId=${order.id}:`, error);
     handleSupabaseError(error, 'orders');
-    throw error;
   }
 }
 
@@ -202,7 +189,6 @@ export async function deleteOrderFromSupabase(orderId) {
   if (error) {
     console.error(`[ORDERS][DELETE] Supabase deletion failed for orderId=${orderId}:`, error);
     handleSupabaseError(error, 'orders');
-    throw error;
   }
 
   console.log(`[ORDERS][DELETE] Supabase deletion successful orderId=${orderId}`);
@@ -214,12 +200,13 @@ export async function deleteOrderFromSupabase(orderId) {
 // ============================================================================
 
 export async function fetchVendors() {
-  if (!isSupabaseConfigured()) return [];
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
   try {
     const { data, error } = await supabase.from('vendors').select('*').order('name');
     if (error) {
       handleSupabaseError(error, 'vendors');
-      return [];
     }
     if (!data) return [];
 
@@ -240,12 +227,14 @@ export async function fetchVendors() {
     }));
   } catch (err) {
     console.error("Error fetching vendors from Supabase:", err);
-    return [];
+    throw err;
   }
 }
 
 export async function saveVendorToSupabase(vendor) {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !vendor) {
+    throw new Error("Supabase database connection is not available.");
+  }
   await ensureValidSession();
   const vendorId = vendor.id || `VEND-2026-${Math.floor(1000 + Math.random() * 9000)}`;
   const vendorName = vendor.name || vendor.companyName || 'New Vendor';
@@ -267,18 +256,22 @@ export async function saveVendorToSupabase(vendor) {
   if (fullErr) {
     console.warn('[vendors] Full payload failed, trying minimal:', fullErr.message);
     const { error: minErr } = await supabase.from('vendors').upsert({ id: vendorId, name: vendorName, category: vendorCategory }, { onConflict: 'id' });
-    if (minErr) { console.error('[vendors] Minimal payload failed:', minErr.message); handleSupabaseError(minErr, 'vendors'); }
-    else { console.log('[vendors] Saved with minimal payload.'); }
-  } else { console.log('[vendors] Saved successfully.'); }
+    if (minErr) {
+      console.error('[vendors] Minimal payload failed:', minErr.message);
+      handleSupabaseError(minErr, 'vendors');
+    }
+  }
 }
 
 export async function deleteVendorFromSupabase(vendorId) {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !vendorId) {
+    throw new Error("Supabase database connection is not available.");
+  }
   await ensureValidSession();
   const { error } = await supabase.from('vendors').delete().eq('id', vendorId);
   if (error) {
     console.error("Error deleting vendor from Supabase:", error);
-    throw error;
+    handleSupabaseError(error, 'vendors');
   }
 }
 
@@ -287,12 +280,13 @@ export async function deleteVendorFromSupabase(vendorId) {
 // ============================================================================
 
 export async function fetchClients() {
-  if (!isSupabaseConfigured()) return [];
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
   try {
     const { data, error } = await supabase.from('clients').select('*').order('name');
     if (error) {
       handleSupabaseError(error, 'clients');
-      return [];
     }
     if (!data) return [];
 
@@ -307,12 +301,14 @@ export async function fetchClients() {
     }));
   } catch (err) {
     console.error("Error fetching clients from Supabase:", err);
-    return [];
+    throw err;
   }
 }
 
 export async function saveClientToSupabase(client) {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !client) {
+    throw new Error("Supabase database connection is not available.");
+  }
   await ensureValidSession();
   const clientId = client.id || `CLI-${Math.floor(1000 + Math.random() * 9000)}`;
 
@@ -326,17 +322,20 @@ export async function saveClientToSupabase(client) {
     phone: client.phone || ''
   }, { onConflict: 'id' });
 
-  handleSupabaseError(error, 'clients');
+  if (error) {
+    handleSupabaseError(error, 'clients');
+  }
 }
 
 export async function deleteClientFromSupabase(clientId) {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !clientId) {
+    throw new Error("Supabase database connection is not available.");
+  }
   await ensureValidSession();
-  try {
-    const { error } = await supabase.from('clients').delete().eq('id', clientId);
+  const { error } = await supabase.from('clients').delete().eq('id', clientId);
+  if (error) {
+    console.error("Error deleting client from Supabase:", error);
     handleSupabaseError(error, 'clients');
-  } catch (err) {
-    console.error("Error deleting client from Supabase:", err);
   }
 }
 
@@ -501,24 +500,27 @@ export function mapInventoryItemToDbPayload(item) {
 }
 
 export async function fetchInventory() {
-  if (!isSupabaseConfigured()) return [];
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
   try {
     const { data, error } = await supabase.from('inventory').select('*').order('item_name');
     if (error) {
       handleSupabaseError(error, 'inventory');
-      return [];
     }
     if (!data) return [];
 
     return data.map(i => sanitizeInventoryItem(i));
   } catch (err) {
     console.error("Error fetching inventory from Supabase:", err);
-    return [];
+    throw err;
   }
 }
 
 export async function saveInventoryItemToSupabase(item) {
-  if (!isSupabaseConfigured() || !item) return;
+  if (!isSupabaseConfigured() || !item) {
+    throw new Error("Cannot save inventory item: Supabase database connection is not available.");
+  }
   await ensureValidSession();
   const payload = mapInventoryItemToDbPayload(item);
   if (!payload) return;
@@ -532,7 +534,9 @@ export async function saveInventoryItemToSupabase(item) {
 }
 
 export async function saveInventoryBatchToSupabase(inventoryList) {
-  if (!isSupabaseConfigured() || !Array.isArray(inventoryList) || inventoryList.length === 0) return;
+  if (!isSupabaseConfigured() || !Array.isArray(inventoryList) || inventoryList.length === 0) {
+    throw new Error("Cannot save inventory batch: Supabase database connection is not available.");
+  }
   await ensureValidSession();
   const payloads = inventoryList.map(item => mapInventoryItemToDbPayload(item)).filter(Boolean);
 
@@ -548,14 +552,15 @@ export async function saveInventoryBatchToSupabase(inventoryList) {
 
 
 export async function deleteInventoryItemFromSupabase(itemId) {
-  if (!isSupabaseConfigured() || !itemId) return;
+  if (!isSupabaseConfigured() || !itemId) {
+    throw new Error("Cannot delete inventory item: Supabase database connection is not available.");
+  }
   await ensureValidSession();
   console.log('[inventory] Deleting item from Supabase:', itemId);
   const { error } = await supabase.from('inventory').delete().eq('id', String(itemId));
   if (error) {
     console.error("Error deleting inventory from Supabase:", error);
     handleSupabaseError(error, 'inventory');
-    throw error;
   }
 }
 
@@ -614,7 +619,9 @@ export function sanitizeGRN(rawGRN) {
 }
 
 export async function fetchGRNs() {
-  if (!isSupabaseConfigured()) return [];
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
   try {
     const { data, error } = await supabase.from('grns').select('*').order('created_at', { ascending: false });
     if (error) throw error;
@@ -623,12 +630,14 @@ export async function fetchGRNs() {
     return data.map(g => sanitizeGRN(g));
   } catch (err) {
     console.error("Error fetching GRNs from Supabase:", err);
-    return [];
+    throw err;
   }
 }
 
 export async function saveGRNToSupabase(grn) {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !grn) {
+    throw new Error("Cannot save GRN: Supabase database connection is not available.");
+  }
   await ensureValidSession();
   const clean = sanitizeGRN(grn);
   const grnId = clean.id || clean.grnNo || `GRN-2026-${Math.floor(100 + Math.random() * 900)}`;
@@ -680,12 +689,13 @@ export async function saveGRNToSupabase(grn) {
 // ============================================================================
 
 export async function fetchCylinders() {
-  if (!isSupabaseConfigured()) return [];
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
   try {
     const { data, error } = await supabase.from('cylinders').select('*').order('created_at', { ascending: false });
     if (error) {
       handleSupabaseError(error, 'cylinders');
-      return [];
     }
     if (!data) return [];
 
@@ -752,12 +762,14 @@ export async function fetchCylinders() {
     });
   } catch (err) {
     console.error("Error fetching cylinders from Supabase:", err);
-    return [];
+    throw err;
   }
 }
 
 export async function saveCylinderToSupabase(cyl) {
-  if (!isSupabaseConfigured() || !cyl) return;
+  if (!isSupabaseConfigured() || !cyl) {
+    throw new Error("Cannot save cylinder: Supabase database connection is not available.");
+  }
   await ensureValidSession();
   const rateVal = cyl.rate !== undefined ? cyl.rate : cyl.ratePerSqInch;
   const id = cyl.id || `CYL-${Math.floor(100 + Math.random() * 900)}`;
@@ -866,12 +878,6 @@ export async function saveCylinderToSupabase(cyl) {
     changelogs: changelogsList
   };
 
-  // Dual-Persist: Save failsafe snapshot in system_settings
-  try {
-    const key = `jobcard_${cyl.sku || id}`;
-    saveSystemSetting(key, { ...cyl, ...pressMarks, id, sku: cyl.sku, jobName: cyl.jobName }).catch(() => {});
-  } catch (e) {}
-
   const { error: fullErr } = await supabase.from('cylinders').upsert(fullPayload, { onConflict: 'id' });
   if (fullErr) {
     console.warn('[cylinders] Full payload upsert rejected, trying payload with press_marks JSON:', fullErr.message);
@@ -917,26 +923,25 @@ export async function saveCylinderToSupabase(cyl) {
 }
 
 export async function saveCylinderBatchToSupabase(cylList) {
-  if (!isSupabaseConfigured() || !Array.isArray(cylList) || cylList.length === 0) return;
+  if (!isSupabaseConfigured() || !Array.isArray(cylList) || cylList.length === 0) {
+    throw new Error("Cannot save cylinder batch: Supabase database connection is not available.");
+  }
   await ensureValidSession();
   console.log(`[cylinders] Bulk syncing ${cylList.length} cylinder set(s) to Supabase...`);
   for (const cyl of cylList) {
-    try {
-      await saveCylinderToSupabase(cyl);
-    } catch (e) {
-      console.warn('[cylinders] Failed to save cylinder in batch:', cyl?.id, e);
-    }
+    await saveCylinderToSupabase(cyl);
   }
 }
 
 export async function deleteCylinderFromSupabase(cylinderId) {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !cylinderId) {
+    throw new Error("Cannot delete cylinder: Supabase database connection is not available.");
+  }
   await ensureValidSession();
-  try {
-    const { error } = await supabase.from('cylinders').delete().eq('id', cylinderId);
+  const { error } = await supabase.from('cylinders').delete().eq('id', cylinderId);
+  if (error) {
+    console.error("Error deleting cylinder from Supabase:", error);
     handleSupabaseError(error, 'cylinders');
-  } catch (err) {
-    console.error("Error deleting cylinder from Supabase:", err);
   }
 }
 
@@ -945,12 +950,13 @@ export async function deleteCylinderFromSupabase(cylinderId) {
 // ============================================================================
 
 export async function fetchProductionRecords() {
-  if (!isSupabaseConfigured()) return [];
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
   try {
     const { data, error } = await supabase.from('production_records').select('*').order('recorded_at', { ascending: false });
     if (error) {
       handleSupabaseError(error, 'production_records');
-      return [];
     }
     if (!data) return [];
 
@@ -1020,12 +1026,14 @@ export async function fetchProductionRecords() {
     });
   } catch (err) {
     console.error("Error fetching production records from Supabase:", err);
-    return [];
+    throw err;
   }
 }
 
 export async function saveProductionRecordToSupabase(record) {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !record) {
+    throw new Error("Cannot save production record: Supabase database connection is not available.");
+  }
   await ensureValidSession();
   const recId = record.id || `REC-${Date.now()}`;
   const scrapKg = Number(record.totalScrapQtyKg ?? record.totalWastageKg ?? 0);
@@ -1151,7 +1159,9 @@ export async function saveProductionRecordToSupabase(record) {
 // ============================================================================
 
 export async function fetchUsers() {
-  if (!isSupabaseConfigured()) return [];
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
   try {
     const { data, error } = await supabase
       .from('users')
@@ -1159,7 +1169,6 @@ export async function fetchUsers() {
       .order('full_name');
     if (error) {
       handleSupabaseError(error, 'users');
-      return [];
     }
     if (!data) return [];
 
@@ -1175,13 +1184,15 @@ export async function fetchUsers() {
       }));
   } catch (err) {
     console.error("Error fetching users from Supabase:", err);
-    return [];
+    throw err;
   }
 }
 
 
 export async function saveUserToSupabase(user) {
-  if (!isSupabaseConfigured()) return null;
+  if (!isSupabaseConfigured() || !user) {
+    throw new Error("Cannot save user: Supabase database connection is not available.");
+  }
   try {
     await ensureValidSession();
     const userId = user.id || `USR-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -1219,7 +1230,6 @@ export async function saveUserToSupabase(user) {
 
       if (minErr) {
         handleSupabaseError(minErr, 'users');
-        return null;
       }
       return minData ? minData[0] : minPayload;
     }
@@ -1227,7 +1237,6 @@ export async function saveUserToSupabase(user) {
     return data ? data[0] : fullPayload;
   } catch (err) {
     handleSupabaseError(err, 'users exception');
-    return null;
   }
 }
 
@@ -1235,7 +1244,9 @@ export async function saveUserToSupabase(user) {
  * Update password for a user in the auth system.
  */
 export async function updateUserPasswordInDB(email, newPassword) {
-  if (!isSupabaseConfigured() || !email || !newPassword) return false;
+  if (!isSupabaseConfigured() || !email || !newPassword) {
+    throw new Error("Cannot update user password: Supabase database connection is not available.");
+  }
   try {
     await ensureValidSession();
     const { error } = await supabase
@@ -1244,28 +1255,27 @@ export async function updateUserPasswordInDB(email, newPassword) {
       .eq('email', email.toLowerCase().trim());
     if (error) {
       console.warn('[users] Could not update user password:', error.message);
-      return false;
+      handleSupabaseError(error, 'users');
     }
     return true;
   } catch (err) {
-    console.warn('[users] updateUserPasswordInDB exception:', err.message);
-    return false;
+    handleSupabaseError(err, 'updateUserPasswordInDB exception');
   }
 }
 
 export async function deleteUserFromSupabase(id) {
-  if (!isSupabaseConfigured() || !id) return false;
+  if (!isSupabaseConfigured() || !id) {
+    throw new Error("Cannot delete user: Supabase database connection is not available.");
+  }
   try {
     await ensureValidSession();
     const { error } = await supabase.from('users').delete().eq('id', id);
     if (error) {
       handleSupabaseError(error, 'users');
-      return false;
     }
     return true;
   } catch (err) {
     handleSupabaseError(err, 'users exception');
-    return false;
   }
 }
 
@@ -1275,12 +1285,13 @@ export async function deleteUserFromSupabase(id) {
 // ============================================================================
 
 export async function fetchJobDataSheets() {
-  if (!isSupabaseConfigured()) return [];
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
   try {
     const { data, error } = await supabase.from('job_datasheets').select('*').order('created_at', { ascending: false });
     if (error) {
       handleSupabaseError(error, 'job_datasheets');
-      return [];
     }
     if (!data) return [];
 
@@ -1303,12 +1314,14 @@ export async function fetchJobDataSheets() {
     }));
   } catch (err) {
     console.error("Error fetching job datasheets from Supabase:", err);
-    return [];
+    throw err;
   }
 }
 
 export async function saveJobDataSheetToSupabase(sheet) {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !sheet) {
+    throw new Error("Cannot save job datasheet: Supabase database connection is not available.");
+  }
   await ensureValidSession();
   const sheetId = sheet.id || `JDS-${Date.now()}`;
   const fullPayload = {
@@ -1333,16 +1346,20 @@ export async function saveJobDataSheetToSupabase(sheet) {
   if (fullErr) {
     console.warn('[job_datasheets] Full payload failed, trying minimal:', fullErr.message);
     const { error: minErr } = await supabase.from('job_datasheets').upsert({ id: sheetId, job_name: sheet.jobName || 'Job Datasheet', client_name: sheet.clientName || '' }, { onConflict: 'id' });
-    if (minErr) { console.error('[job_datasheets] Minimal payload failed:', minErr.message); handleSupabaseError(minErr, 'job_datasheets'); }
-    else { console.log('[job_datasheets] Saved with minimal payload.'); }
-  } else { console.log('[job_datasheets] Saved successfully.'); }
+    if (minErr) {
+      console.error('[job_datasheets] Minimal payload failed:', minErr.message);
+      handleSupabaseError(minErr, 'job_datasheets');
+    }
+  }
 }
 
 export async function deleteJobDataSheetFromSupabase(sheetId) {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !sheetId) return;
   await ensureValidSession();
   const { error } = await supabase.from('job_datasheets').delete().eq('id', sheetId);
-  handleSupabaseError(error, 'job_datasheets');
+  if (error) {
+    handleSupabaseError(error, 'job_datasheets');
+  }
 }
 
 
@@ -1381,12 +1398,13 @@ export async function clearAllSupabaseData() {
 // ============================================================================
 
 export async function fetchInventoryRolls() {
-  if (!isSupabaseConfigured()) return [];
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
   try {
     const { data, error } = await supabase.from('inventory_rolls').select('*').order('inward_datetime', { ascending: false });
     if (error) {
       handleSupabaseError(error, 'inventory_rolls');
-      return [];
     }
     if (!data) return [];
 
@@ -1430,12 +1448,14 @@ export async function fetchInventoryRolls() {
     }));
   } catch (err) {
     console.error("Error fetching inventory rolls from Supabase:", err);
-    return [];
+    throw err;
   }
 }
 
 export async function saveInventoryRollToSupabase(roll) {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !roll) {
+    throw new Error("Cannot save inventory roll: Supabase database connection is not available.");
+  }
   await ensureValidSession();
   const fullPayload = {
     barcode_id: roll.barcodeId || roll.id,
@@ -1488,11 +1508,7 @@ export async function saveInventoryRollToSupabase(roll) {
     if (minErr) { 
       console.error('[inventory_rolls] Minimal payload failed:', minErr.message); 
       handleSupabaseError(minErr, 'inventory_rolls'); 
-    } else { 
-      console.log('[inventory_rolls] Saved with minimal payload.'); 
     }
-  } else { 
-    console.log('[inventory_rolls] Saved successfully.'); 
   }
 }
 
@@ -1501,12 +1517,13 @@ export async function saveInventoryRollToSupabase(roll) {
 // ============================================================================
 
 export async function fetchDispatchShipments() {
-  if (!isSupabaseConfigured()) return [];
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
   try {
     const { data, error } = await supabase.from('dispatch_shipments').select('*').order('dispatch_date', { ascending: false });
     if (error) {
       handleSupabaseError(error, 'dispatch_shipments');
-      return [];
     }
     if (!data) return [];
 
@@ -1525,12 +1542,14 @@ export async function fetchDispatchShipments() {
     }));
   } catch (err) {
     console.error("Error fetching dispatch shipments from Supabase:", err);
-    return [];
+    throw err;
   }
 }
 
 export async function saveDispatchShipmentToSupabase(shipment) {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !shipment) {
+    throw new Error("Cannot save dispatch shipment: Supabase database connection is not available.");
+  }
   await ensureValidSession();
   const fullPayload = {
     dispatch_id: shipment.dispatchId,
@@ -1550,9 +1569,11 @@ export async function saveDispatchShipmentToSupabase(shipment) {
   if (fullErr) {
     console.warn('[dispatch_shipments] Full payload failed, trying minimal:', fullErr.message);
     const { error: minErr } = await supabase.from('dispatch_shipments').upsert({ dispatch_id: shipment.dispatchId, job_name: shipment.jobName || '', client_name: shipment.clientName || '', dispatch_date: shipment.dispatchDate || new Date().toISOString() }, { onConflict: 'dispatch_id' });
-    if (minErr) { console.error('[dispatch_shipments] Minimal payload failed:', minErr.message); handleSupabaseError(minErr, 'dispatch_shipments'); }
-    else { console.log('[dispatch_shipments] Saved with minimal payload.'); }
-  } else { console.log('[dispatch_shipments] Saved successfully.'); }
+    if (minErr) {
+      console.error('[dispatch_shipments] Minimal payload failed:', minErr.message);
+      handleSupabaseError(minErr, 'dispatch_shipments');
+    }
+  }
 }
 
 // ============================================================================
@@ -1560,12 +1581,13 @@ export async function saveDispatchShipmentToSupabase(shipment) {
 // ============================================================================
 
 export async function fetchPrintingMachines() {
-  if (!isSupabaseConfigured()) return [];
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
   try {
     const { data, error } = await supabase.from('printing_machines').select('*').order('name');
     if (error) {
       handleSupabaseError(error, 'printing_machines');
-      return [];
     }
     if (!data) return [];
 
@@ -1582,12 +1604,14 @@ export async function fetchPrintingMachines() {
     }));
   } catch (err) {
     console.error("Error fetching printing machines from Supabase:", err);
-    return [];
+    throw err;
   }
 }
 
 export async function savePrintingMachineToSupabase(machine) {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !machine) {
+    throw new Error("Cannot save printing machine: Supabase database connection is not available.");
+  }
   await ensureValidSession();
   const machineId = machine.id || `MAC-PRINT-${Math.floor(10 + Math.random() * 90)}`;
   const fullPayload = {
@@ -1606,25 +1630,30 @@ export async function savePrintingMachineToSupabase(machine) {
   if (fullErr) {
     console.warn('[printing_machines] Full payload failed, trying minimal:', fullErr.message);
     const { error: minErr } = await supabase.from('printing_machines').upsert({ id: machineId, name: machine.name || 'Machine', status: machine.status || 'Active' }, { onConflict: 'id' });
-    if (minErr) { console.error('[printing_machines] Minimal payload failed:', minErr.message); handleSupabaseError(minErr, 'printing_machines'); }
-    else { console.log('[printing_machines] Saved with minimal payload.'); }
-  } else { console.log('[printing_machines] Saved successfully.'); }
+    if (minErr) {
+      console.error('[printing_machines] Minimal payload failed:', minErr.message);
+      handleSupabaseError(minErr, 'printing_machines');
+    }
+  }
 }
 
 export async function deletePrintingMachineFromSupabase(machineId) {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !machineId) {
+    throw new Error("Cannot delete printing machine: Supabase database connection is not available.");
+  }
   await ensureValidSession();
   const { error } = await supabase.from('printing_machines').delete().eq('id', machineId);
-  handleSupabaseError(error, 'printing_machines');
+  if (error) handleSupabaseError(error, 'printing_machines');
 }
 
 export async function fetchProductionSchedules() {
-  if (!isSupabaseConfigured()) return [];
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
   try {
     const { data, error } = await supabase.from('production_schedules').select('*').order('scheduled_date', { ascending: true });
     if (error) {
       handleSupabaseError(error, 'production_schedules');
-      return [];
     }
     if (!data) return [];
 
@@ -1653,12 +1682,14 @@ export async function fetchProductionSchedules() {
     }));
   } catch (err) {
     console.error("Error fetching production schedules from Supabase:", err);
-    return [];
+    throw err;
   }
 }
 
 export async function saveProductionScheduleToSupabase(schedule) {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !schedule) {
+    throw new Error("Cannot save production schedule: Supabase database connection is not available.");
+  }
   await ensureValidSession();
   const schedId = schedule.id || `SCHED-2026-${Math.floor(100 + Math.random() * 900)}`;
   const fullPayload = {
@@ -1689,16 +1720,20 @@ export async function saveProductionScheduleToSupabase(schedule) {
   if (fullErr) {
     console.warn('[production_schedules] Full payload failed, trying minimal:', fullErr.message);
     const { error: minErr } = await supabase.from('production_schedules').upsert({ id: schedId, job_name: schedule.jobName || '', machine_id: schedule.machineId, scheduled_date: schedule.scheduledDate || new Date().toISOString().split('T')[0], status: schedule.status || 'Scheduled' }, { onConflict: 'id' });
-    if (minErr) { console.error('[production_schedules] Minimal payload failed:', minErr.message); handleSupabaseError(minErr, 'production_schedules'); }
-    else { console.log('[production_schedules] Saved with minimal payload.'); }
-  } else { console.log('[production_schedules] Saved successfully.'); }
+    if (minErr) {
+      console.error('[production_schedules] Minimal payload failed:', minErr.message);
+      handleSupabaseError(minErr, 'production_schedules');
+    }
+  }
 }
 
 export async function deleteProductionScheduleFromSupabase(scheduleId) {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !scheduleId) {
+    throw new Error("Cannot delete production schedule: Supabase database connection is not available.");
+  }
   await ensureValidSession();
   const { error } = await supabase.from('production_schedules').delete().eq('id', scheduleId);
-  handleSupabaseError(error, 'production_schedules');
+  if (error) handleSupabaseError(error, 'production_schedules');
 }
 
 // ============================================================================
@@ -1724,12 +1759,13 @@ export function parseStructureStringToLayers(structureStr) {
 }
 
 export async function fetchJobMasters() {
-  if (!isSupabaseConfigured()) return [];
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
   try {
     const { data, error } = await supabase.from('job_masters').select('*').order('created_at', { ascending: false });
     if (error) {
       handleSupabaseError(error, 'job_masters');
-      return [];
     }
     if (!data) return [];
 
@@ -1785,17 +1821,19 @@ export async function fetchJobMasters() {
         shellSize: j.shell_size || pm.shellSize || '',
         petSize: j.pet_size || pm.petSize || '',
         processRouting: Array.isArray(j.process_routing) ? j.process_routing : (Array.isArray(pm.processRouting) ? pm.processRouting : []),
-        creationDate: j.creation_date || j.created_at ? String(j.created_at).split('T')[0] : new Date().toISOString().split('T')[0]
+        creationDate: j.creation_date || (j.created_at ? String(j.created_at).split('T')[0] : new Date().toISOString().split('T')[0])
       };
     });
   } catch (err) {
     console.error("Error fetching job masters from Supabase:", err);
-    return [];
+    throw err;
   }
 }
 
 export async function saveJobMasterToSupabase(jobMaster) {
-  if (!isSupabaseConfigured() || !jobMaster) return;
+  if (!isSupabaseConfigured() || !jobMaster) {
+    throw new Error("Cannot save job master: Supabase database connection is not available.");
+  }
   await ensureValidSession();
   
   const id = jobMaster.id || `JM-2026-${Math.floor(100 + Math.random() * 900)}`;
@@ -1900,12 +1938,6 @@ export async function saveJobMasterToSupabase(jobMaster) {
     creation_date: jobMaster.creationDate || new Date().toISOString().split('T')[0]
   };
 
-  // Dual-Persist: Save failsafe snapshot in system_settings
-  try {
-    const key = `jobcard_${skuCode || id}`;
-    saveSystemSetting(key, { ...jobMaster, ...pressMarks, id, skuCode, jobName }).catch(() => {});
-  } catch (e) {}
-
   // 1. Try extended payload with new columns (including press marks & layers) FIRST
   const { error: extErr } = await supabase.from('job_masters').upsert(extendedPayload, { onConflict: 'id' });
 
@@ -1930,28 +1962,30 @@ export async function saveJobMasterToSupabase(jobMaster) {
         client_name: clientName
       };
       const { error: minErr } = await supabase.from('job_masters').upsert(minimalPayload, { onConflict: 'id' });
-      handleSupabaseError(minErr, 'job_masters');
+      if (minErr) {
+        handleSupabaseError(minErr, 'job_masters');
+      }
     }
   }
 }
 
 export async function deleteJobMasterFromSupabase(jobMasterId) {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !jobMasterId) {
+    throw new Error("Cannot delete job master: Supabase database connection is not available.");
+  }
   await ensureValidSession();
   const { error } = await supabase.from('job_masters').delete().eq('id', jobMasterId);
-  handleSupabaseError(error, 'job_masters');
+  if (error) handleSupabaseError(error, 'job_masters');
 }
 
 export async function saveJobMasterBatchToSupabase(jobMasterList) {
-  if (!isSupabaseConfigured() || !Array.isArray(jobMasterList) || jobMasterList.length === 0) return;
+  if (!isSupabaseConfigured() || !Array.isArray(jobMasterList) || jobMasterList.length === 0) {
+    throw new Error("Cannot save job master batch: Supabase database connection is not available.");
+  }
   await ensureValidSession();
   console.log(`[job_masters] Bulk syncing ${jobMasterList.length} Job Master(s) to Supabase...`);
   for (const jm of jobMasterList) {
-    try {
-      await saveJobMasterToSupabase(jm);
-    } catch (e) {
-      console.warn('[job_masters] Failed to save job master in batch:', jm?.id, e);
-    }
+    await saveJobMasterToSupabase(jm);
   }
 }
 
@@ -1962,7 +1996,9 @@ export async function saveJobMasterBatchToSupabase(jobMasterList) {
  */
 
 export async function fetchSalesQuotations() {
-  if (!isSupabaseConfigured()) return [];
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
 
   try {
     const { data, error } = await supabase
@@ -1972,112 +2008,102 @@ export async function fetchSalesQuotations() {
 
     if (error) {
       handleSupabaseError(error, 'sales_quotations');
-      return [];
     }
 
-    if (data && data.length > 0) {
-      return data.map(q => ({
-        id: q.id,
-        quotationNo: q.quotation_no,
-        revisionNo: q.revision_no || 0,
-        amendmentNo: q.amendment_no || 'Rev 00',
-        enquiryDate: q.enquiry_date,
-        estimatedDeliveryDate: q.estimated_delivery_date,
-        salesManager: q.sales_manager,
-        clientName: q.client_name,
-        clientAddress: q.client_address,
-        clientGstin: q.client_gstin,
-        contactPerson: q.contact_person,
-        contactPhone: q.contact_phone,
-        contactEmail: q.contact_email,
-        paymentTerms: q.payment_terms,
-        cylinderTerms: q.cylinder_terms,
-        transportTerms: q.transport_terms,
-        status: q.status,
-        ocnRefNo: q.ocn_ref_no || '',
-        convertedDate: q.converted_date || '',
-        items: q.items || [],
-        termsAndConditions: q.terms_and_conditions || [],
-        comments: q.comments || '',
-        createdAt: q.created_at
-      }));
-    }
+    if (!data) return [];
+
+    return data.map(q => ({
+      id: q.id,
+      quotationNo: q.quotation_no,
+      revisionNo: q.revision_no || 0,
+      amendmentNo: q.amendment_no || 'Rev 00',
+      enquiryDate: q.enquiry_date,
+      estimatedDeliveryDate: q.estimated_delivery_date,
+      salesManager: q.sales_manager,
+      clientName: q.client_name,
+      clientAddress: q.client_address,
+      clientGstin: q.client_gstin,
+      contactPerson: q.contact_person,
+      contactPhone: q.contact_phone,
+      contactEmail: q.contact_email,
+      paymentTerms: q.payment_terms,
+      cylinderTerms: q.cylinder_terms,
+      transportTerms: q.transport_terms,
+      status: q.status,
+      ocnRefNo: q.ocn_ref_no || '',
+      convertedDate: q.converted_date || '',
+      items: q.items || [],
+      termsAndConditions: q.terms_and_conditions || [],
+      comments: q.comments || '',
+      createdAt: q.created_at
+    }));
   } catch (err) {
-    handleSupabaseError(err, 'sales_quotations exception');
+    console.error("Error fetching sales quotations from Supabase:", err);
+    throw err;
   }
-
-  return [];
 }
 
 export async function saveSalesQuotationToSupabase(quotation) {
-  if (!isSupabaseConfigured() || !quotation) return null;
-
-  try {
-    await ensureValidSession();
-
-    const payload = {
-      id: quotation.id,
-      quotation_no: quotation.quotationNo,
-      revision_no: quotation.revisionNo || 0,
-      amendment_no: quotation.amendmentNo || 'Rev 00',
-      enquiry_date: quotation.enquiryDate,
-      estimated_delivery_date: quotation.estimatedDeliveryDate,
-      sales_manager: quotation.salesManager,
-      client_name: quotation.clientName,
-      client_address: quotation.clientAddress,
-      client_gstin: quotation.clientGstin,
-      contact_person: quotation.contactPerson,
-      contact_phone: quotation.contactPhone,
-      contact_email: quotation.contactEmail,
-      payment_terms: quotation.paymentTerms,
-      cylinder_terms: quotation.cylinderTerms,
-      transport_terms: quotation.transportTerms,
-      status: quotation.status,
-      ocn_ref_no: quotation.ocnRefNo || '',
-      converted_date: quotation.convertedDate || '',
-      items: quotation.items || [],
-      terms_and_conditions: quotation.termsAndConditions || [],
-      comments: quotation.comments || ''
-    };
-
-    const { data, error } = await supabase
-      .from('sales_quotations')
-      .upsert([payload], { onConflict: 'id' })
-      .select();
-
-    if (error) {
-      handleSupabaseError(error, 'sales_quotations');
-      return null;
-    }
-
-    return data ? data[0] : null;
-  } catch (err) {
-    handleSupabaseError(err, 'sales_quotations exception');
-    return null;
+  if (!isSupabaseConfigured() || !quotation) {
+    throw new Error("Cannot save sales quotation: Supabase database connection is not available.");
   }
+
+  await ensureValidSession();
+
+  const payload = {
+    id: quotation.id,
+    quotation_no: quotation.quotationNo,
+    revision_no: quotation.revisionNo || 0,
+    amendment_no: quotation.amendmentNo || 'Rev 00',
+    enquiry_date: quotation.enquiryDate,
+    estimated_delivery_date: quotation.estimatedDeliveryDate,
+    sales_manager: quotation.salesManager,
+    client_name: quotation.clientName,
+    client_address: quotation.clientAddress,
+    client_gstin: quotation.clientGstin,
+    contact_person: quotation.contactPerson,
+    contact_phone: quotation.contactPhone,
+    contact_email: quotation.contactEmail,
+    payment_terms: quotation.paymentTerms,
+    cylinder_terms: quotation.cylinderTerms,
+    transport_terms: quotation.transportTerms,
+    status: quotation.status,
+    ocn_ref_no: quotation.ocnRefNo || '',
+    converted_date: quotation.convertedDate || '',
+    items: quotation.items || [],
+    terms_and_conditions: quotation.termsAndConditions || [],
+    comments: quotation.comments || ''
+  };
+
+  const { data, error } = await supabase
+    .from('sales_quotations')
+    .upsert([payload], { onConflict: 'id' })
+    .select();
+
+  if (error) {
+    handleSupabaseError(error, 'sales_quotations');
+  }
+
+  return data ? data[0] : null;
 }
 
 export async function deleteSalesQuotationFromSupabase(id) {
-  if (!isSupabaseConfigured() || !id) return false;
-
-  try {
-    await ensureValidSession();
-
-    const { error } = await supabase
-      .from('sales_quotations')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      handleSupabaseError(error, 'sales_quotations');
-      return false;
-    }
-
-    return true;
-  } catch (err) {
-    handleSupabaseError(err, 'sales_quotations exception');
-    return false;
+  if (!isSupabaseConfigured() || !id) {
+    throw new Error("Cannot delete sales quotation: Supabase database connection is not available.");
   }
+
+  await ensureValidSession();
+
+  const { error } = await supabase
+    .from('sales_quotations')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    handleSupabaseError(error, 'sales_quotations');
+  }
+
+  return true;
 }
 
 /**
@@ -2087,7 +2113,9 @@ export async function deleteSalesQuotationFromSupabase(id) {
  */
 
 export async function fetchInks() {
-  if (!isSupabaseConfigured()) return null;
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
 
   try {
     const { data, error } = await supabase
@@ -2097,85 +2125,77 @@ export async function fetchInks() {
 
     if (error) {
       handleSupabaseError(error, 'inks');
-      return null;
     }
 
-    if (data) {
-      return data.map(i => ({
-        id: i.id,
-        productCode: i.product_code,
-        shade: i.shade,
-        inkType: i.ink_type || 'Reverse Ink',
-        manufacturer: i.manufacturer,
-        supplierId: i.supplier_id,
-        supplierName: i.supplier_name,
-        solidContentPct: parseFloat(i.solid_content_pct) || 40,
-        solidVariationPct: parseFloat(i.solid_variation_pct) || 2,
-        pricePerKg: parseFloat(i.price_per_kg) || 0,
-        stockQtyKg: parseFloat(i.stock_qty_kg) || 0,
-        reorderLevelKg: parseFloat(i.reorder_level_kg) || 0,
-        unit: i.unit || 'Kg',
-        solventType: i.solvent_type || '',
-        notes: i.notes || '',
-        priceHistory: i.price_history || [],
-        createdAt: i.created_at,
-        lastUpdated: i.last_updated
-      }));
-    }
+    if (!data) return [];
+
+    return data.map(i => ({
+      id: i.id,
+      productCode: i.product_code,
+      shade: i.shade,
+      inkType: i.ink_type || 'Reverse Ink',
+      manufacturer: i.manufacturer,
+      supplierId: i.supplier_id,
+      supplierName: i.supplier_name,
+      solidContentPct: parseFloat(i.solid_content_pct) || 40,
+      solidVariationPct: parseFloat(i.solid_variation_pct) || 2,
+      pricePerKg: parseFloat(i.price_per_kg) || 0,
+      stockQtyKg: parseFloat(i.stock_qty_kg) || 0,
+      reorderLevelKg: parseFloat(i.reorder_level_kg) || 0,
+      unit: i.unit || 'Kg',
+      solventType: i.solvent_type || '',
+      notes: i.notes || '',
+      priceHistory: i.price_history || [],
+      createdAt: i.created_at,
+      lastUpdated: i.last_updated
+    }));
   } catch (err) {
-    handleSupabaseError(err, 'inks exception');
+    console.error("Error fetching inks from Supabase:", err);
+    throw err;
   }
-
-  return null;
 }
 
 export async function saveInkToSupabase(ink) {
-  if (!isSupabaseConfigured() || !ink) return null;
-
-  try {
-    await ensureValidSession();
-
-    const payload = {
-      id: ink.id,
-      product_code: ink.productCode,
-      shade: ink.shade,
-      ink_type: ink.inkType || 'Reverse Ink',
-      manufacturer: ink.manufacturer || '',
-      supplier_id: ink.supplierId || null,
-      supplier_name: ink.supplierName || '',
-      solid_content_pct: parseFloat(ink.solidContentPct) || 40,
-      solid_variation_pct: parseFloat(ink.solidVariationPct) || 2,
-      price_per_kg: parseFloat(ink.pricePerKg) || 0,
-      stock_qty_kg: parseFloat(ink.stockQtyKg) || 0,
-      reorder_level_kg: parseFloat(ink.reorderLevelKg) || 0,
-      unit: ink.unit || 'Kg',
-      solvent_type: ink.solventType || '',
-      notes: ink.notes || '',
-      price_history: ink.priceHistory || [],
-      last_updated: new Date().toISOString()
-    };
-
-    const { error } = await supabase.from('inks').upsert(payload, { onConflict: 'id' });
-    if (error) {
-      handleSupabaseError(error, 'inks');
-      return false;
-    }
-    return true;
-  } catch (err) {
-    handleSupabaseError(err, 'inks exception');
-    return false;
+  if (!isSupabaseConfigured() || !ink) {
+    throw new Error("Cannot save ink: Supabase database connection is not available.");
   }
+
+  await ensureValidSession();
+
+  const payload = {
+    id: ink.id,
+    product_code: ink.productCode,
+    shade: ink.shade,
+    ink_type: ink.inkType || 'Reverse Ink',
+    manufacturer: ink.manufacturer || '',
+    supplier_id: ink.supplierId || null,
+    supplier_name: ink.supplierName || '',
+    solid_content_pct: parseFloat(ink.solidContentPct) || 40,
+    solid_variation_pct: parseFloat(ink.solidVariationPct) || 2,
+    price_per_kg: parseFloat(ink.pricePerKg) || 0,
+    stock_qty_kg: parseFloat(ink.stockQtyKg) || 0,
+    reorder_level_kg: parseFloat(ink.reorderLevelKg) || 0,
+    unit: ink.unit || 'Kg',
+    solvent_type: ink.solventType || '',
+    notes: ink.notes || '',
+    price_history: ink.priceHistory || [],
+    last_updated: new Date().toISOString()
+  };
+
+  const { error } = await supabase.from('inks').upsert(payload, { onConflict: 'id' });
+  if (error) {
+    handleSupabaseError(error, 'inks');
+  }
+  return true;
 }
 
 export async function deleteInkFromSupabase(inkId) {
-  if (!isSupabaseConfigured() || !inkId) return;
-  try {
-    await ensureValidSession();
-    const { error } = await supabase.from('inks').delete().eq('id', inkId);
-    if (error) handleSupabaseError(error, 'inks');
-  } catch (err) {
-    handleSupabaseError(err, 'inks delete exception');
+  if (!isSupabaseConfigured() || !inkId) {
+    throw new Error("Cannot delete ink: Supabase database connection is not available.");
   }
+  await ensureValidSession();
+  const { error } = await supabase.from('inks').delete().eq('id', inkId);
+  if (error) handleSupabaseError(error, 'inks');
 }
 
 
@@ -2435,289 +2455,303 @@ export async function fetchEmailTemplatesFromSupabase() {
 // ==========================================
 
 export async function fetchEmployeesFromSupabase() {
-  if (!isSupabaseConfigured()) return null;
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
   try {
     const { data, error } = await supabase.from('employees').select('*').order('created_at', { ascending: false });
     if (error) {
-      console.warn('[employees] Table fetch fallback to system_settings:', error.message);
-      return await fetchSystemSetting('employees');
+      handleSupabaseError(error, 'employees');
     }
-    if (data) {
-      return data.map(r => ({
-        id: r.id,
-        empCode: r.emp_code || r.empCode,
-        fullName: r.full_name || r.fullName,
-        gender: r.gender,
-        dob: r.dob,
-        phone: r.phone,
-        email: r.email,
-        department: r.department,
-        designation: r.designation,
-        joiningDate: r.joining_date || r.joiningDate,
-        status: r.status,
-        shiftDurationHours: Number(r.shift_duration_hours || r.shiftDurationHours) || 12,
-        defaultShift: r.default_shift || r.defaultShift,
-        address: r.address,
-        aadharNo: r.aadhar_no || r.aadharNo,
-        panNo: r.pan_no || r.panNo,
-        uanNo: r.uan_no || r.uanNo,
-        esicNo: r.esic_no || r.esicNo,
-        emergencyContact: r.emergency_contact || r.emergencyContact,
-        bankDetails: r.bank_details || r.bankDetails || {},
-        salaryStructure: r.salary_structure || r.salaryStructure || {},
-        offboarding: r.offboarding || {}
-      }));
-    }
+    if (!data) return [];
+    return data.map(r => ({
+      id: r.id,
+      empCode: r.emp_code || r.empCode,
+      fullName: r.full_name || r.fullName,
+      gender: r.gender,
+      dob: r.dob,
+      phone: r.phone,
+      email: r.email,
+      department: r.department,
+      designation: r.designation,
+      joiningDate: r.joining_date || r.joiningDate,
+      status: r.status,
+      shiftDurationHours: Number(r.shift_duration_hours || r.shiftDurationHours) || 12,
+      defaultShift: r.default_shift || r.defaultShift,
+      address: r.address,
+      aadharNo: r.aadhar_no || r.aadharNo,
+      panNo: r.pan_no || r.panNo,
+      uanNo: r.uan_no || r.uanNo,
+      esicNo: r.esic_no || r.esicNo,
+      emergencyContact: r.emergency_contact || r.emergencyContact,
+      bankDetails: r.bank_details || r.bankDetails || {},
+      salaryStructure: r.salary_structure || r.salaryStructure || {},
+      offboarding: r.offboarding || {}
+    }));
   } catch (e) {
-    console.warn('[employees] Exception, falling back to system_settings:', e.message);
+    console.error("Error fetching employees from Supabase:", e);
+    throw e;
   }
-  return await fetchSystemSetting('employees');
 }
 
 export async function saveEmployeeToSupabase(employee) {
-  if (!isSupabaseConfigured() || !employee) return;
-  try {
-    const row = {
-      id: employee.id,
-      emp_code: employee.empCode || employee.id,
-      full_name: employee.fullName,
-      gender: employee.gender,
-      dob: employee.dob,
-      phone: employee.phone,
-      email: employee.email,
-      department: employee.department,
-      designation: employee.designation,
-      joining_date: employee.joiningDate,
-      status: employee.status,
-      shift_duration_hours: employee.shiftDurationHours || 12,
-      default_shift: employee.defaultShift,
-      address: employee.address,
-      aadhar_no: employee.aadharNo,
-      pan_no: employee.panNo,
-      uan_no: employee.uanNo,
-      esic_no: employee.esicNo,
-      emergency_contact: employee.emergencyContact,
-      bank_details: employee.bankDetails || {},
-      salary_structure: employee.salaryStructure || {},
-      offboarding: employee.offboarding || {},
-      updated_at: new Date().toISOString()
-    };
-    const { error } = await supabase.from('employees').upsert(row, { onConflict: 'id' });
-    if (error) {
-      console.warn('[employees] Table upsert fallback:', error.message);
-    }
-  } catch (err) {
-    console.warn('[employees] Save exception:', err.message);
+  if (!isSupabaseConfigured() || !employee) {
+    throw new Error("Cannot save employee: Supabase database connection is not available.");
+  }
+  await ensureValidSession();
+  const row = {
+    id: employee.id,
+    emp_code: employee.empCode || employee.id,
+    full_name: employee.fullName,
+    gender: employee.gender,
+    dob: employee.dob,
+    phone: employee.phone,
+    email: employee.email,
+    department: employee.department,
+    designation: employee.designation,
+    joining_date: employee.joiningDate,
+    status: employee.status,
+    shift_duration_hours: employee.shiftDurationHours || 12,
+    default_shift: employee.defaultShift,
+    address: employee.address,
+    aadhar_no: employee.aadharNo,
+    pan_no: employee.panNo,
+    uan_no: employee.uanNo,
+    esic_no: employee.esicNo,
+    emergency_contact: employee.emergencyContact,
+    bank_details: employee.bankDetails || {},
+    salary_structure: employee.salaryStructure || {},
+    offboarding: employee.offboarding || {},
+    updated_at: new Date().toISOString()
+  };
+  const { error } = await supabase.from('employees').upsert(row, { onConflict: 'id' });
+  if (error) {
+    handleSupabaseError(error, 'employees');
   }
 }
 
 export async function deleteEmployeeFromSupabase(employeeId) {
-  if (!isSupabaseConfigured() || !employeeId) return;
+  if (!isSupabaseConfigured() || !employeeId) {
+    throw new Error("Cannot delete employee: Supabase database connection is not available.");
+  }
+  await ensureValidSession();
+  const { error } = await supabase.from('employees').delete().eq('id', employeeId);
+  if (error) handleSupabaseError(error, 'employees');
   try {
-    await supabase.from('employees').delete().eq('id', employeeId);
     await supabase.from('employee_attendance').delete().eq('employee_id', employeeId);
     await supabase.from('salary_advances').delete().eq('employee_id', employeeId);
     await supabase.from('salary_payments').delete().eq('employee_id', employeeId);
-  } catch (err) {
-    console.warn('[employees] Delete exception:', err.message);
-  }
+  } catch (err) {}
 }
 
 export async function fetchEmployeeAttendanceFromSupabase() {
-  if (!isSupabaseConfigured()) return null;
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
   try {
     const { data, error } = await supabase.from('employee_attendance').select('*').order('date', { ascending: false });
-    if (error) return await fetchSystemSetting('employee_attendance');
-    if (data) {
-      return data.map(r => ({
-        id: r.id,
-        employeeId: r.employee_id || r.employeeId,
-        date: r.date,
-        shiftType: r.shift_type || r.shiftType,
-        shiftHours: Number(r.shift_hours || r.shiftHours) || 12,
-        status: r.status,
-        checkIn: r.check_in || r.checkIn,
-        checkOut: r.check_out || r.checkOut,
-        totalHoursWorked: Number(r.total_hours_worked || r.totalHoursWorked) || 0,
-        overtimeHours: Number(r.overtime_hours || r.overtimeHours) || 0,
-        overtimeReason: r.overtime_reason || r.overtimeReason || '',
-        overtimeStatus: r.overtime_status || r.overtimeStatus || 'Pending Approval',
-        overtimeApprovedBy: r.overtime_approved_by || r.overtimeApprovedBy || '',
-        overtimeApprovedDate: r.overtime_approved_date || r.overtimeApprovedDate || '',
-        dinnerAllowanceEligible: r.dinner_allowance_eligible ?? r.dinnerAllowanceEligible ?? false,
-        markedBy: r.marked_by || r.markedBy || ''
-      }));
+    if (error) {
+      handleSupabaseError(error, 'employee_attendance');
     }
+    if (!data) return [];
+    return data.map(r => ({
+      id: r.id,
+      employeeId: r.employee_id || r.employeeId,
+      date: r.date,
+      shiftType: r.shift_type || r.shiftType,
+      shiftHours: Number(r.shift_hours || r.shiftHours) || 12,
+      status: r.status,
+      checkIn: r.check_in || r.checkIn,
+      checkOut: r.check_out || r.checkOut,
+      totalHoursWorked: Number(r.total_hours_worked || r.totalHoursWorked) || 0,
+      overtimeHours: Number(r.overtime_hours || r.overtimeHours) || 0,
+      overtimeReason: r.overtime_reason || r.overtimeReason || '',
+      overtimeStatus: r.overtime_status || r.overtimeStatus || 'Pending Approval',
+      overtimeApprovedBy: r.overtime_approved_by || r.overtimeApprovedBy || '',
+      overtimeApprovedDate: r.overtime_approved_date || r.overtimeApprovedDate || '',
+      dinnerAllowanceEligible: r.dinner_allowance_eligible ?? r.dinnerAllowanceEligible ?? false,
+      markedBy: r.marked_by || r.markedBy || ''
+    }));
   } catch (e) {
-    console.warn('[employee_attendance] fetch note:', e.message);
+    console.error("Error fetching employee attendance from Supabase:", e);
+    throw e;
   }
-  return await fetchSystemSetting('employee_attendance');
 }
 
 export async function saveEmployeeAttendanceToSupabase(record) {
-  if (!isSupabaseConfigured() || !record) return;
-  try {
-    const row = {
-      id: record.id,
-      employee_id: record.employeeId,
-      date: record.date,
-      shift_type: record.shiftType,
-      shift_hours: record.shiftHours || 12,
-      status: record.status,
-      check_in: record.checkIn,
-      check_out: record.checkOut,
-      total_hours_worked: record.totalHoursWorked || 0,
-      overtime_hours: record.overtimeHours || 0,
-      overtime_reason: record.overtimeReason || '',
-      overtime_status: record.overtimeStatus || 'Pending Approval',
-      overtime_approved_by: record.overtimeApprovedBy || '',
-      overtime_approved_date: record.overtimeApprovedDate || '',
-      dinner_allowance_eligible: record.dinnerAllowanceEligible || false,
-      marked_by: record.markedBy || '',
-      updated_at: new Date().toISOString()
-    };
-    await supabase.from('employee_attendance').upsert(row, { onConflict: 'id' });
-  } catch (err) {
-    console.warn('[employee_attendance] save exception:', err.message);
+  if (!isSupabaseConfigured() || !record) {
+    throw new Error("Cannot save employee attendance: Supabase database connection is not available.");
   }
+  await ensureValidSession();
+  const row = {
+    id: record.id,
+    employee_id: record.employeeId,
+    date: record.date,
+    shift_type: record.shiftType,
+    shift_hours: record.shiftHours || 12,
+    status: record.status,
+    check_in: record.checkIn,
+    check_out: record.checkOut,
+    total_hours_worked: record.totalHoursWorked || 0,
+    overtime_hours: record.overtimeHours || 0,
+    overtime_reason: record.overtimeReason || '',
+    overtime_status: record.overtimeStatus || 'Pending Approval',
+    overtime_approved_by: record.overtimeApprovedBy || '',
+    overtime_approved_date: record.overtimeApprovedDate || '',
+    dinner_allowance_eligible: record.dinnerAllowanceEligible || false,
+    marked_by: record.markedBy || '',
+    updated_at: new Date().toISOString()
+  };
+  const { error } = await supabase.from('employee_attendance').upsert(row, { onConflict: 'id' });
+  if (error) handleSupabaseError(error, 'employee_attendance');
 }
 
 export async function fetchSalaryAdvancesFromSupabase() {
-  if (!isSupabaseConfigured()) return null;
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
   try {
     const { data, error } = await supabase.from('salary_advances').select('*').order('request_date', { ascending: false });
-    if (error) return await fetchSystemSetting('salary_advances');
-    if (data) {
-      return data.map(r => ({
-        id: r.id,
-        employeeId: r.employee_id || r.employeeId,
-        employeeName: r.employee_name || r.employeeName,
-        department: r.department,
-        requestDate: r.request_date || r.requestDate,
-        advanceAmount: Number(r.advance_amount || r.advanceAmount) || 0,
-        repaymentTenureMonths: Number(r.repayment_tenure_months || r.repaymentTenureMonths) || 1,
-        monthlyEmiAmount: Number(r.monthly_emi_amount || r.monthlyEmiAmount) || 0,
-        reason: r.reason || '',
-        status: r.status,
-        approvedBy: r.approved_by || r.approvedBy || '',
-        approvedDate: r.approved_date || r.approvedDate || '',
-        disbursedDate: r.disbursed_date || r.disbursedDate || '',
-        totalRecoveredAmount: Number(r.total_recovered_amount || r.totalRecoveredAmount) || 0,
-        remainingBalance: Number(r.remaining_balance || r.remainingBalance) || 0,
-        deductionHistory: r.deduction_history || r.deductionHistory || []
-      }));
+    if (error) {
+      handleSupabaseError(error, 'salary_advances');
     }
+    if (!data) return [];
+    return data.map(r => ({
+      id: r.id,
+      employeeId: r.employee_id || r.employeeId,
+      employeeName: r.employee_name || r.employeeName,
+      department: r.department,
+      requestDate: r.request_date || r.requestDate,
+      advanceAmount: Number(r.advance_amount || r.advanceAmount) || 0,
+      repaymentTenureMonths: Number(r.repayment_tenure_months || r.repaymentTenureMonths) || 1,
+      monthlyEmiAmount: Number(r.monthly_emi_amount || r.monthlyEmiAmount) || 0,
+      reason: r.reason || '',
+      status: r.status,
+      approvedBy: r.approved_by || r.approvedBy || '',
+      approvedDate: r.approved_date || r.approvedDate || '',
+      disbursedDate: r.disbursed_date || r.disbursedDate || '',
+      totalRecoveredAmount: Number(r.total_recovered_amount || r.totalRecoveredAmount) || 0,
+      remainingBalance: Number(r.remaining_balance || r.remainingBalance) || 0,
+      deductionHistory: r.deduction_history || r.deductionHistory || []
+    }));
   } catch (e) {
-    console.warn('[salary_advances] fetch note:', e.message);
+    console.error("Error fetching salary advances from Supabase:", e);
+    throw e;
   }
-  return await fetchSystemSetting('salary_advances');
 }
 
 export async function saveSalaryAdvanceToSupabase(adv) {
-  if (!isSupabaseConfigured() || !adv) return;
-  try {
-    const row = {
-      id: adv.id,
-      employee_id: adv.employeeId,
-      employee_name: adv.employeeName,
-      department: adv.department,
-      request_date: adv.requestDate,
-      advance_amount: adv.advanceAmount,
-      repayment_tenure_months: adv.repaymentTenureMonths,
-      monthly_emi_amount: adv.monthlyEmiAmount,
-      reason: adv.reason,
-      status: adv.status,
-      approved_by: adv.approvedBy || '',
-      approved_date: adv.approvedDate || '',
-      disbursed_date: adv.disbursedDate || '',
-      total_recovered_amount: adv.totalRecoveredAmount || 0,
-      remaining_balance: adv.remainingBalance || 0,
-      deduction_history: adv.deductionHistory || [],
-      updated_at: new Date().toISOString()
-    };
-    await supabase.from('salary_advances').upsert(row, { onConflict: 'id' });
-  } catch (err) {
-    console.warn('[salary_advances] save exception:', err.message);
+  if (!isSupabaseConfigured() || !adv) {
+    throw new Error("Cannot save salary advance: Supabase database connection is not available.");
   }
+  await ensureValidSession();
+  const row = {
+    id: adv.id,
+    employee_id: adv.employeeId,
+    employee_name: adv.employeeName,
+    department: adv.department,
+    request_date: adv.requestDate,
+    advance_amount: adv.advanceAmount,
+    repayment_tenure_months: adv.repaymentTenureMonths,
+    monthly_emi_amount: adv.monthlyEmiAmount,
+    reason: adv.reason,
+    status: adv.status,
+    approved_by: adv.approvedBy || '',
+    approved_date: adv.approvedDate || '',
+    disbursed_date: adv.disbursedDate || '',
+    total_recovered_amount: adv.totalRecoveredAmount || 0,
+    remaining_balance: adv.remainingBalance || 0,
+    deduction_history: adv.deductionHistory || [],
+    updated_at: new Date().toISOString()
+  };
+  const { error } = await supabase.from('salary_advances').upsert(row, { onConflict: 'id' });
+  if (error) handleSupabaseError(error, 'salary_advances');
 }
 
 export async function fetchSalaryPaymentsFromSupabase() {
-  if (!isSupabaseConfigured()) return null;
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
   try {
     const { data, error } = await supabase.from('salary_payments').select('*').order('payment_timestamp', { ascending: false });
-    if (error) return await fetchSystemSetting('salary_payments');
-    if (data) {
-      return data.map(r => ({
-        id: r.id,
-        monthKey: r.month_key || r.monthKey,
-        employeeId: r.employee_id || r.employeeId,
-        employeeName: r.employee_name || r.employeeName,
-        empCode: r.emp_code || r.empCode,
-        department: r.department,
-        netAmountPaid: Number(r.net_amount_paid || r.netAmountPaid) || 0,
-        paymentDate: r.payment_date || r.paymentDate,
-        paymentTime: r.payment_time || r.paymentTime,
-        paymentTimestamp: r.payment_timestamp || r.paymentTimestamp,
-        paymentMode: r.payment_mode || r.paymentMode || 'Bank Transfer (NEFT)',
-        transactionReference: r.transaction_reference || r.transactionReference || '',
-        bankName: r.bank_name || r.bankName || '',
-        accountNumber: r.account_number || r.accountNumber || '',
-        status: r.status || 'Paid',
-        disbursedBy: r.disbursed_by || r.disbursedBy || '',
-        notes: r.notes || '',
-        createdAt: r.created_at || r.createdAt
-      }));
+    if (error) {
+      handleSupabaseError(error, 'salary_payments');
     }
+    if (!data) return [];
+    return data.map(r => ({
+      id: r.id,
+      monthKey: r.month_key || r.monthKey,
+      employeeId: r.employee_id || r.employeeId,
+      employeeName: r.employee_name || r.employeeName,
+      empCode: r.emp_code || r.empCode,
+      department: r.department,
+      netAmountPaid: Number(r.net_amount_paid || r.netAmountPaid) || 0,
+      paymentDate: r.payment_date || r.paymentDate,
+      paymentTime: r.payment_time || r.paymentTime,
+      paymentTimestamp: r.payment_timestamp || r.paymentTimestamp,
+      paymentMode: r.payment_mode || r.paymentMode || 'Bank Transfer (NEFT)',
+      transactionReference: r.transaction_reference || r.transactionReference || '',
+      bankName: r.bank_name || r.bankName || '',
+      accountNumber: r.account_number || r.accountNumber || '',
+      status: r.status || 'Paid',
+      disbursedBy: r.disbursed_by || r.disbursedBy || '',
+      notes: r.notes || '',
+      createdAt: r.created_at || r.createdAt
+    }));
   } catch (e) {
-    console.warn('[salary_payments] fetch note:', e.message);
+    console.error("Error fetching salary payments from Supabase:", e);
+    throw e;
   }
-  return await fetchSystemSetting('salary_payments');
 }
 
 export async function saveSalaryPaymentToSupabase(payment) {
-  if (!isSupabaseConfigured() || !payment) return;
-  try {
-    const row = {
-      id: payment.id,
-      month_key: payment.monthKey,
-      employee_id: payment.employeeId,
-      employee_name: payment.employeeName,
-      emp_code: payment.empCode || '',
-      department: payment.department || '',
-      net_amount_paid: payment.netAmountPaid,
-      payment_date: payment.paymentDate,
-      payment_time: payment.paymentTime,
-      payment_timestamp: payment.paymentTimestamp || `${payment.paymentDate}T${payment.paymentTime}`,
-      payment_mode: payment.paymentMode || 'Bank Transfer (NEFT)',
-      transaction_reference: payment.transactionReference || '',
-      bank_name: payment.bankName || '',
-      account_number: payment.accountNumber || '',
-      status: payment.status || 'Paid',
-      disbursed_by: payment.disbursedBy || '',
-      notes: payment.notes || '',
-      updated_at: new Date().toISOString()
-    };
-    await supabase.from('salary_payments').upsert(row, { onConflict: 'id' });
-  } catch (err) {
-    console.warn('[salary_payments] save exception:', err.message);
+  if (!isSupabaseConfigured() || !payment) {
+    throw new Error("Cannot save salary payment: Supabase database connection is not available.");
   }
+  await ensureValidSession();
+  const row = {
+    id: payment.id,
+    month_key: payment.monthKey,
+    employee_id: payment.employeeId,
+    employee_name: payment.employeeName,
+    emp_code: payment.empCode || '',
+    department: payment.department || '',
+    net_amount_paid: payment.netAmountPaid,
+    payment_date: payment.paymentDate,
+    payment_time: payment.paymentTime,
+    payment_timestamp: payment.paymentTimestamp || `${payment.paymentDate}T${payment.paymentTime}`,
+    payment_mode: payment.paymentMode || 'Bank Transfer (NEFT)',
+    transaction_reference: payment.transactionReference || '',
+    bank_name: payment.bankName || '',
+    account_number: payment.accountNumber || '',
+    status: payment.status || 'Paid',
+    disbursed_by: payment.disbursedBy || '',
+    notes: payment.notes || '',
+    updated_at: new Date().toISOString()
+  };
+  const { error } = await supabase.from('salary_payments').upsert(row, { onConflict: 'id' });
+  if (error) handleSupabaseError(error, 'salary_payments');
 }
 
 export async function deleteGRNFromSupabase(grnId) {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !grnId) {
+    throw new Error("Cannot delete GRN: Supabase database connection is not available.");
+  }
   await ensureValidSession();
   const { error } = await supabase.from('grns').delete().eq('id', grnId);
   if (error) {
-    console.error('[GRNs] Failed to delete GRN:', error.message);
+    handleSupabaseError(error, 'grns');
   }
 }
 
 export async function deleteProductionRecordFromSupabase(recId) {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !recId) {
+    throw new Error("Cannot delete production record: Supabase database connection is not available.");
+  }
   await ensureValidSession();
   const { error } = await supabase.from('production_records').delete().eq('id', recId);
   if (error) {
-    console.error('[production_records] Failed to delete production record:', error.message);
+    handleSupabaseError(error, 'production_records');
   }
 }
 
@@ -2726,12 +2760,13 @@ export async function deleteProductionRecordFromSupabase(recId) {
 // ============================================================================
 
 export async function fetchSFGGoodsFromSupabase() {
-  if (!isSupabaseConfigured()) return [];
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
   try {
     const { data, error } = await supabase.from('sfg_goods').select('*').order('created_at', { ascending: false });
     if (error) {
-      console.warn('[sfg_goods] fetch error, using system_settings fallback:', error.message);
-      return (await fetchSystemSetting('sfg_goods')) || [];
+      handleSupabaseError(error, 'sfg_goods');
     }
     if (!data) return [];
     return data.map(item => {
@@ -2781,100 +2816,96 @@ export async function fetchSFGGoodsFromSupabase() {
     });
   } catch (err) {
     console.error('Error fetching SFG goods from Supabase:', err);
-    return (await fetchSystemSetting('sfg_goods')) || [];
+    throw err;
   }
 }
 
 export async function saveSFGGoodToSupabase(item) {
-  if (!isSupabaseConfigured() || !item) return;
+  if (!isSupabaseConfigured() || !item) {
+    throw new Error("Cannot save SFG good: Supabase database connection is not available.");
+  }
   await ensureValidSession();
-  try {
-    const sfgBatchCode = item.sfgBatchCode || item.id || `SFG-${Date.now()}`;
-    const netKg = Number(item.totalNetKg ?? item.netWeightKg ?? 0) || 0;
-    const consumedKg = Number(item.consumedKg ?? 0) || 0;
-    const availableKg = Math.max(0, netKg - consumedKg);
-    let computedStatus = item.status || 'In Stock (WIP)';
-    if (consumedKg > 0) {
-      computedStatus = availableKg <= 0 ? 'Fully Consumed' : 'Partially Consumed';
-    }
+  const sfgBatchCode = item.sfgBatchCode || item.id || `SFG-${Date.now()}`;
+  const netKg = Number(item.totalNetKg ?? item.netWeightKg ?? 0) || 0;
+  const consumedKg = Number(item.consumedKg ?? 0) || 0;
+  const availableKg = Math.max(0, netKg - consumedKg);
+  let computedStatus = item.status || 'In Stock (WIP)';
+  if (consumedKg > 0) {
+    computedStatus = availableKg <= 0 ? 'Fully Consumed' : 'Partially Consumed';
+  }
 
-    const notesEnvelope = JSON.stringify({
-      sfgBatchCode,
-      sfgType: item.sfgType,
-      jobId: item.jobId,
-      orderId: item.orderId,
-      jobName: item.jobName,
-      jobCode: item.jobCode,
-      clientName: item.clientName,
-      structure: item.structure,
-      filmType: item.filmType,
-      micron: item.micron,
-      widthMm: item.widthMm,
-      totalGrossKg: item.totalGrossKg,
-      totalNetKg: netKg,
-      consumedKg: consumedKg,
-      availableKg: availableKg,
-      totalMeters: item.totalMeters,
-      rollsCount: item.rollsCount,
-      machineName: item.machineName,
-      operatorName: item.operatorName,
-      shift: item.shift,
-      storageBay: item.storageBay,
-      productionDate: item.productionDate,
-      notesText: item.notes || '',
-      consumptionHistory: item.consumptionHistory || []
-    });
+  const notesEnvelope = JSON.stringify({
+    sfgBatchCode,
+    sfgType: item.sfgType,
+    jobId: item.jobId,
+    orderId: item.orderId,
+    jobName: item.jobName,
+    jobCode: item.jobCode,
+    clientName: item.clientName,
+    structure: item.structure,
+    filmType: item.filmType,
+    micron: item.micron,
+    widthMm: item.widthMm,
+    totalGrossKg: item.totalGrossKg,
+    totalNetKg: netKg,
+    consumedKg: consumedKg,
+    availableKg: availableKg,
+    totalMeters: item.totalMeters,
+    rollsCount: item.rollsCount,
+    machineName: item.machineName,
+    operatorName: item.operatorName,
+    shift: item.shift,
+    storageBay: item.storageBay,
+    productionDate: item.productionDate,
+    notesText: item.notes || '',
+    consumptionHistory: item.consumptionHistory || []
+  });
 
-    const payload = {
-      sfg_batch_code: sfgBatchCode,
-      sfg_type: item.sfgType || 'Printed Rolls',
-      job_id: item.jobId || null,
-      order_id: item.orderId || null,
-      job_name: item.jobName || 'Untitled Job',
-      job_code: item.jobCode || '',
-      client_name: item.clientName || '',
-      structure: item.structure || '',
-      film_type: item.filmType || '',
-      micron: Number(item.micron) || 0,
-      width_mm: Number(item.widthMm) || 0,
-      total_gross_kg: Number(item.totalGrossKg) || 0,
-      total_net_kg: netKg,
-      total_meters: Number(item.totalMeters) || 0,
-      rolls_count: Number(item.rollsCount) || 1,
-      machine_name: item.machineName || '',
-      operator_name: item.operatorName || '',
-      shift: item.shift || '',
-      storage_bay: item.storageBay || 'Bay A',
-      production_date: item.productionDate || new Date().toISOString().split('T')[0],
-      status: computedStatus,
-      notes: notesEnvelope,
-      updated_at: new Date().toISOString()
-    };
+  const payload = {
+    sfg_batch_code: sfgBatchCode,
+    sfg_type: item.sfgType || 'Printed Rolls',
+    job_id: item.jobId || null,
+    order_id: item.orderId || null,
+    job_name: item.jobName || 'Untitled Job',
+    job_code: item.jobCode || '',
+    client_name: item.clientName || '',
+    structure: item.structure || '',
+    film_type: item.filmType || '',
+    micron: Number(item.micron) || 0,
+    width_mm: Number(item.widthMm) || 0,
+    total_gross_kg: Number(item.totalGrossKg) || 0,
+    total_net_kg: netKg,
+    total_meters: Number(item.totalMeters) || 0,
+    rolls_count: Number(item.rollsCount) || 1,
+    machine_name: item.machineName || '',
+    operator_name: item.operatorName || '',
+    shift: item.shift || '',
+    storage_bay: item.storageBay || 'Bay A',
+    production_date: item.productionDate || new Date().toISOString().split('T')[0],
+    status: computedStatus,
+    notes: notesEnvelope,
+    updated_at: new Date().toISOString()
+  };
 
-    if (item.id && item.id.length > 20) {
-      payload.id = item.id;
-    }
+  if (item.id && item.id.length > 20) {
+    payload.id = item.id;
+  }
 
-    console.log('[sfg_goods] Upserting item:', sfgBatchCode);
-    const { error } = await supabase.from('sfg_goods').upsert(payload, { onConflict: 'sfg_batch_code' });
-    if (error) {
-      console.warn('[sfg_goods] Table upsert error, storing in system_settings backup:', error.message);
-    }
-  } catch (err) {
-    console.error('Error saving SFG good to Supabase:', err);
+  console.log('[sfg_goods] Upserting item:', sfgBatchCode);
+  const { error } = await supabase.from('sfg_goods').upsert(payload, { onConflict: 'sfg_batch_code' });
+  if (error) {
+    handleSupabaseError(error, 'sfg_goods');
   }
 }
 
 export async function deleteSFGGoodFromSupabase(idOrBatchCode) {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured() || !idOrBatchCode) {
+    throw new Error("Cannot delete SFG good: Supabase database connection is not available.");
+  }
   await ensureValidSession();
-  try {
-    const { error } = await supabase.from('sfg_goods').delete().or(`id.eq.${idOrBatchCode},sfg_batch_code.eq.${idOrBatchCode}`);
-    if (error) {
-      console.error('[sfg_goods] Delete error:', error.message);
-    }
-  } catch (err) {
-    console.error('Error deleting SFG good from Supabase:', err);
+  const { error } = await supabase.from('sfg_goods').delete().or(`id.eq.${idOrBatchCode},sfg_batch_code.eq.${idOrBatchCode}`);
+  if (error) {
+    handleSupabaseError(error, 'sfg_goods');
   }
 }
 
@@ -2883,121 +2914,95 @@ export async function deleteSFGGoodFromSupabase(idOrBatchCode) {
 // ============================================================================
 
 export async function fetchDeliveryChallansFromSupabase() {
-  if (!isSupabaseConfigured()) return null;
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
   try {
     const { data, error } = await supabase.from('delivery_challans').select('*').order('created_at', { ascending: false });
     if (error) {
-      console.warn('[delivery_challans] Table fetch fallback to system_settings:', error.message);
-      return await fetchSystemSetting('delivery_challans');
+      handleSupabaseError(error, 'delivery_challans');
     }
-    if (data && data.length > 0) {
-      return data.map(r => r.payload || r.details || r);
-    }
+    if (!data) return [];
+    return data.map(r => r.payload || r.details || r);
   } catch (e) {
-    console.warn('[delivery_challans] Exception, falling back to system_settings:', e.message);
+    console.error("Error fetching delivery challans from Supabase:", e);
+    throw e;
   }
-  return await fetchSystemSetting('delivery_challans');
 }
 
 export async function saveDeliveryChallanToSupabase(dc) {
-  if (!isSupabaseConfigured() || !dc) return;
-  try {
-    const { error } = await supabase.from('delivery_challans').upsert({
-      id: String(dc.id),
-      challan_no: dc.challanNo || '',
-      client_name: dc.clientName || '',
-      payload: dc,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'id' });
-    
-    if (error) {
-      console.warn('[delivery_challans] Table upsert notice, saving to system_settings snapshot:', error.message);
-    }
-  } catch (e) {
-    console.warn('[delivery_challans] Save exception:', e.message);
+  if (!isSupabaseConfigured() || !dc) {
+    throw new Error("Cannot save delivery challan: Supabase database connection is not available.");
   }
-  try {
-    const existing = (await fetchDeliveryChallansFromSupabase()) || [];
-    const updated = [dc, ...existing.filter(d => String(d.id) !== String(dc.id))];
-    await saveSystemSetting('delivery_challans', updated);
-  } catch (e) {
-    console.warn('[delivery_challans] System setting snapshot update notice:', e.message);
+  await ensureValidSession();
+  const { error } = await supabase.from('delivery_challans').upsert({
+    id: String(dc.id),
+    challan_no: dc.challanNo || '',
+    client_name: dc.clientName || '',
+    payload: dc,
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'id' });
+  
+  if (error) {
+    handleSupabaseError(error, 'delivery_challans');
   }
 }
 
 export async function deleteDeliveryChallanFromSupabase(id) {
-  if (!isSupabaseConfigured() || !id) return;
-  try {
-    await supabase.from('delivery_challans').delete().eq('id', String(id));
-  } catch (e) {
-    console.warn('[delivery_challans] Table delete notice:', e.message);
+  if (!isSupabaseConfigured() || !id) {
+    throw new Error("Cannot delete delivery challan: Supabase database connection is not available.");
   }
-  try {
-    const existing = (await fetchDeliveryChallansFromSupabase()) || [];
-    const updated = existing.filter(d => String(d.id) !== String(id));
-    await saveSystemSetting('delivery_challans', updated);
-  } catch (e) {
-    console.warn('[delivery_challans] System setting snapshot delete notice:', e.message);
+  await ensureValidSession();
+  const { error } = await supabase.from('delivery_challans').delete().eq('id', String(id));
+  if (error) {
+    handleSupabaseError(error, 'delivery_challans');
   }
 }
 
 export async function fetchCertificatesOfAnalysisFromSupabase() {
-  if (!isSupabaseConfigured()) return null;
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
   try {
     const { data, error } = await supabase.from('certificate_of_analyses').select('*').order('created_at', { ascending: false });
     if (error) {
-      console.warn('[certificate_of_analyses] Table fetch fallback to system_settings:', error.message);
-      return await fetchSystemSetting('certificate_of_analyses');
+      handleSupabaseError(error, 'certificate_of_analyses');
     }
-    if (data && data.length > 0) {
-      return data.map(r => r.payload || r.details || r);
-    }
+    if (!data) return [];
+    return data.map(r => r.payload || r.details || r);
   } catch (e) {
-    console.warn('[certificate_of_analyses] Exception, falling back to system_settings:', e.message);
+    console.error("Error fetching certificate of analyses from Supabase:", e);
+    throw e;
   }
-  return await fetchSystemSetting('certificate_of_analyses');
 }
 
 export async function saveCertificateOfAnalysisToSupabase(coa) {
-  if (!isSupabaseConfigured() || !coa) return;
-  try {
-    const { error } = await supabase.from('certificate_of_analyses').upsert({
-      id: String(coa.id),
-      coa_no: coa.coaNo || '',
-      job_name: coa.jobName || '',
-      customer_name: coa.customerName || '',
-      payload: coa,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'id' });
-    
-    if (error) {
-      console.warn('[certificate_of_analyses] Table upsert notice, saving to system_settings snapshot:', error.message);
-    }
-  } catch (e) {
-    console.warn('[certificate_of_analyses] Save exception:', e.message);
+  if (!isSupabaseConfigured() || !coa) {
+    throw new Error("Cannot save certificate of analysis: Supabase database connection is not available.");
   }
-  try {
-    const existing = (await fetchCertificatesOfAnalysisFromSupabase()) || [];
-    const updated = [coa, ...existing.filter(c => String(c.id) !== String(coa.id))];
-    await saveSystemSetting('certificate_of_analyses', updated);
-  } catch (e) {
-    console.warn('[certificate_of_analyses] System setting snapshot update notice:', e.message);
+  await ensureValidSession();
+  const { error } = await supabase.from('certificate_of_analyses').upsert({
+    id: String(coa.id),
+    coa_no: coa.coaNo || '',
+    job_name: coa.jobName || '',
+    customer_name: coa.customerName || '',
+    payload: coa,
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'id' });
+  
+  if (error) {
+    handleSupabaseError(error, 'certificate_of_analyses');
   }
 }
 
 export async function deleteCertificateOfAnalysisFromSupabase(id) {
-  if (!isSupabaseConfigured() || !id) return;
-  try {
-    await supabase.from('certificate_of_analyses').delete().eq('id', String(id));
-  } catch (e) {
-    console.warn('[certificate_of_analyses] Table delete notice:', e.message);
+  if (!isSupabaseConfigured() || !id) {
+    throw new Error("Cannot delete certificate of analysis: Supabase database connection is not available.");
   }
-  try {
-    const existing = (await fetchCertificatesOfAnalysisFromSupabase()) || [];
-    const updated = existing.filter(c => String(c.id) !== String(id));
-    await saveSystemSetting('certificate_of_analyses', updated);
-  } catch (e) {
-    console.warn('[certificate_of_analyses] System setting snapshot delete notice:', e.message);
+  await ensureValidSession();
+  const { error } = await supabase.from('certificate_of_analyses').delete().eq('id', String(id));
+  if (error) {
+    handleSupabaseError(error, 'certificate_of_analyses');
   }
 }
 
