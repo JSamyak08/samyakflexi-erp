@@ -178,9 +178,16 @@ export async function deleteOrderFromSupabase(orderId) {
   console.log(`[ORDERS][DELETE] Starting delete orderId=${orderId}`);
 
   try {
-    // Clean up dependent production records & job datasheets to avoid foreign key violations
-    await supabase.from('production_records').delete().eq('order_id', orderId);
-    await supabase.from('job_datasheets').delete().eq('job_id', orderId);
+    // Clean up all dependent records across linked tables to prevent foreign key constraint violations
+    await Promise.allSettled([
+      supabase.from('production_records').delete().eq('order_id', orderId),
+      supabase.from('job_datasheets').delete().eq('job_id', orderId),
+      supabase.from('production_schedules').delete().eq('order_id', orderId),
+      supabase.from('inventory_rolls').delete().eq('order_id', orderId),
+      supabase.from('dispatch_shipments').delete().eq('order_id', orderId),
+      supabase.from('certificate_of_analyses').delete().eq('order_id', orderId),
+      supabase.from('delivery_challans').delete().eq('order_id', orderId)
+    ]);
   } catch (e) {
     console.warn('[ORDERS][DELETE] Linked records cleanup notice:', e.message);
   }
@@ -192,6 +199,18 @@ export async function deleteOrderFromSupabase(orderId) {
   }
 
   console.log(`[ORDERS][DELETE] Supabase deletion successful orderId=${orderId}`);
+  return { success: true };
+}
+
+export async function deleteAllOrdersFromSupabase() {
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
+  await ensureValidSession();
+  const { error } = await supabase.from('orders').delete().neq('id', '000');
+  if (error) {
+    handleSupabaseError(error, 'orders');
+  }
   return { success: true };
 }
 
