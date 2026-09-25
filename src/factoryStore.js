@@ -177,11 +177,23 @@ export const calculateJobRawMaterials = ({
   const isPouching = orderType === "Pouching" || String(orderType).toLowerCase().includes('pouch');
   const wastagePct = getWastagePercentage(orderQtyKg, isPouching);
 
-  // 1. Calculate GSM for each film layer
+  // 1. Calculate effective GSM for each film layer based on custom layer width
   const calculatedLayers = layers.map((layer) => {
     const density = FILM_DENSITIES[layer.filmType] || layer.density || 1.0;
     const micron = parseFloat(layer.micron) || 0;
-    const gsm = micron * density; // g/m²
+    const printWidth = parseFloat(printWidthMm) || 1000;
+    const layerIsLD = isLDFilm(layer.filmType);
+    const layerWidthMm = (layer.widthMm !== undefined && layer.widthMm !== '' && !isNaN(parseFloat(layer.widthMm)))
+      ? parseFloat(layer.widthMm)
+      : (layer.width !== undefined && layer.width !== '' && !isNaN(parseFloat(layer.width))
+        ? parseFloat(layer.width)
+        : (layer.filmWidth !== undefined && layer.filmWidth !== '' && !isNaN(parseFloat(layer.filmWidth))
+          ? parseFloat(layer.filmWidth)
+          : getFilmSlitWidth(layer.filmType, printWidth)));
+
+    const baseGsm = micron * density; // g/m² of base film sheet
+    const gsm = printWidth > 0 ? baseGsm * (layerWidthMm / printWidth) : baseGsm; // effective g/m² in laminate
+
     const pricePerKg = (layer.rate !== undefined && layer.rate !== '' && layer.rate !== null && !isNaN(parseFloat(layer.rate)))
       ? parseFloat(layer.rate)
       : ((layer.ratePerKg !== undefined && layer.ratePerKg !== '' && layer.ratePerKg !== null && !isNaN(parseFloat(layer.ratePerKg)))
@@ -193,7 +205,10 @@ export const calculateJobRawMaterials = ({
     return {
       ...layer,
       density,
+      baseGsm,
       gsm,
+      widthMm: layerWidthMm,
+      isLDFilm: layerIsLD,
       pricePerKg
     };
   });
@@ -218,13 +233,12 @@ export const calculateJobRawMaterials = ({
     totalFilmGrossKg += grossKg;
     totalFilmCost += totalCost;
 
-    const layerIsLD = isLDFilm(l.filmType);
-    const layerWidthMm = getFilmSlitWidth(l.filmType, printWidthMm);
-
     return {
       ...l,
-      isLDFilm: layerIsLD,
-      widthMm: layerWidthMm,
+      isLDFilm: l.isLDFilm,
+      widthMm: l.widthMm,
+      gsm: parseFloat(l.gsm.toFixed(2)),
+      baseGsm: parseFloat(l.baseGsm.toFixed(2)),
       netKg: parseFloat(netKg.toFixed(2)),
       grossKg: parseFloat(grossKg.toFixed(2)),
       totalCost: Math.round(totalCost)

@@ -37,7 +37,7 @@ import {
   Download
 } from 'lucide-react';
 import { calculateUtilisation } from '../dataStore';
-import { FILM_DENSITIES } from '../factoryStore';
+import { FILM_DENSITIES, isLDFilm, getFilmSlitWidth } from '../factoryStore';
 import CylinderJobCardForm from '../CylinderJobCardForm';
 import { saveJobMasterToSupabase, saveCylinderToSupabase } from '../services/supabaseDataService';
 
@@ -1410,16 +1410,48 @@ export default function JobMasterDirectory({
                       <Plus size={14} /> Add Layer
                     </button>
                   </div>
-                  {layers.map((l, idx) => (
-                    <div key={l.id} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px 32px', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
-                      <span style={{ fontSize: '0.8rem', fontWeight: '600' }}>Layer {idx + 1}</span>
-                      <select className="form-control" style={{ padding: '4px 8px', fontSize: '0.85rem' }} value={l.filmType} onChange={e => setLayers(prev => prev.map(item => item.id === l.id ? { ...item, filmType: e.target.value } : item))}>
-                        {availableFilmTypes.map(f => <option key={f} value={f}>{f} ({FILM_DENSITIES[f]} g/cc)</option>)}
-                      </select>
-                      <input type="number" className="form-control" style={{ padding: '4px 8px', fontSize: '0.85rem' }} value={l.micron} onChange={e => setLayers(prev => prev.map(item => item.id === l.id ? { ...item, micron: parseFloat(e.target.value) || 0 } : item))} placeholder="Microns" />
-                      {layers.length > 1 && <button type="button" className="btn-secondary" style={{ padding: '4px' }} onClick={() => removeLayer(l.id)}><X size={14} /></button>}
-                    </div>
-                  ))}
+                  {layers.map((l, idx) => {
+                    const pw = parseFloat(printWidthMm) || 1000;
+                    const defaultW = isLDFilm(l.filmType) ? pw + 5 : pw;
+                    const widthVal = (l.widthMm !== undefined && l.widthMm !== '' && !isNaN(parseFloat(l.widthMm)))
+                      ? l.widthMm
+                      : defaultW;
+                    return (
+                      <div key={l.id} style={{ display: 'grid', gridTemplateColumns: '70px 1fr 90px 100px 32px', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                        <span style={{ fontSize: '0.8rem', fontWeight: '600' }}>Layer {idx + 1}</span>
+                        <select 
+                          className="form-control" 
+                          style={{ padding: '4px 8px', fontSize: '0.85rem' }} 
+                          value={l.filmType} 
+                          onChange={e => {
+                            const newType = e.target.value;
+                            const newDefW = isLDFilm(newType) ? pw + 5 : pw;
+                            setLayers(prev => prev.map(item => item.id === l.id ? { ...item, filmType: newType, widthMm: newDefW } : item));
+                          }}
+                        >
+                          {availableFilmTypes.map(f => <option key={f} value={f}>{f} ({FILM_DENSITIES[f]} g/cc)</option>)}
+                        </select>
+                        <input 
+                          type="number" 
+                          className="form-control" 
+                          style={{ padding: '4px 8px', fontSize: '0.85rem' }} 
+                          value={l.micron} 
+                          onChange={e => setLayers(prev => prev.map(item => item.id === l.id ? { ...item, micron: parseFloat(e.target.value) || 0 } : item))} 
+                          placeholder="Microns" 
+                        />
+                        <input 
+                          type="number" 
+                          className="form-control" 
+                          style={{ padding: '4px 8px', fontSize: '0.85rem', fontWeight: '700', color: '#1e40af' }} 
+                          value={widthVal} 
+                          onChange={e => setLayers(prev => prev.map(item => item.id === l.id ? { ...item, widthMm: e.target.value } : item))} 
+                          placeholder="Width mm"
+                          title="Film Width (mm)" 
+                        />
+                        {layers.length > 1 && <button type="button" className="btn-secondary" style={{ padding: '4px' }} onClick={() => removeLayer(l.id)}><X size={14} /></button>}
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {/* Simplified Process Routing & Machine Sequence */}
@@ -2119,7 +2151,7 @@ export default function JobMasterDirectory({
 
               <h4 style={{ fontSize: '0.9rem', fontWeight: '700', marginBottom: '10px' }}>Laminate Layer Breakdown</h4>
               <table className="data-table" style={{ fontSize: '0.85rem' }}>
-                <thead><tr><th>Layer #</th><th>Substrate Film Grade</th><th>Micron (µ)</th><th>Calculated GSM</th></tr></thead>
+                <thead><tr><th>Layer #</th><th>Substrate Film Grade</th><th>Micron (µ)</th><th>Film Width (mm)</th><th>Calculated GSM</th></tr></thead>
                 <tbody>
                   {(() => {
                     const displayLayers = (selectedJob.layers && selectedJob.layers.length > 0)
@@ -2129,25 +2161,32 @@ export default function JobMasterDirectory({
                     if (displayLayers.length === 0) {
                       return (
                         <tr>
-                          <td colSpan="4" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '12px' }}>
+                          <td colSpan="5" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '12px' }}>
                             No layers defined for this structure.
                           </td>
                         </tr>
                       );
                     }
 
+                    const printW = parseFloat(selectedJob.printWidthMm) || 1000;
+
                     return displayLayers.map((l, idx) => {
-                    const density = FILM_DENSITIES[l.filmType] || 1.0;
-                    const gsm = (l.micron * density).toFixed(1);
-                    return (
-                      <tr key={l.id || idx}>
-                        <td style={{ fontWeight: '700' }}>Layer {idx + 1}</td>
-                        <td style={{ fontWeight: '600', color: 'var(--primary-brand)' }}>{l.filmType}</td>
-                        <td>{l.micron} µ</td>
-                        <td>{gsm} g/m²</td>
-                      </tr>
-                    );
-                  });
+                      const density = FILM_DENSITIES[l.filmType] || 1.0;
+                      const layerW = (l.widthMm !== undefined && l.widthMm !== '' && !isNaN(parseFloat(l.widthMm)))
+                        ? parseFloat(l.widthMm)
+                        : (isLDFilm(l.filmType) ? printW + 5 : printW);
+                      const baseGsm = l.micron * density;
+                      const effectiveGsm = printW > 0 ? (baseGsm * (layerW / printW)).toFixed(2) : baseGsm.toFixed(2);
+                      return (
+                        <tr key={l.id || idx}>
+                          <td style={{ fontWeight: '700' }}>Layer {idx + 1}</td>
+                          <td style={{ fontWeight: '600', color: 'var(--primary-brand)' }}>{l.filmType}</td>
+                          <td>{l.micron} µ</td>
+                          <td style={{ fontWeight: '700', color: '#1e40af' }}>{layerW} mm</td>
+                          <td>{effectiveGsm} g/m²</td>
+                        </tr>
+                      );
+                    });
                 })()}
                 </tbody>
               </table>
