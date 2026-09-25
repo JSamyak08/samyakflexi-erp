@@ -6166,6 +6166,7 @@ export default function InventoryManagement({
       {selectedItemForPurchaseHistory && (() => {
         const item = sanitizeInventoryItem(selectedItemForPurchaseHistory);
         const unitStr = item.unit || 'Kg';
+        const itemActualUnitPrice = Number(item.unitPrice || item.purchaseRatePerKg || item.pricePerKg || 0);
 
         // Universal Item Matcher for Films, Inks, Solvents, Adhesives, Blades, Tapes, PPE & Spares
         const isItemMatch = (candidate, target) => {
@@ -6385,8 +6386,6 @@ export default function InventoryManagement({
               notes: tx.notes || (isIssue ? 'Manual shopfloor issue' : 'Unused stock returned')
             };
           });
-
-        const itemActualUnitPrice = Number(item.unitPrice || item.purchaseRatePerKg || item.pricePerKg || 0);
 
         // 4. Gather Physical Reconciliation & Quick Adjustments
         const adjLines = (stockLedgerAdjustments || [])
