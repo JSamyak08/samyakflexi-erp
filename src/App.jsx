@@ -543,12 +543,6 @@ export default function App() {
         safeLocalStorageSet('samyak_film_substrates_master', JSON.stringify(dbFilmSubstrates));
       }
 
-      if (Array.isArray(supaOrders)) {
-        const cleanSupa = stripDummyRecords(supaOrders);
-        setOrders(cleanSupa);
-        supaOrders.filter(isDummyRecord).forEach(d => deleteOrderFromSupabase(d.id).catch(console.warn));
-      }
-
       if (Array.isArray(supaVendors)) {
         const cleanSupa = stripDummyRecords(supaVendors);
         setVendors(cleanSupa);
