@@ -3033,7 +3033,7 @@ export async function deleteSFGGoodFromSupabase(idOrBatchCode) {
 }
 
 // ============================================================================
-// DELIVERY CHALLANS & COA SUPABASE PERSISTENCE
+// DELIVERY CHALLANS & COA SUPABASE PERSISTENCE (DUAL-LAYER ROBUST PERSISTENCE)
 // ============================================================================
 
 export async function fetchDeliveryChallansFromSupabase() {
@@ -3041,14 +3041,43 @@ export async function fetchDeliveryChallansFromSupabase() {
     throw new Error("Supabase is not configured.");
   }
   try {
-    const { data, error } = await supabase.from('delivery_challans').select('*').order('created_at', { ascending: false });
-    if (error) {
-      handleSupabaseError(error, 'delivery_challans');
+    let tableRecords = [];
+    try {
+      const { data, error } = await supabase.from('delivery_challans').select('*');
+      if (!error && Array.isArray(data)) {
+        tableRecords = data.map(r => r.payload || r.details || r);
+      } else if (error) {
+        console.warn('[delivery_challans] Table fetch notice:', error.message);
+      }
+    } catch (err) {
+      console.warn('[delivery_challans] Table query exception:', err.message);
     }
-    if (!data) return [];
-    return data.map(r => r.payload || r.details || r);
+    
+    // Fallback & Merge with system_settings 'delivery_challans'
+    const settingData = await fetchSystemSetting('delivery_challans').catch(() => null);
+    const backupRecords = Array.isArray(settingData) ? settingData : [];
+
+    // Merge records by ID
+    const recordMap = new Map();
+    backupRecords.forEach(r => {
+      if (r && r.id) recordMap.set(String(r.id), r);
+    });
+    tableRecords.forEach(r => {
+      if (r && r.id) recordMap.set(String(r.id), r);
+    });
+
+    const allDCs = Array.from(recordMap.values());
+    allDCs.sort((a, b) => {
+      const timeA = new Date(a.createdDate || a.dispatchDateTime || a.date || 0).getTime();
+      const timeB = new Date(b.createdDate || b.dispatchDateTime || b.date || 0).getTime();
+      return timeB - timeA;
+    });
+
+    return allDCs;
   } catch (e) {
     console.error("Error fetching delivery challans from Supabase:", e);
+    const settingData = await fetchSystemSetting('delivery_challans').catch(() => null);
+    if (Array.isArray(settingData)) return settingData;
     throw e;
   }
 }
@@ -3058,16 +3087,36 @@ export async function saveDeliveryChallanToSupabase(dc) {
     throw new Error("Cannot save delivery challan: Supabase database connection is not available.");
   }
   await ensureValidSession();
-  const { error } = await supabase.from('delivery_challans').upsert({
-    id: String(dc.id),
-    challan_no: dc.challanNo || '',
-    client_name: dc.clientName || '',
-    payload: dc,
-    updated_at: new Date().toISOString()
-  }, { onConflict: 'id' });
   
-  if (error) {
-    handleSupabaseError(error, 'delivery_challans');
+  let tableSuccess = false;
+  try {
+    const { error } = await supabase.from('delivery_challans').upsert({
+      id: String(dc.id),
+      challan_no: dc.challanNo || '',
+      client_name: dc.clientName || dc.partyName || '',
+      payload: dc,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'id' });
+
+    if (!error) {
+      tableSuccess = true;
+    } else {
+      console.warn('[delivery_challans] Upsert table notice:', error.message);
+    }
+  } catch (e) {
+    console.warn('[delivery_challans] Table write exception:', e.message);
+  }
+
+  // Dual Persistence: Always backup into system_settings under key 'delivery_challans'
+  try {
+    const currentList = await fetchDeliveryChallansFromSupabase().catch(() => []);
+    const updatedList = [dc, ...currentList.filter(d => String(d.id) !== String(dc.id))];
+    await saveSystemSetting('delivery_challans', updatedList);
+  } catch (e) {
+    console.warn('[delivery_challans] Backup to system_settings notice:', e.message);
+    if (!tableSuccess) {
+      throw e;
+    }
   }
 }
 
@@ -3076,9 +3125,18 @@ export async function deleteDeliveryChallanFromSupabase(id) {
     throw new Error("Cannot delete delivery challan: Supabase database connection is not available.");
   }
   await ensureValidSession();
-  const { error } = await supabase.from('delivery_challans').delete().eq('id', String(id));
-  if (error) {
-    handleSupabaseError(error, 'delivery_challans');
+  try {
+    await supabase.from('delivery_challans').delete().eq('id', String(id));
+  } catch (e) {
+    console.warn('[delivery_challans] Table delete notice:', e.message);
+  }
+
+  try {
+    const currentList = await fetchDeliveryChallansFromSupabase().catch(() => []);
+    const updatedList = currentList.filter(d => String(d.id) !== String(id));
+    await saveSystemSetting('delivery_challans', updatedList);
+  } catch (e) {
+    console.warn('[delivery_challans] Delete from system_settings notice:', e.message);
   }
 }
 
@@ -3087,14 +3145,41 @@ export async function fetchCertificatesOfAnalysisFromSupabase() {
     throw new Error("Supabase is not configured.");
   }
   try {
-    const { data, error } = await supabase.from('certificate_of_analyses').select('*').order('created_at', { ascending: false });
-    if (error) {
-      handleSupabaseError(error, 'certificate_of_analyses');
+    let tableRecords = [];
+    try {
+      const { data, error } = await supabase.from('certificate_of_analyses').select('*');
+      if (!error && Array.isArray(data)) {
+        tableRecords = data.map(r => r.payload || r.details || r);
+      } else if (error) {
+        console.warn('[certificate_of_analyses] Table fetch notice:', error.message);
+      }
+    } catch (err) {
+      console.warn('[certificate_of_analyses] Table query exception:', err.message);
     }
-    if (!data) return [];
-    return data.map(r => r.payload || r.details || r);
+
+    const settingData = await fetchSystemSetting('certificate_of_analyses').catch(() => null);
+    const backupRecords = Array.isArray(settingData) ? settingData : [];
+
+    const recordMap = new Map();
+    backupRecords.forEach(r => {
+      if (r && r.id) recordMap.set(String(r.id), r);
+    });
+    tableRecords.forEach(r => {
+      if (r && r.id) recordMap.set(String(r.id), r);
+    });
+
+    const allCoAs = Array.from(recordMap.values());
+    allCoAs.sort((a, b) => {
+      const timeA = new Date(a.createdDate || a.testDate || 0).getTime();
+      const timeB = new Date(b.createdDate || b.testDate || 0).getTime();
+      return timeB - timeA;
+    });
+
+    return allCoAs;
   } catch (e) {
     console.error("Error fetching certificate of analyses from Supabase:", e);
+    const settingData = await fetchSystemSetting('certificate_of_analyses').catch(() => null);
+    if (Array.isArray(settingData)) return settingData;
     throw e;
   }
 }
@@ -3104,17 +3189,35 @@ export async function saveCertificateOfAnalysisToSupabase(coa) {
     throw new Error("Cannot save certificate of analysis: Supabase database connection is not available.");
   }
   await ensureValidSession();
-  const { error } = await supabase.from('certificate_of_analyses').upsert({
-    id: String(coa.id),
-    coa_no: coa.coaNo || '',
-    job_name: coa.jobName || '',
-    customer_name: coa.customerName || '',
-    payload: coa,
-    updated_at: new Date().toISOString()
-  }, { onConflict: 'id' });
-  
-  if (error) {
-    handleSupabaseError(error, 'certificate_of_analyses');
+  let tableSuccess = false;
+  try {
+    const { error } = await supabase.from('certificate_of_analyses').upsert({
+      id: String(coa.id),
+      coa_no: coa.coaNo || '',
+      job_name: coa.jobName || '',
+      customer_name: coa.customerName || '',
+      payload: coa,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'id' });
+
+    if (!error) {
+      tableSuccess = true;
+    } else {
+      console.warn('[certificate_of_analyses] Table upsert notice:', error.message);
+    }
+  } catch (e) {
+    console.warn('[certificate_of_analyses] Table write exception:', e.message);
+  }
+
+  try {
+    const currentList = await fetchCertificatesOfAnalysisFromSupabase().catch(() => []);
+    const updatedList = [coa, ...currentList.filter(c => String(c.id) !== String(coa.id))];
+    await saveSystemSetting('certificate_of_analyses', updatedList);
+  } catch (e) {
+    console.warn('[certificate_of_analyses] Backup to system_settings notice:', e.message);
+    if (!tableSuccess) {
+      throw e;
+    }
   }
 }
 
@@ -3123,9 +3226,18 @@ export async function deleteCertificateOfAnalysisFromSupabase(id) {
     throw new Error("Cannot delete certificate of analysis: Supabase database connection is not available.");
   }
   await ensureValidSession();
-  const { error } = await supabase.from('certificate_of_analyses').delete().eq('id', String(id));
-  if (error) {
-    handleSupabaseError(error, 'certificate_of_analyses');
+  try {
+    await supabase.from('certificate_of_analyses').delete().eq('id', String(id));
+  } catch (e) {
+    console.warn('[certificate_of_analyses] Table delete notice:', e.message);
+  }
+
+  try {
+    const currentList = await fetchCertificatesOfAnalysisFromSupabase().catch(() => []);
+    const updatedList = currentList.filter(c => String(c.id) !== String(id));
+    await saveSystemSetting('certificate_of_analyses', updatedList);
+  } catch (e) {
+    console.warn('[certificate_of_analyses] Delete from system_settings notice:', e.message);
   }
 }
 

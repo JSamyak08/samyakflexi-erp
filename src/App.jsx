@@ -558,9 +558,9 @@ export default function App() {
 
         if (!isMounted) return;
 
-        if (Array.isArray(supaSFG) && supaSFG.length > 0) setSfgGoods(stripDummyRecords(supaSFG));
-        if (Array.isArray(supaDCs) && supaDCs.length > 0) setDeliveryChallans(stripDummyRecords(supaDCs));
-        if (Array.isArray(supaCoAs) && supaCoAs.length > 0) setCertificateOfAnalyses(stripDummyRecords(supaCoAs));
+        if (Array.isArray(supaSFG)) setSfgGoods(stripDummyRecords(supaSFG));
+        if (Array.isArray(supaDCs)) setDeliveryChallans(stripDummyRecords(supaDCs));
+        if (Array.isArray(supaCoAs)) setCertificateOfAnalyses(stripDummyRecords(supaCoAs));
         if (Array.isArray(supaAuditLogs)) setAuditLogs(pruneOldAuditLogs(supaAuditLogs));
         if (dbPrefixes) safeLocalStorageSet('samyak_doc_prefixes', dbPrefixes);
         if (dbTerms) safeLocalStorageSet('samyak_doc_terms', dbTerms);
