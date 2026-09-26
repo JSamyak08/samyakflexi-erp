@@ -3610,6 +3610,7 @@ export default function App() {
           <SFGStoreManagement 
             urlParams={urlParams}
             sfgGoods={sfgGoods}
+            inventory={inventory}
             orders={orders}
             jobMasters={jobMasters}
             productionRecords={productionRecords}

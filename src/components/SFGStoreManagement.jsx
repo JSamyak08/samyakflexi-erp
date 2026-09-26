@@ -33,6 +33,7 @@ import { getInventoryAgeingSettings } from '../services/settingsService';
 
 export default function SFGStoreManagement({
   sfgGoods = [],
+  inventory = [],
   orders = [],
   jobMasters = [],
   productionRecords = [],
@@ -67,8 +68,51 @@ export default function SFGStoreManagement({
   // Combined & Prepared SFG items with FIFO Sorting (oldest first)
   const allSfgItems = useMemo(() => {
     const list = Array.isArray(sfgGoods) ? [...sfgGoods] : [];
+
+    // Merge SFG / FG items from central inventory table so all shopfloor output is accessible in SFG & FG Store
+    const invList = Array.isArray(inventory) ? inventory : [];
+    invList.forEach(item => {
+      const cat = String(item.category || '').toLowerCase().trim();
+      const code = String(item.itemCode || item.id || '').toLowerCase().trim();
+      const rollType = String(item.rollType || '').toUpperCase().trim();
+      
+      const isSFGorFG = 
+        cat.includes('semi-finished') || 
+        cat.includes('finished goods') || 
+        cat === 'sfg' || 
+        cat === 'fg' || 
+        code.startsWith('sfg-') || 
+        code.startsWith('fg-') ||
+        rollType === 'SEMI_FINISHED_GOODS' ||
+        rollType === 'FINISHED_GOODS';
+
+      if (isSFGorFG) {
+        const exists = list.some(s => s.id === item.id || s.sfgBatchCode === item.id || s.sfgBatchCode === item.itemCode);
+        if (!exists) {
+          list.push({
+            id: item.id,
+            sfgBatchCode: item.itemCode || item.id,
+            orderId: item.orderId || (item.id.includes('ORD-') ? item.id.replace('SFG-ITEM-', '') : 'N/A'),
+            jobName: item.itemName || 'SFG Stock Item',
+            jobCode: item.jobCode || item.itemCode || item.id,
+            clientName: item.clientName || item.lastVendor || 'Factory Store',
+            sfgType: (cat.includes('finished') || code.startsWith('fg-')) ? 'Finished Goods (FG)' : 'Printed Rolls',
+            filmType: item.filmType || 'PET',
+            widthMm: item.widthMm || 460,
+            micron: item.micron || 12,
+            totalNetKg: Number(item.availableQtyKg || item.netWeightKg || 0),
+            availableKg: Number(item.availableQtyKg || item.availableWeightKg || 0),
+            consumedKg: Number(item.allocatedQtyKg || 0),
+            status: Number(item.availableQtyKg || 0) > 0 ? 'In Stock' : 'Consumed',
+            location: item.location || 'SFG Store',
+            createdDate: item.inwardDatetime || item.created_at || new Date().toISOString().split('T')[0]
+          });
+        }
+      }
+    });
+
     return sortInventoryByFifo(list);
-  }, [sfgGoods]);
+  }, [sfgGoods, inventory]);
 
 
   // Filtered Items

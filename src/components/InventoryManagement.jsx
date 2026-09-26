@@ -62,8 +62,6 @@ import {
 
 export const INVENTORY_CATEGORIES = [
   "Film Substrates",
-  "Semi-Finished Goods (SFG)",
-  "Finished Goods (FG)",
   "Printing Inks",
   "Chemicals & Solvents",
   "Adhesives & Hardener",
@@ -188,7 +186,26 @@ export default function InventoryManagement({
   // Sanitize all inventory and GRN records, applying FIFO sorting by true oldest inward date
   const safeInventory = useMemo(() => {
     const sanitized = (inventory || []).map(sanitizeInventoryItem);
-    return sortInventoryByFifo(sanitized, safeGrns, inventoryRolls);
+    // Filter out Semi-Finished Goods (SFG) and Finished Goods (FG) as they belong exclusively in SFG & FG Store module!
+    const rawMaterialsOnly = sanitized.filter(item => {
+      const cat = String(item.category || '').toLowerCase().trim();
+      const code = String(item.itemCode || item.id || '').toLowerCase().trim();
+      const rollType = String(item.rollType || '').toUpperCase().trim();
+      
+      const isSFGorFG = 
+        cat.includes('semi-finished') || 
+        cat.includes('finished goods') || 
+        cat === 'sfg' || 
+        cat === 'fg' || 
+        code.startsWith('sfg-') || 
+        code.startsWith('fg-') ||
+        rollType === 'SEMI_FINISHED_GOODS' ||
+        rollType === 'FINISHED_GOODS';
+
+      return !isSFGorFG;
+    });
+
+    return sortInventoryByFifo(rawMaterialsOnly, safeGrns, inventoryRolls);
   }, [inventory, safeGrns, inventoryRolls]);
 
   // Group inventory items by Item Name / Specs so films of same 'Item Name' but different Inventory Code/ID are consolidated into the same Item row
