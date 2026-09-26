@@ -29,6 +29,8 @@ import TablePagination, { usePagination } from './TablePagination';
 import DeliveryChallanPDF from './DeliveryChallanPDF';
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import CertificateOfAnalysisPDF, { DEFAULT_COA_PARAMETERS } from './CertificateOfAnalysisPDF';
+import DispatchPackingListPDF from './DispatchPackingListPDF';
+import BarcodePrinterModal from './BarcodePrinterModal';
 import { generateDocRefNumber, getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import { formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
 import { COMPANY_DETAILS } from '../factoryStore';
@@ -130,6 +132,7 @@ export const DEFAULT_MATERIAL_TEMPLATES = [
 export default function DispatchManagement({
   deliveryChallans = [],
   certificateOfAnalyses = [],
+  dispatchShipments = [],
   clients = [],
   vendors = [],
   jobMasters = [],
@@ -140,11 +143,15 @@ export default function DispatchManagement({
   onDeleteDeliveryChallan,
   onSaveCoA,
   onDeleteCoA,
+  onAddDispatchShipment,
   urlParams = {}
 }) {
   const [activeTab, setActiveTab] = useState(() => {
     if (urlParams.subTab === 'coas' || urlParams.tab === 'coas' || urlParams.coaId || urlParams.coaNo) {
       return 'coas';
+    }
+    if (urlParams.subTab === 'packing' || urlParams.tab === 'packing') {
+      return 'packing';
     }
     return 'challans';
   });
@@ -170,6 +177,21 @@ export default function DispatchManagement({
   const [isCoaModalOpen, setIsCoaModalOpen] = useState(false);
   const [editingCoaId, setEditingCoaId] = useState(null);
   const [activeCoaForPDF, setActiveCoaForPDF] = useState(null);
+
+  // Packing List Modal & Printer State
+  const [isPackingModalOpen, setIsPackingModalOpen] = useState(false);
+  const [selectedDispatchForPackingList, setSelectedDispatchForPackingList] = useState(null);
+  const [selectedRollForBarcodeModal, setSelectedRollForBarcodeModal] = useState(null);
+
+  // New Packing List Form State
+  const [pktJobName, setPktJobName] = useState('');
+  const [pktClientName, setPktClientName] = useState('');
+  const [pktVehicleNo, setPktVehicleNo] = useState('');
+  const [pktLrNo, setPktLrNo] = useState('');
+  const [pktTransporterName, setPktTransporterName] = useState('');
+  const [pktPoNo, setPktPoNo] = useState('');
+  const [currentPktNetWeight, setCurrentPktNetWeight] = useState(210.0);
+  const [pktRollsList, setPktRollsList] = useState([]);
 
   // Search & Filter
   const [searchTerm, setSearchTerm] = useState('');
@@ -939,8 +961,166 @@ export default function DispatchManagement({
     );
   }, [certificateOfAnalyses, searchTerm]);
 
+  const filteredPackingLists = useMemo(() => {
+    const term = searchTerm.toLowerCase();
+    return (dispatchShipments || []).filter(ds => 
+      (ds.dispatchId || ds.id || '').toLowerCase().includes(term) ||
+      (ds.clientName || '').toLowerCase().includes(term) ||
+      (ds.jobName || '').toLowerCase().includes(term) ||
+      (ds.vehicleNo || '').toLowerCase().includes(term) ||
+      (ds.lrNo || '').toLowerCase().includes(term)
+    );
+  }, [dispatchShipments, searchTerm]);
+
   const challanPagination = usePagination(filteredChallans, 10);
   const coaPagination = usePagination(filteredCoAs, 10);
+  const packingPagination = usePagination(filteredPackingLists, 10);
+
+  const handleCreateDcFromPackingList = (shipment) => {
+    setEditingDcId(null);
+    const newDcNo = getNextDocRefNumber('dc');
+    setDcChallanNo(newDcNo);
+    setDcInvoiceNo('');
+    setDcDispatchDateTime(new Date().toISOString().slice(0, 16));
+    setDcPartyType('Client');
+    setDcSelectedClientName(shipment.clientName || '');
+    
+    const matchedClient = (clients || []).find(c => c.name === shipment.clientName);
+    setDcClientAddress(matchedClient?.address || '');
+    setDcClientGstin(matchedClient?.gstin || '');
+    setDcClientContactPerson(matchedClient?.contactPerson || '');
+    setDcClientPhone(matchedClient?.phone || '');
+    
+    setDcVehicleNo(shipment.vehicleNo || '');
+    setDcTransporterName(shipment.transporterName || '');
+    setDcDriverPhone('');
+    setDcPoRefNo(shipment.poNo || '');
+    setDcDebitNoteNo('');
+    setDcJobName(shipment.jobName || '');
+    setDcChallanNature('Sale of Goods');
+    setDcFreightCharges(0);
+    setDcGstRatePct(18);
+    setDcTaxType('auto');
+    setDcDispatchedBy(currentUser?.fullName || currentUser?.name || 'Dispatch Executive');
+    setDcRemarks(`Linked with Packing List #${shipment.dispatchId || shipment.id} (${shipment.totalRolls || 1} rolls | Net: ${shipment.totalNetWeightKg} kg | Gross: ${shipment.totalGrossWeightKg} kg)`);
+    setDcTerms(getDocumentTerms('dc'));
+
+    const itemsList = Array.isArray(shipment.items) && shipment.items.length > 0 ? shipment.items : [];
+    const jobGroupMap = new Map();
+
+    if (itemsList.length > 0) {
+      itemsList.forEach(r => {
+        const jName = r.jobName || shipment.jobName || 'Printed Roll Job';
+        const existing = jobGroupMap.get(jName) || { jobName: jName, netW: 0, grossW: 0, count: 0 };
+        existing.netW += (Number(r.netWeightKg) || 0);
+        existing.grossW += (Number(r.grossWeightKg) || 0);
+        existing.count += 1;
+        jobGroupMap.set(jName, existing);
+      });
+    } else {
+      const jName = shipment.jobName || 'Printed Roll Job';
+      jobGroupMap.set(jName, {
+        jobName: jName,
+        netW: Number(shipment.totalNetWeightKg) || 0,
+        grossW: Number(shipment.totalGrossWeightKg) || 0,
+        count: Number(shipment.totalRolls) || 1
+      });
+    }
+
+    const generatedDcItems = [];
+    let idx = 1;
+    jobGroupMap.forEach((grp, jName) => {
+      const matchedJm = (jobMasters || []).find(j => j.jobName === jName);
+      const matchedOrder = (orders || []).find(o => o.jobName === jName);
+      const rate = Number(matchedJm?.sellingPricePerKg || matchedOrder?.rate || 185);
+      const netKg = Number(grp.netW.toFixed(2));
+      const grossKg = Number(grp.grossW.toFixed(2));
+
+      generatedDcItems.push({
+        id: `dc-item-${Date.now()}-${idx++}`,
+        hsnSac: '3923',
+        description: `${jName} - Printed Laminated Film Rolls (${grp.count} Reels | Net: ${netKg} Kg | Gross: ${grossKg} Kg)`,
+        quantity: netKg,
+        unit: 'Kg',
+        grossWeightKg: grossKg,
+        rollCount: grp.count,
+        packingListId: shipment.dispatchId || shipment.id,
+        rate: rate,
+        amount: Number((netKg * rate).toFixed(2))
+      });
+    });
+
+    setDcItems(generatedDcItems);
+    handleTabSwitch('challans');
+    setIsDcModalOpen(true);
+  };
+
+  const handleAddRollToPackingList = () => {
+    const netW = Number(currentPktNetWeight) > 0 ? Number(currentPktNetWeight) : 210.0;
+    const grossW = Number((netW + 4.5).toFixed(2));
+    const nextRollNo = pktRollsList.length + 1;
+    const matchedOrder = (orders || []).find(o => o.jobName === pktJobName);
+    const orderId = matchedOrder?.id || 'N/A';
+
+    const newRollItem = {
+      rollNo: nextRollNo,
+      barcodeId: `FG-DISP-${Date.now().toString().slice(-6)}-${nextRollNo}`,
+      jobName: pktJobName || 'Standard Job',
+      orderId: orderId,
+      substrateSpec: matchedOrder?.structure || 'Laminated Printed Reel',
+      netWeightKg: netW,
+      grossWeightKg: grossW,
+      coreSize: '3 inch'
+    };
+    setPktRollsList(prev => [...prev, newRollItem]);
+  };
+
+  const handleSavePackingListSubmit = (e) => {
+    e.preventDefault();
+    if (!pktJobName || !pktClientName) {
+      alert("Please select a Production Job and enter Client Name.");
+      return;
+    }
+
+    const rollsToSave = pktRollsList.length > 0 ? pktRollsList : [
+      {
+        rollNo: 1,
+        barcodeId: `FG-DISP-${Date.now().toString().slice(-6)}-1`,
+        jobName: pktJobName,
+        netWeightKg: Number(currentPktNetWeight) || 210.0,
+        grossWeightKg: Number((currentPktNetWeight || 210.0) + 4.5),
+        coreSize: '3 inch'
+      }
+    ];
+
+    const totalNetWeightKg = rollsToSave.reduce((sum, r) => sum + (Number(r.netWeightKg) || 0), 0);
+    const totalGrossWeightKg = rollsToSave.reduce((sum, r) => sum + (Number(r.grossWeightKg) || 0), 0);
+    const matchedOrder = (orders || []).find(o => o.jobName === pktJobName);
+
+    const newShipment = {
+      id: `DISP-PL-${Date.now()}`,
+      dispatchId: `PL-${Date.now().toString().slice(-6)}`,
+      orderId: matchedOrder?.id || 'N/A',
+      jobName: pktJobName,
+      clientName: pktClientName,
+      vehicleNo: pktVehicleNo || 'MP-09-AB-1234',
+      lrNo: pktLrNo || 'LR-2026-99',
+      transporterName: pktTransporterName || 'Express Logistics',
+      poNo: pktPoNo || matchedOrder?.poNo || '',
+      dispatchDate: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      totalRolls: rollsToSave.length,
+      totalNetWeightKg: Number(totalNetWeightKg.toFixed(2)),
+      totalGrossWeightKg: Number(totalGrossWeightKg.toFixed(2)),
+      items: rollsToSave
+    };
+
+    if (onAddDispatchShipment) {
+      onAddDispatchShipment(newShipment);
+    }
+
+    setIsPackingModalOpen(false);
+    setSelectedDispatchForPackingList(newShipment);
+  };
 
   // Statistics
   const safeChallans = deliveryChallans || [];
@@ -1034,6 +1214,26 @@ export default function DispatchManagement({
             }}
           >
             <Truck size={16} /> Delivery Challans ({totalChallansCount})
+          </button>
+
+          <button 
+            type="button" 
+            className={`btn-subtab ${activeTab === 'packing' ? 'active' : ''}`}
+            onClick={() => handleTabSwitch('packing')}
+            style={{
+              background: activeTab === 'packing' ? '#059669' : 'rgba(255, 255, 255, 0.05)',
+              color: '#ffffff',
+              border: activeTab === 'packing' ? '1px solid #34d399' : '1px solid rgba(255, 255, 255, 0.1)',
+              padding: '8px 18px',
+              borderRadius: '8px',
+              fontWeight: '700',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            <Package size={16} /> Create Packing List ({(dispatchShipments || []).length})
           </button>
 
           <button 
@@ -1311,6 +1511,132 @@ export default function DispatchManagement({
           </>
         )}
 
+        {/* TAB 3: CREATE PACKING LIST TABLE & STATION */}
+        {activeTab === 'packing' && (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#ecfdf5', padding: '14px 20px', borderRadius: '12px', border: '1px solid #a7f3d0', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ background: '#059669', color: '#ffffff', width: '40px', height: '40px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Package size={22} />
+                </div>
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: '800', color: '#065f46' }}>
+                    Scale #4 Dispatch & Packing List Station
+                  </h4>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '0.8rem', color: '#047857' }}>
+                    Weigh FG rolls/pouches on Scale #4, compute sum total net weight and gross weight per job, print barcode slips, and generate Delivery Challans.
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                className="btn-primary" 
+                onClick={() => {
+                  const firstOrder = (orders || [])[0];
+                  setPktJobName(firstOrder?.jobName || '');
+                  setPktClientName(firstOrder?.clientName || firstOrder?.customerName || '');
+                  setPktVehicleNo('MP-09-AB-1234');
+                  setPktLrNo('LR-2026-001');
+                  setPktTransporterName('Express Logistics');
+                  setPktPoNo(firstOrder?.poNo || '');
+                  setCurrentPktNetWeight(210.0);
+                  setPktRollsList([]);
+                  setIsPackingModalOpen(true);
+                }}
+                style={{ background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', fontSize: '0.86rem', padding: '8px 16px', fontWeight: '700', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Plus size={18} /> + Create New Packing List
+              </button>
+            </div>
+
+            <div style={{ overflowX: 'auto', background: '#ffffff', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Packing List ID</th>
+                    <th>Date & Time</th>
+                    <th>Customer / Client Name</th>
+                    <th>Job Name</th>
+                    <th>Vehicle & LR #</th>
+                    <th style={{ textAlign: 'center' }}>Rolls Count</th>
+                    <th style={{ textAlign: 'right' }}>Total Net Wt (Kg)</th>
+                    <th style={{ textAlign: 'right' }}>Total Gross Wt (Kg)</th>
+                    <th style={{ textAlign: 'center' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(packingPagination.paginatedItems || []).length === 0 ? (
+                    <tr>
+                      <td colSpan={9} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                        <Package size={38} style={{ opacity: 0.25, display: 'block', margin: '0 auto 8px' }} />
+                        No Packing Lists found. Click <strong>"+ Create New Packing List"</strong> to record stock weights.
+                      </td>
+                    </tr>
+                  ) : (
+                    (packingPagination.paginatedItems || []).map(ds => (
+                      <tr key={ds.dispatchId || ds.id}>
+                        <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                          <strong style={{ color: '#2563eb', fontFamily: 'monospace', fontSize: '0.88rem' }}>{ds.dispatchId || ds.id}</strong>
+                        </td>
+                        <td style={{ padding: '12px 14px', verticalAlign: 'middle', fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
+                          {ds.dispatchDate}
+                        </td>
+                        <td style={{ padding: '12px 14px', verticalAlign: 'middle', fontWeight: '700', color: '#0f172a' }}>
+                          {ds.clientName}
+                        </td>
+                        <td style={{ padding: '12px 14px', verticalAlign: 'middle', fontWeight: '600' }}>
+                          {ds.jobName}
+                        </td>
+                        <td style={{ padding: '12px 14px', verticalAlign: 'middle', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                          {ds.vehicleNo || '-'} {ds.lrNo ? `| LR: ${ds.lrNo}` : ''}
+                        </td>
+                        <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'center', fontWeight: '700' }}>
+                          {ds.totalRolls || (ds.items?.length || 1)} rolls
+                        </td>
+                        <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'right', fontWeight: '800', color: '#047857' }}>
+                          {Number(ds.totalNetWeightKg).toLocaleString()} kg
+                        </td>
+                        <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'right', fontWeight: '800', color: '#4338ca' }}>
+                          {Number(ds.totalGrossWeightKg || (ds.totalNetWeightKg + 4.5)).toLocaleString()} kg
+                        </td>
+                        <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
+                            <button 
+                              type="button"
+                              className="btn-primary" 
+                              style={{ padding: '5px 10px', fontSize: '0.78rem', background: '#0284c7', borderColor: '#0284c7', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                              title="Issue Delivery Challan linked to this Packing List"
+                              onClick={() => handleCreateDcFromPackingList(ds)}
+                            >
+                              <Truck size={14} /> Issue DC
+                            </button>
+                            <button 
+                              type="button"
+                              className="btn-secondary" 
+                              style={{ padding: '5px 10px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                              onClick={() => setSelectedDispatchForPackingList(ds)}
+                            >
+                              <Printer size={14} /> Print PDF
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <TablePagination
+              currentPage={packingPagination.currentPage}
+              totalPages={packingPagination.totalPages}
+              totalItems={packingPagination.totalItems}
+              itemsPerPage={packingPagination.itemsPerPage}
+              onPageChange={packingPagination.setCurrentPage}
+            />
+          </>
+        )}
+
         {/* TAB 2: CERTIFICATE OF ANALYSIS (COA) TABLE */}
         {activeTab === 'coas' && (
           <>
@@ -1484,6 +1810,38 @@ export default function DispatchManagement({
 
             <form onSubmit={handleSaveDcSubmit}>
               
+              {/* Import / Link from Packing List Banner */}
+              <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '12px', padding: '12px 16px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                <div>
+                  <div style={{ fontWeight: '800', color: '#065f46', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Package size={16} /> Link / Import from Packing List
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: '#047857', marginTop: '2px' }}>
+                    Auto-populates job-wise roll count, sum total net weight, and sum total gross weight of rolls into Delivery Challan items.
+                  </div>
+                </div>
+                <select
+                  className="form-control"
+                  style={{ width: 'auto', minWidth: '280px', background: '#ffffff', fontWeight: '700', borderColor: '#a7f3d0', fontSize: '0.84rem' }}
+                  onChange={(e) => {
+                    const selectedId = e.target.value;
+                    if (!selectedId) return;
+                    const matchedPl = (dispatchShipments || []).find(s => String(s.dispatchId) === String(selectedId) || String(s.id) === String(selectedId));
+                    if (matchedPl) {
+                      handleCreateDcFromPackingList(matchedPl);
+                    }
+                  }}
+                  defaultValue=""
+                >
+                  <option value="">-- Import from Packing List --</option>
+                  {(dispatchShipments || []).map(ds => (
+                    <option key={ds.dispatchId || ds.id} value={ds.dispatchId || ds.id}>
+                      {ds.dispatchId || ds.id} - {ds.clientName} ({ds.jobName} | {ds.totalRolls || 1} rolls, {ds.totalNetWeightKg} kg Net / {ds.totalGrossWeightKg || (ds.totalNetWeightKg + 4.5)} kg Gross)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* Card 1: Basic Identifiers & Party Info */}
               <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', marginBottom: '16px' }}>
                 {/* Top 3 Identifiers */}
@@ -2871,6 +3229,166 @@ export default function DispatchManagement({
             </form>
           </div>
         </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* MODAL 7: CREATE NEW PACKING LIST (SCALE #4 STATION)                  */}
+      {/* ==================================================================== */}
+      {isPackingModalOpen && (
+        <div className="modal-overlay" style={{ zIndex: 2100 }} onClick={() => setIsPackingModalOpen(false)}>
+          <div className="glass-card modal-content" style={{ width: '680px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Package style={{ color: '#059669' }} /> Create New Packing List (Scale #4 Station)
+                </h3>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  Weigh finished goods rolls on Scale #4 and generate total net & gross weights per job for Delivery Challan.
+                </p>
+              </div>
+              <button type="button" className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.8rem' }} onClick={() => setIsPackingModalOpen(false)}>
+                ✕ Close
+              </button>
+            </div>
+
+            <form onSubmit={handleSavePackingListSubmit}>
+              <div className="form-grid">
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label>Select Production Job *</label>
+                  <select 
+                    className="form-control"
+                    value={pktJobName}
+                    onChange={e => {
+                      const jName = e.target.value;
+                      setPktJobName(jName);
+                      const matchedOrder = (orders || []).find(o => o.jobName === jName);
+                      if (matchedOrder) {
+                        setPktClientName(matchedOrder.clientName || matchedOrder.customerName || '');
+                        if (matchedOrder.poNo) setPktPoNo(matchedOrder.poNo);
+                      }
+                    }}
+                    required
+                  >
+                    <option value="" disabled>-- Select Production Job --</option>
+                    {(orders || []).map(o => (
+                      <option key={o.id} value={o.jobName}>{o.jobName} ({o.clientName})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Client Name *</label>
+                  <input type="text" className="form-control" required value={pktClientName} onChange={e => setPktClientName(e.target.value)} />
+                </div>
+
+                <div className="form-group">
+                  <label>Vehicle Number *</label>
+                  <input type="text" className="form-control" required value={pktVehicleNo} onChange={e => setPktVehicleNo(e.target.value)} />
+                </div>
+
+                <div className="form-group">
+                  <label>Transporter Name</label>
+                  <input type="text" className="form-control" value={pktTransporterName} onChange={e => setPktTransporterName(e.target.value)} />
+                </div>
+
+                <div className="form-group">
+                  <label>Lorry Receipt (LR) #</label>
+                  <input type="text" className="form-control" value={pktLrNo} onChange={e => setPktLrNo(e.target.value)} />
+                </div>
+
+                {/* Scale #4 Live Weight Input */}
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <WeighingScaleCaptureButton
+                    weightKg={currentPktNetWeight}
+                    onCaptureWeight={(w) => setCurrentPktNetWeight(Number(w) || 210.0)}
+                    stationId="SCALE_4_DISPATCH"
+                    label="Scale #4 Live Roll Net Weight (Kg) *"
+                  />
+                </div>
+              </div>
+
+              {/* Scanned Packing List Rolls Table */}
+              <div style={{ marginTop: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <h4 style={{ fontSize: '0.9rem', fontWeight: '700' }}>Itemized Rolls / Boxes ({pktRollsList.length})</h4>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ fontSize: '0.75rem', padding: '5px 10px', background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontWeight: '700' }}
+                    onClick={handleAddRollToPackingList}
+                  >
+                    + Add Roll ({currentPktNetWeight} kg Net / {(currentPktNetWeight + 4.5).toFixed(1)} kg Gross)
+                  </button>
+                </div>
+
+                {pktRollsList.length === 0 ? (
+                  <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '8px', textAlign: 'center', fontSize: '0.82rem', color: '#64748b' }}>
+                    Click "+ Add Roll" to record roll weights. If no individual rolls are added, 1 summary roll will be generated automatically.
+                  </div>
+                ) : (
+                  <table className="data-table" style={{ fontSize: '0.8rem' }}>
+                    <thead>
+                      <tr>
+                        <th>Roll #</th>
+                        <th>Barcode ID</th>
+                        <th>Job Name</th>
+                        <th>Net Wt (kg)</th>
+                        <th>Gross Wt (kg)</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pktRollsList.map((r, i) => (
+                        <tr key={i}>
+                          <td style={{ fontWeight: '700' }}>{r.rollNo}</td>
+                          <td style={{ fontFamily: 'monospace', color: '#2563eb' }}>{r.barcodeId}</td>
+                          <td style={{ fontWeight: '600' }}>{r.jobName}</td>
+                          <td style={{ fontWeight: '700', color: '#047857' }}>{r.netWeightKg} kg</td>
+                          <td style={{ fontWeight: '700', color: '#4338ca' }}>{r.grossWeightKg} kg</td>
+                          <td>
+                            <button
+                              type="button"
+                              className="icon-btn-danger"
+                              onClick={() => setPktRollsList(pktRollsList.filter((_, idx) => idx !== i))}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                <button type="button" className="btn-secondary" onClick={() => setIsPackingModalOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary" style={{ background: '#059669', borderColor: '#059669' }}>
+                  <Printer size={16} /> Save Packing List & Preview PDF
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 8: PACKING LIST PDF PREVIEW */}
+      {selectedDispatchForPackingList && (
+        <DispatchPackingListPDF 
+          shipment={selectedDispatchForPackingList} 
+          company={COMPANY_DETAILS}
+          onClose={() => setSelectedDispatchForPackingList(null)} 
+        />
+      )}
+
+      {/* MODAL 9: ROLL BARCODE TAG PRINTER */}
+      {selectedRollForBarcodeModal && (
+        <BarcodePrinterModal 
+          roll={selectedRollForBarcodeModal} 
+          onClose={() => setSelectedRollForBarcodeModal(null)} 
+        />
       )}
 
     </div>

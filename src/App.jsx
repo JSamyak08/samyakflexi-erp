@@ -3697,6 +3697,7 @@ export default function App() {
             urlParams={urlParams}
             deliveryChallans={deliveryChallans}
             certificateOfAnalyses={certificateOfAnalyses}
+            dispatchShipments={dispatchShipments}
             clients={clients}
             vendors={vendors}
             jobMasters={jobMasters}
@@ -3707,6 +3708,7 @@ export default function App() {
             onDeleteDeliveryChallan={handleDeleteDeliveryChallan}
             onSaveCoA={handleSaveCoA}
             onDeleteCoA={handleDeleteCoA}
+            onAddDispatchShipment={handleAddDispatchShipment}
           />
         )}
 
