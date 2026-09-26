@@ -147,6 +147,7 @@ export async function saveOrderToSupabase(order) {
   };
   const combinedJobName = `${order.jobName || 'Untitled Job'} ||| ${JSON.stringify(metaEnvelope)}`;
 
+  // Tier 1: Full payload with all enriched columns
   const fullPayload = {
     id: order.id,
     job_name: combinedJobName,
@@ -161,24 +162,69 @@ export async function saveOrderToSupabase(order) {
   };
 
   const { error: fullErr } = await supabase.from('orders').upsert(fullPayload, { onConflict: 'id' });
-  if (fullErr) {
-    console.warn(`[ORDERS][DB WRITE] Full payload failed (${fullErr.message}), trying fallback payload...`);
-    const fallbackPayload = {
-      id: order.id,
-      job_name: combinedJobName,
-      client_name: order.clientName || 'General Client',
-      order_type: order.orderType || 'Reel',
-      order_qty_kg: Number(order.orderQtyKg) || 0,
-      target_delivery_date: targetDateVal,
-      status: order.status || 'Scheduled',
-      job_details: jobDetails,
-      raw_material_requirements: matReqs
-    };
-    const { error: fbErr } = await supabase.from('orders').upsert(fallbackPayload, { onConflict: 'id' });
-    if (fbErr) {
-      console.error(`[ORDERS][DB WRITE Error] orderId=${order.id}:`, fbErr);
-      handleSupabaseError(fbErr, 'orders');
-    }
+  if (!fullErr) {
+    console.log(`[ORDERS][DB WRITE] Successfully saved orderId=${order.id} with full payload.`);
+    return;
+  }
+
+  console.warn(`[ORDERS][DB WRITE] Full payload notice (${fullErr.message}), trying Tier 2 fallback without delivery_date...`);
+
+  // Tier 2: Without delivery_date
+  const tier2Payload = {
+    id: order.id,
+    job_name: combinedJobName,
+    client_name: order.clientName || 'General Client',
+    order_type: order.orderType || 'Reel',
+    order_qty_kg: Number(order.orderQtyKg) || 0,
+    target_delivery_date: targetDateVal,
+    status: order.status || 'Scheduled',
+    job_details: jobDetails,
+    raw_material_requirements: matReqs
+  };
+
+  const { error: t2Err } = await supabase.from('orders').upsert(tier2Payload, { onConflict: 'id' });
+  if (!t2Err) {
+    console.log(`[ORDERS][DB WRITE] Successfully saved orderId=${order.id} with Tier 2 payload.`);
+    return;
+  }
+
+  console.warn(`[ORDERS][DB WRITE] Tier 2 notice (${t2Err.message}), trying Tier 3 schema-independent fallback...`);
+
+  // Tier 3: Core baseline payload (All metadata, jobDetails, & matReqs are embedded inside job_name envelope!)
+  const tier3Payload = {
+    id: order.id,
+    job_name: combinedJobName,
+    client_name: order.clientName || 'General Client',
+    order_type: order.orderType || 'Reel',
+    order_qty_kg: Number(order.orderQtyKg) || 0,
+    target_delivery_date: targetDateVal,
+    status: order.status || 'Scheduled'
+  };
+
+  const { error: t3Err } = await supabase.from('orders').upsert(tier3Payload, { onConflict: 'id' });
+  if (!t3Err) {
+    console.log(`[ORDERS][DB WRITE] Successfully saved orderId=${order.id} with Tier 3 baseline payload.`);
+    return;
+  }
+
+  console.warn(`[ORDERS][DB WRITE] Tier 3 notice (${t3Err.message}), trying Tier 4 minimal fallback...`);
+
+  // Tier 4: Minimal mandatory payload
+  const tier4Payload = {
+    id: order.id,
+    job_name: combinedJobName,
+    client_name: order.clientName || 'General Client',
+    order_type: order.orderType || 'Reel',
+    order_qty_kg: Number(order.orderQtyKg) || 0,
+    status: order.status || 'Scheduled'
+  };
+
+  const { error: t4Err } = await supabase.from('orders').upsert(tier4Payload, { onConflict: 'id' });
+  if (t4Err) {
+    console.error(`[ORDERS][DB WRITE Error] orderId=${order.id}:`, t4Err);
+    handleSupabaseError(t4Err, 'orders');
+  } else {
+    console.log(`[ORDERS][DB WRITE] Successfully saved orderId=${order.id} with Tier 4 minimal payload.`);
   }
 }
 
