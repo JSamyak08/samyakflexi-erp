@@ -37,7 +37,7 @@ import {
   Download
 } from 'lucide-react';
 import { calculateUtilisation } from '../dataStore';
-import { FILM_DENSITIES, isLDFilm, getFilmSlitWidth } from '../factoryStore';
+import { FILM_DENSITIES, isLDFilm, getFilmSlitWidth, isMetalloceneEligibleFilm, METALLOCENE_OPTIONS } from '../factoryStore';
 import CylinderJobCardForm from '../CylinderJobCardForm';
 import { saveJobMasterToSupabase, saveCylinderToSupabase } from '../services/supabaseDataService';
 
@@ -1416,8 +1416,9 @@ export default function JobMasterDirectory({
                     const widthVal = (l.widthMm !== undefined && l.widthMm !== '' && !isNaN(parseFloat(l.widthMm)))
                       ? l.widthMm
                       : defaultW;
+                    const isEligible = isMetalloceneEligibleFilm(l.filmType);
                     return (
-                      <div key={l.id} style={{ display: 'grid', gridTemplateColumns: '70px 1fr 90px 100px 32px', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                      <div key={l.id} style={{ display: 'grid', gridTemplateColumns: isEligible ? '70px 1fr 80px 85px 85px 32px' : '70px 1fr 90px 100px 32px', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
                         <span style={{ fontSize: '0.8rem', fontWeight: '600' }}>Layer {idx + 1}</span>
                         <select 
                           className="form-control" 
@@ -1448,6 +1449,23 @@ export default function JobMasterDirectory({
                           placeholder="Width mm"
                           title="Film Width (mm)" 
                         />
+                        {isEligible && (
+                          <select
+                            className="form-control"
+                            style={{ padding: '4px 6px', fontSize: '0.8rem' }}
+                            value={l.metallocenePct || ''}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setLayers(prev => prev.map(item => item.id === l.id ? { ...item, metallocenePct: val } : item));
+                            }}
+                            title="Metallocene Percentage (%)"
+                          >
+                            <option value="">Met %</option>
+                            {METALLOCENE_OPTIONS.map(opt => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                          </select>
+                        )}
                         {layers.length > 1 && <button type="button" className="btn-secondary" style={{ padding: '4px' }} onClick={() => removeLayer(l.id)}><X size={14} /></button>}
                       </div>
                     );

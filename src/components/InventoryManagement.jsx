@@ -55,7 +55,9 @@ import {
   generateBarcodeId, 
   generateVendorId,
   generateInventoryId,
-  PACKAGING_MATERIAL_TYPES
+  PACKAGING_MATERIAL_TYPES,
+  isMetalloceneEligibleFilm,
+  METALLOCENE_OPTIONS
 } from '../factoryStore';
 
 export const INVENTORY_CATEGORIES = [
@@ -584,6 +586,7 @@ export default function InventoryManagement({
   const [grnCategory, setGrnCategory] = useState('Film Substrates');
   const [grnItemName, setGrnItemName] = useState('');
   const [grnFilmType, setGrnFilmType] = useState('PET');
+  const [grnMetallocenePct, setGrnMetallocenePct] = useState('');
   const [grnMicron, setGrnMicron] = useState('');
   const [grnWidthMm, setGrnWidthMm] = useState('');
   const [grnUnit, setGrnUnit] = useState('Kg');
@@ -625,9 +628,20 @@ export default function InventoryManagement({
 
   const handleFilmTypeChange = (newFilmType) => {
     setGrnFilmType(newFilmType);
+    const newPct = isMetalloceneEligibleFilm(newFilmType) ? grnMetallocenePct : '';
+    if (!isMetalloceneEligibleFilm(newFilmType)) {
+      setGrnMetallocenePct('');
+    }
     if (grnCategory === 'Film Substrates') {
       recalculateAllRollLengths(newFilmType, grnMicron, grnWidthMm);
-      setGrnItemName(formatFilmItemName(newFilmType, grnWidthMm, grnMicron));
+      setGrnItemName(formatFilmItemName(newFilmType, grnWidthMm, grnMicron, '', newPct));
+    }
+  };
+
+  const handleMetallocenePctChange = (newPct) => {
+    setGrnMetallocenePct(newPct);
+    if (grnCategory === 'Film Substrates') {
+      setGrnItemName(formatFilmItemName(grnFilmType, grnWidthMm, grnMicron, '', newPct));
     }
   };
 
@@ -635,7 +649,7 @@ export default function InventoryManagement({
     setGrnMicron(newMicron);
     if (grnCategory === 'Film Substrates') {
       recalculateAllRollLengths(grnFilmType, newMicron, grnWidthMm);
-      setGrnItemName(formatFilmItemName(grnFilmType, grnWidthMm, newMicron));
+      setGrnItemName(formatFilmItemName(grnFilmType, grnWidthMm, newMicron, '', grnMetallocenePct));
     }
   };
 
@@ -643,7 +657,7 @@ export default function InventoryManagement({
     setGrnWidthMm(newWidth);
     if (grnCategory === 'Film Substrates') {
       recalculateAllRollLengths(grnFilmType, grnMicron, newWidth);
-      setGrnItemName(formatFilmItemName(grnFilmType, newWidth, grnMicron));
+      setGrnItemName(formatFilmItemName(grnFilmType, newWidth, grnMicron, '', grnMetallocenePct));
     }
   };
 
@@ -1257,8 +1271,10 @@ export default function InventoryManagement({
   const handleSelectStockItemForGrn = (item) => {
     if (!item) return;
     const isFilm = (item.category || 'Film Substrates') === 'Film Substrates';
+    const mPct = item.metallocenePct || item.metallocene_pct || '';
+    setGrnMetallocenePct(mPct);
     const title = isFilm
-      ? formatFilmItemName(item.filmType, item.widthMm, item.micron, item.itemName)
+      ? formatFilmItemName(item.filmType, item.widthMm, item.micron, item.itemName, mPct)
       : (item.itemName ? item.itemName.replace(/µ/g, 'Micron') : `${item.category || 'Stock'} Item`);
     
     setGrnSelectedStockItemId(item.id);
@@ -1339,6 +1355,7 @@ export default function InventoryManagement({
   const [editItemCode, setEditItemCode] = useState('');
   const [editUnit, setEditUnit] = useState('Kg');
   const [editFilmType, setEditFilmType] = useState('PET');
+  const [editMetallocenePct, setEditMetallocenePct] = useState('');
   const [editMicron, setEditMicron] = useState(12);
   const [editWidthMm, setEditWidthMm] = useState(1000);
   const [editSubType, setEditSubType] = useState('');
@@ -1360,6 +1377,7 @@ export default function InventoryManagement({
     setEditItemCode(newId);
     setEditUnit('Kg');
     setEditFilmType('PET');
+    setEditMetallocenePct('');
     setEditMicron(12);
     setEditWidthMm(1000);
     setEditSubType('');
@@ -1390,9 +1408,12 @@ export default function InventoryManagement({
     const subOrGrade = item.substrateOrGrade || item.substrateGrade || item.filmType || item.grade || item.subType || (isFilm ? 'PET' : '');
     setEditSubstrateOrGrade(subOrGrade);
     
+    const mPct = item.metallocenePct || item.metallocene_pct || '';
+    setEditMetallocenePct(mPct);
+
     // Pre-fill Item Name
     const defaultName = isFilm 
-      ? `${subOrGrade || 'PET'} ${item.micron && item.micron !== '-' ? item.micron + 'µ' : ''} (${item.widthMm && item.widthMm !== '-' ? item.widthMm + 'mm' : ''})`.trim()
+      ? formatFilmItemName(subOrGrade, item.widthMm, item.micron, item.itemName, mPct)
       : (item.itemName || subOrGrade || `${category} Stock Item`);
     setEditItemName(item.itemName || defaultName);
     
@@ -1441,6 +1462,7 @@ export default function InventoryManagement({
       if (!editSubstrateOrGrade || FILM_DENSITIES[editSubstrateOrGrade]) {
         setEditSubstrateOrGrade(editSubType || '');
       }
+      setEditMetallocenePct('');
       if (newCategory === 'Chemicals & Solvents' && editUnit === 'Kg') setEditUnit('Litres');
       else if (newCategory === 'Doctor Blades & Wipers' && editUnit === 'Kg') setEditUnit('Meters');
       else if (newCategory === 'Tapes & Consumables' && editUnit === 'Kg') setEditUnit('Rolls');
@@ -1457,11 +1479,13 @@ export default function InventoryManagement({
     const finalSubstrateOrGrade = isFilm 
       ? (editFilmType || editSubstrateOrGrade || 'PET') 
       : (editSubstrateOrGrade.trim() || editSubType.trim() || '');
+    const mPct = (isFilm && isMetalloceneEligibleFilm(finalSubstrateOrGrade)) ? editMetallocenePct : '';
+
     const defaultGeneratedName = isFilm
-      ? formatFilmItemName(finalSubstrateOrGrade, editWidthMm, editMicron)
+      ? formatFilmItemName(finalSubstrateOrGrade, editWidthMm, editMicron, '', mPct)
       : `${editCategory} - ${finalSubstrateOrGrade || 'Item'}`;
     const finalItemName = isFilm
-      ? formatFilmItemName(finalSubstrateOrGrade, editWidthMm, editMicron)
+      ? formatFilmItemName(finalSubstrateOrGrade, editWidthMm, editMicron, '', mPct)
       : (editItemName.trim().replace(/µ/g, 'Micron') || defaultGeneratedName);
     const rateVal = parseFloat(editUnitPrice) || 0;
     const availQty = parseFloat(editAvailableQty) || 0;
@@ -1479,6 +1503,8 @@ export default function InventoryManagement({
       dimensions: !isFilm ? editDimensions.trim() : '',
       micron: isFilm ? (parseFloat(editMicron) || 12) : '-',
       widthMm: isFilm ? (parseFloat(editWidthMm) || 1000) : (editDimensions.trim() ? editDimensions.replace(/[^\d.]/g, '') || '-' : '-'),
+      metallocenePct: mPct,
+      metallocene_pct: mPct,
       density: isFilm ? (FILM_DENSITIES[finalSubstrateOrGrade] || 1.0) : 1.0,
       availableQtyKg: availQty,
       allocatedQtyKg: parseFloat(editAllocatedQty) || 0,
@@ -1565,8 +1591,9 @@ export default function InventoryManagement({
     }
 
     const isFilm = grnCategory === 'Film Substrates';
+    const mPct = (isFilm && isMetalloceneEligibleFilm(grnFilmType)) ? grnMetallocenePct : '';
     const itemName = isFilm 
-      ? formatFilmItemName(grnFilmType, grnWidthMm, grnMicron) 
+      ? formatFilmItemName(grnFilmType, grnWidthMm, grnMicron, '', mPct) 
       : (grnItemName.trim().replace(/µ/g, 'Micron') || `${grnCategory} Inward Item`);
 
     // Ensure we have valid items in grnItemsList
@@ -1611,7 +1638,9 @@ export default function InventoryManagement({
         vendorRollNo: itemVendorRoll,
         itemRemarks: itemRemarkVal,
         remarks: itemRemarkVal,
-        notes: itemRemarkVal
+        notes: itemRemarkVal,
+        metallocenePct: mPct,
+        metallocene_pct: mPct
       };
     });
 
@@ -1632,6 +1661,8 @@ export default function InventoryManagement({
       filmType: isFilm ? grnFilmType : grnCategory,
       micron: isFilm ? parseFloat(grnMicron) : '-',
       widthMm: isFilm ? parseFloat(grnWidthMm) : '-',
+      metallocenePct: mPct,
+      metallocene_pct: mPct,
       unit: isFilm ? 'Kg' : (isCylinderCategory ? 'Set' : grnUnit),
       packagingType: grnPackagingType,
       rollsReceived: unitCount,
@@ -4916,6 +4947,24 @@ export default function InventoryManagement({
                         </select>
                       </div>
 
+                      {isMetalloceneEligibleFilm(grnFilmType) && (
+                        <div className="form-group">
+                          <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                            Metallocene Percentage (%)
+                          </label>
+                          <select 
+                            className="form-control"
+                            value={grnMetallocenePct}
+                            onChange={e => handleMetallocenePctChange(e.target.value)}
+                          >
+                            <option value="">-- Select Metallocene % --</option>
+                            {METALLOCENE_OPTIONS.map(opt => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
                       <div className="form-group">
                         <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>Micron Gauge (Micron)</label>
                         <input type="number" className="form-control" placeholder="e.g. 12" value={grnMicron} onChange={e => handleMicronChange(e.target.value)} />
@@ -6062,6 +6111,26 @@ export default function InventoryManagement({
                         onChange={e => setEditWidthMm(e.target.value)}
                       />
                     </div>
+
+                    {isMetalloceneEligibleFilm(editSubstrateOrGrade || editFilmType) && (
+                      <div className="form-group">
+                        <label style={{ fontWeight: '600', fontSize: '0.83rem' }}>Metallocene Percentage (%)</label>
+                        <select 
+                          className="form-control"
+                          value={editMetallocenePct}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setEditMetallocenePct(val);
+                            setEditItemName(formatFilmItemName(editSubstrateOrGrade || editFilmType, editWidthMm, editMicron, '', val));
+                          }}
+                        >
+                          <option value="">-- Select Metallocene % --</option>
+                          {METALLOCENE_OPTIONS.map(opt => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
 
                     <div className="form-group">
                       <label>Calculated Density</label>

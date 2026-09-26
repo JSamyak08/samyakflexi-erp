@@ -5,6 +5,7 @@
 
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 import { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl } from './supabaseStorageService';
+import { isMetalloceneEligibleFilm, getFilmTypeCode } from '../factoryStore';
 export { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl };
 
 /**
@@ -363,15 +364,24 @@ export async function deleteClientFromSupabase(clientId) {
 // 3. INVENTORY & RAW MATERIALS / CONSUMABLES
 // ============================================================================
 
-export function formatFilmItemName(filmType, widthMm, micron, rawName = '') {
-  let fType = String(filmType || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/gi, '');
+export function formatFilmItemName(filmType, widthMm, micron, rawName = '', metallocenePct = '') {
+  let fType = String(filmType || '').trim();
   let width = String(widthMm || '').replace(/[^0-9.]/g, '');
   let mic = String(micron || '').replace(/[^0-9.]/g, '');
+  let mPct = String(metallocenePct || '').trim();
+
+  // If mPct was not explicitly passed, attempt to extract from rawName if film is eligible
+  if (!mPct && rawName && isMetalloceneEligibleFilm(filmType || rawName)) {
+    const pctMatch = String(rawName).match(/(\d{1,2}%)/);
+    if (pctMatch) {
+      mPct = pctMatch[1];
+    }
+  }
 
   if ((!fType || !width || !mic) && rawName) {
     const cleanRaw = String(rawName).replace(/µ/g, 'Micron');
     if (!fType) {
-      const matchType = cleanRaw.match(/^(PET|BOPP|METPET|CPP|LDPE|LLDPE|POLY|BON|PVC|ALU)/i);
+      const matchType = cleanRaw.match(/^(PET|BOPP|METPET|CPP|LDPE|LLDPE|POLY|BON|PVC|ALU|MATTA|NMET|MMET|MGP|NGP)/i);
       fType = matchType ? matchType[1].toUpperCase() : cleanRaw.split(/[\s-]/)[0].toUpperCase();
     }
     if (!width) {
@@ -384,11 +394,16 @@ export function formatFilmItemName(filmType, widthMm, micron, rawName = '') {
     }
   }
 
-  fType = fType || 'PET';
+  const code = getFilmTypeCode(fType);
   width = width || '1000';
   mic = mic || '12';
 
-  return `${fType}-${width}-${mic}`;
+  if (isMetalloceneEligibleFilm(fType || code) && mPct) {
+    const formattedPct = mPct.endsWith('%') ? mPct : `${mPct}%`;
+    return `${code}-${width}-${mic}-${formattedPct}`;
+  }
+
+  return `${code}-${width}-${mic}`;
 }
 
 export function normalizeFilmType(filmType) {
@@ -538,6 +553,9 @@ export function sanitizeInventoryItem(rawItem) {
   const widthMm = isFilm 
     ? ((extractedMeta.widthMm !== undefined && extractedMeta.widthMm !== null && extractedMeta.widthMm !== '-') ? extractedMeta.widthMm : (rawItem.widthMm && rawItem.widthMm !== '-' ? rawItem.widthMm : 1000)) 
     : '-';
+  const metallocenePct = isFilm 
+    ? (extractedMeta.metallocenePct || rawItem.metallocene_pct || rawItem.metallocenePct || (rawName && isMetalloceneEligibleFilm(filmType) ? (rawName.match(/(\d{1,2}%)/)?.[1] || '') : ''))
+    : '';
 
   const fallbackUnit = isFilm ? 'Kg' : (
     category === 'Chemicals & Solvents' || category === 'Solvents' ? 'Litres' : 
@@ -550,7 +568,7 @@ export function sanitizeInventoryItem(rawItem) {
   const resolvedUnit = rawItem.unit || rawItem.unit_of_measure || extractedMeta.unit || fallbackUnit;
 
   const cleanItemName = isFilm 
-    ? formatFilmItemName(filmType, widthMm, micron, rawName) 
+    ? formatFilmItemName(filmType, widthMm, micron, rawName, metallocenePct) 
     : (rawName ? rawName.replace(/µ/g, 'Micron') : `${category} Stock Item`);
 
   return {
@@ -563,6 +581,8 @@ export function sanitizeInventoryItem(rawItem) {
     filmType: isFilm ? filmType : '',
     micron: micron,
     widthMm: widthMm,
+    metallocenePct: metallocenePct,
+    metallocene_pct: metallocenePct,
     unit: resolvedUnit,
     availableQtyKg: Number(rawItem.availableQtyKg ?? rawItem.stock_qty_kg ?? extractedMeta.availableQtyKg ?? 0) || 0,
     allocatedQtyKg: Number(rawItem.allocatedQtyKg ?? extractedMeta.allocatedQtyKg ?? 0) || 0,
@@ -601,6 +621,8 @@ export function mapInventoryItemToDbPayload(item) {
     dimensions: clean.dimensions || '',
     micron: isFilm ? clean.micron : '-',
     widthMm: isFilm ? clean.widthMm : '-',
+    metallocenePct: clean.metallocenePct || '',
+    metallocene_pct: clean.metallocenePct || '',
     allocatedQtyKg: clean.allocatedQtyKg,
     reorderLevelKg: clean.reorderLevelKg,
     unit: clean.unit,
@@ -617,6 +639,7 @@ export function mapInventoryItemToDbPayload(item) {
     id: String(clean.id),
     item_code: itemCodeStr,
     item_name: combinedItemName,
+    metallocene_pct: clean.metallocenePct || null,
     stock_qty_kg: Number(clean.availableQtyKg ?? 0) || 0,
     unit_price: Number(clean.unitPrice ?? 0) || 0
   };
@@ -711,6 +734,8 @@ export function sanitizeGRN(rawGRN) {
     }
   }
 
+  const metallocenePct = meta.metallocenePct || rawGRN.metallocene_pct || rawGRN.metallocenePct || '';
+
   return {
     ...rawGRN,
     ...meta,
@@ -725,6 +750,8 @@ export function sanitizeGRN(rawGRN) {
     filmType: meta.filmType || rawGRN.filmType || (rawName ? rawName.split(' ')[0] : 'PET'),
     micron: meta.micron !== undefined ? meta.micron : (rawGRN.micron !== undefined ? rawGRN.micron : '-'),
     widthMm: meta.widthMm !== undefined ? meta.widthMm : (rawGRN.widthMm !== undefined ? rawGRN.widthMm : '-'),
+    metallocenePct: metallocenePct,
+    metallocene_pct: metallocenePct,
     rollsReceived: Number(meta.rollsReceived ?? rawGRN.rollsReceived ?? 0) || 0,
     purchaseRatePerKg: Number(meta.purchaseRatePerKg ?? meta.unitPrice ?? rawGRN.purchaseRatePerKg ?? rawGRN.unitPrice ?? 0) || 0,
     unitPrice: Number(meta.purchaseRatePerKg ?? meta.unitPrice ?? rawGRN.purchaseRatePerKg ?? rawGRN.unitPrice ?? 0) || 0,
@@ -775,6 +802,8 @@ export async function saveGRNToSupabase(grn) {
     filmType: clean.filmType,
     micron: clean.micron,
     widthMm: clean.widthMm,
+    metallocenePct: clean.metallocenePct || '',
+    metallocene_pct: clean.metallocenePct || '',
     rollsReceived: clean.rollsReceived,
     purchaseRatePerKg: Number(clean.purchaseRatePerKg ?? clean.unitPrice ?? 0) || 0,
     unitPrice: Number(clean.purchaseRatePerKg ?? clean.unitPrice ?? 0) || 0,
@@ -798,6 +827,7 @@ export async function saveGRNToSupabase(grn) {
     invoice_number: clean.invoiceNo || '',
     received_date: clean.receivedDate || new Date().toISOString(),
     item_name: combinedItemName,
+    metallocene_pct: clean.metallocenePct || null,
     received_qty_kg: weightVal,
     status: clean.status || 'Pending QC',
     qc_remarks: clean.qcNotes || ''
@@ -1548,6 +1578,8 @@ export async function fetchInventoryRolls() {
       orderId: r.order_id,
       micron: Number(r.micron) || 0,
       widthMm: Number(r.width_mm) || 0,
+      metallocenePct: r.metallocene_pct || r.metallocenePct || '',
+      metallocene_pct: r.metallocene_pct || r.metallocenePct || '',
       packagingType: r.packaging_type || '',
       inwardDatetime: r.inward_datetime,
       productionDate: r.production_date || (r.inward_datetime ? r.inward_datetime.split('T')[0] : ''),
@@ -1598,6 +1630,7 @@ export async function saveInventoryRollToSupabase(roll) {
     order_id: roll.orderId || '',
     micron: Number(roll.micron) || 0,
     width_mm: Number(roll.widthMm) || 0,
+    metallocene_pct: roll.metallocenePct || roll.metallocene_pct || null,
     packaging_type: roll.packagingType || '',
     inward_datetime: roll.inwardDatetime || new Date().toISOString(),
     production_date: roll.productionDate || (roll.inwardDatetime ? roll.inwardDatetime.split('T')[0] : new Date().toISOString().split('T')[0]),

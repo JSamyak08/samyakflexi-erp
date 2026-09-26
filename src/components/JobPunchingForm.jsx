@@ -4,7 +4,9 @@ import {
   DEFAULT_DAILY_RATES, 
   DEFAULT_PROCESSING_RATES,
   calculateJobRawMaterials,
-  isLDFilm
+  isLDFilm,
+  isMetalloceneEligibleFilm,
+  METALLOCENE_OPTIONS
 } from '../factoryStore';
 import { 
   Calculator, 
@@ -841,6 +843,23 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
                       title="Editable Film Width (mm). Pre-filled with Print Width (+5mm for LD films)."
                     />
                   </div>
+
+                  {isMetalloceneEligibleFilm(layer.filmType) && (
+                    <div style={{ flex: '1.2 1 95px', minWidth: 0 }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', whiteSpace: 'nowrap' }}>Metallocene %</label>
+                      <select
+                        className="form-control"
+                        style={{ padding: '6px 8px', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box' }}
+                        value={layer.metallocenePct || ''}
+                        onChange={e => updateLayer(layer.id, 'metallocenePct', e.target.value)}
+                      >
+                        <option value="">-- % --</option>
+                        {METALLOCENE_OPTIONS.map(opt => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
                   <div style={{ flex: '1.2 1 85px', minWidth: 0 }}>
                     <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', whiteSpace: 'nowrap' }}>Rate (₹/kg) *</label>

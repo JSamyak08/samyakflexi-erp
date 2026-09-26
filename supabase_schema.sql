@@ -755,4 +755,11 @@ CREATE POLICY "Allow anon and auth full access on delivery_challans" ON public.d
 ALTER TABLE public.certificate_of_analyses ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow anon and auth full access on certificate_of_analyses" ON public.certificate_of_analyses FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
+-- Metallocene Percentage Column Additions for LD Film Types (MATTA, NMET, MMET, MGP, NGP)
+ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS metallocene_pct TEXT;
+ALTER TABLE public.inventory_rolls ADD COLUMN IF NOT EXISTS metallocene_pct TEXT;
+ALTER TABLE public.grns ADD COLUMN IF NOT EXISTS metallocene_pct TEXT;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS metallocene_pct TEXT;
+ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS metallocene_pct TEXT;
+
 

@@ -30,6 +30,55 @@ export const getFilmSubstrateMap = () => {
   return map;
 };
 
+export const METALLOCENE_ELIGIBLE_FILMS = [
+  'MATTA',
+  'NMET',
+  'MMET',
+  'MGP',
+  'NGP',
+  'MILKY ATTA',
+  'NATURAL METALLOCENE',
+  'MILKY METALLOCENE',
+  'MILKY GP',
+  'NATURAL GP',
+  'NATURAL LD GP FILM',
+  'MILKY LD GP FILM',
+  'NATURAL LD METALLOCENE FILM',
+  'MILKY LD METALLOCENE FILM',
+  'MILKY ATTA (HIGH DART) FILM'
+];
+
+export const METALLOCENE_OPTIONS = [
+  '10%',
+  '20%',
+  '30%',
+  '40%',
+  '50%',
+  '60%',
+  '70%',
+  '80%',
+  '90%'
+];
+
+export const isMetalloceneEligibleFilm = (filmType = "") => {
+  if (!filmType) return false;
+  const str = String(filmType).trim().toUpperCase();
+  return METALLOCENE_ELIGIBLE_FILMS.some(f => str === f || str.includes(f) || f.includes(str));
+};
+
+export const getFilmTypeCode = (filmType = "") => {
+  if (!filmType) return "PET";
+  const str = String(filmType).trim().toUpperCase();
+  if (str.includes("MATTA") || str.includes("ATTA")) return "MATTA";
+  if (str.includes("NMET") || (str.includes("NATURAL") && str.includes("METALLOCENE"))) return "NMET";
+  if (str.includes("MMET") || (str.includes("MILKY") && str.includes("METALLOCENE"))) return "MMET";
+  if (str.includes("MGP") || (str.includes("MILKY") && str.includes("GP"))) return "MGP";
+  if (str.includes("NGP") || (str.includes("NATURAL") && str.includes("GP"))) return "NGP";
+  
+  let fType = str.replace(/[^A-Z0-9_-]/gi, '');
+  return fType || "PET";
+};
+
 export const getFilmSubstrateDensity = (filmTypeStr) => {
   if (!filmTypeStr) return 1.40;
   const rawKey = String(filmTypeStr).trim();
@@ -47,9 +96,9 @@ export const getFilmSubstrateDensity = (filmTypeStr) => {
   if (cleanKey.includes('pet')) return 1.40;
   if (cleanKey.includes('bopp')) return 0.91;
   if (cleanKey.includes('cpp')) return 0.91;
-  if (cleanKey.includes('metallocene')) return 0.935;
-  if (cleanKey.includes('atta') || cleanKey.includes('lldpe')) return 0.94;
-  if (cleanKey.includes('ld') || cleanKey.includes('pe')) return 0.93;
+  if (cleanKey.includes('metallocene') || cleanKey.includes('nmet') || cleanKey.includes('mmet')) return 0.935;
+  if (cleanKey.includes('atta') || cleanKey.includes('matta') || cleanKey.includes('lldpe')) return 0.94;
+  if (cleanKey.includes('ld') || cleanKey.includes('pe') || cleanKey.includes('mgp') || cleanKey.includes('ngp')) return 0.93;
   if (cleanKey.includes('paper')) return 0.80;
 
   return 1.40;
@@ -93,6 +142,11 @@ export const calculateFilmRollLength = (netWeightKg, widthMm, micronGauge, filmT
 export const DEFAULT_DAILY_RATES = {
   "PET": 125,
   "METPET": 140,
+  "MATTA": 138,
+  "NMET": 128,
+  "MMET": 132,
+  "MGP": 120,
+  "NGP": 115,
   "Natural LD GP Film": 115,
   "Milky LD GP Film": 120,
   "Natural LD Metallocene Film": 128,
@@ -111,22 +165,23 @@ export const DEFAULT_DAILY_RATES = {
 
 /**
  * Checks if a film grade is an LD Film that requires +5mm extra slit width.
- * Only the following 4 specific film types qualify for the +5mm rule:
- * - Natural LD GP Film
- * - Milky LD GP Film
- * - Natural LD Metallocene Film
- * - Milky LD Metallocene Film
  */
 export const isLDFilm = (filmType = "") => {
   if (!filmType) return false;
   const LD_FILMS_WITH_EXTRA_WIDTH = [
+    'matta',
+    'nmet',
+    'mmet',
+    'mgp',
+    'ngp',
     'natural ld gp film',
     'milky ld gp film',
     'natural ld metallocene film',
     'milky ld metallocene film',
     'milky atta (high dart) film'
   ];
-  return LD_FILMS_WITH_EXTRA_WIDTH.includes(filmType.toLowerCase().trim());
+  const str = filmType.toLowerCase().trim();
+  return LD_FILMS_WITH_EXTRA_WIDTH.some(f => str === f || str.includes(f) || f.includes(str));
 };
 
 /**
