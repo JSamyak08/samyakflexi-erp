@@ -336,6 +336,9 @@ export default function App() {
   const [certificateOfAnalyses, setCertificateOfAnalyses] = useState([]);
   const [machines, setMachines] = useState([]);
   const [schedules, setSchedules] = useState([]);
+  const [pressQueueOrder, setPressQueueOrder] = useState([]);
+  const [pressMachineAssignments, setPressMachineAssignments] = useState({});
+  const [pressActiveRunningJob, setPressActiveRunningJob] = useState(null);
   const [clients, setClients] = useState([]);
   const [jobMasters, setJobMasters] = useState([]);
   const [inks, setInks] = useState([]);
@@ -543,7 +546,8 @@ export default function App() {
         // Fetch schema-independent system settings & lifted store states
         const [
           dbPrefixes, dbTerms, dbLogo, dbSignature,
-          dbIndents, dbIssues, dbConsumables, dbStoreTx, dbFilmSubstrates
+          dbIndents, dbIssues, dbConsumables, dbStoreTx, dbFilmSubstrates,
+          dbPressAssign, dbPressQueue, dbPressRunJob
         ] = await Promise.all([
           fetchSafe(() => fetchSystemSetting('doc_prefixes'), 'Prefixes'),
           fetchSafe(() => fetchSystemSetting('doc_terms'), 'Terms'),
@@ -553,7 +557,10 @@ export default function App() {
           fetchSafe(() => fetchSystemSetting('machine_issues'), 'Machine Issues'),
           fetchSafe(() => fetchSystemSetting('consumables'), 'Consumables'),
           fetchSafe(() => fetchSystemSetting('store_issue_transactions'), 'Store Issue Transactions'),
-          fetchSafe(fetchFilmSubstratesFromSupabase, 'Film Substrates Master')
+          fetchSafe(fetchFilmSubstratesFromSupabase, 'Film Substrates Master'),
+          fetchSafe(() => fetchSystemSetting('printing_press_machine_assignments'), 'Press Assignments'),
+          fetchSafe(() => fetchSystemSetting('printing_press_queue_order'), 'Press Queue'),
+          fetchSafe(() => fetchSystemSetting('printing_press_active_running_job'), 'Press Active Job')
         ]);
 
         if (!isMounted) return;
@@ -570,6 +577,9 @@ export default function App() {
         if (dbIssues && Array.isArray(dbIssues)) setMachineIssues(dbIssues);
         if (dbConsumables && Array.isArray(dbConsumables)) setConsumables(dbConsumables);
         if (dbStoreTx && Array.isArray(dbStoreTx)) setStoreIssueTransactions(stripDummyRecords(dbStoreTx));
+        if (dbPressAssign && typeof dbPressAssign === 'object') setPressMachineAssignments(dbPressAssign);
+        if (dbPressQueue && Array.isArray(dbPressQueue)) setPressQueueOrder(dbPressQueue);
+        if (dbPressRunJob && typeof dbPressRunJob === 'object') setPressActiveRunningJob(dbPressRunJob);
         if (dbFilmSubstrates && Array.isArray(dbFilmSubstrates) && dbFilmSubstrates.length > 0) {
           safeLocalStorageSet('samyak_film_substrates_master', JSON.stringify(dbFilmSubstrates));
         }
@@ -846,6 +856,21 @@ export default function App() {
     requireDatabaseConnection('delete production schedule');
     await deleteProductionScheduleFromSupabase(scheduleId);
     setSchedules(prev => prev.filter(s => s.id !== scheduleId));
+  };
+
+  const handleReorderQueue = async (newQueueOrder) => {
+    setPressQueueOrder(newQueueOrder);
+    await saveSystemSetting('printing_press_queue_order', newQueueOrder);
+  };
+
+  const handleMachineAssignmentsChange = async (newAssignments) => {
+    setPressMachineAssignments(newAssignments);
+    await saveSystemSetting('printing_press_machine_assignments', newAssignments);
+  };
+
+  const handleActiveRunningJobChange = async (newRunningJob) => {
+    setPressActiveRunningJob(newRunningJob);
+    await saveSystemSetting('printing_press_active_running_job', newRunningJob);
   };
 
   const usersRef = useRef(users);
@@ -2855,6 +2880,9 @@ export default function App() {
               cylinders={cylinders}
               productionRecords={productionRecords}
               currentUser={currentUser}
+              initialPressQueueOrder={pressQueueOrder}
+              initialPressMachineAssignments={pressMachineAssignments}
+              initialPressActiveRunningJob={pressActiveRunningJob}
               onSaveMachine={handleSaveMachine}
               onUpdateMachine={handleUpdateMachine}
               onDeleteMachine={handleDeleteMachine}
@@ -2865,6 +2893,9 @@ export default function App() {
               onEndJob={handleEndPrintingJob}
               onAddRoll={handleAddRoll}
               onSaveInventoryItem={handleSaveInventoryItem}
+              onReorderQueue={handleReorderQueue}
+              onMachineAssignmentChange={handleMachineAssignmentsChange}
+              onActiveRunningJobChange={handleActiveRunningJobChange}
             />
           </div>
         ) : activeTab === 'dashboard' && (
@@ -3713,6 +3744,9 @@ export default function App() {
             cylinders={cylinders}
             productionRecords={productionRecords}
             currentUser={currentUser}
+            initialPressQueueOrder={pressQueueOrder}
+            initialPressMachineAssignments={pressMachineAssignments}
+            initialPressActiveRunningJob={pressActiveRunningJob}
             onSaveMachine={handleSaveMachine}
             onUpdateMachine={handleUpdateMachine}
             onDeleteMachine={handleDeleteMachine}
@@ -3723,6 +3757,9 @@ export default function App() {
             onEndJob={handleEndPrintingJob}
             onAddRoll={handleAddRoll}
             onSaveInventoryItem={handleSaveInventoryItem}
+            onReorderQueue={handleReorderQueue}
+            onMachineAssignmentChange={handleMachineAssignmentsChange}
+            onActiveRunningJobChange={handleActiveRunningJobChange}
           />
         )}
 

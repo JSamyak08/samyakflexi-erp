@@ -769,5 +769,9 @@ ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS job_details JSONB;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS raw_material_requirements JSONB;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS metallocene_pct TEXT;
 
+-- Employee Attendance PTO (Personal Time Off) Hours Column Alignment
+ALTER TABLE public.employee_attendance ADD COLUMN IF NOT EXISTS pto_hours NUMERIC DEFAULT 0;
+
+
 
 

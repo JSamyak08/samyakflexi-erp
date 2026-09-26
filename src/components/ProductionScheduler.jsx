@@ -93,6 +93,9 @@ export default function ProductionScheduler({
   cylinders = [],
   productionRecords = [],
   currentUser,
+  initialPressQueueOrder = [],
+  initialPressMachineAssignments = {},
+  initialPressActiveRunningJob = null,
   onSaveMachine,
   onUpdateMachine,
   onDeleteMachine,
@@ -102,6 +105,8 @@ export default function ProductionScheduler({
   onStartJob,
   onEndJob,
   onReorderQueue,
+  onMachineAssignmentChange,
+  onActiveRunningJobChange,
   onAddRoll,
   onSaveInventoryItem
 }) {
@@ -130,10 +135,33 @@ export default function ProductionScheduler({
 
   // Active Job Run Modal & Artwork Preview State
   const [selectedOrderForRun, setSelectedOrderForRun] = useState(null);
-  const [activeRunningJob, setActiveRunningJob] = useState(null);
-  const [activeMachineSelection, setActiveMachineSelection] = useState({});
-  const [isArtworkZoomOpen, setIsArtworkZoomOpen] = useState(false);
-  const [zoomArtworkSrc, setZoomArtworkSrc] = useState('');
+  const [activeRunningJob, setActiveRunningJobState] = useState(initialPressActiveRunningJob);
+  const [activeMachineSelection, setActiveMachineSelectionState] = useState(initialPressMachineAssignments);
+
+  const setActiveRunningJob = (job) => {
+    setActiveRunningJobState(job);
+    if (onActiveRunningJobChange) onActiveRunningJobChange(job);
+  };
+
+  const setActiveMachineSelection = (valOrFn) => {
+    setActiveMachineSelectionState(prev => {
+      const next = typeof valOrFn === 'function' ? valOrFn(prev) : valOrFn;
+      if (onMachineAssignmentChange) onMachineAssignmentChange(next);
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (initialPressActiveRunningJob) {
+      setActiveRunningJobState(initialPressActiveRunningJob);
+    }
+  }, [initialPressActiveRunningJob]);
+
+  useEffect(() => {
+    if (initialPressMachineAssignments && Object.keys(initialPressMachineAssignments).length > 0) {
+      setActiveMachineSelectionState(initialPressMachineAssignments);
+    }
+  }, [initialPressMachineAssignments]);
 
   // Live Timer State for Active Job Run
   const [liveElapsedSeconds, setLiveElapsedSeconds] = useState(0);
@@ -172,18 +200,22 @@ export default function ProductionScheduler({
 
   // Custom Queue Ordering State
   const [queueOrderIds, setQueueOrderIds] = useState(() => {
+    if (initialPressQueueOrder && Array.isArray(initialPressQueueOrder) && initialPressQueueOrder.length > 0) {
+      return initialPressQueueOrder;
+    }
     return (orders || []).map(o => o.id);
   });
 
-  // Keep queueOrderIds in sync with orders list
+  // Keep queueOrderIds in sync with orders list and initialPressQueueOrder
   useEffect(() => {
     setQueueOrderIds(prev => {
       const currentIds = (orders || []).map(o => o.id);
-      const filteredPrev = prev.filter(id => currentIds.includes(id));
-      const newIds = currentIds.filter(id => !prev.includes(id));
+      let baseOrder = (initialPressQueueOrder && initialPressQueueOrder.length > 0) ? initialPressQueueOrder : prev;
+      const filteredPrev = baseOrder.filter(id => currentIds.includes(id));
+      const newIds = currentIds.filter(id => !baseOrder.includes(id));
       return [...filteredPrev, ...newIds];
     });
-  }, [orders]);
+  }, [orders, initialPressQueueOrder]);
 
   // Derive All Enriched Manufacturing Orders
   const allEnrichedOrders = useMemo(() => {

@@ -170,6 +170,7 @@ export default function EmployeeManagement({
   const [advAmount, setAdvAmount] = useState('');
   const [advTenureMonths, setAdvTenureMonths] = useState(2);
   const [advReason, setAdvReason] = useState('');
+  const [editingAdvance, setEditingAdvance] = useState(null);
 
   // Form State for Attendance Marking
   const [attStatus, setAttStatus] = useState('Present');
@@ -177,6 +178,7 @@ export default function EmployeeManagement({
   const [attCheckIn, setAttCheckIn] = useState('08:00');
   const [attCheckOut, setAttCheckOut] = useState('20:00');
   const [attOtHours, setAttOtHours] = useState(0);
+  const [attPtoHours, setAttPtoHours] = useState('0');
   const [attOtReason, setAttOtReason] = useState('');
 
   // Form State for Offboarding
@@ -417,6 +419,7 @@ export default function EmployeeManagement({
       setAttCheckIn(existing.checkIn || '08:00');
       setAttCheckOut(existing.checkOut || '20:00');
       setAttOtHours(existing.overtimeHours || 0);
+      setAttPtoHours(existing.ptoHours !== undefined ? String(existing.ptoHours) : (existing.pto_hours !== undefined ? String(existing.pto_hours) : '0'));
       setAttOtReason(existing.overtimeReason || '');
     } else {
       setAttStatus('Present');
@@ -424,6 +427,7 @@ export default function EmployeeManagement({
       setAttCheckIn(emp.shiftDurationHours === 8 ? '09:00' : '08:00');
       setAttCheckOut(emp.shiftDurationHours === 8 ? '17:00' : emp.shiftDurationHours === 10 ? '18:00' : '20:00');
       setAttOtHours(0);
+      setAttPtoHours('0');
       setAttOtReason('');
     }
   };
@@ -434,6 +438,7 @@ export default function EmployeeManagement({
 
     const isNight = attShiftType.toLowerCase().includes('night');
     const ot = parseFloat(attOtHours) || 0;
+    const pto = Math.max(0, parseFloat(attPtoHours) || 0);
     const shiftHrs = markingAttendanceEmp.shiftDurationHours || 12;
 
     const isExisting = Boolean(markingAttendanceEmp?.id && attendanceRecords.some(a => a.employeeId === markingAttendanceEmp.id && a.date === attendanceDate));
@@ -441,6 +446,12 @@ export default function EmployeeManagement({
       alert("⛔ Permission Denied: Attendance has already been marked for this employee. Only the Admin role is authorized to edit or modify locked attendance records.");
       return;
     }
+
+    const netShiftHours = attStatus === 'Present' 
+      ? Math.max(0, (shiftHrs - pto + ot)) 
+      : attStatus === 'Half Day' 
+      ? Math.max(0, ((shiftHrs / 2) - pto + ot)) 
+      : 0;
 
     const record = {
       id: `ATT-${attendanceDate.replace(/-/g, '')}-${markingAttendanceEmp.id}`,
@@ -451,8 +462,10 @@ export default function EmployeeManagement({
       status: attStatus,
       checkIn: attCheckIn,
       checkOut: attCheckOut,
-      totalHoursWorked: attStatus === 'Present' ? (shiftHrs + ot) : attStatus === 'Half Day' ? (shiftHrs / 2) : 0,
+      totalHoursWorked: Number(netShiftHours.toFixed(2)),
       overtimeHours: ot,
+      ptoHours: pto,
+      pto_hours: pto,
       overtimeReason: attOtReason.trim(),
       overtimeStatus: ot > 0 ? 'Pending Approval' : 'Approved',
       overtimeApprovedBy: '',
@@ -464,7 +477,7 @@ export default function EmployeeManagement({
     if (onSaveAttendance) onSaveAttendance(record);
     saveEmployeeAttendanceToSupabase(record);
     setMarkingAttendanceEmp(null);
-    alert(`Attendance marked for ${markingAttendanceEmp.fullName} on ${attendanceDate} (${attStatus}${ot > 0 ? `, OT: ${ot} hrs Pending Approval` : ''})`);
+    alert(`Attendance marked for ${markingAttendanceEmp.fullName} on ${attendanceDate} (${attStatus}, Net Hours: ${netShiftHours.toFixed(1)}h${pto > 0 ? `, PTO: ${pto}h deducted` : ''}${ot > 0 ? `, OT: ${ot}h Pending Approval` : ''})`);
   };
 
   // Bulk Mark All Present
@@ -522,7 +535,21 @@ export default function EmployeeManagement({
     alert(`Overtime request for ${attRecord.employeeId} on ${attRecord.date} has been marked as ${updated.overtimeStatus}!`);
   };
 
-  // Save New Salary Advance Request
+  // Edit Salary Advance (Admin Only)
+  const handleEditAdvance = (adv) => {
+    if (!isAdmin) {
+      alert("⛔ Permission Denied: Only the Admin role is authorized to edit Salary Advances & Loans.");
+      return;
+    }
+    setEditingAdvance(adv);
+    setAdvEmpId(adv.employeeId);
+    setAdvAmount(adv.advanceAmount || '');
+    setAdvTenureMonths(adv.repaymentTenureMonths || 1);
+    setAdvReason(adv.reason || '');
+    setShowAdvanceModal(true);
+  };
+
+  // Save New or Edited Salary Advance Request
   const handleSaveSalaryAdvance = (e) => {
     e.preventDefault();
     if (!advEmpId || !advAmount || Number(advAmount) <= 0) {
@@ -532,48 +559,68 @@ export default function EmployeeManagement({
     const selectedEmp = employees.find(emp => emp.id === advEmpId);
     if (!selectedEmp) return;
 
-    // Rule Enforcement: Any employee with a previous outstanding advance cannot request a new advance before completion of old dues
-    const activeExistingAdvance = salaryAdvances.find(adv => 
-      adv.employeeId === selectedEmp.id && 
-      (adv.status === 'Approved & Disbursed' || adv.status === 'Pending Approval') &&
-      Number(adv.remainingBalance ?? (adv.advanceAmount - (adv.totalRecoveredAmount || 0))) > 0
-    );
+    if (!editingAdvance) {
+      // Rule Enforcement: Any employee with a previous outstanding advance cannot request a new advance before completion of old dues
+      const activeExistingAdvance = salaryAdvances.find(adv => 
+        adv.employeeId === selectedEmp.id && 
+        (adv.status === 'Approved & Disbursed' || adv.status === 'Pending Approval') &&
+        Number(adv.remainingBalance ?? (adv.advanceAmount - (adv.totalRecoveredAmount || 0))) > 0
+      );
 
-    if (activeExistingAdvance) {
-      alert(`⚠️ Advance Blocked: ${selectedEmp.fullName} already has an active outstanding advance (${activeExistingAdvance.id}) with ₹${Number(activeExistingAdvance.remainingBalance || activeExistingAdvance.advanceAmount).toLocaleString()} remaining dues! New advances cannot be requested until previous dues are 100% completed.`);
-      return;
+      if (activeExistingAdvance) {
+        alert(`⚠️ Advance Blocked: ${selectedEmp.fullName} already has an active outstanding advance (${activeExistingAdvance.id}) with ₹${Number(activeExistingAdvance.remainingBalance || activeExistingAdvance.advanceAmount).toLocaleString()} remaining dues! New advances cannot be requested until previous dues are 100% completed.`);
+        return;
+      }
     }
 
     const amt = Number(advAmount);
     const tenure = Number(advTenureMonths) || 1;
     const emi = Math.round(amt / tenure);
 
-    const advanceRecord = {
-      id: `ADV-${Date.now().toString().slice(-4)}`,
-      employeeId: selectedEmp.id,
-      employeeName: selectedEmp.fullName,
-      department: selectedEmp.department,
-      requestDate: new Date().toISOString().split('T')[0],
-      advanceAmount: amt,
-      repaymentTenureMonths: tenure,
-      monthlyEmiAmount: emi,
-      reason: advReason.trim() || 'Salary Advance Request',
-      status: canApprove ? 'Approved & Disbursed' : 'Pending Approval',
-      approvedBy: canApprove ? (currentUser?.name || 'Plant Head') : '',
-      approvedDate: canApprove ? new Date().toISOString().split('T')[0] : '',
-      disbursedDate: canApprove ? new Date().toISOString().split('T')[0] : '',
-      totalRecoveredAmount: 0,
-      remainingBalance: amt,
-      deductionHistory: []
-    };
+    let advanceRecord;
+    if (editingAdvance) {
+      const recovered = Number(editingAdvance.totalRecoveredAmount) || 0;
+      const remBal = Math.max(0, amt - recovered);
+      advanceRecord = {
+        ...editingAdvance,
+        employeeId: selectedEmp.id,
+        employeeName: selectedEmp.fullName,
+        department: selectedEmp.department,
+        advanceAmount: amt,
+        repaymentTenureMonths: tenure,
+        monthlyEmiAmount: emi,
+        remainingBalance: remBal,
+        reason: advReason.trim() || editingAdvance.reason || 'Salary Advance Request'
+      };
+    } else {
+      advanceRecord = {
+        id: `ADV-${Date.now().toString().slice(-4)}`,
+        employeeId: selectedEmp.id,
+        employeeName: selectedEmp.fullName,
+        department: selectedEmp.department,
+        requestDate: new Date().toISOString().split('T')[0],
+        advanceAmount: amt,
+        repaymentTenureMonths: tenure,
+        monthlyEmiAmount: emi,
+        reason: advReason.trim() || 'Salary Advance Request',
+        status: canApprove ? 'Approved & Disbursed' : 'Pending Approval',
+        approvedBy: canApprove ? (currentUser?.name || 'Plant Head') : '',
+        approvedDate: canApprove ? new Date().toISOString().split('T')[0] : '',
+        disbursedDate: canApprove ? new Date().toISOString().split('T')[0] : '',
+        totalRecoveredAmount: 0,
+        remainingBalance: amt,
+        deductionHistory: []
+      };
+    }
 
     if (onSaveSalaryAdvance) onSaveSalaryAdvance(advanceRecord);
     saveSalaryAdvanceToSupabase(advanceRecord);
     setShowAdvanceModal(false);
+    setEditingAdvance(null);
     setAdvEmpId('');
     setAdvAmount('');
     setAdvReason('');
-    alert(`Salary Advance Request of ₹${amt.toLocaleString()} recorded for ${selectedEmp.fullName} (${advanceRecord.status})!`);
+    alert(`Salary Advance ${editingAdvance ? 'Updated' : 'Request recorded'} for ${selectedEmp.fullName} (₹${amt.toLocaleString()})!`);
   };
 
   // Approve Salary Advance
@@ -1439,20 +1486,33 @@ export default function EmployeeManagement({
                         </span>
                       </td>
                       <td style={{ textAlign: 'center' }}>
-                        {adv.status === 'Pending Approval' ? (
-                          <button 
-                            type="button" 
-                            className="btn-primary" 
-                            style={{ padding: '3px 10px', fontSize: '0.75rem', background: '#059669', borderColor: '#059669' }}
-                            onClick={() => handleApproveAdvance(adv)}
-                          >
-                            <Check size={13} /> Approve & Disburse
-                          </button>
-                        ) : (
-                          <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                            Auto-deducts in payroll
-                          </span>
-                        )}
+                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
+                          {isAdmin && (
+                            <button 
+                              type="button" 
+                              className="btn-secondary" 
+                              style={{ padding: '3px 8px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                              onClick={() => handleEditAdvance(adv)}
+                              title="Edit Salary Advance / Loan (Admin Only)"
+                            >
+                              <Edit size={13} /> Edit
+                            </button>
+                          )}
+                          {adv.status === 'Pending Approval' ? (
+                            <button 
+                              type="button" 
+                              className="btn-primary" 
+                              style={{ padding: '3px 10px', fontSize: '0.75rem', background: '#059669', borderColor: '#059669', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                              onClick={() => handleApproveAdvance(adv)}
+                            >
+                              <Check size={13} /> Approve & Disburse
+                            </button>
+                          ) : (
+                            <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                              Auto-deducts in payroll
+                            </span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -2090,6 +2150,41 @@ export default function EmployeeManagement({
               <div>
                 <label className="form-label">Check-Out Time</label>
                 <input type="time" className="form-control" value={attCheckOut} onChange={e => setAttCheckOut(e.target.value)} />
+              </div>
+            </div>
+
+            {/* Personal Time Off (PTO) Hours Logging Section */}
+            <div style={{ background: '#fff7ed', padding: '12px 16px', borderRadius: '6px', border: '1px solid #ffedd5', marginBottom: '16px' }}>
+              <div style={{ fontWeight: '800', fontSize: '0.85rem', color: '#c2410c', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Clock size={16} /> 🏖️ Personal Time Off (PTO) Hours in this Shift
+              </div>
+              <div style={{ fontSize: '0.76rem', color: '#9a3412', marginBottom: '8px' }}>
+                Hours taken off for personal work during shift. Deducted from total shift working hours.
+              </div>
+              <div className="form-grid-2">
+                <div>
+                  <label className="form-label" style={{ color: '#9a3412' }}>PTO Hours (Deducted)</label>
+                  <input 
+                    type="number" 
+                    step="0.5"
+                    min="0"
+                    max={markingAttendanceEmp.shiftDurationHours || 12}
+                    className="form-control" 
+                    value={attPtoHours} 
+                    onChange={e => setAttPtoHours(e.target.value)} 
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label className="form-label">Net Shift Working Hours</label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    value={`${Math.max(0, (attStatus === 'Present' ? ((markingAttendanceEmp.shiftDurationHours || 12) - (parseFloat(attPtoHours) || 0) + (parseFloat(attOtHours) || 0)) : attStatus === 'Half Day' ? (((markingAttendanceEmp.shiftDurationHours || 12) / 2) - (parseFloat(attPtoHours) || 0) + (parseFloat(attOtHours) || 0)) : 0)).toFixed(1)} Hours`} 
+                    disabled 
+                    style={{ background: '#ffffff', fontWeight: '900', color: '#0f172a', borderColor: '#fdba74' }}
+                  />
+                </div>
               </div>
             </div>
 
