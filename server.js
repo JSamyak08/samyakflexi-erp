@@ -105,20 +105,44 @@ app.post('/api/recover-password', async (req, res) => {
   }
 });
 
+// Helper to filter out external vendor/customer emails and restrict to internal domains
+function filterInternalRecipientsOnly(emailInput, defaultInternal = 'admin@samyakinternational.in') {
+  if (!emailInput) return defaultInternal;
+  const internalDomainRegex = /@(samyakinternational\.in|plant\.com|samyak\.com|samyakflexi\.com)$/i;
+
+  const emails = String(emailInput)
+    .split(/[,;]/)
+    .map(e => e.trim())
+    .filter(Boolean);
+
+  const internalOnly = emails.filter(e => {
+    const clean = e.toLowerCase();
+    if (clean.includes('vendor') || clean.includes('customer') || clean.includes('client') || clean.includes('supplier')) {
+      return false;
+    }
+    return internalDomainRegex.test(clean);
+  });
+
+  return internalOnly.length > 0 ? internalOnly.join(', ') : defaultInternal;
+}
+
 /**
  * API Endpoint: General ERP Transactional Email Dispatch
  */
 app.post('/api/send-email', async (req, res) => {
   const { to, cc, subject, html, text } = req.body;
 
-  if (!to || !subject) {
-    return res.status(400).json({ success: false, message: 'Recipient email and subject are required.' });
+  const sanitizedTo = filterInternalRecipientsOnly(to, 'admin@samyakinternational.in');
+  const sanitizedCc = cc ? filterInternalRecipientsOnly(cc, '') : '';
+
+  if (!sanitizedTo || !subject) {
+    return res.status(400).json({ success: false, message: 'Recipient internal email and subject are required.' });
   }
 
   const mailOptions = {
     from: `"Samyak International ERP" <${process.env.SMTP_USER || 'admin@samyakinternational.in'}>`,
-    to,
-    ...(cc ? { cc } : {}),
+    to: sanitizedTo,
+    ...(sanitizedCc ? { cc: sanitizedCc } : {}),
     subject,
     text,
     html
@@ -126,7 +150,7 @@ app.post('/api/send-email', async (req, res) => {
 
   try {
     const info = await transporter.sendMail(mailOptions);
-    console.log(`✉️ Notification email sent to ${to} ${cc ? `(cc: ${cc})` : ''} (Message ID: ${info.messageId})`);
+    console.log(`✉️ Internal notification email sent to ${sanitizedTo} ${sanitizedCc ? `(cc: ${sanitizedCc})` : ''} (Message ID: ${info.messageId})`);
     return res.status(200).json({ success: true, messageId: info.messageId });
   } catch (error) {
     console.error('❌ Notification email error:', error);

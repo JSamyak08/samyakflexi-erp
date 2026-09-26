@@ -6,14 +6,43 @@
 
 import { getEmailTemplates, interpolateTemplate } from './settingsService';
 
+/**
+ * Internal Email Safety Guard
+ * Ensures NO emails are sent to Customer or Vendor email addresses.
+ * Communication is strictly restricted to internal ERP email addresses.
+ */
+export const filterInternalRecipientsOnly = (emailInput, defaultInternal = 'admin@samyakinternational.in') => {
+  if (!emailInput) return defaultInternal;
+
+  // Allowed internal email domains
+  const internalDomainRegex = /@(samyakinternational\.in|plant\.com|samyak\.com|samyakflexi\.com)$/i;
+
+  const emails = String(emailInput)
+    .split(/[,;]/)
+    .map(e => e.trim())
+    .filter(Boolean);
+
+  const internalOnly = emails.filter(e => {
+    const clean = e.toLowerCase();
+    // Exclude customer/vendor email hints
+    if (clean.includes('vendor') || clean.includes('customer') || clean.includes('client') || clean.includes('supplier')) {
+      return false;
+    }
+    return internalDomainRegex.test(clean);
+  });
+
+  return internalOnly.length > 0 ? internalOnly.join(', ') : defaultInternal;
+};
+
 export const requestPasswordRecovery = async (email) => {
+  const sanitizedEmail = filterInternalRecipientsOnly(email, 'admin@samyakinternational.in');
   try {
     const response = await fetch('/api/recover-password', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email: sanitizedEmail }),
     });
 
     const data = await response.json();
@@ -29,13 +58,16 @@ export const requestPasswordRecovery = async (email) => {
 };
 
 export const sendERPEmailNotification = async ({ to, cc, subject, html, text }) => {
+  const sanitizedTo = filterInternalRecipientsOnly(to, 'admin@samyakinternational.in');
+  const sanitizedCc = cc ? filterInternalRecipientsOnly(cc, '') : '';
+
   try {
     const response = await fetch('/api/send-email', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ to, cc, subject, html, text }),
+      body: JSON.stringify({ to: sanitizedTo, cc: sanitizedCc, subject, html, text }),
     });
 
     const data = await response.json();
