@@ -692,3 +692,67 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_auth_user();
 
+-- =========================================================================
+-- 20. DELIVERY CHALLANS TABLE
+-- =========================================================================
+CREATE TABLE IF NOT EXISTS public.delivery_challans (
+    id TEXT PRIMARY KEY,
+    challan_no TEXT,
+    order_id TEXT,
+    client_name TEXT,
+    payload JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =========================================================================
+-- 21. CERTIFICATE OF ANALYSIS (COA) TABLE
+-- =========================================================================
+CREATE TABLE IF NOT EXISTS public.certificate_of_analyses (
+    id TEXT PRIMARY KEY,
+    coa_no TEXT,
+    order_id TEXT,
+    job_name TEXT,
+    client_name TEXT,
+    payload JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =========================================================================
+-- 22. SCHEMA MIGRATION COLUMN ADDITIONS FOR RECENT ERP UPDATES
+-- =========================================================================
+
+-- Inward GRN & Inventory Item-Level Remarks, Barcodes, Lot Numbers
+ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS remark TEXT;
+ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS item_remark TEXT;
+ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS lot_number TEXT;
+ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS inward_date DATE;
+ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS barcode TEXT;
+ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+
+-- Roll Barcode Printer, Lot Remarks & Metadata Envelopes
+ALTER TABLE public.inventory_rolls ADD COLUMN IF NOT EXISTS remark TEXT;
+ALTER TABLE public.inventory_rolls ADD COLUMN IF NOT EXISTS item_remark TEXT;
+ALTER TABLE public.inventory_rolls ADD COLUMN IF NOT EXISTS barcode TEXT;
+ALTER TABLE public.inventory_rolls ADD COLUMN IF NOT EXISTS lot_number TEXT;
+ALTER TABLE public.inventory_rolls ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+
+-- Production Records Item Remarks & Material Consumption Breakdown
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS item_remarks JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS materials_list JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS remarks TEXT;
+
+-- Rotogravure Cylinders Specifications Locking & Audit Logs
+ALTER TABLE public.cylinders ADD COLUMN IF NOT EXISTS is_locked BOOLEAN DEFAULT FALSE;
+ALTER TABLE public.cylinders ADD COLUMN IF NOT EXISTS locked_by TEXT;
+ALTER TABLE public.cylinders ADD COLUMN IF NOT EXISTS changelogs JSONB DEFAULT '[]'::jsonb;
+
+-- Delivery Challan & COA RLS Policy Enablement
+ALTER TABLE public.delivery_challans ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow anon and auth full access on delivery_challans" ON public.delivery_challans FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE public.certificate_of_analyses ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow anon and auth full access on certificate_of_analyses" ON public.certificate_of_analyses FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+
