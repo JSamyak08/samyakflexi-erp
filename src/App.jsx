@@ -1587,11 +1587,41 @@ export default function App() {
           actualMetersPrinted,
           inkGsmInSpeed,
           printedOutputKg,
-          actualCalculatedInkGsm: endData.actualCalculatedInkGsm || 0
+          actualCalculatedInkGsm: endData.actualCalculatedInkGsm || 0,
+          outputRolls: endData.rollsBreakdown || baseRecord.outputRolls || [],
+          sfgBarcodes: (endData.rollsBreakdown || []).map(r => r.barcodeId || r.id)
         }
       }
     };
     handleSaveProductionRecord(updatedRecord);
+
+    // Automatically store each Printed Output SFG roll barcode into SFG & FG Store
+    if (Array.isArray(endData.rollsBreakdown) && endData.rollsBreakdown.length > 0) {
+      for (const r of endData.rollsBreakdown) {
+        const barcodeId = r.barcodeId || r.id;
+        const sfgItemRecord = {
+          id: barcodeId,
+          sfgBatchCode: barcodeId,
+          orderId: order.id,
+          jobName: `${order.jobName} - Roll #${r.rollNo || 1}`,
+          jobCode: order.jobCode || order.id,
+          clientName: order.clientName || order.customerName || 'Client',
+          sfgType: 'Printed Rolls',
+          filmType: r.filmType || order.printFilmType || 'PET',
+          widthMm: Number(r.widthMm || order.widthMm || 460),
+          micron: Number(r.micron || order.micron || 12),
+          totalNetKg: Number(r.netWeightKg || 0),
+          availableKg: Number(r.availableWeightKg || r.netWeightKg || 0),
+          consumedKg: 0,
+          status: 'In Stock',
+          location: r.locationBay || 'SFG Store (Pre-Lamination)',
+          createdDate: new Date().toISOString().split('T')[0]
+        };
+        saveSFGGoodToSupabase(sfgItemRecord).catch(console.warn);
+        setSfgGoods(prev => [sfgItemRecord, ...prev.filter(s => s.sfgBatchCode !== sfgItemRecord.sfgBatchCode)]);
+      }
+    }
+
     logAudit('UPDATE', 'Printing Scheduler', `Ended printing job for "${order.jobName}" (${order.id}). Meters: ${actualMetersPrinted}m, Ink GSM: ${inkGsmInSpeed}, Output: ${printedOutputKg}kg, Duration: ${durationFormatted}`, order.id);
   };
 
@@ -3611,6 +3641,7 @@ export default function App() {
             urlParams={urlParams}
             sfgGoods={sfgGoods}
             inventory={inventory}
+            inventoryRolls={inventoryRolls}
             orders={orders}
             jobMasters={jobMasters}
             productionRecords={productionRecords}

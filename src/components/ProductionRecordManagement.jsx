@@ -1628,6 +1628,53 @@ export default function ProductionRecordManagement({
                     </table>
                   </div>
                 )}
+
+                {/* Printed Output SFG Rolls Breakdown Table */}
+                {outputRolls.length > 0 && (
+                  <div style={{ marginTop: '16px' }}>
+                    <h5 style={{ fontSize: '0.85rem', fontWeight: '800', color: '#0f172a', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Tag size={16} style={{ color: '#059669' }} /> 🏷️ Printed Output SFG Barcodes & Roll-Wise Production Breakdown ({outputRolls.length} Rolls)
+                    </h5>
+                    <table className="data-table" style={{ fontSize: '0.8rem' }}>
+                      <thead>
+                        <tr>
+                          <th>Roll #</th>
+                          <th>SFG Barcode ID</th>
+                          <th>Substrate Specs</th>
+                          <th>Net Weight (kg)</th>
+                          <th>Est. Length (Meters)</th>
+                          <th>Destination Bay / Next Stage</th>
+                          <th>Inward Timestamp</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {outputRolls.map((r, idx) => {
+                          const netW = parseFloat(r.netWeightKg || r.weightKg) || 0;
+                          const lengthM = parseFloat(r.lengthMeters) || 0;
+                          return (
+                            <tr key={idx}>
+                              <td style={{ fontWeight: '700' }}>Roll #{r.rollNo || r.unitNo || (idx + 1)}</td>
+                              <td>
+                                <code style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#047857', padding: '2px 8px', borderRadius: '4px', fontWeight: '900' }}>
+                                  {r.barcodeId || r.id || `SFG-BC-${r.orderId || 'ORD'}-${idx+1}`}
+                                </code>
+                              </td>
+                              <td>{r.filmType || selectedRecord.printFilmType || 'PET'} {r.micron || selectedRecord.micron || 12}µ ({r.widthMm || selectedRecord.printWidthMm || 460}mm)</td>
+                              <td style={{ fontWeight: '800', color: '#059669' }}>{netW.toFixed(1)} kg</td>
+                              <td style={{ fontWeight: '700', color: '#0284c7' }}>{lengthM > 0 ? `${lengthM.toLocaleString()} m` : '-'}</td>
+                              <td>
+                                <span style={{ fontSize: '0.74rem', background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '2px 6px', borderRadius: '4px', color: '#334155', fontWeight: '600' }}>
+                                  {r.locationBay || r.nextProcess || 'SFG Store (Pre-Lamination)'}
+                                </span>
+                              </td>
+                              <td style={{ fontSize: '0.74rem', color: '#64748b' }}>{r.inwardDatetime || new Date().toLocaleString('en-IN')}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             );
           })()}
