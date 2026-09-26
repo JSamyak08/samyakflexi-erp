@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import SearchableSelect from './SearchableSelect';
 import { 
   ShoppingBag, 
   Layers, 
@@ -1247,23 +1248,23 @@ export default function OrderManagement({
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: '500' }}>Filter Status:</span>
-                <select className="form-control" style={{ width: '240px' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+                <SearchableSelect className="form-control" style={{ width: '240px' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                   <option value="ALL">All Orders ({(orders || []).length})</option>
                   <option value="DELAYED">⚠️ Overdue / Delayed ({delayedOrdersCount})</option>
                   <option value="NEARING_DEADLINE">⏳ Nearing Deadline (≤4 Days) ({nearingDeadlineCount})</option>
                   <option value="ON_HOLD">⏸️ On Hold Orders</option>
                   <option value="PENDING_PO">Pending PO Issuance</option>
-                </select>
+                </SearchableSelect>
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: '500' }}>Vendor:</span>
-                <select className="form-control" style={{ width: '180px' }} value={vendorFilter} onChange={e => setVendorFilter(e.target.value)}>
+                <SearchableSelect className="form-control" style={{ width: '180px' }} value={vendorFilter} onChange={e => setVendorFilter(e.target.value)}>
                   <option value="ALL">All Preferred Vendors</option>
                   {(vendors || []).map(v => (
                     <option key={v.id} value={v.companyName}>{v.companyName}</option>
                   ))}
-                </select>
+                </SearchableSelect>
               </div>
             </div>
 
@@ -1817,7 +1818,7 @@ export default function OrderManagement({
               {/* Status Filter */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: '600' }}>Status:</span>
-                <select 
+                <SearchableSelect 
                   className="form-control" 
                   style={{ width: '220px', fontWeight: reqStatusFilter === 'SHORTAGE' ? '700' : '500' }} 
                   value={reqStatusFilter} 
@@ -1828,13 +1829,13 @@ export default function OrderManagement({
                   <option value="PENDING_PO">Pending PO (Any stock) ({allMaterialRequirements.filter(r => !r.poIssued).length})</option>
                   <option value="IN_STOCK">✅ Fully In-Stock ({reqMetrics.inStockLines})</option>
                   <option value="PO_ISSUED">📄 PO Already Issued ({reqMetrics.poIssuedLines})</option>
-                </select>
+                </SearchableSelect>
               </div>
 
               {/* Vendor Filter */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: '600' }}>Vendor:</span>
-                <select 
+                <SearchableSelect 
                   className="form-control" 
                   style={{ width: '180px' }} 
                   value={reqVendorFilter} 
@@ -1844,7 +1845,7 @@ export default function OrderManagement({
                   {Array.from(new Set(allMaterialRequirements.map(r => r.preferredVendor).filter(Boolean))).map(vName => (
                     <option key={vName} value={vName}>{vName}</option>
                   ))}
-                </select>
+                </SearchableSelect>
               </div>
 
               {/* Category Filter */}

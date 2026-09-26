@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import SearchableSelect from './SearchableSelect';
 import { 
   FILM_DENSITIES, 
   DEFAULT_DAILY_RATES, 
@@ -665,14 +666,14 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
 
             <div className="form-group">
               <label>Order Type</label>
-              <select 
+              <SearchableSelect 
                 className="form-control"
                 value={orderType}
                 onChange={e => setOrderType(e.target.value)}
               >
                 <option value="Reel">Reel Form</option>
                 <option value="Pouching">Pouching Form</option>
-              </select>
+              </SearchableSelect>
             </div>
 
             <div className="form-group">
@@ -797,7 +798,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
 
                   <div style={{ flex: '2 1 120px', minWidth: 0 }}>
                     <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', whiteSpace: 'nowrap' }}>Film Substrate</label>
-                    <select 
+                    <SearchableSelect 
                       className="form-control" 
                       style={{ padding: '6px 8px', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box' }}
                       value={layer.filmType}
@@ -816,7 +817,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
                       {Object.keys(FILM_DENSITIES).map(type => (
                         <option key={type} value={type}>{type}</option>
                       ))}
-                    </select>
+                    </SearchableSelect>
                   </div>
 
                   <div style={{ flex: '1 1 70px', minWidth: 0 }}>
@@ -847,7 +848,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
                   {isMetalloceneEligibleFilm(layer.filmType) && (
                     <div style={{ flex: '1.2 1 95px', minWidth: 0 }}>
                       <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', whiteSpace: 'nowrap' }}>Metallocene %</label>
-                      <select
+                      <SearchableSelect
                         className="form-control"
                         style={{ padding: '6px 8px', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box' }}
                         value={layer.metallocenePct || ''}
@@ -857,7 +858,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
                         {METALLOCENE_OPTIONS.map(opt => (
                           <option key={opt} value={opt}>{opt}</option>
                         ))}
-                      </select>
+                      </SearchableSelect>
                     </div>
                   )}
 

@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import SearchableSelect from './SearchableSelect';
 import { 
   ClipboardList, 
   Package, 
@@ -790,7 +791,7 @@ export default function ConsumablesAndIndents({
               {/* Machine-wise Filter */}
               <div>
                 <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Filter by Machine</label>
-                <select 
+                <SearchableSelect 
                   className="form-control" 
                   style={{ fontSize: '0.85rem', padding: '6px 12px' }}
                   value={machineFilter}
@@ -800,13 +801,13 @@ export default function ConsumablesAndIndents({
                   {dynamicMachineList.map(m => (
                     <option key={m} value={m}>{m}</option>
                   ))}
-                </select>
+                </SearchableSelect>
               </div>
 
               {/* Low Quantity Filter Toggle */}
               <div>
                 <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Quantity Status Filter</label>
-                <select 
+                <SearchableSelect 
                   className="form-control" 
                   style={{ fontSize: '0.85rem', padding: '6px 12px', color: lowStockOnly ? '#dc2626' : 'inherit', fontWeight: lowStockOnly ? '700' : 'normal' }}
                   value={lowStockOnly ? "LOW_ONLY" : "ALL"}
@@ -814,13 +815,13 @@ export default function ConsumablesAndIndents({
                 >
                   <option value="ALL">All Items (Below Reserve Promoted to Top)</option>
                   <option value="LOW_ONLY">⚠️ Low Stock / Below Reserve Level Only ({lowStockItemsCount})</option>
-                </select>
+                </SearchableSelect>
               </div>
 
               {/* Category Filter */}
               <div>
                 <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Category Filter</label>
-                <select 
+                <SearchableSelect 
                   className="form-control" 
                   style={{ fontSize: '0.85rem', padding: '6px 12px' }}
                   value={categoryFilter}
@@ -830,7 +831,7 @@ export default function ConsumablesAndIndents({
                   {uniqueCategories.map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
-                </select>
+                </SearchableSelect>
               </div>
 
             </div>

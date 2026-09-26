@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import SearchableSelect from './SearchableSelect';
 import TablePagination, { usePagination } from './TablePagination';
 import { 
   FileCode, 
@@ -2497,7 +2498,7 @@ export default function JobMasterDirectory({
             <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>
               Client Directory
             </label>
-            <select 
+            <SearchableSelect 
               className="form-control" 
               style={{ fontSize: '0.85rem', padding: '6px 10px' }} 
               value={clientFilter} 
@@ -2507,7 +2508,7 @@ export default function JobMasterDirectory({
               {allClientOptions.map(c => (
                 <option key={c.id || c.name} value={c.name}>{c.name}</option>
               ))}
-            </select>
+            </SearchableSelect>
           </div>
 
           {/* Substrate Film Filter */}
@@ -2515,7 +2516,7 @@ export default function JobMasterDirectory({
             <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>
               Film Substrate
             </label>
-            <select 
+            <SearchableSelect 
               className="form-control" 
               style={{ fontSize: '0.85rem', padding: '6px 10px' }} 
               value={substrateFilter} 
@@ -2529,7 +2530,7 @@ export default function JobMasterDirectory({
               <option value="CPP">CPP Films</option>
               <option value="Atta">Atta (High Dart) Film</option>
               <option value="Metallocene">Metallocene Film</option>
-            </select>
+            </SearchableSelect>
           </div>
 
           {/* Layer Count Filter */}
@@ -2537,7 +2538,7 @@ export default function JobMasterDirectory({
             <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>
               Layer Structure
             </label>
-            <select 
+            <SearchableSelect 
               className="form-control" 
               style={{ fontSize: '0.85rem', padding: '6px 10px' }} 
               value={layerCountFilter} 
@@ -2547,7 +2548,7 @@ export default function JobMasterDirectory({
               <option value="2">2-Layer Laminates</option>
               <option value="3">3-Layer Laminates</option>
               <option value="4+">4+ Layer Laminates</option>
-            </select>
+            </SearchableSelect>
           </div>
 
           {/* Printing Colors Filter */}
@@ -2555,7 +2556,7 @@ export default function JobMasterDirectory({
             <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>
               Printing Colors
             </label>
-            <select 
+            <SearchableSelect 
               className="form-control" 
               style={{ fontSize: '0.85rem', padding: '6px 10px' }} 
               value={colorsFilter} 
@@ -2565,7 +2566,7 @@ export default function JobMasterDirectory({
               <option value="1-4">1 - 4 Colors</option>
               <option value="5-7">5 - 7 Colors</option>
               <option value="8+">8+ Colors</option>
-            </select>
+            </SearchableSelect>
           </div>
 
           {/* Cylinder Cost Borne Filter */}
@@ -2573,7 +2574,7 @@ export default function JobMasterDirectory({
             <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>
               Cylinder Cost Borne By
             </label>
-            <select 
+            <SearchableSelect 
               className="form-control" 
               style={{ fontSize: '0.85rem', padding: '6px 10px' }} 
               value={costBorneFilter} 
@@ -2583,7 +2584,7 @@ export default function JobMasterDirectory({
               <option value="client">Client (100%)</option>
               <option value="us">Us / Factory (100%)</option>
               <option value="both">Both (50/50 Shared)</option>
-            </select>
+            </SearchableSelect>
           </div>
         </div>
 
