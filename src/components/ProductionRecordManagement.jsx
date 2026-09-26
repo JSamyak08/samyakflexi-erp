@@ -1631,30 +1631,40 @@ export default function ProductionRecordManagement({
               {(selectedRecord.materialsList || []).map((m, idx) => (
                 <tr key={idx}>
                   <td style={{ fontWeight: '600' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span>{m.filmType}</span>
-                      {m.barcode && (
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          style={{ padding: '2px 6px', fontSize: '0.7rem', display: 'inline-flex', alignItems: 'center', gap: '2px', color: '#059669', borderColor: '#a7f3d0' }}
-                          onClick={() => setSelectedRollForBarcodeModal({
-                            barcodeId: m.barcode,
-                            rollType: 'RAW_MATERIAL',
-                            itemName: m.filmType,
-                            category: m.filmType?.includes('Film') ? 'Film Substrates' : 'General Store',
-                            unit: m.unit || 'Kg',
-                            micron: parseFloat(m.micron) || 0,
-                            widthMm: parseFloat(m.widthMm) || 0,
-                            netWeightKg: parseFloat(m.netConsumedQtyKg || m.issueQtyKg) || 0,
-                            jobName: selectedRecord.jobName,
-                            clientName: selectedRecord.clientName,
-                            stationId: 'SCALE_2_PRINTING'
-                          })}
-                          title="Print Input Barcode Tag"
-                        >
-                          <Printer size={12} /> {m.barcode}
-                        </button>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span>{m.filmType}</span>
+                        {m.barcode && (
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            style={{ padding: '2px 6px', fontSize: '0.7rem', display: 'inline-flex', alignItems: 'center', gap: '2px', color: '#059669', borderColor: '#a7f3d0' }}
+                            onClick={() => setSelectedRollForBarcodeModal({
+                              barcodeId: m.barcode,
+                              rollType: 'RAW_MATERIAL',
+                              itemName: m.filmType,
+                              category: m.filmType?.includes('Film') ? 'Film Substrates' : 'General Store',
+                              unit: m.unit || 'Kg',
+                              micron: parseFloat(m.micron) || 0,
+                              widthMm: parseFloat(m.widthMm) || 0,
+                              netWeightKg: parseFloat(m.netConsumedQtyKg || m.issueQtyKg) || 0,
+                              itemRemarks: m.itemRemarks || m.remarks || m.notes || '',
+                              remarks: m.itemRemarks || m.remarks || m.notes || '',
+                              notes: m.itemRemarks || m.remarks || m.notes || '',
+                              jobName: selectedRecord.jobName,
+                              clientName: selectedRecord.clientName,
+                              stationId: 'SCALE_2_PRINTING'
+                            })}
+                            title="Print Input Barcode Tag"
+                          >
+                            <Printer size={12} /> {m.barcode}
+                          </button>
+                        )}
+                      </div>
+                      {(m.itemRemarks || m.remarks || m.notes) && (
+                        <div style={{ fontSize: '0.72rem', color: '#0369a1', fontWeight: '500' }}>
+                          💬 {m.itemRemarks || m.remarks || m.notes}
+                        </div>
                       )}
                     </div>
                   </td>
@@ -2428,6 +2438,11 @@ export default function ProductionRecordManagement({
                                 const rate = rollMatch.purchaseRatePerKg || rollMatch.unitPrice || rollMatch.purchaseRate || 0;
                                 if (rate > 0) updateMaterialRow(m.id, 'unitPricePerKg', rate);
                                 if (rollMatch.unit) updateMaterialRow(m.id, 'unit', rollMatch.unit);
+                                const remark = rollMatch.itemRemarks || rollMatch.remarks || rollMatch.notes;
+                                if (remark) {
+                                  updateMaterialRow(m.id, 'itemRemarks', remark);
+                                  updateMaterialRow(m.id, 'notes', remark);
+                                }
                               } else {
                                 // 2. Fallback lookup in central inventory
                                 const match = (inventory || []).find(inv => 

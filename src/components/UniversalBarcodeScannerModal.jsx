@@ -296,6 +296,11 @@ export default function UniversalBarcodeScannerModal({
         rollProps.push({ label: 'Shift Allocation', value: matchedRoll.shift });
       }
 
+      const resolvedRemarks = matchedRoll.itemRemarks || matchedRoll.remarks || matchedRoll.notes || linkedGrn?.itemRemarks || linkedGrn?.remarks || linkedGrn?.notes || '';
+      if (resolvedRemarks) {
+        rollProps.push({ label: 'Item Comment / Remark', value: resolvedRemarks, isHighlight: true });
+      }
+
       rollProps.push({ label: 'Current Status', value: matchedRoll.status || 'In Stock' });
 
       return {
@@ -442,7 +447,7 @@ export default function UniversalBarcodeScannerModal({
           { label: 'Received Quantity', value: matchedGrn.received_qty_kg || matchedGrn.receivedQtyKg || matchedGrn.netWeightKg ? `${matchedGrn.received_qty_kg || matchedGrn.receivedQtyKg || matchedGrn.netWeightKg} ${matchedGrn.unit || 'kg'}` : 'N/A', isHighlight: true },
           { label: 'Packaging Units', value: matchedGrn.rollsReceived || matchedGrn.unitsReceived ? `${matchedGrn.rollsReceived || matchedGrn.unitsReceived} ${matchedGrn.packagingType || 'Units'}` : 'N/A' },
           { label: 'QC Inspection Status', value: matchedGrn.qc_status || matchedGrn.qcStatus || matchedGrn.status || 'Pending QC', isStatus: true },
-          { label: 'Remarks / Notes', value: matchedGrn.qc_remarks || matchedGrn.remarks || matchedGrn.qcNotes || 'N/A' }
+          { label: 'Item Comment / Remark', value: matchedGrn.itemRemarks || matchedGrn.remarks || matchedGrn.qc_remarks || matchedGrn.qcNotes || matchedGrn.notes || 'N/A', isHighlight: true }
         ]
       };
     }

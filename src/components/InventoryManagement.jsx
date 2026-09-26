@@ -597,10 +597,11 @@ export default function InventoryManagement({
   const [isGrnItemDropdownOpen, setIsGrnItemDropdownOpen] = useState(false);
   const [grnFreightAmount, setGrnFreightAmount] = useState('');
   const [grnTransporterName, setGrnTransporterName] = useState('');
+  const [grnItemRemarks, setGrnItemRemarks] = useState('');
 
   // Individual Roll / Container Itemized Breakdown State (Each with distinct gross/tare/net weights)
   const [grnItemsList, setGrnItemsList] = useState([
-    { id: 'item-1', grossWeightKg: '', tareWeightKg: 0, netWeightKg: '', lengthMeters: '', vendorRollNo: '', notes: '' }
+    { id: 'item-1', grossWeightKg: '', tareWeightKg: 0, netWeightKg: '', lengthMeters: '', vendorRollNo: '', itemRemarks: '', notes: '' }
   ]);
   const [grnDefaultTare, setGrnDefaultTare] = useState(0);
 
@@ -667,7 +668,8 @@ export default function InventoryManagement({
         netWeightKg: initialData.netWeightKg ?? '',
         lengthMeters: calculatedLen,
         vendorRollNo: initialData.vendorRollNo ?? '',
-        notes: ''
+        itemRemarks: initialData.itemRemarks ?? initialData.notes ?? '',
+        notes: initialData.notes ?? initialData.itemRemarks ?? ''
       }
     ]);
   };
@@ -733,6 +735,7 @@ export default function InventoryManagement({
               netWeightKg: '',
               lengthMeters: '',
               vendorRollNo: '',
+              itemRemarks: '',
               notes: ''
             });
           }
@@ -1596,6 +1599,8 @@ export default function InventoryManagement({
         ? `${isFilm ? 'RM-BC' : 'CON-BC'}-${grnCode}-${i}` 
         : generateBarcodeId(isFilm ? 'RM-BC' : 'CON-BC');
 
+      const itemRemarkVal = (item.itemRemarks || item.notes || grnItemRemarks || '').trim();
+
       return {
         unitNo: i,
         barcodeId: barcodeId,
@@ -1603,12 +1608,17 @@ export default function InventoryManagement({
         tareWeightKg: itemTare,
         netWeightKg: itemNet,
         lengthMeters: itemLength > 0 ? itemLength : 0,
-        vendorRollNo: itemVendorRoll
+        vendorRollNo: itemVendorRoll,
+        itemRemarks: itemRemarkVal,
+        remarks: itemRemarkVal,
+        notes: itemRemarkVal
       };
     });
 
     const allBarcodes = preparedItemsBreakdown.map(b => b.barcodeId);
     const barcodeSummaryStr = allBarcodes.join(', ');
+
+    const grnOverallRemark = (grnItemRemarks || '').trim();
 
     const newGRN = {
       grnNo: grnDocNo,
@@ -1637,6 +1647,9 @@ export default function InventoryManagement({
       batchNo: grnBatchNo,
       freightAmount: parseFloat(grnFreightAmount) || 0,
       transporterName: grnTransporterName.trim() || 'Direct Dispatch / Self',
+      itemRemarks: grnOverallRemark,
+      remarks: grnOverallRemark,
+      notes: grnOverallRemark,
       status: isCylinderCategory ? "Approved" : "Pending QC Approval", // Auto approve cylinder GRNs, non-cylinders require QC Lab Approval
       qcStatus: isCylinderCategory ? "Approved" : "Pending QC Approval",
       qcNotes: isCylinderCategory ? "Engraved cylinder set received and verified." : "",
@@ -1646,6 +1659,7 @@ export default function InventoryManagement({
 
     setGrnFreightAmount('');
     setGrnTransporterName('');
+    setGrnItemRemarks('');
 
     if (onAddGRN) {
       onAddGRN(newGRN);
@@ -1684,6 +1698,7 @@ export default function InventoryManagement({
 
     // Generate individual barcode stickers for each box / roll / container unit received with its DISTINCT net weight!
     const newRolls = preparedItemsBreakdown.map((item) => {
+      const rollRemark = item.itemRemarks || item.remarks || item.notes || grnOverallRemark;
       const rollObj = {
         id: item.barcodeId,
         barcodeId: item.barcodeId,
@@ -1715,7 +1730,10 @@ export default function InventoryManagement({
         stationId: 'SCALE_1_INWARD',
         locationBay: isFilm ? 'Bay A' : 'Consumables Store',
         status: isCylinderCategory ? 'In Stock' : 'Pending QC',
-        qcStatus: isCylinderCategory ? 'Approved' : 'Pending QC'
+        qcStatus: isCylinderCategory ? 'Approved' : 'Pending QC',
+        itemRemarks: rollRemark,
+        remarks: rollRemark,
+        notes: rollRemark
       };
       return rollObj;
     });
@@ -2113,7 +2131,8 @@ export default function InventoryManagement({
       unit: unitStr,
       qcStatus,
       isQCPending,
-      isQCRejected
+      isQCRejected,
+      itemRemarks: matchedRoll?.itemRemarks || matchedRoll?.remarks || matchedRoll?.notes || matchedGrn?.itemRemarks || matchedGrn?.remarks || matchedGrn?.notes || ''
     });
 
     if (availableQty > 0 && !isQCPending && !isQCRejected) {
@@ -4853,6 +4872,19 @@ export default function InventoryManagement({
                       ))}
                     </select>
                   </div>
+
+                  <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                    <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                      Item Comment / Inward Remark (Optional)
+                    </label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="e.g. Received in good condition, batch certified high clarity, minor outer packaging scratch..." 
+                      value={grnItemRemarks} 
+                      onChange={e => setGrnItemRemarks(e.target.value)} 
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -5049,6 +5081,7 @@ export default function InventoryManagement({
                           </th>
                         )}
                         <th style={{ padding: '8px 10px' }}>Vendor {grnPackagingType} / Lot #</th>
+                        <th style={{ padding: '8px 10px' }}>Comment / Remark</th>
                         <th style={{ padding: '8px 8px', width: '45px', textAlign: 'center' }}></th>
                       </tr>
                     </thead>
@@ -5190,6 +5223,26 @@ export default function InventoryManagement({
                                 placeholder={`e.g. VR-${unitNumber.toString().padStart(2, '0')}`}
                                 value={item.vendorRollNo}
                                 onChange={e => handleUpdateGrnItemRow(item.id, 'vendorRollNo', e.target.value)}
+                              />
+                            </td>
+
+                            {/* Roll / Item Specific Remark */}
+                            <td style={{ padding: '6px 10px' }}>
+                              <input 
+                                type="text"
+                                style={{ 
+                                  width: '100%', 
+                                  padding: '4px 6px', 
+                                  fontSize: '0.8rem', 
+                                  borderRadius: '4px', 
+                                  border: '1px solid #cbd5e1' 
+                                }}
+                                placeholder="Roll comment / remark"
+                                value={item.itemRemarks || item.notes || ''}
+                                onChange={e => {
+                                  handleUpdateGrnItemRow(item.id, 'itemRemarks', e.target.value);
+                                  handleUpdateGrnItemRow(item.id, 'notes', e.target.value);
+                                }}
                               />
                             </td>
 
@@ -5659,6 +5712,12 @@ export default function InventoryManagement({
                   </span>
                   {scannedItemDetails.grnNo && <span>GRN Ref: <strong>{scannedItemDetails.grnNo}</strong></span>}
                 </div>
+
+                {(scannedItemDetails.itemRemarks || scannedItemDetails.matchedRoll?.itemRemarks || scannedItemDetails.matchedGrn?.itemRemarks) && (
+                  <div style={{ marginTop: '6px', fontSize: '0.76rem', color: '#0369a1', fontWeight: '600' }}>
+                    💬 Remark: <strong>{scannedItemDetails.itemRemarks || scannedItemDetails.matchedRoll?.itemRemarks || scannedItemDetails.matchedGrn?.itemRemarks}</strong>
+                  </div>
+                )}
 
                 {scannedItemDetails.isQCPending && (
                   <div style={{
@@ -6265,6 +6324,10 @@ export default function InventoryManagement({
             resolvedBarcode = `${isFilmGRN ? 'RM-BC' : 'CON-BC'}-${g.grnNo || g.id}${specSuffix}`;
           }
 
+          const grnRemark = g.itemRemarks || g.remarks || g.notes || '';
+          const rollRemarksStr = matchingRolls.map(r => r.itemRemarks || r.remarks || r.notes).filter(Boolean).join('; ');
+          const finalRemark = (grnRemark || rollRemarksStr || '').trim();
+
           return {
             txId,
             category: 'inward',
@@ -6285,7 +6348,9 @@ export default function InventoryManagement({
             batchNo: g.batchNo || `GRN-${g.grnNo}`,
             invoiceNo: g.invoiceNo || '',
             status: g.status || 'Pending QC',
-            notes: `${g.rollsReceived || matchingRolls.length || 1} pkg/roll(s) | Barcode: ${resolvedBarcode}`
+            itemRemarks: finalRemark,
+            remarks: finalRemark,
+            notes: `${g.rollsReceived || matchingRolls.length || 1} pkg/roll(s) | Barcode: ${resolvedBarcode}${finalRemark ? ` | Remark: ${finalRemark}` : ''}`
           };
         });
 
@@ -6784,6 +6849,11 @@ export default function InventoryManagement({
                             <td>
                               <div style={{ fontWeight: '600' }}>{tx.partyName}</div>
                               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{tx.subParty}</div>
+                              {tx.itemRemarks && (
+                                <div style={{ fontSize: '0.73rem', color: '#0369a1', fontWeight: '600', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  💬 {tx.itemRemarks}
+                                </div>
+                              )}
                             </td>
 
                             {/* Updatable Barcode Column */}
@@ -6858,6 +6928,9 @@ export default function InventoryManagement({
                                            batchNo: batchVal,
                                            invoiceNo: invoiceVal,
                                            purchaseRatePerKg: rateVal,
+                                           itemRemarks: tx.itemRemarks || tx.remarks || tx.notes || '',
+                                           remarks: tx.itemRemarks || tx.remarks || tx.notes || '',
+                                           notes: tx.itemRemarks || tx.remarks || tx.notes || '',
                                            stationId: 'SCALE_1_INWARD'
                                          });
                                        }}

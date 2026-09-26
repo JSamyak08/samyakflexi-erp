@@ -737,7 +737,10 @@ export function sanitizeGRN(rawGRN) {
     receivedQtyKg: Number(rawGRN.received_qty_kg ?? rawGRN.receivedQtyKg ?? rawGRN.netWeightKg ?? 0) || 0,
     netWeightKg: Number(rawGRN.received_qty_kg ?? rawGRN.receivedQtyKg ?? rawGRN.netWeightKg ?? 0) || 0,
     packagingType: meta.packagingType || rawGRN.packagingType || 'Roll',
-    itemsBreakdown: meta.itemsBreakdown || rawGRN.itemsBreakdown || []
+    itemsBreakdown: meta.itemsBreakdown || rawGRN.itemsBreakdown || [],
+    itemRemarks: meta.itemRemarks || rawGRN.itemRemarks || rawGRN.remarks || meta.remarks || rawGRN.notes || '',
+    remarks: meta.itemRemarks || rawGRN.itemRemarks || rawGRN.remarks || meta.remarks || rawGRN.notes || '',
+    notes: meta.itemRemarks || rawGRN.itemRemarks || rawGRN.remarks || meta.remarks || rawGRN.notes || ''
   };
 }
 
@@ -780,7 +783,9 @@ export async function saveGRNToSupabase(grn) {
     inspectedBy: clean.inspectedBy,
     storeManager: clean.storeManager,
     packagingType: clean.packagingType || 'Roll',
-    itemsBreakdown: clean.itemsBreakdown || []
+    itemsBreakdown: clean.itemsBreakdown || [],
+    itemRemarks: clean.itemRemarks || clean.remarks || clean.notes || '',
+    remarks: clean.itemRemarks || clean.remarks || clean.notes || ''
   };
 
   const combinedItemName = `${itemNameVal} ||| ${JSON.stringify(meta)}`;
@@ -1560,6 +1565,8 @@ export async function fetchInventoryRolls() {
       operatorName: r.operator_name || '',
       shift: r.shift || '',
       remarks: r.remarks || '',
+      itemRemarks: r.remarks || '',
+      notes: r.remarks || '',
       coreDia: r.core_dia || '',
       purchaseRatePerKg: Number(r.purchase_rate_per_kg ?? r.unit_price ?? 0) || 0,
       unitPrice: Number(r.purchase_rate_per_kg ?? r.unit_price ?? 0) || 0,
@@ -1607,7 +1614,7 @@ export async function saveInventoryRollToSupabase(roll) {
     machine_name: roll.machineName || roll.machine || roll.stationId || '',
     operator_name: roll.operatorName || roll.operator || '',
     shift: roll.shift || '',
-    remarks: roll.remarks || roll.notes || '',
+    remarks: roll.itemRemarks || roll.remarks || roll.notes || '',
     core_dia: roll.coreDia || '',
     purchase_rate_per_kg: Number(roll.purchaseRatePerKg ?? roll.unitPrice ?? roll.purchaseRate ?? 0) || 0,
     unit_price: Number(roll.purchaseRatePerKg ?? roll.unitPrice ?? roll.purchaseRate ?? 0) || 0,
