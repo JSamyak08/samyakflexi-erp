@@ -2181,5 +2181,54 @@ html, body {
   }
 }
 
+/* =============================================================
+   TABLE PAGINATION & TOUCH RESPONSIVE ENHANCEMENTS
+   ============================================================= */
+@media (max-width: 640px) {
+  .table-pagination-container {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+    text-align: center !important;
+    padding: 12px 10px !important;
+  }
+
+  .table-pagination-container > div {
+    justify-content: center !important;
+    width: 100% !important;
+    flex-wrap: wrap !important;
+  }
+}
+
+/* Smooth Touch Scrolling for Horizontal Data Tables */
+.table-responsive,
+div[style*="overflowX: 'auto'"],
+div[style*="overflow-x: auto"] {
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* Horizontal Scrollable Tabs on Mobile & iPad */
+.nav-tabs,
+.tab-bar,
+.sub-nav-tabs,
+div[style*="overflowX: 'auto'"] {
+  display: flex;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  scrollbar-width: thin;
+}
+
+/* General Mobile & iPad Touch Padding and Touch Target Optimization */
+@media (max-width: 1024px) {
+  .btn-primary, .btn-secondary, .btn-danger {
+    min-height: 38px;
+    touch-action: manipulation;
+  }
+}
+
+
 
 

@@ -28,6 +28,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import SalesQuotationPDF from './SalesQuotationPDF';
+import TablePagination, { usePagination } from './TablePagination';
 import { 
   calculateJobRawMaterials,
   isLDFilm,
@@ -984,6 +985,17 @@ export default function SalesManagement({
     });
   }, [quotations, searchTerm, statusFilter]);
 
+  const {
+    currentPage,
+    totalPages,
+    pageSize,
+    setPageSize,
+    goToPage,
+    startIndex,
+    endIndex,
+    paginatedItems: paginatedQuotations
+  } = usePagination(filteredQuotations, 25);
+
   // Analytics Metrics
   const totalQuotationsCount = (quotations || []).length;
   const confirmedCount = (quotations || []).filter(q => q.status.includes('Confirmed')).length;
@@ -1149,7 +1161,7 @@ export default function SalesManagement({
                     </td>
                   </tr>
                 ) : (
-                  filteredQuotations.map(qtn => {
+                  paginatedQuotations.map(qtn => {
                     const isConfirmed = qtn.status.includes('Confirmed');
                     const mainItem = (qtn.items && qtn.items[0]) || {};
                     const totalVal = (qtn.items || []).reduce((a, b) => a + (b.totalAmount || (b.quantity * b.ratePerUom * 1.18)), 0);
@@ -1255,6 +1267,16 @@ export default function SalesManagement({
               </tbody>
             </table>
           </div>
+          <TablePagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            setPageSize={setPageSize}
+            goToPage={goToPage}
+            startIndex={startIndex}
+            endIndex={endIndex}
+            totalItems={filteredQuotations.length}
+          />
         </div>
       )}
 

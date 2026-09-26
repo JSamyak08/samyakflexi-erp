@@ -32,6 +32,7 @@ import SFGFGEntryModal from './SFGFGEntryModal';
 import { DEFAULT_DAILY_RATES, generateBarcodeId, calculateJobRawMaterials, calculatePreVsPostCosting } from '../factoryStore';
 import { notifyProductionRecordSubmitted, notifyProductionRecordApproved, notifyOverWastageAlert } from '../services/emailService';
 import { pushSlugState } from '../utils/slugRouter';
+import TablePagination, { usePagination } from './TablePagination';
 
 export default function ProductionRecordManagement({
   urlParams = {},
@@ -799,6 +800,17 @@ export default function ProductionRecordManagement({
     return matchesSearch && matchesFilter;
   });
 
+  const {
+    currentPage,
+    totalPages,
+    pageSize,
+    setPageSize,
+    goToPage,
+    startIndex,
+    endIndex,
+    paginatedItems: paginatedRecords
+  } = usePagination(filteredRecords, 25);
+
   const filteredPunchedOrders = orders.filter(o => {
     return o.jobName.toLowerCase().includes(searchTerm.toLowerCase()) || 
            o.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1266,7 +1278,7 @@ export default function ProductionRecordManagement({
                     </td>
                   </tr>
                 ) : (
-                  filteredRecords.map(rec => {
+                  paginatedRecords.map(rec => {
                     const linkedOrder = orders.find(o => 
                       (rec.orderId && String(o.id) === String(rec.orderId)) ||
                       (rec.jobCode && String(o.jobCode || '').toUpperCase() === String(rec.jobCode).toUpperCase()) ||
@@ -1361,6 +1373,16 @@ export default function ProductionRecordManagement({
               </tbody>
             </table>
           </div>
+          <TablePagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            setPageSize={setPageSize}
+            goToPage={goToPage}
+            startIndex={startIndex}
+            endIndex={endIndex}
+            totalItems={filteredRecords.length}
+          />
         </div>
       )}
 

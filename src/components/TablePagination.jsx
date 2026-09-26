@@ -4,10 +4,10 @@ import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-r
 export default function TablePagination({
   currentPage = 1,
   totalItems = 0,
-  pageSize = 50,
+  pageSize = 25,
   onPageChange,
   onPageSizeChange,
-  pageSizeOptions = [25, 50, 100, 200],
+  pageSizeOptions = [10, 25, 50, 100, 250, 500],
   style = {}
 }) {
   const totalPages = Math.ceil(totalItems / pageSize) || 1;
@@ -70,7 +70,7 @@ export default function TablePagination({
             >
               {pageSizeOptions.map(size => (
                 <option key={size} value={size}>
-                  {size} per page {size === 50 ? '(Default)' : size === 200 ? '(Max)' : ''}
+                  {size} per page {size === 25 ? '(Default)' : size === 500 ? '(Max)' : ''}
                 </option>
               ))}
             </select>
@@ -140,7 +140,7 @@ export default function TablePagination({
 /**
  * Custom React Hook for managing table pagination state seamlessly
  */
-export function usePagination(items = [], defaultPageSize = 50) {
+export function usePagination(items = [], defaultPageSize = 25) {
   const [currentPage, setCurrentPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(defaultPageSize);
 

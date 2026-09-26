@@ -34,6 +34,7 @@ import { FILM_DENSITIES } from '../factoryStore';
 import CylinderJobCardForm from '../CylinderJobCardForm';
 import { uploadArtworkFile, openArtworkViewer } from '../services/supabaseStorageService';
 import ArtworkModal from './ArtworkModal';
+import TablePagination, { usePagination } from './TablePagination';
 
 // Target Schema Fields for Rotogravure Cylinder Bulk Import
 const TARGET_SCHEMA_FIELDS = [
@@ -975,6 +976,17 @@ export default function CylinderManagement({
     (c.engravuresName && c.engravuresName.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
+  const {
+    currentPage,
+    totalPages,
+    pageSize,
+    setPageSize,
+    goToPage,
+    startIndex,
+    endIndex,
+    paginatedItems: paginatedCylinders
+  } = usePagination(filteredCylinders, 25);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Top Banner */}
@@ -1080,7 +1092,7 @@ export default function CylinderManagement({
                   </td>
                 </tr>
               ) : (
-                filteredCylinders.map(c => {
+                paginatedCylinders.map(c => {
                   const util = calculateUtilisation(c.dispatchedQty, c.utilisationLimit || 10000);
                   const isWarning = util >= 80;
                   const cCirc = c.circumferenceMm || 400;
@@ -1319,6 +1331,16 @@ export default function CylinderManagement({
             </tbody>
           </table>
         </div>
+        <TablePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          setPageSize={setPageSize}
+          goToPage={goToPage}
+          startIndex={startIndex}
+          endIndex={endIndex}
+          totalItems={filteredCylinders.length}
+        />
       </div>
 
       {/* ========================================== */}

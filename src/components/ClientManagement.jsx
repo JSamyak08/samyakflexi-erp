@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Plus, Search, Building2, Phone, MapPin, Briefcase, ChevronRight, Package, Layers, X, Edit, Trash2, AlertTriangle, ExternalLink, IndianRupee, Image as ImageIcon } from 'lucide-react';
 import { openArtworkViewer } from '../services/supabaseStorageService';
 import ArtworkModal from './ArtworkModal';
+import TablePagination, { usePagination } from './TablePagination';
 
 export default function ClientManagement({ urlParams = {}, clients = [], orders = [], cylinders = [], onAddClient, onUpdateClient, onDeleteClient }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -36,6 +37,17 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
       (c.gstin && c.gstin.toLowerCase().includes(searchTerm.toLowerCase()))
     );
   }, [clients, searchTerm]);
+
+  const {
+    currentPage,
+    totalPages,
+    pageSize,
+    setPageSize,
+    goToPage,
+    startIndex,
+    endIndex,
+    paginatedItems: paginatedClients
+  } = usePagination(filteredClients, 25);
 
   const openModal = (client = null) => {
     if (client) {
@@ -470,7 +482,7 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
                   </td>
                 </tr>
               ) : (
-                filteredClients.map(c => {
+                paginatedClients.map(c => {
                   const cylCount = (cylinders || []).filter(cyl => cyl.clientGroup === c.name || cyl.clientName === c.name || (cyl.jobName && cyl.jobName.includes(c.name))).length;
 
                   return (
@@ -518,6 +530,16 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
             </tbody>
           </table>
         </div>
+        <TablePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          setPageSize={setPageSize}
+          goToPage={goToPage}
+          startIndex={startIndex}
+          endIndex={endIndex}
+          totalItems={filteredClients.length}
+        />
       </div>
 
       {/* Add / Edit Client Modal */}

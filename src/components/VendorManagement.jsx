@@ -16,6 +16,7 @@ import {
   X
 } from 'lucide-react';
 import { generateVendorId } from '../factoryStore';
+import TablePagination, { usePagination } from './TablePagination';
 function VendorMaterialItemsCell({ items = [] }) {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -194,6 +195,17 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
     v.materials.some(m => m.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
+  const {
+    currentPage,
+    totalPages,
+    pageSize,
+    setPageSize,
+    goToPage,
+    startIndex,
+    endIndex,
+    paginatedItems: paginatedVendors
+  } = usePagination(filteredVendors, 25);
+
   // Helper to compute PO history for a selected vendor
   const getVendorPoHistory = (vendor) => {
     if (!vendor) return [];
@@ -297,7 +309,7 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
 
       {/* Vendor Cards Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '24px' }}>
-        {filteredVendors.map(vendor => (
+        {paginatedVendors.map(vendor => (
           <div key={vendor.id} className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', borderRadius: '12px' }}>
             {/* Header: Company Name & Rating */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -389,6 +401,19 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="glass-panel" style={{ padding: '12px 20px' }}>
+        <TablePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          setPageSize={setPageSize}
+          goToPage={goToPage}
+          startIndex={startIndex}
+          endIndex={endIndex}
+          totalItems={filteredVendors.length}
+        />
       </div>
 
       {/* Modal: Vendor PO History */}
