@@ -81,8 +81,8 @@ export async function fetchOrders() {
         clientName: o.client_name,
         orderType: o.order_type || 'Reel',
         orderQtyKg: Number(o.order_qty_kg) || 0,
-        deliveryDate: o.target_delivery_date,
-        targetDeliveryDate: o.target_delivery_date,
+        deliveryDate: o.target_delivery_date || o.delivery_date,
+        targetDeliveryDate: o.target_delivery_date || o.delivery_date,
         orderDate: jd.orderDate || (o.created_at ? new Date(o.created_at).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB')),
         status: o.status || 'Scheduled',
         wastagePct: Number(o.wastage_percentage) || Number(jd.wastagePct) || Number(jd.calculationDetails?.wastagePct) || 5,
@@ -147,7 +147,7 @@ export async function saveOrderToSupabase(order) {
   };
   const combinedJobName = `${order.jobName || 'Untitled Job'} ||| ${JSON.stringify(metaEnvelope)}`;
 
-  const payload = {
+  const fullPayload = {
     id: order.id,
     job_name: combinedJobName,
     client_name: order.clientName || 'General Client',
@@ -160,10 +160,25 @@ export async function saveOrderToSupabase(order) {
     raw_material_requirements: matReqs
   };
 
-  const { error } = await supabase.from('orders').upsert(payload, { onConflict: 'id' });
-  if (error) {
-    console.error(`[ORDERS][DB WRITE Error] orderId=${order.id}:`, error);
-    handleSupabaseError(error, 'orders');
+  const { error: fullErr } = await supabase.from('orders').upsert(fullPayload, { onConflict: 'id' });
+  if (fullErr) {
+    console.warn(`[ORDERS][DB WRITE] Full payload failed (${fullErr.message}), trying fallback payload...`);
+    const fallbackPayload = {
+      id: order.id,
+      job_name: combinedJobName,
+      client_name: order.clientName || 'General Client',
+      order_type: order.orderType || 'Reel',
+      order_qty_kg: Number(order.orderQtyKg) || 0,
+      target_delivery_date: targetDateVal,
+      status: order.status || 'Scheduled',
+      job_details: jobDetails,
+      raw_material_requirements: matReqs
+    };
+    const { error: fbErr } = await supabase.from('orders').upsert(fallbackPayload, { onConflict: 'id' });
+    if (fbErr) {
+      console.error(`[ORDERS][DB WRITE Error] orderId=${order.id}:`, fbErr);
+      handleSupabaseError(fbErr, 'orders');
+    }
   }
 }
 

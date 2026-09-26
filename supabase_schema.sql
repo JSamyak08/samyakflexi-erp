@@ -762,4 +762,8 @@ ALTER TABLE public.grns ADD COLUMN IF NOT EXISTS metallocene_pct TEXT;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS metallocene_pct TEXT;
 ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS metallocene_pct TEXT;
 
+-- Orders Table Delivery Date Schema Alignments
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS delivery_date DATE;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS target_delivery_date DATE;
+
 
