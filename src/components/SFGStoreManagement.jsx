@@ -146,7 +146,14 @@ export default function SFGStoreManagement({
       }
     });
 
-    return sortInventoryByFifo(list);
+    // Filter out dummy 0-kg placeholders
+    const cleanList = list.filter(item => {
+      const isUntitledOrBlank = (item.jobName === 'Untitled Job' || item.jobName === 'SFG Stock Item' || !item.jobName) && (!item.orderId || item.orderId === 'N/A' || item.orderId === '#N/A');
+      const isZeroKg = Number(item.totalNetKg || 0) <= 0 && Number(item.availableKg || 0) <= 0;
+      return !(isUntitledOrBlank && isZeroKg);
+    });
+
+    return sortInventoryByFifo(cleanList);
   }, [sfgGoods, inventory, inventoryRolls]);
 
 
@@ -607,11 +614,11 @@ export default function SFGStoreManagement({
                     <tr key={item.id || item.sfgBatchCode} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s ease' }}>
                       
                       {/* Barcode / Batch Code */}
-                      <td style={{ padding: '14px 16px' }}>
-                        <div style={{ fontFamily: 'monospace', fontWeight: '700', color: '#0f172a', fontSize: '0.85rem' }}>
+                      <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontFamily: 'monospace', fontWeight: '800', color: '#0f172a', fontSize: '0.84rem', background: '#f8fafc', padding: '3px 8px', borderRadius: '5px', border: '1px solid #e2e8f0', display: 'inline-block' }}>
                           {item.sfgBatchCode}
                         </div>
-                        <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                        <div style={{ marginTop: '4px' }}>
                           <button
                             type="button"
                             onClick={() => setSelectedRollForBarcodeModal(item)}
@@ -620,7 +627,7 @@ export default function SFGStoreManagement({
                               border: 'none',
                               color: '#2563eb',
                               fontSize: '0.74rem',
-                              fontWeight: '600',
+                              fontWeight: '700',
                               cursor: 'pointer',
                               display: 'inline-flex',
                               alignItems: 'center',
@@ -635,118 +642,122 @@ export default function SFGStoreManagement({
 
                       {/* Job Code & Name */}
                       <td style={{ padding: '14px 16px' }}>
-                        <div style={{ fontWeight: '700', color: '#0f172a' }}>
+                        <div style={{ fontWeight: '700', color: '#0f172a', fontSize: '0.88rem' }}>
                           {item.jobName || 'Untitled Job'}
                         </div>
-                        {item.jobCode && (
-                          <span style={{ fontSize: '0.75rem', color: '#64748b', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>
+                        {item.jobCode && item.jobCode !== 'N/A' && (
+                          <span style={{ fontSize: '0.74rem', color: '#64748b', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontWeight: '600', marginTop: '2px', display: 'inline-block' }}>
                             {item.jobCode}
                           </span>
                         )}
                       </td>
 
                       {/* Order & Client */}
-                      <td style={{ padding: '14px 16px' }}>
+                      <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
                         <div style={{ color: '#0f172a', fontWeight: '600' }}>
                           {item.clientName || 'General Client'}
                         </div>
-                        {item.orderId && (
-                          <div style={{ fontSize: '0.75rem', color: '#2563eb', fontWeight: '600', marginTop: '2px' }}>
+                        {item.orderId && item.orderId !== 'N/A' && item.orderId !== '#N/A' && (
+                          <div style={{ fontSize: '0.74rem', color: '#2563eb', fontWeight: '700', marginTop: '2px' }}>
                             Order: #{item.orderId}
                           </div>
                         )}
                       </td>
 
                       {/* Substrate & Size */}
-                      <td style={{ padding: '14px 16px' }}>
-                        <div style={{ color: '#0f172a', fontWeight: '600' }}>
+                      <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
+                        <div style={{ color: '#0f172a', fontWeight: '700', fontSize: '0.86rem' }}>
                           {item.filmType || 'Film Substrate'}
                         </div>
-                        <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                        <div style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: '600' }}>
                           {item.micron ? `${item.micron} µm` : '-'} | {item.widthMm ? `${item.widthMm} mm` : '-'}
                         </div>
                       </td>
 
                       {/* SFG / FG Type */}
-                      <td style={{ padding: '14px 16px' }}>
+                      <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
                         <span style={{
                           fontSize: '0.75rem',
-                          fontWeight: '700',
-                          padding: '3px 8px',
+                          fontWeight: '800',
+                          padding: '4px 10px',
                           borderRadius: '6px',
                           background: isFgType ? '#ecfdf5' : '#f5f3ff',
                           color: isFgType ? '#047857' : '#6d28d9',
-                          border: `1px solid ${isFgType ? '#a7f3d0' : '#ddd6fe'}`
+                          border: `1px solid ${isFgType ? '#a7f3d0' : '#ddd6fe'}`,
+                          whiteSpace: 'nowrap',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px'
                         }}>
                           {item.sfgType || (isFgType ? 'Finished Goods' : 'Printed Rolls')}
                         </span>
                       </td>
 
                       {/* Initial Net Weight */}
-                      <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: '600', color: '#334155' }}>
+                      <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: '600', color: '#334155', whiteSpace: 'nowrap' }}>
                         {net.toFixed(2)} kg
                       </td>
 
                       {/* Consumed Weight */}
-                      <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: '700', color: consumed > 0 ? '#c2410c' : '#94a3b8' }}>
+                      <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: '700', color: consumed > 0 ? '#c2410c' : '#94a3b8', whiteSpace: 'nowrap' }}>
                         {consumed.toFixed(2)} kg
                       </td>
 
                       {/* Available Balance */}
-                      <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                      <td style={{ padding: '14px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                         <span style={{
-                          fontSize: '0.95rem',
+                          fontSize: '0.92rem',
                           fontWeight: '800',
                           color: available > 0 ? '#15803d' : '#94a3b8',
                           background: available > 0 ? '#f0fdf4' : '#f8fafc',
                           padding: '4px 8px',
                           borderRadius: '6px',
-                          border: available > 0 ? '1px solid #bbf7d0' : '1px solid #e2e8f0'
+                          border: available > 0 ? '1px solid #bbf7d0' : '1px solid #e2e8f0',
+                          display: 'inline-block'
                         }}>
                           {available.toFixed(2)} kg
                         </span>
                       </td>
 
                       {/* Storage Bay */}
-                      <td style={{ padding: '14px 16px', color: '#475569' }}>
-                        {item.storageBay || 'Bay A'}
+                      <td style={{ padding: '14px 16px', color: '#475569', whiteSpace: 'nowrap', fontSize: '0.82rem', fontWeight: '600' }}>
+                        {item.storageBay || item.location || 'Bay A'}
                       </td>
 
                       {/* Status Badge */}
-                      <td style={{ padding: '14px 16px' }}>
-                        <span style={{
-                          padding: '4px 10px',
-                          borderRadius: '12px',
-                          fontSize: '0.75rem',
-                          fontWeight: '700',
-                          background: statusBg,
-                          color: statusColor,
-                          border: `1px solid ${statusBorder}`,
-                          display: 'inline-block'
-                        }}>
-                          {item.status || 'In Stock (WIP)'}
-                        </span>
+                      <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+                          <span style={{
+                            padding: '4px 10px',
+                            borderRadius: '12px',
+                            fontSize: '0.74rem',
+                            fontWeight: '800',
+                            background: statusBg,
+                            color: statusColor,
+                            border: `1px solid ${statusBorder}`,
+                            whiteSpace: 'nowrap',
+                            display: 'inline-block'
+                          }}>
+                            {item.status || 'In Stock (WIP)'}
+                          </span>
 
-                        {(() => {
-                          const catName = isFgType ? "Finished Goods (FG)" : "Semi-Finished Goods (SFG)";
-                          const ageInDays = getItemAgeInDays(item);
-                          const threshold = getCategoryAgeingThreshold(catName, ageingSettings);
-                          const isOverAged = ageInDays > threshold;
+                          {(() => {
+                            const catName = isFgType ? "Finished Goods (FG)" : "Semi-Finished Goods (SFG)";
+                            const ageInDays = getItemAgeInDays(item);
+                            const threshold = getCategoryAgeingThreshold(catName, ageingSettings);
+                            const isOverAged = ageInDays > threshold;
 
-                          return isOverAged ? (
-                            <div style={{ marginTop: '4px' }}>
-                              <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', fontSize: '0.68rem', fontWeight: '800', padding: '2px 6px', borderRadius: '4px', display: 'inline-block' }}>
+                            return isOverAged ? (
+                              <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', fontSize: '0.68rem', fontWeight: '800', padding: '2px 6px', borderRadius: '4px', whiteSpace: 'nowrap', display: 'inline-block' }}>
                                 ⚠️ OVER-AGED ({ageInDays}d &gt; {threshold}d)
                               </span>
-                            </div>
-                          ) : (
-                            <div style={{ marginTop: '4px' }}>
-                              <span style={{ background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', fontSize: '0.68rem', fontWeight: '700', padding: '2px 6px', borderRadius: '4px', display: 'inline-block' }}>
+                            ) : (
+                              <span style={{ background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', fontSize: '0.68rem', fontWeight: '700', padding: '2px 6px', borderRadius: '4px', whiteSpace: 'nowrap', display: 'inline-block' }}>
                                 📜 FIFO ({ageInDays}d)
                               </span>
-                            </div>
-                          );
-                        })()}
+                            );
+                          })()}
+                        </div>
                       </td>
 
 
