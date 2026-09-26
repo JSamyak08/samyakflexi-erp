@@ -535,6 +535,16 @@ export default function EmployeeManagement({
     alert(`Overtime request for ${attRecord.employeeId} on ${attRecord.date} has been marked as ${updated.overtimeStatus}!`);
   };
 
+  // Open New Salary Advance Request Modal
+  const handleOpenNewAdvanceModal = () => {
+    setEditingAdvance(null);
+    setAdvEmpId('');
+    setAdvAmount('');
+    setAdvTenureMonths(1);
+    setAdvReason('');
+    setShowAdvanceModal(true);
+  };
+
   // Edit Salary Advance (Admin Only)
   const handleEditAdvance = (adv) => {
     if (!isAdmin) {
@@ -799,7 +809,7 @@ export default function EmployeeManagement({
             type="button" 
             className="btn-secondary" 
             style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '700' }}
-            onClick={() => setShowAdvanceModal(true)}
+            onClick={handleOpenNewAdvanceModal}
           >
             <Coins size={16} /> Request Salary Advance
           </button>
@@ -1421,7 +1431,7 @@ export default function EmployeeManagement({
               type="button" 
               className="btn-primary" 
               style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-              onClick={() => setShowAdvanceModal(true)}
+              onClick={handleOpenNewAdvanceModal}
             >
               <Plus size={16} /> New Advance Request
             </button>
@@ -2248,9 +2258,9 @@ export default function EmployeeManagement({
           <div className="modal-content glass-panel" style={{ width: '520px', padding: '24px', background: '#ffffff' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
               <h3 style={{ margin: 0, fontWeight: '900', color: 'var(--primary-brand)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Coins size={20} /> Request Salary Advance
+                <Coins size={20} /> {editingAdvance ? `Edit Salary Advance / Loan (${editingAdvance.id})` : 'Request Salary Advance'}
               </h3>
-              <button type="button" className="btn-secondary" onClick={() => setShowAdvanceModal(false)}>
+              <button type="button" className="btn-secondary" onClick={() => { setShowAdvanceModal(false); setEditingAdvance(null); }}>
                 <X size={16} />
               </button>
             </div>
@@ -2259,6 +2269,7 @@ export default function EmployeeManagement({
             {(() => {
               const selectedEmpActiveAdvance = advEmpId ? salaryAdvances.find(adv => 
                 adv.employeeId === advEmpId && 
+                adv.id !== editingAdvance?.id &&
                 (adv.status === 'Approved & Disbursed' || adv.status === 'Pending Approval') &&
                 Number(adv.remainingBalance ?? (adv.advanceAmount - (adv.totalRecoveredAmount || 0))) > 0
               ) : null;
@@ -2267,11 +2278,18 @@ export default function EmployeeManagement({
                 <form onSubmit={handleSaveSalaryAdvance}>
                   <div style={{ marginBottom: '12px' }}>
                     <label className="form-label">Select Employee *</label>
-                    <select className="form-control" value={advEmpId} onChange={e => setAdvEmpId(e.target.value)} required>
+                    <select 
+                      className="form-control" 
+                      value={advEmpId} 
+                      onChange={e => setAdvEmpId(e.target.value)} 
+                      disabled={Boolean(editingAdvance || selectedEmpActiveAdvance)}
+                      required
+                    >
                       <option value="">-- Choose Employee --</option>
                       {employees.filter(e => e.status === 'Active' || e.status === 'On Probation').map(e => {
                         const hasActive = salaryAdvances.find(adv => 
                           adv.employeeId === e.id && 
+                          adv.id !== editingAdvance?.id &&
                           (adv.status === 'Approved & Disbursed' || adv.status === 'Pending Approval') &&
                           Number(adv.remainingBalance ?? (adv.advanceAmount - (adv.totalRecoveredAmount || 0))) > 0
                         );
@@ -2345,7 +2363,7 @@ export default function EmployeeManagement({
                   </div>
 
                   <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                    <button type="button" className="btn-secondary" onClick={() => setShowAdvanceModal(false)}>
+                    <button type="button" className="btn-secondary" onClick={() => { setShowAdvanceModal(false); setEditingAdvance(null); }}>
                       Cancel
                     </button>
                     <button 
@@ -2356,9 +2374,9 @@ export default function EmployeeManagement({
                         opacity: selectedEmpActiveAdvance ? 0.5 : 1,
                         cursor: selectedEmpActiveAdvance ? 'not-allowed' : 'pointer'
                       }}
-                      title={selectedEmpActiveAdvance ? 'Request blocked due to outstanding advance' : 'Submit Advance Request'}
+                      title={selectedEmpActiveAdvance ? 'Request blocked due to outstanding advance' : (editingAdvance ? 'Update Salary Advance Details' : 'Submit Advance Request')}
                     >
-                      Submit Advance Request
+                      {editingAdvance ? 'Update Salary Advance' : 'Submit Advance Request'}
                     </button>
                   </div>
                 </form>
