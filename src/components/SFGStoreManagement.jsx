@@ -70,6 +70,66 @@ export default function SFGStoreManagement({
   const allSfgItems = useMemo(() => {
     const list = Array.isArray(sfgGoods) ? [...sfgGoods] : [];
 
+    // Helper map for order specs lookup
+    const orderMap = new Map((orders || []).map(o => [o.id, o]));
+    const ordersList = orders || [];
+
+    const resolveItemSpecs = (item) => {
+      let ordId = item.orderId;
+      if (!ordId || ordId === 'N/A' || ordId === '#N/A') {
+        if (item.id && item.id.includes('ORD-')) {
+          ordId = item.id.replace('SFG-ITEM-', '').replace('SFG-BC-', '').split('-').slice(0, 3).join('-');
+        }
+      }
+      const cleanOrdId = String(ordId || '').replace('#', '').trim();
+
+      let matchedOrder = orderMap.get(ordId) || orderMap.get(cleanOrdId);
+      if (!matchedOrder) {
+        matchedOrder = ordersList.find(o => {
+          const oId = String(o.id || '').replace('#', '').trim();
+          const oJobCode = String(o.jobCode || '').trim();
+          const oJobName = String(o.jobName || '').toLowerCase().trim();
+          const itemJobName = String(item.jobName || '').toLowerCase().trim();
+          const itemJobCode = String(item.jobCode || '').trim();
+          
+          return (
+            (cleanOrdId && (oId === cleanOrdId || oId.endsWith(cleanOrdId) || cleanOrdId.endsWith(oId))) ||
+            (itemJobCode && (oJobCode === itemJobCode || oId === itemJobCode)) ||
+            (itemJobName && (oJobName === itemJobName || itemJobName.includes(oJobName) || oJobName.includes(itemJobName)))
+          );
+        });
+      }
+
+      const topLayer = Array.isArray(matchedOrder?.layers) && matchedOrder.layers.length > 0 ? matchedOrder.layers[0] : null;
+
+      const rawFilm = item.filmType && item.filmType !== '-' && item.filmType !== 'Film Substrate' 
+        ? item.filmType 
+        : (matchedOrder?.printFilmType || matchedOrder?.filmType || topLayer?.filmType || 'PET');
+
+      const rawMicron = Number(item.micron) > 0 
+        ? Number(item.micron) 
+        : (Number(matchedOrder?.micron) || Number(matchedOrder?.printFilmMicron) || Number(topLayer?.micron) || 12);
+
+      const rawWidth = Number(item.widthMm) > 0 
+        ? Number(item.widthMm) 
+        : (Number(matchedOrder?.widthMm) || Number(matchedOrder?.printWidthMm) || Number(topLayer?.widthMm) || 460);
+
+      const rawClient = item.clientName && item.clientName !== 'Client' && item.clientName !== 'General Client' && item.clientName !== 'In-House Printing Press'
+        ? item.clientName
+        : (matchedOrder?.clientName || matchedOrder?.customerName || item.clientName || 'In-House Printing Press');
+
+      const resolvedOrderId = matchedOrder?.id || (ordId && ordId !== 'N/A' && ordId !== '#N/A' ? ordId : '');
+
+      return { 
+        ...item, 
+        filmType: rawFilm, 
+        micron: rawMicron, 
+        widthMm: rawWidth, 
+        clientName: rawClient, 
+        orderId: resolvedOrderId 
+      };
+    };
+
     // Merge SFG / FG items from central inventory table so all shopfloor output is accessible in SFG & FG Store
     const invList = Array.isArray(inventory) ? inventory : [];
     invList.forEach(item => {
@@ -90,6 +150,7 @@ export default function SFGStoreManagement({
       if (isSFGorFG) {
         const exists = list.some(s => s.id === item.id || s.sfgBatchCode === item.id || s.sfgBatchCode === item.itemCode);
         if (!exists) {
+          const isFgCategory = (cat.includes('finished goods') && !cat.includes('semi-finished')) || code.startsWith('fg-');
           list.push({
             id: item.id,
             sfgBatchCode: item.itemCode || item.id,
@@ -97,7 +158,7 @@ export default function SFGStoreManagement({
             jobName: item.itemName || 'SFG Stock Item',
             jobCode: item.jobCode || item.itemCode || item.id,
             clientName: item.clientName || item.lastVendor || 'Factory Store',
-            sfgType: (cat.includes('finished') || code.startsWith('fg-')) ? 'Finished Goods (FG)' : 'Printed Rolls',
+            sfgType: isFgCategory ? 'Finished Goods (FG)' : 'Printed Rolls',
             filmType: item.filmType || 'PET',
             widthMm: item.widthMm || 460,
             micron: item.micron || 12,
@@ -146,15 +207,18 @@ export default function SFGStoreManagement({
       }
     });
 
+    // Resolve specs (film, micron, width, client, orderId) for all items
+    const resolvedList = list.map(resolveItemSpecs);
+
     // Filter out dummy 0-kg placeholders
-    const cleanList = list.filter(item => {
+    const cleanList = resolvedList.filter(item => {
       const isUntitledOrBlank = (item.jobName === 'Untitled Job' || item.jobName === 'SFG Stock Item' || !item.jobName) && (!item.orderId || item.orderId === 'N/A' || item.orderId === '#N/A');
       const isZeroKg = Number(item.totalNetKg || 0) <= 0 && Number(item.availableKg || 0) <= 0;
       return !(isUntitledOrBlank && isZeroKg);
     });
 
     return sortInventoryByFifo(cleanList);
-  }, [sfgGoods, inventory, inventoryRolls]);
+  }, [sfgGoods, inventory, inventoryRolls, orders]);
 
 
   // Filtered Items
@@ -608,7 +672,16 @@ export default function SFGStoreManagement({
                     statusBorder = '#cbd5e1';
                   }
 
-                  const isFgType = (item.sfgType && (item.sfgType.includes('FG') || item.sfgType.includes('Finished') || item.sfgType.includes('Slit'))) || item.category === 'Finished Goods (FG)' || item.mode === 'FG';
+                  const sType = String(item.sfgType || '').toLowerCase();
+                  const cType = String(item.category || '').toLowerCase();
+                  const isFgType = (
+                    (sType.includes('finished') && !sType.includes('semi')) ||
+                    (sType.includes('fg') && !sType.includes('sfg')) ||
+                    sType.includes('slit') ||
+                    sType.includes('pouch') ||
+                    (cType.includes('finished') && !cType.includes('semi')) ||
+                    item.mode === 'FG'
+                  );
 
                   return (
                     <tr key={item.id || item.sfgBatchCode} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s ease' }}>
@@ -670,7 +743,7 @@ export default function SFGStoreManagement({
                           {item.filmType || 'Film Substrate'}
                         </div>
                         <div style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: '600' }}>
-                          {item.micron ? `${item.micron} µm` : '-'} | {item.widthMm ? `${item.widthMm} mm` : '-'}
+                          {item.micron ? `${item.micron} Mic` : '12 Mic'} | {item.widthMm ? `${item.widthMm} mm` : '460 mm'}
                         </div>
                       </td>
 
