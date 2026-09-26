@@ -1495,7 +1495,7 @@ export default function EmployeeManagement({
                               onClick={() => handleEditAdvance(adv)}
                               title="Edit Salary Advance / Loan (Admin Only)"
                             >
-                              <Edit size={13} /> Edit
+                              <Edit3 size={13} /> Edit
                             </button>
                           )}
                           {adv.status === 'Pending Approval' ? (
