@@ -3,12 +3,26 @@ import { Printer, X, Tag, ChevronLeft, ChevronRight, QrCode } from 'lucide-react
 import { COMPANY_DETAILS } from '../factoryStore';
 import QRCode2D from './QRCode2D';
 
-export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks = [], onClose }) {
+export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks = [], autoPrint = false, onClose }) {
   const rollList = Array.isArray(rolls) 
     ? rolls 
     : (Array.isArray(roll) ? roll : (roll ? [roll] : []));
 
   const [activeIndex, setActiveIndex] = useState(0);
+
+  // Auto-trigger instant print command to system default printer when requested
+  React.useEffect(() => {
+    if (autoPrint && rollList.length > 0) {
+      const timer = setTimeout(() => {
+        try {
+          window.print();
+        } catch (e) {
+          console.warn("Auto-print error:", e);
+        }
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [autoPrint, rollList.length]);
 
   if (rollList.length === 0) return null;
 

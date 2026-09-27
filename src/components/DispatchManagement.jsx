@@ -3833,6 +3833,7 @@ export default function DispatchManagement({
       {selectedRollForBarcodeModal && (
         <BarcodePrinterModal 
           roll={selectedRollForBarcodeModal} 
+          autoPrint={true}
           onClose={() => setSelectedRollForBarcodeModal(null)} 
         />
       )}
