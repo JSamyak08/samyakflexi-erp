@@ -981,6 +981,53 @@ export default function DispatchManagement({
     setIsCoaModalOpen(true);
   };
 
+  // Open New CoA Modal handler
+  const handleOpenNewCoaModal = () => {
+    setEditingCoaId(null);
+    const nextCoa = getNextDocRefNumber('coa');
+    setCoaNo(nextCoa);
+    setCoaTestDate(new Date().toLocaleDateString('en-GB'));
+
+    const firstOrder = (orders || [])[0];
+    const firstJobName = firstOrder?.jobName || '';
+    const firstClient = firstOrder?.clientName || firstOrder?.customerName || (clients || [])[0]?.companyName || '';
+
+    setCoaCustomerName(firstClient);
+    setCoaJobName(firstJobName);
+    setCoaInvoiceNo('');
+
+    const matchedJm = (jobMasters || []).find(j => j.jobName === firstJobName);
+    setCoaJobCode(matchedJm?.id ? String(matchedJm.id).replace('JM-', '') : '1');
+    setCoaBatchLotNo(firstOrder?.poNo ? `Order Ref: ${firstOrder.poNo}` : 'Order Ref: N/A');
+
+    const details = resolveJobMasterDetails(firstJobName);
+    setCoaFilmType(details.filmType || 'Printed Laminated Film');
+    setCoaNetWeight(details.netWeightStr || '0 Kg');
+    setCoaSpecification(details.structure || 'PET 12µ / METPET 12µ / Poly 50µ');
+    setCoaSizeMm(details.size || 'Standard Pouch');
+    setCoaThicknessMicron(details.thicknessMicron || '74µ');
+
+    setCoaOverallStatus('PASSED & APPROVED');
+    setCoaQcInspector(currentUser ? `${currentUser.name || currentUser.fullName} (QC Inspector)` : 'Quality Store Executive');
+    setCoaApprovedByHead('Plant Quality Head');
+    setCoaRemarks('Material inspected and passed standard QC parameters.');
+
+    const activeTemplate = (coaTemplates || []).find(t => t.id === selectedCoaTemplateId) || (coaTemplates || [])[0];
+    if (activeTemplate) {
+      setCoaParameters((activeTemplate.parameters || []).map((p, idx) => ({
+        srNo: idx + 1,
+        parameter: p.parameter,
+        uom: p.uom,
+        standard: p.standard,
+        observation: 'Pass / Met'
+      })));
+    } else {
+      setCoaParameters(DEFAULT_COA_PARAMETERS.map(p => ({ ...p, observation: 'Pass' })));
+    }
+
+    setIsCoaModalOpen(true);
+  };
+
   const handleJobSelectChange = (jobNameStr) => {
     setCoaJobName(jobNameStr);
     const matched = (jobMasters || []).find(j => j.jobName === jobNameStr);
