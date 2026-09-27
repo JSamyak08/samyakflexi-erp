@@ -222,18 +222,30 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
           {r.clientName && (
             <div>Client: <strong>{r.clientName}</strong></div>
           )}
-          {r.vendorRollNo && (
-            <div>Vendor {r.packagingType || 'Roll'} #: <strong style={{ color: '#0284c7' }}>{r.vendorRollNo}</strong></div>
+
+          {isFG ? (
+            <>
+              <div>
+                Order Ref #: <strong>{r.poNo || r.orderRefNo || r.orderId || r.batchNo || 'N/A'}</strong> {r.invoiceNo ? `| Inv: ${r.invoiceNo}` : ''}
+              </div>
+            </>
+          ) : (
+            <>
+              {r.vendorRollNo && (
+                <div>Vendor {r.packagingType || 'Roll'} #: <strong style={{ color: '#0284c7' }}>{r.vendorRollNo}</strong></div>
+              )}
+              <div>
+                Vendor: <strong>{vendorStr}</strong> {r.invoiceNo ? `| Inv: ${r.invoiceNo}` : ''}
+              </div>
+              <div>
+                Batch / Heat #: <strong>{batchStr}</strong>
+              </div>
+              <div style={{ color: '#047857', fontWeight: '700' }}>
+                Purchase Rate: <strong>{rateVal > 0 ? `₹${rateVal} / ${displayUnit}` : '₹-'}</strong>
+              </div>
+            </>
           )}
-          <div>
-            Vendor: <strong>{vendorStr}</strong> {r.invoiceNo ? `| Inv: ${r.invoiceNo}` : ''}
-          </div>
-          <div>
-            Batch / Heat #: <strong>{batchStr}</strong>
-          </div>
-          <div style={{ color: '#047857', fontWeight: '700' }}>
-            Purchase Rate: <strong>{rateVal > 0 ? `₹${rateVal} / ${displayUnit}` : '₹-'}</strong>
-          </div>
+
           {r.inputBarcodeIds && r.inputBarcodeIds.length > 0 && (
             <div style={{ fontSize: '0.66rem', color: '#4f46e5', fontWeight: '600' }}>
               Input Roll Ref: {r.inputBarcodeIds.join(', ')}
@@ -245,8 +257,8 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
             </div>
           )}
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px', fontSize: '0.65rem', color: '#64748b', borderTop: '1px solid #e2e8f0', paddingTop: '2px' }}>
-            <span>Station: <strong>{r.stationId || r.station_id || 'N/A'}</strong></span>
-            <span>Date: <strong>{r.inwardDatetime || r.date || new Date().toLocaleString()}</strong></span>
+            <span>Station: <strong>{isFG ? 'Dispatch Main Dock' : (r.stationId || r.station_id || 'Dispatch Main Dock')}</strong></span>
+            <span>Date: <strong>{r.inwardDatetime || r.dispatchDate || r.date || new Date().toLocaleDateString('en-IN')}</strong></span>
           </div>
         </div>
       </div>

@@ -1314,6 +1314,8 @@ export default function DispatchManagement({
       coreSize: '3 Inch',
       clientName: pktClientName,
       invoiceNo: pktInvoiceNo,
+      poNo: pktPoNo || matchedOrder?.poNo || '',
+      stationId: 'Dispatch Main Dock',
       rollType: 'FG_DISPATCH'
     };
     setPktRollsList(prev => [...prev, newRollItem]);
