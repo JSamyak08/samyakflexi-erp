@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
 import { COMPANY_DETAILS } from '../factoryStore';
-import { numberToWords, formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
+import { numberToWords, formatINR, calculateGSTBreakdown, toTitleCase } from '../utils/pdfHelpers';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 
 export default function DeliveryChallanPDF({ challanData, onClose }) {
@@ -196,21 +196,21 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
                 </td>
                 <td style={{ padding: '4px 6px' }}>
                   <div className="address-box-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '9.5px', marginBottom: '3px', paddingBottom: '2px' }}>
-                    <span>{displayName}</span>
+                    <span>{toTitleCase(displayName)}</span>
                     <span style={{ background: partyType === 'Vendor' ? '#d97706' : '#2563eb', color: '#fff', fontSize: '7.5px', padding: '1px 4px', borderRadius: '3px', fontWeight: 'bold' }}>
                       {partyType.toUpperCase()}
                     </span>
                   </div>
                   <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px' }}>{clientAddress}</div>
                   <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px' }}>GSTIN: <strong>{clientGstin || 'Unregistered / Exempt'}</strong></div>
-                  <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px' }}>Contact Person: {clientContactPerson || 'Store Manager / Receiver'}</div>
+                  <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px' }}>Contact Person: {toTitleCase(clientContactPerson) || 'Store Manager / Receiver'}</div>
                   <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px' }}>Phone: {clientPhone || '—'}</div>
                 </td>
                 <td style={{ padding: '4px 6px' }}>
                   <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px' }}>Invoice Ref #: <strong>{invoiceNo || 'N/A'}</strong></div>
                   <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px' }}>Dispatch Date/Time: <strong>{dispatchDateTime}</strong></div>
                   <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px' }}>Vehicle No: <strong style={{ color: '#0284c7' }}>{vehicleNo || 'Self Hand Delivery'}</strong></div>
-                  <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px' }}>Transporter: {transporterName || 'Direct Dispatch'}</div>
+                  <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px' }}>Transporter: {toTitleCase(transporterName) || 'Direct Dispatch'}</div>
                   {lrNo && <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px' }}>Lorry Receipt # (LR): <strong style={{ color: '#047857' }}>{lrNo}</strong></div>}
                   <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px' }}>Driver Contact: {driverPhone || '—'}</div>
                   <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px' }}>Client PO Ref #: {poRefNo || 'N/A'}</div>
@@ -232,7 +232,7 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
           {/* Job Reference bar if available */}
           {jobName && (
             <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '4px 10px', borderRadius: '4px', marginBottom: '8px', fontSize: '9.5px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>Job / Product Reference: <strong>{jobName}</strong></span>
+              <span>Job / Product Reference: <strong>{toTitleCase(jobName)}</strong></span>
             </div>
           )}
 
@@ -258,7 +258,7 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
                   <tr key={item.id || idx}>
                     <td style={{ textAlign: 'center', padding: '3px 5px' }}>{idx + 1}</td>
                     <td style={{ padding: '3px 5px' }}>
-                      <div style={{ fontWeight: 'bold', color: '#1e293b', fontSize: '9.5px' }}>{item.description || item.name}</div>
+                      <div style={{ fontWeight: 'bold', color: '#1e293b', fontSize: '9.5px' }}>{toTitleCase(item.description || item.name)}</div>
                       {specText && (
                         <div style={{ fontSize: '8.5px', color: '#475569', marginTop: '1px', whiteSpace: 'pre-line', lineHeight: '1.2' }}>
                           {specText}

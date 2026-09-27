@@ -148,3 +148,18 @@ export function calculateGSTBreakdown(gstin = '', address = '', taxableAmount = 
     };
   }
 }
+
+/**
+ * Capitalizes the first letter of every word in a string while preserving all-caps acronyms
+ * Example: "RK enterprises" -> "RK Enterprises"
+ * Example: "sonu jaljeera shots inner" -> "Sonu Jaljeera Shots Inner"
+ */
+export function toTitleCase(str) {
+  if (!str || typeof str !== 'string') return str || '';
+  return str.split(/(\s+)/).map(part => {
+    if (/\s+/.test(part)) return part;
+    if (part === part.toUpperCase()) return part;
+    return part.charAt(0).toUpperCase() + part.slice(1);
+  }).join('');
+}
+

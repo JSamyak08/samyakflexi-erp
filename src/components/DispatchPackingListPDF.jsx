@@ -2,6 +2,7 @@ import React from 'react';
 import { Printer, ArrowLeft } from 'lucide-react';
 import { COMPANY_DETAILS } from '../factoryStore';
 import { getCompanyLogo } from '../services/settingsService';
+import { toTitleCase } from '../utils/pdfHelpers';
 
 export default function DispatchPackingListPDF({ shipment, company, onClose }) {
   if (!shipment) return null;
@@ -11,6 +12,7 @@ export default function DispatchPackingListPDF({ shipment, company, onClose }) {
   };
 
   const logoUrl = getCompanyLogo() || COMPANY_DETAILS.logoUrl || '/samyak-logo.png';
+  const totalCore = shipment.items?.reduce((sum, item) => sum + (item.coreWeightKg !== undefined ? Number(item.coreWeightKg) : 4.5), 0) || 0;
   const totalNet = shipment.items?.reduce((sum, item) => sum + (Number(item.netWeightKg) || 0), 0) || Number(shipment.totalNetWeightKg) || 0;
   const totalGross = shipment.items?.reduce((sum, item) => sum + (Number(item.grossWeightKg) || 0), 0) || Number(shipment.totalGrossWeightKg) || 0;
 
@@ -37,7 +39,7 @@ export default function DispatchPackingListPDF({ shipment, company, onClose }) {
           className="printable-document"
           style={{
             background: '#ffffff',
-            padding: '36px 40px',
+            padding: '32px 36px',
             borderRadius: '8px',
             boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
             border: '1px solid #cbd5e1',
@@ -46,67 +48,67 @@ export default function DispatchPackingListPDF({ shipment, company, onClose }) {
           }}
         >
           {/* Header Block with Company Logo */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #0f172a', paddingBottom: '16px', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #0f172a', paddingBottom: '14px', marginBottom: '16px' }}>
             <div>
               {logoUrl ? (
                 <img 
                   src={logoUrl} 
                   alt={COMPANY_DETAILS.name} 
-                  style={{ maxHeight: '65px', maxWidth: '280px', objectFit: 'contain', marginBottom: '8px', display: 'block' }}
+                  style={{ maxHeight: '60px', maxWidth: '280px', objectFit: 'contain', marginBottom: '6px', display: 'block' }}
                   onError={(e) => {
                     e.target.onerror = null;
                     e.target.style.display = 'none';
                   }}
                 />
               ) : (
-                <h1 style={{ fontSize: '1.5rem', fontWeight: '900', color: '#0f172a', margin: 0, tracking: '-0.02em' }}>
+                <h1 style={{ fontSize: '1.4rem', fontWeight: '900', color: '#0f172a', margin: 0, tracking: '-0.02em' }}>
                   {COMPANY_DETAILS.name}
                 </h1>
               )}
-              <p style={{ fontSize: '0.8rem', color: '#475569', margin: '4px 0 0 0', fontWeight: '500' }}>
+              <p style={{ fontSize: '0.78rem', color: '#475569', margin: '3px 0 0 0', fontWeight: '500' }}>
                 {COMPANY_DETAILS.address}
               </p>
-              <p style={{ fontSize: '0.78rem', color: '#64748b', margin: '2px 0 0 0' }}>
+              <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '2px 0 0 0' }}>
                 GSTIN: <strong>{COMPANY_DETAILS.gstin}</strong> | CIN: {COMPANY_DETAILS.tagline?.split(' • ')[1] || COMPANY_DETAILS.tagline} | Phone: {COMPANY_DETAILS.phones}
               </p>
             </div>
 
             <div style={{ textAlign: 'right' }}>
-              <div style={{ background: '#0f172a', color: '#ffffff', padding: '6px 14px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              <div style={{ background: '#0f172a', color: '#ffffff', padding: '5px 12px', borderRadius: '6px', fontSize: '0.82rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 DISPATCH PACKING LIST
               </div>
-              <div style={{ fontSize: '0.95rem', fontWeight: '800', color: '#2563eb', marginTop: '8px' }}>
+              <div style={{ fontSize: '0.92rem', fontWeight: '800', color: '#2563eb', marginTop: '6px' }}>
                 {shipment.dispatchId}
               </div>
               {shipment.invoiceNo && (
-                <div style={{ fontSize: '0.82rem', fontWeight: '700', color: '#0f172a', marginTop: '2px' }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: '700', color: '#0f172a', marginTop: '2px' }}>
                   Invoice No: <span style={{ color: '#2563eb' }}>{shipment.invoiceNo}</span>
                 </div>
               )}
-              <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '2px' }}>
+              <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
                 Date & Time: <strong>{shipment.dispatchDate || shipment.createdAt || new Date().toLocaleString()}</strong>
               </div>
             </div>
           </div>
 
           {/* Consignee & Logistics Details Grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', background: '#f8fafc', padding: '16px 20px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '16px', fontSize: '0.85rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', background: '#f8fafc', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '14px', fontSize: '0.82rem' }}>
             <div>
-              <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>Consignee / Customer Details</span>
-              <div style={{ fontWeight: '800', fontSize: '1.05rem', color: '#0f172a', marginTop: '2px' }}>
-                {shipment.clientName}
+              <span style={{ fontSize: '0.68rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>Consignee / Customer Details</span>
+              <div style={{ fontWeight: '800', fontSize: '1rem', color: '#0f172a', marginTop: '2px' }}>
+                {toTitleCase(shipment.clientName)}
               </div>
               {shipment.orderId && (
-                <div style={{ color: '#64748b', fontSize: '0.8rem', marginTop: '4px' }}>Order Ref: <strong>{shipment.orderId}</strong></div>
+                <div style={{ color: '#64748b', fontSize: '0.78rem', marginTop: '3px' }}>Order Ref: <strong>{shipment.orderId}</strong></div>
               )}
               {shipment.poNo && (
-                <div style={{ color: '#64748b', fontSize: '0.8rem', marginTop: '2px' }}>Customer PO #: <strong>{shipment.poNo}</strong></div>
+                <div style={{ color: '#64748b', fontSize: '0.78rem', marginTop: '2px' }}>Customer PO #: <strong>{shipment.poNo}</strong></div>
               )}
             </div>
 
-            <div style={{ borderLeft: '1px solid #cbd5e1', paddingLeft: '20px' }}>
-              <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>Transport & Logistics Info</span>
-              <div style={{ color: '#334155', marginTop: '4px' }}>
+            <div style={{ borderLeft: '1px solid #cbd5e1', paddingLeft: '16px' }}>
+              <span style={{ fontSize: '0.68rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>Transport & Logistics Info</span>
+              <div style={{ color: '#334155', marginTop: '3px' }}>
                 Vehicle Number: <strong>{shipment.vehicleNo || 'MP-09-AB-1234'}</strong>
               </div>
               <div style={{ color: '#334155', marginTop: '2px' }}>
@@ -123,29 +125,29 @@ export default function DispatchPackingListPDF({ shipment, company, onClose }) {
             textAlign: 'center',
             background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
             color: '#ffffff',
-            padding: '10px 16px',
+            padding: '8px 14px',
             borderRadius: '6px',
-            marginBottom: '20px',
+            marginBottom: '14px',
             boxShadow: '0 2px 6px rgba(0,0,0,0.06)'
           }}>
-            <span style={{ fontSize: '0.7rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.1em', color: '#94a3b8', display: 'block' }}>
+            <span style={{ fontSize: '0.68rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.1em', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>
               JOB NAME / PRODUCT SPECIFICATION
             </span>
-            <span style={{ fontSize: '1.25rem', fontWeight: '900', letterSpacing: '0.02em', color: '#38bdf8' }}>
-              {shipment.jobName}
+            <span style={{ fontSize: '1.2rem', fontWeight: '900', letterSpacing: '0.02em', color: '#ffffff' }}>
+              {toTitleCase(shipment.jobName)}
             </span>
           </div>
 
-          {/* Itemized Barcode Roll Table (Gross Weight on Left, Net Weight on Right, No QR Code) */}
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', marginBottom: '24px' }}>
+          {/* Itemized Barcode Roll Table (Compact / Thinner Rows to accommodate more items per page) */}
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.76rem', lineHeight: '1.25', marginBottom: '16px' }}>
             <thead>
               <tr style={{ background: '#0f172a', color: '#ffffff' }}>
-                <th style={{ padding: '10px 10px', textAlign: 'center', border: '1px solid #0f172a', width: '60px' }}>Roll #</th>
-                <th style={{ padding: '10px 12px', textAlign: 'left', border: '1px solid #0f172a' }}>Barcode ID</th>
-                <th style={{ padding: '10px 12px', textAlign: 'left', border: '1px solid #0f172a' }}>Substrate Specification</th>
-                <th style={{ padding: '10px 10px', textAlign: 'center', border: '1px solid #0f172a', width: '100px' }}>Core Wt (Kg)</th>
-                <th style={{ padding: '10px 12px', textAlign: 'right', border: '1px solid #0f172a', width: '125px' }}>Gross Weight (Kg)</th>
-                <th style={{ padding: '10px 12px', textAlign: 'right', border: '1px solid #0f172a', width: '125px' }}>Net Weight (Kg)</th>
+                <th style={{ padding: '5px 8px', textAlign: 'center', border: '1px solid #0f172a', width: '50px', fontSize: '0.72rem' }}>Roll #</th>
+                <th style={{ padding: '5px 8px', textAlign: 'left', border: '1px solid #0f172a', fontSize: '0.72rem' }}>Barcode ID</th>
+                <th style={{ padding: '5px 8px', textAlign: 'left', border: '1px solid #0f172a', fontSize: '0.72rem' }}>Substrate Specification</th>
+                <th style={{ padding: '5px 8px', textAlign: 'center', border: '1px solid #0f172a', width: '90px', fontSize: '0.72rem' }}>Core Wt (Kg)</th>
+                <th style={{ padding: '5px 8px', textAlign: 'right', border: '1px solid #0f172a', width: '110px', fontSize: '0.72rem' }}>Gross Weight (Kg)</th>
+                <th style={{ padding: '5px 8px', textAlign: 'right', border: '1px solid #0f172a', width: '110px', fontSize: '0.72rem' }}>Net Weight (Kg)</th>
               </tr>
             </thead>
             <tbody>
@@ -157,22 +159,22 @@ export default function DispatchPackingListPDF({ shipment, company, onClose }) {
 
                 return (
                   <tr key={idx} style={{ background: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
-                    <td style={{ padding: '10px 10px', textAlign: 'center', border: '1px solid #e2e8f0', fontWeight: '700' }}>
+                    <td style={{ padding: '4px 8px', textAlign: 'center', border: '1px solid #e2e8f0', fontWeight: '700' }}>
                       {item.rollNo || idx + 1}
                     </td>
-                    <td style={{ padding: '10px 12px', border: '1px solid #e2e8f0', fontFamily: 'monospace', fontWeight: '800', color: '#2563eb' }}>
+                    <td style={{ padding: '4px 8px', border: '1px solid #e2e8f0', fontFamily: 'monospace', fontWeight: '800', color: '#2563eb' }}>
                       {item.barcodeId}
                     </td>
-                    <td style={{ padding: '10px 12px', border: '1px solid #e2e8f0', fontSize: '0.82rem', color: '#334155' }}>
+                    <td style={{ padding: '4px 8px', border: '1px solid #e2e8f0', color: '#334155' }}>
                       {shortSubstrate}
                     </td>
-                    <td style={{ padding: '10px 10px', textAlign: 'center', border: '1px solid #e2e8f0', fontSize: '0.82rem', color: '#475569' }}>
+                    <td style={{ padding: '4px 8px', textAlign: 'center', border: '1px solid #e2e8f0', color: '#475569' }}>
                       {coreWt.toFixed(1)} kg {item.coreSize ? `(${item.coreSize})` : ''}
                     </td>
-                    <td style={{ padding: '10px 12px', textAlign: 'right', border: '1px solid #e2e8f0', fontWeight: '700', color: '#1e293b' }}>
+                    <td style={{ padding: '4px 8px', textAlign: 'right', border: '1px solid #e2e8f0', fontWeight: '700', color: '#1e293b' }}>
                       {grossWt.toFixed(1)}
                     </td>
-                    <td style={{ padding: '10px 12px', textAlign: 'right', border: '1px solid #e2e8f0', fontWeight: '800', color: '#047857' }}>
+                    <td style={{ padding: '4px 8px', textAlign: 'right', border: '1px solid #e2e8f0', fontWeight: '800', color: '#047857' }}>
                       {netWt.toFixed(1)}
                     </td>
                   </tr>
@@ -180,38 +182,41 @@ export default function DispatchPackingListPDF({ shipment, company, onClose }) {
               })}
             </tbody>
             <tfoot>
-              <tr style={{ background: '#f1f5f9', fontWeight: '800', fontSize: '0.88rem' }}>
-                <td colSpan="4" style={{ padding: '12px', textAlign: 'right', border: '1px solid #cbd5e1' }}>
+              <tr style={{ background: '#f1f5f9', fontWeight: '800', fontSize: '0.78rem' }}>
+                <td colSpan="3" style={{ padding: '5px 8px', textAlign: 'right', border: '1px solid #cbd5e1' }}>
                   TOTAL SHIPMENT ({shipment.items?.length || shipment.totalRolls || 1} ROLLS):
                 </td>
-                <td style={{ padding: '12px', textAlign: 'right', border: '1px solid #cbd5e1', color: '#1e293b' }}>
-                  {totalGross.toFixed(1)} kg
+                <td style={{ padding: '5px 8px', textAlign: 'center', border: '1px solid #cbd5e1', color: '#475569' }}>
+                  {totalCore.toFixed(1)} Kg
                 </td>
-                <td style={{ padding: '12px', textAlign: 'right', border: '1px solid #cbd5e1', color: '#047857' }}>
-                  {totalNet.toFixed(1)} kg
+                <td style={{ padding: '5px 8px', textAlign: 'right', border: '1px solid #cbd5e1', color: '#1e293b' }}>
+                  {totalGross.toFixed(1)} Kg
+                </td>
+                <td style={{ padding: '5px 8px', textAlign: 'right', border: '1px solid #cbd5e1', color: '#047857' }}>
+                  {totalNet.toFixed(1)} Kg
                 </td>
               </tr>
             </tfoot>
           </table>
 
           {/* Signatures & Footer */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginTop: '40px', paddingTop: '16px', borderTop: '1px dashed #cbd5e1', fontSize: '0.8rem', textAlign: 'center' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginTop: '30px', paddingTop: '12px', borderTop: '1px dashed #cbd5e1', fontSize: '0.78rem', textAlign: 'center' }}>
             <div>
-              <div style={{ height: '36px' }} />
+              <div style={{ height: '30px' }} />
               <div style={{ borderTop: '1px solid #0f172a', paddingTop: '4px', fontWeight: '700' }}>
                 Plant Manager / HOD Signature
               </div>
             </div>
 
             <div>
-              <div style={{ height: '36px' }} />
+              <div style={{ height: '30px' }} />
               <div style={{ borderTop: '1px solid #0f172a', paddingTop: '4px', fontWeight: '700' }}>
                 Verified By (QC Inspector)
               </div>
             </div>
 
             <div>
-              <div style={{ height: '36px' }} />
+              <div style={{ height: '30px' }} />
               <div style={{ borderTop: '1px solid #0f172a', paddingTop: '4px', fontWeight: '700' }}>
                 Received By (Driver / Customer)
               </div>
