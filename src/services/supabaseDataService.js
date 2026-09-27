@@ -2776,37 +2776,57 @@ export async function fetchEmployeesFromSupabase() {
     throw new Error("Supabase is not configured.");
   }
   try {
-    const { data, error } = await supabase.from('employees').select('*').order('created_at', { ascending: false });
-    if (error) {
-      handleSupabaseError(error, 'employees');
+    let tableRecords = [];
+    try {
+      const { data, error } = await supabase.from('employees').select('*').order('created_at', { ascending: false });
+      if (!error && Array.isArray(data)) {
+        tableRecords = data.map(r => ({
+          id: r.id,
+          empCode: r.emp_code || r.empCode,
+          fullName: r.full_name || r.fullName,
+          gender: r.gender,
+          dob: r.dob,
+          phone: r.phone,
+          email: r.email,
+          department: r.department,
+          designation: r.designation,
+          joiningDate: r.joining_date || r.joiningDate,
+          status: r.status,
+          shiftDurationHours: Number(r.shift_duration_hours || r.shiftDurationHours) || 12,
+          defaultShift: r.default_shift || r.defaultShift,
+          address: r.address,
+          aadharNo: r.aadhar_no || r.aadharNo,
+          panNo: r.pan_no || r.panNo,
+          uanNo: r.uan_no || r.uanNo,
+          esicNo: r.esic_no || r.esicNo,
+          emergencyContact: r.emergency_contact || r.emergencyContact,
+          bankDetails: r.bank_details || r.bankDetails || {},
+          salaryStructure: r.salary_structure || r.salaryStructure || {},
+          offboarding: r.offboarding || {}
+        }));
+      } else if (error) {
+        console.warn('[employees] Table fetch notice:', error.message);
+      }
+    } catch (err) {
+      console.warn('[employees] Table query exception:', err.message);
     }
-    if (!data) return [];
-    return data.map(r => ({
-      id: r.id,
-      empCode: r.emp_code || r.empCode,
-      fullName: r.full_name || r.fullName,
-      gender: r.gender,
-      dob: r.dob,
-      phone: r.phone,
-      email: r.email,
-      department: r.department,
-      designation: r.designation,
-      joiningDate: r.joining_date || r.joiningDate,
-      status: r.status,
-      shiftDurationHours: Number(r.shift_duration_hours || r.shiftDurationHours) || 12,
-      defaultShift: r.default_shift || r.defaultShift,
-      address: r.address,
-      aadharNo: r.aadhar_no || r.aadharNo,
-      panNo: r.pan_no || r.panNo,
-      uanNo: r.uan_no || r.uanNo,
-      esicNo: r.esic_no || r.esicNo,
-      emergencyContact: r.emergency_contact || r.emergencyContact,
-      bankDetails: r.bank_details || r.bankDetails || {},
-      salaryStructure: r.salary_structure || r.salaryStructure || {},
-      offboarding: r.offboarding || {}
-    }));
+
+    const settingData = await fetchSystemSetting('employees').catch(() => null);
+    const backupRecords = Array.isArray(settingData) ? settingData : [];
+
+    const recordMap = new Map();
+    backupRecords.forEach(r => {
+      if (r && r.id) recordMap.set(String(r.id), r);
+    });
+    tableRecords.forEach(r => {
+      if (r && r.id) recordMap.set(String(r.id), r);
+    });
+
+    return Array.from(recordMap.values());
   } catch (e) {
     console.error("Error fetching employees from Supabase:", e);
+    const settingData = await fetchSystemSetting('employees').catch(() => null);
+    if (Array.isArray(settingData)) return settingData;
     throw e;
   }
 }
@@ -2841,9 +2861,26 @@ export async function saveEmployeeToSupabase(employee) {
     offboarding: employee.offboarding || {},
     updated_at: new Date().toISOString()
   };
-  const { error } = await supabase.from('employees').upsert(row, { onConflict: 'id' });
-  if (error) {
-    handleSupabaseError(error, 'employees');
+
+  let tableSuccess = false;
+  try {
+    const { error } = await supabase.from('employees').upsert(row, { onConflict: 'id' });
+    if (!error) {
+      tableSuccess = true;
+    } else {
+      console.warn('[employees] Table upsert notice:', error.message);
+    }
+  } catch (err) {
+    console.warn('[employees] Table write exception:', err.message);
+  }
+
+  try {
+    const currentList = await fetchEmployeesFromSupabase().catch(() => []);
+    const updatedList = [employee, ...currentList.filter(e => String(e.id) !== String(employee.id))];
+    await saveSystemSetting('employees', updatedList);
+  } catch (e) {
+    console.warn('[employees] Backup to system_settings notice:', e.message);
+    if (!tableSuccess) throw e;
   }
 }
 
@@ -2852,13 +2889,22 @@ export async function deleteEmployeeFromSupabase(employeeId) {
     throw new Error("Cannot delete employee: Supabase database connection is not available.");
   }
   await ensureValidSession();
-  const { error } = await supabase.from('employees').delete().eq('id', employeeId);
-  if (error) handleSupabaseError(error, 'employees');
   try {
+    await supabase.from('employees').delete().eq('id', employeeId);
     await supabase.from('employee_attendance').delete().eq('employee_id', employeeId);
     await supabase.from('salary_advances').delete().eq('employee_id', employeeId);
     await supabase.from('salary_payments').delete().eq('employee_id', employeeId);
-  } catch (err) {}
+  } catch (err) {
+    console.warn('[employees] Table delete notice:', err.message);
+  }
+
+  try {
+    const currentList = await fetchEmployeesFromSupabase().catch(() => []);
+    const updatedList = currentList.filter(e => String(e.id) !== String(employeeId));
+    await saveSystemSetting('employees', updatedList);
+  } catch (e) {
+    console.warn('[employees] Delete from system_settings notice:', e.message);
+  }
 }
 
 export async function fetchEmployeeAttendanceFromSupabase() {
@@ -2866,32 +2912,52 @@ export async function fetchEmployeeAttendanceFromSupabase() {
     throw new Error("Supabase is not configured.");
   }
   try {
-    const { data, error } = await supabase.from('employee_attendance').select('*').order('date', { ascending: false });
-    if (error) {
-      handleSupabaseError(error, 'employee_attendance');
+    let tableRecords = [];
+    try {
+      const { data, error } = await supabase.from('employee_attendance').select('*').order('date', { ascending: false });
+      if (!error && Array.isArray(data)) {
+        tableRecords = data.map(r => ({
+          id: r.id,
+          employeeId: r.employee_id || r.employeeId,
+          date: r.date,
+          shiftType: r.shift_type || r.shiftType,
+          shiftHours: Number(r.shift_hours || r.shiftHours) || 12,
+          status: r.status,
+          checkIn: r.check_in || r.checkIn,
+          checkOut: r.check_out || r.checkOut,
+          totalHoursWorked: Number(r.total_hours_worked || r.totalHoursWorked) || 0,
+          overtimeHours: Number(r.overtime_hours || r.overtimeHours) || 0,
+          ptoHours: Number(r.pto_hours || r.ptoHours) || 0,
+          overtimeReason: r.overtime_reason || r.overtimeReason || '',
+          overtimeStatus: r.overtime_status || r.overtimeStatus || 'Pending Approval',
+          overtimeApprovedBy: r.overtime_approved_by || r.overtimeApprovedBy || '',
+          overtimeApprovedDate: r.overtime_approved_date || r.overtimeApprovedDate || '',
+          dinnerAllowanceEligible: r.dinner_allowance_eligible ?? r.dinnerAllowanceEligible ?? false,
+          markedBy: r.marked_by || r.markedBy || ''
+        }));
+      } else if (error) {
+        console.warn('[employee_attendance] Table fetch notice:', error.message);
+      }
+    } catch (err) {
+      console.warn('[employee_attendance] Table query exception:', err.message);
     }
-    if (!data) return [];
-    return data.map(r => ({
-      id: r.id,
-      employeeId: r.employee_id || r.employeeId,
-      date: r.date,
-      shiftType: r.shift_type || r.shiftType,
-      shiftHours: Number(r.shift_hours || r.shiftHours) || 12,
-      status: r.status,
-      checkIn: r.check_in || r.checkIn,
-      checkOut: r.check_out || r.checkOut,
-      totalHoursWorked: Number(r.total_hours_worked || r.totalHoursWorked) || 0,
-      overtimeHours: Number(r.overtime_hours || r.overtimeHours) || 0,
-      ptoHours: Number(r.pto_hours || r.ptoHours) || 0,
-      overtimeReason: r.overtime_reason || r.overtimeReason || '',
-      overtimeStatus: r.overtime_status || r.overtimeStatus || 'Pending Approval',
-      overtimeApprovedBy: r.overtime_approved_by || r.overtimeApprovedBy || '',
-      overtimeApprovedDate: r.overtime_approved_date || r.overtimeApprovedDate || '',
-      dinnerAllowanceEligible: r.dinner_allowance_eligible ?? r.dinnerAllowanceEligible ?? false,
-      markedBy: r.marked_by || r.markedBy || ''
-    }));
+
+    const settingData = await fetchSystemSetting('employee_attendance').catch(() => null);
+    const backupRecords = Array.isArray(settingData) ? settingData : [];
+
+    const recordMap = new Map();
+    backupRecords.forEach(r => {
+      if (r && r.id) recordMap.set(String(r.id), r);
+    });
+    tableRecords.forEach(r => {
+      if (r && r.id) recordMap.set(String(r.id), r);
+    });
+
+    return Array.from(recordMap.values());
   } catch (e) {
     console.error("Error fetching employee attendance from Supabase:", e);
+    const settingData = await fetchSystemSetting('employee_attendance').catch(() => null);
+    if (Array.isArray(settingData)) return settingData;
     throw e;
   }
 }
@@ -2921,8 +2987,27 @@ export async function saveEmployeeAttendanceToSupabase(record) {
     marked_by: record.markedBy || '',
     updated_at: new Date().toISOString()
   };
-  const { error } = await supabase.from('employee_attendance').upsert(row, { onConflict: 'id' });
-  if (error) handleSupabaseError(error, 'employee_attendance');
+
+  let tableSuccess = false;
+  try {
+    const { error } = await supabase.from('employee_attendance').upsert(row, { onConflict: 'id' });
+    if (!error) {
+      tableSuccess = true;
+    } else {
+      console.warn('[employee_attendance] Upsert notice:', error.message);
+    }
+  } catch (err) {
+    console.warn('[employee_attendance] Table write exception:', err.message);
+  }
+
+  try {
+    const currentList = await fetchEmployeeAttendanceFromSupabase().catch(() => []);
+    const updatedList = [record, ...currentList.filter(r => String(r.id) !== String(record.id))];
+    await saveSystemSetting('employee_attendance', updatedList);
+  } catch (e) {
+    console.warn('[employee_attendance] Backup to system_settings notice:', e.message);
+    if (!tableSuccess) throw e;
+  }
 }
 
 export async function fetchSalaryAdvancesFromSupabase() {
@@ -2930,31 +3015,51 @@ export async function fetchSalaryAdvancesFromSupabase() {
     throw new Error("Supabase is not configured.");
   }
   try {
-    const { data, error } = await supabase.from('salary_advances').select('*').order('request_date', { ascending: false });
-    if (error) {
-      handleSupabaseError(error, 'salary_advances');
+    let tableRecords = [];
+    try {
+      const { data, error } = await supabase.from('salary_advances').select('*').order('request_date', { ascending: false });
+      if (!error && Array.isArray(data)) {
+        tableRecords = data.map(r => ({
+          id: r.id,
+          employeeId: r.employee_id || r.employeeId,
+          employeeName: r.employee_name || r.employeeName,
+          department: r.department,
+          requestDate: r.request_date || r.requestDate,
+          advanceAmount: Number(r.advance_amount || r.advanceAmount) || 0,
+          repaymentTenureMonths: Number(r.repayment_tenure_months || r.repaymentTenureMonths) || 1,
+          monthlyEmiAmount: Number(r.monthly_emi_amount || r.monthlyEmiAmount) || 0,
+          reason: r.reason || '',
+          status: r.status,
+          approvedBy: r.approved_by || r.approvedBy || '',
+          approvedDate: r.approved_date || r.approvedDate || '',
+          disbursedDate: r.disbursed_date || r.disbursedDate || '',
+          totalRecoveredAmount: Number(r.total_recovered_amount || r.totalRecoveredAmount) || 0,
+          remainingBalance: Number(r.remaining_balance || r.remainingBalance) || 0,
+          deductionHistory: r.deduction_history || r.deductionHistory || []
+        }));
+      } else if (error) {
+        console.warn('[salary_advances] Table fetch notice:', error.message);
+      }
+    } catch (err) {
+      console.warn('[salary_advances] Table query exception:', err.message);
     }
-    if (!data) return [];
-    return data.map(r => ({
-      id: r.id,
-      employeeId: r.employee_id || r.employeeId,
-      employeeName: r.employee_name || r.employeeName,
-      department: r.department,
-      requestDate: r.request_date || r.requestDate,
-      advanceAmount: Number(r.advance_amount || r.advanceAmount) || 0,
-      repaymentTenureMonths: Number(r.repayment_tenure_months || r.repaymentTenureMonths) || 1,
-      monthlyEmiAmount: Number(r.monthly_emi_amount || r.monthlyEmiAmount) || 0,
-      reason: r.reason || '',
-      status: r.status,
-      approvedBy: r.approved_by || r.approvedBy || '',
-      approvedDate: r.approved_date || r.approvedDate || '',
-      disbursedDate: r.disbursed_date || r.disbursedDate || '',
-      totalRecoveredAmount: Number(r.total_recovered_amount || r.totalRecoveredAmount) || 0,
-      remainingBalance: Number(r.remaining_balance || r.remainingBalance) || 0,
-      deductionHistory: r.deduction_history || r.deductionHistory || []
-    }));
+
+    const settingData = await fetchSystemSetting('salary_advances').catch(() => null);
+    const backupRecords = Array.isArray(settingData) ? settingData : [];
+
+    const recordMap = new Map();
+    backupRecords.forEach(r => {
+      if (r && r.id) recordMap.set(String(r.id), r);
+    });
+    tableRecords.forEach(r => {
+      if (r && r.id) recordMap.set(String(r.id), r);
+    });
+
+    return Array.from(recordMap.values());
   } catch (e) {
     console.error("Error fetching salary advances from Supabase:", e);
+    const settingData = await fetchSystemSetting('salary_advances').catch(() => null);
+    if (Array.isArray(settingData)) return settingData;
     throw e;
   }
 }
@@ -2983,8 +3088,27 @@ export async function saveSalaryAdvanceToSupabase(adv) {
     deduction_history: adv.deductionHistory || [],
     updated_at: new Date().toISOString()
   };
-  const { error } = await supabase.from('salary_advances').upsert(row, { onConflict: 'id' });
-  if (error) handleSupabaseError(error, 'salary_advances');
+
+  let tableSuccess = false;
+  try {
+    const { error } = await supabase.from('salary_advances').upsert(row, { onConflict: 'id' });
+    if (!error) {
+      tableSuccess = true;
+    } else {
+      console.warn('[salary_advances] Upsert notice:', error.message);
+    }
+  } catch (err) {
+    console.warn('[salary_advances] Table write exception:', err.message);
+  }
+
+  try {
+    const currentList = await fetchSalaryAdvancesFromSupabase().catch(() => []);
+    const updatedList = [adv, ...currentList.filter(a => String(a.id) !== String(adv.id))];
+    await saveSystemSetting('salary_advances', updatedList);
+  } catch (e) {
+    console.warn('[salary_advances] Backup to system_settings notice:', e.message);
+    if (!tableSuccess) throw e;
+  }
 }
 
 export async function fetchSalaryPaymentsFromSupabase() {
@@ -2992,33 +3116,53 @@ export async function fetchSalaryPaymentsFromSupabase() {
     throw new Error("Supabase is not configured.");
   }
   try {
-    const { data, error } = await supabase.from('salary_payments').select('*').order('payment_timestamp', { ascending: false });
-    if (error) {
-      handleSupabaseError(error, 'salary_payments');
+    let tableRecords = [];
+    try {
+      const { data, error } = await supabase.from('salary_payments').select('*').order('payment_timestamp', { ascending: false });
+      if (!error && Array.isArray(data)) {
+        tableRecords = data.map(r => ({
+          id: r.id,
+          monthKey: r.month_key || r.monthKey,
+          employeeId: r.employee_id || r.employeeId,
+          employeeName: r.employee_name || r.employeeName,
+          empCode: r.emp_code || r.empCode,
+          department: r.department,
+          netAmountPaid: Number(r.net_amount_paid || r.netAmountPaid) || 0,
+          paymentDate: r.payment_date || r.paymentDate,
+          paymentTime: r.payment_time || r.paymentTime,
+          paymentTimestamp: r.payment_timestamp || r.paymentTimestamp,
+          paymentMode: r.payment_mode || r.paymentMode || 'Bank Transfer (NEFT)',
+          transactionReference: r.transaction_reference || r.transactionReference || '',
+          bankName: r.bank_name || r.bankName || '',
+          accountNumber: r.account_number || r.accountNumber || '',
+          status: r.status || 'Paid',
+          disbursedBy: r.disbursed_by || r.disbursedBy || '',
+          notes: r.notes || '',
+          createdAt: r.created_at || r.createdAt
+        }));
+      } else if (error) {
+        console.warn('[salary_payments] Table fetch notice:', error.message);
+      }
+    } catch (err) {
+      console.warn('[salary_payments] Table query exception:', err.message);
     }
-    if (!data) return [];
-    return data.map(r => ({
-      id: r.id,
-      monthKey: r.month_key || r.monthKey,
-      employeeId: r.employee_id || r.employeeId,
-      employeeName: r.employee_name || r.employeeName,
-      empCode: r.emp_code || r.empCode,
-      department: r.department,
-      netAmountPaid: Number(r.net_amount_paid || r.netAmountPaid) || 0,
-      paymentDate: r.payment_date || r.paymentDate,
-      paymentTime: r.payment_time || r.paymentTime,
-      paymentTimestamp: r.payment_timestamp || r.paymentTimestamp,
-      paymentMode: r.payment_mode || r.paymentMode || 'Bank Transfer (NEFT)',
-      transactionReference: r.transaction_reference || r.transactionReference || '',
-      bankName: r.bank_name || r.bankName || '',
-      accountNumber: r.account_number || r.accountNumber || '',
-      status: r.status || 'Paid',
-      disbursedBy: r.disbursed_by || r.disbursedBy || '',
-      notes: r.notes || '',
-      createdAt: r.created_at || r.createdAt
-    }));
+
+    const settingData = await fetchSystemSetting('salary_payments').catch(() => null);
+    const backupRecords = Array.isArray(settingData) ? settingData : [];
+
+    const recordMap = new Map();
+    backupRecords.forEach(r => {
+      if (r && r.id) recordMap.set(String(r.id), r);
+    });
+    tableRecords.forEach(r => {
+      if (r && r.id) recordMap.set(String(r.id), r);
+    });
+
+    return Array.from(recordMap.values());
   } catch (e) {
     console.error("Error fetching salary payments from Supabase:", e);
+    const settingData = await fetchSystemSetting('salary_payments').catch(() => null);
+    if (Array.isArray(settingData)) return settingData;
     throw e;
   }
 }
@@ -3048,8 +3192,27 @@ export async function saveSalaryPaymentToSupabase(payment) {
     notes: payment.notes || '',
     updated_at: new Date().toISOString()
   };
-  const { error } = await supabase.from('salary_payments').upsert(row, { onConflict: 'id' });
-  if (error) handleSupabaseError(error, 'salary_payments');
+
+  let tableSuccess = false;
+  try {
+    const { error } = await supabase.from('salary_payments').upsert(row, { onConflict: 'id' });
+    if (!error) {
+      tableSuccess = true;
+    } else {
+      console.warn('[salary_payments] Upsert notice:', error.message);
+    }
+  } catch (err) {
+    console.warn('[salary_payments] Table write exception:', err.message);
+  }
+
+  try {
+    const currentList = await fetchSalaryPaymentsFromSupabase().catch(() => []);
+    const updatedList = [payment, ...currentList.filter(p => String(p.id) !== String(payment.id))];
+    await saveSystemSetting('salary_payments', updatedList);
+  } catch (e) {
+    console.warn('[salary_payments] Backup to system_settings notice:', e.message);
+    if (!tableSuccess) throw e;
+  }
 }
 
 export async function deleteGRNFromSupabase(grnId) {

@@ -130,7 +130,7 @@ export default function EmployeeManagement({
   const [formEmpCode, setFormEmpCode] = useState('');
   const [formFullName, setFormFullName] = useState('');
   const [formGender, setFormGender] = useState('Male');
-  const [formDob, setFormDob] = useState('1992-01-01');
+  const [formDob, setFormDob] = useState('');
   const [formPhone, setFormPhone] = useState('');
   const [formEmail, setFormEmail] = useState('');
   const [formDepartment, setFormDepartment] = useState('Rotogravure Printing');
@@ -151,19 +151,19 @@ export default function EmployeeManagement({
   const [formAccountNumber, setFormAccountNumber] = useState('');
   const [formIfscCode, setFormIfscCode] = useState('');
   const [formAccountHolder, setFormAccountHolder] = useState('');
-  const [formBranch, setFormBranch] = useState('Pithampur Sector 3');
+  const [formBranch, setFormBranch] = useState('');
   const [formPaymentMode, setFormPaymentMode] = useState('Bank Transfer (NEFT)');
 
   // Salary Form State
-  const [formBasicSalary, setFormBasicSalary] = useState(15000);
-  const [formHra, setFormHra] = useState(6000);
-  const [formOtherAllowance, setFormOtherAllowance] = useState(2000);
+  const [formBasicSalary, setFormBasicSalary] = useState('');
+  const [formHra, setFormHra] = useState('');
+  const [formOtherAllowance, setFormOtherAllowance] = useState('');
   const [formOptDinner, setFormOptDinner] = useState(false);
   const [formDinnerPerNight, setFormDinnerPerNight] = useState(0);
   const [formFixedDinner, setFormFixedDinner] = useState(0);
   const [formOptPf, setFormOptPf] = useState(true);
   const [formOptEsic, setFormOptEsic] = useState(false);
-  const [formPt, setFormPt] = useState(200);
+  const [formPt, setFormPt] = useState(0);
 
   // Form State for Salary Advance Request
   const [advEmpId, setAdvEmpId] = useState('');
@@ -202,11 +202,11 @@ export default function EmployeeManagement({
   // Open Onboard Modal
   const handleOpenOnboardModal = () => {
     setEditingEmployee(null);
-    const nextCode = `SIL-${Math.floor(100 + Math.random() * 900)}`;
+    const nextCode = `EMP-${Math.floor(100 + Math.random() * 900)}`;
     setFormEmpCode(nextCode);
     setFormFullName('');
     setFormGender('Male');
-    setFormDob('1995-01-01');
+    setFormDob('');
     setFormPhone('');
     setFormEmail('');
     setFormDepartment('Rotogravure Printing');
@@ -224,20 +224,20 @@ export default function EmployeeManagement({
 
     setFormBankName('State Bank of India');
     setFormAccountNumber('');
-    setFormIfscCode('SBIN0004521');
+    setFormIfscCode('');
     setFormAccountHolder('');
-    setFormBranch('Pithampur Sector 3');
+    setFormBranch('');
     setFormPaymentMode('Bank Transfer (NEFT)');
 
-    setFormBasicSalary(14000);
-    setFormHra(5600);
-    setFormOtherAllowance(2000);
+    setFormBasicSalary('');
+    setFormHra('');
+    setFormOtherAllowance('');
     setFormOptDinner(false);
     setFormDinnerPerNight(0);
     setFormFixedDinner(0);
     setFormOptPf(true);
     setFormOptEsic(false);
-    setFormPt(200);
+    setFormPt(0);
 
     setShowOnboardModal(true);
   };
