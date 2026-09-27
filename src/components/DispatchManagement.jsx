@@ -197,6 +197,7 @@ export default function DispatchManagement({
   const [pktPoNo, setPktPoNo] = useState('');
   const [pktCoreWeight, setPktCoreWeight] = useState(4.5);
   const [currentPktNetWeight, setCurrentPktNetWeight] = useState(210.0);
+  const [pktUom, setPktUom] = useState('Kg');
   const [pktRollsList, setPktRollsList] = useState([]);
 
   // Search & Filter
@@ -1245,9 +1246,9 @@ export default function DispatchManagement({
   };
 
   const handleAddRollToPackingList = () => {
-    const netW = Number(currentPktNetWeight) > 0 ? Number(currentPktNetWeight) : 210.0;
-    const coreW = Number(pktCoreWeight) >= 0 ? Number(pktCoreWeight) : 4.5;
-    const grossW = Number((netW + coreW).toFixed(2));
+    const netW = Number(currentPktNetWeight) >= 0 ? Number(currentPktNetWeight) : 0;
+    const tareW = Number(pktCoreWeight) >= 0 ? Number(pktCoreWeight) : 0;
+    const grossW = Number((netW + tareW).toFixed(2));
     const nextRollNo = pktRollsList.length + 1;
     const matchedOrder = (orders || []).find(o => o.jobName === pktJobName);
     const orderId = matchedOrder?.id || 'N/A';
@@ -1255,15 +1256,23 @@ export default function DispatchManagement({
     const newRollItem = {
       rollNo: nextRollNo,
       barcodeId: `FG-DISP-${Date.now().toString().slice(-6)}-${nextRollNo}`,
-      jobName: pktJobName || 'Standard Job',
+      jobName: pktJobName || 'Finished Goods Job',
       orderId: orderId,
-      substrateSpec: matchedOrder?.structure || 'PET 12µ / METBOPP 18µ',
-      coreWeightKg: coreW,
+      substrateSpec: matchedOrder?.structure || 'Flexible Laminate',
+      coreWeightKg: tareW,
+      tareWeightKg: tareW,
       netWeightKg: netW,
       grossWeightKg: grossW,
-      coreSize: '3 Inch'
+      unit: pktUom || 'Kg',
+      coreSize: '3 Inch',
+      clientName: pktClientName,
+      invoiceNo: pktInvoiceNo,
+      rollType: 'FG_DISPATCH'
     };
     setPktRollsList(prev => [...prev, newRollItem]);
+
+    // IMMEDIATELY OPEN STICKER (2x4) PRINTER MODAL FOR THIS ROLL/BOX FOR INSTANT PRINTING & PASTING
+    setSelectedRollForBarcodeModal(newRollItem);
   };
 
   const handleSavePackingListSubmit = (e) => {
@@ -1795,8 +1804,9 @@ export default function DispatchManagement({
                   setPktLrNo('');
                   setPktTransporterName('');
                   setPktPoNo(firstOrder?.poNo || '');
-                  setPktCoreWeight(4.5);
-                  setCurrentPktNetWeight(210.0);
+                  setPktCoreWeight(0);
+                  setPktUom('Kg');
+                  setCurrentPktNetWeight(0);
                   setPktRollsList([]);
                   setIsPackingModalOpen(true);
                 }}
@@ -3644,13 +3654,31 @@ export default function DispatchManagement({
                 </div>
 
                 <div className="form-group">
-                  <label>Core Tare Weight (Kg) *</label>
+                  <label>Select Unit of Measurement (UoM) *</label>
+                  <select 
+                    className="form-control"
+                    value={pktUom}
+                    onChange={e => setPktUom(e.target.value)}
+                    style={{ fontWeight: '700', color: '#047857' }}
+                  >
+                    <option value="Kg">Kg (Kilograms)</option>
+                    <option value="Pcs">Pcs (Pieces)</option>
+                    <option value="Boxes">Boxes (Cartons)</option>
+                    <option value="Rolls">Rolls (Reels)</option>
+                    <option value="Bundles">Bundles</option>
+                    <option value="Meters">Meters</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Core / Pkg Weight (Tare Wt in Kg) *</label>
                   <input 
                     type="number" 
-                    step="0.1" 
+                    step="0.01" 
                     className="form-control" 
                     value={pktCoreWeight} 
                     onChange={e => setPktCoreWeight(parseFloat(e.target.value) || 0)} 
+                    placeholder="Core or Box Tare Weight"
                   />
                 </div>
 
@@ -3658,9 +3686,9 @@ export default function DispatchManagement({
                 <div className="form-group">
                   <WeighingScaleCaptureButton
                     weightKg={currentPktNetWeight}
-                    onCaptureWeight={(w) => setCurrentPktNetWeight(Number(w) || 210.0)}
+                    onCaptureWeight={(w) => setCurrentPktNetWeight(Number(w) || 0)}
                     stationId="SCALE_4_DISPATCH"
-                    label="Scale #4 Live Roll Net Weight (Kg) *"
+                    label={`Scale #4 Live Net Qty / Weight (${pktUom}) *`}
                   />
                 </div>
               </div>
@@ -3672,28 +3700,28 @@ export default function DispatchManagement({
                   <button
                     type="button"
                     className="btn-secondary"
-                    style={{ fontSize: '0.75rem', padding: '5px 10px', background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontWeight: '700' }}
+                    style={{ fontSize: '0.75rem', padding: '5px 12px', background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontWeight: '800' }}
                     onClick={handleAddRollToPackingList}
                   >
-                    + Add Roll ({currentPktNetWeight} kg Net / {(currentPktNetWeight + Number(pktCoreWeight || 4.5)).toFixed(1)} kg Gross)
+                    + Add Roll / Box ({currentPktNetWeight} {pktUom} Net / {(currentPktNetWeight + Number(pktCoreWeight || 0)).toFixed(1)} Kg Gross)
                   </button>
                 </div>
 
                 {pktRollsList.length === 0 ? (
                   <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '8px', textAlign: 'center', fontSize: '0.82rem', color: '#64748b' }}>
-                    Click "+ Add Roll" to record roll weights. If no individual rolls are added, 1 summary roll will be generated automatically.
+                    Click "+ Add Roll / Box" to record weights. As soon as a roll/box is added, a 2×4 Sticker with QR Code will open immediately for printing!
                   </div>
                 ) : (
                   <table className="data-table" style={{ fontSize: '0.8rem' }}>
                     <thead>
                       <tr>
-                        <th>Roll #</th>
+                        <th>#</th>
                         <th>Barcode ID</th>
                         <th>Substrate Spec</th>
-                        <th style={{ textAlign: 'center' }}>Core Wt (kg)</th>
+                        <th style={{ textAlign: 'center' }}>Core/Pkg Wt (Tare)</th>
                         <th style={{ textAlign: 'right' }}>Gross Wt (kg)</th>
-                        <th style={{ textAlign: 'right' }}>Net Wt (kg)</th>
-                        <th>Action</th>
+                        <th style={{ textAlign: 'right' }}>Net Qty / Wt ({pktUom})</th>
+                        <th style={{ textAlign: 'center' }}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -3702,10 +3730,19 @@ export default function DispatchManagement({
                           <td style={{ fontWeight: '700' }}>{r.rollNo}</td>
                           <td style={{ fontFamily: 'monospace', color: '#2563eb' }}>{r.barcodeId}</td>
                           <td>{r.substrateSpec}</td>
-                          <td style={{ textAlign: 'center' }}>{r.coreWeightKg} kg</td>
+                          <td style={{ textAlign: 'center' }}>{r.tareWeightKg !== undefined ? r.tareWeightKg : r.coreWeightKg} kg</td>
                           <td style={{ fontWeight: '700', color: '#1e293b', textAlign: 'right' }}>{r.grossWeightKg} kg</td>
-                          <td style={{ fontWeight: '700', color: '#047857', textAlign: 'right' }}>{r.netWeightKg} kg</td>
-                          <td>
+                          <td style={{ fontWeight: '700', color: '#047857', textAlign: 'right' }}>{r.netWeightKg} {r.unit || pktUom}</td>
+                          <td style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              style={{ padding: '3px 8px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px', background: '#f0fdf4', color: '#15803d', borderColor: '#bbf7d0', fontWeight: '700' }}
+                              onClick={() => setSelectedRollForBarcodeModal(r)}
+                              title="Print 2x4 Thermal Sticker"
+                            >
+                              <Printer size={12} /> Sticker (2x4)
+                            </button>
                             <button
                               type="button"
                               className="icon-btn-danger"

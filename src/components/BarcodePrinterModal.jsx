@@ -98,7 +98,7 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
 
     const catStr = (r.category || '').toLowerCase();
     const isChemicalOrInk = catStr.includes('chemical') || catStr.includes('solvent') || catStr.includes('ink') || catStr.includes('adhesive') || catStr.includes('resin') || (r.barcodeId || '').startsWith('CON-BC') || (r.barcodeId || '').startsWith('RM-BC');
-    const displayUnit = (r.unit && r.unit !== 'Pcs') ? r.unit : (isFilmItem || isChemicalOrInk ? 'Kg' : (r.unit || r.uom || 'Pcs'));
+    const displayUnit = r.unit || r.uom || (isFilmItem || isChemicalOrInk ? 'Kg' : 'Pcs');
     const displayQty = (r.netWeightKg !== undefined && r.netWeightKg !== null && Number(r.netWeightKg) > 0)
       ? Number(r.netWeightKg)
       : ((r.availableWeightKg !== undefined && r.availableWeightKg !== null && Number(r.availableWeightKg) > 0)
@@ -111,7 +111,7 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
 
     return (
       <div 
-        key={r.barcodeId || r.id || Math.random()}
+        key={r.barcodeId || r.id || Math.between?.(1,999) || Math.random()}
         className={isPrintView ? "printable-barcode-single-label" : ""}
         style={!isPrintView ? {
           background: '#ffffff',
@@ -125,7 +125,7 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
           gap: '6px',
           fontFamily: 'Inter, sans-serif',
           color: '#0f172a',
-          minHeight: '320px'
+          minHeight: '300px'
         } : {
           fontFamily: 'Inter, sans-serif',
           color: '#0f172a'
@@ -165,7 +165,7 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', padding: '6px 10px', borderRadius: '6px', border: '1.5px solid #0f172a', gap: '12px' }}>
           <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
             <span style={{ fontSize: '0.62rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <QrCode size={12} style={{ color: '#047857' }} /> 2D BARCODE (ISO 18004)
+              <QrCode size={12} style={{ color: '#047857' }} /> 2D QR BARCODE (TRACEABILITY)
             </span>
             <span style={{ fontFamily: "Consolas, Monaco, 'Courier New', monospace", fontWeight: '900', fontSize: '1rem', color: '#0f172a', letterSpacing: '0.04em', marginTop: '3px', wordBreak: 'break-all' }}>
               {barcodeCodeStr}
@@ -181,7 +181,7 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '6px', fontSize: '0.8rem', background: '#f8fafc', padding: '6px 8px', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
           <div>
             <span style={{ fontSize: '0.62rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Item / Substrate</span>
-            <div style={{ fontWeight: '800', fontSize: '0.85rem', color: '#0f172a', lineHeight: '1.2' }}>{r.itemName}</div>
+            <div style={{ fontWeight: '800', fontSize: '0.85rem', color: '#0f172a', lineHeight: '1.2' }}>{r.itemName || r.jobName}</div>
             {isFilmItem ? (
               <div style={{ fontSize: '0.7rem', color: '#334155', marginTop: '1px' }}>
                 Gauge: <strong>{r.micron}µ</strong> | Width: <strong>{r.widthMm}mm</strong>
@@ -189,23 +189,23 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
               </div>
             ) : (
               <div style={{ fontSize: '0.7rem', color: '#334155', marginTop: '1px' }}>
-                Category: <strong>{r.category || 'Stock Item'}</strong> {r.totalUnits > 1 ? ` | ${r.packagingType || 'Unit'} ${r.unitNo || 1} of ${r.totalUnits}` : ''}
+                {r.substrateSpec ? <strong>{r.substrateSpec}</strong> : `Unit: ${displayUnit}`}
               </div>
             )}
           </div>
 
           <div style={{ textAlign: 'right', borderLeft: '1.5px solid #cbd5e1', paddingLeft: '6px' }}>
             <span style={{ fontSize: '0.62rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              {isFilmItem || isFG || isSFG ? 'Net Scale Weight' : 'Net Scale Weight / Qty'}
+              Net Qty / Weight
             </span>
             <div style={{ fontWeight: '900', fontSize: '1.15rem', color: '#047857', lineHeight: '1.1', marginTop: '1px' }}>
               {displayQty} <span style={{ fontSize: '0.72rem' }}>{displayUnit}</span>
             </div>
-            {r.grossWeightKg && (
+            {r.grossWeightKg ? (
               <div style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: '600', marginTop: '1px' }}>
-                Gross: {r.grossWeightKg} kg {r.tareWeightKg ? `| Tare: ${r.tareWeightKg} kg` : ''}
+                Gross: {r.grossWeightKg} kg {(r.tareWeightKg !== undefined || r.coreWeightKg !== undefined) ? `| Core/Pkg Tare: ${r.tareWeightKg ?? r.coreWeightKg} kg` : ''}
               </div>
-            )}
+            ) : null}
             {r.lengthMeters && (
               <div style={{ fontSize: '0.65rem', color: '#0369a1', fontWeight: '700', marginTop: '1px' }}>
                 Len: {r.lengthMeters} m

@@ -142,21 +142,22 @@ export default function DispatchPackingListPDF({ shipment, company, onClose }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.76rem', lineHeight: '1.25', marginBottom: '16px' }}>
             <thead>
               <tr style={{ background: '#0f172a', color: '#ffffff' }}>
-                <th style={{ padding: '5px 8px', textAlign: 'center', border: '1px solid #0f172a', width: '50px', fontSize: '0.72rem' }}>Roll #</th>
+                <th style={{ padding: '5px 8px', textAlign: 'center', border: '1px solid #0f172a', width: '50px', fontSize: '0.72rem' }}>#</th>
                 <th style={{ padding: '5px 8px', textAlign: 'left', border: '1px solid #0f172a', fontSize: '0.72rem' }}>Barcode ID</th>
-                <th style={{ padding: '5px 8px', textAlign: 'left', border: '1px solid #0f172a', fontSize: '0.72rem' }}>Substrate Specification</th>
-                <th style={{ padding: '5px 8px', textAlign: 'center', border: '1px solid #0f172a', width: '90px', fontSize: '0.72rem' }}>Core Wt (Kg)</th>
-                <th style={{ padding: '5px 8px', textAlign: 'right', border: '1px solid #0f172a', width: '100px', fontSize: '0.72rem' }}>Gross Weight (Kg)</th>
-                <th style={{ padding: '5px 8px', textAlign: 'right', border: '1px solid #0f172a', width: '100px', fontSize: '0.72rem' }}>Net Weight (Kg)</th>
+                <th style={{ padding: '5px 8px', textAlign: 'left', border: '1px solid #0f172a', fontSize: '0.72rem' }}>Substrate / Specification</th>
+                <th style={{ padding: '5px 8px', textAlign: 'center', border: '1px solid #0f172a', width: '95px', fontSize: '0.72rem' }}>Core/Pkg Wt (Tare)</th>
+                <th style={{ padding: '5px 8px', textAlign: 'right', border: '1px solid #0f172a', width: '95px', fontSize: '0.72rem' }}>Gross Weight (Kg)</th>
+                <th style={{ padding: '5px 8px', textAlign: 'right', border: '1px solid #0f172a', width: '100px', fontSize: '0.72rem' }}>Net Qty / Weight</th>
                 <th style={{ padding: '5px 8px', textAlign: 'center', border: '1px solid #0f172a', width: '105px', fontSize: '0.72rem' }}>Confirm Loading</th>
               </tr>
             </thead>
             <tbody>
               {shipment.items?.map((item, idx) => {
-                const shortSubstrate = item.substrateSpec || 'PET 12µ / METBOPP 18µ';
-                const coreWt = item.coreWeightKg !== undefined ? Number(item.coreWeightKg) : 4.5;
+                const shortSubstrate = item.substrateSpec || 'Laminated Film / Pouch';
+                const tareWt = item.tareWeightKg !== undefined ? Number(item.tareWeightKg) : (item.coreWeightKg !== undefined ? Number(item.coreWeightKg) : 0);
                 const netWt = Number(item.netWeightKg || 0);
-                const grossWt = Number(item.grossWeightKg || (netWt + coreWt));
+                const grossWt = Number(item.grossWeightKg || (netWt + tareWt));
+                const itemUnit = item.unit || 'Kg';
 
                 return (
                   <tr key={idx} style={{ background: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
@@ -170,13 +171,13 @@ export default function DispatchPackingListPDF({ shipment, company, onClose }) {
                       {shortSubstrate}
                     </td>
                     <td style={{ padding: '4px 8px', textAlign: 'center', border: '1px solid #e2e8f0', color: '#475569' }}>
-                      {coreWt.toFixed(1)} kg {item.coreSize ? `(${item.coreSize})` : ''}
+                      {tareWt.toFixed(1)} kg {item.coreSize ? `(${item.coreSize})` : ''}
                     </td>
                     <td style={{ padding: '4px 8px', textAlign: 'right', border: '1px solid #e2e8f0', fontWeight: '700', color: '#1e293b' }}>
                       {grossWt.toFixed(1)}
                     </td>
                     <td style={{ padding: '4px 8px', textAlign: 'right', border: '1px solid #e2e8f0', fontWeight: '800', color: '#047857' }}>
-                      {netWt.toFixed(1)}
+                      {netWt.toFixed(1)} {itemUnit}
                     </td>
                     <td style={{ padding: '4px 8px', textAlign: 'center', border: '1px solid #e2e8f0' }}>
                       <div style={{ display: 'inline-block', width: '14px', height: '14px', border: '1.5px solid #475569', borderRadius: '3px', background: '#ffffff' }} />
