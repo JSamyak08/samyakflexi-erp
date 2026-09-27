@@ -150,10 +150,10 @@ export default function DispatchManagement({
     if (urlParams.subTab === 'coas' || urlParams.tab === 'coas' || urlParams.coaId || urlParams.coaNo) {
       return 'coas';
     }
-    if (urlParams.subTab === 'packing' || urlParams.tab === 'packing') {
-      return 'packing';
+    if (urlParams.subTab === 'challans' || urlParams.tab === 'challans' || urlParams.id || urlParams.challanNo) {
+      return 'challans';
     }
-    return 'challans';
+    return 'packing'; // Create Packing List is 1st position by default
   });
 
   const handleTabSwitch = (tabKey) => {
@@ -1497,28 +1497,9 @@ export default function DispatchManagement({
           </div>
         </div>
 
-        {/* Navigation Sub-Tabs */}
+        {/* Navigation Sub-Tabs: 1. Create Packing List (Leftmost) | 2. Delivery Challans | 3. Quality Test Reports (CoA) */}
         <div style={{ display: 'flex', gap: '12px', marginTop: '24px', borderTop: '1px solid rgba(255, 255, 255, 0.1)', paddingTop: '16px' }}>
-          <button 
-            type="button" 
-            className={`btn-subtab ${activeTab === 'challans' ? 'active' : ''}`}
-            onClick={() => handleTabSwitch('challans')}
-            style={{
-              background: activeTab === 'challans' ? '#0284c7' : 'rgba(255, 255, 255, 0.05)',
-              color: '#ffffff',
-              border: activeTab === 'challans' ? '1px solid #38bdf8' : '1px solid rgba(255, 255, 255, 0.1)',
-              padding: '8px 18px',
-              borderRadius: '8px',
-              fontWeight: '700',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}
-          >
-            <Truck size={16} /> Delivery Challans ({totalChallansCount})
-          </button>
-
+          {/* 1st Position: Create Packing List */}
           <button 
             type="button" 
             className={`btn-subtab ${activeTab === 'packing' ? 'active' : ''}`}
@@ -1539,6 +1520,28 @@ export default function DispatchManagement({
             <Package size={16} /> Create Packing List ({(dispatchShipments || []).length})
           </button>
 
+          {/* 2nd Position: Delivery Challans */}
+          <button 
+            type="button" 
+            className={`btn-subtab ${activeTab === 'challans' ? 'active' : ''}`}
+            onClick={() => handleTabSwitch('challans')}
+            style={{
+              background: activeTab === 'challans' ? '#0284c7' : 'rgba(255, 255, 255, 0.05)',
+              color: '#ffffff',
+              border: activeTab === 'challans' ? '1px solid #38bdf8' : '1px solid rgba(255, 255, 255, 0.1)',
+              padding: '8px 18px',
+              borderRadius: '8px',
+              fontWeight: '700',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            <Truck size={16} /> Delivery Challans ({totalChallansCount})
+          </button>
+
+          {/* 3rd Position: Quality Test Reports (CoA) */}
           <button 
             type="button" 
             className={`btn-subtab ${activeTab === 'coas' ? 'active' : ''}`}
