@@ -281,6 +281,79 @@ export default function UniversalBarcodeScannerModal({
     // Extract potential GRN code if barcode is formatted as (CON|RM)-BC-YYYYMMDD-XXX or similar
     const grnExtract = query.replace(/^(con|rm)-bc-/, '').replace(/-\d+$/, '');
 
+    // 0. Dedicated Finished Goods Dispatch Roll Search (Highest Priority for FG-DISP- Barcodes & Packing List Rolls)
+    let matchedDispatchRollItem = null;
+    let parentDispatchDoc = null;
+
+    // Search inside dispatchShipments items
+    for (const shipment of (dispatchShipments || [])) {
+      const foundRoll = (shipment.items || []).find(it => {
+        const bId = (it.barcodeId || it.id || '').trim().toLowerCase();
+        return bId && (bId === query || query === bId || (query.length >= 4 && (bId.includes(query) || query.includes(bId))));
+      });
+      if (foundRoll) {
+        matchedDispatchRollItem = foundRoll;
+        parentDispatchDoc = shipment;
+        break;
+      }
+    }
+
+    // Search inside deliveryChallans items if not found
+    if (!matchedDispatchRollItem) {
+      for (const dc of (deliveryChallans || [])) {
+        const foundRoll = (dc.items || []).find(it => {
+          const bId = (it.barcodeId || it.id || '').trim().toLowerCase();
+          return bId && (bId === query || query === bId || (query.length >= 4 && (bId.includes(query) || query.includes(bId))));
+        });
+        if (foundRoll) {
+          matchedDispatchRollItem = foundRoll;
+          parentDispatchDoc = dc;
+          break;
+        }
+      }
+    }
+
+    if (matchedDispatchRollItem) {
+      const roll = matchedDispatchRollItem;
+      const shipment = parentDispatchDoc;
+      const jName = roll.jobName || shipment?.jobName || 'Finished Goods Job';
+      const oId = roll.orderId || shipment?.orderId || 'N/A';
+      const traceData = getJobTraceabilityData(jName, oId);
+      const matchedOrder = (orders || []).find(o => o.id === oId || o.jobName === jName);
+
+      return {
+        type: 'DISPATCH_ROLL',
+        entityCategory: 'Finished Goods (FG) Dispatch Roll',
+        badgeColor: '#059669',
+        badgeBg: '#ecfdf5',
+        title: `FG Dispatch Roll: ${roll.barcodeId || roll.id}`,
+        code: roll.barcodeId || roll.id,
+        raw: roll,
+        jobName: traceData.jobName || jName,
+        orderId: traceData.orderId || oId,
+        dateOfPrinting: traceData.dateOfPrinting,
+        materialsUsed: traceData.materialsUsed,
+        isDispatchBarCode: true,
+        properties: [
+          { label: 'Dispatch Roll Barcode ID', value: roll.barcodeId || roll.id, isCode: true },
+          { label: 'Job Order Name', value: jName },
+          { label: 'Client Consignee', value: shipment?.clientName || matchedOrder?.clientName || 'N/A' },
+          { label: 'Order OCN / Ref', value: oId, isCode: true },
+          { label: 'Invoice No', value: shipment?.invoiceNo || matchedOrder?.invoiceNo || 'N/A' },
+          { label: 'Substrate Spec', value: roll.substrateSpec || roll.structure || matchedOrder?.structure || 'PET 12µ / METBOPP 18µ' },
+          { label: 'Roll Net Weight', value: roll.netWeightKg ? `${roll.netWeightKg} kg` : (roll.weightKg ? `${roll.weightKg} kg` : 'N/A'), isHighlight: true },
+          { label: 'Gross Scale Weight', value: roll.grossWeightKg ? `${roll.grossWeightKg} kg` : 'N/A' },
+          { label: 'Core Tare Weight', value: roll.coreWeightKg ? `${roll.coreWeightKg} kg` : 'N/A' },
+          { label: 'Core Size', value: roll.coreSize || '3 Inch' },
+          { label: 'Roll # in Packing List', value: roll.rollNo ? `Roll #${roll.rollNo}` : 'N/A' },
+          { label: 'Packing List / Dispatch ID', value: shipment?.dispatchId || shipment?.id || 'N/A' },
+          { label: 'Vehicle Number', value: shipment?.vehicleNo || 'N/A' },
+          { label: 'LR / Waybill No', value: shipment?.lrNo || 'N/A' },
+          { label: 'Dispatch Date', value: shipment?.dispatchDate || 'N/A' }
+        ]
+      };
+    }
+
     // 1. Inventory Rolls & Inward Packages Search (Highest Priority for Barcodes)
     // Pass 1: Strict Exact Match on Barcode ID or Roll ID
     let matchedRoll = (inventoryRolls || []).find(r => {
@@ -605,11 +678,12 @@ export default function UniversalBarcodeScannerModal({
     }
 
     // 7. Dispatch Shipments / Challans Search
-    const matchedDispatch = (dispatchShipments || []).find(d => {
+    const matchedDispatch = (dispatchShipments || []).concat(deliveryChallans || []).find(d => {
       const dId = (d.dispatch_id || d.dispatchId || d.id || '').toLowerCase();
+      const inv = (d.invoiceNo || d.invoice_no || '').toLowerCase();
       const lr = (d.lr_no || d.lrNo || d.lr_number || '').toLowerCase();
       const veh = (d.vehicle_no || d.vehicleNo || d.vehicle_number || '').toLowerCase();
-      return dId === query || dId.includes(query) || (lr && lr === query) || (veh && veh === query);
+      return (dId && (dId === query || dId.includes(query))) || (inv && inv === query) || (lr && lr === query) || (veh && veh === query);
     });
 
     if (matchedDispatch) {
@@ -622,23 +696,24 @@ export default function UniversalBarcodeScannerModal({
         entityCategory: 'Finished Goods Dispatch & Outward Shipment',
         badgeColor: '#16a34a',
         badgeBg: '#f0fdf4',
-        title: `Dispatch ID: ${matchedDispatch.dispatch_id || matchedDispatch.dispatchId}`,
-        code: matchedDispatch.dispatch_id || matchedDispatch.dispatchId,
+        title: `Dispatch ID: ${matchedDispatch.dispatch_id || matchedDispatch.dispatchId || matchedDispatch.id}`,
+        code: matchedDispatch.dispatch_id || matchedDispatch.dispatchId || matchedDispatch.id,
         raw: matchedDispatch,
-        jobName: jName,
-        orderId: oId,
+        jobName: traceData.jobName || jName,
+        orderId: traceData.orderId || oId,
         dateOfPrinting: traceData.dateOfPrinting,
         materialsUsed: traceData.materialsUsed,
         isDispatchBarCode: true,
         properties: [
-          { label: 'Dispatch Shipment ID', value: matchedDispatch.dispatch_id || matchedDispatch.dispatchId, isCode: true },
+          { label: 'Dispatch Shipment ID', value: matchedDispatch.dispatch_id || matchedDispatch.dispatchId || matchedDispatch.id, isCode: true },
           { label: 'Client Consignee', value: matchedDispatch.client_name || matchedDispatch.clientName || 'N/A' },
           { label: 'Job Name', value: jName || 'N/A' },
           { label: 'Invoice No', value: matchedDispatch.invoiceNo || matchedDispatch.invoice_no || 'N/A' },
           { label: 'Vehicle Number', value: matchedDispatch.vehicle_no || matchedDispatch.vehicleNo || matchedDispatch.vehicle_number || 'N/A' },
           { label: 'LR / Waybill Number', value: matchedDispatch.lr_no || matchedDispatch.lrNo || matchedDispatch.lr_number || 'N/A' },
-          { label: 'Total Rolls Dispatched', value: matchedDispatch.total_rolls || matchedDispatch.totalRolls ? `${matchedDispatch.total_rolls || matchedDispatch.totalRolls} Rolls` : 'N/A' },
+          { label: 'Total Rolls Dispatched', value: matchedDispatch.total_rolls || matchedDispatch.totalRolls || matchedDispatch.items?.length ? `${matchedDispatch.total_rolls || matchedDispatch.totalRolls || matchedDispatch.items?.length} Rolls` : 'N/A' },
           { label: 'Total Net Weight', value: matchedDispatch.total_net_weight_kg || matchedDispatch.totalNetWeightKg ? `${matchedDispatch.total_net_weight_kg || matchedDispatch.totalNetWeightKg} kg` : 'N/A', isHighlight: true },
+          { label: 'Total Gross Weight', value: matchedDispatch.total_gross_weight_kg || matchedDispatch.totalGrossWeightKg ? `${matchedDispatch.total_gross_weight_kg || matchedDispatch.totalGrossWeightKg} kg` : 'N/A' },
           { label: 'Dispatch Date', value: matchedDispatch.dispatch_date || matchedDispatch.dispatchDate ? String(matchedDispatch.dispatch_date || matchedDispatch.dispatchDate).split('T')[0] : 'N/A' }
         ]
       };
@@ -672,14 +747,20 @@ export default function UniversalBarcodeScannerModal({
 
     // 9. Purchase Orders (PO) Search (Internal ERP Verification)
     const cleanPoQuery = query.replace(/^samyak-erp-po:/i, '').replace(/^erp-doc-po:/i, '').replace(/^po:/i, '').trim();
-    
+
+    // Guard: Dispatch barcodes or FG rolls should NEVER match as Purchase Orders
+    if (cleanPoQuery.startsWith('fg-disp-') || cleanPoQuery.startsWith('pl-') || cleanPoQuery.startsWith('disp-') || cleanPoQuery.startsWith('dc-')) {
+      return { notFound: true, query: activeBarcode };
+    }
+
     // Check localStorage issued POs first
     let matchedPoData = null;
     let matchedPoNo = '';
     try {
       const savedPos = JSON.parse(localStorage.getItem('samyak_erp_issued_pos') || '{}');
       for (const [key, val] of Object.entries(savedPos)) {
-        if (key.toLowerCase() === cleanPoQuery || key.toLowerCase().includes(cleanPoQuery) || cleanPoQuery.includes(key.toLowerCase())) {
+        const cleanKey = key.toLowerCase();
+        if (cleanKey.length > 0 && (cleanKey === cleanPoQuery || (cleanPoQuery.length >= 4 && cleanKey.includes(cleanPoQuery)))) {
           matchedPoData = val;
           matchedPoNo = key;
           break;
@@ -690,16 +771,22 @@ export default function UniversalBarcodeScannerModal({
     }
 
     // Check across orders for issued PO numbers if not in store
-    if (!matchedPoData) {
+    if (!matchedPoData && cleanPoQuery.length >= 3) {
       const ordWithPo = (orders || []).find(o => {
-        const poNum = (o.poNumber || o.po_number || '').toLowerCase();
-        const hasReqPo = (o.materialRequirements || []).some(r => (r.poNumber || '').toLowerCase() === cleanPoQuery || cleanPoQuery.includes((r.poNumber || '').toLowerCase()));
-        return (poNum && (poNum === cleanPoQuery || cleanPoQuery.includes(poNum))) || hasReqPo;
+        const poNum = (o.poNumber || o.po_number || '').trim().toLowerCase();
+        const hasReqPo = (o.materialRequirements || []).some(r => {
+          const reqPo = (r.poNumber || '').trim().toLowerCase();
+          return reqPo.length > 0 && (reqPo === cleanPoQuery || cleanPoQuery.includes(reqPo));
+        });
+        return (poNum.length > 0 && (poNum === cleanPoQuery || cleanPoQuery.includes(poNum))) || hasReqPo;
       });
 
       if (ordWithPo) {
         matchedPoNo = ordWithPo.poNumber || cleanPoQuery.toUpperCase();
-        const matchingReqs = (ordWithPo.materialRequirements || []).filter(r => !r.poNumber || r.poNumber === matchedPoNo || cleanPoQuery.includes((r.poNumber || '').toLowerCase()));
+        const matchingReqs = (ordWithPo.materialRequirements || []).filter(r => {
+          const reqPo = (r.poNumber || '').trim().toLowerCase();
+          return reqPo.length > 0 && (reqPo === matchedPoNo.toLowerCase() || cleanPoQuery.includes(reqPo));
+        });
         const preferredVendorName = matchingReqs[0]?.preferredVendor || 'Preferred Supplier';
         const vendorObj = (vendors || []).find(v => (v.companyName || v.name) === preferredVendorName) || { companyName: preferredVendorName };
 
@@ -722,10 +809,10 @@ export default function UniversalBarcodeScannerModal({
     }
 
     // Check across GRNs for PO number
-    if (!matchedPoData) {
+    if (!matchedPoData && cleanPoQuery.length >= 3) {
       const grnWithPo = (grns || []).find(g => {
-        const poNum = (g.po_number || g.poNumber || '').toLowerCase();
-        return poNum && (poNum === cleanPoQuery || cleanPoQuery.includes(poNum));
+        const poNum = (g.po_number || g.poNumber || '').trim().toLowerCase();
+        return poNum.length > 0 && (poNum === cleanPoQuery || cleanPoQuery.includes(poNum));
       });
       if (grnWithPo) {
         matchedPoNo = grnWithPo.po_number || grnWithPo.poNumber;
@@ -775,7 +862,7 @@ export default function UniversalBarcodeScannerModal({
     }
 
     return { notFound: true, query: activeBarcode };
-  }, [activeBarcode, inventoryRolls, orders, cylinders, jobMasters, grns, inks, dispatchShipments, inventory, vendors, productionRecords]);
+  }, [activeBarcode, inventoryRolls, orders, cylinders, jobMasters, grns, inks, dispatchShipments, deliveryChallans, inventory, vendors, productionRecords]);
 
   const handleCopyDetails = () => {
     if (!searchResults || searchResults.notFound) return;
