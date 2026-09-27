@@ -3601,6 +3601,219 @@ export async function deleteCertificateOfAnalysisFromSupabase(id) {
 }
 
 // ============================================================================
+// PELLET FUEL STOCK & BOILER CONSUMPTION MANAGEMENT
+// ============================================================================
+
+export async function fetchPelletInwardsFromSupabase() {
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
+  try {
+    let tableRecords = [];
+    try {
+      const { data, error } = await supabase.from('pellet_inwards').select('*');
+      if (!error && Array.isArray(data)) {
+        tableRecords = data.map(r => r.payload || r.details || r);
+      } else if (error) {
+        console.warn('[pellet_inwards] Table fetch notice:', error.message);
+      }
+    } catch (err) {
+      console.warn('[pellet_inwards] Table query exception:', err.message);
+    }
+    
+    // Fallback & Merge with system_settings 'pellet_inwards'
+    const settingData = await fetchSystemSetting('pellet_inwards').catch(() => null);
+    const backupRecords = Array.isArray(settingData) ? settingData : [];
+
+    const recordMap = new Map();
+    backupRecords.forEach(r => {
+      if (r && r.id) recordMap.set(String(r.id), r);
+    });
+    tableRecords.forEach(r => {
+      if (r && r.id) recordMap.set(String(r.id), r);
+    });
+
+    const allInwards = Array.from(recordMap.values());
+    allInwards.sort((a, b) => {
+      const timeA = new Date(a.inwardDate || a.createdDate || 0).getTime();
+      const timeB = new Date(b.inwardDate || b.createdDate || 0).getTime();
+      return timeB - timeA;
+    });
+
+    return allInwards;
+  } catch (e) {
+    console.error("Error fetching pellet inwards from Supabase:", e);
+    const settingData = await fetchSystemSetting('pellet_inwards').catch(() => null);
+    if (Array.isArray(settingData)) return settingData;
+    throw e;
+  }
+}
+
+export async function savePelletInwardToSupabase(item) {
+  if (!isSupabaseConfigured() || !item) {
+    throw new Error("Cannot save pellet inward: Supabase database connection is not available.");
+  }
+  await ensureValidSession();
+  
+  let tableSuccess = false;
+  try {
+    const { error } = await supabase.from('pellet_inwards').upsert({
+      id: String(item.id),
+      grn_no: item.grnNo || '',
+      inward_date: item.inwardDate || new Date().toISOString().split('T')[0],
+      inward_qty_kg: Number(item.inwardQtyKg) || 0,
+      unit_cost_per_kg: Number(item.unitCostPerKg) || 0,
+      total_amount: Number(item.totalAmount) || 0,
+      payload: item,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'id' });
+
+    if (!error) {
+      tableSuccess = true;
+    } else {
+      console.warn('[pellet_inwards] Table upsert notice:', error.message);
+    }
+  } catch (e) {
+    console.warn('[pellet_inwards] Table write exception:', e.message);
+  }
+
+  // Backup into system_settings
+  try {
+    const currentList = await fetchPelletInwardsFromSupabase().catch(() => []);
+    const updatedList = [item, ...currentList.filter(d => String(d.id) !== String(item.id))];
+    await saveSystemSetting('pellet_inwards', updatedList);
+  } catch (e) {
+    console.warn('[pellet_inwards] Backup to system_settings notice:', e.message);
+    if (!tableSuccess) {
+      throw e;
+    }
+  }
+}
+
+export async function deletePelletInwardFromSupabase(id) {
+  if (!isSupabaseConfigured() || !id) {
+    throw new Error("Cannot delete pellet inward: Supabase database connection is not available.");
+  }
+  await ensureValidSession();
+  try {
+    await supabase.from('pellet_inwards').delete().eq('id', String(id));
+  } catch (e) {
+    console.warn('[pellet_inwards] Table delete notice:', e.message);
+  }
+
+  try {
+    const currentList = await fetchPelletInwardsFromSupabase().catch(() => []);
+    const updatedList = currentList.filter(d => String(d.id) !== String(id));
+    await saveSystemSetting('pellet_inwards', updatedList);
+  } catch (e) {
+    console.warn('[pellet_inwards] Delete from system_settings notice:', e.message);
+  }
+}
+
+export async function fetchPelletConsumptionsFromSupabase() {
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
+  try {
+    let tableRecords = [];
+    try {
+      const { data, error } = await supabase.from('pellet_consumptions').select('*');
+      if (!error && Array.isArray(data)) {
+        tableRecords = data.map(r => r.payload || r.details || r);
+      } else if (error) {
+        console.warn('[pellet_consumptions] Table fetch notice:', error.message);
+      }
+    } catch (err) {
+      console.warn('[pellet_consumptions] Table query exception:', err.message);
+    }
+
+    const settingData = await fetchSystemSetting('pellet_consumptions').catch(() => null);
+    const backupRecords = Array.isArray(settingData) ? settingData : [];
+
+    const recordMap = new Map();
+    backupRecords.forEach(r => {
+      if (r && r.id) recordMap.set(String(r.id), r);
+    });
+    tableRecords.forEach(r => {
+      if (r && r.id) recordMap.set(String(r.id), r);
+    });
+
+    const allConsum = Array.from(recordMap.values());
+    allConsum.sort((a, b) => {
+      const timeA = new Date(a.consumptionDate || a.date || 0).getTime();
+      const timeB = new Date(b.consumptionDate || b.date || 0).getTime();
+      return timeB - timeA;
+    });
+
+    return allConsum;
+  } catch (e) {
+    console.error("Error fetching pellet consumptions from Supabase:", e);
+    const settingData = await fetchSystemSetting('pellet_consumptions').catch(() => null);
+    if (Array.isArray(settingData)) return settingData;
+    throw e;
+  }
+}
+
+export async function savePelletConsumptionToSupabase(item) {
+  if (!isSupabaseConfigured() || !item) {
+    throw new Error("Cannot save pellet consumption: Supabase database connection is not available.");
+  }
+  await ensureValidSession();
+  
+  let tableSuccess = false;
+  try {
+    const { error } = await supabase.from('pellet_consumptions').upsert({
+      id: String(item.id),
+      consumption_date: item.consumptionDate || new Date().toISOString().split('T')[0],
+      consumed_qty_kg: Number(item.consumedQtyKg) || 0,
+      operating_hours: Number(item.operatingHours) || 0,
+      reference_printing_done_kg: Number(item.referencePrintingDoneKg) || 0,
+      payload: item,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'id' });
+
+    if (!error) {
+      tableSuccess = true;
+    } else {
+      console.warn('[pellet_consumptions] Table upsert notice:', error.message);
+    }
+  } catch (e) {
+    console.warn('[pellet_consumptions] Table write exception:', e.message);
+  }
+
+  try {
+    const currentList = await fetchPelletConsumptionsFromSupabase().catch(() => []);
+    const updatedList = [item, ...currentList.filter(d => String(d.id) !== String(item.id))];
+    await saveSystemSetting('pellet_consumptions', updatedList);
+  } catch (e) {
+    console.warn('[pellet_consumptions] Backup to system_settings notice:', e.message);
+    if (!tableSuccess) {
+      throw e;
+    }
+  }
+}
+
+export async function deletePelletConsumptionFromSupabase(id) {
+  if (!isSupabaseConfigured() || !id) {
+    throw new Error("Cannot delete pellet consumption: Supabase database connection is not available.");
+  }
+  await ensureValidSession();
+  try {
+    await supabase.from('pellet_consumptions').delete().eq('id', String(id));
+  } catch (e) {
+    console.warn('[pellet_consumptions] Table delete notice:', e.message);
+  }
+
+  try {
+    const currentList = await fetchPelletConsumptionsFromSupabase().catch(() => []);
+    const updatedList = currentList.filter(d => String(d.id) !== String(id));
+    await saveSystemSetting('pellet_consumptions', updatedList);
+  } catch (e) {
+    console.warn('[pellet_consumptions] Delete from system_settings notice:', e.message);
+  }
+}
+
+// ============================================================================
 // SEED MIGRATION: SEED DATA PUSHES HAVE BEEN PERMANENTLY DISABLED
 // ============================================================================
 

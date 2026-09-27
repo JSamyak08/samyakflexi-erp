@@ -37,7 +37,8 @@ import {
   ScanBarcode,
   Coins,
   Clock,
-  RefreshCw
+  RefreshCw,
+  Flame
 } from 'lucide-react';
 
 import AuthScreen from './components/AuthScreen';
@@ -55,6 +56,7 @@ import ClientManagement from './components/ClientManagement';
 import SupabaseManagement from './components/SupabaseManagement';
 import DocumentSettings from './components/DocumentSettings';
 import ConsumablesAndIndents from './components/ConsumablesAndIndents';
+import PelletFuelManagement from './components/PelletFuelManagement';
 import SalesManagement from './components/SalesManagement';
 import ScrapWastageAnalysis from './components/ScrapWastageAnalysis';
 import AuditLogsManagement from './components/AuditLogsManagement';
@@ -91,6 +93,8 @@ import {
   fetchSFGGoodsFromSupabase, saveSFGGoodToSupabase, deleteSFGGoodFromSupabase,
   fetchDeliveryChallansFromSupabase, saveDeliveryChallanToSupabase, deleteDeliveryChallanFromSupabase,
   fetchCertificatesOfAnalysisFromSupabase, saveCertificateOfAnalysisToSupabase, deleteCertificateOfAnalysisFromSupabase,
+  fetchPelletInwardsFromSupabase, savePelletInwardToSupabase, deletePelletInwardFromSupabase,
+  fetchPelletConsumptionsFromSupabase, savePelletConsumptionToSupabase, deletePelletConsumptionFromSupabase,
   fetchFilmSubstratesFromSupabase,
   fetchSystemSetting, saveSystemSetting
 } from './services/supabaseDataService';
@@ -354,6 +358,50 @@ export default function App() {
   const [salaryAdvances, setSalaryAdvances] = useState([]);
   const [salaryPayments, setSalaryPayments] = useState([]);
   const [sfgGoods, setSfgGoods] = useState([]);
+  const [pelletInwards, setPelletInwards] = useState([]);
+  const [pelletConsumptions, setPelletConsumptions] = useState([]);
+
+  const handleSavePelletInward = async (item) => {
+    setPelletInwards(prev => [item, ...prev.filter(i => String(i.id) !== String(item.id))]);
+    try {
+      await savePelletInwardToSupabase(item);
+      logAudit('Save Pellet Inward', 'Pellet Fuel Stock Management', `GRN ${item.grnNo} - Inwarded ${item.inwardQtyKg} kg`, item.id);
+    } catch (e) {
+      console.error("Failed to save pellet inward to Supabase:", e);
+      alert(`Saved locally, DB notice: ${e.message}`);
+    }
+  };
+
+  const handleDeletePelletInward = async (id) => {
+    setPelletInwards(prev => prev.filter(i => String(i.id) !== String(id)));
+    try {
+      await deletePelletInwardFromSupabase(id);
+      logAudit('Delete Pellet Inward', 'Pellet Fuel Stock Management', `Deleted Pellet GRN record ${id}`, id);
+    } catch (e) {
+      console.error("Failed to delete pellet inward from Supabase:", e);
+    }
+  };
+
+  const handleSavePelletConsumption = async (item) => {
+    setPelletConsumptions(prev => [item, ...prev.filter(i => String(i.id) !== String(item.id))]);
+    try {
+      await savePelletConsumptionToSupabase(item);
+      logAudit('Save Pellet Consumption', 'Pellet Fuel Stock Management', `Recorded ${item.consumedQtyKg} kg boiler consumption on ${item.consumptionDate}`, item.id);
+    } catch (e) {
+      console.error("Failed to save pellet consumption to Supabase:", e);
+      alert(`Saved locally, DB notice: ${e.message}`);
+    }
+  };
+
+  const handleDeletePelletConsumption = async (id) => {
+    setPelletConsumptions(prev => prev.filter(i => String(i.id) !== String(id)));
+    try {
+      await deletePelletConsumptionFromSupabase(id);
+      logAudit('Delete Pellet Consumption', 'Pellet Fuel Stock Management', `Deleted Pellet consumption record ${id}`, id);
+    } catch (e) {
+      console.error("Failed to delete pellet consumption from Supabase:", e);
+    }
+  };
 
 
   const logAudit = async (actionType, moduleName, details, targetId = null) => {
@@ -514,7 +562,8 @@ export default function App() {
           supaProd, supaUsers, supaSheets, supaRolls, supaShipments,
           supaMachines, supaSchedules, supaClients, supaJobMasters,
           supaInks, supaEmployees, supaAttendance, supaAdvances,
-          supaRolePerms, supaAuditLogs, supaSFG, supaDCs, supaCoAs
+          supaRolePerms, supaAuditLogs, supaSFG, supaDCs, supaCoAs,
+          supaPelletInwards, supaPelletConsumptions
         ] = await Promise.all([
           ordersTask,
           fetchSafe(fetchVendors, 'Vendors'),
@@ -539,7 +588,9 @@ export default function App() {
           fetchSafe(fetchAuditLogsFromSupabase, 'Audit Logs'),
           fetchSafe(fetchSFGGoodsFromSupabase, 'SFG Goods'),
           fetchSafe(fetchDeliveryChallansFromSupabase, 'Delivery Challans'),
-          fetchSafe(fetchCertificatesOfAnalysisFromSupabase, 'Certificates of Analysis')
+          fetchSafe(fetchCertificatesOfAnalysisFromSupabase, 'Certificates of Analysis'),
+          fetchSafe(fetchPelletInwardsFromSupabase, 'Pellet Inwards'),
+          fetchSafe(fetchPelletConsumptionsFromSupabase, 'Pellet Consumptions')
         ]);
 
 
@@ -693,6 +744,13 @@ export default function App() {
 
         if (supaRolePerms && typeof supaRolePerms === 'object' && Object.keys(supaRolePerms).length > 0) {
           setRolePermissions(supaRolePerms);
+        }
+
+        if (Array.isArray(supaPelletInwards)) {
+          setPelletInwards(supaPelletInwards);
+        }
+        if (Array.isArray(supaPelletConsumptions)) {
+          setPelletConsumptions(supaPelletConsumptions);
         }
       } catch (err) {
         console.error('[Supabase Load Error]', err);
@@ -2599,6 +2657,18 @@ export default function App() {
                 </div>
               )}
 
+              {isTabAllowed('pellet_fuel') && (
+                <div 
+                  className={`nav-item ${activeTab === 'pellet_fuel' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('pellet_fuel')}
+                >
+                  <span className="nav-icon-box" style={{ color: '#d97706' }}>
+                    <Flame size={18} />
+                  </span>
+                  <span>Pellet Fuel Stock Management</span>
+                </div>
+              )}
+
               {isTabAllowed('vendors') && (
                 <div 
                   className={`nav-item ${activeTab === 'vendors' ? 'active' : ''}`}
@@ -2745,6 +2815,7 @@ export default function App() {
               {activeTab === 'inventory' && 'Raw Material Inventory, GRN & Quality Control'}
               {activeTab === 'ink_management' && 'Ink Master Directory, Solid Costing & Stock Management'}
               {activeTab === 'material_indents' && 'Material Indents Requisitions & Consumable Store'}
+              {activeTab === 'pellet_fuel' && 'Boiler Pellet Fuel Stock & Consumption Management'}
               {activeTab === 'dispatch' && 'Finished Goods Dispatch, Delivery Challan & Quality CoA Hub'}
               {activeTab === 'user_management' && 'Departmental User Management (RBAC)'}
               {activeTab === 'cylinders' && 'Rotogravure Cylinder Database'}
@@ -3695,6 +3766,29 @@ export default function App() {
             onUpdateIndents={handleUpdateIndents}
             machineIssues={machineIssues}
             onUpdateMachineIssues={handleUpdateMachineIssues}
+            pelletInwards={pelletInwards}
+            pelletConsumptions={pelletConsumptions}
+            onSavePelletInward={handleSavePelletInward}
+            onDeletePelletInward={handleDeletePelletInward}
+            onSavePelletConsumption={handleSavePelletConsumption}
+            onDeletePelletConsumption={handleDeletePelletConsumption}
+          />
+        )}
+
+        {/* TAB: BOILER PELLET FUEL STOCK & CONSUMPTION */}
+        {activeTab === 'pellet_fuel' && (
+          <PelletFuelManagement 
+            urlParams={urlParams}
+            userRole={currentUser?.role || "Admin"}
+            userName={currentUser?.name || "Plant Manager"}
+            vendors={vendors}
+            machines={machines}
+            pelletInwards={pelletInwards}
+            pelletConsumptions={pelletConsumptions}
+            onSavePelletInward={handleSavePelletInward}
+            onDeletePelletInward={handleDeletePelletInward}
+            onSavePelletConsumption={handleSavePelletConsumption}
+            onDeletePelletConsumption={handleDeletePelletConsumption}
           />
         )}
 

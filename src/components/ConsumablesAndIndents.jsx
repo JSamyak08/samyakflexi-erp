@@ -34,9 +34,11 @@ import {
   DollarSign,
   ShoppingBag,
   Settings,
-  PackagePlus
+  PackagePlus,
+  Flame
 } from 'lucide-react';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
+import PelletFuelManagement from './PelletFuelManagement';
 import { notifyPurchaseIndentCreated, notifyPurchaseOrderIssued, notifyLowStockAlert } from '../services/emailService';
 import { generateDocRefNumber, getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import TablePagination, { usePagination } from './TablePagination';
@@ -63,6 +65,7 @@ export const initialMaterialIndents = [];
 export const initialMachineIssues = [];
 
 export default function ConsumablesAndIndents({ 
+  urlParams = {},
   userRole = "Admin",
   userName = "Samyak Jain",
   vendors = [],
@@ -74,10 +77,16 @@ export default function ConsumablesAndIndents({
   indents = [],
   onUpdateIndents,
   machineIssues = [],
-  onUpdateMachineIssues
+  onUpdateMachineIssues,
+  pelletInwards = [],
+  pelletConsumptions = [],
+  onSavePelletInward,
+  onDeletePelletInward,
+  onSavePelletConsumption,
+  onDeletePelletConsumption
 }) {
-  // Navigation Sub-Tabs: "store" (Consumables Store) | "indents" (Material Indents & Requisitions) | "issues" (Machine Issue Audit Log)
-  const [activeSubTab, setActiveSubTab] = useState("store");
+  // Navigation Sub-Tabs: "store" | "indents" | "issues" | "pellet_fuel"
+  const [activeSubTab, setActiveSubTab] = useState(urlParams?.subTab || "store");
 
   // Role-Based Admin Permission Check for Issuing Purchase Orders
   const isAdminRole = useMemo(() => {
@@ -870,7 +879,44 @@ export default function ConsumablesAndIndents({
         >
           <Cpu size={18} /> Machine Stock Issue Log ({(machineIssues || []).length})
         </button>
+
+        <button 
+          className={`btn-secondary ${activeSubTab === 'pellet_fuel' ? 'active' : ''}`}
+          style={{ 
+            padding: '10px 20px', 
+            fontSize: '0.9rem', 
+            fontWeight: '700',
+            borderRadius: '8px 8px 0 0',
+            borderBottom: activeSubTab === 'pellet_fuel' ? '3px solid #d97706' : '3px solid transparent',
+            color: activeSubTab === 'pellet_fuel' ? '#d97706' : undefined,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+          onClick={() => setActiveSubTab('pellet_fuel')}
+        >
+          <Flame size={18} style={{ color: '#d97706' }} /> Pellet Fuel Stock & Boiler Consumption
+        </button>
       </div>
+
+      {/* ========================================================================= */}
+      {/* SUB-TAB 4: BOILER PELLET FUEL STOCK & CONSUMPTION                         */}
+      {/* ========================================================================= */}
+      {activeSubTab === 'pellet_fuel' && (
+        <PelletFuelManagement 
+          urlParams={urlParams}
+          userRole={userRole}
+          userName={userName}
+          vendors={vendors}
+          machines={machines}
+          pelletInwards={pelletInwards}
+          pelletConsumptions={pelletConsumptions}
+          onSavePelletInward={onSavePelletInward}
+          onDeletePelletInward={onDeletePelletInward}
+          onSavePelletConsumption={onSavePelletConsumption}
+          onDeletePelletConsumption={onDeletePelletConsumption}
+        />
+      )}
 
       {/* ========================================================================= */}
       {/* SUB-TAB 1: CONSUMABLES & SPARE PARTS STORE */}
