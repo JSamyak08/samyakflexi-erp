@@ -3642,18 +3642,6 @@ export default function DispatchManagement({
 
             <form onSubmit={handleSavePackingListSubmit}>
               <div className="form-grid">
-                <div className="form-group" style={{ gridColumn: 'span 2', background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <input 
-                    type="checkbox" 
-                    id="pktHideBranding"
-                    checked={pktHideBranding} 
-                    onChange={e => setPktHideBranding(e.target.checked)} 
-                    style={{ width: '18px', height: '18px', accentColor: '#059669', cursor: 'pointer' }}
-                  />
-                  <label htmlFor="pktHideBranding" style={{ fontSize: '0.85rem', fontWeight: '700', color: '#1e293b', cursor: 'pointer', margin: 0 }}>
-                    Hide Factory Branding & GSTIN on Barcode Stickers (for 3rd Party / White-Label Shipments)
-                  </label>
-                </div>
 
                 <div className="form-group">
                   <label>Packing List ID (Automated) *</label>
@@ -3826,13 +3814,26 @@ export default function DispatchManagement({
                 )}
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
-                <button type="button" className="btn-secondary" onClick={() => setIsPackingModalOpen(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn-primary" style={{ background: '#059669', borderColor: '#059669' }}>
-                  <Printer size={16} /> Save Packing List & Preview PDF
-                </button>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px', flexWrap: 'wrap', gap: '12px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
+                <label htmlFor="pktHideBranding" style={{ fontSize: '0.78rem', fontWeight: '600', color: '#475569', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+                  <input 
+                    type="checkbox" 
+                    id="pktHideBranding"
+                    checked={pktHideBranding} 
+                    onChange={e => setPktHideBranding(e.target.checked)} 
+                    style={{ width: '15px', height: '15px', accentColor: '#059669', cursor: 'pointer' }}
+                  />
+                  <span>Hide Factory Branding & GSTIN on Barcode Stickers (for 3rd Party / White-Label Shipments)</span>
+                </label>
+
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button type="button" className="btn-secondary" onClick={() => setIsPackingModalOpen(false)}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn-primary" style={{ background: '#059669', borderColor: '#059669' }}>
+                    <Printer size={16} /> Save Packing List & Preview PDF
+                  </button>
+                </div>
               </div>
             </form>
           </div>
