@@ -813,83 +813,148 @@ export default function DispatchManagement({
     setSelectedDcForReturn(null);
   };
 
-  // --------------------------------------------------------------------------
-  // OPEN COA MODAL HANDLERS
-  // --------------------------------------------------------------------------
-  const handleOpenNewCoaModal = () => {
+  // Helper to extract technical specifications and attributes from Job Master / Order
+  const resolveJobMasterDetails = (targetJobName, dcObj = {}) => {
+    const matchedJm = (jobMasters || []).find(j => j.jobName === targetJobName) || {};
+    const matchedOrder = (orders || []).find(o => o.jobName === targetJobName) || {};
+
+    // 1. Film Type (from respective Job Master / Order)
+    let filmType = matchedJm.filmType || matchedJm.substrateType || matchedJm.materialType || matchedJm.filmCategory || '';
+    if (!filmType && Array.isArray(matchedJm.layers) && matchedJm.layers.length > 0) {
+      filmType = matchedJm.layers.map(l => l.filmType).filter(Boolean).join(' / ');
+    }
+    if (!filmType) {
+      filmType = matchedOrder.filmType || matchedOrder.substrateType || 'Laminated Packaging Film';
+    }
+
+    // 2. Net Weight (Total for each item from Packing List / Delivery Challan items)
+    let netWeightVal = 0;
+    if (Array.isArray(dcObj.items) && dcObj.items.length > 0) {
+      const matchedItems = dcObj.items.filter(i => !targetJobName || !i.description || i.description.toLowerCase().includes(targetJobName.toLowerCase()) || dcObj.items.length === 1);
+      const targetList = matchedItems.length > 0 ? matchedItems : dcObj.items;
+      netWeightVal = targetList.reduce((s, i) => s + (parseFloat(i.quantity) || parseFloat(i.netWeightKg) || 0), 0);
+    }
+    if (!netWeightVal) {
+      netWeightVal = parseFloat(dcObj.totalNetWeightKg) || parseFloat(dcObj.netWeight) || 0;
+    }
+    const netWeightStr = netWeightVal > 0 ? `${netWeightVal.toFixed(2)} Kg` : '';
+
+    // 3. Structure Specification (from respective Job Master)
+    let structure = matchedJm.structure || matchedJm.specification || matchedJm.substrateSpec || '';
+    if (!structure && Array.isArray(matchedJm.layers) && matchedJm.layers.length > 0) {
+      structure = matchedJm.layers.map(l => `${l.filmType || 'PET'} ${l.micron || 12}µ`).join(' / ');
+    }
+    if (!structure) {
+      structure = matchedOrder.structure || matchedOrder.substrateSpec || 'PET 12µ / METBOPP 18µ';
+    }
+
+    // 4. Size (Pouch Size from respective Job Master)
+    let size = matchedJm.pouchSize || matchedJm.size || matchedJm.sizeMm || matchedJm.pouchDimensions || '';
+    if (!size && (matchedJm.pouchWidthMm || matchedJm.pouchLengthMm)) {
+      size = `${matchedJm.pouchWidthMm || 0} x ${matchedJm.pouchLengthMm || 0} mm`;
+    }
+    if (!size) {
+      size = matchedOrder.pouchSize || matchedOrder.size || (matchedJm.printWidthMm ? `${matchedJm.printWidthMm} mm` : 'As per Specs');
+    }
+
+    // 5. Thickness (total of all layers of the respective job)
+    let thicknessMicron = matchedJm.totalThicknessMicron || matchedJm.totalThickness || matchedJm.thicknessMicron || matchedJm.thickness || '';
+    if (!thicknessMicron && Array.isArray(matchedJm.layers) && matchedJm.layers.length > 0) {
+      const totalMic = matchedJm.layers.reduce((sum, l) => sum + (parseFloat(l.micron) || 0), 0);
+      if (totalMic > 0) thicknessMicron = `${totalMic}µ`;
+    }
+    if (!thicknessMicron && structure) {
+      const matches = structure.match(/\d+(\.\d+)?\s*(µ|micron)/gi);
+      if (matches) {
+        const sum = matches.reduce((s, m) => s + (parseFloat(m) || 0), 0);
+        if (sum > 0) thicknessMicron = `${sum}µ`;
+      }
+    }
+    if (!thicknessMicron) {
+      thicknessMicron = '30µ';
+    }
+
+    return {
+      filmType,
+      netWeightStr,
+      structure,
+      size,
+      thicknessMicron
+    };
+  };
+
+  // Pre-fill and generate Quality CoA Report from a Delivery Challan
+  const handleCreateCoaFromDc = (dc) => {
     setEditingCoaId(null);
-    const nextCoa = generateDocRefNumber('coa');
+    const nextCoa = getNextDocRefNumber('coa');
     setCoaNo(nextCoa);
     setCoaTestDate(new Date().toLocaleDateString('en-GB'));
-    
-    // All user fields are left empty for fresh entry by user
-    setCoaCustomerName('');
-    setCoaJobName('');
-    setCoaJobCode('');
-    setCoaInvoiceNo('');
-    setCoaBatchLotNo('');
-    setCoaNetWeight('');
-    setCoaSizeMm('');
-    setCoaOverallStatus('PASSED & APPROVED');
-    setCoaQcInspector(currentUser ? `${currentUser.name} (QC Inspector)` : '');
-    setCoaApprovedByHead('');
-    setCoaRemarks('Material tested strictly in Quality Control Laboratory and meets all agreed technical specifications. Approved for dispatch.');
 
-    // Load active or default material structure template parameters & specs
+    // 1. Customer Name
+    const custName = dc.clientName || dc.partyName || '';
+    setCoaCustomerName(custName);
+
+    // 2. Invoice Number
+    setCoaInvoiceNo(dc.invoiceNo || '');
+
+    // 3. Select Job Name
+    let primaryJobName = dc.jobName || '';
+    if (!primaryJobName && Array.isArray(dc.items) && dc.items[0]?.description) {
+      primaryJobName = dc.items[0].description.split(' - ')[0];
+    }
+    setCoaJobName(primaryJobName);
+
+    const matchedJm = (jobMasters || []).find(j => j.jobName === primaryJobName);
+    setCoaJobCode(matchedJm?.id ? String(matchedJm.id).replace('JM-', '') : '1');
+
+    // 4. Batch Number (Order Ref: #)
+    const batchRef = dc.poRefNo ? `Order Ref: ${dc.poRefNo}` : (dc.challanNo ? `Order Ref: ${dc.challanNo}` : 'Order Ref: N/A');
+    setCoaBatchLotNo(batchRef);
+
+    // 5-9. Resolve Film Type, Net Weight, Structure, Size, Thickness from Job Master
+    const details = resolveJobMasterDetails(primaryJobName, dc);
+
+    setCoaFilmType(details.filmType);
+    setCoaNetWeight(details.netWeightStr);
+    setCoaSpecification(details.structure);
+    setCoaSizeMm(details.size);
+    setCoaThicknessMicron(details.thicknessMicron);
+
+    setCoaOverallStatus('PASSED & APPROVED');
+    setCoaQcInspector(currentUser ? `${currentUser.name || currentUser.fullName} (QC Inspector)` : 'Quality Store Executive');
+    setCoaApprovedByHead('Plant Quality Head');
+    setCoaRemarks(`Quality CoA generated for Delivery Challan #${dc.challanNo} (Invoice #${dc.invoiceNo || 'N/A'}). Material inspected and passed standard QC parameters.`);
+
+    // Load active or default material structure template parameters
     const activeTemplate = coaTemplates.find(t => t.id === selectedCoaTemplateId) || coaTemplates[0];
     if (activeTemplate) {
-      setSelectedCoaTemplateId(activeTemplate.id);
-      setCoaFilmType(activeTemplate.filmType || '');
-      setCoaSpecification(activeTemplate.specification || '');
-      setCoaThicknessMicron(activeTemplate.thicknessMicron || '');
       setCoaParameters((activeTemplate.parameters || []).map((p, idx) => ({
         srNo: idx + 1,
         parameter: p.parameter,
         uom: p.uom,
         standard: p.standard,
-        observation: ''
+        observation: 'Pass / Met'
       })));
     } else {
-      setCoaFilmType('');
-      setCoaSpecification('');
-      setCoaThicknessMicron('');
-      setCoaParameters(DEFAULT_COA_PARAMETERS.map(p => ({ ...p, observation: '' })));
+      setCoaParameters(DEFAULT_COA_PARAMETERS.map(p => ({ ...p, observation: 'Pass' })));
     }
 
-    setIsCoaModalOpen(true);
-  };
-
-  const handleEditCoa = (coa) => {
-    setEditingCoaId(coa.id);
-    setCoaNo(coa.coaNo);
-    setCoaTestDate(coa.testDate || '');
-    setCoaCustomerName(coa.customerName || '');
-    setCoaJobName(coa.jobName || '');
-    setCoaInvoiceNo(coa.invoiceNo || '');
-    setCoaJobCode(coa.jobCode || '1');
-    setCoaFilmType(coa.filmType || '');
-    setCoaNetWeight(coa.netWeight || '');
-    setCoaSpecification(coa.specification || '');
-    setCoaSizeMm(coa.sizeMm || '');
-    setCoaThicknessMicron(coa.thicknessMicron || '');
-    setCoaBatchLotNo(coa.batchLotNo || '');
-    setCoaOverallStatus(coa.overallStatus || 'PASSED & APPROVED');
-    setCoaQcInspector(coa.qcInspector || '');
-    setCoaApprovedByHead(coa.approvedByHead || '');
-    setCoaRemarks(coa.remarks || '');
-    setCoaParameters(Array.isArray(coa.parameters) && coa.parameters.length > 0 ? coa.parameters : DEFAULT_COA_PARAMETERS);
-
+    setActiveTab('coas');
     setIsCoaModalOpen(true);
   };
 
   const handleJobSelectChange = (jobNameStr) => {
     setCoaJobName(jobNameStr);
-    const matched = jobMasters.find(j => j.jobName === jobNameStr);
+    const matched = (jobMasters || []).find(j => j.jobName === jobNameStr);
     if (matched) {
       setCoaJobCode(matched.id ? String(matched.id).replace('JM-', '') : '1');
       if (matched.clientName) setCoaCustomerName(matched.clientName);
-      if (matched.structure) setCoaSpecification(`Multi-layer (${matched.structure})`);
-      if (matched.printWidthMm) setCoaSizeMm(`${matched.printWidthMm} mm`);
+      
+      const details = resolveJobMasterDetails(jobNameStr, {});
+      if (details.filmType) setCoaFilmType(details.filmType);
+      if (details.structure) setCoaSpecification(details.structure);
+      if (details.size) setCoaSizeMm(details.size);
+      if (details.thicknessMicron) setCoaThicknessMicron(details.thicknessMicron);
     }
   };
 
@@ -1222,7 +1287,14 @@ export default function DispatchManagement({
 
       {/* PDF Viewers */}
       {activeDcForPDF && (
-        <DeliveryChallanPDF challanData={activeDcForPDF} onClose={() => setActiveDcForPDF(null)} />
+        <DeliveryChallanPDF 
+          challanData={activeDcForPDF} 
+          onClose={() => setActiveDcForPDF(null)} 
+          onGenerateCoa={(dc) => {
+            setActiveDcForPDF(null);
+            handleCreateCoaFromDc(dc);
+          }}
+        />
       )}
       {activeCoaForPDF && (
         <CertificateOfAnalysisPDF coaData={activeCoaForPDF} onClose={() => setActiveCoaForPDF(null)} />
@@ -1542,6 +1614,14 @@ export default function DispatchManagement({
                                   History ({dc.returnInwardHistory.length})
                                 </button>
                               )}
+                              <button 
+                                className="btn-secondary" 
+                                style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontWeight: '700', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                title="Generate Quality CoA Report for this Delivery Challan"
+                                onClick={() => handleCreateCoaFromDc(dc)}
+                              >
+                                <FileText size={14} /> + Quality CoA
+                              </button>
                               <button 
                                 className="btn-secondary" 
                                 style={{ padding: '4px 10px', fontSize: '0.75rem' }}

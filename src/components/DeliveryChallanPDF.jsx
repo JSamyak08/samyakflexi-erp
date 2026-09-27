@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
+import { Printer, ArrowLeft, Edit3, Plus, Trash2, FileText } from 'lucide-react';
 import { COMPANY_DETAILS } from '../factoryStore';
 import { numberToWords, formatINR, calculateGSTBreakdown, toTitleCase } from '../utils/pdfHelpers';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 
-export default function DeliveryChallanPDF({ challanData, onClose }) {
+export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa }) {
   if (!challanData) return null;
 
   const defaultChallanNo = challanData.challanNo || generateDocRefNumber('dc');
@@ -118,6 +118,15 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
         <button className="btn-secondary" onClick={onClose}>
           <ArrowLeft size={16} /> Back to Dispatch Hub
         </button>
+        {onGenerateCoa && (
+          <button 
+            className="btn-secondary" 
+            style={{ background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }} 
+            onClick={() => onGenerateCoa(challanData)}
+          >
+            <FileText size={16} /> + Quality CoA Report
+          </button>
+        )}
         <button className="btn-primary" onClick={() => window.print()}>
           <Printer size={16} /> Print Delivery Challan
         </button>
