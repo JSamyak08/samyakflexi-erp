@@ -198,6 +198,7 @@ export default function DispatchManagement({
   const [pktCoreWeight, setPktCoreWeight] = useState(4.5);
   const [currentPktNetWeight, setCurrentPktNetWeight] = useState(210.0);
   const [pktUom, setPktUom] = useState('Kg');
+  const [pktHideBranding, setPktHideBranding] = useState(false);
   const [pktRollsList, setPktRollsList] = useState([]);
 
   // Search & Filter
@@ -1316,6 +1317,7 @@ export default function DispatchManagement({
       invoiceNo: pktInvoiceNo,
       poNo: pktPoNo || matchedOrder?.poNo || '',
       stationId: 'Dispatch Main Dock',
+      hideBranding: pktHideBranding,
       rollType: 'FG_DISPATCH'
     };
     setPktRollsList(prev => [...prev, newRollItem]);
@@ -1858,6 +1860,7 @@ export default function DispatchManagement({
                   setPktPoNo(firstOrder?.poNo || '');
                   setPktCoreWeight(0);
                   setPktUom('Kg');
+                  setPktHideBranding(false);
                   setCurrentPktNetWeight(0);
                   setPktRollsList([]);
                   setIsPackingModalOpen(true);
@@ -3639,6 +3642,19 @@ export default function DispatchManagement({
 
             <form onSubmit={handleSavePackingListSubmit}>
               <div className="form-grid">
+                <div className="form-group" style={{ gridColumn: 'span 2', background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <input 
+                    type="checkbox" 
+                    id="pktHideBranding"
+                    checked={pktHideBranding} 
+                    onChange={e => setPktHideBranding(e.target.checked)} 
+                    style={{ width: '18px', height: '18px', accentColor: '#059669', cursor: 'pointer' }}
+                  />
+                  <label htmlFor="pktHideBranding" style={{ fontSize: '0.85rem', fontWeight: '700', color: '#1e293b', cursor: 'pointer', margin: 0 }}>
+                    Hide Factory Branding & GSTIN on Barcode Stickers (for 3rd Party / White-Label Shipments)
+                  </label>
+                </div>
+
                 <div className="form-group">
                   <label>Packing List ID (Automated) *</label>
                   <input 

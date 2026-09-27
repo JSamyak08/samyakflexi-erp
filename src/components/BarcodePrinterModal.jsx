@@ -168,12 +168,25 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
         {/* Label Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1.5px solid #0f172a', paddingBottom: '4px' }}>
           <div>
-            <div style={{ fontWeight: '900', fontSize: '0.88rem', letterSpacing: '-0.02em', lineHeight: '1.1' }}>
-              {COMPANY_DETAILS.name}
-            </div>
-            <div style={{ fontSize: '0.65rem', color: '#475569', fontWeight: '600', marginTop: '1px' }}>
-              Indore Plant • GSTIN: {COMPANY_DETAILS.gstin}
-            </div>
+            {!r.hideBranding ? (
+              <>
+                <div style={{ fontWeight: '900', fontSize: '0.88rem', letterSpacing: '-0.02em', lineHeight: '1.1' }}>
+                  {COMPANY_DETAILS.name}
+                </div>
+                <div style={{ fontSize: '0.65rem', color: '#475569', fontWeight: '600', marginTop: '1px' }}>
+                  Indore Plant • GSTIN: {COMPANY_DETAILS.gstin}
+                </div>
+              </>
+            ) : (
+              <div>
+                <div style={{ fontWeight: '900', fontSize: '0.85rem', letterSpacing: '0.02em', color: '#334155', textTransform: 'uppercase' }}>
+                  IDENTIFICATION TAG
+                </div>
+                <div style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: '600', marginTop: '1px' }}>
+                  3rd Party / White-Label Shipment
+                </div>
+              </div>
+            )}
           </div>
           <span style={{ 
             fontSize: '0.65rem', 
