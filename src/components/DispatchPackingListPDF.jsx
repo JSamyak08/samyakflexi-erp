@@ -146,8 +146,9 @@ export default function DispatchPackingListPDF({ shipment, company, onClose }) {
                 <th style={{ padding: '5px 8px', textAlign: 'left', border: '1px solid #0f172a', fontSize: '0.72rem' }}>Barcode ID</th>
                 <th style={{ padding: '5px 8px', textAlign: 'left', border: '1px solid #0f172a', fontSize: '0.72rem' }}>Substrate Specification</th>
                 <th style={{ padding: '5px 8px', textAlign: 'center', border: '1px solid #0f172a', width: '90px', fontSize: '0.72rem' }}>Core Wt (Kg)</th>
-                <th style={{ padding: '5px 8px', textAlign: 'right', border: '1px solid #0f172a', width: '110px', fontSize: '0.72rem' }}>Gross Weight (Kg)</th>
-                <th style={{ padding: '5px 8px', textAlign: 'right', border: '1px solid #0f172a', width: '110px', fontSize: '0.72rem' }}>Net Weight (Kg)</th>
+                <th style={{ padding: '5px 8px', textAlign: 'right', border: '1px solid #0f172a', width: '100px', fontSize: '0.72rem' }}>Gross Weight (Kg)</th>
+                <th style={{ padding: '5px 8px', textAlign: 'right', border: '1px solid #0f172a', width: '100px', fontSize: '0.72rem' }}>Net Weight (Kg)</th>
+                <th style={{ padding: '5px 8px', textAlign: 'center', border: '1px solid #0f172a', width: '105px', fontSize: '0.72rem' }}>Confirm Loading</th>
               </tr>
             </thead>
             <tbody>
@@ -177,6 +178,9 @@ export default function DispatchPackingListPDF({ shipment, company, onClose }) {
                     <td style={{ padding: '4px 8px', textAlign: 'right', border: '1px solid #e2e8f0', fontWeight: '800', color: '#047857' }}>
                       {netWt.toFixed(1)}
                     </td>
+                    <td style={{ padding: '4px 8px', textAlign: 'center', border: '1px solid #e2e8f0' }}>
+                      <div style={{ display: 'inline-block', width: '14px', height: '14px', border: '1.5px solid #475569', borderRadius: '3px', background: '#ffffff' }} />
+                    </td>
                   </tr>
                 );
               })}
@@ -194,6 +198,9 @@ export default function DispatchPackingListPDF({ shipment, company, onClose }) {
                 </td>
                 <td style={{ padding: '5px 8px', textAlign: 'right', border: '1px solid #cbd5e1', color: '#047857' }}>
                   {totalNet.toFixed(1)} Kg
+                </td>
+                <td style={{ padding: '5px 8px', textAlign: 'center', border: '1px solid #cbd5e1', color: '#64748b', fontSize: '0.7rem' }}>
+                  [ ] Verified
                 </td>
               </tr>
             </tfoot>
