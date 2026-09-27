@@ -3851,6 +3851,10 @@ export default function App() {
         deliveryChallans={deliveryChallans}
         productionRecords={productionRecords}
         vendors={vendors}
+        onNavigateToProductionRecord={(jobName, params) => {
+          setIsBarcodeScannerOpen(false);
+          handleTabChange('production_records', { jobName, ...params });
+        }}
       />
     </div>
   );

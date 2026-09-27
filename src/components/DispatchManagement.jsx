@@ -184,12 +184,15 @@ export default function DispatchManagement({
   const [selectedRollForBarcodeModal, setSelectedRollForBarcodeModal] = useState(null);
 
   // New Packing List Form State
+  const [pktDispatchId, setPktDispatchId] = useState('');
+  const [pktInvoiceNo, setPktInvoiceNo] = useState('');
   const [pktJobName, setPktJobName] = useState('');
   const [pktClientName, setPktClientName] = useState('');
   const [pktVehicleNo, setPktVehicleNo] = useState('');
   const [pktLrNo, setPktLrNo] = useState('');
   const [pktTransporterName, setPktTransporterName] = useState('');
   const [pktPoNo, setPktPoNo] = useState('');
+  const [pktCoreWeight, setPktCoreWeight] = useState(4.5);
   const [currentPktNetWeight, setCurrentPktNetWeight] = useState(210.0);
   const [pktRollsList, setPktRollsList] = useState([]);
 
@@ -980,7 +983,7 @@ export default function DispatchManagement({
     setEditingDcId(null);
     const newDcNo = getNextDocRefNumber('dc');
     setDcChallanNo(newDcNo);
-    setDcInvoiceNo('');
+    setDcInvoiceNo(shipment.invoiceNo || '');
     setDcDispatchDateTime(new Date().toISOString().slice(0, 16));
     setDcPartyType('Client');
     setDcSelectedClientName(shipment.clientName || '');
@@ -1057,7 +1060,8 @@ export default function DispatchManagement({
 
   const handleAddRollToPackingList = () => {
     const netW = Number(currentPktNetWeight) > 0 ? Number(currentPktNetWeight) : 210.0;
-    const grossW = Number((netW + 4.5).toFixed(2));
+    const coreW = Number(pktCoreWeight) >= 0 ? Number(pktCoreWeight) : 4.5;
+    const grossW = Number((netW + coreW).toFixed(2));
     const nextRollNo = pktRollsList.length + 1;
     const matchedOrder = (orders || []).find(o => o.jobName === pktJobName);
     const orderId = matchedOrder?.id || 'N/A';
@@ -1067,10 +1071,11 @@ export default function DispatchManagement({
       barcodeId: `FG-DISP-${Date.now().toString().slice(-6)}-${nextRollNo}`,
       jobName: pktJobName || 'Standard Job',
       orderId: orderId,
-      substrateSpec: matchedOrder?.structure || 'Laminated Printed Reel',
+      substrateSpec: matchedOrder?.structure || 'PET 12µ / METBOPP 18µ',
+      coreWeightKg: coreW,
       netWeightKg: netW,
       grossWeightKg: grossW,
-      coreSize: '3 inch'
+      coreSize: '3 Inch'
     };
     setPktRollsList(prev => [...prev, newRollItem]);
   };
@@ -1082,24 +1087,45 @@ export default function DispatchManagement({
       return;
     }
 
+    const coreW = Number(pktCoreWeight) >= 0 ? Number(pktCoreWeight) : 4.5;
+    const matchedOrder = (orders || []).find(o => o.jobName === pktJobName);
     const rollsToSave = pktRollsList.length > 0 ? pktRollsList : [
       {
         rollNo: 1,
         barcodeId: `FG-DISP-${Date.now().toString().slice(-6)}-1`,
         jobName: pktJobName,
+        substrateSpec: matchedOrder?.structure || 'PET 12µ / METBOPP 18µ',
+        coreWeightKg: coreW,
         netWeightKg: Number(currentPktNetWeight) || 210.0,
-        grossWeightKg: Number((currentPktNetWeight || 210.0) + 4.5),
-        coreSize: '3 inch'
+        grossWeightKg: Number(((Number(currentPktNetWeight) || 210.0) + coreW).toFixed(2)),
+        coreSize: '3 Inch'
       }
     ];
 
     const totalNetWeightKg = rollsToSave.reduce((sum, r) => sum + (Number(r.netWeightKg) || 0), 0);
     const totalGrossWeightKg = rollsToSave.reduce((sum, r) => sum + (Number(r.grossWeightKg) || 0), 0);
-    const matchedOrder = (orders || []).find(o => o.jobName === pktJobName);
+
+    const now = new Date();
+    const exactTimestamp = now.toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    }) + ', ' + now.toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
+
+    const finalDispatchId = pktDispatchId || getNextDocRefNumber('pl');
+    if (pktDispatchId) {
+      getNextDocRefNumber('pl');
+    }
 
     const newShipment = {
       id: `DISP-PL-${Date.now()}`,
-      dispatchId: `PL-${Date.now().toString().slice(-6)}`,
+      dispatchId: finalDispatchId,
+      invoiceNo: pktInvoiceNo || '',
       orderId: matchedOrder?.id || 'N/A',
       jobName: pktJobName,
       clientName: pktClientName,
@@ -1107,7 +1133,8 @@ export default function DispatchManagement({
       lrNo: pktLrNo || 'LR-2026-99',
       transporterName: pktTransporterName || 'Express Logistics',
       poNo: pktPoNo || matchedOrder?.poNo || '',
-      dispatchDate: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      dispatchDate: exactTimestamp,
+      createdAt: exactTimestamp,
       totalRolls: rollsToSave.length,
       totalNetWeightKg: Number(totalNetWeightKg.toFixed(2)),
       totalGrossWeightKg: Number(totalGrossWeightKg.toFixed(2)),
@@ -1532,6 +1559,9 @@ export default function DispatchManagement({
                 type="button" 
                 className="btn-primary" 
                 onClick={() => {
+                  const autoPlId = generateDocRefNumber('pl');
+                  setPktDispatchId(autoPlId);
+                  setPktInvoiceNo('');
                   const firstOrder = (orders || [])[0];
                   setPktJobName(firstOrder?.jobName || '');
                   setPktClientName(firstOrder?.clientName || firstOrder?.customerName || '');
@@ -1539,6 +1569,7 @@ export default function DispatchManagement({
                   setPktLrNo('LR-2026-001');
                   setPktTransporterName('Express Logistics');
                   setPktPoNo(firstOrder?.poNo || '');
+                  setPktCoreWeight(4.5);
                   setCurrentPktNetWeight(210.0);
                   setPktRollsList([]);
                   setIsPackingModalOpen(true);
@@ -3253,6 +3284,29 @@ export default function DispatchManagement({
 
             <form onSubmit={handleSavePackingListSubmit}>
               <div className="form-grid">
+                <div className="form-group">
+                  <label>Packing List ID (Automated) *</label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    value={pktDispatchId} 
+                    onChange={e => setPktDispatchId(e.target.value)} 
+                    required 
+                    style={{ fontWeight: '800', color: '#2563eb' }}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Invoice Number</label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    placeholder="e.g. INV-2026-001" 
+                    value={pktInvoiceNo} 
+                    onChange={e => setPktInvoiceNo(e.target.value)} 
+                  />
+                </div>
+
                 <div className="form-group" style={{ gridColumn: 'span 2' }}>
                   <label>Select Production Job *</label>
                   <select 
@@ -3296,8 +3350,19 @@ export default function DispatchManagement({
                   <input type="text" className="form-control" value={pktLrNo} onChange={e => setPktLrNo(e.target.value)} />
                 </div>
 
+                <div className="form-group">
+                  <label>Core Tare Weight (Kg) *</label>
+                  <input 
+                    type="number" 
+                    step="0.1" 
+                    className="form-control" 
+                    value={pktCoreWeight} 
+                    onChange={e => setPktCoreWeight(parseFloat(e.target.value) || 0)} 
+                  />
+                </div>
+
                 {/* Scale #4 Live Weight Input */}
-                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                <div className="form-group">
                   <WeighingScaleCaptureButton
                     weightKg={currentPktNetWeight}
                     onCaptureWeight={(w) => setCurrentPktNetWeight(Number(w) || 210.0)}
@@ -3317,7 +3382,7 @@ export default function DispatchManagement({
                     style={{ fontSize: '0.75rem', padding: '5px 10px', background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontWeight: '700' }}
                     onClick={handleAddRollToPackingList}
                   >
-                    + Add Roll ({currentPktNetWeight} kg Net / {(currentPktNetWeight + 4.5).toFixed(1)} kg Gross)
+                    + Add Roll ({currentPktNetWeight} kg Net / {(currentPktNetWeight + Number(pktCoreWeight || 4.5)).toFixed(1)} kg Gross)
                   </button>
                 </div>
 
@@ -3331,9 +3396,10 @@ export default function DispatchManagement({
                       <tr>
                         <th>Roll #</th>
                         <th>Barcode ID</th>
-                        <th>Job Name</th>
-                        <th>Net Wt (kg)</th>
-                        <th>Gross Wt (kg)</th>
+                        <th>Substrate Spec</th>
+                        <th style={{ textAlign: 'center' }}>Core Wt (kg)</th>
+                        <th style={{ textAlign: 'right' }}>Gross Wt (kg)</th>
+                        <th style={{ textAlign: 'right' }}>Net Wt (kg)</th>
                         <th>Action</th>
                       </tr>
                     </thead>
@@ -3342,9 +3408,10 @@ export default function DispatchManagement({
                         <tr key={i}>
                           <td style={{ fontWeight: '700' }}>{r.rollNo}</td>
                           <td style={{ fontFamily: 'monospace', color: '#2563eb' }}>{r.barcodeId}</td>
-                          <td style={{ fontWeight: '600' }}>{r.jobName}</td>
-                          <td style={{ fontWeight: '700', color: '#047857' }}>{r.netWeightKg} kg</td>
-                          <td style={{ fontWeight: '700', color: '#4338ca' }}>{r.grossWeightKg} kg</td>
+                          <td>{r.substrateSpec}</td>
+                          <td style={{ textAlign: 'center' }}>{r.coreWeightKg} kg</td>
+                          <td style={{ fontWeight: '700', color: '#1e293b', textAlign: 'right' }}>{r.grossWeightKg} kg</td>
+                          <td style={{ fontWeight: '700', color: '#047857', textAlign: 'right' }}>{r.netWeightKg} kg</td>
                           <td>
                             <button
                               type="button"

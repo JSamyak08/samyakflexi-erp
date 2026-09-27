@@ -103,7 +103,9 @@ export const DEFAULT_PREFIXES = {
   jdsPrefix: 'SIL/JDS/26-27/',
   jdsCounter: 201,
   indentPrefix: 'SIL/IND/26-27/',
-  indentCounter: 101
+  indentCounter: 101,
+  plPrefix: 'PL-',
+  plCounter: 606130
 };
 
 export const DEFAULT_DOCUMENT_TERMS = {
@@ -297,6 +299,10 @@ export function generateDocRefNumber(type, customNumber) {
   } else if (type === 'indent') {
     const num = customNumber !== undefined ? customNumber : (config.indentCounter || 101);
     return `${config.indentPrefix || 'SIL/IND/26-27/'}${num}`;
+  } else if (type === 'pl' || type === 'packing') {
+    const year = new Date().getFullYear();
+    const num = customNumber !== undefined ? customNumber : (config.plCounter || 606130);
+    return `PL-${year}-${num}`;
   }
   
   return `SIL/DOC/${customNumber || 100}`;
@@ -340,6 +346,9 @@ export function getNextDocRefNumber(type) {
   } else if (type === 'indent') {
     num = config.indentCounter || 101;
     key = 'indentCounter';
+  } else if (type === 'pl' || type === 'packing') {
+    num = config.plCounter || 606130;
+    key = 'plCounter';
   }
 
   const docRef = generateDocRefNumber(type, num);
