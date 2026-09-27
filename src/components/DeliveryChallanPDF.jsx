@@ -37,6 +37,8 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
 
   const {
     invoiceNo = "SIL/INV/26-27/042",
+    lrNo = "",
+    linkedPackingListIds = [],
     dispatchDateTime = new Date().toISOString().slice(0, 16).replace('T', ' '),
     partyType = "Client",
     clientName = "Britannia Industries Ltd",
@@ -209,8 +211,14 @@ export default function DeliveryChallanPDF({ challanData, onClose }) {
                   <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px' }}>Dispatch Date/Time: <strong>{dispatchDateTime}</strong></div>
                   <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px' }}>Vehicle No: <strong style={{ color: '#0284c7' }}>{vehicleNo || 'Self Hand Delivery'}</strong></div>
                   <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px' }}>Transporter: {transporterName || 'Direct Dispatch'}</div>
+                  {lrNo && <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px' }}>Lorry Receipt # (LR): <strong style={{ color: '#047857' }}>{lrNo}</strong></div>}
                   <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px' }}>Driver Contact: {driverPhone || '—'}</div>
                   <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px' }}>Client PO Ref #: {poRefNo || 'N/A'}</div>
+                  {(linkedPackingListIds && (Array.isArray(linkedPackingListIds) ? linkedPackingListIds.length > 0 : String(linkedPackingListIds).trim())) && (
+                    <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px', color: '#0369a1' }}>
+                      Linked Packing List(s): <strong>{Array.isArray(linkedPackingListIds) ? linkedPackingListIds.join(', ') : linkedPackingListIds}</strong>
+                    </div>
+                  )}
                   {debitNoteNo && (
                     <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px', color: '#b91c1c' }}>
                       Debit Note #: <strong>{debitNoteNo}</strong>

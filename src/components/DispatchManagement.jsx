@@ -229,6 +229,8 @@ export default function DispatchManagement({
   // --------------------------------------------------------------------------
   const [dcChallanNo, setDcChallanNo] = useState('');
   const [dcInvoiceNo, setDcInvoiceNo] = useState('');
+  const [dcLrNo, setDcLrNo] = useState('');
+  const [dcSelectedPackingListIds, setDcSelectedPackingListIds] = useState([]);
   const [dcDispatchDateTime, setDcDispatchDateTime] = useState('');
   const [dcPartyType, setDcPartyType] = useState('Client'); // 'Client' | 'Vendor'
   const [dcSelectedClientName, setDcSelectedClientName] = useState('');
@@ -525,6 +527,8 @@ export default function DispatchManagement({
     const nextRef = generateDocRefNumber('dc');
     setDcChallanNo(nextRef);
     setDcInvoiceNo('');
+    setDcLrNo('');
+    setDcSelectedPackingListIds([]);
     
     const now = new Date();
     const isoString = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -567,6 +571,8 @@ export default function DispatchManagement({
     setEditingDcId(dc.id);
     setDcChallanNo(dc.challanNo);
     setDcInvoiceNo(dc.invoiceNo || '');
+    setDcLrNo(dc.lrNo || dc.lrNumber || '');
+    setDcSelectedPackingListIds(Array.isArray(dc.linkedPackingListIds) ? dc.linkedPackingListIds : (dc.linkedPackingListId ? [dc.linkedPackingListId] : []));
     setDcDispatchDateTime(dc.dispatchDateTime || '');
     setDcPartyType(dc.partyType || 'Client');
     setDcSelectedClientName(dc.clientName || dc.partyName || '');
@@ -678,6 +684,8 @@ export default function DispatchManagement({
       id: editingDcId || `DC-${Date.now()}`,
       challanNo: finalChallanNo,
       invoiceNo: dcInvoiceNo,
+      lrNo: dcLrNo,
+      linkedPackingListIds: dcSelectedPackingListIds,
       dispatchDateTime: dcDispatchDateTime,
       partyType: dcPartyType,
       clientName: dcSelectedClientName,
@@ -979,81 +987,127 @@ export default function DispatchManagement({
   const coaPagination = usePagination(filteredCoAs, 10);
   const packingPagination = usePagination(filteredPackingLists, 10);
 
-  const handleCreateDcFromPackingList = (shipment) => {
+  const handleImportMultiplePackingLists = (selectedIds) => {
     setEditingDcId(null);
-    const newDcNo = getNextDocRefNumber('dc');
+    const validIds = Array.isArray(selectedIds) ? selectedIds : [selectedIds].filter(Boolean);
+    const strIds = validIds.map(id => String(id));
+    setDcSelectedPackingListIds(strIds);
+
+    if (strIds.length === 0) return;
+
+    const matchedShipments = (dispatchShipments || []).filter(s =>
+      strIds.includes(String(s.dispatchId || s.id))
+    );
+
+    if (matchedShipments.length === 0) return;
+
+    const newDcNo = dcChallanNo || getNextDocRefNumber('dc');
     setDcChallanNo(newDcNo);
-    setDcInvoiceNo(shipment.invoiceNo || '');
-    setDcDispatchDateTime(new Date().toISOString().slice(0, 16));
+
+    // Primary metadata aggregation
+    const clientName = matchedShipments[0].clientName || '';
+    const invoices = [...new Set(matchedShipments.map(s => s.invoiceNo).filter(Boolean))].join(', ');
+    const lrs = [...new Set(matchedShipments.map(s => s.lrNo).filter(Boolean))].join(', ');
+    const vehicles = [...new Set(matchedShipments.map(s => s.vehicleNo).filter(Boolean))].join(', ');
+    const transporters = [...new Set(matchedShipments.map(s => s.transporterName).filter(Boolean))].join(', ');
+    const pos = [...new Set(matchedShipments.map(s => s.poNo).filter(Boolean))].join(', ');
+    const jobs = [...new Set(matchedShipments.map(s => s.jobName).filter(Boolean))].join(', ');
+
     setDcPartyType('Client');
-    setDcSelectedClientName(shipment.clientName || '');
-    
-    const matchedClient = (clients || []).find(c => c.name === shipment.clientName);
-    setDcClientAddress(matchedClient?.address || '');
-    setDcClientGstin(matchedClient?.gstin || '');
-    setDcClientContactPerson(matchedClient?.contactPerson || '');
-    setDcClientPhone(matchedClient?.phone || '');
-    
-    setDcVehicleNo(shipment.vehicleNo || '');
-    setDcTransporterName(shipment.transporterName || '');
-    setDcDriverPhone('');
-    setDcPoRefNo(shipment.poNo || '');
-    setDcDebitNoteNo('');
-    setDcJobName(shipment.jobName || '');
+    setDcSelectedClientName(clientName);
+
+    const matchedClient = (clients || []).find(c => (c.name || c.companyName || c.clientName) === clientName);
+    setDcClientAddress(matchedClient?.address || matchedClient?.factoryAddress || matchedClient?.registeredAddress || '');
+    setDcClientGstin(matchedClient?.gstin || matchedClient?.gstNumber || '');
+    setDcClientContactPerson(matchedClient?.contactPerson || matchedClient?.contactName || '');
+    setDcClientPhone(matchedClient?.phone || matchedClient?.contactNo || matchedClient?.mobile || '');
+
+    setDcInvoiceNo(invoices);
+    setDcLrNo(lrs);
+    setDcVehicleNo(vehicles);
+    setDcTransporterName(transporters);
+    setDcPoRefNo(pos);
+    setDcJobName(jobs);
     setDcChallanNature('Sale of Goods');
     setDcFreightCharges(0);
     setDcGstRatePct(18);
     setDcTaxType('auto');
     setDcDispatchedBy(currentUser?.fullName || currentUser?.name || 'Dispatch Executive');
-    setDcRemarks(`Linked with Packing List #${shipment.dispatchId || shipment.id} (${shipment.totalRolls || 1} rolls | Net: ${shipment.totalNetWeightKg} kg | Gross: ${shipment.totalGrossWeightKg} kg)`);
+    
+    setDcRemarks(`Linked with Packing List(s): ${strIds.join(', ')}`);
     setDcTerms(getDocumentTerms('dc'));
 
-    const itemsList = Array.isArray(shipment.items) && shipment.items.length > 0 ? shipment.items : [];
-    const jobGroupMap = new Map();
-
-    if (itemsList.length > 0) {
-      itemsList.forEach(r => {
-        const jName = r.jobName || shipment.jobName || 'Printed Roll Job';
-        const existing = jobGroupMap.get(jName) || { jobName: jName, netW: 0, grossW: 0, count: 0 };
-        existing.netW += (Number(r.netWeightKg) || 0);
-        existing.grossW += (Number(r.grossWeightKg) || 0);
-        existing.count += 1;
-        jobGroupMap.set(jName, existing);
-      });
-    } else {
-      const jName = shipment.jobName || 'Printed Roll Job';
-      jobGroupMap.set(jName, {
-        jobName: jName,
-        netW: Number(shipment.totalNetWeightKg) || 0,
-        grossW: Number(shipment.totalGrossWeightKg) || 0,
-        count: Number(shipment.totalRolls) || 1
-      });
-    }
-
+    // Generate item rows per packing list & job
     const generatedDcItems = [];
     let idx = 1;
-    jobGroupMap.forEach((grp, jName) => {
-      const matchedJm = (jobMasters || []).find(j => j.jobName === jName);
-      const matchedOrder = (orders || []).find(o => o.jobName === jName);
-      const rate = Number(matchedJm?.sellingPricePerKg || matchedOrder?.rate || 185);
-      const netKg = Number(grp.netW.toFixed(2));
-      const grossKg = Number(grp.grossW.toFixed(2));
 
-      generatedDcItems.push({
-        id: `dc-item-${Date.now()}-${idx++}`,
-        hsnSac: '3923',
-        description: `${jName} - Printed Laminated Film Rolls (${grp.count} Reels | Net: ${netKg} Kg | Gross: ${grossKg} Kg)`,
-        quantity: netKg,
-        unit: 'Kg',
-        grossWeightKg: grossKg,
-        rollCount: grp.count,
-        packingListId: shipment.dispatchId || shipment.id,
-        rate: rate,
-        amount: Number((netKg * rate).toFixed(2))
-      });
+    matchedShipments.forEach(shipment => {
+      const plId = shipment.dispatchId || shipment.id;
+      const itemsList = Array.isArray(shipment.items) && shipment.items.length > 0 ? shipment.items : [];
+
+      if (itemsList.length > 0) {
+        const jobGroupMap = new Map();
+        itemsList.forEach(r => {
+          const jName = r.jobName || shipment.jobName || 'Printed Roll Job';
+          const existing = jobGroupMap.get(jName) || { jobName: jName, netW: 0, grossW: 0, count: 0 };
+          existing.netW += (Number(r.netWeightKg) || 0);
+          existing.grossW += (Number(r.grossWeightKg) || 0);
+          existing.count += 1;
+          jobGroupMap.set(jName, existing);
+        });
+
+        jobGroupMap.forEach((grp, jName) => {
+          const matchedJm = (jobMasters || []).find(j => j.jobName === jName);
+          const matchedOrder = (orders || []).find(o => o.jobName === jName);
+          const rate = Number(matchedJm?.sellingPricePerKg || matchedOrder?.rate || 185);
+          const netKg = Number(grp.netW.toFixed(2));
+          const grossKg = Number(grp.grossW.toFixed(2));
+
+          generatedDcItems.push({
+            id: `dc-item-${Date.now()}-${idx++}`,
+            hsnSac: '3923',
+            description: `${jName} - Printed Laminated Film Rolls (Packing List: ${plId} | ${grp.count} Reels | Net: ${netKg} Kg | Gross: ${grossKg} Kg)`,
+            itemDetails: `Linked Packing List: ${plId}`,
+            quantity: netKg,
+            unit: 'Kg',
+            grossWeightKg: grossKg,
+            rollCount: grp.count,
+            packingListId: plId,
+            rate: rate,
+            amount: Number((netKg * rate).toFixed(2))
+          });
+        });
+      } else {
+        const jName = shipment.jobName || 'Printed Roll Job';
+        const matchedJm = (jobMasters || []).find(j => j.jobName === jName);
+        const matchedOrder = (orders || []).find(o => o.jobName === jName);
+        const rate = Number(matchedJm?.sellingPricePerKg || matchedOrder?.rate || 185);
+        const netKg = Number(Number(shipment.totalNetWeightKg || 0).toFixed(2));
+        const grossKg = Number(Number(shipment.totalGrossWeightKg || (netKg + 4.5)).toFixed(2));
+        const count = Number(shipment.totalRolls) || 1;
+
+        generatedDcItems.push({
+          id: `dc-item-${Date.now()}-${idx++}`,
+          hsnSac: '3923',
+          description: `${jName} - Printed Laminated Film Rolls (Packing List: ${plId} | ${count} Reels | Net: ${netKg} Kg | Gross: ${grossKg} Kg)`,
+          itemDetails: `Linked Packing List: ${plId}`,
+          quantity: netKg,
+          unit: 'Kg',
+          grossWeightKg: grossKg,
+          rollCount: count,
+          packingListId: plId,
+          rate: rate,
+          amount: Number((netKg * rate).toFixed(2))
+        });
+      }
     });
 
     setDcItems(generatedDcItems);
+  };
+
+  const handleCreateDcFromPackingList = (shipment) => {
+    const plId = String(shipment.dispatchId || shipment.id);
+    handleImportMultiplePackingLists([plId]);
     handleTabSwitch('challans');
     setIsDcModalOpen(true);
   };
@@ -1842,41 +1896,97 @@ export default function DispatchManagement({
             <form onSubmit={handleSaveDcSubmit}>
               
               {/* Import / Link from Packing List Banner */}
-              <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '12px', padding: '12px 16px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-                <div>
-                  <div style={{ fontWeight: '800', color: '#065f46', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Package size={16} /> Link / Import from Packing List
+              <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '12px', padding: '14px 16px', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: dcSelectedPackingListIds.length > 0 ? '10px' : '0' }}>
+                  <div>
+                    <div style={{ fontWeight: '800', color: '#065f46', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Package size={16} /> Link / Import from Packing List (Multiple Selection Supported)
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#047857', marginTop: '2px' }}>
+                      Auto-populates Client Name, Invoice #, Lorry Receipt #, and sums Total Net Weight of each packing list into item rows.
+                    </div>
                   </div>
-                  <div style={{ fontSize: '0.78rem', color: '#047857', marginTop: '2px' }}>
-                    Auto-populates job-wise roll count, sum total net weight, and sum total gross weight of rolls into Delivery Challan items.
-                  </div>
+                  <select
+                    className="form-control"
+                    style={{ width: 'auto', minWidth: '300px', background: '#ffffff', fontWeight: '700', borderColor: '#a7f3d0', fontSize: '0.84rem' }}
+                    value=""
+                    onChange={(e) => {
+                      const selectedId = e.target.value;
+                      if (!selectedId) return;
+                      if (!dcSelectedPackingListIds.includes(selectedId)) {
+                        const next = [...dcSelectedPackingListIds, selectedId];
+                        handleImportMultiplePackingLists(next);
+                      }
+                    }}
+                  >
+                    <option value="">+ Add Packing List to Link...</option>
+                    {(dispatchShipments || []).map(ds => {
+                      const id = String(ds.dispatchId || ds.id);
+                      const isAlreadySelected = dcSelectedPackingListIds.includes(id);
+                      return (
+                        <option key={id} value={id} disabled={isAlreadySelected}>
+                          {isAlreadySelected ? '✓ ' : ''}{id} - {ds.clientName} ({ds.jobName} | {ds.totalRolls || 1} rolls, {ds.totalNetWeightKg} kg Net)
+                        </option>
+                      );
+                    })}
+                  </select>
                 </div>
-                <select
-                  className="form-control"
-                  style={{ width: 'auto', minWidth: '280px', background: '#ffffff', fontWeight: '700', borderColor: '#a7f3d0', fontSize: '0.84rem' }}
-                  onChange={(e) => {
-                    const selectedId = e.target.value;
-                    if (!selectedId) return;
-                    const matchedPl = (dispatchShipments || []).find(s => String(s.dispatchId) === String(selectedId) || String(s.id) === String(selectedId));
-                    if (matchedPl) {
-                      handleCreateDcFromPackingList(matchedPl);
-                    }
-                  }}
-                  defaultValue=""
-                >
-                  <option value="">-- Import from Packing List --</option>
-                  {(dispatchShipments || []).map(ds => (
-                    <option key={ds.dispatchId || ds.id} value={ds.dispatchId || ds.id}>
-                      {ds.dispatchId || ds.id} - {ds.clientName} ({ds.jobName} | {ds.totalRolls || 1} rolls, {ds.totalNetWeightKg} kg Net / {ds.totalGrossWeightKg || (ds.totalNetWeightKg + 4.5)} kg Gross)
-                    </option>
-                  ))}
-                </select>
+
+                {/* Active Linked Packing List Chips */}
+                {dcSelectedPackingListIds.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', paddingTop: '8px', borderTop: '1px dashed #a7f3d0' }}>
+                    <span style={{ fontSize: '0.76rem', fontWeight: '800', color: '#065f46' }}>Linked Packing Lists:</span>
+                    {dcSelectedPackingListIds.map(plId => {
+                      const matched = (dispatchShipments || []).find(s => String(s.dispatchId || s.id) === String(plId));
+                      return (
+                        <span 
+                          key={plId}
+                          style={{
+                            background: '#059669',
+                            color: '#ffffff',
+                            fontSize: '0.76rem',
+                            fontWeight: '700',
+                            padding: '3px 10px',
+                            borderRadius: '16px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
+                          }}
+                        >
+                          <Package size={12} />
+                          {plId} {matched?.clientName ? `(${matched.clientName})` : ''}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = dcSelectedPackingListIds.filter(id => id !== plId);
+                              handleImportMultiplePackingLists(next);
+                            }}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: '#ffffff',
+                              cursor: 'pointer',
+                              fontWeight: '900',
+                              padding: '0 2px',
+                              fontSize: '0.85rem',
+                              lineHeight: 1
+                            }}
+                            title="Remove this Packing List"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Card 1: Basic Identifiers & Party Info */}
               <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', marginBottom: '16px' }}>
-                {/* Top 3 Identifiers */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', marginBottom: '14px' }}>
+                {/* Top Identifiers */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '14px' }}>
                   <div>
                     <label className="form-label">Delivery Challan No *</label>
                     <input 
@@ -1898,6 +2008,17 @@ export default function DispatchManagement({
                       value={dcInvoiceNo} 
                       onChange={e => setDcInvoiceNo(e.target.value)} 
                       required 
+                    />
+                  </div>
+
+                  <div>
+                    <label className="form-label">Lorry Receipt # (LR No)</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="e.g. LR-2026-99"
+                      value={dcLrNo} 
+                      onChange={e => setDcLrNo(e.target.value)} 
                     />
                   </div>
 
