@@ -86,6 +86,13 @@ export default function ConsumablesAndIndents({
     return role.includes('admin') || role.includes('plant') || role.includes('director') || role.includes('manager') || role.includes('super');
   }, [userRole]);
 
+  // Strict Admin Role Check for Edit Action (Admin Role Only)
+  const isAdminOnly = useMemo(() => {
+    if (!userRole) return false;
+    const role = String(userRole).toLowerCase().trim();
+    return role === 'admin' || role.includes('admin') || role.includes('super');
+  }, [userRole]);
+
   // Vendors List Fallback
   const availableVendors = useMemo(() => {
     if (vendors && vendors.length > 0) return vendors;
@@ -165,6 +172,29 @@ export default function ConsumablesAndIndents({
   const [selectedItemForRestock, setSelectedItemForRestock] = useState(null);
 
   const [isNewItemModalOpen, setIsNewItemModalOpen] = useState(false);
+
+  // Edit Store Item Modal State (Admin Restricted)
+  const [isEditStoreItemModalOpen, setIsEditStoreItemModalOpen] = useState(false);
+  const [editingStoreItem, setEditingStoreItem] = useState(null);
+  const [editItemCode, setEditItemCode] = useState("");
+  const [editItemName, setEditItemName] = useState("");
+  const [editItemCategory, setEditItemCategory] = useState("Chemicals & Solvents");
+  const [editItemUnit, setEditItemUnit] = useState("Kg");
+  const [editItemStock, setEditItemStock] = useState(0);
+  const [editItemMinReserve, setEditItemMinReserve] = useState(0);
+  const [editItemUnitCost, setEditItemUnitCost] = useState(0);
+  const [editItemMachine, setEditItemMachine] = useState("");
+  const [editItemLocation, setEditItemLocation] = useState("");
+
+  // Edit Material Indent Modal State (Admin Restricted)
+  const [isEditIndentModalOpen, setIsEditIndentModalOpen] = useState(false);
+  const [editingIndent, setEditingIndent] = useState(null);
+  const [editIndentPriority, setEditIndentPriority] = useState("Normal");
+  const [editIndentDepartment, setEditIndentDepartment] = useState("Production & Printing");
+  const [editIndentRaisedBy, setEditIndentRaisedBy] = useState("");
+  const [editIndentStatus, setEditIndentStatus] = useState("Pending Approval");
+  const [editIndentRemarks, setEditIndentRemarks] = useState("");
+  const [editIndentLineItems, setEditIndentLineItems] = useState([]);
 
   // Purchase Order Generation Modal Controls (Admin Restricted)
   const [isRaisePOModalOpen, setIsRaisePOModalOpen] = useState(false);
@@ -616,6 +646,131 @@ export default function ConsumablesAndIndents({
     alert(`Indent ${indentId} updated to "${newStatus}".`);
   };
 
+  // ─── Edit Handlers (Strictly Restricted to Admin Role) ──────────────────────────
+
+  // 1. Open Edit Store Item Modal (Admin Only)
+  const handleOpenEditStoreItemModal = (item) => {
+    if (!isAdminOnly) {
+      alert(`Access Restricted!\n\nEdit option for Consumable & Spare Store items is restricted strictly to users with the Admin Role.\n\nYour current logged-in role is: "${userRole}". Please contact Admin to make edits.`);
+      return;
+    }
+    setEditingStoreItem(item);
+    setEditItemCode(item.itemCode || '');
+    setEditItemName(item.name || '');
+    setEditItemCategory(item.category || 'Chemicals & Solvents');
+    setEditItemUnit(item.unit || 'Kg');
+    setEditItemStock(item.currentStock ?? 0);
+    setEditItemMinReserve(item.minReserve ?? 0);
+    setEditItemUnitCost(item.unitCost ?? 0);
+    setEditItemMachine(item.assignedMachine || '');
+    setEditItemLocation(item.location || '');
+    setIsEditStoreItemModalOpen(true);
+  };
+
+  // Save Edit Store Item
+  const handleSaveEditStoreItem = (e) => {
+    e.preventDefault();
+    if (!editingStoreItem) return;
+    const updatedItem = {
+      ...editingStoreItem,
+      itemCode: editItemCode.trim(),
+      name: editItemName.trim(),
+      category: editItemCategory,
+      unit: editItemUnit,
+      currentStock: parseFloat(editItemStock) || 0,
+      minReserve: parseFloat(editItemMinReserve) || 0,
+      unitCost: parseFloat(editItemUnitCost) || 0,
+      assignedMachine: editItemMachine,
+      location: editItemLocation.trim()
+    };
+    setConsumables(prev => prev.map(c => c.id === editingStoreItem.id ? updatedItem : c));
+    setIsEditStoreItemModalOpen(false);
+    setEditingStoreItem(null);
+    alert(`Consumable store item "${updatedItem.name}" (${updatedItem.itemCode}) updated successfully!`);
+  };
+
+  // 2. Open Edit Material Indent Modal (Admin Only)
+  const handleOpenEditIndentModal = (indent) => {
+    if (!isAdminOnly) {
+      alert(`Access Restricted!\n\nEdit option for Material Indents is restricted strictly to users with the Admin Role.\n\nYour current logged-in role is: "${userRole}". Please contact Admin to make edits.`);
+      return;
+    }
+    setEditingIndent(indent);
+    setEditIndentPriority(indent.priority || 'Normal');
+    setEditIndentDepartment(indent.department || 'Production & Printing');
+    setEditIndentRaisedBy(indent.raisedBy || userName || 'Store Manager');
+    setEditIndentStatus(indent.status || 'Pending Approval');
+    setEditIndentRemarks(indent.remarks || '');
+    setEditIndentLineItems(indent.items ? JSON.parse(JSON.stringify(indent.items)) : []);
+    setIsEditIndentModalOpen(true);
+  };
+
+  const addEditIndentLineItem = () => {
+    const defaultConsumable = consumables[0] || {};
+    setEditIndentLineItems(prev => [
+      ...prev,
+      {
+        id: Date.now(),
+        itemName: defaultConsumable.name || "Ethyl Acetate Solvent",
+        category: defaultConsumable.category || "Chemicals & Solvents",
+        unit: defaultConsumable.unit || "Litres",
+        reqQty: 100,
+        targetMachine: dynamicMachineList[0] || ''
+      }
+    ]);
+  };
+
+  const removeEditIndentLineItem = (index) => {
+    if (editIndentLineItems.length <= 1) return;
+    setEditIndentLineItems(prev => prev.filter((_, idx) => idx !== index));
+  };
+
+  const updateEditIndentLineItem = (index, field, val) => {
+    setEditIndentLineItems(prev => prev.map((item, idx) => {
+      if (idx === index) {
+        if (field === 'itemName') {
+          const matched = consumables.find(c => c.name === val);
+          if (matched) {
+            return {
+              ...item,
+              itemName: matched.name,
+              category: matched.category,
+              unit: matched.unit
+            };
+          }
+        }
+        return { ...item, [field]: val };
+      }
+      return item;
+    }));
+  };
+
+  // Save Edit Material Indent
+  const handleSaveEditIndent = (e) => {
+    e.preventDefault();
+    if (!editingIndent) return;
+    if (editIndentLineItems.length === 0) {
+      alert("Indent must have at least one line item!");
+      return;
+    }
+    const updatedIndent = {
+      ...editingIndent,
+      priority: editIndentPriority,
+      department: editIndentDepartment,
+      raisedBy: editIndentRaisedBy,
+      status: editIndentStatus,
+      remarks: editIndentRemarks,
+      items: editIndentLineItems.map(item => ({
+        ...item,
+        reqQty: parseFloat(item.reqQty) || 1
+      }))
+    };
+    setIndents(prev => prev.map(ind => ind.id === editingIndent.id ? updatedIndent : ind));
+    setIsEditIndentModalOpen(false);
+    setEditingIndent(null);
+    alert(`Material Indent ${updatedIndent.indentNo} updated successfully!`);
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
@@ -926,6 +1081,22 @@ export default function ConsumablesAndIndents({
                         <td>
                           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                             <button 
+                              className="btn-secondary" 
+                              style={{ 
+                                padding: '4px 8px', 
+                                fontSize: '0.75rem', 
+                                display: 'inline-flex', 
+                                alignItems: 'center', 
+                                gap: '4px',
+                                opacity: isAdminOnly ? 1 : 0.6,
+                                cursor: isAdminOnly ? 'pointer' : 'not-allowed'
+                              }}
+                              onClick={() => handleOpenEditStoreItemModal(item)}
+                              title={isAdminOnly ? "Edit Store Item Details (Admin Only)" : "Permission Denied: Edit option restricted to Admin Role"}
+                            >
+                              {!isAdminOnly ? <Lock size={12} /> : <Edit size={13} />} Edit
+                            </button>
+                            <button 
                               className="btn-primary" 
                               style={{ padding: '4px 10px', fontSize: '0.75rem', background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                               onClick={() => handleOpenIssueModal(item)}
@@ -1069,6 +1240,24 @@ export default function ConsumablesAndIndents({
                         </td>
                         <td>
                           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                            {/* Edit Material Indent Button (Admin Role Only) */}
+                            <button 
+                              className="btn-secondary" 
+                              style={{ 
+                                padding: '4px 8px', 
+                                fontSize: '0.75rem', 
+                                display: 'inline-flex', 
+                                alignItems: 'center', 
+                                gap: '4px',
+                                opacity: isAdminOnly ? 1 : 0.6,
+                                cursor: isAdminOnly ? 'pointer' : 'not-allowed'
+                              }}
+                              onClick={() => handleOpenEditIndentModal(indent)}
+                              title={isAdminOnly ? "Edit Requisition Indent Details (Admin Only)" : "Permission Denied: Edit option restricted to Admin Role"}
+                            >
+                              {!isAdminOnly ? <Lock size={12} /> : <Edit size={13} />} Edit
+                            </button>
+
                             <button 
                               className="btn-secondary" 
                               style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
@@ -1942,6 +2131,325 @@ export default function ConsumablesAndIndents({
           vendors={vendors}
           onClose={() => setActivePOData(null)} 
         />
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: EDIT CONSUMABLE STORE ITEM (ADMIN ONLY) */}
+      {/* ========================================================================= */}
+      {isEditStoreItemModalOpen && editingStoreItem && (
+        <div className="modal-overlay" onClick={() => setIsEditStoreItemModalOpen(false)}>
+          <div className="modal-content" style={{ width: '700px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
+            
+            {/* Executive Header */}
+            <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '18px 24px', color: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ background: 'rgba(99, 102, 241, 0.2)', padding: '10px', borderRadius: '10px', color: '#818cf8', border: '1px solid rgba(129, 140, 248, 0.3)' }}>
+                  <Edit size={22} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.18rem', fontWeight: '800', margin: 0, color: '#ffffff' }}>
+                    Edit Store Item (Admin Restricted)
+                  </h3>
+                  <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0 0' }}>
+                    Update item code, description, stock levels, reserve thresholds & bin locations
+                  </p>
+                </div>
+              </div>
+              <button type="button" className="modal-close-btn" onClick={() => setIsEditStoreItemModalOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditStoreItem} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
+                <div>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Item Code / SKU *</label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    style={{ fontWeight: '700', fontFamily: 'monospace' }}
+                    value={editItemCode} 
+                    onChange={e => setEditItemCode(e.target.value)} 
+                    required 
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Category *</label>
+                  <select className="form-control" value={editItemCategory} onChange={e => setEditItemCategory(e.target.value)}>
+                    <option value="Chemicals & Solvents">Chemicals & Solvents</option>
+                    <option value="Inks & Additives">Inks & Additives</option>
+                    <option value="Lamination Adhesives">Lamination Adhesives</option>
+                    <option value="Doctor Blades & Seals">Doctor Blades & Seals</option>
+                    <option value="Tape & Packaging">Tape & Packaging</option>
+                    <option value="Spare Parts">Spare Parts & Mechanical</option>
+                    <option value="Electrical & Utility">Electrical & Utility</option>
+                    <option value="General Factory Store">General Factory Store</option>
+                  </select>
+                </div>
+
+                <div style={{ gridColumn: 'span 2' }}>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Item Name / Specification *</label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    style={{ fontWeight: '700' }}
+                    value={editItemName} 
+                    onChange={e => setEditItemName(e.target.value)} 
+                    required 
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Unit of Measure (UOM) *</label>
+                  <select className="form-control" value={editItemUnit} onChange={e => setEditItemUnit(e.target.value)}>
+                    <option value="Kg">Kg (Kilograms)</option>
+                    <option value="Litres">Litres</option>
+                    <option value="Meters">Meters</option>
+                    <option value="Pcs">Pcs</option>
+                    <option value="Rolls">Rolls</option>
+                    <option value="Boxes">Boxes</option>
+                    <option value="Pack">Pack</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Current Stock *</label>
+                  <input 
+                    type="number" 
+                    step="any"
+                    className="form-control" 
+                    style={{ fontWeight: '700' }}
+                    value={editItemStock} 
+                    onChange={e => setEditItemStock(e.target.value)} 
+                    required 
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Minimum Reserve Level *</label>
+                  <input 
+                    type="number" 
+                    step="any"
+                    className="form-control" 
+                    style={{ fontWeight: '700' }}
+                    value={editItemMinReserve} 
+                    onChange={e => setEditItemMinReserve(e.target.value)} 
+                    required 
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Unit Cost (₹)</label>
+                  <input 
+                    type="number" 
+                    step="any"
+                    className="form-control" 
+                    value={editItemUnitCost} 
+                    onChange={e => setEditItemUnitCost(e.target.value)} 
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Assigned Machine / Usage Area</label>
+                  <select className="form-control" value={editItemMachine} onChange={e => setEditItemMachine(e.target.value)}>
+                    <option value="">— Select Machine / Usage Area —</option>
+                    {dynamicMachineList.map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Storage Bin Location</label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    placeholder="e.g. Bin B-12 / Ink Room Rack 2" 
+                    value={editItemLocation} 
+                    onChange={e => setEditItemLocation(e.target.value)} 
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
+                <button type="button" className="btn-secondary" style={{ padding: '9px 20px' }} onClick={() => setIsEditStoreItemModalOpen(false)}>Cancel</button>
+                <button type="submit" className="btn-primary" style={{ padding: '10px 24px', fontWeight: '800', background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)' }}>Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: EDIT MATERIAL INDENT (ADMIN ONLY) */}
+      {/* ========================================================================= */}
+      {isEditIndentModalOpen && editingIndent && (
+        <div className="modal-overlay" onClick={() => setIsEditIndentModalOpen(false)}>
+          <div className="modal-content" style={{ width: '850px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
+            
+            {/* Executive Header */}
+            <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '18px 24px', color: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ background: 'rgba(99, 102, 241, 0.2)', padding: '10px', borderRadius: '10px', color: '#818cf8', border: '1px solid rgba(129, 140, 248, 0.3)' }}>
+                  <Edit size={22} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.18rem', fontWeight: '800', margin: 0, color: '#ffffff' }}>
+                    Edit Material Indent {editingIndent.indentNo} (Admin Restricted)
+                  </h3>
+                  <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0 0' }}>
+                    Modify priority, department, requisition line items, approval status & remarks
+                  </p>
+                </div>
+              </div>
+              <button type="button" className="modal-close-btn" onClick={() => setIsEditIndentModalOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditIndent} style={{ padding: '24px' }}>
+              <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr 1fr 1fr', marginBottom: '20px' }}>
+                <div>
+                  <label className="form-label">Priority Level *</label>
+                  <select className="form-control" value={editIndentPriority} onChange={e => setEditIndentPriority(e.target.value)}>
+                    <option value="Normal">Normal</option>
+                    <option value="High">High</option>
+                    <option value="Urgent">Urgent (Breakdown / Urgent Order)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="form-label">Department *</label>
+                  <select className="form-control" value={editIndentDepartment} onChange={e => setEditIndentDepartment(e.target.value)}>
+                    <option value="Production & Printing">Production & Printing</option>
+                    <option value="Lamination Dept">Lamination Dept</option>
+                    <option value="Slitting & Pouching">Slitting & Pouching</option>
+                    <option value="Maintenance & Utility">Maintenance & Utility</option>
+                    <option value="Quality Assurance (QC)">Quality Assurance (QC)</option>
+                    <option value="General Store">General Store</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="form-label">Raised By *</label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    value={editIndentRaisedBy} 
+                    onChange={e => setEditIndentRaisedBy(e.target.value)} 
+                    required 
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">Indent Status *</label>
+                  <select className="form-control" value={editIndentStatus} onChange={e => setEditIndentStatus(e.target.value)}>
+                    <option value="Pending Approval">Pending Approval</option>
+                    <option value="Approved">Approved</option>
+                    <option value="Issued to Machine">Issued to Machine</option>
+                    <option value="Rejected">Rejected</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Line Items Table */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <h4 style={{ fontSize: '0.95rem', fontWeight: '700', margin: 0 }}>Requisition Line Items</h4>
+                <button type="button" className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.78rem' }} onClick={addEditIndentLineItem}>
+                  + Add Line Item
+                </button>
+              </div>
+
+              <div className="table-responsive" style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                <table className="data-table" style={{ fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr>
+                      <th>Material Item Description</th>
+                      <th>Category</th>
+                      <th>Unit</th>
+                      <th style={{ width: '110px' }}>Req Qty</th>
+                      <th>Target Machine</th>
+                      <th style={{ width: '40px' }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {editIndentLineItems.map((item, index) => (
+                      <tr key={index}>
+                        <td>
+                          <select 
+                            className="form-control" 
+                            style={{ fontSize: '0.85rem' }}
+                            value={item.itemName} 
+                            onChange={e => updateEditIndentLineItem(index, 'itemName', e.target.value)}
+                          >
+                            {consumables.map(c => (
+                              <option key={c.id} value={c.name}>{c.name} (Stock: {c.currentStock} {c.unit})</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td>
+                          <input type="text" className="form-control" value={item.category} disabled style={{ fontSize: '0.8rem', background: '#f1f5f9' }} />
+                        </td>
+                        <td>
+                          <input type="text" className="form-control" value={item.unit} disabled style={{ fontSize: '0.8rem', width: '70px', background: '#f1f5f9' }} />
+                        </td>
+                        <td>
+                          <input 
+                            type="number" 
+                            step="any"
+                            className="form-control" 
+                            style={{ fontSize: '0.85rem', width: '100px' }}
+                            value={item.reqQty} 
+                            onChange={e => updateEditIndentLineItem(index, 'reqQty', e.target.value)} 
+                            required
+                          />
+                        </td>
+                        <td>
+                          <select 
+                            className="form-control" 
+                            style={{ fontSize: '0.8rem' }}
+                            value={item.targetMachine} 
+                            onChange={e => updateEditIndentLineItem(index, 'targetMachine', e.target.value)}
+                          >
+                            {dynamicMachineList.map(m => (
+                              <option key={m} value={m}>{m}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td>
+                          <button 
+                            type="button" 
+                            className="btn-secondary" 
+                            style={{ color: '#dc2626', borderColor: '#fca5a5', padding: '4px 8px' }}
+                            onClick={() => removeEditIndentLineItem(index)}
+                          >
+                            <X size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style={{ marginTop: '16px' }}>
+                <label className="form-label">Indent Remarks & Justification</label>
+                <textarea 
+                  className="form-control" 
+                  rows="2" 
+                  value={editIndentRemarks} 
+                  onChange={e => setEditIndentRemarks(e.target.value)} 
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+                <button type="button" className="btn-secondary" onClick={() => setIsEditIndentModalOpen(false)}>Cancel</button>
+                <button type="submit" className="btn-primary" style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)' }}>Save Indent Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
     </div>
