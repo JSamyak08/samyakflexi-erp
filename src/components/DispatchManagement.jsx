@@ -183,6 +183,9 @@ export default function DispatchManagement({
   const [selectedDispatchForPackingList, setSelectedDispatchForPackingList] = useState(null);
   const [selectedRollForBarcodeModal, setSelectedRollForBarcodeModal] = useState(null);
 
+  // Document Confirmation Pop-up Modal State
+  const [pendingDocConfirmation, setPendingDocConfirmation] = useState(null);
+
   // New Packing List Form State
   const [pktDispatchId, setPktDispatchId] = useState('');
   const [pktInvoiceNo, setPktInvoiceNo] = useState('');
@@ -667,6 +670,16 @@ export default function DispatchManagement({
       return;
     }
 
+    if (!dcSelectedClientName || !dcSelectedClientName.trim()) {
+      alert('Client / Party Name is required for Delivery Challan.');
+      return;
+    }
+
+    if (!dcItems || dcItems.length === 0) {
+      alert('At least one line item is required for Delivery Challan.');
+      return;
+    }
+
     const finalChallanNo = editingDcId ? dcChallanNo : getNextDocRefNumber('dc');
 
     const subtotalItems = dcItems.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
@@ -686,7 +699,7 @@ export default function DispatchManagement({
       invoiceNo: dcInvoiceNo,
       lrNo: dcLrNo,
       linkedPackingListIds: dcSelectedPackingListIds,
-      dispatchDateTime: dcDispatchDateTime,
+      dispatchDateTime: dcDispatchDateTime || new Date().toLocaleDateString('en-IN'),
       partyType: dcPartyType,
       clientName: dcSelectedClientName,
       partyName: dcSelectedClientName,
@@ -716,12 +729,36 @@ export default function DispatchManagement({
       createdDate: new Date().toISOString()
     };
 
-    if (onSaveDeliveryChallan) {
-      onSaveDeliveryChallan(payload);
-    }
-
-    setIsDcModalOpen(false);
-    setActiveDcForPDF(payload);
+    setPendingDocConfirmation({
+      docType: 'Delivery Challan',
+      docNo: finalChallanNo,
+      partyName: dcSelectedClientName,
+      invoiceNo: dcInvoiceNo || 'N/A',
+      dateStr: dcDispatchDateTime || new Date().toLocaleDateString('en-IN'),
+      jobName: dcJobName || (dcItems[0]?.description ? dcItems[0].description.split(' - ')[0] : 'Dispatch Item'),
+      summaryFields: [
+        { label: 'Nature of Challan', value: dcChallanNature },
+        { label: 'Vehicle & Transport', value: `${dcVehicleNo || 'N/A'} | ${dcTransporterName || 'Direct'} (${dcLrNo ? 'LR: ' + dcLrNo : 'No LR'})` },
+        { label: 'PO / Order Ref', value: dcPoRefNo || 'N/A' },
+        { label: 'Total Taxable Subtotal', value: formatINR(totalTaxable) },
+        { label: 'GST Amount & Type', value: `${formatINR(gstInfo.totalTax)} (${gstInfo.taxLabel})` },
+        { label: 'Grand Total Amount', value: formatINR(grandTotal) }
+      ],
+      items: dcItems.map(item => ({
+        col1: item.description,
+        col2: `${item.quantity} ${item.unit}`,
+        col3: formatINR(item.rate),
+        col4: formatINR(item.amount)
+      })),
+      onConfirm: () => {
+        if (onSaveDeliveryChallan) {
+          onSaveDeliveryChallan(payload);
+        }
+        setIsDcModalOpen(false);
+        setActiveDcForPDF(payload);
+        setPendingDocConfirmation(null);
+      }
+    });
   };
 
   // Helper to apply preset item selection to a specific DC row
@@ -981,6 +1018,11 @@ export default function DispatchManagement({
   const handleSaveCoaSubmit = (e) => {
     e.preventDefault();
 
+    if (!coaCustomerName.trim() || !coaJobName.trim()) {
+      alert("Customer Name and Job Name are required for CoA Report.");
+      return;
+    }
+
     const finalCoaNo = editingCoaId ? coaNo : getNextDocRefNumber('coa');
 
     const payload = {
@@ -1005,12 +1047,37 @@ export default function DispatchManagement({
       createdDate: new Date().toISOString()
     };
 
-    if (onSaveCoA) {
-      onSaveCoA(payload);
-    }
-
-    setIsCoaModalOpen(false);
-    setActiveCoaForPDF(payload);
+    setPendingDocConfirmation({
+      docType: 'Quality CoA Report',
+      docNo: finalCoaNo,
+      partyName: coaCustomerName,
+      invoiceNo: coaInvoiceNo || 'N/A',
+      dateStr: coaTestDate || new Date().toLocaleDateString('en-GB'),
+      jobName: coaJobName,
+      summaryFields: [
+        { label: 'Batch / Order Ref', value: coaBatchLotNo || 'N/A' },
+        { label: 'Film Type', value: coaFilmType || 'N/A' },
+        { label: 'Structure Spec', value: coaSpecification || 'N/A' },
+        { label: 'Size & Thickness', value: `${coaSizeMm || 'N/A'} | ${coaThicknessMicron || 'N/A'}` },
+        { label: 'Total Net Weight', value: coaNetWeight || 'N/A' },
+        { label: 'Overall Quality Status', value: coaOverallStatus || 'PASS' },
+        { label: 'QC Inspector / Head', value: `${coaQcInspector || 'QC Eng'} / ${coaApprovedByHead || 'QA Head'}` }
+      ],
+      items: (coaParameters || []).map(p => ({
+        col1: `#${p.srNo} ${p.parameter}`,
+        col2: p.uom || '—',
+        col3: p.standard || '—',
+        col4: p.observation || 'Conforms'
+      })),
+      onConfirm: () => {
+        if (onSaveCoA) {
+          onSaveCoA(payload);
+        }
+        setIsCoaModalOpen(false);
+        setActiveCoaForPDF(payload);
+        setPendingDocConfirmation(null);
+      }
+    });
   };
 
   // --------------------------------------------------------------------------
@@ -1213,10 +1280,10 @@ export default function DispatchManagement({
         rollNo: 1,
         barcodeId: `FG-DISP-${Date.now().toString().slice(-6)}-1`,
         jobName: pktJobName,
-        substrateSpec: matchedOrder?.structure || 'PET 12µ / METBOPP 18µ',
+        substrateSpec: matchedOrder?.structure || 'Flexible Laminate',
         coreWeightKg: coreW,
-        netWeightKg: Number(currentPktNetWeight) || 210.0,
-        grossWeightKg: Number(((Number(currentPktNetWeight) || 210.0) + coreW).toFixed(2)),
+        netWeightKg: Number(currentPktNetWeight) || 0,
+        grossWeightKg: Number(((Number(currentPktNetWeight) || 0) + coreW).toFixed(2)),
         coreSize: '3 Inch'
       }
     ];
@@ -1248,9 +1315,9 @@ export default function DispatchManagement({
       orderId: matchedOrder?.id || 'N/A',
       jobName: pktJobName,
       clientName: pktClientName,
-      vehicleNo: pktVehicleNo || 'MP-09-AB-1234',
-      lrNo: pktLrNo || 'LR-2026-99',
-      transporterName: pktTransporterName || 'Express Logistics',
+      vehicleNo: pktVehicleNo || '',
+      lrNo: pktLrNo || '',
+      transporterName: pktTransporterName || '',
       poNo: pktPoNo || matchedOrder?.poNo || '',
       dispatchDate: exactTimestamp,
       createdAt: exactTimestamp,
@@ -1260,12 +1327,37 @@ export default function DispatchManagement({
       items: rollsToSave
     };
 
-    if (onAddDispatchShipment) {
-      onAddDispatchShipment(newShipment);
-    }
-
-    setIsPackingModalOpen(false);
-    setSelectedDispatchForPackingList(newShipment);
+    setPendingDocConfirmation({
+      docType: 'Dispatch Packing List',
+      docNo: finalDispatchId,
+      partyName: pktClientName,
+      invoiceNo: pktInvoiceNo || 'N/A',
+      dateStr: exactTimestamp,
+      jobName: pktJobName,
+      summaryFields: [
+        { label: 'Customer PO #', value: pktPoNo || matchedOrder?.poNo || 'N/A' },
+        { label: 'Vehicle Number', value: pktVehicleNo || 'N/A' },
+        { label: 'Lorry Receipt (LR) #', value: pktLrNo || 'N/A' },
+        { label: 'Transporter Name', value: pktTransporterName || 'N/A' },
+        { label: 'Total Rolls / Reels', value: `${rollsToSave.length} Reels` },
+        { label: 'Total Net Weight', value: `${totalNetWeightKg.toFixed(2)} Kg` },
+        { label: 'Total Gross Weight', value: `${totalGrossWeightKg.toFixed(2)} Kg` }
+      ],
+      items: rollsToSave.map(roll => ({
+        col1: `Reel #${roll.rollNo} (${roll.barcodeId})`,
+        col2: roll.substrateSpec || 'Laminated Film',
+        col3: `Net: ${roll.netWeightKg} Kg`,
+        col4: `Gross: ${roll.grossWeightKg} Kg`
+      })),
+      onConfirm: () => {
+        if (onAddDispatchShipment) {
+          onAddDispatchShipment(newShipment);
+        }
+        setIsPackingModalOpen(false);
+        setSelectedDispatchForPackingList(newShipment);
+        setPendingDocConfirmation(null);
+      }
+    });
   };
 
   // Statistics
@@ -1699,9 +1791,9 @@ export default function DispatchManagement({
                   const firstOrder = (orders || [])[0];
                   setPktJobName(firstOrder?.jobName || '');
                   setPktClientName(firstOrder?.clientName || firstOrder?.customerName || '');
-                  setPktVehicleNo('MP-09-AB-1234');
-                  setPktLrNo('LR-2026-001');
-                  setPktTransporterName('Express Logistics');
+                  setPktVehicleNo('');
+                  setPktLrNo('');
+                  setPktTransporterName('');
                   setPktPoNo(firstOrder?.poNo || '');
                   setPktCoreWeight(4.5);
                   setCurrentPktNetWeight(210.0);
@@ -3657,6 +3749,233 @@ export default function DispatchManagement({
           roll={selectedRollForBarcodeModal} 
           onClose={() => setSelectedRollForBarcodeModal(null)} 
         />
+      )}
+
+      {/* MODAL 10: CONFIRMATION POP-UP BEFORE GENERATION */}
+      {pendingDocConfirmation && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.75)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '16px',
+            maxWidth: '750px',
+            width: '100%',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            border: '1px solid #e2e8f0',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+              color: '#ffffff',
+              padding: '20px 24px',
+              borderTopLeftRadius: '16px',
+              borderTopRightRadius: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ background: '#3b82f620', padding: '10px', borderRadius: '10px', border: '1px solid #3b82f640' }}>
+                  <FileCheck size={24} style={{ color: '#38bdf8' }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#94a3b8' }}>
+                    Document Generation Verification
+                  </div>
+                  <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '700', color: '#ffffff' }}>
+                    Confirm {pendingDocConfirmation.docType}
+                  </h3>
+                </div>
+              </div>
+              <div style={{
+                background: '#047857',
+                color: '#ffffff',
+                padding: '4px 12px',
+                borderRadius: '9999px',
+                fontSize: '0.8rem',
+                fontWeight: '700'
+              }}>
+                {pendingDocConfirmation.docNo}
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '24px', flex: 1 }}>
+              <p style={{ margin: '0 0 16px 0', fontSize: '0.9rem', color: '#475569', lineHeight: '1.5' }}>
+                Please review the document details below. Accepting will store all details cleanly in the database and generate the official PDF report.
+              </p>
+
+              {/* Primary Summary Grid */}
+              <div style={{
+                background: '#f8fafc',
+                borderRadius: '12px',
+                padding: '16px 20px',
+                border: '1px solid #e2e8f0',
+                marginBottom: '20px',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                gap: '14px'
+              }}>
+                <div>
+                  <div style={{ fontSize: '0.72rem', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Customer / Party Name</div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#0f172a', marginTop: '2px' }}>{pendingDocConfirmation.partyName || 'N/A'}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.72rem', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Invoice Number</div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#0f172a', marginTop: '2px' }}>{pendingDocConfirmation.invoiceNo || 'N/A'}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.72rem', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Document Date</div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#0f172a', marginTop: '2px' }}>{pendingDocConfirmation.dateStr || 'N/A'}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.72rem', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Job Name</div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#0f172a', marginTop: '2px' }}>{pendingDocConfirmation.jobName || 'N/A'}</div>
+                </div>
+              </div>
+
+              {/* Additional Details Grid */}
+              {pendingDocConfirmation.summaryFields && pendingDocConfirmation.summaryFields.length > 0 && (
+                <div style={{
+                  background: '#ffffff',
+                  borderRadius: '10px',
+                  border: '1px solid #cbd5e1',
+                  padding: '14px 16px',
+                  marginBottom: '20px',
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                  gap: '12px'
+                }}>
+                  {pendingDocConfirmation.summaryFields.map((f, i) => (
+                    <div key={i}>
+                      <div style={{ fontSize: '0.7rem', fontWeight: '600', color: '#64748b' }}>{f.label}</div>
+                      <div style={{ fontSize: '0.88rem', fontWeight: '700', color: '#1e293b', marginTop: '1px' }}>{f.value}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Items Summary Table */}
+              {pendingDocConfirmation.items && pendingDocConfirmation.items.length > 0 && (
+                <div style={{ marginBottom: '20px' }}>
+                  <h4 style={{ margin: '0 0 8px 0', fontSize: '0.85rem', fontWeight: '700', color: '#334155', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Included Items / Parameters ({pendingDocConfirmation.items.length})
+                  </h4>
+                  <div style={{ maxHeight: '180px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                      <thead>
+                        <tr style={{ background: '#f1f5f9', color: '#475569', textAlign: 'left' }}>
+                          <th style={{ padding: '8px 12px', borderBottom: '1px solid #e2e8f0' }}>Description / Item</th>
+                          <th style={{ padding: '8px 12px', borderBottom: '1px solid #e2e8f0' }}>Qty / Spec</th>
+                          <th style={{ padding: '8px 12px', borderBottom: '1px solid #e2e8f0' }}>Net Weight / Standard</th>
+                          <th style={{ padding: '8px 12px', borderBottom: '1px solid #e2e8f0', textAlign: 'right' }}>Total / Observation</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pendingDocConfirmation.items.map((row, idx) => (
+                          <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '8px 12px', fontWeight: '600', color: '#1e293b' }}>{row.col1}</td>
+                            <td style={{ padding: '8px 12px', color: '#475569' }}>{row.col2}</td>
+                            <td style={{ padding: '8px 12px', color: '#475569' }}>{row.col3}</td>
+                            <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '700', color: '#047857' }}>{row.col4}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Database Notice */}
+              <div style={{
+                background: '#eff6ff',
+                borderLeft: '4px solid #3b82f6',
+                padding: '12px 16px',
+                borderRadius: '6px',
+                fontSize: '0.82rem',
+                color: '#1e40af',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px'
+              }}>
+                <ShieldCheck size={20} style={{ flexShrink: 0, color: '#2563eb' }} />
+                <span>
+                  <strong>Database Verified:</strong> Data will be securely saved into the database without fallbacks or hardcoded entries.
+                </span>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              padding: '16px 24px',
+              background: '#f8fafc',
+              borderTop: '1px solid #e2e8f0',
+              borderBottomLeftRadius: '16px',
+              borderBottomRightRadius: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              gap: '12px'
+            }}>
+              <button
+                type="button"
+                onClick={() => setPendingDocConfirmation(null)}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  color: '#475569',
+                  fontWeight: '600',
+                  fontSize: '0.88rem',
+                  cursor: 'pointer'
+                }}
+              >
+                ← Edit & Review Details
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (pendingDocConfirmation && pendingDocConfirmation.onConfirm) {
+                    pendingDocConfirmation.onConfirm();
+                  }
+                }}
+                style={{
+                  padding: '10px 24px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                  color: '#ffffff',
+                  fontWeight: '700',
+                  fontSize: '0.88rem',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(5, 150, 105, 0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <CheckCircle2 size={18} /> Confirm & Save to Database
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

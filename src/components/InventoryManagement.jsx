@@ -548,7 +548,7 @@ export default function InventoryManagement({
       jobName: dispatchJobName,
       clientName: dispatchClientName,
       vehicleNo: dispatchVehicleNo,
-      lrNo: dispatchLrNo || `LR-${Math.floor(10000 + Math.random() * 90000)}-IND`,
+      lrNo: dispatchLrNo || '',
       dispatchDate: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
       totalRolls: dispatchRollsList.length,
       totalNetWeightKg: parseFloat(totalNetWeight.toFixed(2)),
