@@ -4048,24 +4048,6 @@ export default function DispatchManagement({
                   </div>
                 </div>
               )}
-
-              {/* Database Notice */}
-              <div style={{
-                background: '#eff6ff',
-                borderLeft: '4px solid #3b82f6',
-                padding: '12px 16px',
-                borderRadius: '6px',
-                fontSize: '0.82rem',
-                color: '#1e40af',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px'
-              }}>
-                <ShieldCheck size={20} style={{ flexShrink: 0, color: '#2563eb' }} />
-                <span>
-                  <strong>Database Verified:</strong> Data will be securely saved into the database without fallbacks or hardcoded entries.
-                </span>
-              </div>
             </div>
 
             {/* Modal Footer */}
