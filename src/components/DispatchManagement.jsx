@@ -3834,6 +3834,10 @@ export default function DispatchManagement({
         <BarcodePrinterModal 
           roll={selectedRollForBarcodeModal} 
           autoPrint={true}
+          onRecordNext={() => {
+            setSelectedRollForBarcodeModal(null);
+            setCurrentPktNetWeight(0);
+          }}
           onClose={() => setSelectedRollForBarcodeModal(null)} 
         />
       )}

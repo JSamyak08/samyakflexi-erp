@@ -1,17 +1,37 @@
-import React, { useState } from 'react';
-import { Printer, X, Tag, ChevronLeft, ChevronRight, QrCode } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Printer, X, Tag, ChevronLeft, ChevronRight, QrCode, ArrowRight } from 'lucide-react';
 import { COMPANY_DETAILS } from '../factoryStore';
 import QRCode2D from './QRCode2D';
 
-export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks = [], autoPrint = false, onClose }) {
+export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks = [], autoPrint = false, onRecordNext, onClose }) {
   const rollList = Array.isArray(rolls) 
     ? rolls 
     : (Array.isArray(roll) ? roll : (roll ? [roll] : []));
 
   const [activeIndex, setActiveIndex] = useState(0);
 
+  const handleRecordNext = () => {
+    if (onRecordNext) {
+      onRecordNext();
+    } else {
+      onClose();
+    }
+  };
+
+  // Listen for Enter key to automatically trigger 'Record Next'
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleRecordNext();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onRecordNext, onClose]);
+
   // Auto-trigger instant print command to system default printer when requested
-  React.useEffect(() => {
+  useEffect(() => {
     if (autoPrint && rollList.length > 0) {
       const timer = setTimeout(() => {
         try {
@@ -393,14 +413,22 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
         {/* Footer Print Actions */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px' }}>
           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            {rollList.length > 1 ? `Will print all ${rollList.length} stickers (1 sticker per 4×4 page)` : 'Prints 1 sticker on 4×4 thermal paper'}
+            {rollList.length > 1 ? `Will print all ${rollList.length} stickers (1 sticker per 4×4 page)` : 'Press Enter to Record Next Roll'}
           </div>
           <div style={{ display: 'flex', gap: '12px' }}>
             <button type="button" className="btn-secondary" onClick={onClose}>
-              Cancel
+              Close
             </button>
-            <button type="button" className="btn-primary" onClick={handlePrint} style={{ background: '#059669', borderColor: '#059669' }}>
-              <Printer size={16} /> Print Thermal Stickers ({rollList.length})
+            <button type="button" className="btn-secondary" onClick={handlePrint} style={{ background: '#f8fafc', color: '#1e293b' }}>
+              <Printer size={16} /> Re-Print ({rollList.length})
+            </button>
+            <button 
+              type="button" 
+              className="btn-primary" 
+              onClick={handleRecordNext} 
+              style={{ background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', borderColor: '#059669', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <ArrowRight size={16} /> Record Next Roll (Enter ↵)
             </button>
           </div>
         </div>
