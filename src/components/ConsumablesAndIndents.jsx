@@ -1393,7 +1393,7 @@ export default function ConsumablesAndIndents({
       {/* ========================================================================= */}
       {isIssueModalOpen && selectedItemForIssue && (
         <div className="modal-overlay" onClick={() => setIsIssueModalOpen(false)}>
-          <div className="modal-content" style={{ width: '640px' }} onClick={e => e.stopPropagation()}>
+          <div className="modal-content" style={{ width: '640px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             
             {/* Dark Executive Header */}
             <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1506,10 +1506,10 @@ export default function ConsumablesAndIndents({
       {/* ========================================================================= */}
       {isIndentModalOpen && (
         <div className="modal-overlay" onClick={() => setIsIndentModalOpen(false)}>
-          <div className="modal-content" style={{ width: '850px', maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
+          <div className="modal-content" style={{ width: '850px', maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
             
             {/* Dark Executive Header */}
-            <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <div style={{ background: 'rgba(99, 102, 241, 0.2)', padding: '10px', borderRadius: '10px', color: '#818cf8', border: '1px solid rgba(129, 140, 248, 0.3)' }}>
                   <ClipboardList size={22} />
@@ -1528,8 +1528,8 @@ export default function ConsumablesAndIndents({
               </button>
             </div>
 
-            <form onSubmit={handleCreateIndent} style={{ padding: '24px' }}>
-              <div className="form-grid">
+            <form onSubmit={handleCreateIndent} style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
                 <div>
                   <label className="form-label">Priority Level *</label>
                   <select className="form-control" value={indentPriority} onChange={e => setIndentPriority(e.target.value)}>
@@ -1552,86 +1552,88 @@ export default function ConsumablesAndIndents({
               </div>
 
               {/* Line Items Table */}
-              <div style={{ marginTop: '20px' }}>
+              <div style={{ marginTop: '10px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                  <h4 style={{ fontSize: '0.95rem', fontWeight: '800' }}>Requisition Items List</h4>
+                  <h4 style={{ fontSize: '0.95rem', fontWeight: '800', margin: 0 }}>Requisition Items List</h4>
                   <button type="button" className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={addIndentLineItem}>
                     + Add Item Row
                   </button>
                 </div>
 
-                <table className="data-table" style={{ fontSize: '0.85rem' }}>
-                  <thead>
-                    <tr>
-                      <th>Select Store Item / Description</th>
-                      <th>Category</th>
-                      <th>Unit</th>
-                      <th>Required Qty</th>
-                      <th>Target Machine</th>
-                      <th>Remove</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {indentLineItems.map((item) => (
-                      <tr key={item.id}>
-                        <td>
-                          <select 
-                            className="form-control" 
-                            style={{ fontSize: '0.85rem' }}
-                            value={item.itemName} 
-                            onChange={e => updateIndentLineItem(item.id, 'itemName', e.target.value)}
-                          >
-                            {consumables.map(c => (
-                              <option key={c.id} value={c.name}>{c.name} (Stock: {c.currentStock} {c.unit})</option>
-                            ))}
-                          </select>
-                        </td>
-                        <td>
-                          <input type="text" className="form-control" value={item.category} disabled style={{ fontSize: '0.8rem', background: '#f1f5f9' }} />
-                        </td>
-                        <td>
-                          <input type="text" className="form-control" value={item.unit} disabled style={{ fontSize: '0.8rem', width: '70px', background: '#f1f5f9' }} />
-                        </td>
-                        <td>
-                          <input 
-                            type="number" 
-                            step="any"
-                            className="form-control" 
-                            style={{ fontSize: '0.85rem', width: '100px' }}
-                            value={item.reqQty} 
-                            onChange={e => updateIndentLineItem(item.id, 'reqQty', e.target.value)} 
-                            required
-                          />
-                        </td>
-                        <td>
-                          <select 
-                            className="form-control" 
-                            style={{ fontSize: '0.8rem' }}
-                            value={item.targetMachine} 
-                            onChange={e => updateIndentLineItem(item.id, 'targetMachine', e.target.value)}
-                          >
-                            {dynamicMachineList.map(m => (
-                              <option key={m} value={m}>{m}</option>
-                            ))}
-                          </select>
-                        </td>
-                        <td>
-                          <button 
-                            type="button" 
-                            className="btn-secondary" 
-                            style={{ color: '#dc2626', borderColor: '#fca5a5', padding: '4px 8px' }}
-                            onClick={() => removeIndentLineItem(item.id)}
-                          >
-                            <X size={14} />
-                          </button>
-                        </td>
+                <div className="table-responsive" style={{ overflowX: 'auto', maxHeight: '280px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                  <table className="data-table" style={{ fontSize: '0.85rem', width: '100%', minWidth: '700px', margin: 0 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ minWidth: '220px' }}>Select Store Item / Description</th>
+                        <th style={{ minWidth: '120px' }}>Category</th>
+                        <th style={{ minWidth: '75px' }}>Unit</th>
+                        <th style={{ minWidth: '100px' }}>Required Qty</th>
+                        <th style={{ minWidth: '180px' }}>Target Machine</th>
+                        <th style={{ minWidth: '50px', textAlign: 'center' }}>Remove</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {indentLineItems.map((item) => (
+                        <tr key={item.id}>
+                          <td>
+                            <select 
+                              className="form-control" 
+                              style={{ fontSize: '0.85rem' }}
+                              value={item.itemName} 
+                              onChange={e => updateIndentLineItem(item.id, 'itemName', e.target.value)}
+                            >
+                              {consumables.map(c => (
+                                <option key={c.id} value={c.name}>{c.name} (Stock: {c.currentStock} {c.unit})</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td>
+                            <input type="text" className="form-control" value={item.category} disabled style={{ fontSize: '0.8rem', background: '#f1f5f9' }} />
+                          </td>
+                          <td>
+                            <input type="text" className="form-control" value={item.unit} disabled style={{ fontSize: '0.8rem', width: '70px', background: '#f1f5f9' }} />
+                          </td>
+                          <td>
+                            <input 
+                              type="number" 
+                              step="any"
+                              className="form-control" 
+                              style={{ fontSize: '0.85rem', width: '100px' }}
+                              value={item.reqQty} 
+                              onChange={e => updateIndentLineItem(item.id, 'reqQty', e.target.value)} 
+                              required
+                            />
+                          </td>
+                          <td>
+                            <select 
+                              className="form-control" 
+                              style={{ fontSize: '0.8rem' }}
+                              value={item.targetMachine} 
+                              onChange={e => updateIndentLineItem(item.id, 'targetMachine', e.target.value)}
+                            >
+                              {dynamicMachineList.map(m => (
+                                <option key={m} value={m}>{m}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <button 
+                              type="button" 
+                              className="btn-secondary" 
+                              style={{ color: '#dc2626', borderColor: '#fca5a5', padding: '4px 8px' }}
+                              onClick={() => removeIndentLineItem(item.id)}
+                            >
+                              <X size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
-              <div style={{ marginTop: '16px' }}>
+              <div>
                 <label className="form-label">Indent Remarks & Justification</label>
                 <textarea 
                   className="form-control" 
@@ -1642,7 +1644,7 @@ export default function ConsumablesAndIndents({
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
                 <button type="button" className="btn-secondary" onClick={() => setIsIndentModalOpen(false)}>Cancel</button>
                 <button type="submit" className="btn-primary">Submit Material Indent</button>
               </div>
@@ -1656,7 +1658,7 @@ export default function ConsumablesAndIndents({
       {/* ========================================================================= */}
       {isRestockModalOpen && selectedItemForRestock && (
         <div className="modal-overlay" onClick={() => setIsRestockModalOpen(false)}>
-          <div className="modal-content" style={{ width: '540px' }} onClick={e => e.stopPropagation()}>
+          <div className="modal-content" style={{ width: '540px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             
             {/* Dark Executive Header */}
             <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1711,7 +1713,7 @@ export default function ConsumablesAndIndents({
       {/* ========================================================================= */}
       {isNewItemModalOpen && (
         <div className="modal-overlay" onClick={() => setIsNewItemModalOpen(false)}>
-          <div className="modal-content" style={{ width: '700px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
+          <div className="modal-content" style={{ width: '700px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             
             {/* Dark Executive Header */}
             <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '18px 24px', color: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1858,10 +1860,10 @@ export default function ConsumablesAndIndents({
       {/* ========================================================================= */}
       {selectedIndentForPrint && (
         <div className="modal-overlay" onClick={() => setSelectedIndentForPrint(null)}>
-          <div className="modal-content" style={{ width: '750px', padding: '0', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+          <div className="modal-content" style={{ width: '750px', maxWidth: '95vw', maxHeight: '90vh', padding: '0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
             
             {/* Header Toolbar */}
-            <div style={{ padding: '14px 20px', background: '#0f172a', color: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ padding: '14px 20px', background: '#0f172a', color: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <div style={{ fontWeight: '700', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Printer size={16} /> Material Indent Slip: {selectedIndentForPrint.indentNo}
               </div>
@@ -1880,7 +1882,7 @@ export default function ConsumablesAndIndents({
             </div>
 
             {/* Formatted Indent Slip Sheet */}
-            <div style={{ padding: '30px', background: '#ffffff', color: '#1e293b', fontFamily: 'Inter, sans-serif' }}>
+            <div style={{ padding: '30px', background: '#ffffff', color: '#1e293b', fontFamily: 'Inter, sans-serif', overflowY: 'auto', flex: 1 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #0f172a', paddingBottom: '16px', marginBottom: '20px' }}>
                 <div>
                   <h2 style={{ fontSize: '1.4rem', fontWeight: '900', color: '#0f172a', margin: 0 }}>SAMYAK INTERNATIONAL LTD.</h2>
@@ -1953,10 +1955,10 @@ export default function ConsumablesAndIndents({
       {/* ========================================================================= */}
       {isRaisePOModalOpen && targetIndentForPO && (
         <div className="modal-overlay" onClick={() => setIsRaisePOModalOpen(false)}>
-          <div className="modal-content" style={{ width: '820px', maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
+          <div className="modal-content" style={{ width: '820px', maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
             
             {/* Dark Executive Header */}
-            <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <div style={{ background: 'rgba(99, 102, 241, 0.2)', padding: '10px', borderRadius: '10px', color: '#818cf8', border: '1px solid rgba(129, 140, 248, 0.3)' }}>
                   <ShoppingBag size={22} />
@@ -1975,7 +1977,7 @@ export default function ConsumablesAndIndents({
               </button>
             </div>
 
-            <form onSubmit={handleConfirmIssuePO} style={{ padding: '24px' }}>
+            <form onSubmit={handleConfirmIssuePO} style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {/* Linked Indent Information Header */}
               <div style={{ background: '#f0f9ff', padding: '14px 18px', borderRadius: '8px', border: '1px solid #bae6fd', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
@@ -2138,7 +2140,7 @@ export default function ConsumablesAndIndents({
       {/* ========================================================================= */}
       {isEditStoreItemModalOpen && editingStoreItem && (
         <div className="modal-overlay" onClick={() => setIsEditStoreItemModalOpen(false)}>
-          <div className="modal-content" style={{ width: '700px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
+          <div className="modal-content" style={{ width: '700px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             
             {/* Executive Header */}
             <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '18px 24px', color: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -2286,10 +2288,10 @@ export default function ConsumablesAndIndents({
       {/* ========================================================================= */}
       {isEditIndentModalOpen && editingIndent && (
         <div className="modal-overlay" onClick={() => setIsEditIndentModalOpen(false)}>
-          <div className="modal-content" style={{ width: '850px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
+          <div className="modal-content" style={{ width: '850px', maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
             
             {/* Executive Header */}
-            <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '18px 24px', color: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '18px 24px', color: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <div style={{ background: 'rgba(99, 102, 241, 0.2)', padding: '10px', borderRadius: '10px', color: '#818cf8', border: '1px solid rgba(129, 140, 248, 0.3)' }}>
                   <Edit size={22} />
@@ -2308,8 +2310,8 @@ export default function ConsumablesAndIndents({
               </button>
             </div>
 
-            <form onSubmit={handleSaveEditIndent} style={{ padding: '24px' }}>
-              <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr 1fr 1fr', marginBottom: '20px' }}>
+            <form onSubmit={handleSaveEditIndent} style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px' }}>
                 <div>
                   <label className="form-label">Priority Level *</label>
                   <select className="form-control" value={editIndentPriority} onChange={e => setEditIndentPriority(e.target.value)}>
@@ -2354,86 +2356,88 @@ export default function ConsumablesAndIndents({
               </div>
 
               {/* Line Items Table */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                <h4 style={{ fontSize: '0.95rem', fontWeight: '700', margin: 0 }}>Requisition Line Items</h4>
-                <button type="button" className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.78rem' }} onClick={addEditIndentLineItem}>
-                  + Add Line Item
-                </button>
-              </div>
+              <div style={{ marginTop: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                  <h4 style={{ fontSize: '0.95rem', fontWeight: '700', margin: 0 }}>Requisition Line Items</h4>
+                  <button type="button" className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.78rem' }} onClick={addEditIndentLineItem}>
+                    + Add Line Item
+                  </button>
+                </div>
 
-              <div className="table-responsive" style={{ maxHeight: '250px', overflowY: 'auto' }}>
-                <table className="data-table" style={{ fontSize: '0.85rem' }}>
-                  <thead>
-                    <tr>
-                      <th>Material Item Description</th>
-                      <th>Category</th>
-                      <th>Unit</th>
-                      <th style={{ width: '110px' }}>Req Qty</th>
-                      <th>Target Machine</th>
-                      <th style={{ width: '40px' }}></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {editIndentLineItems.map((item, index) => (
-                      <tr key={index}>
-                        <td>
-                          <select 
-                            className="form-control" 
-                            style={{ fontSize: '0.85rem' }}
-                            value={item.itemName} 
-                            onChange={e => updateEditIndentLineItem(index, 'itemName', e.target.value)}
-                          >
-                            {consumables.map(c => (
-                              <option key={c.id} value={c.name}>{c.name} (Stock: {c.currentStock} {c.unit})</option>
-                            ))}
-                          </select>
-                        </td>
-                        <td>
-                          <input type="text" className="form-control" value={item.category} disabled style={{ fontSize: '0.8rem', background: '#f1f5f9' }} />
-                        </td>
-                        <td>
-                          <input type="text" className="form-control" value={item.unit} disabled style={{ fontSize: '0.8rem', width: '70px', background: '#f1f5f9' }} />
-                        </td>
-                        <td>
-                          <input 
-                            type="number" 
-                            step="any"
-                            className="form-control" 
-                            style={{ fontSize: '0.85rem', width: '100px' }}
-                            value={item.reqQty} 
-                            onChange={e => updateEditIndentLineItem(index, 'reqQty', e.target.value)} 
-                            required
-                          />
-                        </td>
-                        <td>
-                          <select 
-                            className="form-control" 
-                            style={{ fontSize: '0.8rem' }}
-                            value={item.targetMachine} 
-                            onChange={e => updateEditIndentLineItem(index, 'targetMachine', e.target.value)}
-                          >
-                            {dynamicMachineList.map(m => (
-                              <option key={m} value={m}>{m}</option>
-                            ))}
-                          </select>
-                        </td>
-                        <td>
-                          <button 
-                            type="button" 
-                            className="btn-secondary" 
-                            style={{ color: '#dc2626', borderColor: '#fca5a5', padding: '4px 8px' }}
-                            onClick={() => removeEditIndentLineItem(index)}
-                          >
-                            <X size={14} />
-                          </button>
-                        </td>
+                <div className="table-responsive" style={{ overflowX: 'auto', maxHeight: '250px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                  <table className="data-table" style={{ fontSize: '0.85rem', width: '100%', minWidth: '700px', margin: 0 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ minWidth: '220px' }}>Material Item Description</th>
+                        <th style={{ minWidth: '120px' }}>Category</th>
+                        <th style={{ minWidth: '75px' }}>Unit</th>
+                        <th style={{ minWidth: '100px' }}>Req Qty</th>
+                        <th style={{ minWidth: '180px' }}>Target Machine</th>
+                        <th style={{ minWidth: '50px', textAlign: 'center' }}>Remove</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {editIndentLineItems.map((item, index) => (
+                        <tr key={index}>
+                          <td>
+                            <select 
+                              className="form-control" 
+                              style={{ fontSize: '0.85rem' }}
+                              value={item.itemName} 
+                              onChange={e => updateEditIndentLineItem(index, 'itemName', e.target.value)}
+                            >
+                              {consumables.map(c => (
+                                <option key={c.id} value={c.name}>{c.name} (Stock: {c.currentStock} {c.unit})</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td>
+                            <input type="text" className="form-control" value={item.category} disabled style={{ fontSize: '0.8rem', background: '#f1f5f9' }} />
+                          </td>
+                          <td>
+                            <input type="text" className="form-control" value={item.unit} disabled style={{ fontSize: '0.8rem', width: '70px', background: '#f1f5f9' }} />
+                          </td>
+                          <td>
+                            <input 
+                              type="number" 
+                              step="any"
+                              className="form-control" 
+                              style={{ fontSize: '0.85rem', width: '100px' }}
+                              value={item.reqQty} 
+                              onChange={e => updateEditIndentLineItem(index, 'reqQty', e.target.value)} 
+                              required
+                            />
+                          </td>
+                          <td>
+                            <select 
+                              className="form-control" 
+                              style={{ fontSize: '0.8rem' }}
+                              value={item.targetMachine} 
+                              onChange={e => updateEditIndentLineItem(index, 'targetMachine', e.target.value)}
+                            >
+                              {dynamicMachineList.map(m => (
+                                <option key={m} value={m}>{m}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <button 
+                              type="button" 
+                              className="btn-secondary" 
+                              style={{ color: '#dc2626', borderColor: '#fca5a5', padding: '4px 8px' }}
+                              onClick={() => removeEditIndentLineItem(index)}
+                            >
+                              <X size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
-              <div style={{ marginTop: '16px' }}>
+              <div>
                 <label className="form-label">Indent Remarks & Justification</label>
                 <textarea 
                   className="form-control" 
@@ -2443,7 +2447,7 @@ export default function ConsumablesAndIndents({
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
                 <button type="button" className="btn-secondary" onClick={() => setIsEditIndentModalOpen(false)}>Cancel</button>
                 <button type="submit" className="btn-primary" style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)' }}>Save Indent Changes</button>
               </div>
