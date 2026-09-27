@@ -21,6 +21,7 @@ import {
   QrCode,
   Zap,
   ChevronRight,
+  ChevronDown,
   ShieldCheck,
   Printer
 } from 'lucide-react';
@@ -270,8 +271,84 @@ export default function SFGStoreManagement({
     };
   }, [allSfgItems]);
 
-  // Pagination
-  const { paginatedItems, totalPages, currentPage, setCurrentPage } = usePagination(filteredItems, 12);
+  // Group filtered items by Job Order Ref (orderId or jobCode/jobName)
+  const groupedOrders = useMemo(() => {
+    const groups = [];
+    const map = new Map();
+
+    filteredItems.forEach(item => {
+      let rawOrderKey = (item.orderId && item.orderId !== 'N/A' && item.orderId !== '#N/A') 
+        ? item.orderId 
+        : (item.jobCode && item.jobCode !== 'N/A' ? item.jobCode : (item.jobName || 'Unassigned Order'));
+      
+      const orderKey = String(rawOrderKey).replace('#', '').trim();
+
+      if (!map.has(orderKey)) {
+        const groupObj = {
+          orderKey,
+          orderId: item.orderId && item.orderId !== 'N/A' && item.orderId !== '#N/A' ? item.orderId : '',
+          jobName: item.jobName || 'Untitled Job',
+          jobCode: item.jobCode || '',
+          clientName: item.clientName || 'General Client',
+          filmType: item.filmType,
+          micron: item.micron,
+          widthMm: item.widthMm,
+          totalNetKg: 0,
+          consumedKg: 0,
+          availableKg: 0,
+          items: []
+        };
+        map.set(orderKey, groupObj);
+        groups.push(groupObj);
+      }
+
+      const grp = map.get(orderKey);
+      const net = Number(item.totalNetKg) || 0;
+      const consumed = Number(item.consumedKg) || 0;
+      const available = item.availableKg !== undefined ? Number(item.availableKg) : Math.max(0, net - consumed);
+
+      grp.totalNetKg += net;
+      grp.consumedKg += consumed;
+      grp.availableKg += available;
+      grp.items.push(item);
+    });
+
+    return groups;
+  }, [filteredItems]);
+
+  // Collapsible state for order accordions ({ [orderKey]: boolean })
+  const [expandedOrders, setExpandedOrders] = useState({});
+
+  const isOrderExpanded = (orderKey) => {
+    // Default to true (expanded) if key not in expandedOrders
+    return expandedOrders[orderKey] !== false;
+  };
+
+  const toggleOrderExpand = (orderKey) => {
+    setExpandedOrders(prev => ({
+      ...prev,
+      [orderKey]: prev[orderKey] === undefined ? false : !prev[orderKey]
+    }));
+  };
+
+  const expandAllOrders = () => {
+    const newMap = {};
+    groupedOrders.forEach(g => {
+      newMap[g.orderKey] = true;
+    });
+    setExpandedOrders(newMap);
+  };
+
+  const collapseAllOrders = () => {
+    const newMap = {};
+    groupedOrders.forEach(g => {
+      newMap[g.orderKey] = false;
+    });
+    setExpandedOrders(newMap);
+  };
+
+  // Pagination by Order Group
+  const { paginatedItems: paginatedGroups, totalPages, currentPage, setCurrentPage } = usePagination(groupedOrders, 10);
 
   // Handle Consume Modal Open
   const handleOpenConsumeModal = (item) => {
@@ -617,289 +694,453 @@ export default function SFGStoreManagement({
         </div>
       </div>
 
-      {/* SFG & FG Inventory Table */}
+      {/* SFG & FG Grouped Inventory View */}
       <div style={{
-        background: '#ffffff',
-        border: '1px solid #e2e8f0',
-        borderRadius: '14px',
-        overflow: 'hidden',
-        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '14px',
+        padding: '0 4px'
       }}>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
-            <thead>
-              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                <th style={{ padding: '14px 16px' }}>SFG / FG Barcode</th>
-                <th style={{ padding: '14px 16px' }}>Job Code & Name</th>
-                <th style={{ padding: '14px 16px' }}>Order & Client</th>
-                <th style={{ padding: '14px 16px' }}>Substrate & Size</th>
-                <th style={{ padding: '14px 16px' }}>Stock Type</th>
-                <th style={{ padding: '14px 16px', textAlign: 'right' }}>Initial Net (kg)</th>
-                <th style={{ padding: '14px 16px', textAlign: 'right' }}>Consumed (kg)</th>
-                <th style={{ padding: '14px 16px', textAlign: 'right' }}>Available Balance (kg)</th>
-                <th style={{ padding: '14px 16px' }}>Bay</th>
-                <th style={{ padding: '14px 16px' }}>Status</th>
-                <th style={{ padding: '14px 16px', textAlign: 'center' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paginatedItems.length === 0 ? (
-                <tr>
-                  <td colSpan="11" style={{ padding: '48px', textAlign: 'center', color: '#94a3b8' }}>
-                    <Layers size={36} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.5 }} />
-                    <div style={{ fontSize: '1rem', fontWeight: '600', color: '#475569' }}>No SFG or FG inventory batches found</div>
-                    <div style={{ fontSize: '0.82rem', marginTop: '4px' }}>Click "+ Add SFG Batch" or "+ Add FG Batch" to record stock job-wise & order-wise.</div>
-                  </td>
-                </tr>
-              ) : (
-                paginatedItems.map((item) => {
-                  const net = Number(item.totalNetKg) || 0;
-                  const consumed = Number(item.consumedKg) || 0;
-                  const available = item.availableKg !== undefined ? Number(item.availableKg) : Math.max(0, net - consumed);
-
-                  // Status badge style
-                  let statusBg = '#eff6ff';
-                  let statusColor = '#1d4ed8';
-                  let statusBorder = '#bfdbfe';
-
-                  if (item.status === 'Partially Consumed') {
-                    statusBg = '#fff7ed';
-                    statusColor = '#c2410c';
-                    statusBorder = '#fed7aa';
-                  } else if (item.status === 'Fully Consumed' || available <= 0) {
-                    statusBg = '#f1f5f9';
-                    statusColor = '#64748b';
-                    statusBorder = '#cbd5e1';
-                  }
-
-                  const sType = String(item.sfgType || '').toLowerCase();
-                  const cType = String(item.category || '').toLowerCase();
-                  const isFgType = (
-                    (sType.includes('finished') && !sType.includes('semi')) ||
-                    (sType.includes('fg') && !sType.includes('sfg')) ||
-                    sType.includes('slit') ||
-                    sType.includes('pouch') ||
-                    (cType.includes('finished') && !cType.includes('semi')) ||
-                    item.mode === 'FG'
-                  );
-
-                  return (
-                    <tr key={item.id || item.sfgBatchCode} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s ease' }}>
-                      
-                      {/* Barcode / Batch Code */}
-                      <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
-                        <div style={{ fontFamily: 'monospace', fontWeight: '800', color: '#0f172a', fontSize: '0.84rem', background: '#f8fafc', padding: '3px 8px', borderRadius: '5px', border: '1px solid #e2e8f0', display: 'inline-block' }}>
-                          {item.sfgBatchCode}
-                        </div>
-                        <div style={{ marginTop: '4px' }}>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedRollForBarcodeModal(item)}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              color: '#2563eb',
-                              fontSize: '0.74rem',
-                              fontWeight: '700',
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '3px',
-                              padding: 0
-                            }}
-                          >
-                            <QrCode size={12} /> Print Tag
-                          </button>
-                        </div>
-                      </td>
-
-                      {/* Job Code & Name */}
-                      <td style={{ padding: '14px 16px' }}>
-                        <div style={{ fontWeight: '700', color: '#0f172a', fontSize: '0.88rem' }}>
-                          {item.jobName || 'Untitled Job'}
-                        </div>
-                        {item.jobCode && item.jobCode !== 'N/A' && (
-                          <span style={{ fontSize: '0.74rem', color: '#64748b', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontWeight: '600', marginTop: '2px', display: 'inline-block' }}>
-                            {item.jobCode}
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Order & Client */}
-                      <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
-                        <div style={{ color: '#0f172a', fontWeight: '600' }}>
-                          {item.clientName || 'General Client'}
-                        </div>
-                        {item.orderId && item.orderId !== 'N/A' && item.orderId !== '#N/A' && (
-                          <div style={{ fontSize: '0.74rem', color: '#2563eb', fontWeight: '700', marginTop: '2px' }}>
-                            Order: #{item.orderId}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Substrate & Size */}
-                      <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
-                        <div style={{ color: '#0f172a', fontWeight: '700', fontSize: '0.86rem' }}>
-                          {item.filmType || 'Film Substrate'}
-                        </div>
-                        <div style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: '600' }}>
-                          {item.micron ? `${item.micron} Mic` : '12 Mic'} | {item.widthMm ? `${item.widthMm} mm` : '460 mm'}
-                        </div>
-                      </td>
-
-                      {/* SFG / FG Type */}
-                      <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
-                        <span style={{
-                          fontSize: '0.75rem',
-                          fontWeight: '800',
-                          padding: '4px 10px',
-                          borderRadius: '6px',
-                          background: isFgType ? '#ecfdf5' : '#f5f3ff',
-                          color: isFgType ? '#047857' : '#6d28d9',
-                          border: `1px solid ${isFgType ? '#a7f3d0' : '#ddd6fe'}`,
-                          whiteSpace: 'nowrap',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px'
-                        }}>
-                          {item.sfgType || (isFgType ? 'Finished Goods' : 'Printed Rolls')}
-                        </span>
-                      </td>
-
-                      {/* Initial Net Weight */}
-                      <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: '600', color: '#334155', whiteSpace: 'nowrap' }}>
-                        {net.toFixed(2)} kg
-                      </td>
-
-                      {/* Consumed Weight */}
-                      <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: '700', color: consumed > 0 ? '#c2410c' : '#94a3b8', whiteSpace: 'nowrap' }}>
-                        {consumed.toFixed(2)} kg
-                      </td>
-
-                      {/* Available Balance */}
-                      <td style={{ padding: '14px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        <span style={{
-                          fontSize: '0.92rem',
-                          fontWeight: '800',
-                          color: available > 0 ? '#15803d' : '#94a3b8',
-                          background: available > 0 ? '#f0fdf4' : '#f8fafc',
-                          padding: '4px 8px',
-                          borderRadius: '6px',
-                          border: available > 0 ? '1px solid #bbf7d0' : '1px solid #e2e8f0',
-                          display: 'inline-block'
-                        }}>
-                          {available.toFixed(2)} kg
-                        </span>
-                      </td>
-
-                      {/* Storage Bay */}
-                      <td style={{ padding: '14px 16px', color: '#475569', whiteSpace: 'nowrap', fontSize: '0.82rem', fontWeight: '600' }}>
-                        {item.storageBay || item.location || 'Bay A'}
-                      </td>
-
-                      {/* Status Badge */}
-                      <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
-                          <span style={{
-                            padding: '4px 10px',
-                            borderRadius: '12px',
-                            fontSize: '0.74rem',
-                            fontWeight: '800',
-                            background: statusBg,
-                            color: statusColor,
-                            border: `1px solid ${statusBorder}`,
-                            whiteSpace: 'nowrap',
-                            display: 'inline-block'
-                          }}>
-                            {item.status || 'In Stock (WIP)'}
-                          </span>
-
-                          {(() => {
-                            const catName = isFgType ? "Finished Goods (FG)" : "Semi-Finished Goods (SFG)";
-                            const ageInDays = getItemAgeInDays(item);
-                            const threshold = getCategoryAgeingThreshold(catName, ageingSettings);
-                            const isOverAged = ageInDays > threshold;
-
-                            return isOverAged ? (
-                              <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', fontSize: '0.68rem', fontWeight: '800', padding: '2px 6px', borderRadius: '4px', whiteSpace: 'nowrap', display: 'inline-block' }}>
-                                ⚠️ OVER-AGED ({ageInDays}d &gt; {threshold}d)
-                              </span>
-                            ) : (
-                              <span style={{ background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', fontSize: '0.68rem', fontWeight: '700', padding: '2px 6px', borderRadius: '4px', whiteSpace: 'nowrap', display: 'inline-block' }}>
-                                📜 FIFO ({ageInDays}d)
-                              </span>
-                            );
-                          })()}
-                        </div>
-                      </td>
-
-
-                      {/* Actions */}
-                      <td style={{ padding: '14px 16px', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenConsumeModal(item)}
-                            disabled={available <= 0}
-                            style={{
-                              background: available > 0 ? 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)' : '#e2e8f0',
-                              color: available > 0 ? '#ffffff' : '#94a3b8',
-                              border: 'none',
-                              borderRadius: '8px',
-                              padding: '7px 14px',
-                              fontSize: '0.8rem',
-                              fontWeight: '700',
-                              cursor: available > 0 ? 'pointer' : 'not-allowed',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              boxShadow: available > 0 ? '0 2px 4px rgba(37, 99, 235, 0.2)' : 'none',
-                              transition: 'all 0.15s ease'
-                            }}
-                          >
-                            <Zap size={14} /> Consume
-                          </button>
-
-                          {Array.isArray(item.consumptionHistory) && item.consumptionHistory.length > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => setViewHistoryItem(item)}
-                              title="View Stock Consumption Log History"
-                              style={{
-                                background: '#f1f5f9',
-                                color: '#475569',
-                                border: '1px solid #cbd5e1',
-                                borderRadius: '8px',
-                                padding: '7px 10px',
-                                fontSize: '0.8rem',
-                                cursor: 'pointer'
-                              }}
-                            >
-                              <History size={14} />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+        <div style={{ fontSize: '0.92rem', fontWeight: '700', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Layers size={18} color="#2563eb" />
+          Job Order Groups ({groupedOrders.length} {groupedOrders.length === 1 ? 'Order' : 'Orders'}, {filteredItems.length} Total Rolls/Batches)
         </div>
-
-        {/* Pagination */}
-        {filteredItems.length > 0 && (
-          <div style={{ padding: '16px 20px', borderTop: '1px solid #e2e8f0' }}>
-            <TablePagination
-              currentPage={currentPage}
-              totalPages={totalPages}
-              onPageChange={setCurrentPage}
-            />
+        {groupedOrders.length > 0 && (
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              type="button"
+              onClick={expandAllOrders}
+              style={{
+                background: '#ffffff',
+                border: '1px solid #cbd5e1',
+                color: '#334155',
+                borderRadius: '8px',
+                padding: '6px 14px',
+                fontSize: '0.8rem',
+                fontWeight: '600',
+                cursor: 'pointer',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              Expand All
+            </button>
+            <button
+              type="button"
+              onClick={collapseAllOrders}
+              style={{
+                background: '#ffffff',
+                border: '1px solid #cbd5e1',
+                color: '#334155',
+                borderRadius: '8px',
+                padding: '6px 14px',
+                fontSize: '0.8rem',
+                fontWeight: '600',
+                cursor: 'pointer',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              Collapse All
+            </button>
           </div>
         )}
       </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
+        {paginatedGroups.length === 0 ? (
+          <div style={{
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '14px',
+            padding: '48px',
+            textAlign: 'center',
+            color: '#94a3b8'
+          }}>
+            <Layers size={36} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.5 }} />
+            <div style={{ fontSize: '1rem', fontWeight: '600', color: '#475569' }}>No SFG or FG inventory batches found</div>
+            <div style={{ fontSize: '0.82rem', marginTop: '4px' }}>Click "+ Add SFG Batch" or "+ Add FG Batch" to record stock job-wise & order-wise.</div>
+          </div>
+        ) : (
+          paginatedGroups.map((group) => {
+            const expanded = isOrderExpanded(group.orderKey);
+
+            return (
+              <div
+                key={group.orderKey}
+                style={{
+                  background: '#ffffff',
+                  border: expanded ? '1px solid #93c5fd' : '1px solid #e2e8f0',
+                  borderRadius: '14px',
+                  overflow: 'hidden',
+                  boxShadow: expanded ? '0 4px 12px -2px rgba(37, 99, 235, 0.08)' : '0 2px 4px rgba(0, 0, 0, 0.02)',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                {/* Collapsible Header */}
+                <div
+                  onClick={() => toggleOrderExpand(group.orderKey)}
+                  style={{
+                    background: expanded ? 'linear-gradient(90deg, #eff6ff 0%, #f8fafc 100%)' : '#f8fafc',
+                    padding: '16px 20px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    borderBottom: expanded ? '1px solid #cbd5e1' : 'none',
+                    transition: 'background 0.15s ease'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap', flex: 1 }}>
+                    <div style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '8px',
+                      background: expanded ? '#dbeafe' : '#e2e8f0',
+                      color: expanded ? '#1d4ed8' : '#64748b',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      transition: 'all 0.2s ease'
+                    }}>
+                      {expanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+                    </div>
+
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        <span style={{
+                          fontFamily: 'monospace',
+                          fontWeight: '800',
+                          fontSize: '0.88rem',
+                          background: '#1e293b',
+                          color: '#60a5fa',
+                          padding: '3px 10px',
+                          borderRadius: '6px'
+                        }}>
+                          {group.orderId ? `Order #${group.orderId}` : `Job Ref: ${group.orderKey}`}
+                        </span>
+                        
+                        <h3 style={{ fontSize: '1rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                          {group.jobName}
+                        </h3>
+
+                        {group.jobCode && group.jobCode !== group.orderId && (
+                          <span style={{ fontSize: '0.76rem', color: '#475569', background: '#e2e8f0', padding: '2px 8px', borderRadius: '4px', fontWeight: '600' }}>
+                            {group.jobCode}
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ fontSize: '0.82rem', color: '#64748b', marginTop: '4px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                        <span>Client: <strong style={{ color: '#1e293b' }}>{group.clientName}</strong></span>
+                        <span>Substrate: <strong style={{ color: '#1e293b' }}>{group.filmType} ({group.micron}µm × {group.widthMm}mm)</strong></span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Summary Badges on Header */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+                    <div style={{
+                      background: '#f1f5f9',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '8px',
+                      padding: '6px 12px',
+                      fontSize: '0.82rem',
+                      fontWeight: '700',
+                      color: '#475569',
+                      whiteSpace: 'nowrap'
+                    }}>
+                      📦 {group.items.length} {group.items.length === 1 ? 'Roll / Batch' : 'Rolls / Batches'}
+                    </div>
+
+                    <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <div style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: '600' }}>INITIAL / CONSUMED</div>
+                      <div style={{ fontSize: '0.86rem', fontWeight: '700', color: '#334155' }}>
+                        {group.totalNetKg.toFixed(2)} kg / <span style={{ color: group.consumedKg > 0 ? '#c2410c' : '#64748b' }}>{group.consumedKg.toFixed(2)} kg</span>
+                      </div>
+                    </div>
+
+                    <div style={{
+                      background: group.availableKg > 0 ? '#f0fdf4' : '#f8fafc',
+                      border: group.availableKg > 0 ? '1px solid #bbf7d0' : '1px solid #cbd5e1',
+                      borderRadius: '10px',
+                      padding: '6px 14px',
+                      textAlign: 'right',
+                      whiteSpace: 'nowrap'
+                    }}>
+                      <div style={{ fontSize: '0.72rem', color: group.availableKg > 0 ? '#166534' : '#64748b', fontWeight: '700' }}>AVAILABLE BALANCE</div>
+                      <div style={{ fontSize: '1.05rem', fontWeight: '900', color: group.availableKg > 0 ? '#15803d' : '#64748b' }}>
+                        {group.availableKg.toFixed(2)} kg
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Collapsible Content Body */}
+                {expanded && (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
+                      <thead>
+                        <tr style={{ background: '#ffffff', borderBottom: '1px solid #e2e8f0', color: '#64748b', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          <th style={{ padding: '12px 16px' }}>SFG / FG Barcode</th>
+                          <th style={{ padding: '12px 16px' }}>Roll / Batch Code & Title</th>
+                          <th style={{ padding: '12px 16px' }}>Substrate & Size</th>
+                          <th style={{ padding: '12px 16px' }}>Stock Type</th>
+                          <th style={{ padding: '12px 16px', textAlign: 'right' }}>Initial Net (kg)</th>
+                          <th style={{ padding: '12px 16px', textAlign: 'right' }}>Consumed (kg)</th>
+                          <th style={{ padding: '12px 16px', textAlign: 'right' }}>Available Balance (kg)</th>
+                          <th style={{ padding: '12px 16px' }}>Bay</th>
+                          <th style={{ padding: '12px 16px' }}>Status</th>
+                          <th style={{ padding: '12px 16px', textAlign: 'center' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.items.map((item) => {
+                          const net = Number(item.totalNetKg) || 0;
+                          const consumed = Number(item.consumedKg) || 0;
+                          const available = item.availableKg !== undefined ? Number(item.availableKg) : Math.max(0, net - consumed);
+
+                          let statusBg = '#eff6ff';
+                          let statusColor = '#1d4ed8';
+                          let statusBorder = '#bfdbfe';
+
+                          if (item.status === 'Partially Consumed') {
+                            statusBg = '#fff7ed';
+                            statusColor = '#c2410c';
+                            statusBorder = '#fed7aa';
+                          } else if (item.status === 'Fully Consumed' || available <= 0) {
+                            statusBg = '#f1f5f9';
+                            statusColor = '#64748b';
+                            statusBorder = '#cbd5e1';
+                          }
+
+                          const sType = String(item.sfgType || '').toLowerCase();
+                          const cType = String(item.category || '').toLowerCase();
+                          const isFgType = (
+                            (sType.includes('finished') && !sType.includes('semi')) ||
+                            (sType.includes('fg') && !sType.includes('sfg')) ||
+                            sType.includes('slit') ||
+                            sType.includes('pouch') ||
+                            (cType.includes('finished') && !cType.includes('semi')) ||
+                            item.mode === 'FG'
+                          );
+
+                          return (
+                            <tr key={item.id || item.sfgBatchCode} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s ease' }}>
+                              
+                              {/* Barcode / Batch Code */}
+                              <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
+                                <div style={{ fontFamily: 'monospace', fontWeight: '800', color: '#0f172a', fontSize: '0.84rem', background: '#f8fafc', padding: '3px 8px', borderRadius: '5px', border: '1px solid #e2e8f0', display: 'inline-block' }}>
+                                  {item.sfgBatchCode}
+                                </div>
+                                <div style={{ marginTop: '4px' }}>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); setSelectedRollForBarcodeModal(item); }}
+                                    style={{
+                                      background: 'none',
+                                      border: 'none',
+                                      color: '#2563eb',
+                                      fontSize: '0.74rem',
+                                      fontWeight: '700',
+                                      cursor: 'pointer',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '3px',
+                                      padding: 0
+                                    }}
+                                  >
+                                    <QrCode size={12} /> Print Tag
+                                  </button>
+                                </div>
+                              </td>
+
+                              {/* Roll / Batch Code & Title */}
+                              <td style={{ padding: '12px 16px' }}>
+                                <div style={{ fontWeight: '700', color: '#0f172a', fontSize: '0.86rem' }}>
+                                  {item.jobName || 'Untitled Item'}
+                                </div>
+                                {item.jobCode && item.jobCode !== 'N/A' && (
+                                  <span style={{ fontSize: '0.72rem', color: '#64748b', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontWeight: '600', marginTop: '2px', display: 'inline-block' }}>
+                                    {item.jobCode}
+                                  </span>
+                                )}
+                              </td>
+
+                              {/* Substrate & Size */}
+                              <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
+                                <div style={{ color: '#0f172a', fontWeight: '700', fontSize: '0.84rem' }}>
+                                  {item.filmType || 'Film Substrate'}
+                                </div>
+                                <div style={{ fontSize: '0.76rem', color: '#64748b', fontWeight: '600' }}>
+                                  {item.micron ? `${item.micron} Mic` : '12 Mic'} | {item.widthMm ? `${item.widthMm} mm` : '460 mm'}
+                                </div>
+                              </td>
+
+                              {/* SFG / FG Type */}
+                              <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
+                                <span style={{
+                                  fontSize: '0.74rem',
+                                  fontWeight: '800',
+                                  padding: '4px 10px',
+                                  borderRadius: '6px',
+                                  background: isFgType ? '#ecfdf5' : '#f5f3ff',
+                                  color: isFgType ? '#047857' : '#6d28d9',
+                                  border: `1px solid ${isFgType ? '#a7f3d0' : '#ddd6fe'}`,
+                                  whiteSpace: 'nowrap',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}>
+                                  {item.sfgType || (isFgType ? 'Finished Goods' : 'Printed Rolls')}
+                                </span>
+                              </td>
+
+                              {/* Initial Net Weight */}
+                              <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600', color: '#334155', whiteSpace: 'nowrap' }}>
+                                {net.toFixed(2)} kg
+                              </td>
+
+                              {/* Consumed Weight */}
+                              <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '700', color: consumed > 0 ? '#c2410c' : '#94a3b8', whiteSpace: 'nowrap' }}>
+                                {consumed.toFixed(2)} kg
+                              </td>
+
+                              {/* Available Balance */}
+                              <td style={{ padding: '12px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                <span style={{
+                                  fontSize: '0.9rem',
+                                  fontWeight: '800',
+                                  color: available > 0 ? '#15803d' : '#94a3b8',
+                                  background: available > 0 ? '#f0fdf4' : '#f8fafc',
+                                  padding: '3px 8px',
+                                  borderRadius: '6px',
+                                  border: available > 0 ? '1px solid #bbf7d0' : '1px solid #e2e8f0',
+                                  display: 'inline-block'
+                                }}>
+                                  {available.toFixed(2)} kg
+                                </span>
+                              </td>
+
+                              {/* Storage Bay */}
+                              <td style={{ padding: '12px 16px', color: '#475569', whiteSpace: 'nowrap', fontSize: '0.82rem', fontWeight: '600' }}>
+                                {item.storageBay || item.location || 'Bay A'}
+                              </td>
+
+                              {/* Status Badge */}
+                              <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+                                  <span style={{
+                                    padding: '3px 8px',
+                                    borderRadius: '12px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: '800',
+                                    background: statusBg,
+                                    color: statusColor,
+                                    border: `1px solid ${statusBorder}`,
+                                    whiteSpace: 'nowrap',
+                                    display: 'inline-block'
+                                  }}>
+                                    {item.status || 'In Stock (WIP)'}
+                                  </span>
+
+                                  {(() => {
+                                    const catName = isFgType ? "Finished Goods (FG)" : "Semi-Finished Goods (SFG)";
+                                    const ageInDays = getItemAgeInDays(item);
+                                    const threshold = getCategoryAgeingThreshold(catName, ageingSettings);
+                                    const isOverAged = ageInDays > threshold;
+
+                                    return isOverAged ? (
+                                      <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', fontSize: '0.66rem', fontWeight: '800', padding: '2px 6px', borderRadius: '4px', whiteSpace: 'nowrap', display: 'inline-block' }}>
+                                        ⚠️ OVER-AGED ({ageInDays}d &gt; {threshold}d)
+                                      </span>
+                                    ) : (
+                                      <span style={{ background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', fontSize: '0.66rem', fontWeight: '700', padding: '2px 6px', borderRadius: '4px', whiteSpace: 'nowrap', display: 'inline-block' }}>
+                                        📜 FIFO ({ageInDays}d)
+                                      </span>
+                                    );
+                                  })()}
+                                </div>
+                              </td>
+
+                              {/* Actions */}
+                              <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); handleOpenConsumeModal(item); }}
+                                    disabled={available <= 0}
+                                    style={{
+                                      background: available > 0 ? 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)' : '#e2e8f0',
+                                      color: available > 0 ? '#ffffff' : '#94a3b8',
+                                      border: 'none',
+                                      borderRadius: '8px',
+                                      padding: '6px 12px',
+                                      fontSize: '0.78rem',
+                                      fontWeight: '700',
+                                      cursor: available > 0 ? 'pointer' : 'not-allowed',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      boxShadow: available > 0 ? '0 2px 4px rgba(37, 99, 235, 0.2)' : 'none',
+                                      transition: 'all 0.15s ease'
+                                    }}
+                                  >
+                                    <Zap size={13} /> Consume
+                                  </button>
+
+                                  {Array.isArray(item.consumptionHistory) && item.consumptionHistory.length > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); setViewHistoryItem(item); }}
+                                      title="View Stock Consumption Log History"
+                                      style={{
+                                        background: '#f1f5f9',
+                                        color: '#475569',
+                                        border: '1px solid #cbd5e1',
+                                        borderRadius: '8px',
+                                        padding: '6px 9px',
+                                        fontSize: '0.78rem',
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      <History size={13} />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Pagination Footer */}
+      {groupedOrders.length > 0 && (
+        <div style={{
+          background: '#ffffff',
+          border: '1px solid #e2e8f0',
+          borderRadius: '14px',
+          padding: '16px 20px',
+          marginBottom: '24px'
+        }}>
+          <TablePagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+          />
+        </div>
+      )}
 
       {/* ==================================================================== */}
       {/* MODAL: CONSUME SFG FOR DOWNSTREAM PROCESSING                         */}
