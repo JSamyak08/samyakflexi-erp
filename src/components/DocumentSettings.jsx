@@ -29,7 +29,12 @@ import {
   Key,
   AlertCircle,
   Clock,
-  AlertTriangle
+  AlertTriangle,
+  Warehouse,
+  Layers,
+  Search,
+  Filter,
+  Building2
 } from 'lucide-react';
 import { 
   getCompanyLogo,
@@ -65,7 +70,11 @@ import {
   getFilmSubstrates,
   saveFilmSubstrates,
   loadFilmSubstratesFromSupabase,
-  DEFAULT_FILM_SUBSTRATES
+  DEFAULT_FILM_SUBSTRATES,
+  getStorageBays,
+  saveStorageBays,
+  loadStorageBaysFromSupabase,
+  DEFAULT_STORAGE_BAYS
 } from '../services/settingsService';
 import { sendERPEmailNotification, buildEmailTemplate } from '../services/emailService';
 
@@ -96,6 +105,134 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     });
     return () => { isMounted = false; };
   }, []);
+
+  // Storage Bays Master State
+  const [storageBays, setStorageBays] = useState(() => getStorageBays());
+  const [selectedStorageTypeFilter, setSelectedStorageTypeFilter] = useState('all');
+  const [baySearchTerm, setBaySearchTerm] = useState('');
+
+  const [isBayModalOpen, setIsBayModalOpen] = useState(false);
+  const [editingBay, setEditingBay] = useState(null);
+  const [bayName, setBayName] = useState('');
+  const [bayCode, setBayCode] = useState('');
+  const [bayStorageType, setBayStorageType] = useState('Raw Material Store');
+  const [bayZone, setBayZone] = useState('');
+  const [bayCapacityKg, setBayCapacityKg] = useState('');
+  const [bayStatus, setBayStatus] = useState('Active');
+  const [bayDescription, setBayDescription] = useState('');
+
+  useEffect(() => {
+    let isMounted = true;
+    loadStorageBaysFromSupabase().then(remote => {
+      if (isMounted && remote && Array.isArray(remote) && remote.length > 0) {
+        setStorageBays(remote);
+      }
+    });
+    return () => { isMounted = false; };
+  }, []);
+
+  const handleOpenBayModal = (bay = null) => {
+    if (bay) {
+      setEditingBay(bay);
+      setBayName(bay.name || '');
+      setBayCode(bay.code || '');
+      setBayStorageType(bay.storageType || 'Raw Material Store');
+      setBayZone(bay.zone || '');
+      setBayCapacityKg(bay.capacityKg !== undefined ? bay.capacityKg : '');
+      setBayStatus(bay.status || 'Active');
+      setBayDescription(bay.description || '');
+    } else {
+      setEditingBay(null);
+      setBayName('');
+      setBayCode('');
+      setBayStorageType('Raw Material Store');
+      setBayZone('');
+      setBayCapacityKg('');
+      setBayStatus('Active');
+      setBayDescription('');
+    }
+    setIsBayModalOpen(true);
+  };
+
+  const handleSaveBaySubmit = (e) => {
+    e.preventDefault();
+    if (!bayName.trim()) {
+      alert("Storage Bay Name is required!");
+      return;
+    }
+
+    const cleanName = bayName.trim();
+    const cleanCode = bayCode.trim() || `BAY-${Date.now().toString().slice(-4)}`;
+    const cleanType = bayStorageType || 'Raw Material Store';
+    const cleanZone = bayZone.trim();
+    const cleanCap = Number(bayCapacityKg) > 0 ? Number(bayCapacityKg) : 0;
+    const cleanStatus = bayStatus || 'Active';
+    const cleanDesc = bayDescription.trim();
+
+    let updated = [];
+    if (editingBay) {
+      updated = storageBays.map(b => {
+        if (b.id === editingBay.id) {
+          return {
+            ...b,
+            name: cleanName,
+            code: cleanCode,
+            storageType: cleanType,
+            zone: cleanZone,
+            capacityKg: cleanCap,
+            status: cleanStatus,
+            description: cleanDesc
+          };
+        }
+        return b;
+      });
+    } else {
+      const newBay = {
+        id: `BAY-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+        name: cleanName,
+        code: cleanCode,
+        storageType: cleanType,
+        zone: cleanZone,
+        capacityKg: cleanCap,
+        status: cleanStatus,
+        description: cleanDesc
+      };
+      updated = [...storageBays, newBay];
+    }
+
+    setStorageBays(updated);
+    saveStorageBays(updated);
+    setIsBayModalOpen(false);
+    triggerSaveNotification();
+  };
+
+  const handleDeleteBayItem = (id, name) => {
+    if (!window.confirm(`Are you sure you want to delete Storage Bay "${name}"?`)) return;
+    const updated = storageBays.filter(b => b.id !== id);
+    setStorageBays(updated);
+    saveStorageBays(updated);
+    triggerSaveNotification();
+  };
+
+  const handleResetBaysToDefault = () => {
+    if (!window.confirm("Reset all Storage Bays to ERP factory defaults? Custom bays will be reset.")) return;
+    setStorageBays(DEFAULT_STORAGE_BAYS);
+    saveStorageBays(DEFAULT_STORAGE_BAYS);
+    triggerSaveNotification();
+  };
+
+  const filteredStorageBays = storageBays.filter(bay => {
+    const matchType = selectedStorageTypeFilter === 'all' || bay.storageType === selectedStorageTypeFilter;
+    const term = baySearchTerm.trim().toLowerCase();
+    const matchSearch = !term ||
+      (bay.name && bay.name.toLowerCase().includes(term)) ||
+      (bay.code && bay.code.toLowerCase().includes(term)) ||
+      (bay.zone && bay.zone.toLowerCase().includes(term)) ||
+      (bay.storageType && bay.storageType.toLowerCase().includes(term)) ||
+      (bay.description && bay.description.toLowerCase().includes(term));
+
+    return matchType && matchSearch;
+  });
   const [isSubstrateModalOpen, setIsSubstrateModalOpen] = useState(false);
   const [editingSubstrate, setEditingSubstrate] = useState(null);
   const [subName, setSubName] = useState('');
@@ -628,6 +765,14 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                 onClick={() => setActiveTab('film_substrates')}
               >
                 🎞️ Film Substrates & Densities
+              </button>
+              <button
+                type="button"
+                className={`tab-button ${activeTab === 'storage_bays' ? 'active' : ''}`}
+                style={{ padding: '6px 14px', fontSize: '0.82rem', fontWeight: '700', borderRadius: '6px', cursor: 'pointer', border: 'none', background: activeTab === 'storage_bays' ? '#ffffff' : 'transparent', color: activeTab === 'storage_bays' ? '#0f172a' : '#64748b', boxShadow: activeTab === 'storage_bays' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}
+                onClick={() => setActiveTab('storage_bays')}
+              >
+                🏬 Storage Bays
               </button>
               <button
                 type="button"
@@ -1808,6 +1953,364 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                 </button>
                 <button type="submit" className="btn-primary" style={{ background: '#0284c7', borderColor: '#0284c7' }}>
                   <Check size={16} style={{ marginRight: '6px' }} /> {editingSubstrate ? 'Save Changes' : 'Add Substrate'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB: STORAGE BAYS MASTER DATA */}
+      {/* ========================================================================= */}
+      {activeTab === 'storage_bays' && (
+        <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '12px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                🏬 Storage Bays & Warehouse Locations Master
+              </h3>
+              <p style={{ margin: '4px 0 0 0', fontSize: '0.83rem', color: '#64748b' }}>
+                Configure storage bays, zones, racks, and capacities across Raw Material Store, SFG Store, FG Store, Inks & Chemicals Store, and Cylinder Storage.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ fontSize: '0.8rem', fontWeight: '700', padding: '7px 12px' }}
+                onClick={handleResetBaysToDefault}
+                title="Restore factory default storage bays list"
+              >
+                <RefreshCw size={14} style={{ marginRight: '6px' }} /> Reset to Defaults
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                style={{ fontSize: '0.8rem', fontWeight: '700', padding: '7px 14px', background: '#2563eb', borderColor: '#2563eb' }}
+                onClick={() => handleOpenBayModal()}
+              >
+                <Plus size={15} style={{ marginRight: '6px' }} /> Add Storage Bay
+              </button>
+            </div>
+          </div>
+
+          {/* Search & Filter Toolbar */}
+          <div style={{ display: 'flex', gap: '16px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', padding: '14px 16px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', gap: '12px', flex: 1, minWidth: '260px' }}>
+              <input
+                type="text"
+                placeholder="Search storage bay name, code, zone, or notes..."
+                value={baySearchTerm}
+                onChange={e => setBaySearchTerm(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  border: '1px solid #cbd5e1',
+                  fontSize: '0.85rem'
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: '700', color: '#475569' }}>Filter Storage Type:</span>
+              <select
+                value={selectedStorageTypeFilter}
+                onChange={e => setSelectedStorageTypeFilter(e.target.value)}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  border: '1px solid #cbd5e1',
+                  fontSize: '0.85rem',
+                  background: '#ffffff',
+                  fontWeight: '600'
+                }}
+              >
+                <option value="all">All Material Storage Types ({storageBays.length})</option>
+                <option value="Raw Material Store">Raw Material Store</option>
+                <option value="Semi-Finished Goods (SFG) Store">SFG Store</option>
+                <option value="Finished Goods (FG) Store">FG Store</option>
+                <option value="Inks & Chemicals Store">Inks & Chemicals Store</option>
+                <option value="Cylinder Store">Cylinder Store</option>
+                <option value="General Store / Consumables">General Store / Consumables</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Storage Bays Table */}
+          <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+              <thead>
+                <tr style={{ background: '#0f172a', color: '#ffffff', textAlign: 'left', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  <th style={{ padding: '10px 14px', width: '50px' }}>#</th>
+                  <th style={{ padding: '10px 14px' }}>Bay Code & Name</th>
+                  <th style={{ padding: '10px 14px' }}>Material Storage Type</th>
+                  <th style={{ padding: '10px 14px' }}>Zone / Rack / Floor</th>
+                  <th style={{ padding: '10px 14px', textAlign: 'right' }}>Max Capacity (kg)</th>
+                  <th style={{ padding: '10px 14px' }}>Status</th>
+                  <th style={{ padding: '10px 14px' }}>Description / Remarks</th>
+                  <th style={{ padding: '10px 14px', width: '100px', textAlign: 'center' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredStorageBays.length === 0 ? (
+                  <tr>
+                    <td colSpan="8" style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>
+                      No storage bays found for the selected filter or search query.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredStorageBays.map((bay, idx) => {
+                    let typeBg = '#eff6ff';
+                    let typeColor = '#1d4ed8';
+                    let typeBorder = '#bfdbfe';
+
+                    if (bay.storageType.includes('SFG')) {
+                      typeBg = '#f5f3ff';
+                      typeColor = '#6d28d9';
+                      typeBorder = '#ddd6fe';
+                    } else if (bay.storageType.includes('FG')) {
+                      typeBg = '#ecfdf5';
+                      typeColor = '#047857';
+                      typeBorder = '#a7f3d0';
+                    } else if (bay.storageType.includes('Ink') || bay.storageType.includes('Chemical')) {
+                      typeBg = '#fff7ed';
+                      typeColor = '#c2410c';
+                      typeBorder = '#fed7aa';
+                    } else if (bay.storageType.includes('Cylinder')) {
+                      typeBg = '#f0f9ff';
+                      typeColor = '#0369a1';
+                      typeBorder = '#bae6fd';
+                    }
+
+                    return (
+                      <tr key={bay.id || idx} style={{ borderBottom: '1px solid #f1f5f9', background: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                        <td style={{ padding: '10px 14px', fontWeight: '700', color: '#64748b' }}>{idx + 1}</td>
+                        
+                        <td style={{ padding: '10px 14px' }}>
+                          <span style={{ fontFamily: 'monospace', fontWeight: '800', color: '#0f172a', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '0.78rem', border: '1px solid #cbd5e1', marginRight: '6px' }}>
+                            {bay.code || 'BAY'}
+                          </span>
+                          <span style={{ fontWeight: '800', color: '#0f172a' }}>
+                            {bay.name}
+                          </span>
+                        </td>
+
+                        <td style={{ padding: '10px 14px' }}>
+                          <span style={{
+                            fontSize: '0.74rem',
+                            fontWeight: '800',
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            background: typeBg,
+                            color: typeColor,
+                            border: `1px solid ${typeBorder}`
+                          }}>
+                            {bay.storageType}
+                          </span>
+                        </td>
+
+                        <td style={{ padding: '10px 14px', color: '#334155', fontWeight: '600' }}>
+                          {bay.zone || 'Main Store Floor'}
+                        </td>
+
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: '700', color: '#0f172a' }}>
+                          {Number(bay.capacityKg || 0).toLocaleString()} kg
+                        </td>
+
+                        <td style={{ padding: '10px 14px' }}>
+                          <span style={{
+                            fontSize: '0.72rem',
+                            fontWeight: '800',
+                            padding: '2px 8px',
+                            borderRadius: '10px',
+                            background: bay.status === 'Active' ? '#f0fdf4' : bay.status === 'Maintenance' ? '#fff7ed' : '#f1f5f9',
+                            color: bay.status === 'Active' ? '#15803d' : bay.status === 'Maintenance' ? '#c2410c' : '#64748b',
+                            border: bay.status === 'Active' ? '1px solid #bbf7d0' : bay.status === 'Maintenance' ? '1px solid #fed7aa' : '1px solid #cbd5e1'
+                          }}>
+                            {bay.status || 'Active'}
+                          </span>
+                        </td>
+
+                        <td style={{ padding: '10px 14px', color: '#64748b', fontSize: '0.82rem' }}>
+                          {bay.description || '—'}
+                        </td>
+
+                        <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenBayModal(bay)}
+                              style={{ border: 'none', background: 'transparent', color: '#0284c7', cursor: 'pointer', padding: '4px' }}
+                              title="Edit Storage Bay"
+                            >
+                              <Edit3 size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteBayItem(bay.id, bay.name)}
+                              style={{ border: 'none', background: 'transparent', color: '#ef4444', cursor: 'pointer', padding: '4px' }}
+                              title="Delete Storage Bay"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Add/Edit Storage Bay */}
+      {isBayModalOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '16px' }}>
+          <div style={{ background: '#ffffff', borderRadius: '14px', width: '100%', maxWidth: '560px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', border: '1px solid #cbd5e1' }}>
+            <div style={{ background: '#0f172a', color: '#ffffff', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '800', fontSize: '1rem' }}>
+                🏬 {editingBay ? 'Edit Storage Bay / Location' : 'Add New Storage Bay'}
+              </div>
+              <button type="button" onClick={() => setIsBayModalOpen(false)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveBaySubmit} style={{ padding: '20px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                
+                {/* Bay Name */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                    Storage Bay Name <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    className="form-control"
+                    placeholder="e.g. Bay A - Film Storage, SFG Bay 1, FG Rack 3"
+                    value={bayName}
+                    onChange={e => setBayName(e.target.value)}
+                  />
+                </div>
+
+                {/* Short Code & Storage Type */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                      Bay Code / Tag
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. RM-BAY-A, SFG-01"
+                      value={bayCode}
+                      onChange={e => setBayCode(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                      Material Storage Type <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <select
+                      className="form-control"
+                      value={bayStorageType}
+                      onChange={e => setBayStorageType(e.target.value)}
+                    >
+                      <option value="Raw Material Store">Raw Material Store</option>
+                      <option value="Semi-Finished Goods (SFG) Store">Semi-Finished Goods (SFG) Store</option>
+                      <option value="Finished Goods (FG) Store">Finished Goods (FG) Store</option>
+                      <option value="Inks & Chemicals Store">Inks & Chemicals Store</option>
+                      <option value="Cylinder Store">Cylinder Store</option>
+                      <option value="General Store / Consumables">General Store / Consumables</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Zone & Capacity */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                      Zone / Floor / Rack Location
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. Zone 1 - Main Factory Floor"
+                      value={bayZone}
+                      onChange={e => setBayZone(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                      Max Weight Capacity (kg)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      className="form-control"
+                      placeholder="e.g. 10000"
+                      value={bayCapacityKg}
+                      onChange={e => setBayCapacityKg(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {/* Status */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                    Operational Status
+                  </label>
+                  <select
+                    className="form-control"
+                    value={bayStatus}
+                    onChange={e => setBayStatus(e.target.value)}
+                  >
+                    <option value="Active">Active</option>
+                    <option value="Maintenance">Maintenance</option>
+                    <option value="Full">Full</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                </div>
+
+                {/* Description */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                    Description / Storage Remarks
+                  </label>
+                  <textarea
+                    rows="2"
+                    className="form-control"
+                    placeholder="Enter details on stored materials or handling requirements..."
+                    value={bayDescription}
+                    onChange={e => setBayDescription(e.target.value)}
+                  />
+                </div>
+
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setIsBayModalOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  style={{ background: '#2563eb', borderColor: '#2563eb' }}
+                >
+                  <Check size={16} style={{ marginRight: '4px' }} />
+                  {editingBay ? 'Save Changes' : 'Create Storage Bay'}
                 </button>
               </div>
             </form>

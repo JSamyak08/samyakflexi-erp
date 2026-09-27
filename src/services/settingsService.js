@@ -36,7 +36,7 @@ export const DEFAULT_AGEING_SETTINGS = {
 };
 
 import { compressImageDataUrl, safeLocalStorageSet } from '../utils/safeStorage';
-import { saveSystemSetting, saveEmailSettingsToSupabase, saveEmailTemplatesToSupabase, fetchFilmSubstratesFromSupabase, saveFilmSubstratesToSupabase } from './supabaseDataService';
+import { saveSystemSetting, fetchSystemSetting, saveEmailSettingsToSupabase, saveEmailTemplatesToSupabase, fetchFilmSubstratesFromSupabase, saveFilmSubstratesToSupabase } from './supabaseDataService';
 
 
 
@@ -801,6 +801,117 @@ export async function loadFilmSubstratesFromSupabase() {
     console.warn("Could not load film substrates from Supabase:", e.message);
   }
   return getFilmSubstrates();
+}
+
+/* ========================================================================= */
+/* STORAGE BAYS MASTER SETTINGS */
+/* ========================================================================= */
+const STORAGE_BAYS_STORAGE_KEY = 'samyak_storage_bays_master';
+
+export const DEFAULT_STORAGE_BAYS = [
+  {
+    id: 'BAY-RM-01',
+    name: 'Bay A - Film Substrate Store',
+    code: 'RM-BAY-A',
+    storageType: 'Raw Material Store',
+    zone: 'Zone 1 - Main Factory Floor',
+    capacityKg: 10000,
+    status: 'Active',
+    description: 'Storage area for raw PET, BOPP, METPET film rolls'
+  },
+  {
+    id: 'BAY-RM-02',
+    name: 'Bay B - Inks & Solvents',
+    code: 'RM-BAY-B',
+    storageType: 'Inks & Chemicals Store',
+    zone: 'Rack 2 - Chemicals & Solvent Room',
+    capacityKg: 5000,
+    status: 'Active',
+    description: 'Base inks, ethyl acetate, toluene, hardener barrels'
+  },
+  {
+    id: 'BAY-CYL-01',
+    name: 'Bay C - Printing Cylinders Racks',
+    code: 'CYL-BAY-C',
+    storageType: 'Cylinder Store',
+    zone: 'Cylinder Storage Racks (Grid A-F)',
+    capacityKg: 500,
+    status: 'Active',
+    description: 'Engraved Rotogravure cylinders storage'
+  },
+  {
+    id: 'BAY-SFG-01',
+    name: 'SFG Bay 1 - Printed Web Rolls',
+    code: 'SFG-BAY-01',
+    storageType: 'Semi-Finished Goods (SFG) Store',
+    zone: 'SFG Aisle 1 (Post-Printing)',
+    capacityKg: 8000,
+    status: 'Active',
+    description: 'Storage for freshly printed rolls awaiting lamination'
+  },
+  {
+    id: 'BAY-SFG-02',
+    name: 'SFG Bay 2 - Laminated Web Rolls',
+    code: 'SFG-BAY-02',
+    storageType: 'Semi-Finished Goods (SFG) Store',
+    zone: 'SFG Aisle 2 (Post-Lamination)',
+    capacityKg: 8000,
+    status: 'Active',
+    description: 'Curing area for 1st & 2nd pass laminated web rolls'
+  },
+  {
+    id: 'BAY-FG-01',
+    name: 'FG Bay 1 - Slit Finished Reels',
+    code: 'FG-BAY-01',
+    storageType: 'Finished Goods (FG) Store',
+    zone: 'Dispatch Warehouse Shelf A',
+    capacityKg: 12000,
+    status: 'Active',
+    description: 'QC passed slit rolls packed & ready for delivery'
+  },
+  {
+    id: 'BAY-FG-02',
+    name: 'FG Bay 2 - Finished Pouches & Bags',
+    code: 'FG-BAY-02',
+    storageType: 'Finished Goods (FG) Store',
+    zone: 'Dispatch Warehouse Shelf B',
+    capacityKg: 10000,
+    status: 'Active',
+    description: 'Corrugated cartons of finished pouches'
+  }
+];
+
+export function getStorageBays() {
+  try {
+    const saved = localStorage.getItem(STORAGE_BAYS_STORAGE_KEY);
+    if (!saved) return [...DEFAULT_STORAGE_BAYS];
+    const parsed = JSON.parse(saved);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : [...DEFAULT_STORAGE_BAYS];
+  } catch (e) {
+    return [...DEFAULT_STORAGE_BAYS];
+  }
+}
+
+export function saveStorageBays(baysList) {
+  try {
+    safeLocalStorageSet(STORAGE_BAYS_STORAGE_KEY, JSON.stringify(baysList));
+    saveSystemSetting('storage_bays_master', baysList).catch(() => {});
+  } catch (e) {
+    console.error("Failed to save storage bays master settings", e);
+  }
+}
+
+export async function loadStorageBaysFromSupabase() {
+  try {
+    const remote = await fetchSystemSetting('storage_bays_master');
+    if (remote && Array.isArray(remote) && remote.length > 0) {
+      safeLocalStorageSet(STORAGE_BAYS_STORAGE_KEY, JSON.stringify(remote));
+      return remote;
+    }
+  } catch (e) {
+    console.warn("Could not load storage bays from Supabase:", e.message);
+  }
+  return getStorageBays();
 }
 
 

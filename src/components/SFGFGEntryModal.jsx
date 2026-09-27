@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import { FILM_DENSITIES, getFilmSubstrateDensity, calculateFilmRollLength, COMPANY_DETAILS } from '../factoryStore';
+import { getStorageBays } from '../services/settingsService';
 
 export const SFG_TYPES = [
   'Printed Rolls',
@@ -952,9 +953,10 @@ export default function SFGFGEntryModal({
                 </label>
                 <input 
                   type="text" 
+                  list="configured-sfg-bays-list"
                   className="form-control" 
                   style={{ fontSize: '0.8rem', width: '100%', borderColor: formErrors.storageBay ? '#ef4444' : undefined }}
-                  placeholder="e.g. Curing Bay A1, Bay 2 *"
+                  placeholder="Select or enter Storage Bay (e.g. SFG Bay 1, Bay A)"
                   value={storageBay} 
                   onChange={e => {
                     setStorageBay(e.target.value);
@@ -962,6 +964,21 @@ export default function SFGFGEntryModal({
                   }}
                   required
                 />
+                <datalist id="configured-sfg-bays-list">
+                  {(() => {
+                    try {
+                      const list = getStorageBays();
+                      const targetType = mode === 'FG' ? 'Finished Goods (FG) Store' : 'Semi-Finished Goods (SFG) Store';
+                      const matching = list.filter(b => b.status !== 'Inactive' && (b.storageType === targetType || b.storageType.includes(mode)));
+                      const displayList = matching.length > 0 ? matching : list.filter(b => b.status !== 'Inactive');
+                      return displayList.map(b => (
+                        <option key={b.id} value={b.name}>{b.code ? `[${b.code}] ${b.zone || ''}` : b.storageType}</option>
+                      ));
+                    } catch (e) {
+                      return null;
+                    }
+                  })()}
+                </datalist>
                 {formErrors.storageBay && (
                   <div style={{ fontSize: '0.72rem', color: '#dc2626', marginTop: '2px', fontWeight: '600' }}>
                     {formErrors.storageBay}
