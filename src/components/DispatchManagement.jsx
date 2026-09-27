@@ -925,6 +925,19 @@ export default function DispatchManagement({
 
   // Pre-fill and generate Quality CoA Report from a Delivery Challan
   const handleCreateCoaFromDc = (dc) => {
+    // Validate that Quality Test Reports (CoA) are exclusively generated for Finished Goods (FG)
+    const nature = dc.challanNature || dc.movementType || dc.natureOfMovement || "Sale of Goods";
+    const nonFGNatures = [
+      'QC Reject - Return to Vendor', 
+      'Maintenance Material - Returnable', 
+      'Job Work Material - Returnable', 
+      'Returnable Material'
+    ];
+    if (nonFGNatures.includes(nature)) {
+      alert("⚠️ Quality Test Reports (CoA) are generated exclusively for Finished Goods (FG) produced and sold, not for non-FG / returnable / QC reject items.");
+      return;
+    }
+
     setEditingCoaId(null);
     const nextCoa = getNextDocRefNumber('coa');
     setCoaNo(nextCoa);
@@ -2847,6 +2860,12 @@ export default function DispatchManagement({
             </div>
 
             <form onSubmit={handleSaveCoaSubmit}>
+              
+              {/* Finished Goods (FG) Only Policy Banner */}
+              <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '10px 14px', borderRadius: '8px', marginBottom: '16px', fontSize: '0.8rem', color: '#047857', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ShieldCheck size={18} style={{ color: '#059669', flexShrink: 0 }} />
+                <span>Quality Test Reports (CoA) are generated exclusively for <strong>Finished Goods (FG)</strong> produced and manufactured for clients.</span>
+              </div>
 
               {/* Grid 1: Basic Header Inputs */}
               <div className="form-grid" style={{ marginBottom: '16px' }}>
@@ -2874,14 +2893,14 @@ export default function DispatchManagement({
                 </div>
 
                 <div>
-                  <label className="form-label">Job Name (Select Specs) *</label>
+                  <label className="form-label">Finished Goods (FG) Production Job *</label>
                   <select 
                     className="form-control" 
                     value={coaJobName} 
                     onChange={e => handleJobSelectChange(e.target.value)}
                     required
                   >
-                    <option value="" disabled>-- Select Job Master --</option>
+                    <option value="" disabled>-- Select Finished Goods (FG) Job --</option>
                     {(jobMasters || []).map(j => (
                       <option key={j.id} value={j.jobName}>{j.jobName} ({j.clientName})</option>
                     ))}

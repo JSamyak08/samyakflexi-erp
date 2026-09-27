@@ -109,6 +109,7 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
   })();
 
   const selectedNature = challanData.challanNature || challanData.movementType || challanData.natureOfMovement || "Sale of Goods";
+  const isFGChallan = selectedNature === 'Sale of Goods' || !['QC Reject - Return to Vendor', 'Maintenance Material - Returnable', 'Job Work Material - Returnable', 'Returnable Material'].includes(selectedNature);
 
   return (
     <div className="pdf-modal-overlay">
@@ -116,13 +117,14 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
         <button className="btn-secondary" onClick={onClose}>
           <ArrowLeft size={16} /> Back to Dispatch Hub
         </button>
-        {onGenerateCoa && (
+        {onGenerateCoa && isFGChallan && (
           <button 
             className="btn-secondary" 
             style={{ background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }} 
             onClick={() => onGenerateCoa(challanData)}
+            title="Generate Quality Test Report (CoA) for Finished Goods"
           >
-            <FileText size={16} /> + Quality CoA Report
+            <FileText size={16} /> + Quality CoA Report (FG)
           </button>
         )}
         <button className="btn-primary" onClick={() => window.print()}>
