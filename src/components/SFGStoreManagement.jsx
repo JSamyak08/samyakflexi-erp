@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Layers, 
   Package, 
@@ -23,6 +23,12 @@ import {
   ChevronRight,
   ChevronDown,
   ShieldCheck,
+  ShieldAlert,
+  Trash2,
+  RotateCcw,
+  CheckCircle,
+  AlertOctagon,
+  ArrowRight,
   Printer
 } from 'lucide-react';
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
@@ -49,6 +55,44 @@ export default function SFGStoreManagement({
   const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'In Stock (WIP)', 'Partially Consumed', 'Fully Consumed'
   const [typeFilter, setTypeFilter] = useState('all');
 
+  // Sub-tab Navigation: 'available' | 'qchold' | 'scrap'
+  const [activeStoreTab, setActiveStoreTab] = useState('available');
+
+  // QC Hold Store & Scrap Store Persisted State
+  const [qcHoldItems, setQcHoldItems] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sfg_qc_hold_items');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const [scrapItems, setScrapItems] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sfg_scrap_items');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('sfg_qc_hold_items', JSON.stringify(qcHoldItems));
+    } catch (e) {
+      console.error("Error saving sfg_qc_hold_items:", e);
+    }
+  }, [qcHoldItems]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('sfg_scrap_items', JSON.stringify(scrapItems));
+    } catch (e) {
+      console.error("Error saving sfg_scrap_items:", e);
+    }
+  }, [scrapItems]);
+
   // Inventory Ageing Settings Configuration
   const ageingSettings = useMemo(() => getInventoryAgeingSettings(), []);
 
@@ -66,6 +110,23 @@ export default function SFGStoreManagement({
   const [shift, setShift] = useState('Day Shift');
   const [notes, setNotes] = useState('');
   const [formError, setFormError] = useState('');
+
+  // QC Hold Form Fields inside Consume Modal
+  const [holdReason, setHoldReason] = useState('');
+  const [holdRollCount, setHoldRollCount] = useState(1);
+  const [rollWeights, setRollWeights] = useState(['']);
+
+  // Modals for QC Hold Actions
+  const [selectedQcItemForApprove, setSelectedQcItemForApprove] = useState(null);
+  const [approveQtyKg, setApproveQtyKg] = useState('');
+  const [approveReason, setApproveReason] = useState('');
+  const [approveFormError, setApproveFormError] = useState('');
+
+  const [selectedQcItemForScrap, setSelectedQcItemForScrap] = useState(null);
+  const [scrapQtyKg, setScrapQtyKg] = useState('');
+  const [defectCategory, setDefectCategory] = useState('Delamination / Bonding Failure');
+  const [scrapReason, setScrapReason] = useState('');
+  const [scrapFormError, setScrapFormError] = useState('');
 
   // Combined & Prepared SFG items with FIFO Sorting (oldest first)
   const allSfgItems = useMemo(() => {
@@ -398,10 +459,39 @@ export default function SFGStoreManagement({
     setOperatorName(currentUser?.fullName || currentUser?.username || '');
     setShift('Day Shift');
     setNotes('');
+    setHoldReason('');
+    setHoldRollCount(1);
+    setRollWeights(['']);
     setFormError('');
   };
 
-  // Submit Consume SFG
+  const handleRollCountChange = (count) => {
+    const num = Math.max(1, parseInt(count) || 1);
+    setHoldRollCount(num);
+    setRollWeights(prev => {
+      const updated = [...prev];
+      if (updated.length < num) {
+        while (updated.length < num) updated.push('');
+      } else if (updated.length > num) {
+        updated.length = num;
+      }
+      return updated;
+    });
+  };
+
+  const handleRollWeightChange = (index, val) => {
+    setRollWeights(prev => {
+      const updated = [...prev];
+      updated[index] = val;
+      const sum = updated.reduce((acc, curr) => acc + (parseFloat(curr) || 0), 0);
+      if (sum > 0) {
+        setConsumedWeightKg(sum.toFixed(2));
+      }
+      return updated;
+    });
+  };
+
+  // Submit Consume / QC Hold SFG
   const handleConfirmConsumeSFG = (e) => {
     e.preventDefault();
     if (!selectedItemForConsume) return;
@@ -421,6 +511,13 @@ export default function SFGStoreManagement({
     if (qtyVal > currentAvailable) {
       setFormError(`Consumed weight (${qtyVal} kg) cannot exceed current available balance (${currentAvailable.toFixed(2)} kg).`);
       return;
+    }
+
+    if (targetProcess === 'QC Hold Store') {
+      if (!holdReason || !holdReason.trim()) {
+        setFormError('Please specify the QC Hold Reason before sending material to quarantine.');
+        return;
+      }
     }
 
     const newConsumedKg = (currentConsumed + qtyVal).toFixed(2);
@@ -445,7 +542,7 @@ export default function SFGStoreManagement({
       targetMachine,
       operatorName,
       shift,
-      notes
+      notes: targetProcess === 'QC Hold Store' ? `QC Hold: ${holdReason}` : notes
     };
 
     const updatedConsumptionHistory = [
@@ -467,7 +564,219 @@ export default function SFGStoreManagement({
       onSaveSFGGood(updatedItem);
     }
 
+    // Special logic when targetProcess is 'QC Hold Store'
+    if (targetProcess === 'QC Hold Store') {
+      const holdTagId = `QCHOLD-${Date.now().toString().slice(-6)}`;
+      const parsedRollWeights = rollWeights.map(w => parseFloat(w) || 0).filter(w => w > 0);
+      const finalRollCount = Math.max(1, parseInt(holdRollCount) || 1);
+
+      const newQcHoldEntry = {
+        id: holdTagId,
+        barcodeId: holdTagId,
+        sfgBatchCode: holdTagId,
+        parentSfgBatchCode: selectedItemForConsume.sfgBatchCode,
+        parentSfgId: selectedItemForConsume.id,
+        orderId: selectedItemForConsume.orderId || 'N/A',
+        jobName: selectedItemForConsume.jobName,
+        jobCode: selectedItemForConsume.jobCode,
+        clientName: selectedItemForConsume.clientName,
+        filmType: selectedItemForConsume.filmType,
+        micron: selectedItemForConsume.micron,
+        widthMm: selectedItemForConsume.widthMm,
+        totalHoldKg: parseFloat(qtyVal.toFixed(2)),
+        remainingHoldKg: parseFloat(qtyVal.toFixed(2)),
+        approvedKg: 0,
+        scrappedKg: 0,
+        numberOfRolls: finalRollCount,
+        rollWeights: parsedRollWeights.length > 0 ? parsedRollWeights : [parseFloat(qtyVal.toFixed(2))],
+        holdReason: holdReason.trim(),
+        targetProcess: 'QC Hold Store',
+        operatorName: operatorName || currentUser?.fullName || currentUser?.username || 'QC Inspector',
+        shift,
+        date: new Date().toISOString().split('T')[0],
+        timestamp: new Date().toISOString(),
+        status: 'QC_HOLD',
+        isQCHold: true,
+        approvalLogs: [],
+        scrapLogs: []
+      };
+
+      setQcHoldItems(prev => [newQcHoldEntry, ...prev]);
+
+      // Open Barcode sticker modal immediately for the new QC Hold tag
+      setSelectedRollForBarcodeModal(newQcHoldEntry);
+    }
+
     setSelectedItemForConsume(null);
+  };
+
+  // Submit Option 1: Approve & Move to Store
+  const handleConfirmApproveMove = (e) => {
+    e.preventDefault();
+    if (!selectedQcItemForApprove) return;
+
+    const approveVal = parseFloat(approveQtyKg);
+    const currentRemaining = Number(selectedQcItemForApprove.remainingHoldKg || 0);
+
+    if (isNaN(approveVal) || approveVal <= 0) {
+      setApproveFormError('Please enter a valid quantity to approve greater than 0 kg.');
+      return;
+    }
+
+    if (approveVal > currentRemaining) {
+      setApproveFormError(`Approve quantity (${approveVal} kg) cannot exceed current pending QC hold balance (${currentRemaining.toFixed(2)} kg).`);
+      return;
+    }
+
+    if (!approveReason || !approveReason.trim()) {
+      setApproveFormError('Please specify the approval reason/justification.');
+      return;
+    }
+
+    const newRemainingKg = Math.max(0, currentRemaining - approveVal);
+    const newApprovedKg = Number(selectedQcItemForApprove.approvedKg || 0) + approveVal;
+
+    const approvalLog = {
+      id: `APP-LOG-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      approvedKg: approveVal,
+      remainingHoldKg: newRemainingKg,
+      reason: approveReason.trim(),
+      approvedBy: currentUser?.fullName || currentUser?.username || 'QC Manager'
+    };
+
+    // 1. Restore approved quantity back to parent SFG/FG store item
+    const parentId = selectedQcItemForApprove.parentSfgId || selectedQcItemForApprove.parentSfgBatchCode;
+    const parentItem = allSfgItems.find(s => s.id === parentId || s.sfgBatchCode === parentId);
+
+    if (parentItem) {
+      const parentNet = Number(parentItem.totalNetKg) || 0;
+      const parentConsumed = Math.max(0, Number(parentItem.consumedKg) - approveVal);
+      const parentAvail = parentItem.availableKg !== undefined ? Number(parentItem.availableKg) + approveVal : Math.max(0, parentNet - parentConsumed);
+
+      const updatedParent = {
+        ...parentItem,
+        consumedKg: parseFloat(parentConsumed.toFixed(2)),
+        availableKg: parseFloat(parentAvail.toFixed(2)),
+        status: parentAvail > 0 ? (parentConsumed > 0 ? 'Partially Consumed' : 'In Stock (WIP)') : 'Fully Consumed',
+        consumptionHistory: [
+          {
+            id: `RESTORE-LOG-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            date: new Date().toISOString().split('T')[0],
+            sfgBatchCode: parentItem.sfgBatchCode,
+            jobName: parentItem.jobName,
+            consumedKg: -parseFloat(approveVal.toFixed(2)), // negative consumed = restored
+            remainingBalanceKg: parseFloat(parentAvail.toFixed(2)),
+            targetProcess: 'Restored from QC Hold Store',
+            operatorName: currentUser?.fullName || currentUser?.username || 'QC Manager',
+            shift: 'Day Shift',
+            notes: `Approved from QC Hold Tag #${selectedQcItemForApprove.barcodeId}. Reason: ${approveReason.trim()}`
+          },
+          ...(parentItem.consumptionHistory || [])
+        ]
+      };
+
+      if (onSaveSFGGood) {
+        onSaveSFGGood(updatedParent);
+      }
+    }
+
+    // 2. Update or automatically remove from QC Hold Store if remaining is 0 kg!
+    if (newRemainingKg <= 0) {
+      setQcHoldItems(prev => prev.filter(item => item.id !== selectedQcItemForApprove.id));
+    } else {
+      setQcHoldItems(prev => prev.map(item => {
+        if (item.id === selectedQcItemForApprove.id) {
+          return {
+            ...item,
+            remainingHoldKg: parseFloat(newRemainingKg.toFixed(2)),
+            approvedKg: parseFloat(newApprovedKg.toFixed(2)),
+            approvalLogs: [approvalLog, ...(item.approvalLogs || [])]
+          };
+        }
+        return item;
+      }));
+    }
+
+    setSelectedQcItemForApprove(null);
+  };
+
+  // Submit Option 2: Send to Scrap
+  const handleConfirmSendToScrap = (e) => {
+    e.preventDefault();
+    if (!selectedQcItemForScrap) return;
+
+    const scrapVal = parseFloat(scrapQtyKg);
+    const currentRemaining = Number(selectedQcItemForScrap.remainingHoldKg || 0);
+
+    if (isNaN(scrapVal) || scrapVal <= 0) {
+      setScrapFormError('Please enter a valid quantity to send to scrap greater than 0 kg.');
+      return;
+    }
+
+    if (scrapVal > currentRemaining) {
+      setScrapFormError(`Scrap quantity (${scrapVal} kg) cannot exceed current pending QC hold balance (${currentRemaining.toFixed(2)} kg).`);
+      return;
+    }
+
+    if (!scrapReason || !scrapReason.trim()) {
+      setScrapFormError('Please specify the scrap reason/notes.');
+      return;
+    }
+
+    const newRemainingKg = Math.max(0, currentRemaining - scrapVal);
+    const newScrappedKg = Number(selectedQcItemForScrap.scrappedKg || 0) + scrapVal;
+
+    const scrapLog = {
+      id: `SCRAP-LOG-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      scrappedKg: scrapVal,
+      remainingHoldKg: newRemainingKg,
+      defectCategory,
+      reason: scrapReason.trim(),
+      scrappedBy: currentUser?.fullName || currentUser?.username || 'QC Inspector'
+    };
+
+    // 1. Record entry in Scrap Store
+    const scrapStoreEntry = {
+      id: `SCRAP-ITEM-${Date.now()}`,
+      holdTagId: selectedQcItemForScrap.barcodeId,
+      orderId: selectedQcItemForScrap.orderId,
+      jobName: selectedQcItemForScrap.jobName,
+      jobCode: selectedQcItemForScrap.jobCode,
+      clientName: selectedQcItemForScrap.clientName,
+      filmType: selectedQcItemForScrap.filmType,
+      micron: selectedQcItemForScrap.micron,
+      widthMm: selectedQcItemForScrap.widthMm,
+      scrapQtyKg: parseFloat(scrapVal.toFixed(2)),
+      defectCategory,
+      scrapReason: scrapReason.trim(),
+      scrappedBy: currentUser?.fullName || currentUser?.username || 'QC Inspector',
+      date: new Date().toISOString().split('T')[0],
+      timestamp: new Date().toISOString()
+    };
+
+    setScrapItems(prev => [scrapStoreEntry, ...prev]);
+
+    // 2. Update or automatically remove from QC Hold Store if remaining is 0 kg!
+    if (newRemainingKg <= 0) {
+      setQcHoldItems(prev => prev.filter(item => item.id !== selectedQcItemForScrap.id));
+    } else {
+      setQcHoldItems(prev => prev.map(item => {
+        if (item.id === selectedQcItemForScrap.id) {
+          return {
+            ...item,
+            remainingHoldKg: parseFloat(newRemainingKg.toFixed(2)),
+            scrappedKg: parseFloat(newScrappedKg.toFixed(2)),
+            scrapLogs: [scrapLog, ...(item.scrapLogs || [])]
+          };
+        }
+        return item;
+      }));
+    }
+
+    setSelectedQcItemForScrap(null);
   };
 
   return (
@@ -557,7 +866,113 @@ export default function SFGStoreManagement({
         </div>
       </div>
 
-      {/* Metric Cards */}
+      {/* Sub-Tab Navigation Bar */}
+      <div style={{
+        display: 'flex',
+        gap: '8px',
+        marginBottom: '24px',
+        borderBottom: '2px solid #e2e8f0',
+        paddingBottom: '2px'
+      }}>
+        <button
+          type="button"
+          onClick={() => setActiveStoreTab('available')}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 18px',
+            fontSize: '0.92rem',
+            fontWeight: '800',
+            border: 'none',
+            borderBottom: activeStoreTab === 'available' ? '3px solid #2563eb' : '3px solid transparent',
+            color: activeStoreTab === 'available' ? '#2563eb' : '#64748b',
+            background: activeStoreTab === 'available' ? '#eff6ff' : 'transparent',
+            borderRadius: '8px 8px 0 0',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <Layers size={18} />
+          SFG & FG Store
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveStoreTab('qchold')}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 18px',
+            fontSize: '0.92rem',
+            fontWeight: '800',
+            border: 'none',
+            borderBottom: activeStoreTab === 'qchold' ? '3px solid #dc2626' : '3px solid transparent',
+            color: activeStoreTab === 'qchold' ? '#dc2626' : '#64748b',
+            background: activeStoreTab === 'qchold' ? '#fff5f5' : 'transparent',
+            borderRadius: '8px 8px 0 0',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <ShieldAlert size={18} />
+          QC Hold Store
+          {qcHoldItems.length > 0 && (
+            <span style={{
+              background: '#dc2626',
+              color: '#ffffff',
+              fontSize: '0.74rem',
+              fontWeight: '900',
+              padding: '2px 8px',
+              borderRadius: '10px',
+              marginLeft: '4px'
+            }}>
+              {qcHoldItems.length}
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveStoreTab('scrap')}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 18px',
+            fontSize: '0.92rem',
+            fontWeight: '800',
+            border: 'none',
+            borderBottom: activeStoreTab === 'scrap' ? '3px solid #475569' : '3px solid transparent',
+            color: activeStoreTab === 'scrap' ? '#0f172a' : '#64748b',
+            background: activeStoreTab === 'scrap' ? '#f1f5f9' : 'transparent',
+            borderRadius: '8px 8px 0 0',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <Trash2 size={18} />
+          Scrap Store
+          {scrapItems.length > 0 && (
+            <span style={{
+              background: '#64748b',
+              color: '#ffffff',
+              fontSize: '0.74rem',
+              fontWeight: '900',
+              padding: '2px 8px',
+              borderRadius: '10px',
+              marginLeft: '4px'
+            }}>
+              {scrapItems.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* VIEW 1: SFG & FG AVAILABLE STORE */}
+      {activeStoreTab === 'available' && (
+        <>
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
@@ -1220,6 +1635,646 @@ export default function SFGStoreManagement({
           />
         </div>
       )}
+      </>
+      )}
+
+      {/* ==================================================================== */}
+      {/* VIEW 2: QC HOLD STORE SECTION                                        */}
+      {/* ==================================================================== */}
+      {activeStoreTab === 'qchold' && (
+        <div>
+          {/* QC Hold KPIs */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+            gap: '16px',
+            marginBottom: '24px'
+          }}>
+            <div style={{ background: '#fff', border: '1px solid #fca5a5', borderRadius: '14px', padding: '18px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#991b1b', fontSize: '0.85rem', fontWeight: '700' }}>
+                <span>Active Quarantine Hold Batches</span>
+                <ShieldAlert size={18} color="#dc2626" />
+              </div>
+              <div style={{ fontSize: '1.75rem', fontWeight: '900', color: '#7f1d1d', marginTop: '8px' }}>
+                {qcHoldItems.length} <span style={{ fontSize: '0.88rem', color: '#991b1b', fontWeight: '600' }}>Batches</span>
+              </div>
+            </div>
+
+            <div style={{ background: '#fff5f5', border: '1px solid #fca5a5', borderRadius: '14px', padding: '18px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#991b1b', fontSize: '0.85rem', fontWeight: '700' }}>
+                <span>Total Pending Hold Weight</span>
+                <Scale size={18} color="#dc2626" />
+              </div>
+              <div style={{ fontSize: '1.75rem', fontWeight: '900', color: '#991b1b', marginTop: '8px' }}>
+                {qcHoldItems.reduce((acc, item) => acc + Number(item.remainingHoldKg || 0), 0).toFixed(2)} <span style={{ fontSize: '0.88rem', color: '#991b1b' }}>kg</span>
+              </div>
+            </div>
+
+            <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '14px', padding: '18px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#047857', fontSize: '0.85rem', fontWeight: '700' }}>
+                <span>Approved & Released</span>
+                <CheckCircle size={18} color="#059669" />
+              </div>
+              <div style={{ fontSize: '1.75rem', fontWeight: '900', color: '#047857', marginTop: '8px' }}>
+                {qcHoldItems.reduce((acc, item) => acc + Number(item.approvedKg || 0), 0).toFixed(2)} <span style={{ fontSize: '0.88rem', color: '#047857' }}>kg</span>
+              </div>
+            </div>
+
+            <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '14px', padding: '18px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569', fontSize: '0.85rem', fontWeight: '700' }}>
+                <span>Scrapped from Hold</span>
+                <Trash2 size={18} color="#64748b" />
+              </div>
+              <div style={{ fontSize: '1.75rem', fontWeight: '900', color: '#334155', marginTop: '8px' }}>
+                {qcHoldItems.reduce((acc, item) => acc + Number(item.scrappedKg || 0), 0).toFixed(2)} <span style={{ fontSize: '0.88rem', color: '#475569' }}>kg</span>
+              </div>
+            </div>
+          </div>
+
+          {/* QC Hold Table */}
+          <div style={{ background: '#fff', border: '1px solid #fca5a5', borderRadius: '14px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(220,38,38,0.06)' }}>
+            <div style={{ background: 'linear-gradient(90deg, #fef2f2 0%, #fff 100%)', padding: '16px 20px', borderBottom: '1px solid #fca5a5', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ShieldAlert size={20} color="#dc2626" />
+                <h3 style={{ fontSize: '1.05rem', fontWeight: '800', color: '#7f1d1d', margin: 0 }}>
+                  QC Hold Store — Quarantine Items ({qcHoldItems.length})
+                </h3>
+              </div>
+              <span style={{ fontSize: '0.78rem', color: '#991b1b', background: '#fee2e2', padding: '4px 10px', borderRadius: '6px', fontWeight: '700', border: '1px solid #fca5a5' }}>
+                🚨 EXPLICIT 'QC HOLD MATERIAL' STICKERS APPLIED
+              </span>
+            </div>
+
+            {qcHoldItems.length === 0 ? (
+              <div style={{ padding: '48px', textAlign: 'center', color: '#94a3b8' }}>
+                <ShieldCheck size={40} style={{ margin: '0 auto 12px', display: 'block', color: '#10b981' }} />
+                <div style={{ fontSize: '1.05rem', fontWeight: '700', color: '#334155' }}>No active materials in QC Hold Quarantine</div>
+                <div style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '4px' }}>
+                  When consuming SFG or FG goods, select "QC Hold Store" in Target Process / Stage to send items here.
+                </div>
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
+                  <thead>
+                    <tr style={{ background: '#fff5f5', borderBottom: '1px solid #fca5a5', color: '#7f1d1d', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      <th style={{ padding: '12px 16px' }}>QC Tag / Barcode</th>
+                      <th style={{ padding: '12px 16px' }}>Job Name & Order</th>
+                      <th style={{ padding: '12px 16px' }}>Substrate & Size</th>
+                      <th style={{ padding: '12px 16px', textAlign: 'right' }}>Total Hold (kg)</th>
+                      <th style={{ padding: '12px 16px', textAlign: 'right' }}>Pending Hold (kg)</th>
+                      <th style={{ padding: '12px 16px' }}>Rolls / Weights</th>
+                      <th style={{ padding: '12px 16px' }}>Hold Reason</th>
+                      <th style={{ padding: '12px 16px' }}>Inspector & Date</th>
+                      <th style={{ padding: '12px 16px', textAlign: 'center' }}>QC Action Options</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {qcHoldItems.map((item) => (
+                      <tr key={item.id} style={{ borderBottom: '1px solid #fee2e2' }}>
+                        
+                        {/* Tag Barcode */}
+                        <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
+                          <div style={{ fontFamily: 'monospace', fontWeight: '900', color: '#991b1b', background: '#fee2e2', padding: '3px 8px', borderRadius: '5px', border: '1px solid #fca5a5', display: 'inline-block' }}>
+                            {item.barcodeId}
+                          </div>
+                          <div style={{ marginTop: '4px' }}>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedRollForBarcodeModal(item)}
+                              style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: '0.74rem', fontWeight: '800', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '3px', padding: 0 }}
+                            >
+                              <QrCode size={12} /> Print Sticker
+                            </button>
+                          </div>
+                        </td>
+
+                        {/* Job & Order */}
+                        <td style={{ padding: '12px 16px' }}>
+                          <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '0.88rem' }}>{item.jobName}</div>
+                          <div style={{ fontSize: '0.76rem', color: '#475569', marginTop: '2px' }}>
+                            {item.orderId ? `Order #${item.orderId}` : item.jobCode} | Client: <strong>{item.clientName}</strong>
+                          </div>
+                        </td>
+
+                        {/* Substrate */}
+                        <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
+                          <div style={{ fontWeight: '700', color: '#334155', fontSize: '0.84rem' }}>{item.filmType}</div>
+                          <div style={{ fontSize: '0.76rem', color: '#64748b' }}>{item.micron}µm × {item.widthMm}mm</div>
+                        </td>
+
+                        {/* Total Hold */}
+                        <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '700', color: '#64748b', whiteSpace: 'nowrap' }}>
+                          {item.totalHoldKg.toFixed(2)} kg
+                        </td>
+
+                        {/* Pending Hold Balance */}
+                        <td style={{ padding: '12px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          <span style={{ fontSize: '0.95rem', fontWeight: '900', color: '#991b1b', background: '#fee2e2', padding: '4px 10px', borderRadius: '6px', border: '1px solid #fca5a5', display: 'inline-block' }}>
+                            {item.remainingHoldKg.toFixed(2)} kg
+                          </span>
+                        </td>
+
+                        {/* Rolls */}
+                        <td style={{ padding: '12px 16px', fontSize: '0.82rem', color: '#334155' }}>
+                          <div style={{ fontWeight: '700' }}>{item.numberOfRolls} Roll(s)</div>
+                          {Array.isArray(item.rollWeights) && item.rollWeights.length > 0 && (
+                            <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                              ({item.rollWeights.join(', ')} kg)
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Hold Reason */}
+                        <td style={{ padding: '12px 16px', fontSize: '0.82rem', color: '#991b1b', fontWeight: '700', maxWidth: '200px' }}>
+                          {item.holdReason}
+                        </td>
+
+                        {/* Inspector & Date */}
+                        <td style={{ padding: '12px 16px', fontSize: '0.78rem', color: '#475569', whiteSpace: 'nowrap' }}>
+                          <div>Inspector: <strong>{item.operatorName}</strong></div>
+                          <div style={{ color: '#64748b', marginTop: '2px' }}>Date: {item.date} ({item.shift})</div>
+                        </td>
+
+                        {/* Action Options: Approve & Move to Store vs Send to Scrap */}
+                        <td style={{ padding: '12px 16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                            
+                            {/* Option 1: Approve & Move to Store */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedQcItemForApprove(item);
+                                setApproveQtyKg(item.remainingHoldKg.toString());
+                                setApproveReason('');
+                                setApproveFormError('');
+                              }}
+                              style={{
+                                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                                color: '#ffffff',
+                                border: 'none',
+                                borderRadius: '8px',
+                                padding: '7px 12px',
+                                fontSize: '0.78rem',
+                                fontWeight: '800',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
+                              }}
+                            >
+                              <ShieldCheck size={14} /> Approve & Move to Store
+                            </button>
+
+                            {/* Option 2: Send to Scrap */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedQcItemForScrap(item);
+                                setScrapQtyKg(item.remainingHoldKg.toString());
+                                setDefectCategory('Delamination / Bonding Failure');
+                                setScrapReason('');
+                                setScrapFormError('');
+                              }}
+                              style={{
+                                background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                                color: '#ffffff',
+                                border: 'none',
+                                borderRadius: '8px',
+                                padding: '7px 12px',
+                                fontSize: '0.78rem',
+                                fontWeight: '800',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                boxShadow: '0 2px 6px rgba(239, 68, 68, 0.3)'
+                              }}
+                            >
+                              <Trash2 size={14} /> Send to Scrap
+                            </button>
+
+                          </div>
+                        </td>
+
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* VIEW 3: SCRAP STORE SECTION                                          */}
+      {/* ==================================================================== */}
+      {activeStoreTab === 'scrap' && (
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '24px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <div>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Trash2 size={20} color="#64748b" /> Scrap Store Inventory Log ({scrapItems.length})
+              </h3>
+              <p style={{ fontSize: '0.82rem', color: '#64748b', margin: '2px 0 0 0' }}>
+                Record of all defective materials rejected and transferred to Scrap Store from QC Hold Quarantine.
+              </p>
+            </div>
+            <div style={{ fontSize: '1.1rem', fontWeight: '900', color: '#dc2626', background: '#fef2f2', padding: '8px 16px', borderRadius: '10px', border: '1px solid #fca5a5' }}>
+              Total Scrapped: {scrapItems.reduce((acc, i) => acc + Number(i.scrapQtyKg || 0), 0).toFixed(2)} kg
+            </div>
+          </div>
+
+          {scrapItems.length === 0 ? (
+            <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
+              <Trash2 size={36} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.4 }} />
+              <div style={{ fontSize: '0.95rem', fontWeight: '600', color: '#475569' }}>Scrap store is currently empty</div>
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc', borderBottom: '1px solid #cbd5e1', color: '#475569', fontSize: '0.75rem', textTransform: 'uppercase' }}>
+                    <th style={{ padding: '10px 14px' }}>Original Tag Ref</th>
+                    <th style={{ padding: '10px 14px' }}>Job Name & Order</th>
+                    <th style={{ padding: '10px 14px' }}>Substrate & Size</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'right' }}>Scrap Weight (kg)</th>
+                    <th style={{ padding: '10px 14px' }}>Defect Category</th>
+                    <th style={{ padding: '10px 14px' }}>Scrap Reason & Remarks</th>
+                    <th style={{ padding: '10px 14px' }}>Transferred By & Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scrapItems.map((item) => (
+                    <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '10px 14px', fontFamily: 'monospace', fontWeight: '700', color: '#dc2626' }}>
+                        {item.holdTagId}
+                      </td>
+                      <td style={{ padding: '10px 14px' }}>
+                        <div style={{ fontWeight: '700', color: '#0f172a' }}>{item.jobName}</div>
+                        <div style={{ fontSize: '0.74rem', color: '#64748b' }}>{item.orderId} | Client: {item.clientName}</div>
+                      </td>
+                      <td style={{ padding: '10px 14px', color: '#334155' }}>
+                        {item.filmType} ({item.micron}µm × {item.widthMm}mm)
+                      </td>
+                      <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: '900', color: '#dc2626' }}>
+                        {item.scrapQtyKg.toFixed(2)} kg
+                      </td>
+                      <td style={{ padding: '10px 14px' }}>
+                        <span style={{ fontSize: '0.75rem', fontWeight: '700', background: '#fee2e2', color: '#991b1b', padding: '3px 8px', borderRadius: '4px', border: '1px solid #fca5a5' }}>
+                          {item.defectCategory}
+                        </span>
+                      </td>
+                      <td style={{ padding: '10px 14px', color: '#475569', fontSize: '0.8rem' }}>
+                        {item.scrapReason}
+                      </td>
+                      <td style={{ padding: '10px 14px', color: '#64748b', fontSize: '0.76rem' }}>
+                        <div>{item.scrappedBy}</div>
+                        <div>{item.date}</div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* MODAL: APPROVE & MOVE TO STORE                                       */}
+      {/* ==================================================================== */}
+      {selectedQcItemForApprove && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(15, 23, 42, 0.65)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '16px'
+        }}>
+          <div style={{
+            background: '#ffffff',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '540px',
+            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
+            border: '1px solid #e2e8f0',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+              color: '#ffffff',
+              padding: '20px 24px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: '800', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <ShieldCheck size={20} /> Approve & Move to Store
+                </h3>
+                <div style={{ fontSize: '0.8rem', color: '#a7f3d0', marginTop: '2px' }}>
+                  Release QC Hold material back to SFG/FG store for production consumption
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedQcItemForApprove(null)}
+                style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmApproveMove} style={{ padding: '24px' }}>
+              <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '10px', padding: '14px', marginBottom: '16px', fontSize: '0.85rem' }}>
+                <div style={{ fontWeight: '700', color: '#047857' }}>{selectedQcItemForApprove.jobName} ({selectedQcItemForApprove.barcodeId})</div>
+                <div style={{ color: '#065f46', marginTop: '2px' }}>
+                  Pending Hold Weight: <strong>{Number(selectedQcItemForApprove.remainingHoldKg).toFixed(2)} kg</strong> | Rolls: {selectedQcItemForApprove.numberOfRolls}
+                </div>
+                <div style={{ color: '#047857', fontSize: '0.78rem', marginTop: '4px' }}>
+                  Initial Hold Reason: <em>{selectedQcItemForApprove.holdReason}</em>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#0f172a', marginBottom: '6px' }}>
+                  Quantity to Approve & Move to Store (kg) <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    max={selectedQcItemForApprove.remainingHoldKg}
+                    value={approveQtyKg}
+                    onChange={(e) => setApproveQtyKg(e.target.value)}
+                    placeholder={`Max ${selectedQcItemForApprove.remainingHoldKg} kg`}
+                    style={{
+                      flex: 1,
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      border: '2px solid #10b981',
+                      fontSize: '1rem',
+                      fontWeight: '800',
+                      outline: 'none'
+                    }}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setApproveQtyKg(selectedQcItemForApprove.remainingHoldKg.toString())}
+                    style={{
+                      padding: '10px 14px',
+                      background: '#d1fae5',
+                      color: '#047857',
+                      border: '1px solid #a7f3d0',
+                      borderRadius: '8px',
+                      fontWeight: '700',
+                      fontSize: '0.8rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Select All ({selectedQcItemForApprove.remainingHoldKg} kg)
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#0f172a', marginBottom: '6px' }}>
+                  Approval Reason / Release Justification <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <textarea
+                  rows="3"
+                  value={approveReason}
+                  onChange={(e) => setApproveReason(e.target.value)}
+                  placeholder="Mention why this material is cleared (e.g. Visual re-inspection passed, Client approval obtained, Minor defect within tolerance)..."
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid #cbd5e1',
+                    fontSize: '0.88rem',
+                    fontFamily: 'inherit'
+                  }}
+                  required
+                />
+              </div>
+
+              {approveFormError && (
+                <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', color: '#991b1b', padding: '10px', borderRadius: '8px', fontSize: '0.84rem', marginBottom: '16px' }}>
+                  ⚠️ {approveFormError}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedQcItemForApprove(null)}
+                  style={{ padding: '9px 16px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.88rem', color: '#475569', fontWeight: '600', cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  style={{ padding: '9px 20px', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', border: 'none', borderRadius: '8px', fontSize: '0.88rem', color: '#fff', fontWeight: '800', cursor: 'pointer', boxShadow: '0 4px 12px rgba(16,185,129,0.3)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Check size={18} /> Confirm Approval & Move to Store
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* MODAL: SEND TO SCRAP                                                 */}
+      {/* ==================================================================== */}
+      {selectedQcItemForScrap && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(15, 23, 42, 0.65)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '16px'
+        }}>
+          <div style={{
+            background: '#ffffff',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '540px',
+            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
+            border: '1px solid #e2e8f0',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              background: 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)',
+              color: '#ffffff',
+              padding: '20px 24px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: '800', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Trash2 size={20} /> Send to Scrap Store
+                </h3>
+                <div style={{ fontSize: '0.8rem', color: '#fca5a5', marginTop: '2px' }}>
+                  Move defective QC Hold material to scrap storage. Pending balance remains in QC Hold.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedQcItemForScrap(null)}
+                style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmSendToScrap} style={{ padding: '24px' }}>
+              <div style={{ background: '#fff5f5', border: '1px solid #fca5a5', borderRadius: '10px', padding: '14px', marginBottom: '16px', fontSize: '0.85rem' }}>
+                <div style={{ fontWeight: '700', color: '#991b1b' }}>{selectedQcItemForScrap.jobName} ({selectedQcItemForScrap.barcodeId})</div>
+                <div style={{ color: '#7f1d1d', marginTop: '2px' }}>
+                  Pending Hold Weight: <strong>{Number(selectedQcItemForScrap.remainingHoldKg).toFixed(2)} kg</strong> | Rolls: {selectedQcItemForScrap.numberOfRolls}
+                </div>
+                <div style={{ color: '#991b1b', fontSize: '0.78rem', marginTop: '4px' }}>
+                  Initial Hold Reason: <em>{selectedQcItemForScrap.holdReason}</em>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#0f172a', marginBottom: '6px' }}>
+                  Quantity to Scrap (kg) <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    max={selectedQcItemForScrap.remainingHoldKg}
+                    value={scrapQtyKg}
+                    onChange={(e) => setScrapQtyKg(e.target.value)}
+                    placeholder={`Max ${selectedQcItemForScrap.remainingHoldKg} kg`}
+                    style={{
+                      flex: 1,
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      border: '2px solid #ef4444',
+                      fontSize: '1rem',
+                      fontWeight: '800',
+                      outline: 'none'
+                    }}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setScrapQtyKg(selectedQcItemForScrap.remainingHoldKg.toString())}
+                    style={{
+                      padding: '10px 14px',
+                      background: '#fee2e2',
+                      color: '#991b1b',
+                      border: '1px solid #fca5a5',
+                      borderRadius: '8px',
+                      fontWeight: '700',
+                      fontSize: '0.8rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Select All ({selectedQcItemForScrap.remainingHoldKg} kg)
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#0f172a', marginBottom: '6px' }}>
+                  Defect Category <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <select
+                  value={defectCategory}
+                  onChange={(e) => setDefectCategory(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid #cbd5e1',
+                    fontSize: '0.88rem',
+                    color: '#0f172a'
+                  }}
+                >
+                  <option value="Delamination / Bonding Failure">Delamination / Bonding Failure</option>
+                  <option value="Shade / Color Variation">Shade / Color Variation</option>
+                  <option value="Wrinkles / Creases / Telescoping">Wrinkles / Creases / Telescoping</option>
+                  <option value="Misregistration / Print Shift">Misregistration / Print Shift</option>
+                  <option value="Scuffing / Scratches / Ink Flaking">Scuffing / Scratches / Ink Flaking</option>
+                  <option value="Pinholes / Contamination / Spots">Pinholes / Contamination / Spots</option>
+                  <option value="Substrate Defects / Gauge Variation">Substrate Defects / Gauge Variation</option>
+                  <option value="Other Rejection Defect">Other Rejection Defect</option>
+                </select>
+              </div>
+
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#0f172a', marginBottom: '6px' }}>
+                  Scrap Reason / Defect Remarks <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <textarea
+                  rows="3"
+                  value={scrapReason}
+                  onChange={(e) => setScrapReason(e.target.value)}
+                  placeholder="Detail the exact defect or rejection notes triggering scrap..."
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid #cbd5e1',
+                    fontSize: '0.88rem',
+                    fontFamily: 'inherit'
+                  }}
+                  required
+                />
+              </div>
+
+              {scrapFormError && (
+                <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', color: '#991b1b', padding: '10px', borderRadius: '8px', fontSize: '0.84rem', marginBottom: '16px' }}>
+                  ⚠️ {scrapFormError}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedQcItemForScrap(null)}
+                  style={{ padding: '9px 16px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.88rem', color: '#475569', fontWeight: '600', cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  style={{ padding: '9px 20px', background: 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)', border: 'none', borderRadius: '8px', fontSize: '0.88rem', color: '#fff', fontWeight: '800', cursor: 'pointer', boxShadow: '0 4px 12px rgba(220,38,38,0.3)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Trash2 size={18} /> Confirm Move to Scrap
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ==================================================================== */}
       {/* MODAL: CONSUME SFG FOR DOWNSTREAM PROCESSING                         */}
@@ -1393,10 +2448,11 @@ export default function SFGStoreManagement({
                       width: '100%',
                       padding: '10px 12px',
                       borderRadius: '8px',
-                      border: '1px solid #cbd5e1',
+                      border: targetProcess === 'QC Hold Store' ? '2px solid #dc2626' : '1px solid #cbd5e1',
                       fontSize: '0.88rem',
-                      color: '#0f172a',
-                      background: '#ffffff'
+                      fontWeight: targetProcess === 'QC Hold Store' ? '800' : 'normal',
+                      color: targetProcess === 'QC Hold Store' ? '#991b1b' : '#0f172a',
+                      background: targetProcess === 'QC Hold Store' ? '#fff5f5' : '#ffffff'
                     }}
                   >
                     <option value="Lamination (Pass 1)">Lamination (Pass 1)</option>
@@ -1406,9 +2462,117 @@ export default function SFGStoreManagement({
                     <option value="Dispatch Packing">Dispatch Packing</option>
                     <option value="Printing (Pass 2)">Printing (Pass 2)</option>
                     <option value="QC Inspection & Rewinding">QC Inspection & Rewinding</option>
+                    <option value="QC Hold Store">🚨 QC Hold Store (Quarantine)</option>
                     <option value="Custom Stage">Other Process Stage</option>
                   </select>
                 </div>
+
+                {/* Conditional QC Hold Quarantine Controls */}
+                {targetProcess === 'QC Hold Store' && (
+                  <div style={{ gridColumn: 'span 2', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ background: '#fff5f5', border: '2px solid #dc2626', borderRadius: '10px', padding: '14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#991b1b', fontWeight: '900', fontSize: '0.92rem' }}>
+                        <ShieldAlert size={20} color="#dc2626" />
+                        QC HOLD QUARANTINE MOVEMENT
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: '#7f1d1d', marginTop: '4px' }}>
+                        Selected quantity will be moved to <strong>QC Hold Store</strong>. A quarantine barcode sticker explicitly stating <strong>'QC HOLD MATERIAL'</strong> will be printed.
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: '800', color: '#991b1b', marginBottom: '6px' }}>
+                        QC Hold Reason / Defect Justification <span style={{ color: '#ef4444' }}>*</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Failed QC inspection - Delamination / Wrinkles / Shade variation"
+                        value={holdReason}
+                        onChange={(e) => setHoldReason(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '10px 14px',
+                          borderRadius: '8px',
+                          border: '2px solid #dc2626',
+                          fontSize: '0.88rem',
+                          fontWeight: '700',
+                          color: '#991b1b',
+                          background: '#fff'
+                        }}
+                        required
+                      />
+                    </div>
+
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '14px', borderRadius: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                        <label style={{ fontSize: '0.84rem', fontWeight: '800', color: '#0f172a' }}>
+                          Number of Rolls on QC Hold:
+                        </label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {[1, 2, 3, 4, 5].map(num => (
+                            <button
+                              key={num}
+                              type="button"
+                              onClick={() => handleRollCountChange(num)}
+                              style={{
+                                padding: '4px 10px',
+                                borderRadius: '6px',
+                                fontSize: '0.8rem',
+                                fontWeight: '800',
+                                border: holdRollCount === num ? '2px solid #dc2626' : '1px solid #cbd5e1',
+                                background: holdRollCount === num ? '#fee2e2' : '#ffffff',
+                                color: holdRollCount === num ? '#991b1b' : '#334155',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              {num} {num === 1 ? 'Roll' : 'Rolls'}
+                            </button>
+                          ))}
+                          <input
+                            type="number"
+                            min="1"
+                            max="50"
+                            value={holdRollCount}
+                            onChange={(e) => handleRollCountChange(e.target.value)}
+                            style={{ width: '60px', padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.84rem', fontWeight: '700' }}
+                          />
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+                        <div style={{ fontSize: '0.76rem', color: '#64748b', fontWeight: '600' }}>
+                          Roll Weights (Capture via weighing scale or direct numeric input):
+                        </div>
+                        {rollWeights.map((w, idx) => (
+                          <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '0.8rem', fontWeight: '700', color: '#475569', width: '70px' }}>
+                              Roll #{idx + 1}:
+                            </span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              placeholder="Direct weight input (kg)"
+                              value={w}
+                              onChange={(e) => handleRollWeightChange(idx, e.target.value)}
+                              style={{
+                                flex: 1,
+                                padding: '8px 12px',
+                                borderRadius: '6px',
+                                border: '1px solid #cbd5e1',
+                                fontSize: '0.88rem',
+                                fontWeight: '700'
+                              }}
+                            />
+                            <WeighingScaleCaptureButton
+                              onWeightCaptured={(capturedWeight) => handleRollWeightChange(idx, capturedWeight.toString())}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Target Machine */}
                 <div>

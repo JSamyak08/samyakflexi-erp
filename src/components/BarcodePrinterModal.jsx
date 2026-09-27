@@ -143,13 +143,15 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
     const batchStr = r.batchNo || r.heatNo || r.batch || '-';
     const barcodeCodeStr = r.barcodeId || r.id || 'BC-2026-0000';
 
+    const isQCHold = r.isQCHold || r.targetProcess === 'QC Hold Store' || r.status === 'QC_HOLD' || r.rollType === 'QC_HOLD' || r.isHold === true;
+
     return (
       <div 
         key={r.barcodeId || r.id || Math.between?.(1,999) || Math.random()}
         className={isPrintView ? "printable-barcode-single-label" : ""}
         style={!isPrintView ? {
-          background: '#ffffff',
-          border: '2px solid #0f172a',
+          background: isQCHold ? '#fff5f5' : '#ffffff',
+          border: isQCHold ? '2.5px solid #dc2626' : '2px solid #0f172a',
           borderRadius: '8px',
           padding: '10px 12px',
           boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
@@ -166,7 +168,7 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
         }}
       >
         {/* Label Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1.5px solid #0f172a', paddingBottom: '4px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: isQCHold ? '2px solid #dc2626' : '1.5px solid #0f172a', paddingBottom: '4px' }}>
           <div>
             {!r.hideBranding ? (
               <>
@@ -187,23 +189,43 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
           </div>
           <span style={{ 
             fontSize: '0.65rem', 
-            fontWeight: '800', 
-            background: isSFG ? '#e0e7ff' : isFG ? '#fef3c7' : (isFilmItem ? '#dcfce7' : '#f0f9ff'),
-            color: isSFG ? '#3730a3' : isFG ? '#92400e' : (isFilmItem ? '#166534' : '#1e40af'),
-            padding: '2px 6px', 
+            fontWeight: '900', 
+            background: isQCHold ? '#fee2e2' : (isSFG ? '#e0e7ff' : isFG ? '#fef3c7' : (isFilmItem ? '#dcfce7' : '#f0f9ff')),
+            color: isQCHold ? '#991b1b' : (isSFG ? '#3730a3' : isFG ? '#92400e' : (isFilmItem ? '#166534' : '#1e40af')),
+            padding: '2px 7px', 
             borderRadius: '4px',
-            border: '1px solid currentColor'
+            border: `1.5px solid ${isQCHold ? '#dc2626' : 'currentColor'}`,
+            letterSpacing: isQCHold ? '0.04em' : 'normal'
           }}>
-            {isSFG 
-              ? 'SEMI-FINISHED (SFG)' 
-              : isFG 
-                ? 'FINISHED GOODS (FG)' 
-                : (isFilmItem 
-                  ? 'RAW MATERIAL (RM)' 
-                  : (r.category && r.category !== 'CONSUMABLE_ITEM' ? r.category.toUpperCase() : 'STORE ITEM')
-                )}
+            {isQCHold 
+              ? '🚨 QC HOLD MATERIAL' 
+              : (isSFG 
+                ? 'SEMI-FINISHED (SFG)' 
+                : isFG 
+                  ? 'FINISHED GOODS (FG)' 
+                  : (isFilmItem 
+                    ? 'RAW MATERIAL (RM)' 
+                    : (r.category && r.category !== 'CONSUMABLE_ITEM' ? r.category.toUpperCase() : 'STORE ITEM')
+                  ))}
           </span>
         </div>
+
+        {/* Warning Banner for QC Hold */}
+        {isQCHold && (
+          <div style={{
+            background: '#7f1d1d',
+            color: '#ffffff',
+            fontWeight: '900',
+            fontSize: '0.78rem',
+            textAlign: 'center',
+            padding: '3px 6px',
+            borderRadius: '4px',
+            letterSpacing: '0.05em',
+            textTransform: 'uppercase'
+          }}>
+            ⚠️ QC HOLD MATERIAL — QUARANTINE ⚠️
+          </div>
+        )}
 
         {/* 2D Barcode (QR Code) Scanner Visual */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', padding: '6px 10px', borderRadius: '6px', border: '1.5px solid #0f172a', gap: '12px' }}>
@@ -293,6 +315,11 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
           {r.inputBarcodeIds && r.inputBarcodeIds.length > 0 && (
             <div style={{ fontSize: '0.66rem', color: '#4f46e5', fontWeight: '600' }}>
               Input Roll Ref: {r.inputBarcodeIds.join(', ')}
+            </div>
+          )}
+          {r.holdReason && (
+            <div style={{ color: '#991b1b', fontWeight: '800', fontSize: '0.68rem', background: '#fef2f2', padding: '2px 6px', borderRadius: '4px', border: '1px solid #fca5a5', wordBreak: 'break-word' }}>
+              QC HOLD REASON: <strong>{r.holdReason}</strong>
             </div>
           )}
           {(r.itemRemarks || r.remarks || r.notes) && (
