@@ -135,6 +135,8 @@ export default function ProductionScheduler({
 
   // Active Job Run Modal & Artwork Preview State
   const [selectedOrderForRun, setSelectedOrderForRun] = useState(null);
+  const [isArtworkZoomOpen, setIsArtworkZoomOpen] = useState(false);
+  const [zoomArtworkSrc, setZoomArtworkSrc] = useState(null);
   const [activeRunningJob, setActiveRunningJobState] = useState(initialPressActiveRunningJob);
   const [activeMachineSelection, setActiveMachineSelectionState] = useState(initialPressMachineAssignments);
 
