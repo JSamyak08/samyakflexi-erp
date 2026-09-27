@@ -108,6 +108,13 @@ export default function EmployeeManagement({
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [shiftFilter, setShiftFilter] = useState('ALL');
 
+  // Salary Advances & EMI Recovery Schedule Filters State
+  const [advancesStartDate, setAdvancesStartDate] = useState('');
+  const [advancesEndDate, setAdvancesEndDate] = useState('');
+  const [advancesStatusFilter, setAdvancesStatusFilter] = useState('ALL');
+  const [advancesDepartmentFilter, setAdvancesDepartmentFilter] = useState('ALL');
+  const [advancesSearch, setAdvancesSearch] = useState('');
+
   // Selected Date for Daily Attendance Register
   const [attendanceDate, setAttendanceDate] = useState(() => new Date().toISOString().split('T')[0]);
 
@@ -775,6 +782,76 @@ export default function EmployeeManagement({
     return attendanceRecords.filter(a => Number(a.overtimeHours) > 0 && a.overtimeStatus === 'Pending Approval');
   }, [attendanceRecords]);
 
+  // Department List Options
+  const departmentListOptions = useMemo(() => {
+    return Array.isArray(EMPLOYEE_DEPARTMENTS) ? EMPLOYEE_DEPARTMENTS : [];
+  }, []);
+
+  // Filtered Salary Advances Schedule
+  const filteredSalaryAdvances = useMemo(() => {
+    return salaryAdvances.filter(adv => {
+      // Date Range Filter (against requestDate or disbursementDate)
+      if (advancesStartDate && adv.requestDate && adv.requestDate < advancesStartDate) {
+        return false;
+      }
+      if (advancesEndDate && adv.requestDate && adv.requestDate > advancesEndDate) {
+        return false;
+      }
+
+      // Status Filter
+      if (advancesStatusFilter !== 'ALL' && adv.status !== advancesStatusFilter) {
+        return false;
+      }
+
+      // Department Filter
+      if (advancesDepartmentFilter !== 'ALL' && adv.department !== advancesDepartmentFilter) {
+        return false;
+      }
+
+      // Search Query Filter
+      if (advancesSearch.trim()) {
+        const q = advancesSearch.toLowerCase().trim();
+        const empName = (adv.employeeName || '').toLowerCase();
+        const empCode = (adv.employeeCode || '').toLowerCase();
+        const reason = (adv.reason || '').toLowerCase();
+        const dept = (adv.department || '').toLowerCase();
+        if (!empName.includes(q) && !empCode.includes(q) && !reason.includes(q) && !dept.includes(q)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [salaryAdvances, advancesStartDate, advancesEndDate, advancesStatusFilter, advancesDepartmentFilter, advancesSearch]);
+
+  // Salary Advances Summary Metrics
+  const advancesMetrics = useMemo(() => {
+    return filteredSalaryAdvances.reduce((acc, adv) => {
+      acc.totalDisbursed += (adv.advanceAmount || 0);
+      acc.totalRecovered += (adv.totalRecoveredAmount || 0);
+      acc.totalBalance += (adv.remainingBalance || 0);
+      acc.count += 1;
+      return acc;
+    }, { totalDisbursed: 0, totalRecovered: 0, totalBalance: 0, count: 0 });
+  }, [filteredSalaryAdvances]);
+
+  // Export Salary Advances Schedule to CSV
+  const handleExportAdvancesCSV = () => {
+    let csv = "Request Date,Disbursement Date,Employee Code,Employee Name,Department,Advance Amount (₹),Repayment Tenure (Months),Monthly EMI (₹),Total Recovered (₹),Remaining Balance (₹),Status,Reason,Approved By\n";
+    filteredSalaryAdvances.forEach(adv => {
+      csv += `"${adv.requestDate || ''}","${adv.disbursementDate || ''}","${adv.employeeCode || ''}","${adv.employeeName || ''}","${adv.department || ''}",${adv.advanceAmount || 0},${adv.repaymentTenureMonths || 0},${adv.monthlyEmiAmount || 0},${adv.totalRecoveredAmount || 0},${adv.remainingBalance || 0},"${adv.status || ''}","${(adv.reason || '').replace(/"/g, '""')}","${adv.approvedBy || ''}"\n`;
+    });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const dateRangeStr = (advancesStartDate || advancesEndDate) 
+      ? `_${advancesStartDate || 'Start'}_to_${advancesEndDate || 'End'}`
+      : '';
+    link.download = `Salary_Advances_Schedule${dateRangeStr}.csv`;
+    link.click();
+  };
+
   // Export Monthly Salary Sheet to CSV
   const handleExportPayrollCSV = () => {
     let csv = "Employee Code,Employee Name,Department,Designation,Shift Hours,Working Days,Present Days,Half Days,Night Shifts,Approved OT Hours,Basic Salary (₹),HRA (₹),Other Allowance (₹),Dinner Allowance (₹),Overtime Pay (₹),Total Gross (₹),PF Deduction (₹),ESIC Deduction (₹),PT (₹),Advance EMI (₹),Total Deductions (₹),Net Payable (₹),Bank Name,Account Number,IFSC\n";
@@ -1423,18 +1500,138 @@ export default function EmployeeManagement({
       {/* ========================================================================= */}
       {activeSubTab === 'advances' && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h4 style={{ fontSize: '1rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+            <h4 style={{ fontSize: '1rem', fontWeight: '800', color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
               💳 Employee Salary Advances & EMI Recovery Schedule
             </h4>
-            <button 
-              type="button" 
-              className="btn-primary" 
-              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-              onClick={handleOpenNewAdvanceModal}
-            >
-              <Plus size={16} /> New Advance Request
-            </button>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <button 
+                type="button" 
+                className="btn-secondary" 
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '700' }}
+                onClick={handleExportAdvancesCSV}
+                title="Export filtered salary advances schedule to CSV"
+              >
+                <Download size={16} /> Download CSV
+              </button>
+              <button 
+                type="button" 
+                className="btn-primary" 
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                onClick={handleOpenNewAdvanceModal}
+              >
+                <Plus size={16} /> New Advance Request
+              </button>
+            </div>
+          </div>
+
+          {/* Filter Bar */}
+          <div className="glass-panel" style={{ padding: '16px 20px', marginBottom: '16px', borderRadius: '12px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px', alignItems: 'end' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>
+                  From Date
+                </label>
+                <input 
+                  type="date" 
+                  className="input-field" 
+                  value={advancesStartDate} 
+                  onChange={(e) => setAdvancesStartDate(e.target.value)} 
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>
+                  To Date
+                </label>
+                <input 
+                  type="date" 
+                  className="input-field" 
+                  value={advancesEndDate} 
+                  onChange={(e) => setAdvancesEndDate(e.target.value)} 
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>
+                  Status Filter
+                </label>
+                <select 
+                  className="input-field" 
+                  value={advancesStatusFilter} 
+                  onChange={(e) => setAdvancesStatusFilter(e.target.value)}
+                >
+                  <option value="ALL">All Statuses</option>
+                  <option value="Pending Approval">Pending Approval</option>
+                  <option value="Approved & Disbursed">Approved & Disbursed</option>
+                  <option value="Fully Recovered">Fully Recovered</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>
+                  Department Filter
+                </label>
+                <select 
+                  className="input-field" 
+                  value={advancesDepartmentFilter} 
+                  onChange={(e) => setAdvancesDepartmentFilter(e.target.value)}
+                >
+                  <option value="ALL">All Departments</option>
+                  {departmentListOptions.map(dept => (
+                    <option key={dept} value={dept}>{dept}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>
+                  Search Employee / Reason
+                </label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  placeholder="Search name, code, reason..." 
+                  value={advancesSearch} 
+                  onChange={(e) => setAdvancesSearch(e.target.value)} 
+                />
+              </div>
+
+              {(advancesStartDate || advancesEndDate || advancesStatusFilter !== 'ALL' || advancesDepartmentFilter !== 'ALL' || advancesSearch) && (
+                <div>
+                  <button 
+                    type="button" 
+                    className="btn-secondary" 
+                    style={{ width: '100%', fontSize: '0.78rem', padding: '8px' }}
+                    onClick={() => {
+                      setAdvancesStartDate('');
+                      setAdvancesEndDate('');
+                      setAdvancesStatusFilter('ALL');
+                      setAdvancesDepartmentFilter('ALL');
+                      setAdvancesSearch('');
+                    }}
+                  >
+                    Reset Filters
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* KPI Summary Strip */}
+            <div style={{ display: 'flex', gap: '16px', marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #e2e8f0', flexWrap: 'wrap' }}>
+              <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                Total Records: <strong style={{ color: '#0f172a' }}>{advancesMetrics.count}</strong>
+              </div>
+              <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                Total Disbursed: <strong style={{ color: '#0284c7' }}>₹ {advancesMetrics.totalDisbursed.toLocaleString()}</strong>
+              </div>
+              <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                Total Recovered: <strong style={{ color: '#059669' }}>₹ {advancesMetrics.totalRecovered.toLocaleString()}</strong>
+              </div>
+              <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                Outstanding Balance: <strong style={{ color: '#d97706' }}>₹ {advancesMetrics.totalBalance.toLocaleString()}</strong>
+              </div>
+            </div>
           </div>
 
           <div className="glass-panel" style={{ padding: '0', overflow: 'hidden' }}>
@@ -1452,14 +1649,14 @@ export default function EmployeeManagement({
                 </tr>
               </thead>
               <tbody>
-                {salaryAdvances.length === 0 ? (
+                {filteredSalaryAdvances.length === 0 ? (
                   <tr>
                     <td colSpan={8} style={{ textAlign: 'center', padding: '30px', color: '#94a3b8' }}>
-                      No salary advances recorded.
+                      No salary advances found matching the selected filters.
                     </td>
                   </tr>
                 ) : (
-                  salaryAdvances.map(adv => (
+                  filteredSalaryAdvances.map(adv => (
                     <tr key={adv.id}>
                       <td style={{ fontWeight: '700' }}>{adv.requestDate}</td>
                       <td>
