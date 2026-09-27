@@ -121,13 +121,24 @@ export default function SFGStoreManagement({
 
       const resolvedOrderId = matchedOrder?.id || (ordId && ordId !== 'N/A' && ordId !== '#N/A' ? ordId : '');
 
+      const rawOrderQty = item.orderQty || item.orderQuantity || matchedOrder?.totalOrderQty || matchedOrder?.quantityKg || matchedOrder?.orderQtyKg || matchedOrder?.quantity || matchedOrder?.orderQty || matchedOrder?.targetQtyKg || matchedOrder?.plannedQtyKg || null;
+      
+      const rawOrderQtyUnit = item.orderQtyUnit || item.quantityUnit || matchedOrder?.quantityUnit || matchedOrder?.orderQtyUnit || matchedOrder?.unit || 'Kg';
+      
+      const rawOrderDate = item.orderDate || matchedOrder?.orderDate || matchedOrder?.date || matchedOrder?.order_date || matchedOrder?.created_at || item.createdDate || null;
+
+      const formattedOrderDate = rawOrderDate ? String(rawOrderDate).split('T')[0] : null;
+
       return { 
         ...item, 
         filmType: rawFilm, 
         micron: rawMicron, 
         widthMm: rawWidth, 
         clientName: rawClient, 
-        orderId: resolvedOrderId 
+        orderId: resolvedOrderId,
+        orderQty: rawOrderQty,
+        orderQtyUnit: rawOrderQtyUnit,
+        orderDate: formattedOrderDate
       };
     };
 
@@ -276,6 +287,9 @@ export default function SFGStoreManagement({
     const groups = [];
     const map = new Map();
 
+    const orderMap = new Map((orders || []).map(o => [o.id, o]));
+    const cleanOrderMap = new Map((orders || []).map(o => [String(o.id || '').replace('#', '').trim(), o]));
+
     filteredItems.forEach(item => {
       let rawOrderKey = (item.orderId && item.orderId !== 'N/A' && item.orderId !== '#N/A') 
         ? item.orderId 
@@ -284,6 +298,20 @@ export default function SFGStoreManagement({
       const orderKey = String(rawOrderKey).replace('#', '').trim();
 
       if (!map.has(orderKey)) {
+        let directOrderMatch = orderMap.get(item.orderId) || cleanOrderMap.get(orderKey);
+        if (!directOrderMatch) {
+          directOrderMatch = (orders || []).find(o => {
+            const oId = String(o.id || '').replace('#', '').trim();
+            return oId === orderKey || oId.endsWith(orderKey) || orderKey.endsWith(oId);
+          });
+        }
+
+        const rawQty = item.orderQty || directOrderMatch?.totalOrderQty || directOrderMatch?.quantityKg || directOrderMatch?.orderQtyKg || directOrderMatch?.quantity || directOrderMatch?.orderQty || directOrderMatch?.targetQtyKg || directOrderMatch?.plannedQtyKg || null;
+
+        const rawUnit = item.orderQtyUnit || directOrderMatch?.quantityUnit || directOrderMatch?.orderQtyUnit || directOrderMatch?.unit || 'Kg';
+
+        const rawDate = item.orderDate || directOrderMatch?.orderDate || directOrderMatch?.date || directOrderMatch?.order_date || directOrderMatch?.created_at || null;
+
         const groupObj = {
           orderKey,
           orderId: item.orderId && item.orderId !== 'N/A' && item.orderId !== '#N/A' ? item.orderId : '',
@@ -293,6 +321,9 @@ export default function SFGStoreManagement({
           filmType: item.filmType,
           micron: item.micron,
           widthMm: item.widthMm,
+          orderQty: rawQty,
+          orderQtyUnit: rawUnit,
+          orderDate: rawDate ? String(rawDate).split('T')[0] : null,
           totalNetKg: 0,
           consumedKg: 0,
           availableKg: 0,
@@ -307,6 +338,14 @@ export default function SFGStoreManagement({
       const consumed = Number(item.consumedKg) || 0;
       const available = item.availableKg !== undefined ? Number(item.availableKg) : Math.max(0, net - consumed);
 
+      if (!grp.orderQty && item.orderQty) {
+        grp.orderQty = item.orderQty;
+        grp.orderQtyUnit = item.orderQtyUnit || 'Kg';
+      }
+      if (!grp.orderDate && item.orderDate) {
+        grp.orderDate = String(item.orderDate).split('T')[0];
+      }
+
       grp.totalNetKg += net;
       grp.consumedKg += consumed;
       grp.availableKg += available;
@@ -314,7 +353,7 @@ export default function SFGStoreManagement({
     });
 
     return groups;
-  }, [filteredItems]);
+  }, [filteredItems, orders]);
 
   // Collapsible state for order accordions ({ [orderKey]: boolean })
   const [expandedOrders, setExpandedOrders] = useState({});
@@ -821,7 +860,41 @@ export default function SFGStoreManagement({
                         }}>
                           {group.orderId ? `Order #${group.orderId}` : `Job Ref: ${group.orderKey}`}
                         </span>
-                        
+
+                        {group.orderQty && (
+                          <span style={{
+                            fontSize: '0.78rem',
+                            fontWeight: '700',
+                            color: '#047857',
+                            background: '#d1fae5',
+                            border: '1px solid #a7f3d0',
+                            padding: '3px 9px',
+                            borderRadius: '6px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}>
+                            Order Qty: {group.orderQty} {group.orderQtyUnit && !String(group.orderQty).toLowerCase().includes(String(group.orderQtyUnit).toLowerCase()) ? group.orderQtyUnit : ''}
+                          </span>
+                        )}
+
+                        {group.orderDate && (
+                          <span style={{
+                            fontSize: '0.78rem',
+                            fontWeight: '600',
+                            color: '#0284c7',
+                            background: '#e0f2fe',
+                            border: '1px solid #bae6fd',
+                            padding: '3px 9px',
+                            borderRadius: '6px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}>
+                            <Clock size={12} /> Date: {group.orderDate}
+                          </span>
+                        )}
+
                         <h3 style={{ fontSize: '1rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
                           {group.jobName}
                         </h3>
@@ -833,9 +906,15 @@ export default function SFGStoreManagement({
                         )}
                       </div>
 
-                      <div style={{ fontSize: '0.82rem', color: '#64748b', marginTop: '4px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                      <div style={{ fontSize: '0.82rem', color: '#64748b', marginTop: '4px', display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
                         <span>Client: <strong style={{ color: '#1e293b' }}>{group.clientName}</strong></span>
                         <span>Substrate: <strong style={{ color: '#1e293b' }}>{group.filmType} ({group.micron}µm × {group.widthMm}mm)</strong></span>
+                        {group.orderQty && (
+                          <span>Order Qty: <strong style={{ color: '#047857' }}>{group.orderQty} {group.orderQtyUnit && !String(group.orderQty).toLowerCase().includes(String(group.orderQtyUnit).toLowerCase()) ? group.orderQtyUnit : ''}</strong></span>
+                        )}
+                        {group.orderDate && (
+                          <span>Order Date: <strong style={{ color: '#0284c7' }}>{group.orderDate}</strong></span>
+                        )}
                       </div>
                     </div>
                   </div>
