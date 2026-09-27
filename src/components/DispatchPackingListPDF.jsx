@@ -109,10 +109,10 @@ export default function DispatchPackingListPDF({ shipment, company, onClose }) {
             <div style={{ borderLeft: '1px solid #cbd5e1', paddingLeft: '16px' }}>
               <span style={{ fontSize: '0.68rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>Transport & Logistics Info</span>
               <div style={{ color: '#334155', marginTop: '3px' }}>
-                Vehicle Number: <strong>{shipment.vehicleNo || 'MP-09-AB-1234'}</strong>
+                Vehicle Number: <strong>{shipment.vehicleNo || '-'}</strong>
               </div>
               <div style={{ color: '#334155', marginTop: '2px' }}>
-                LR / Lorry Receipt No: <strong>{shipment.lrNo || 'LR-2026-001'}</strong>
+                LR / Lorry Receipt No: <strong>{shipment.lrNo || '-'}</strong>
               </div>
               <div style={{ color: '#334155', marginTop: '2px' }}>
                 Weighing Scale Station: <strong>Scale #4 (Dispatch Section)</strong>

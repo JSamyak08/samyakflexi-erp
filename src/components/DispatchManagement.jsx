@@ -144,6 +144,7 @@ export default function DispatchManagement({
   onSaveCoA,
   onDeleteCoA,
   onAddDispatchShipment,
+  onDeleteDispatchShipment,
   urlParams = {}
 }) {
   const [activeTab, setActiveTab] = useState(() => {
@@ -1940,6 +1941,22 @@ export default function DispatchManagement({
                             >
                               <Printer size={14} /> Print PDF
                             </button>
+                            {onDeleteDispatchShipment && (
+                              <button
+                                type="button"
+                                className="btn-secondary"
+                                style={{ padding: '5px 8px', fontSize: '0.78rem', color: '#dc2626', borderColor: '#fca5a5', background: '#fef2f2' }}
+                                title="Delete Packing List"
+                                onClick={() => {
+                                  const targetId = ds.dispatchId || ds.id;
+                                  if (window.confirm(`Are you sure you want to delete Packing List "${targetId}"?`)) {
+                                    onDeleteDispatchShipment(targetId);
+                                  }
+                                }}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>

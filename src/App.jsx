@@ -77,7 +77,7 @@ import {
   fetchUsers, saveUserToSupabase, deleteUserFromSupabase, updateUserPasswordInDB,
   fetchJobDataSheets, saveJobDataSheetToSupabase, deleteJobDataSheetFromSupabase,
   fetchInventoryRolls, saveInventoryRollToSupabase,
-  fetchDispatchShipments, saveDispatchShipmentToSupabase,
+  fetchDispatchShipments, saveDispatchShipmentToSupabase, deleteDispatchShipmentFromSupabase,
   fetchPrintingMachines, savePrintingMachineToSupabase, deletePrintingMachineFromSupabase,
   fetchProductionSchedules, saveProductionScheduleToSupabase, deleteProductionScheduleFromSupabase,
   fetchClients, saveClientToSupabase, deleteClientFromSupabase,
@@ -1974,6 +1974,13 @@ export default function App() {
     logAudit('CREATE', 'Dispatch', `Created client dispatch shipment ${newShipment.id} for "${newShipment.clientName}"`, newShipment.id);
   };
 
+  const handleDeleteDispatchShipment = async (id) => {
+    requireDatabaseConnection('delete dispatch shipment');
+    await deleteDispatchShipmentFromSupabase(id);
+    setDispatchShipments(prev => prev.filter(s => String(s.dispatchId || s.id) !== String(id)));
+    logAudit('DELETE', 'Dispatch', `Deleted Packing List / Dispatch Shipment ${id}`, id);
+  };
+
   const handleSaveDeliveryChallan = async (newDc) => {
     requireDatabaseConnection('save delivery challan');
     await saveDeliveryChallanToSupabase(newDc);
@@ -3709,6 +3716,7 @@ export default function App() {
             onSaveCoA={handleSaveCoA}
             onDeleteCoA={handleDeleteCoA}
             onAddDispatchShipment={handleAddDispatchShipment}
+            onDeleteDispatchShipment={handleDeleteDispatchShipment}
           />
         )}
 

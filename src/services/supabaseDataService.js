@@ -1745,27 +1745,70 @@ export async function fetchDispatchShipments() {
     throw new Error("Supabase is not configured.");
   }
   try {
-    const { data, error } = await supabase.from('dispatch_shipments').select('*').order('dispatch_date', { ascending: false });
-    if (error) {
-      handleSupabaseError(error, 'dispatch_shipments');
+    let tableRecords = [];
+    try {
+      const { data, error } = await supabase.from('dispatch_shipments').select('*').order('dispatch_date', { ascending: false });
+      if (!error && Array.isArray(data)) {
+        tableRecords = data.map(d => {
+          if (d.payload && typeof d.payload === 'object') {
+            return {
+              ...d.payload,
+              id: d.payload.id || d.id || d.dispatch_id,
+              dispatchId: d.payload.dispatchId || d.dispatch_id
+            };
+          }
+          return {
+            id: d.id || d.dispatch_id,
+            dispatchId: d.dispatch_id,
+            orderId: d.order_id,
+            jobName: d.job_name,
+            clientName: d.client_name,
+            vehicleNo: d.vehicle_no,
+            lrNo: d.lr_no,
+            transporterName: d.transporter_name || '',
+            poNo: d.po_no || '',
+            invoiceNo: d.invoice_no || '',
+            dispatchDate: d.dispatch_date,
+            totalRolls: Number(d.total_rolls) || 0,
+            totalNetWeightKg: Number(d.total_net_weight_kg) || 0,
+            totalGrossWeightKg: Number(d.total_gross_weight_kg) || 0,
+            items: Array.isArray(d.items) ? d.items : [],
+            hideBranding: d.hide_branding || false
+          };
+        });
+      } else if (error) {
+        console.warn('[dispatch_shipments] Table fetch notice:', error.message);
+      }
+    } catch (err) {
+      console.warn('[dispatch_shipments] Table query exception:', err.message);
     }
-    if (!data) return [];
 
-    return data.map(d => ({
-      dispatchId: d.dispatch_id,
-      orderId: d.order_id,
-      jobName: d.job_name,
-      clientName: d.client_name,
-      vehicleNo: d.vehicle_no,
-      lrNo: d.lr_no,
-      dispatchDate: d.dispatch_date,
-      totalRolls: Number(d.total_rolls) || 0,
-      totalNetWeightKg: Number(d.total_net_weight_kg) || 0,
-      totalGrossWeightKg: Number(d.total_gross_weight_kg) || 0,
-      items: Array.isArray(d.items) ? d.items : []
-    }));
+    // Dual Persistence Merge with system_settings 'dispatch_shipments'
+    const settingData = await fetchSystemSetting('dispatch_shipments').catch(() => null);
+    const backupRecords = Array.isArray(settingData) ? settingData : [];
+
+    const recordMap = new Map();
+    backupRecords.forEach(r => {
+      const recId = String(r.dispatchId || r.id || '');
+      if (recId) recordMap.set(recId, r);
+    });
+    tableRecords.forEach(r => {
+      const recId = String(r.dispatchId || r.id || '');
+      if (recId) recordMap.set(recId, r);
+    });
+
+    const allShipments = Array.from(recordMap.values());
+    allShipments.sort((a, b) => {
+      const timeA = new Date(a.dispatchDate || a.createdAt || 0).getTime();
+      const timeB = new Date(b.dispatchDate || b.createdAt || 0).getTime();
+      return timeB - timeA;
+    });
+
+    return allShipments;
   } catch (err) {
     console.error("Error fetching dispatch shipments from Supabase:", err);
+    const settingData = await fetchSystemSetting('dispatch_shipments').catch(() => null);
+    if (Array.isArray(settingData)) return settingData;
     throw err;
   }
 }
@@ -1775,28 +1818,78 @@ export async function saveDispatchShipmentToSupabase(shipment) {
     throw new Error("Cannot save dispatch shipment: Supabase database connection is not available.");
   }
   await ensureValidSession();
+
+  const primaryKey = String(shipment.id || shipment.dispatchId || `DISP-PL-${Date.now()}`);
   const fullPayload = {
-    dispatch_id: shipment.dispatchId,
-    order_id: shipment.orderId,
+    id: primaryKey,
+    dispatch_id: shipment.dispatchId || primaryKey,
+    order_id: shipment.orderId || '',
     job_name: shipment.jobName || '',
     client_name: shipment.clientName || '',
     vehicle_no: shipment.vehicleNo || '',
     lr_no: shipment.lrNo || '',
+    transporter_name: shipment.transporterName || '',
+    po_no: shipment.poNo || '',
+    invoice_no: shipment.invoiceNo || '',
     dispatch_date: shipment.dispatchDate || new Date().toISOString(),
     total_rolls: Number(shipment.totalRolls) || 0,
     total_net_weight_kg: Number(shipment.totalNetWeightKg) || 0,
     total_gross_weight_kg: Number(shipment.totalGrossWeightKg) || 0,
-    items: shipment.items || []
+    items: shipment.items || [],
+    payload: shipment,
+    updated_at: new Date().toISOString()
   };
-  console.log('[dispatch_shipments] Saving:', shipment.dispatchId);
-  const { error: fullErr } = await supabase.from('dispatch_shipments').upsert(fullPayload, { onConflict: 'dispatch_id' });
-  if (fullErr) {
-    console.warn('[dispatch_shipments] Full payload failed, trying minimal:', fullErr.message);
-    const { error: minErr } = await supabase.from('dispatch_shipments').upsert({ dispatch_id: shipment.dispatchId, job_name: shipment.jobName || '', client_name: shipment.clientName || '', dispatch_date: shipment.dispatchDate || new Date().toISOString() }, { onConflict: 'dispatch_id' });
-    if (minErr) {
-      console.error('[dispatch_shipments] Minimal payload failed:', minErr.message);
-      handleSupabaseError(minErr, 'dispatch_shipments');
+
+  console.log('[dispatch_shipments] Saving:', shipment.dispatchId || primaryKey);
+  let tableSuccess = false;
+  try {
+    const { error: fullErr } = await supabase.from('dispatch_shipments').upsert(fullPayload, { onConflict: 'dispatch_id' });
+    if (!fullErr) {
+      tableSuccess = true;
+    } else {
+      console.warn('[dispatch_shipments] Table upsert notice:', fullErr.message);
+      const { error: altErr } = await supabase.from('dispatch_shipments').upsert(fullPayload, { onConflict: 'id' });
+      if (!altErr) {
+        tableSuccess = true;
+      } else {
+        console.warn('[dispatch_shipments] Alt upsert notice:', altErr.message);
+      }
     }
+  } catch (e) {
+    console.warn('[dispatch_shipments] Table write exception:', e.message);
+  }
+
+  // Dual Persistence: Always backup into system_settings under key 'dispatch_shipments'
+  try {
+    const currentList = await fetchDispatchShipments().catch(() => []);
+    const updatedList = [shipment, ...currentList.filter(s => String(s.dispatchId || s.id) !== String(shipment.dispatchId || shipment.id))];
+    await saveSystemSetting('dispatch_shipments', updatedList);
+  } catch (e) {
+    console.warn('[dispatch_shipments] Backup to system_settings notice:', e.message);
+    if (!tableSuccess) {
+      throw e;
+    }
+  }
+}
+
+export async function deleteDispatchShipmentFromSupabase(id) {
+  if (!isSupabaseConfigured() || !id) {
+    throw new Error("Cannot delete dispatch shipment: Supabase database connection is not available.");
+  }
+  await ensureValidSession();
+  try {
+    await supabase.from('dispatch_shipments').delete().eq('dispatch_id', String(id));
+    await supabase.from('dispatch_shipments').delete().eq('id', String(id));
+  } catch (e) {
+    console.warn('[dispatch_shipments] Table delete notice:', e.message);
+  }
+
+  try {
+    const currentList = await fetchDispatchShipments().catch(() => []);
+    const updatedList = currentList.filter(s => String(s.dispatchId || s.id) !== String(id));
+    await saveSystemSetting('dispatch_shipments', updatedList);
+  } catch (e) {
+    console.warn('[dispatch_shipments] Delete from system_settings notice:', e.message);
   }
 }
 

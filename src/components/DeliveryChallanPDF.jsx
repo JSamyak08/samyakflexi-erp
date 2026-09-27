@@ -36,37 +36,35 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
   };
 
   const {
-    invoiceNo = "SIL/INV/26-27/042",
+    invoiceNo = "",
     lrNo = "",
     linkedPackingListIds = [],
     dispatchDateTime = new Date().toISOString().slice(0, 16).replace('T', ' '),
     partyType = "Client",
-    clientName = "Britannia Industries Ltd",
+    clientName = "",
     partyName = "",
-    clientAddress = "Plot 12, Pithampur Industrial Area Sector III, Dhar, M.P. - 454775",
-    clientGstin = "23AAACB1234F1Z5",
-    clientContactPerson = "Rajesh Sharma",
-    clientPhone = "+91 98260 12345",
-    vehicleNo = "MP-09-AB-1234",
-    transporterName = "Self / Direct Truck Delivery",
-    driverPhone = "+91 91110 99887",
-    poRefNo = "PO-BRIT-2026-991",
+    clientAddress = "",
+    clientGstin = "",
+    clientContactPerson = "",
+    clientPhone = "",
+    vehicleNo = "",
+    transporterName = "",
+    driverPhone = "",
+    poRefNo = "",
     debitNoteNo = "",
-    jobName = "Britannia Bourbon 250g Printed Laminate Film",
-    challanNature = "Returnable Material",
+    jobName = "",
+    challanNature = "Sale of Goods",
     freightCharges = 0,
-    items = [
-      { id: 1, description: "Britannia Bourbon 250g PET/METPET Film Roll", itemDetails: "Primary laminate roll for packaging", hsnSac: "3923", quantity: 1250, unit: "Kg", rate: 195, amount: 243750 }
-    ],
+    items = [],
     gstRatePct = 18,
     taxType = 'auto',
-    dispatchedBy = "Dilip Joshi (Dispatch Store Incharge)",
-    remarks = "Material dispatched in 12 rolls wrapped in waterproof Stretch Film.",
+    dispatchedBy = "",
+    remarks = "",
     returnStatus = "",
     returnInwardHistory = []
   } = challanData;
 
-  const displayName = clientName || partyName || "Client / Vendor Party";
+  const displayName = clientName || partyName || "N/A";
 
   const CHALLAN_NATURE_OPTIONS = [
     'Returnable Material',

@@ -45,20 +45,20 @@ export default function CertificateOfAnalysisPDF({ coaData, onClose }) {
 
   const {
     testDate = new Date().toLocaleDateString('en-GB'),
-    customerName = "Foodella Foods",
-    jobName = "Foodella Reverse 7mm",
-    invoiceNo = "SAM/25-26/00303",
-    jobCode = "1",
-    filmType = "natural Deep Freeze (80%)",
-    netWeight = "365.08 kg",
-    specification = "2 layer (12 PET + 50 Deep Freeze)",
-    sizeMm = "700 mm",
-    thicknessMicron = "50µ",
-    batchLotNo = "BATCH-FD-2026-08",
+    customerName = "",
+    jobName = "",
+    invoiceNo = "",
+    jobCode = "",
+    filmType = "",
+    netWeight = "",
+    specification = "",
+    sizeMm = "",
+    thicknessMicron = "",
+    batchLotNo = "",
     overallStatus = "PASSED & APPROVED",
-    qcInspector = "Ramesh Kumar (Quality Engineer)",
-    approvedByHead = "Samyak Jain (QA Head)",
-    remarks = "Material tested strictly in Quality Control Laboratory and meets all agreed technical specifications. Approved for dispatch."
+    qcInspector = "",
+    approvedByHead = "",
+    remarks = "Material tested in Quality Control Laboratory and meets all agreed technical specifications."
   } = coaData;
 
   const handleUpdateRow = (index, field, value) => {
