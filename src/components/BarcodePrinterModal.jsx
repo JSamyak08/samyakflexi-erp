@@ -182,9 +182,6 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
                 <div style={{ fontWeight: '900', fontSize: '0.85rem', letterSpacing: '0.02em', color: '#334155', textTransform: 'uppercase' }}>
                   IDENTIFICATION TAG
                 </div>
-                <div style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: '600', marginTop: '1px' }}>
-                  3rd Party / White-Label Shipment
-                </div>
               </div>
             )}
           </div>
