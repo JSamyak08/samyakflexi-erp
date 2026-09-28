@@ -186,15 +186,18 @@ class WeighingScaleService {
   async readStream() {
     while (this.port && this.port.readable && this.keepReading) {
       try {
-        if (typeof TextDecoderStream !== 'undefined') {
+        let streamSuccess = false;
+        if (typeof TextDecoderStream === 'function') {
           try {
             const textDecoder = new TextDecoderStream();
             this.readableStreamClosed = this.port.readable.pipeTo(textDecoder.writable);
             this.reader = textDecoder.readable.getReader();
+            streamSuccess = true;
           } catch (streamErr) {
-            this.reader = this.port.readable.getReader();
+            console.warn('TextDecoderStream constructor bypass:', streamErr);
           }
-        } else {
+        }
+        if (!streamSuccess) {
           this.reader = this.port.readable.getReader();
         }
 
