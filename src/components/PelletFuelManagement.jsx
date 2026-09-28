@@ -61,9 +61,20 @@ export default function PelletFuelManagement({
   const [cQtyKg, setCQtyKg] = useState('');
   const [cHours, setCHours] = useState(12);
   const [cPrintedKg, setCPrintedKg] = useState('');
-  const [cCostPerKgOverride, setCCostPerKgOverride] = useState('');
+  const [cGrnSource, setCGrnSource] = useState('AUTO_WEIGHTED');
   const [cManager, setCManager] = useState(userName || 'Plant Manager');
   const [cRemarks, setCRemarks] = useState('');
+
+  // Auto-calculated effective cost rate directly pulled from Inward GRNs
+  const effectiveInwardCostRate = useMemo(() => {
+    if (cGrnSource && cGrnSource !== 'AUTO_WEIGHTED') {
+      const grn = (pelletInwards || []).find(i => String(i.id) === String(cGrnSource) || String(i.grnNo) === String(cGrnSource));
+      if (grn && Number(grn.unitCostPerKg) > 0) {
+        return Number(grn.unitCostPerKg);
+      }
+    }
+    return stockSummary.weightedAvgCostPerKg || 0;
+  }, [cGrnSource, pelletInwards, stockSummary.weightedAvgCostPerKg]);
 
   // Form State: Inward
   const [iGrnNo, setIGrnNo] = useState('');
@@ -197,7 +208,7 @@ export default function PelletFuelManagement({
     setCQtyKg('');
     setCHours(12);
     setCPrintedKg('');
-    setCCostPerKgOverride(stockSummary.weightedAvgCostPerKg ? stockSummary.weightedAvgCostPerKg.toFixed(2) : '');
+    setCGrnSource('AUTO_WEIGHTED');
     setCManager(userName || 'Plant Manager');
     setCRemarks('');
     setShowConsumptionModal(true);
@@ -212,7 +223,7 @@ export default function PelletFuelManagement({
     setCQtyKg(item.consumedQtyKg || '');
     setCHours(item.operatingHours || 12);
     setCPrintedKg(item.referencePrintingDoneKg || '');
-    setCCostPerKgOverride(item.inwardCostPerKgUsed ? String(item.inwardCostPerKgUsed) : (stockSummary.weightedAvgCostPerKg ? stockSummary.weightedAvgCostPerKg.toFixed(2) : ''));
+    setCGrnSource(item.grnNoRef || 'AUTO_WEIGHTED');
     setCManager(item.plantManagerName || userName || 'Plant Manager');
     setCRemarks(item.remarks || '');
     setShowConsumptionModal(true);
@@ -234,7 +245,7 @@ export default function PelletFuelManagement({
       return;
     }
 
-    const costPerKg = Number(cCostPerKgOverride) || stockSummary.weightedAvgCostPerKg || 0;
+    const costPerKg = effectiveInwardCostRate;
     const consumed = Number(cQtyKg);
     const hours = Number(cHours);
     const printedKg = Number(cPrintedKg);
@@ -251,6 +262,7 @@ export default function PelletFuelManagement({
       operatingHours: hours,
       referencePrintingDoneKg: printedKg,
       inwardCostPerKgUsed: costPerKg,
+      grnNoRef: cGrnSource,
       costPerHour: Math.round(costPerHour * 100) / 100,
       costPerKgPrinted: Math.round(costPerKgPrinted * 100) / 100,
       plantManagerName: cManager,
@@ -1006,35 +1018,57 @@ export default function PelletFuelManagement({
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px', marginBottom: '20px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '800', color: '#334155', marginBottom: '6px' }}>
-                    Inward Cost Rate per Kg (₹)
+                    Inward GRN Stock Batch Source <span style={{ color: '#dc2626' }}>*</span>
                   </label>
-                  <input 
-                    type="number" 
+                  <select 
                     className="input-field" 
                     style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.88rem' }}
-                    placeholder="e.g. 18.50" 
-                    step="0.01"
-                    value={cCostPerKgOverride}
-                    onChange={(e) => setCCostPerKgOverride(e.target.value)}
-                  />
+                    value={cGrnSource}
+                    onChange={(e) => setCGrnSource(e.target.value)}
+                  >
+                    <option value="AUTO_WEIGHTED">
+                      Auto Weighted Average (₹ {stockSummary.weightedAvgCostPerKg ? stockSummary.weightedAvgCostPerKg.toFixed(2) : '0.00'} / kg)
+                    </option>
+                    {(pelletInwards || []).map(g => (
+                      <option key={g.id || g.grnNo} value={g.grnNo || g.id}>
+                        {g.grnNo} - {g.vendorName || 'Inward Stock'} (₹ {Number(g.unitCostPerKg || 0).toFixed(2)}/kg - {g.inwardDate})
+                      </option>
+                    ))}
+                  </select>
                   <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '4px' }}>
-                    Weighted average inward cost: <strong>₹ {stockSummary.weightedAvgCostPerKg ? stockSummary.weightedAvgCostPerKg.toFixed(2) : '0.00'} / kg</strong>
+                    Select specific GRN shipment or use auto-weighted inward average
                   </div>
                 </div>
 
                 <div>
                   <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '800', color: '#334155', marginBottom: '6px' }}>
-                    Recorded By (Plant Manager) <span style={{ color: '#dc2626' }}>*</span>
+                    Inward Cost Rate per Kg (₹) <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#059669' }}>(Auto-Taken From GRN)</span>
                   </label>
                   <input 
                     type="text" 
                     className="input-field" 
-                    style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.88rem' }}
-                    required
-                    value={cManager}
-                    onChange={(e) => setCManager(e.target.value)}
+                    readOnly
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.88rem', background: '#f8fafc', color: '#0f172a', fontWeight: '800', cursor: 'not-allowed' }}
+                    value={`₹ ${effectiveInwardCostRate.toFixed(2)} / Kg`}
                   />
+                  <div style={{ fontSize: '0.74rem', color: '#059669', marginTop: '4px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <CheckCircle2 size={12} /> Auto-fetched directly from Inward GRN records
+                  </div>
                 </div>
+              </div>
+
+              <div style={{ marginBottom: '18px' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '800', color: '#334155', marginBottom: '6px' }}>
+                  Recorded By (Plant Manager) <span style={{ color: '#dc2626' }}>*</span>
+                </label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.88rem' }}
+                  required
+                  value={cManager}
+                  onChange={(e) => setCManager(e.target.value)}
+                />
               </div>
 
               {/* Dynamic Live Cost Calculations Preview Card */}
@@ -1047,14 +1081,14 @@ export default function PelletFuelManagement({
                     <div style={{ background: '#ffffff', padding: '12px 14px', borderRadius: '8px', border: '1px solid #fcd34d' }}>
                       <span style={{ fontSize: '0.76rem', color: '#64748b', fontWeight: '700' }}>Cost / Boiler Hour:</span>
                       <div style={{ fontSize: '1.25rem', fontWeight: '900', color: '#7c3aed', marginTop: '2px' }}>
-                        ₹ {((Number(cQtyKg) * Number(cCostPerKgOverride || stockSummary.weightedAvgCostPerKg)) / Number(cHours)).toFixed(2)} <span style={{ fontSize: '0.76rem', fontWeight: '700' }}>/hr</span>
+                        ₹ {((Number(cQtyKg) * effectiveInwardCostRate) / Number(cHours)).toFixed(2)} <span style={{ fontSize: '0.76rem', fontWeight: '700' }}>/hr</span>
                       </div>
                     </div>
 
                     <div style={{ background: '#ffffff', padding: '12px 14px', borderRadius: '8px', border: '1px solid #fcd34d' }}>
                       <span style={{ fontSize: '0.76rem', color: '#64748b', fontWeight: '700' }}>Cost / Kg Printed:</span>
                       <div style={{ fontSize: '1.25rem', fontWeight: '900', color: '#dc2626', marginTop: '2px' }}>
-                        ₹ {((Number(cQtyKg) * Number(cCostPerKgOverride || stockSummary.weightedAvgCostPerKg)) / Number(cPrintedKg)).toFixed(2)} <span style={{ fontSize: '0.76rem', fontWeight: '700' }}>/kg</span>
+                        ₹ {((Number(cQtyKg) * effectiveInwardCostRate) / Number(cPrintedKg)).toFixed(2)} <span style={{ fontSize: '0.76rem', fontWeight: '700' }}>/kg</span>
                       </div>
                     </div>
                   </div>
