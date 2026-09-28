@@ -332,3 +332,46 @@ export function safeLocalStorageGet(key, fallbackDefault = null) {
 export function initSafeStorage() {
   emergencyCleanLocalStorage();
 }
+
+/**
+ * Completely purges all client-side browser caches (localStorage, sessionStorage, CacheStorage, ServiceWorkers)
+ */
+export async function purgeApplicationCache() {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const keysToKeep = new Set(['samyak_supabase_url', 'samyak_supabase_key', 'sb-access-token', 'sb-refresh-token']);
+      const allKeys = Object.keys(window.localStorage);
+      allKeys.forEach(k => {
+        if (!keysToKeep.has(k) && !k.startsWith('sb-')) {
+          try { window.localStorage.removeItem(k); } catch (e) {}
+        }
+      });
+    }
+
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      try { window.sessionStorage.clear(); } catch (e) {}
+    }
+
+    if (typeof window !== 'undefined' && 'caches' in window) {
+      try {
+        const cacheNames = await window.caches.keys();
+        await Promise.all(cacheNames.map(name => window.caches.delete(name)));
+      } catch (e) {}
+    }
+
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      try {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (let registration of registrations) {
+          registration.unregister();
+        }
+      } catch (e) {}
+    }
+
+    console.log('[Cache] Application cache successfully purged.');
+    return true;
+  } catch (err) {
+    console.warn('[Cache] Cache purge notice:', err);
+    return false;
+  }
+}
