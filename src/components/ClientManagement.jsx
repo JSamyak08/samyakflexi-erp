@@ -1,16 +1,18 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, Search, Building2, Phone, MapPin, Briefcase, ChevronRight, Package, Layers, X, Edit, Trash2, AlertTriangle, ExternalLink, IndianRupee, Image as ImageIcon } from 'lucide-react';
+import { Plus, Search, Building2, Phone, MapPin, Briefcase, ChevronRight, Package, Layers, X, Edit, Trash2, AlertTriangle, ExternalLink, IndianRupee, Image as ImageIcon, Printer, FileText } from 'lucide-react';
 import { openArtworkViewer } from '../services/supabaseStorageService';
 import ArtworkModal from './ArtworkModal';
 import TablePagination, { usePagination } from './TablePagination';
+import ClientPendingOrdersPDF from './ClientPendingOrdersPDF';
 
-export default function ClientManagement({ urlParams = {}, clients = [], orders = [], cylinders = [], onAddClient, onUpdateClient, onDeleteClient }) {
+export default function ClientManagement({ urlParams = {}, clients = [], orders = [], cylinders = [], jobMasters = [], onAddClient, onUpdateClient, onDeleteClient }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedClient, setSelectedClient] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, client: null });
   const [activeArtworkModal, setActiveArtworkModal] = useState({ isOpen: false, url: '', title: '' });
+  const [pendingOrdersPdfClient, setPendingOrdersPdfClient] = useState(null);
 
   React.useEffect(() => {
     if (urlParams && urlParams.id) {
@@ -207,9 +209,32 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
           {/* Orders Column */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <div className="glass-panel" style={{ padding: '20px' }}>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Package size={18} /> Pending Orders ({clientOrders.pending.length})
-              </h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: '700', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Package size={18} /> Pending Orders ({clientOrders.pending.length})
+                </h3>
+                {clientOrders.pending.length > 0 && (
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    style={{
+                      padding: '5px 12px',
+                      fontSize: '0.8rem',
+                      background: '#047857',
+                      borderColor: '#047857',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      fontWeight: '700',
+                      borderRadius: '6px'
+                    }}
+                    onClick={() => setPendingOrdersPdfClient(selectedClient)}
+                    title="Download or Print PDF report of client's pending orders"
+                  >
+                    <Printer size={14} /> Download Pending Orders PDF
+                  </button>
+                )}
+              </div>
               {clientOrders.pending.length === 0 ? (
                 <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>No pending orders.</p>
               ) : (
@@ -626,6 +651,16 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
         artworkUrl={activeArtworkModal.url}
         title={activeArtworkModal.title}
       />
+
+      {/* Client Pending Orders Printable PDF Modal */}
+      {pendingOrdersPdfClient && (
+        <ClientPendingOrdersPDF
+          client={pendingOrdersPdfClient}
+          pendingOrders={clientOrders.pending}
+          jobMasters={jobMasters}
+          onClose={() => setPendingOrdersPdfClient(null)}
+        />
+      )}
     </div>
   );
 }

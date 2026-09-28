@@ -3666,6 +3666,7 @@ export default function App() {
             clients={clients}
             orders={orders}
             cylinders={cylinders}
+            jobMasters={jobMasters}
             onAddClient={handleAddClient}
             onUpdateClient={handleUpdateClient}
             onDeleteClient={handleDeleteClient}
