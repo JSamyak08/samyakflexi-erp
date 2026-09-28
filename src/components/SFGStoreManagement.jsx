@@ -17,7 +17,7 @@ import {
   Tag, 
   X, 
   Check, 
-  History,
+  History as HistoryIcon,
   QrCode,
   Zap,
   ChevronRight,
@@ -1600,7 +1600,7 @@ export default function SFGStoreManagement({
                                         cursor: 'pointer'
                                       }}
                                     >
-                                      <History size={13} />
+                                      <HistoryIcon size={13} />
                                     </button>
                                   )}
                                 </div>

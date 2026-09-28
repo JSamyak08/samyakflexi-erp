@@ -22,7 +22,7 @@ import {
   Unlock,
   Clock,
   FileSpreadsheet,
-  History,
+  History as HistoryIcon,
   Eye,
   RefreshCw,
   Download,
@@ -1306,7 +1306,7 @@ export default function CylinderManagement({
                             onClick={() => setChangelogCylinder(c)}
                             title="View Job Changelog History"
                           >
-                            <History size={13} style={{ color: 'var(--primary-brand)' }} />
+                            <HistoryIcon size={13} style={{ color: 'var(--primary-brand)' }} />
                             {changelogCount > 0 && <span>({changelogCount})</span>}
                           </button>
 
@@ -1480,7 +1480,7 @@ export default function CylinderManagement({
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
               <div>
                 <h3 style={{ fontSize: '1.15rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '10px', margin: 0, color: 'var(--text-primary)' }}>
-                  <History size={22} style={{ color: 'var(--primary-brand)' }} /> Job Changelog & Revision History
+                  <HistoryIcon size={22} style={{ color: 'var(--primary-brand)' }} /> Job Changelog & Revision History
                 </h3>
                 <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '3px' }}>
                   SKU: <strong style={{ color: 'var(--primary-brand)' }}>{changelogCylinder.sku}</strong> | Job: <strong>{changelogCylinder.jobName}</strong>

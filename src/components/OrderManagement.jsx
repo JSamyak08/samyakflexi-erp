@@ -79,26 +79,30 @@ export default function OrderManagement({
       ((j.jobName || '').toLowerCase().trim() === (order?.jobName || '').toLowerCase().trim())
     );
     if (jm) {
-      const jmType = jm.orderType || jm.materialFormat || jm.materialForm || jm.supplyFormat;
+      const jmType = jm.materialForm || jm.orderType || jm.materialFormat || jm.supplyFormat;
       if (jmType) {
         const s = String(jmType).trim().toLowerCase();
-        if (s.includes('pouch')) return 'Pouching Form';
+        if (s.includes('pouch') || s.includes('bag') || s.includes('sachet')) return 'Pouching Form';
         if (s.includes('reel') || s.includes('roll')) return 'Reel Form';
       }
-      if ((jm.pouchOpenWidth && Number(jm.pouchOpenWidth) > 0) || (jm.pouchHeight && Number(jm.pouchHeight) > 0) || jm.pouchType) {
-        return 'Pouching Form';
+      // Check process routing in Job Master: if it has steps, inspect operations
+      const routing = jm.processRouting || jm.routingSteps;
+      if (Array.isArray(routing) && routing.length > 0) {
+        const hasPouch = routing.some(s => (s.operation || '').toLowerCase().includes('pouch'));
+        return hasPouch ? 'Pouching Form' : 'Reel Form';
       }
-      if (Array.isArray(jm.routingSteps) && jm.routingSteps.some(s => (s.operation || '').toLowerCase().includes('pouch'))) {
+      // Check explicit pouchType if defined and not N/A
+      if (jm.pouchType && String(jm.pouchType).toLowerCase() !== 'none' && String(jm.pouchType).toLowerCase() !== 'n/a') {
         return 'Pouching Form';
       }
     }
 
     // 2. Order's job details / attributes
-    const rawType = order.jobDetails?.orderType || order.jobDetails?.materialFormat || order.orderType || order.materialFormat || order.materialForm || order.supplyFormat || order.calculationDetails?.orderType;
+    const rawType = order.orderType || order.materialFormat || order.materialForm || order.jobDetails?.orderType || order.jobDetails?.materialFormat || order.supplyFormat || order.calculationDetails?.orderType;
     if (rawType) {
       const s = String(rawType).trim().toLowerCase();
-      if (s.includes('pouch')) return 'Pouching Form';
-      if (s.includes('reel') || s.includes('roll')) return 'Reel Form';
+      if (s === 'pouching' || s === 'pouch' || s.includes('pouch')) return 'Pouching Form';
+      if (s === 'reel' || s === 'roll' || s.includes('reel') || s.includes('roll')) return 'Reel Form';
     }
 
     // 3. Fallback: Check keywords in Job Title / Product Name

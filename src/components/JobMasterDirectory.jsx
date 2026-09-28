@@ -226,8 +226,9 @@ export default function JobMasterDirectory({
   const [printWidthMm, setPrintWidthMm] = useState('1000');
   const [faceLengthMm, setFaceLengthMm] = useState('1050');
   const [repeatLengthMm, setRepeatLengthMm] = useState('400');
-  const [pouchOpenWidth, setPouchOpenWidth] = useState('120');
-  const [pouchHeight, setPouchHeight] = useState('150');
+  const [pouchOpenWidth, setPouchOpenWidth] = useState('');
+  const [pouchHeight, setPouchHeight] = useState('');
+  const [materialForm, setMaterialForm] = useState('Reel Form');
 
   // Unified Unique Clients Options (from clients prop + orders + jobMasters)
   const allClientOptions = useMemo(() => {
@@ -589,6 +590,7 @@ export default function JobMasterDirectory({
     const defaultPouch = (machines || []).find(m => (m.type || '').toLowerCase().includes('pouch') || (m.name || '').toLowerCase().includes('pouch')) || { id: 'MAC-POUCH-1', name: 'Pouch Making Machine 1' };
 
     if (presetType === '2-ply') {
+      setMaterialForm('Reel Form');
       setProcessRouting([
         { id: `step-1`, stepNumber: 1, operation: 'Rotogravure Printing', machineId: defaultRoto.id, machineName: defaultRoto.name, pass: 'Pass 1 (Single Pass)', stageOutput: 'Semi-Finished Goods (SFG)' },
         { id: `step-2`, stepNumber: 2, operation: 'Solventless Lamination', machineId: defaultLam.id, machineName: defaultLam.name, pass: 'Pass 1 (Layer 1 + Layer 2)', stageOutput: 'Semi-Finished Goods (SFG)' },
@@ -596,6 +598,7 @@ export default function JobMasterDirectory({
         { id: `step-4`, stepNumber: 4, operation: 'Final Inspection & Dispatch', machineId: 'MANUAL-PACKING', machineName: 'Dispatch Bay', pass: 'Final Stage', stageOutput: 'Finished Goods (FG)' }
       ]);
     } else if (presetType === '3-ply') {
+      setMaterialForm('Reel Form');
       setProcessRouting([
         { id: `step-1`, stepNumber: 1, operation: 'Rotogravure Printing', machineId: defaultRoto.id, machineName: defaultRoto.name, pass: 'Pass 1 (Single Pass)', stageOutput: 'Semi-Finished Goods (SFG)' },
         { id: `step-2`, stepNumber: 2, operation: 'Solventless Lamination', machineId: defaultLam.id, machineName: defaultLam.name, pass: 'Pass 1 (Layer 1 + Layer 2)', stageOutput: 'Semi-Finished Goods (SFG)' },
@@ -604,6 +607,7 @@ export default function JobMasterDirectory({
         { id: `step-5`, stepNumber: 5, operation: 'Final Inspection & Dispatch', machineId: 'MANUAL-PACKING', machineName: 'Dispatch Bay', pass: 'Final Stage', stageOutput: 'Finished Goods (FG)' }
       ]);
     } else if (presetType === 'pouch') {
+      setMaterialForm('Pouching Form');
       setProcessRouting([
         { id: `step-1`, stepNumber: 1, operation: 'Rotogravure Printing', machineId: defaultRoto.id, machineName: defaultRoto.name, pass: 'Pass 1 (Single Pass)', stageOutput: 'Semi-Finished Goods (SFG)' },
         { id: `step-2`, stepNumber: 2, operation: 'Solventless Lamination', machineId: defaultLam.id, machineName: defaultLam.name, pass: 'Pass 1 (Layer 1 + Layer 2)', stageOutput: 'Semi-Finished Goods (SFG)' },
@@ -841,8 +845,9 @@ export default function JobMasterDirectory({
     setPrintWidthMm('1000');
     setFaceLengthMm('1050');
     setRepeatLengthMm('400');
-    setPouchOpenWidth('120');
-    setPouchHeight('150');
+    setPouchOpenWidth('');
+    setPouchHeight('');
+    setMaterialForm('Reel Form');
     setColorsCount(6);
     setCylinderCost('35000');
     setCostBorneBy('Client (100%)');
@@ -910,8 +915,10 @@ export default function JobMasterDirectory({
     setPrintWidthMm(job.printWidthMm ? String(job.printWidthMm) : '1000');
     setFaceLengthMm(job.faceLengthMm ? String(job.faceLengthMm) : (job.printWidthMm ? String(job.printWidthMm) : '1050'));
     setRepeatLengthMm(job.repeatLengthMm ? String(job.repeatLengthMm) : '400');
-    setPouchOpenWidth(job.pouchOpenWidth ? String(job.pouchOpenWidth) : '120');
-    setPouchHeight(job.pouchHeight ? String(job.pouchHeight) : '150');
+    setPouchOpenWidth(job.pouchOpenWidth ? String(job.pouchOpenWidth) : '');
+    setPouchHeight(job.pouchHeight ? String(job.pouchHeight) : '');
+    const derivedForm = job.materialForm || (Array.isArray(job.processRouting) && job.processRouting.some(s => (s.operation || '').toLowerCase().includes('pouch')) ? 'Pouching Form' : 'Reel Form');
+    setMaterialForm(derivedForm);
     setColorsCount(job.colorsCount || 6);
     setCylinderCost(job.cylinderCost ? String(job.cylinderCost).replace(/[^0-9]/g, '') : '');
     setCostBorneBy(job.costBorneBy || 'Client (100%)');
@@ -995,6 +1002,9 @@ export default function JobMasterDirectory({
         repeatLengthMm: parseFloat(repeatLengthMm) || 400,
         pouchOpenWidth: parseFloat(pouchOpenWidth) || 0,
         pouchHeight: parseFloat(pouchHeight) || 0,
+        materialForm: materialForm || (sanitizedRouting.some(s => (s.operation || '').toLowerCase().includes('pouch')) ? 'Pouching Form' : 'Reel Form'),
+        orderType: materialForm === 'Pouching Form' ? 'Pouching' : 'Reel',
+        materialFormat: materialForm === 'Pouching Form' ? 'Pouching' : 'Reel',
         layers,
         inkGsm: parseFloat(inkGsm) || 1.5,
         adhesiveGsm: parseFloat(adhesiveGsm) || 1.5,
@@ -1032,6 +1042,9 @@ export default function JobMasterDirectory({
       repeatLengthMm: parseFloat(repeatLengthMm) || 400,
       pouchOpenWidth: parseFloat(pouchOpenWidth) || 0,
       pouchHeight: parseFloat(pouchHeight) || 0,
+      materialForm: materialForm || (sanitizedRouting.some(s => (s.operation || '').toLowerCase().includes('pouch')) ? 'Pouching Form' : 'Reel Form'),
+      orderType: materialForm === 'Pouching Form' ? 'Pouching' : 'Reel',
+      materialFormat: materialForm === 'Pouching Form' ? 'Pouching' : 'Reel',
       layers,
       inkGsm: parseFloat(inkGsm) || 1.5,
       adhesiveGsm: parseFloat(adhesiveGsm) || 1.5,
@@ -1387,6 +1400,19 @@ export default function JobMasterDirectory({
                     onChange={e => setRepeatLengthMm(e.target.value)} 
                     placeholder="e.g. 400"
                   />
+                </div>
+
+                <div className="form-group">
+                  <label style={{ fontWeight: '700' }}>Material Supply Form *</label>
+                  <select 
+                    className="form-control" 
+                    value={materialForm} 
+                    onChange={e => setMaterialForm(e.target.value)}
+                    style={{ fontWeight: '700' }}
+                  >
+                    <option value="Reel Form">📦 Reel Form (Roll Supply)</option>
+                    <option value="Pouching Form">🛍️ Pouching Form (Pouch Line)</option>
+                  </select>
                 </div>
 
                 <div className="form-group">

@@ -33,7 +33,11 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
   const [printWidthMm, setPrintWidthMm] = useState(() => initialJobMasterData?.printWidthMm || '');
   const [repeatLengthMm, setRepeatLengthMm] = useState(() => initialJobMasterData?.repeatLengthMm || '');
   const [orderQtyKg, setOrderQtyKg] = useState('');
-  const [orderType, setOrderType] = useState('Pouching'); // Reel or Pouching
+  const [orderType, setOrderType] = useState(() => {
+    const fmt = initialJobMasterData?.materialForm || initialJobMasterData?.orderType || initialJobMasterData?.materialFormat;
+    if (fmt) return String(fmt).toLowerCase().includes('pouch') ? 'Pouching' : 'Reel';
+    return 'Reel';
+  }); // Reel or Pouching
   const [inkGsm, setInkGsm] = useState(1.5);
   const [adhesiveGsm, setAdhesiveGsm] = useState(1.5);
   const [orderComments, setOrderComments] = useState('');
@@ -615,6 +619,17 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
                     if (selectedJM.colorsCount) setColorsCount(selectedJM.colorsCount);
                     if (selectedJM.layers && selectedJM.layers.length > 0) {
                       setLayers(selectedJM.layers.map(l => ({ ...l, rate: l.rate ?? l.ratePerKg ?? '' })));
+                    }
+                    const jmForm = selectedJM.materialForm || selectedJM.orderType || selectedJM.materialFormat || selectedJM.supplyFormat;
+                    if (jmForm) {
+                      setOrderType(String(jmForm).toLowerCase().includes('pouch') ? 'Pouching' : 'Reel');
+                    } else if (Array.isArray(selectedJM.processRouting) && selectedJM.processRouting.length > 0) {
+                      const hasPouch = selectedJM.processRouting.some(s => (s.operation || '').toLowerCase().includes('pouch'));
+                      setOrderType(hasPouch ? 'Pouching' : 'Reel');
+                    } else {
+                      const jn = (selectedJM.jobName || '').toLowerCase();
+                      const isPouchKeyword = jn.includes('pouch') || jn.includes('bag') || jn.includes('zipper') || jn.includes('sachet');
+                      setOrderType(isPouchKeyword ? 'Pouching' : 'Reel');
                     }
                   }
                 }}
