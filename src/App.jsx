@@ -362,10 +362,52 @@ export default function App() {
   const [pelletConsumptions, setPelletConsumptions] = useState([]);
 
   const handleSavePelletInward = async (item) => {
-    setPelletInwards(prev => [item, ...prev.filter(i => String(i.id) !== String(item.id))]);
+    if (!item) return;
+    const cleanItem = {
+      ...item,
+      status: item.status || 'Pending QC',
+      qcStatus: item.qcStatus || item.status || 'Pending QC'
+    };
+
+    setPelletInwards(prev => [cleanItem, ...prev.filter(i => String(i.id) !== String(cleanItem.id))]);
+
+    // Build corresponding GRN item for central GRN table and QC Approval Lab queue
+    const grnRecord = {
+      id: cleanItem.id || `PEL-GRN-${cleanItem.grnNo || Date.now()}`,
+      grnNo: cleanItem.grnNo || `GRN-PEL-${Date.now()}`,
+      grn_number: cleanItem.grnNo,
+      receivedDate: cleanItem.inwardDate || new Date().toISOString().split('T')[0],
+      inwardDate: cleanItem.inwardDate || new Date().toISOString().split('T')[0],
+      date: cleanItem.inwardDate || new Date().toISOString().split('T')[0],
+      vendorName: cleanItem.vendorName || 'Pellet Supplier',
+      vendorId: cleanItem.vendorName || 'Pellet Supplier',
+      itemName: 'Boiler Wood Pellets (Biofuel Fuel Stock)',
+      category: 'Boiler Pellets / Fuel',
+      receivedQtyKg: Number(cleanItem.inwardQtyKg) || 0,
+      netWeightKg: Number(cleanItem.inwardQtyKg) || 0,
+      quantity: Number(cleanItem.inwardQtyKg) || 0,
+      unit: 'Kg',
+      unitPrice: Number(cleanItem.unitCostPerKg) || 0,
+      purchaseRatePerKg: Number(cleanItem.unitCostPerKg) || 0,
+      totalAmount: Number(cleanItem.totalAmount) || 0,
+      invoiceNo: cleanItem.invoiceNo || '',
+      chalanNo: cleanItem.chalanNo || '',
+      storageLocation: cleanItem.storageLocation || 'Boiler Fuel Bay',
+      storeManager: cleanItem.receivedBy || 'Plant Manager',
+      status: cleanItem.status || 'Pending QC',
+      qcStatus: cleanItem.qcStatus || cleanItem.status || 'Pending QC',
+      itemRemarks: cleanItem.remarks || '',
+      remarks: cleanItem.remarks || '',
+      isPelletFuel: true,
+      updatedAt: new Date().toISOString()
+    };
+
+    setGrns(prev => [grnRecord, ...prev.filter(g => String(g.id) !== String(grnRecord.id) && String(g.grnNo) !== String(grnRecord.grnNo))]);
+
     try {
-      await savePelletInwardToSupabase(item);
-      logAudit('Save Pellet Inward', 'Pellet Fuel Stock Management', `GRN ${item.grnNo} - Inwarded ${item.inwardQtyKg} kg`, item.id);
+      await savePelletInwardToSupabase(cleanItem);
+      await saveGRNToSupabase(grnRecord);
+      logAudit('Save Pellet Inward', 'Pellet Fuel Stock Management', `GRN ${cleanItem.grnNo} - Inwarded ${cleanItem.inwardQtyKg} kg (Submitted to QC Approval Lab)`, cleanItem.id);
     } catch (e) {
       console.error("Failed to save pellet inward to Supabase:", e);
       alert(`Saved locally, DB notice: ${e.message}`);
@@ -373,7 +415,12 @@ export default function App() {
   };
 
   const handleDeletePelletInward = async (id) => {
+    const targetItem = (pelletInwards || []).find(i => String(i.id) === String(id));
     setPelletInwards(prev => prev.filter(i => String(i.id) !== String(id)));
+    if (targetItem && targetItem.grnNo) {
+      setGrns(prev => prev.filter(g => g.grnNo !== targetItem.grnNo && String(g.id) !== String(id)));
+      deleteGRNFromSupabase(id || targetItem.grnNo).catch(console.warn);
+    }
     try {
       await deletePelletInwardFromSupabase(id);
       logAudit('Delete Pellet Inward', 'Pellet Fuel Stock Management', `Deleted Pellet GRN record ${id}`, id);
@@ -1730,7 +1777,20 @@ export default function App() {
   const handleUpdateGRN = async (updatedGRN) => {
     requireDatabaseConnection('update GRN');
     await saveGRNToSupabase(updatedGRN);
-    setGrns(prev => prev.map(g => g.grnNo === updatedGRN.grnNo ? updatedGRN : g));
+    setGrns(prev => prev.map(g => g.grnNo === updatedGRN.grnNo || String(g.id) === String(updatedGRN.id) ? updatedGRN : g));
+
+    // Sync QC status back to pelletInwards if it is a pellet fuel GRN
+    if (updatedGRN.category === 'Boiler Pellets / Fuel' || updatedGRN.isPelletFuel || (updatedGRN.grnNo && String(updatedGRN.grnNo).includes('PEL'))) {
+      setPelletInwards(prev => prev.map(p => {
+        if (p.grnNo === updatedGRN.grnNo || String(p.id) === String(updatedGRN.id)) {
+          const updatedPellet = { ...p, status: updatedGRN.status, qcStatus: updatedGRN.status, qcNotes: updatedGRN.qcNotes };
+          savePelletInwardToSupabase(updatedPellet).catch(console.warn);
+          return updatedPellet;
+        }
+        return p;
+      }));
+    }
+
     logAudit('UPDATE', 'GRN Inward', `Updated GRN ${updatedGRN.grnNo} status to "${updatedGRN.status}"`, updatedGRN.grnNo);
   };
 
