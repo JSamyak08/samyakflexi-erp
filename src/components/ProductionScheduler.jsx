@@ -287,13 +287,20 @@ export default function ProductionScheduler({
                          '';
 
       // Colors resolution linked to Job Master / Cylinder / Order
-      const colorsCount = order.colors ||
-                          order.jobDetails?.cylinderColors?.length ||
-                          matchedJM?.cylinderColors?.length ||
-                          matchedJM?.colors ||
-                          matchedCylinder?.colors ||
-                          matchedCylinder?.colorsList?.length ||
-                          8;
+      const rawColorsCount = order.colorsCount ||
+                             order.colors ||
+                             order.jobDetails?.colorsCount ||
+                             order.cylinderDetails?.colorsCount ||
+                             matchedJM?.colorsCount ||
+                             matchedJM?.colors ||
+                             matchedJM?.colors_count ||
+                             matchedJM?.cylinderColors?.length ||
+                             matchedCylinder?.colorsCount ||
+                             matchedCylinder?.colors ||
+                             matchedCylinder?.colorsList?.length ||
+                             matchedCylinder?.numberOfColors ||
+                             6;
+      const colorsCount = parseInt(rawColorsCount, 10) || 6;
 
       const cylinderColors = order.jobDetails?.cylinderColors ||
                              matchedJM?.cylinderColors ||
