@@ -65,17 +65,6 @@ export default function PelletFuelManagement({
   const [cManager, setCManager] = useState(userName || 'Plant Manager');
   const [cRemarks, setCRemarks] = useState('');
 
-  // Auto-calculated effective cost rate directly pulled from Inward GRNs
-  const effectiveInwardCostRate = useMemo(() => {
-    if (cGrnSource && cGrnSource !== 'AUTO_WEIGHTED') {
-      const grn = (pelletInwards || []).find(i => String(i.id) === String(cGrnSource) || String(i.grnNo) === String(cGrnSource));
-      if (grn && Number(grn.unitCostPerKg) > 0) {
-        return Number(grn.unitCostPerKg);
-      }
-    }
-    return stockSummary.weightedAvgCostPerKg || 0;
-  }, [cGrnSource, pelletInwards, stockSummary.weightedAvgCostPerKg]);
-
   // Form State: Inward
   const [iGrnNo, setIGrnNo] = useState('');
   const [iDate, setIDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -156,6 +145,17 @@ export default function PelletFuelManagement({
       activeLoggingDaysCount
     };
   }, [pelletInwards, pelletConsumptions]);
+
+  // Auto-calculated effective cost rate directly pulled from Inward GRNs
+  const effectiveInwardCostRate = useMemo(() => {
+    if (cGrnSource && cGrnSource !== 'AUTO_WEIGHTED') {
+      const grn = (pelletInwards || []).find(i => String(i.id) === String(cGrnSource) || String(i.grnNo) === String(cGrnSource));
+      if (grn && Number(grn.unitCostPerKg) > 0) {
+        return Number(grn.unitCostPerKg);
+      }
+    }
+    return stockSummary.weightedAvgCostPerKg || 0;
+  }, [cGrnSource, pelletInwards, stockSummary.weightedAvgCostPerKg]);
 
   // Filtered Consumption Records
   const filteredConsumptions = useMemo(() => {
