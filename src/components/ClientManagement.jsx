@@ -534,8 +534,10 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
           currentPage={currentPage}
           totalPages={totalPages}
           pageSize={pageSize}
-          setPageSize={setPageSize}
+          onPageChange={goToPage}
+          onPageSizeChange={setPageSize}
           goToPage={goToPage}
+          setPageSize={setPageSize}
           startIndex={startIndex}
           endIndex={endIndex}
           totalItems={filteredClients.length}
