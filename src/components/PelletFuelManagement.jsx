@@ -55,7 +55,7 @@ export default function PelletFuelManagement({
   // Form State: Consumption
   const [cDate, setCDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [cShift, setCShift] = useState('Shift A: Day (08:00 - 20:00)');
-  const [cMachine, setCMachine] = useState('Printing Press 1 (Boiler 1)');
+  const [cMachine, setCMachine] = useState('');
   const [cQtyKg, setCQtyKg] = useState('');
   const [cHours, setCHours] = useState(12);
   const [cPrintedKg, setCPrintedKg] = useState('');
@@ -71,7 +71,7 @@ export default function PelletFuelManagement({
   const [iChalanNo, setIChalanNo] = useState('');
   const [iQtyKg, setIQtyKg] = useState('');
   const [iRatePerKg, setIRatePerKg] = useState('');
-  const [iLocation, setILocation] = useState('Boiler Fuel Bay (Silo 1)');
+  const [iLocation, setILocation] = useState('Boiler Fuel Bay');
   const [iVehicleNo, setIVehicleNo] = useState('');
   const [iReceivedBy, setIReceivedBy] = useState(userName || 'Plant Manager');
   const [iRemarks, setIRemarks] = useState('');
@@ -94,7 +94,7 @@ export default function PelletFuelManagement({
     const totalInwardKg = (pelletInwards || []).reduce((acc, item) => acc + (Number(item.inwardQtyKg) || 0), 0);
     const totalInwardAmount = (pelletInwards || []).reduce((acc, item) => acc + (Number(item.totalAmount) || (Number(item.inwardQtyKg) * Number(item.unitCostPerKg)) || 0), 0);
     
-    const weightedAvgCostPerKg = totalInwardKg > 0 ? (totalInwardAmount / totalInwardKg) : 18.5; // default benchmark if 0
+    const weightedAvgCostPerKg = totalInwardKg > 0 ? (totalInwardAmount / totalInwardKg) : 0;
 
     const totalConsumedKg = (pelletConsumptions || []).reduce((acc, item) => acc + (Number(item.consumedQtyKg) || 0), 0);
     
@@ -192,11 +192,11 @@ export default function PelletFuelManagement({
     setEditingConsumption(null);
     setCDate(new Date().toISOString().split('T')[0]);
     setCShift('Shift A: Day (08:00 - 20:00)');
-    setCMachine(availableMachines[0] || 'Printing Press 1 (Boiler 1)');
+    setCMachine(availableMachines[0] || '');
     setCQtyKg('');
     setCHours(12);
     setCPrintedKg('');
-    setCCostPerKgOverride(stockSummary.weightedAvgCostPerKg ? stockSummary.weightedAvgCostPerKg.toFixed(2) : '18.50');
+    setCCostPerKgOverride(stockSummary.weightedAvgCostPerKg ? stockSummary.weightedAvgCostPerKg.toFixed(2) : '');
     setCManager(userName || 'Plant Manager');
     setCRemarks('');
     setShowConsumptionModal(true);
@@ -207,11 +207,11 @@ export default function PelletFuelManagement({
     setEditingConsumption(item);
     setCDate(item.consumptionDate || new Date().toISOString().split('T')[0]);
     setCShift(item.shift || 'Shift A: Day (08:00 - 20:00)');
-    setCMachine(item.machineName || availableMachines[0] || 'Printing Press 1 (Boiler 1)');
+    setCMachine(item.machineName || availableMachines[0] || '');
     setCQtyKg(item.consumedQtyKg || '');
     setCHours(item.operatingHours || 12);
     setCPrintedKg(item.referencePrintingDoneKg || '');
-    setCCostPerKgOverride(item.inwardCostPerKgUsed || stockSummary.weightedAvgCostPerKg || 18.50);
+    setCCostPerKgOverride(item.inwardCostPerKgUsed ? String(item.inwardCostPerKgUsed) : (stockSummary.weightedAvgCostPerKg ? stockSummary.weightedAvgCostPerKg.toFixed(2) : ''));
     setCManager(item.plantManagerName || userName || 'Plant Manager');
     setCRemarks(item.remarks || '');
     setShowConsumptionModal(true);
@@ -233,7 +233,7 @@ export default function PelletFuelManagement({
       return;
     }
 
-    const costPerKg = Number(cCostPerKgOverride) || stockSummary.weightedAvgCostPerKg || 18.50;
+    const costPerKg = Number(cCostPerKgOverride) || stockSummary.weightedAvgCostPerKg || 0;
     const consumed = Number(cQtyKg);
     const hours = Number(cHours);
     const printedKg = Number(cPrintedKg);
@@ -272,8 +272,8 @@ export default function PelletFuelManagement({
     setIInvoiceNo('');
     setIChalanNo('');
     setIQtyKg('');
-    setIRatePerKg('18.50');
-    setILocation('Boiler Fuel Bay (Silo 1)');
+    setIRatePerKg('');
+    setILocation('Boiler Fuel Bay');
     setIVehicleNo('');
     setIReceivedBy(userName || 'Plant Manager');
     setIRemarks('');
@@ -289,8 +289,8 @@ export default function PelletFuelManagement({
     setIInvoiceNo(item.invoiceNo || '');
     setIChalanNo(item.chalanNo || '');
     setIQtyKg(item.inwardQtyKg || '');
-    setIRatePerKg(item.unitCostPerKg || '18.50');
-    setILocation(item.storageLocation || 'Boiler Fuel Bay (Silo 1)');
+    setIRatePerKg(item.unitCostPerKg || '');
+    setILocation(item.storageLocation || 'Boiler Fuel Bay');
     setIVehicleNo(item.vehicleNo || '');
     setIReceivedBy(item.receivedBy || userName || 'Plant Manager');
     setIRemarks(item.remarks || '');
@@ -652,7 +652,7 @@ export default function PelletFuelManagement({
                 </tr>
               ) : (
                 filteredConsumptions.map(item => {
-                  const costPerKg = Number(item.inwardCostPerKgUsed) || stockSummary.weightedAvgCostPerKg || 18.50;
+                  const costPerKg = Number(item.inwardCostPerKgUsed) || stockSummary.weightedAvgCostPerKg || 0;
                   const consumed = Number(item.consumedQtyKg) || 0;
                   const hours = Number(item.operatingHours) || 12;
                   const printed = Number(item.referencePrintingDoneKg) || 0;
