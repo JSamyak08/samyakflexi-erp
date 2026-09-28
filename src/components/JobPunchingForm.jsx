@@ -42,6 +42,54 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
   const [adhesiveGsm, setAdhesiveGsm] = useState(1.5);
   const [orderComments, setOrderComments] = useState('');
 
+  // Order Variants State
+  const [hasVariants, setHasVariants] = useState(() => Boolean(initialJobMasterData?.hasVariants || (initialJobMasterData?.variants && initialJobMasterData.variants.length > 0)));
+  const [variants, setVariants] = useState(() => {
+    if (initialJobMasterData?.variants && Array.isArray(initialJobMasterData.variants) && initialJobMasterData.variants.length > 0) {
+      return initialJobMasterData.variants.map((v, i) => ({
+        id: v.id || i + 1,
+        variantName: v.variantName || v.name || '',
+        allocatedQtyKg: v.allocatedQtyKg || v.qtyKg || '',
+        notes: v.notes || ''
+      }));
+    }
+    return [];
+  });
+
+  const handleToggleHasVariants = (checked) => {
+    setHasVariants(checked);
+    if (checked && variants.length === 0) {
+      const total = parseFloat(orderQtyKg) || 0;
+      const half = total > 0 ? (total / 2).toFixed(1) : '';
+      setVariants([
+        { id: Date.now(), variantName: 'Variant 1 / Flavor A', allocatedQtyKg: half, notes: '' },
+        { id: Date.now() + 1, variantName: 'Variant 2 / Flavor B', allocatedQtyKg: half, notes: '' }
+      ]);
+    }
+  };
+
+  const handleAddVariantRow = () => {
+    setVariants(prev => [
+      ...prev,
+      { id: Date.now(), variantName: `Variant ${prev.length + 1}`, allocatedQtyKg: '', notes: '' }
+    ]);
+  };
+
+  const handleRemoveVariantRow = (id) => {
+    setVariants(prev => prev.filter(v => v.id !== id));
+  };
+
+  const handleVariantFieldChange = (id, field, value) => {
+    setVariants(prev => prev.map(v => v.id === id ? { ...v, [field]: value } : v));
+  };
+
+  const handleDivideEqually = () => {
+    const total = parseFloat(orderQtyKg) || 0;
+    if (total <= 0 || variants.length === 0) return;
+    const equalShare = (total / variants.length).toFixed(1);
+    setVariants(prev => prev.map(v => ({ ...v, allocatedQtyKg: equalShare })));
+  };
+
   // Editable Processing Prices State (loaded from System Settings baseline, editable inline)
   const [inkPrice, setInkPrice] = useState(() => getProcessingRates().liquidInkPrice || DEFAULT_PROCESSING_RATES.liquidInkPrice);
   const [adhesivePrice, setAdhesivePrice] = useState(() => getProcessingRates().adhesivePrice || DEFAULT_PROCESSING_RATES.adhesivePrice);
@@ -412,6 +460,15 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
     const targetDate = new Date();
     targetDate.setDate(targetDate.getDate() + parseInt(targetDeliveryDays || 10));
 
+    const finalVariants = hasVariants 
+      ? variants.filter(v => v.variantName && v.variantName.trim()).map(v => ({
+          id: v.id,
+          variantName: v.variantName.trim(),
+          allocatedQtyKg: parseFloat(v.allocatedQtyKg) || 0,
+          notes: v.notes ? v.notes.trim() : ''
+        }))
+      : [];
+
     const newOrder = {
       id: getNextDocRefNumber('order'),
       jobName,
@@ -425,6 +482,8 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       repeatLengthMm: parseFloat(repeatLengthMm),
       colorsCount: parseInt(colorsCount),
       status: 'In Progress',
+      hasVariants: hasVariants && finalVariants.length > 0,
+      variants: finalVariants,
       orderComments,
       comments: orderComments,
       jobDetails: { 
@@ -432,6 +491,8 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
         printWidthMm: parseFloat(printWidthMm), 
         repeatLengthMm: parseFloat(repeatLengthMm), 
         structure: finalLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / '), 
+        hasVariants: hasVariants && finalVariants.length > 0,
+        variants: finalVariants,
         orderComments, 
         comments: orderComments 
       },
@@ -700,6 +761,167 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
                 onChange={e => setTargetDeliveryDays(e.target.value)}
               />
             </div>
+
+            {/* Order Variants Section */}
+            {(() => {
+              const totalAllocatedKg = variants.reduce((sum, v) => sum + (parseFloat(v.allocatedQtyKg) || 0), 0);
+              const orderQtyNum = parseFloat(orderQtyKg) || 0;
+              const allocationDiff = totalAllocatedKg - orderQtyNum;
+
+              return (
+                <div style={{
+                  gridColumn: 'span 2',
+                  background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+                  border: hasVariants ? '2px solid var(--primary-brand)' : '1px solid #cbd5e1',
+                  borderRadius: '10px',
+                  padding: '16px',
+                  transition: 'all 0.2s ease',
+                  marginTop: '4px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', margin: 0, userSelect: 'none' }}>
+                      <input
+                        type="checkbox"
+                        checked={hasVariants}
+                        onChange={e => handleToggleHasVariants(e.target.checked)}
+                        style={{ width: '18px', height: '18px', accentColor: 'var(--primary-brand)', cursor: 'pointer' }}
+                      />
+                      <div>
+                        <strong style={{ fontSize: '0.95rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Tag size={16} style={{ color: 'var(--primary-brand)' }} />
+                          Enable Order Variants / Flavors / SKU Split
+                        </strong>
+                        <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block' }}>
+                          Divide total order weight ({orderQtyNum || 0} kg) between different SKU flavors/variants
+                        </span>
+                      </div>
+                    </label>
+
+                    {hasVariants && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {orderQtyNum > 0 && variants.length > 0 && (
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            style={{ padding: '4px 10px', fontSize: '0.75rem', fontWeight: '700' }}
+                            onClick={handleDivideEqually}
+                            title="Divide total order weight equally among variants"
+                          >
+                            <Sparkles size={12} style={{ marginRight: '4px' }} /> Divide Weight Equally
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          style={{ padding: '4px 10px', fontSize: '0.75rem', background: '#047857', borderColor: '#047857', fontWeight: '700' }}
+                          onClick={handleAddVariantRow}
+                        >
+                          <Plus size={12} style={{ marginRight: '2px' }} /> Add Variant Row
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {hasVariants && (
+                    <div style={{ marginTop: '14px' }}>
+                      {/* Allocation Summary Bar */}
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justify: 'space-between',
+                        padding: '8px 12px',
+                        borderRadius: '6px',
+                        fontSize: '0.8rem',
+                        fontWeight: '700',
+                        marginBottom: '12px',
+                        background: Math.abs(allocationDiff) < 0.1 && orderQtyNum > 0 ? '#f0fdf4' : allocationDiff > 0.1 ? '#fef2f2' : '#fffbe6',
+                        border: '1px solid',
+                        borderColor: Math.abs(allocationDiff) < 0.1 && orderQtyNum > 0 ? '#86efac' : allocationDiff > 0.1 ? '#fecaca' : '#ffe58f',
+                        color: Math.abs(allocationDiff) < 0.1 && orderQtyNum > 0 ? '#047857' : allocationDiff > 0.1 ? '#dc2626' : '#d97706'
+                      }}>
+                        <div>
+                          Allocated Weight: <strong>{totalAllocatedKg.toFixed(1)} kg</strong> / Total Order: <strong>{orderQtyNum.toFixed(1)} kg</strong>
+                        </div>
+                        <div>
+                          {Math.abs(allocationDiff) < 0.1 && orderQtyNum > 0 ? (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <CheckCircle2 size={14} /> 100% Order Weight Allocated
+                            </span>
+                          ) : allocationDiff > 0.1 ? (
+                            <span>⚠️ Over-allocated by {allocationDiff.toFixed(1)} kg</span>
+                          ) : (
+                            <span>⏳ Remaining to allocate: {(orderQtyNum - totalAllocatedKg).toFixed(1)} kg</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Variants Table */}
+                      <div style={{ overflowX: 'auto' }}>
+                        <table className="data-table" style={{ width: '100%', fontSize: '0.82rem', margin: 0 }}>
+                          <thead>
+                            <tr style={{ background: '#cbd5e1' }}>
+                              <th style={{ width: '40px', textTransform: 'uppercase' }}>#</th>
+                              <th style={{ textTransform: 'uppercase' }}>Variant Name / Flavor / SKU *</th>
+                              <th style={{ width: '150px', textTransform: 'uppercase' }}>Allocated Qty (kg) *</th>
+                              <th style={{ textTransform: 'uppercase' }}>Notes / Cylinder Ref (Optional)</th>
+                              <th style={{ width: '45px' }}></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {variants.map((v, idx) => (
+                              <tr key={v.id}>
+                                <td style={{ textAlign: 'center', fontWeight: '700', color: '#64748b' }}>{idx + 1}</td>
+                                <td>
+                                  <input
+                                    type="text"
+                                    className="form-control"
+                                    style={{ padding: '6px 10px', fontSize: '0.85rem' }}
+                                    placeholder="e.g. Chocolate / Truffle Milk Outer"
+                                    value={v.variantName}
+                                    onChange={e => handleVariantFieldChange(v.id, 'variantName', e.target.value)}
+                                  />
+                                </td>
+                                <td>
+                                  <input
+                                    type="number"
+                                    className="form-control"
+                                    style={{ padding: '6px 10px', fontSize: '0.85rem', fontWeight: '700' }}
+                                    placeholder="e.g. 100"
+                                    value={v.allocatedQtyKg}
+                                    onChange={e => handleVariantFieldChange(v.id, 'allocatedQtyKg', e.target.value)}
+                                  />
+                                </td>
+                                <td>
+                                  <input
+                                    type="text"
+                                    className="form-control"
+                                    style={{ padding: '6px 10px', fontSize: '0.82rem' }}
+                                    placeholder="e.g. Cylinder Set #CYL-101"
+                                    value={v.notes}
+                                    onChange={e => handleVariantFieldChange(v.id, 'notes', e.target.value)}
+                                  />
+                                </td>
+                                <td style={{ textAlign: 'center' }}>
+                                  <button
+                                    type="button"
+                                    className="btn-icon"
+                                    style={{ color: '#dc2626', padding: '4px' }}
+                                    onClick={() => handleRemoveVariantRow(v.id)}
+                                    title="Remove variant"
+                                  >
+                                    <Trash2 size={15} />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             <div className="form-group" style={{ gridColumn: 'span 2' }}>
               <label style={{ fontWeight: '700', color: '#0f172a' }}>Comments for the Order (Production / Special Instructions)</label>

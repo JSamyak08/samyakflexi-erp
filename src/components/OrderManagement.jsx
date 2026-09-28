@@ -1329,6 +1329,11 @@ export default function OrderManagement({
                                 NEARING DEADLINE ({statusInfo.daysRemaining === 0 ? 'TODAY' : `${statusInfo.daysRemaining}D LEFT`})
                               </span>
                             )}
+                            {(order.hasVariants || (Array.isArray(order.variants) && order.variants.length > 0)) && (
+                              <span className="badge-variant-tag" style={{ background: '#f3e8ff', color: '#7e22ce', border: '1px solid #d8b4fe', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: '800', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                🎨 {order.variants?.length || 0} Variants
+                              </span>
+                            )}
                           </div>
                           
                           <div style={{ display: 'flex', gap: '14px', fontSize: '0.8rem', color: 'var(--text-secondary)', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1535,6 +1540,48 @@ export default function OrderManagement({
                           </div>
                         ) : (
                           <>
+                            {(order.hasVariants || (Array.isArray(order.variants) && order.variants.length > 0)) && (
+                              <div style={{ marginBottom: '18px', background: '#faf5ff', padding: '14px 18px', borderRadius: '10px', border: '1px solid #e9d5ff' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                                  <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: '800', color: '#6b21a8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    🎨 ORDER VARIANTS / FLAVORS BREAKDOWN (Total Order Weight: {(order.orderQtyKg || 0).toLocaleString()} kg)
+                                  </h4>
+                                  <span style={{ fontSize: '0.78rem', fontWeight: '700', color: '#7e22ce', background: '#f3e8ff', padding: '2px 8px', borderRadius: '4px' }}>
+                                    {order.variants.length} Variants Defined
+                                  </span>
+                                </div>
+                                <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid #e9d5ff', background: '#ffffff' }}>
+                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                                    <thead>
+                                      <tr style={{ background: '#f3e8ff', color: '#581c87', textAlign: 'left' }}>
+                                        <th style={{ padding: '8px 12px', width: '40px' }}>#</th>
+                                        <th style={{ padding: '8px 12px' }}>Variant / Flavor SKU Name</th>
+                                        <th style={{ padding: '8px 12px', textAlign: 'right' }}>Allocated Weight (Kg)</th>
+                                        <th style={{ padding: '8px 12px', textAlign: 'right' }}>Weight Share</th>
+                                        <th style={{ padding: '8px 12px' }}>Notes / Remarks</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {order.variants.map((v, idx) => {
+                                        const qty = parseFloat(v.allocatedQtyKg || 0);
+                                        const total = parseFloat(order.orderQtyKg || 1);
+                                        const pct = total > 0 ? ((qty / total) * 100).toFixed(1) : '0.0';
+                                        return (
+                                          <tr key={v.id || idx} style={{ borderBottom: '1px solid #f3e8ff' }}>
+                                            <td style={{ padding: '8px 12px', fontWeight: '700', color: '#7e22ce' }}>{idx + 1}</td>
+                                            <td style={{ padding: '8px 12px', fontWeight: '800', color: '#0f172a' }}>{v.variantName || '—'}</td>
+                                            <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '800', color: '#6b21a8' }}>{qty.toLocaleString()} kg</td>
+                                            <td style={{ padding: '8px 12px', textAlign: 'right', color: '#4c1d95', fontWeight: '700' }}>{pct}%</td>
+                                            <td style={{ padding: '8px 12px', color: '#64748b' }}>{v.notes || '—'}</td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            )}
+
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <Layers size={16} style={{ color: 'var(--primary-brand)' }} />

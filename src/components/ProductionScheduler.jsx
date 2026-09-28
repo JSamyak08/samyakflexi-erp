@@ -1593,6 +1593,11 @@ export default function ProductionScheduler({
                               READY
                             </span>
                           )}
+                          {(order.hasVariants || (Array.isArray(order.variants) && order.variants.length > 0)) && (
+                            <span className="badge" style={{ background: '#f3e8ff', color: '#7e22ce', border: '1px solid #d8b4fe', fontSize: '0.7rem', fontWeight: '900', letterSpacing: '0.5px' }}>
+                              🎨 {order.variants.length} VARIANTS
+                            </span>
+                          )}
                         </div>
 
                         <div style={{ fontSize: '1.05rem', fontWeight: '800', color: 'var(--text-primary)', marginTop: '2px' }}>
@@ -1601,6 +1606,11 @@ export default function ProductionScheduler({
                         <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
                           <Building2 size={13} /> {order.clientName || 'Direct Client'}
                         </div>
+                        {(order.hasVariants || (Array.isArray(order.variants) && order.variants.length > 0)) && (
+                          <div style={{ marginTop: '6px', fontSize: '0.78rem', background: '#faf5ff', color: '#6b21a8', border: '1px solid #e9d5ff', borderRadius: '6px', padding: '4px 8px', fontWeight: '700' }}>
+                            🎨 <strong>Variants Breakdown:</strong> {order.variants.map(v => `${v.variantName} (${v.allocatedQtyKg}kg)`).join(' • ')}
+                          </div>
+                        )}
                         {(order.orderComments || order.comments || order.notes || order.jobDetails?.orderComments || order.jobDetails?.comments) && (
                           <div style={{ marginTop: '6px', fontSize: '0.78rem', background: '#fffbebf0', color: '#92400e', border: '1px solid #fde68a', borderRadius: '6px', padding: '4px 8px', fontWeight: '600' }}>
                             💬 <strong>Comment:</strong> {order.orderComments || order.comments || order.notes || order.jobDetails?.orderComments || order.jobDetails?.comments}
@@ -2035,6 +2045,11 @@ export default function ProductionScheduler({
                       ⚡ ACTIVE PRINTING RUN
                     </span>
                   )}
+                  {(activeRunningJob.hasVariants || (Array.isArray(activeRunningJob.variants) && activeRunningJob.variants.length > 0)) && (
+                    <span className="badge" style={{ background: '#f3e8ff', color: '#7e22ce', border: '1px solid #d8b4fe', fontWeight: '900', fontSize: '0.8rem', padding: '4px 10px' }}>
+                      🎨 HAS {activeRunningJob.variants.length} VARIANTS
+                    </span>
+                  )}
                   <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: '700' }}>
                     Job Code: <strong>{activeRunningJob.jobCode || activeRunningJob.id}</strong>
                   </span>
@@ -2150,6 +2165,34 @@ export default function ProductionScheduler({
                     {activeRunningJob.structure}
                   </strong>
                 </div>
+
+                {/* Variants Breakdown (If Enabled) */}
+                {(activeRunningJob.hasVariants || (Array.isArray(activeRunningJob.variants) && activeRunningJob.variants.length > 0)) && (
+                  <div style={{ marginTop: '14px', background: '#faf5ff', padding: '12px 14px', borderRadius: '8px', border: '1px solid #e9d5ff' }}>
+                    <span style={{ fontSize: '0.75rem', color: '#6b21a8', fontWeight: '800', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                      🎨 Job Variants & Flavors Distribution:
+                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {activeRunningJob.variants.map((v, idx) => {
+                        const qty = parseFloat(v.allocatedQtyKg || 0);
+                        const total = parseFloat(activeRunningJob.printQtyKg || activeRunningJob.orderQtyKg || 1);
+                        const pct = total > 0 ? ((qty / total) * 100).toFixed(1) : '0.0';
+                        return (
+                          <div key={v.id || idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#ffffff', padding: '6px 10px', borderRadius: '6px', border: '1px solid #f3e8ff', fontSize: '0.82rem' }}>
+                            <div>
+                              <strong style={{ color: '#1e293b' }}>{v.variantName}</strong>
+                              {v.notes && <span style={{ fontSize: '0.74rem', color: '#64748b', marginLeft: '6px' }}>({v.notes})</span>}
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <span style={{ fontWeight: '800', color: '#7e22ce' }}>{qty.toLocaleString()} kg</span>
+                              <span style={{ fontSize: '0.74rem', color: '#6b21a8', marginLeft: '6px', background: '#f3e8ff', padding: '1px 6px', borderRadius: '4px' }}>{pct}%</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Comments for the Order / Special Production Instructions */}
                 {(activeRunningJob.orderComments || activeRunningJob.comments || activeRunningJob.notes || activeRunningJob.jobDetails?.orderComments || activeRunningJob.jobDetails?.comments) && (

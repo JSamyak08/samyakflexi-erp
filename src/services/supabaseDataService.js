@@ -93,12 +93,20 @@ export async function fetchOrders() {
         colorsCount: jd.colorsCount || o.colors_count || 6,
         poIssued: jd.poIssued || false,
         poNumber: jd.poNumber || '',
+        hasVariants: Boolean(jd.hasVariants || o.hasVariants || (Array.isArray(jd.variants || o.variants) && (jd.variants || o.variants).length > 0)),
+        variants: Array.isArray(jd.variants) ? jd.variants : (Array.isArray(o.variants) ? o.variants : []),
         orderComments: commentsVal,
         comments: commentsVal,
         notes: commentsVal,
         layers: layerList,
         calculationDetails: jd.calculationDetails || null,
-        jobDetails: { ...jd, orderComments: commentsVal, comments: commentsVal },
+        jobDetails: { 
+          ...jd, 
+          hasVariants: Boolean(jd.hasVariants || o.hasVariants || (Array.isArray(jd.variants || o.variants) && (jd.variants || o.variants).length > 0)),
+          variants: Array.isArray(jd.variants) ? jd.variants : (Array.isArray(o.variants) ? o.variants : []),
+          orderComments: commentsVal, 
+          comments: commentsVal 
+        },
         materialRequirements: matReqs,
         rawMaterialRequirements: matReqs
       };
@@ -120,9 +128,13 @@ export async function saveOrderToSupabase(order) {
   const targetDateVal = parsedTarget ? parsedTarget.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
 
   const commentsVal = (order.orderComments || order.comments || order.notes || order.jobDetails?.orderComments || order.jobDetails?.comments || '').trim();
+  const hasVariants = Boolean(order.hasVariants || order.jobDetails?.hasVariants || (Array.isArray(order.variants || order.jobDetails?.variants) && (order.variants || order.jobDetails?.variants).length > 0));
+  const variants = Array.isArray(order.variants) ? order.variants : (Array.isArray(order.jobDetails?.variants) ? order.jobDetails?.variants : []);
 
   const jobDetails = {
     ...(order.jobDetails || {}),
+    hasVariants,
+    variants,
     structure: order.structure || order.jobDetails?.structure || '—',
     printWidthMm: order.printWidthMm || order.jobDetails?.printWidthMm || null,
     repeatLengthMm: order.repeatLengthMm || order.jobDetails?.repeatLengthMm || null,

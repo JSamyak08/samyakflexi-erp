@@ -771,6 +771,8 @@ export default function ProductionRecordManagement({
       filledBy: `${currentUser.name} (${currentUser.role})`,
       approvedBy: "",
       approvalDate: "",
+      hasVariants: Boolean(selectedOrder?.hasVariants || selectedOrder?.variants?.length),
+      variants: selectedOrder?.variants || [],
       notes: recordNotes
     };
 
@@ -1166,6 +1168,11 @@ export default function ProductionRecordManagement({
                         <td>
                           <div style={{ fontWeight: '700', color: '#0f172a' }}>{ord.jobName}</div>
                           <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{ord.clientName}</div>
+                          {(ord.hasVariants || (Array.isArray(ord.variants) && ord.variants.length > 0)) && (
+                            <span className="badge" style={{ background: '#f3e8ff', color: '#7e22ce', border: '1px solid #d8b4fe', fontSize: '0.7rem', fontWeight: '800', marginTop: '4px', display: 'inline-block' }}>
+                              🎨 {ord.variants.length} Variants ({ord.variants.map(v => v.variantName).join(', ')})
+                            </span>
+                          )}
                         </td>
                         <td style={{ fontSize: '0.8rem', color: '#334155' }}>
                           <code>{getSubstrateStructure(ord)}</code>
@@ -1318,6 +1325,11 @@ export default function ProductionRecordManagement({
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                             {rec.clientName} {jobMasterDisplay ? `• ${jobMasterDisplay}` : ''}
                           </div>
+                          {((linkedOrder?.hasVariants || (Array.isArray(linkedOrder?.variants) && linkedOrder.variants.length > 0)) || (rec.hasVariants || (Array.isArray(rec.variants) && rec.variants.length > 0))) && (
+                            <span className="badge" style={{ background: '#f3e8ff', color: '#7e22ce', border: '1px solid #d8b4fe', fontSize: '0.7rem', fontWeight: '800', marginTop: '3px', display: 'inline-block' }}>
+                              🎨 {(rec.variants || linkedOrder?.variants || []).length} Variants
+                            </span>
+                          )}
                         </td>
                         <td>{rec.dateFilled}</td>
                         <td style={{ fontWeight: '600' }}>{actualQty > 0 ? actualQty.toLocaleString() : 0} kg</td>
@@ -1497,12 +1509,38 @@ export default function ProductionRecordManagement({
             const isInkGsmHigher = operatorInkGsm > 0 && actualCalculatedInkGsm > operatorInkGsm;
 
             return (
-              <div style={{ margin: '16px 0 24px', padding: '20px', background: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
-                  <div>
-                    <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '900', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <Scale size={20} style={{ color: '#0284c7' }} /> Technical Substrate & Ink GSM Production Analysis
+              <>
+                {((selectedRecord.hasVariants || (Array.isArray(selectedRecord.variants) && selectedRecord.variants.length > 0)) || (linkedOrder?.hasVariants || (Array.isArray(linkedOrder?.variants) && linkedOrder.variants.length > 0))) && (
+                  <div style={{ margin: '16px 0', padding: '16px 20px', background: '#faf5ff', border: '1.5px solid #e9d5ff', borderRadius: '12px' }}>
+                    <h4 style={{ margin: '0 0 10px 0', fontSize: '1rem', fontWeight: '900', color: '#6b21a8', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      🎨 ORDERED VARIANTS & FLAVORS BREAKDOWN (Total Order: {(linkedOrder?.orderQtyKg || selectedRecord?.totalProductionQtyKg || 0).toLocaleString()} kg)
                     </h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
+                      {(selectedRecord.variants || linkedOrder?.variants || []).map((v, idx) => {
+                        const qty = parseFloat(v.allocatedQtyKg || 0);
+                        const total = parseFloat(linkedOrder?.orderQtyKg || selectedRecord?.totalProductionQtyKg || 1);
+                        const pct = total > 0 ? ((qty / total) * 100).toFixed(1) : '0.0';
+                        return (
+                          <div key={v.id || idx} style={{ background: '#ffffff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #f3e8ff' }}>
+                            <div style={{ fontWeight: '800', color: '#1e293b', fontSize: '0.9rem' }}>{v.variantName}</div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                              <span style={{ fontWeight: '900', color: '#7e22ce', fontSize: '1rem' }}>{qty.toLocaleString()} kg</span>
+                              <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#6b21a8', background: '#f3e8ff', padding: '2px 6px', borderRadius: '4px' }}>{pct}% share</span>
+                            </div>
+                            {v.notes && <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px' }}>Note: {v.notes}</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ margin: '16px 0 24px', padding: '20px', background: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+                    <div>
+                      <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '900', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Scale size={20} style={{ color: '#0284c7' }} /> Technical Substrate & Ink GSM Production Analysis
+                      </h4>
                     <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
                       Input film roll consumption, excess film trimming wastage, and dry ink solids gain calculation.
                     </span>
@@ -1676,7 +1714,8 @@ export default function ProductionRecordManagement({
                   </div>
                 )}
               </div>
-            );
+            </>
+          );
           })()}
 
           {/* Ingredient Materials Breakdown Table */}
@@ -2398,6 +2437,24 @@ export default function ProductionRecordManagement({
               <input type="text" className="form-control" value={`${currentUser.name} (${currentUser.role})`} readOnly />
             </div>
           </div>
+
+          {/* Job Variants Banner (If Job Has Variants) */}
+          {(selectedOrder?.hasVariants || (Array.isArray(selectedOrder?.variants) && selectedOrder.variants.length > 0)) && (
+            <div style={{ marginBottom: '20px', padding: '14px 18px', background: '#faf5ff', border: '1.5px solid #e9d5ff', borderRadius: '10px' }}>
+              <h5 style={{ margin: '0 0 8px 0', fontSize: '0.9rem', fontWeight: '800', color: '#6b21a8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                🎨 JOB VARIANTS & FLAVORS ORDERED (Total Order Weight: {(selectedOrder.orderQtyKg || 0).toLocaleString()} kg)
+              </h5>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                {selectedOrder.variants.map((v, idx) => (
+                  <div key={v.id || idx} style={{ background: '#ffffff', border: '1px solid #d8b4fe', padding: '6px 12px', borderRadius: '6px', fontSize: '0.82rem' }}>
+                    <strong style={{ color: '#1e293b' }}>{v.variantName}: </strong>
+                    <span style={{ color: '#7e22ce', fontWeight: '800' }}>{parseFloat(v.allocatedQtyKg || 0).toLocaleString()} kg</span>
+                    {v.notes && <span style={{ color: '#64748b', fontSize: '0.75rem', marginLeft: '6px' }}>({v.notes})</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Ingredient Materials Form Table */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
