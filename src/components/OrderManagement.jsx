@@ -21,7 +21,8 @@ import {
   CheckSquare,
   Square,
   Box,
-  ArrowUpRight
+  ArrowUpRight,
+  Pencil
 } from 'lucide-react';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
 import TablePagination, { usePagination } from './TablePagination';
@@ -267,7 +268,95 @@ export default function OrderManagement({
     }
   };
 
-  const isAdmin = currentUser?.role === 'Admin';
+  const isAdmin = currentUser?.role === 'Admin' || 
+                  currentUser?.role?.toLowerCase() === 'admin' || 
+                  currentUser?.role?.toLowerCase() === 'executive management' || 
+                  currentUser?.role?.toLowerCase() === 'system admin';
+
+  // Admin Edit Order Modal States
+  const [editingOrder, setEditingOrder] = useState(null);
+  const [editJobName, setEditJobName] = useState('');
+  const [editClientName, setEditClientName] = useState('');
+  const [editOrderType, setEditOrderType] = useState('Reel Form');
+  const [editOrderQtyKg, setEditOrderQtyKg] = useState('');
+  const [editTargetDeliveryDate, setEditTargetDeliveryDate] = useState('');
+  const [editStatus, setEditStatus] = useState('Scheduled');
+  const [editStructure, setEditStructure] = useState('');
+  const [editMetallocenePct, setEditMetallocenePct] = useState('');
+  const [editOrderComments, setEditOrderComments] = useState('');
+  const [editPoNumber, setEditPoNumber] = useState('');
+  const [editVendorName, setEditVendorName] = useState('');
+
+  const handleOpenEditOrderModal = (order, e) => {
+    if (e) e.stopPropagation();
+    if (!isAdmin) {
+      alert("Only users with Admin role have permission to edit order details!");
+      return;
+    }
+
+    setEditingOrder(order);
+    setEditJobName(order.jobName || '');
+    setEditClientName(order.clientName || '');
+    setEditOrderType(order.orderType || order.materialFormat || 'Reel Form');
+    setEditOrderQtyKg(order.orderQtyKg ?? '');
+    setEditTargetDeliveryDate(order.targetDeliveryDate || order.deliveryDate || '');
+    setEditStatus(order.status || 'Scheduled');
+    setEditStructure(order.structure || getSubstrateStructure(order) || '');
+    setEditMetallocenePct(order.metallocenePct || order.metallocene_pct || '');
+    setEditOrderComments(order.orderComments || order.comments || order.notes || order.jobDetails?.orderComments || order.jobDetails?.comments || '');
+    setEditPoNumber(order.poNumber || '');
+    setEditVendorName(order.vendorName || '');
+  };
+
+  const handleSaveEditedOrder = async (e) => {
+    e.preventDefault();
+    if (!editingOrder) return;
+
+    if (!editJobName.trim() || !editClientName.trim()) {
+      alert("Job Name and Client Name are required.");
+      return;
+    }
+
+    const updatedOrder = {
+      ...editingOrder,
+      jobName: editJobName.trim(),
+      clientName: editClientName.trim(),
+      orderType: editOrderType,
+      materialFormat: editOrderType,
+      orderQtyKg: parseFloat(editOrderQtyKg) || 0,
+      targetDeliveryDate: editTargetDeliveryDate,
+      deliveryDate: editTargetDeliveryDate,
+      status: editStatus,
+      structure: editStructure.trim(),
+      metallocenePct: editMetallocenePct.trim(),
+      metallocene_pct: editMetallocenePct.trim(),
+      orderComments: editOrderComments.trim(),
+      comments: editOrderComments.trim(),
+      notes: editOrderComments.trim(),
+      poNumber: editPoNumber.trim(),
+      vendorName: editVendorName.trim(),
+      jobDetails: {
+        ...(editingOrder.jobDetails || {}),
+        orderComments: editOrderComments.trim(),
+        comments: editOrderComments.trim(),
+        structure: editStructure.trim(),
+        metallocenePct: editMetallocenePct.trim()
+      }
+    };
+
+    try {
+      if (onUpdateOrder) {
+        await onUpdateOrder(updatedOrder);
+      } else {
+        await saveOrderToSupabase(updatedOrder);
+      }
+      alert(`Order "${updatedOrder.id} - ${updatedOrder.jobName}" updated and saved to database successfully!`);
+      setEditingOrder(null);
+    } catch (err) {
+      console.error("Error saving edited order:", err);
+      alert(`Failed to save order updates to database: ${err.message || err}`);
+    }
+  };
   
   // Navigation SubTab: 'orders' | 'requirements'
   const [activeSubTab, setActiveSubTab] = useState(urlParams?.subtab === 'requirements' ? 'requirements' : 'orders');
@@ -1425,6 +1514,15 @@ export default function OrderManagement({
                               <>
                                 <button 
                                   className="btn-secondary" 
+                                  style={{ padding: '6px 12px', fontSize: '0.78rem', color: '#0284c7', borderColor: '#bae6fd', background: '#f0f9ff', borderRadius: '6px', fontWeight: '600', whiteSpace: 'nowrap' }}
+                                  onClick={(e) => handleOpenEditOrderModal(order, e)}
+                                  title="Edit Order Details (Admin Only)"
+                                >
+                                  <Pencil size={13} /> Edit
+                                </button>
+
+                                <button 
+                                  className="btn-secondary" 
                                   style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '6px', fontWeight: '600', whiteSpace: 'nowrap' }}
                                   onClick={(e) => handleToggleHoldOrder(order, e)}
                                   title={order.status === 'On Hold' ? 'Resume Order' : 'Put Order On Hold'}
@@ -2415,6 +2513,175 @@ export default function OrderManagement({
                   <button type="button" className="btn-secondary" onClick={() => setIsPoModalOpen(false)}>Cancel</button>
                   <button type="submit" className="btn-primary">
                     <CheckCircle2 size={16} /> Generate & Print Vendor PO PDF
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: ADMIN EDIT ORDER DETAILS */}
+        {editingOrder && (
+          <div className="modal-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}>
+            <div className="modal-content glass-panel" style={{ maxWidth: '640px', width: '100%', padding: '24px', borderRadius: '12px', maxHeight: '90vh', overflowY: 'auto' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ background: '#e0f2fe', color: '#0284c7', padding: '8px', borderRadius: '8px' }}>
+                    <Pencil size={20} />
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', color: 'var(--text-primary)' }}>
+                      Edit Order Details ({editingOrder.id})
+                    </h3>
+                    <span style={{ fontSize: '0.78rem', color: '#0284c7', fontWeight: '600' }}>
+                      🔒 Admin Security Granted • Direct Database Upsert
+                    </span>
+                  </div>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => setEditingOrder(null)} 
+                  style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', color: '#64748b', fontWeight: 'bold' }}
+                >
+                  ×
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveEditedOrder} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <div className="form-group">
+                    <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>Job Name *</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      value={editJobName} 
+                      onChange={e => setEditJobName(e.target.value)} 
+                      required 
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>Client Name *</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      value={editClientName} 
+                      onChange={e => setEditClientName(e.target.value)} 
+                      required 
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>Supply Form / Order Type</label>
+                    <select 
+                      className="form-control" 
+                      value={editOrderType} 
+                      onChange={e => setEditOrderType(e.target.value)}
+                    >
+                      <option value="Reel Form">Reel Form (Rolls)</option>
+                      <option value="Pouching Form">Pouching Form (Pre-made Pouches)</option>
+                      <option value="Rotogravure Cylinder">Rotogravure Cylinder Set</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>Order Quantity (Kg / Sets)</label>
+                    <input 
+                      type="number" 
+                      step="any" 
+                      className="form-control" 
+                      value={editOrderQtyKg} 
+                      onChange={e => setEditOrderQtyKg(e.target.value)} 
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>Target Delivery Date</label>
+                    <input 
+                      type="date" 
+                      className="form-control" 
+                      value={editTargetDeliveryDate} 
+                      onChange={e => setEditTargetDeliveryDate(e.target.value)} 
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>Order Status</label>
+                    <select 
+                      className="form-control" 
+                      value={editStatus} 
+                      onChange={e => setEditStatus(e.target.value)}
+                    >
+                      <option value="Scheduled">Scheduled</option>
+                      <option value="In Production">In Production</option>
+                      <option value="On Hold">On Hold</option>
+                      <option value="Completed">Completed</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>Substrate / Film Structure</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="e.g. PET 12µ / PE 50µ"
+                      value={editStructure} 
+                      onChange={e => setEditStructure(e.target.value)} 
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>Metallocene Percentage (%)</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="e.g. 5%"
+                      value={editMetallocenePct} 
+                      onChange={e => setEditMetallocenePct(e.target.value)} 
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>Vendor PO Ref #</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="PO-2026-..."
+                      value={editPoNumber} 
+                      onChange={e => setEditPoNumber(e.target.value)} 
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>Preferred Material Vendor</label>
+                    <select 
+                      className="form-control" 
+                      value={editVendorName} 
+                      onChange={e => setEditVendorName(e.target.value)}
+                    >
+                      <option value="">-- None Selected --</option>
+                      {(vendors || []).map(v => (
+                        <option key={v.id} value={v.companyName}>{v.companyName}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>Order Comments & Special Instructions</label>
+                  <textarea 
+                    className="form-control" 
+                    rows="3" 
+                    placeholder="Enter production notes, client preferences or job instructions..."
+                    value={editOrderComments} 
+                    onChange={e => setEditOrderComments(e.target.value)} 
+                  />
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
+                  <button type="button" className="btn-secondary" onClick={() => setEditingOrder(null)}>Cancel</button>
+                  <button type="submit" className="btn-primary" style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                    <CheckCircle2 size={16} /> Save Order Changes & Sync DB
                   </button>
                 </div>
               </form>
