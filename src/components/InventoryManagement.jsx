@@ -7375,56 +7375,140 @@ export default function InventoryManagement({
                                   </button>
                                 </div>
                               ) : (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  <code style={{ fontSize: '0.78rem', background: '#f1f5f9', color: '#0f172a', padding: '2px 6px', borderRadius: '4px', border: '1px solid #cbd5e1', fontWeight: '600' }}>
-                                    {tx.barcode}
-                                  </code>
-                                  <button 
-                                    type="button" 
-                                    style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
-                                    onClick={() => {
-                                      setEditingTxId(tx.txId);
-                                      setEditingBarcodeVal(tx.barcode);
-                                    }}
-                                    title="Click to edit/update barcode string"
-                                  >
-                                    <Edit3 size={13} />
-                                  </button>
-                                  {tx.barcode && (
-                                    <button 
-                                      type="button" 
-                                      style={{ background: 'none', border: 'none', color: '#059669', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
-                                      onClick={() => {
-                                         const hasNumericSpecs = parseFloat(item.micron) > 0 && parseFloat(item.widthMm) > 0 && item.micron !== '-' && item.widthMm !== '-';
-                                         const isFilm = (item.category === 'Film Substrates' || item.category === 'Film') && hasNumericSpecs;
-                                         const rateVal = Number(tx.ratePerKg || tx.unitPrice || item.unitPrice || item.purchaseRatePerKg || 0);
-                                         const batchVal = tx.batchNo || (tx.notes?.includes('Batch:') ? tx.notes.split('Batch:')[1].split('|')[0].replace(/[\[\]]/g, '').trim() : (tx.barcode || item.lastBatch || '-'));
-                                         const invoiceVal = tx.subParty?.includes('Inv:') ? tx.subParty.replace('Inv:', '').trim() : (tx.invoiceNo || '');
-                                         setSelectedRollForBarcodeModal({
-                                           barcodeId: tx.barcode,
-                                           rollType: isFilm ? 'RAW_MATERIAL' : 'CONSUMABLE_ITEM',
-                                           itemName: item.itemName || (isFilm ? `${item.filmType} Film (${item.micron}µ x ${item.widthMm}mm)` : `${item.category || 'Stock Item'}`),
-                                           category: item.category || (isFilm ? 'Film Substrates' : 'General Store'),
-                                           unit: item.unit || (isFilm ? 'Kg' : 'Kg'),
-                                           micron: isFilm ? (parseFloat(item.micron) || 0) : '-',
-                                           widthMm: isFilm ? (parseFloat(item.widthMm) || 0) : '-',
-                                           netWeightKg: tx.inwardQtyKg || tx.outwardQtyKg || 0,
-                                           vendorName: tx.partyName || item.lastVendor || 'Company Stock',
-                                           batchNo: batchVal,
-                                           invoiceNo: invoiceVal,
-                                           purchaseRatePerKg: rateVal,
-                                           itemRemarks: tx.itemRemarks || tx.remarks || tx.notes || '',
-                                           remarks: tx.itemRemarks || tx.remarks || tx.notes || '',
-                                           notes: tx.itemRemarks || tx.remarks || tx.notes || '',
-                                           stationId: 'SCALE_1_INWARD'
-                                         });
-                                       }}
-                                      title="Print Barcode Sticker"
-                                    >
-                                      <Printer size={13} />
-                                    </button>
-                                  )}
-                                </div>
+                                (() => {
+                                  const rawBarcodeStr = (tx.barcode || '').trim();
+                                  const barcodeTokens = rawBarcodeStr
+                                    ? rawBarcodeStr.split(/[,;\n]+/).map(b => b.trim()).filter(Boolean)
+                                    : [];
+
+                                  if (barcodeTokens.length === 0) {
+                                    return <span style={{ color: 'var(--text-muted)' }}>—</span>;
+                                  }
+
+                                  const hasNumericSpecs = parseFloat(item.micron) > 0 && parseFloat(item.widthMm) > 0 && item.micron !== '-' && item.widthMm !== '-';
+                                  const isFilm = (item.category === 'Film Substrates' || item.category === 'Film') && hasNumericSpecs;
+                                  const rateVal = Number(tx.ratePerKg || tx.unitPrice || item.unitPrice || item.purchaseRatePerKg || 0);
+                                  const invoiceVal = tx.subParty?.includes('Inv:') ? tx.subParty.replace('Inv:', '').trim() : (tx.invoiceNo || '');
+                                  const totalQty = tx.inwardQtyKg || tx.outwardQtyKg || 0;
+                                  const perUnitWeight = barcodeTokens.length > 0 ? Number((totalQty / barcodeTokens.length).toFixed(2)) : totalQty;
+
+                                  const buildRollObjForBarcode = (code, index) => {
+                                    const matchedRoll = (inventoryRolls || []).find(r => 
+                                      (r.barcodeId && String(r.barcodeId).trim().toLowerCase() === String(code).trim().toLowerCase()) ||
+                                      (r.id && String(r.id).trim().toLowerCase() === String(code).trim().toLowerCase())
+                                    );
+                                    if (matchedRoll) return matchedRoll;
+
+                                    const batchVal = tx.batchNo || (tx.notes?.includes('Batch:') ? tx.notes.split('Batch:')[1].split('|')[0].replace(/[\[\]]/g, '').trim() : (code || item.lastBatch || '-'));
+
+                                    return {
+                                      id: code,
+                                      barcodeId: code,
+                                      grnNo: tx.refNo || '',
+                                      unitNo: index + 1,
+                                      totalUnits: barcodeTokens.length,
+                                      rollType: isFilm ? 'RAW_MATERIAL' : 'CONSUMABLE_ITEM',
+                                      itemName: item.itemName || (isFilm ? `${item.filmType} Film (${item.micron}µ x ${item.widthMm}mm)` : `${item.category || 'Stock Item'}`),
+                                      category: item.category || (isFilm ? 'Film Substrates' : 'General Store'),
+                                      unit: item.unit || 'Kg',
+                                      micron: isFilm ? (parseFloat(item.micron) || 0) : '-',
+                                      widthMm: isFilm ? (parseFloat(item.widthMm) || 0) : '-',
+                                      netWeightKg: perUnitWeight,
+                                      availableWeightKg: perUnitWeight,
+                                      vendorName: tx.partyName || item.lastVendor || 'Company Stock',
+                                      batchNo: batchVal,
+                                      invoiceNo: invoiceVal,
+                                      purchaseRatePerKg: rateVal,
+                                      itemRemarks: tx.itemRemarks || tx.remarks || tx.notes || '',
+                                      remarks: tx.itemRemarks || tx.remarks || tx.notes || '',
+                                      notes: tx.itemRemarks || tx.remarks || tx.notes || '',
+                                      stationId: 'SCALE_1_INWARD'
+                                    };
+                                  };
+
+                                  const allRollObjs = barcodeTokens.map((bCode, idx) => buildRollObjForBarcode(bCode, idx));
+
+                                  return (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                      {/* List of independent barcodes */}
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                        {barcodeTokens.map((bCode, index) => {
+                                          const singleRollObj = allRollObjs[index];
+                                          return (
+                                            <div 
+                                              key={`${bCode}-${index}`}
+                                              style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '6px',
+                                                background: '#f8fafc',
+                                                border: '1px solid #cbd5e1',
+                                                borderRadius: '6px',
+                                                padding: '2px 8px',
+                                                width: 'fit-content'
+                                              }}
+                                            >
+                                              <code style={{ fontSize: '0.78rem', color: '#0f172a', fontWeight: '700' }}>
+                                                {bCode}
+                                              </code>
+                                              {singleRollObj?.netWeightKg > 0 && (
+                                                <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: '600' }}>
+                                                  ({singleRollObj.netWeightKg} {item.unit || 'kg'})
+                                                </span>
+                                              )}
+                                              <button 
+                                                type="button" 
+                                                style={{
+                                                  background: '#ecfdf5',
+                                                  border: '1px solid #a7f3d0',
+                                                  color: '#047857',
+                                                  borderRadius: '4px',
+                                                  padding: '2px 6px',
+                                                  cursor: 'pointer',
+                                                  fontSize: '0.72rem',
+                                                  fontWeight: '700',
+                                                  display: 'inline-flex',
+                                                  alignItems: 'center',
+                                                  gap: '3px'
+                                                }}
+                                                onClick={() => setSelectedRollForBarcodeModal(singleRollObj)}
+                                                title={`Print barcode sticker for ${bCode}`}
+                                              >
+                                                <Printer size={12} /> Print
+                                              </button>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+
+                                      {/* Action links */}
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                                        <button 
+                                          type="button" 
+                                          style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', padding: '0', display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '0.73rem', fontWeight: '600' }}
+                                          onClick={() => {
+                                            setEditingTxId(tx.txId);
+                                            setEditingBarcodeVal(tx.barcode);
+                                          }}
+                                          title="Click to edit/update barcode string"
+                                        >
+                                          <Edit3 size={12} /> Edit
+                                        </button>
+
+                                        {barcodeTokens.length > 1 && (
+                                          <button 
+                                            type="button" 
+                                            style={{ background: '#f0f9ff', border: '1px solid #bae6fd', color: '#0284c7', borderRadius: '4px', padding: '1px 6px', cursor: 'pointer', fontSize: '0.73rem', fontWeight: '700', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                                            onClick={() => setSelectedRollForBarcodeModal(allRollObjs)}
+                                            title="Print all barcode stickers for this inward"
+                                          >
+                                            <Printer size={12} /> Print All ({barcodeTokens.length})
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })()
                               )}
                             </td>
 
