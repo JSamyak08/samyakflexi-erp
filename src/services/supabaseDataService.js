@@ -853,18 +853,22 @@ export function sanitizeGRN(rawGRN) {
   }
 
   const metallocenePct = meta.metallocenePct || rawGRN.metallocene_pct || rawGRN.metallocenePct || '';
+  const statusVal = rawGRN.status || meta.status || 'Pending QC Approval';
+  const qcStatusVal = meta.qcStatus || rawGRN.qcStatus || rawGRN.qc_remarks || statusVal;
 
   return {
     ...rawGRN,
     ...meta,
     id: rawGRN.id || rawGRN.grn_number || rawGRN.grnNo,
     grnNo: rawGRN.grn_number || rawGRN.grnNo || rawGRN.id,
-    vendorId: rawGRN.vendor_id || rawGRN.vendorId || rawGRN.vendorName || 'General Vendor',
-    vendorName: rawGRN.vendorName || rawGRN.vendor_id || rawGRN.vendorId || 'General Vendor',
-    poNumber: rawGRN.po_number || rawGRN.poNumber || '',
-    invoiceNo: rawGRN.invoice_number || rawGRN.invoiceNo || '',
-    receivedDate: rawGRN.received_date || rawGRN.receivedDate || new Date().toISOString(),
+    vendorId: rawGRN.vendor_id || rawGRN.vendorId || rawGRN.vendorName || meta.vendorName || 'General Vendor',
+    vendorName: rawGRN.vendorName || meta.vendorName || rawGRN.vendor_id || rawGRN.vendorId || 'General Vendor',
+    poNumber: rawGRN.po_number || rawGRN.poNumber || meta.poNumber || '',
+    invoiceNo: rawGRN.invoice_number || rawGRN.invoiceNo || meta.invoiceNo || '',
+    receivedDate: rawGRN.received_date || rawGRN.receivedDate || meta.receivedDate || new Date().toISOString(),
     itemName: rawName || 'Item',
+    category: meta.category || rawGRN.category || 'Film Substrates',
+    stockItemId: meta.stockItemId || rawGRN.stockItemId || rawGRN.stock_item_id || '',
     filmType: meta.filmType || rawGRN.filmType || (rawName ? rawName.split(' ')[0] : 'PET'),
     micron: meta.micron !== undefined ? meta.micron : (rawGRN.micron !== undefined ? rawGRN.micron : '-'),
     widthMm: meta.widthMm !== undefined ? meta.widthMm : (rawGRN.widthMm !== undefined ? rawGRN.widthMm : '-'),
@@ -872,20 +876,30 @@ export function sanitizeGRN(rawGRN) {
     metallocene_pct: metallocenePct,
     rollsReceived: Number(meta.rollsReceived ?? rawGRN.rollsReceived ?? 0) || 0,
     purchaseRatePerKg: Number(meta.purchaseRatePerKg ?? meta.unitPrice ?? rawGRN.purchaseRatePerKg ?? rawGRN.unitPrice ?? 0) || 0,
+    purchaseRate: Number(meta.purchaseRatePerKg ?? meta.unitPrice ?? rawGRN.purchaseRatePerKg ?? rawGRN.unitPrice ?? 0) || 0,
     unitPrice: Number(meta.purchaseRatePerKg ?? meta.unitPrice ?? rawGRN.purchaseRatePerKg ?? rawGRN.unitPrice ?? 0) || 0,
     unit: meta.unit || rawGRN.unit || 'Kg',
     batchNo: meta.batchNo || rawGRN.batchNo || '',
-    status: rawGRN.status || 'Pending QC',
-    qcNotes: rawGRN.qc_remarks || rawGRN.qcNotes || '',
+    status: statusVal,
+    qcStatus: qcStatusVal,
+    qcNotes: rawGRN.qc_remarks || rawGRN.qcNotes || meta.qcNotes || '',
     inspectedBy: meta.inspectedBy || rawGRN.inspectedBy || '',
     storeManager: meta.storeManager || rawGRN.storeManager || '',
     receivedQtyKg: Number(rawGRN.received_qty_kg ?? rawGRN.receivedQtyKg ?? rawGRN.netWeightKg ?? 0) || 0,
     netWeightKg: Number(rawGRN.received_qty_kg ?? rawGRN.receivedQtyKg ?? rawGRN.netWeightKg ?? 0) || 0,
+    grossWeightKg: Number(meta.grossWeightKg ?? rawGRN.grossWeightKg ?? 0) || 0,
+    tareWeightKg: Number(meta.tareWeightKg ?? rawGRN.tareWeightKg ?? 0) || 0,
     packagingType: meta.packagingType || rawGRN.packagingType || 'Roll',
     itemsBreakdown: meta.itemsBreakdown || rawGRN.itemsBreakdown || [],
+    barcodes: meta.barcodes || rawGRN.barcodes || [],
+    barcodeId: meta.barcodeId || rawGRN.barcodeId || '',
+    freightAmount: Number(meta.freightAmount ?? rawGRN.freightAmount ?? 0) || 0,
+    transporterName: meta.transporterName || rawGRN.transporterName || 'Direct Dispatch / Self',
     itemRemarks: meta.itemRemarks || rawGRN.itemRemarks || rawGRN.remarks || meta.remarks || rawGRN.notes || '',
     remarks: meta.itemRemarks || rawGRN.itemRemarks || rawGRN.remarks || meta.remarks || rawGRN.notes || '',
-    notes: meta.itemRemarks || rawGRN.itemRemarks || rawGRN.remarks || meta.remarks || rawGRN.notes || ''
+    notes: meta.itemRemarks || rawGRN.itemRemarks || rawGRN.remarks || meta.remarks || rawGRN.notes || '',
+    location: meta.location || rawGRN.location || 'Store Bay',
+    storeLocation: meta.storeLocation || rawGRN.storeLocation || 'Store Bay'
   };
 }
 
@@ -917,6 +931,8 @@ export async function saveGRNToSupabase(grn) {
 
   // Pack extra GRN properties into metadata
   const meta = {
+    category: clean.category,
+    stockItemId: clean.stockItemId,
     filmType: clean.filmType,
     micron: clean.micron,
     widthMm: clean.widthMm,
@@ -931,8 +947,24 @@ export async function saveGRNToSupabase(grn) {
     storeManager: clean.storeManager,
     packagingType: clean.packagingType || 'Roll',
     itemsBreakdown: clean.itemsBreakdown || [],
+    barcodes: clean.barcodes || [],
+    barcodeId: clean.barcodeId || '',
+    grossWeightKg: clean.grossWeightKg || 0,
+    tareWeightKg: clean.tareWeightKg || 0,
+    freightAmount: clean.freightAmount || 0,
+    transporterName: clean.transporterName || '',
     itemRemarks: clean.itemRemarks || clean.remarks || clean.notes || '',
-    remarks: clean.itemRemarks || clean.remarks || clean.notes || ''
+    remarks: clean.itemRemarks || clean.remarks || clean.notes || '',
+    notes: clean.itemRemarks || clean.remarks || clean.notes || '',
+    status: clean.status,
+    qcStatus: clean.qcStatus || clean.status,
+    location: clean.location,
+    storeLocation: clean.storeLocation,
+    poNumber: clean.poNumber,
+    vendorName: clean.vendorName,
+    invoiceNo: clean.invoiceNo,
+    receivedDate: clean.receivedDate,
+    qcNotes: clean.qcNotes
   };
 
   const combinedItemName = `${itemNameVal} ||| ${JSON.stringify(meta)}`;
@@ -947,7 +979,7 @@ export async function saveGRNToSupabase(grn) {
     item_name: combinedItemName,
     metallocene_pct: clean.metallocenePct || null,
     received_qty_kg: weightVal,
-    status: clean.status || 'Pending QC',
+    status: clean.status || 'Pending QC Approval',
     qc_remarks: clean.qcNotes || ''
   };
 
