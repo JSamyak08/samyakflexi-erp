@@ -454,7 +454,7 @@ export default function InventoryManagement({
       qtyKg: qty,
       barcode: adjBarcode.trim() || generateBarcodeId('ADJ'),
       reason: adjReason.trim() || 'Physical Stock Audit Correction',
-      adjustedBy: 'Store Mgr Dilip Joshi'
+      adjustedBy: 'Store Manager'
     };
 
     const updated = [newAdj, ...stockLedgerAdjustments];
@@ -1304,7 +1304,7 @@ export default function InventoryManagement({
       ? formatFilmItemName(item.filmType, item.widthMm, item.micron, item.itemName, mPct)
       : (item.itemName ? item.itemName.replace(/µ/g, 'Micron') : `${item.category || 'Stock'} Item`);
     
-    setGrnSelectedStockItemId(item.id);
+    setGrnSelectedStockItemId(item.primaryId || item.id);
     setGrnItemName(title);
     setGrnItemSearchTerm(title);
     
@@ -1358,10 +1358,10 @@ export default function InventoryManagement({
     }
   };
 
-  const filteredStockItemsForGrn = (safeInventory || []).filter(item => {
+  const filteredStockItemsForGrn = (groupedInventory || []).filter(item => {
     const term = (grnItemSearchTerm || '').toLowerCase().trim();
     const title = (item.itemName || `${item.filmType || ''} ${item.micron || ''} ${item.widthMm || ''}`).toLowerCase();
-    const code = (item.itemCode || item.id || '').toLowerCase();
+    const code = (item.itemCode || item.primaryId || item.id || '').toLowerCase();
     const cat = (item.category || '').toLowerCase();
     
     if (!term) return true;
@@ -1602,7 +1602,8 @@ export default function InventoryManagement({
   const [recStatusFilter, setRecStatusFilter] = useState('ALL'); // 'ALL', 'DISCREPANCY', 'SHORTAGE', 'SURPLUS', 'MATCHED'
   const [recSubstrateFilter, setRecSubstrateFilter] = useState('ALL');
 
-  const isRecDue = isReconciliationDue("2026-07-24");
+  const lastRecDateStr = (stockLedgerAdjustments && stockLedgerAdjustments[0]?.date) || new Date().toISOString().split('T')[0];
+  const isRecDue = isReconciliationDue(lastRecDateStr);
 
   // Inward GRN Submit (Supports Films, Inks, Solvents, Adhesives, Blades, Spares, PPE)
   const handleSaveGRN = (e) => {
@@ -1671,46 +1672,39 @@ export default function InventoryManagement({
 
     const grnOverallRemark = (grnItemRemarks || '').trim();
 
-    // Ensure matching or creating an entry in central inventory list so its Stock Ledger can be clicked and viewed immediately even while Awaiting QC Approval!
-    let targetStockItemId = grnSelectedStockItemId;
-    const existingInvItem = (inventory || []).find(i => {
-      if (grnSelectedStockItemId && String(i.id) === String(grnSelectedStockItemId)) return true;
-      if (isFilm) {
-        return i.filmType === grnFilmType && Number(i.micron) === Number(grnMicron) && Number(i.widthMm) === Number(grnWidthMm);
-      }
-      return (i.itemName || '').toLowerCase() === itemName.toLowerCase();
-    });
+    // Always generate a NEW & UNIQUE Inventory Code (Lot ID) for each inward receipt
+    const newInvId = generateInventoryId(inventory);
+    const targetStockItemId = newInvId;
+    const masterId = grnSelectedStockItemId || newInvId;
 
-    if (existingInvItem) {
-      targetStockItemId = existingInvItem.id;
-    } else {
-      const newInvId = generateInventoryId(inventory);
-      targetStockItemId = newInvId;
-      const newInvItem = {
-        id: newInvId,
-        itemCode: newInvId,
-        itemName: itemName || (isFilm ? `${grnFilmType} (${grnMicron}µ x ${grnWidthMm}mm)` : `${grnCategory} Material`),
-        category: grnCategory || 'Film Substrates',
-        filmType: isFilm ? grnFilmType : grnCategory,
-        micron: isFilm ? (parseFloat(grnMicron) || 0) : '-',
-        widthMm: isFilm ? (parseFloat(grnWidthMm) || 0) : '-',
-        unit: isFilm ? 'Kg' : (isCylinderCategory ? 'Set' : grnUnit),
-        density: FILM_DENSITIES[grnFilmType] || 1.0,
-        availableQtyKg: isCylinderCategory ? totalNetQty : 0, // Auto-approved cylinders get stock immediately, others wait for QC
-        allocatedQtyKg: 0,
-        unitPrice: rateVal,
-        purchaseRatePerKg: rateVal,
-        purchaseValuation: isCylinderCategory ? Number((totalNetQty * rateVal).toFixed(2)) : 0,
-        location: isFilm ? "Bay A - Inward Dock" : "Consumables Store",
-        reorderLevelKg: 100,
-        lastVendor: grnVendor,
-        lastBatch: grnBatchNo
-      };
-      if (onSaveInventoryItem) {
-        onSaveInventoryItem(newInvItem);
-      } else if (onUpdateInventory) {
-        onUpdateInventory([...inventory, newInvItem]);
-      }
+    const newInvItem = {
+      id: newInvId,
+      itemCode: newInvId,
+      masterItemId: masterId,
+      itemName: itemName || (isFilm ? `${grnFilmType} (${grnMicron}µ x ${grnWidthMm}mm)` : `${grnCategory} Material`),
+      category: grnCategory || 'Film Substrates',
+      filmType: isFilm ? grnFilmType : grnCategory,
+      micron: isFilm ? (parseFloat(grnMicron) || 0) : '-',
+      widthMm: isFilm ? (parseFloat(grnWidthMm) || 0) : '-',
+      metallocenePct: mPct,
+      metallocene_pct: mPct,
+      unit: isFilm ? 'Kg' : (isCylinderCategory ? 'Set' : grnUnit),
+      density: FILM_DENSITIES[grnFilmType] || 1.0,
+      availableQtyKg: isCylinderCategory ? totalNetQty : 0, // Auto-approved cylinders get stock immediately, non-cylinders wait for QC
+      allocatedQtyKg: 0,
+      unitPrice: rateVal,
+      purchaseRatePerKg: rateVal,
+      purchaseValuation: isCylinderCategory ? Number((totalNetQty * rateVal).toFixed(2)) : 0,
+      location: isFilm ? "Bay A - Inward Dock" : "Consumables Store",
+      reorderLevelKg: 100,
+      lastVendor: grnVendor,
+      lastBatch: grnBatchNo
+    };
+
+    if (onSaveInventoryItem) {
+      onSaveInventoryItem(newInvItem);
+    } else if (onUpdateInventory) {
+      onUpdateInventory([...inventory, newInvItem]);
     }
 
     const newGRN = {
@@ -1722,6 +1716,7 @@ export default function InventoryManagement({
       category: grnCategory,
       itemName: itemName,
       stockItemId: targetStockItemId,
+      masterItemId: masterId,
       filmType: isFilm ? grnFilmType : grnCategory,
       micron: isFilm ? parseFloat(grnMicron) : '-',
       widthMm: isFilm ? parseFloat(grnWidthMm) : '-',
@@ -1749,7 +1744,7 @@ export default function InventoryManagement({
       qcStatus: isCylinderCategory ? "Approved" : "Pending QC Approval",
       qcNotes: isCylinderCategory ? "Engraved cylinder set received and verified." : "",
       inspectedBy: isCylinderCategory ? "Cylinder QC Inspector" : "",
-      storeManager: "Store Mgr Dilip Joshi"
+      storeManager: currentUser?.name || "Store Manager"
     };
 
     setGrnFreightAmount('');
@@ -1859,7 +1854,7 @@ export default function InventoryManagement({
       location: isApproved ? (qcInspectingGRN.category === 'Film Substrates' ? 'Bay A' : 'Consumables Store') : 'QC Hold Store',
       storeLocation: isApproved ? (qcInspectingGRN.category === 'Film Substrates' ? 'Bay A' : 'Consumables Store') : 'QC Hold Store',
       qcNotes: qcNotesInput || (isApproved ? 'Inspected and passed all laboratory parameters.' : 'Rejected in QC Approval Lab due to spec variation. Transferred to QC Hold Store.'),
-      inspectedBy: currentUser?.name || 'QC Chemist Ramesh Kumar',
+      inspectedBy: currentUser?.name || 'Quality Manager',
       inspectedDate: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })
     };
 
@@ -2966,7 +2961,7 @@ export default function InventoryManagement({
               qtyKg: variance,
               barcode: `ADJ-BULK-${Date.now()}`,
               reason: 'Stock Adjustment (Bulk Upload)',
-              adjustedBy: currentUser?.name || 'Store Mgr Dilip Joshi'
+              adjustedBy: currentUser?.name || 'Store Manager'
             });
           }
           updatedCount++;
@@ -5712,6 +5707,17 @@ export default function InventoryManagement({
                 const avgPerPkg = (effectiveNetWeight / Math.max(1, effectivePkgCount)).toFixed(2);
                 const unitDisplay = grnCategory === 'Film Substrates' ? 'Kg' : grnUnit;
 
+                const itemWeights = (grnItemsList || []).map((it, idx) => ({
+                  unitNo: idx + 1,
+                  netWeight: parseFloat(it.netWeightKg) || Number((effectiveNetWeight / Math.max(1, effectivePkgCount)).toFixed(2))
+                }));
+
+                const firstWt = itemWeights[0]?.netWeight || 0;
+                const isVariableWeight = itemWeights.some(w => Math.abs(w.netWeight - firstWt) > 0.01);
+                const weightDistributionStr = itemWeights
+                  .map(w => `#${w.unitNo}: ${w.netWeight} ${unitDisplay}`)
+                  .join(' | ');
+
                 return (
                   <div style={{ 
                     background: 'linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%)', 
@@ -5728,9 +5734,32 @@ export default function InventoryManagement({
                     <div style={{ background: '#d1fae5', padding: '6px', borderRadius: '8px', color: '#047857', marginTop: '2px' }}>
                       <BarcodeIcon size={18} />
                     </div>
-                    <div>
-                      <strong style={{ color: '#047857', display: 'block', marginBottom: '2px' }}>Inward Package Breakdown & Barcode Generation:</strong>
-                      <strong>{effectiveNetWeight} {unitDisplay}</strong> total across <strong>{effectivePkgCount} {grnPackagingType}(s)</strong> = <strong>{avgPerPkg} {unitDisplay}</strong> per {grnPackagingType}. ({effectivePkgCount} barcode sticker{effectivePkgCount > 1 ? 's' : ''} will be generated for {effectivePkgCount > 1 ? 'these' : 'this'} {grnPackagingType}).
+                    <div style={{ width: '100%' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                        <strong style={{ color: '#047857' }}>Inward Package Breakdown & Barcode Generation:</strong>
+                        <span style={{ fontSize: '0.74rem', background: '#dcfce7', color: '#15803d', padding: '2px 8px', borderRadius: '4px', border: '1px solid #86efac', fontWeight: '700' }}>
+                          {isVariableWeight ? '⚡ Variable Dynamic Weights' : 'Equal Distribution'}
+                        </span>
+                      </div>
+                      <div style={{ color: '#047857' }}>
+                        <strong>{effectiveNetWeight.toLocaleString()} {unitDisplay}</strong> total net weight across <strong>{effectivePkgCount} {grnPackagingType}(s)</strong>
+                        {effectivePkgCount > 1 && (
+                          <span style={{ marginLeft: '4px', fontStyle: 'italic', color: '#065f46' }}>
+                            (Avg: <strong>{avgPerPkg} {unitDisplay}</strong> per {grnPackagingType})
+                          </span>
+                        )}.
+                      </div>
+                      {effectivePkgCount > 1 && (
+                        <div style={{ marginTop: '6px', fontSize: '0.77rem', background: 'rgba(255, 255, 255, 0.75)', padding: '6px 10px', borderRadius: '6px', border: '1px dashed #6ee7b7' }}>
+                          <strong style={{ color: '#047857' }}>Dynamic Distribution Across Item Numbers:</strong>
+                          <div style={{ fontFamily: 'monospace', fontWeight: '700', color: '#0f172a', marginTop: '2px' }}>
+                            {weightDistributionStr}
+                          </div>
+                        </div>
+                      )}
+                      <div style={{ marginTop: '4px', fontSize: '0.74rem', color: '#047857' }}>
+                        ✓ {effectivePkgCount} unique 2D barcode sticker{effectivePkgCount > 1 ? 's' : ''} will be generated with these dynamic package weights.
+                      </div>
                     </div>
                   </div>
                 );
@@ -6844,7 +6873,7 @@ export default function InventoryManagement({
               date: tx.date || '2026-07-25',
               refNo: tx.jobName || (isIssue ? 'Store Issue' : 'Store Return'),
               subRef: `Req: ${tx.id}`,
-              partyName: tx.vendorName || tx.issuedBy || item.lastVendor || 'Store Mgr Dilip Joshi',
+              partyName: tx.vendorName || tx.issuedBy || item.lastVendor || 'Store Manager',
               subParty: isIssue ? 'Shopfloor Requisition' : 'Store Return',
               inwardQtyKg: isIssue ? 0 : qty,
               outwardQtyKg: isIssue ? qty : 0,
@@ -6873,7 +6902,7 @@ export default function InventoryManagement({
               date: a.date || '2026-07-25',
               refNo: `Audit Ref: ${a.id}`,
               subRef: a.type || 'Audit Variance',
-              partyName: a.adjustedBy || 'Store Mgr Dilip Joshi',
+              partyName: a.adjustedBy || 'Store Manager',
               subParty: 'Physical Inventory Audit',
               inwardQtyKg: qty > 0 ? qty : 0,
               outwardQtyKg: qty < 0 ? Math.abs(qty) : 0,
