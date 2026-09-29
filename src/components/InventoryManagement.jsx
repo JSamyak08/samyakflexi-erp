@@ -954,6 +954,14 @@ export default function InventoryManagement({
   const [poSearchTerm, setPoSearchTerm] = useState('');
   const [poStatusFilter, setPoStatusFilter] = useState('ALL');
 
+  // GRN Inward History Search & Filter State
+  const [grnSearchTerm, setGrnSearchTerm] = useState('');
+  const [grnVendorFilter, setGrnVendorFilter] = useState('ALL');
+  const [grnStartDate, setGrnStartDate] = useState('');
+  const [grnEndDate, setGrnEndDate] = useState('');
+  const [grnStatusFilter, setGrnStatusFilter] = useState('ALL');
+  const [grnSortBy, setGrnSortBy] = useState('DATE_DESC');
+
   // Discrepancy Resolution Modal State (Admin Only)
   const [resolvingPoDiscrepancy, setResolvingPoDiscrepancy] = useState(null);
   const [resolutionAction, setResolutionAction] = useState('UPDATE_PO_RATE'); // 'UPDATE_PO_RATE' or 'ENFORCE_PO_RATE'
@@ -3155,8 +3163,121 @@ export default function InventoryManagement({
     });
   }, [safeInventory, physicalCounts, recSearchTerm, recStatusFilter, recSubstrateFilter]);
 
+  // Unique Vendors list for GRN Filter
+  const uniqueGrnVendors = useMemo(() => {
+    const set = new Set();
+    (safeGrns || []).forEach(g => {
+      if (g.vendorName && String(g.vendorName).trim()) {
+        set.add(String(g.vendorName).trim());
+      }
+    });
+    return Array.from(set).sort();
+  }, [safeGrns]);
+
+  // Filtered and Sorted GRNs for Inward History Tab
+  const filteredGrns = useMemo(() => {
+    let list = [...(safeGrns || [])];
+
+    // 1. Text Search Filter
+    if (grnSearchTerm && grnSearchTerm.trim()) {
+      const q = grnSearchTerm.toLowerCase().trim();
+      list = list.filter(g => {
+        const grnNo = String(g.grnNo || g.id || '').toLowerCase();
+        const poNo = String(g.poNumber || '').toLowerCase();
+        const vendor = String(g.vendorName || '').toLowerCase();
+        const invoice = String(g.invoiceNo || '').toLowerCase();
+        const film = String(g.filmType || '').toLowerCase();
+        const item = String(g.itemName || '').toLowerCase();
+        const batch = String(g.batchNo || '').toLowerCase();
+        const status = String(g.status || g.qcStatus || '').toLowerCase();
+        const micron = g.micron !== undefined ? String(g.micron) : '';
+        const width = g.widthMm !== undefined ? String(g.widthMm) : '';
+        const category = String(g.category || '').toLowerCase();
+
+        return grnNo.includes(q) ||
+               poNo.includes(q) ||
+               vendor.includes(q) ||
+               invoice.includes(q) ||
+               film.includes(q) ||
+               item.includes(q) ||
+               batch.includes(q) ||
+               status.includes(q) ||
+               micron.includes(q) ||
+               width.includes(q) ||
+               category.includes(q);
+      });
+    }
+
+    // 2. Vendor Filter
+    if (grnVendorFilter && grnVendorFilter !== 'ALL') {
+      list = list.filter(g => (g.vendorName || '').toLowerCase().trim() === grnVendorFilter.toLowerCase().trim());
+    }
+
+    // 3. QC Status Filter
+    if (grnStatusFilter && grnStatusFilter !== 'ALL') {
+      list = list.filter(g => {
+        const st = String(g.status || g.qcStatus || '').toLowerCase();
+        if (grnStatusFilter === 'APPROVED') return st.includes('approved');
+        if (grnStatusFilter === 'PENDING') return st.includes('pending') || st.includes('awaiting');
+        if (grnStatusFilter === 'REJECTED') return st.includes('reject');
+        return true;
+      });
+    }
+
+    // 4. Date Range Filter
+    if (grnStartDate) {
+      const startMs = new Date(grnStartDate).setHours(0, 0, 0, 0);
+      list = list.filter(g => {
+        const d = g.receivedDate || g.date || g.createdAt;
+        if (!d) return true;
+        return new Date(d).getTime() >= startMs;
+      });
+    }
+
+    if (grnEndDate) {
+      const endMs = new Date(grnEndDate).setHours(23, 59, 59, 999);
+      list = list.filter(g => {
+        const d = g.receivedDate || g.date || g.createdAt;
+        if (!d) return true;
+        return new Date(d).getTime() <= endMs;
+      });
+    }
+
+    // 5. Sort Filter
+    list.sort((a, b) => {
+      const dateA = new Date(a.receivedDate || a.date || a.createdAt || 0).getTime();
+      const dateB = new Date(b.receivedDate || b.date || b.createdAt || 0).getTime();
+      const grnA = String(a.grnNo || '');
+      const grnB = String(b.grnNo || '');
+      const qtyA = Number(a.netWeightKg || a.receivedQtyKg || 0);
+      const qtyB = Number(b.netWeightKg || b.receivedQtyKg || 0);
+      const vendorA = String(a.vendorName || '').toLowerCase();
+      const vendorB = String(b.vendorName || '').toLowerCase();
+
+      switch (grnSortBy) {
+        case 'DATE_ASC':
+          return dateA - dateB;
+        case 'GRN_DESC':
+          return grnB.localeCompare(grnA, undefined, { numeric: true, sensitivity: 'base' });
+        case 'GRN_ASC':
+          return grnA.localeCompare(grnB, undefined, { numeric: true, sensitivity: 'base' });
+        case 'QTY_DESC':
+          return qtyB - qtyA;
+        case 'QTY_ASC':
+          return qtyA - qtyB;
+        case 'VENDOR_ASC':
+          return vendorA.localeCompare(vendorB);
+        case 'DATE_DESC':
+        default:
+          return dateB - dateA;
+      }
+    });
+
+    return list;
+  }, [safeGrns, grnSearchTerm, grnVendorFilter, grnStatusFilter, grnStartDate, grnEndDate, grnSortBy]);
+
   const stockPagination = usePagination(filteredInventory, 50);
-  const grnPagination = usePagination(safeGrns, 50);
+  const grnPagination = usePagination(filteredGrns, 50);
   const poPagination = usePagination(filteredPOs, 50);
   const dispatchPagination = usePagination(dispatchShipments || [], 50);
   const recPagination = usePagination(filteredRecItems, 50);
@@ -4138,16 +4259,160 @@ export default function InventoryManagement({
       {/* TAB 2: INWARD GOODS RECEIPT NOTES (GRN) */}
       {activeTab === 'grn_inward' && (
         <div className="glass-panel" style={{ padding: '24px' }}>
-          <h3 style={{ marginBottom: '16px', fontSize: '1.1rem', fontWeight: '600' }}>Goods Receipt Notes (GRN Inward History)</h3>
+          {/* Header Summary Bar */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '20px' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: '700', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <HistoryIcon size={20} style={{ color: 'var(--accent-color)' }} />
+                Goods Receipt Notes (GRN Inward History)
+              </h3>
+              <p style={{ margin: '4px 0 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                Search, filter by vendor/date, sort, and audit raw material inward GRNs & barcode logs
+              </p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span className="badge badge-info" style={{ background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', padding: '6px 12px', fontSize: '0.82rem', fontWeight: '700' }}>
+                Records: {filteredGrns.length} / {safeGrns.length}
+              </span>
+              <span className="badge badge-primary" style={{ background: '#eff6ff', color: '#1e40af', border: '1px solid #bfdbfe', padding: '6px 12px', fontSize: '0.82rem', fontWeight: '700' }}>
+                Inward Weight: {filteredGrns.reduce((sum, g) => sum + Number(g.netWeightKg || g.receivedQtyKg || 0), 0).toLocaleString()} Kg
+              </span>
+            </div>
+          </div>
+
+          {/* Search, Vendor, QC Status, Date Range & Sort Filter Bar */}
+          <div style={{ background: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {/* Top Row: Search Input & Reset Button */}
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: '280px', position: 'relative' }}>
+                <Search size={16} style={{ color: 'var(--text-muted)', position: 'absolute', left: '12px' }} />
+                <input
+                  type="text"
+                  className="form-control"
+                  style={{ paddingLeft: '36px', paddingRight: grnSearchTerm ? '32px' : '12px' }}
+                  placeholder="Search GRN #, PO #, Vendor, Invoice #, Specs, Batch #..."
+                  value={grnSearchTerm}
+                  onChange={e => setGrnSearchTerm(e.target.value)}
+                />
+                {grnSearchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setGrnSearchTerm('')}
+                    style={{ position: 'absolute', right: '10px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                    title="Clear search"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              {(grnSearchTerm || grnVendorFilter !== 'ALL' || grnStatusFilter !== 'ALL' || grnStartDate || grnEndDate || grnSortBy !== 'DATE_DESC') && (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ padding: '8px 14px', fontSize: '0.82rem', color: '#dc2626', borderColor: '#fca5a5' }}
+                  onClick={() => {
+                    setGrnSearchTerm('');
+                    setGrnVendorFilter('ALL');
+                    setGrnStatusFilter('ALL');
+                    setGrnStartDate('');
+                    setGrnEndDate('');
+                    setGrnSortBy('DATE_DESC');
+                  }}
+                >
+                  <X size={14} /> Reset Filters
+                </button>
+              )}
+            </div>
+
+            {/* Bottom Row: Detailed Dropdown Filters */}
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+              {/* Vendor Filter */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: '1 1 180px', minWidth: '160px' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)' }}>Vendor / Supplier:</label>
+                <select
+                  className="form-control"
+                  style={{ fontSize: '0.85rem' }}
+                  value={grnVendorFilter}
+                  onChange={e => setGrnVendorFilter(e.target.value)}
+                >
+                  <option value="ALL">🌐 All Vendors ({uniqueGrnVendors.length})</option>
+                  {uniqueGrnVendors.map(v => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* QC Status Filter */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: '1 1 160px', minWidth: '150px' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)' }}>QC Clearance Status:</label>
+                <select
+                  className="form-control"
+                  style={{ fontSize: '0.85rem' }}
+                  value={grnStatusFilter}
+                  onChange={e => setGrnStatusFilter(e.target.value)}
+                >
+                  <option value="ALL">All Statuses</option>
+                  <option value="APPROVED">✅ Approved by QC</option>
+                  <option value="PENDING">⏳ Pending QC Clearance</option>
+                  <option value="REJECTED">❌ Rejected by QC</option>
+                </select>
+              </div>
+
+              {/* From Date */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: '1 1 140px', minWidth: '130px' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)' }}>From Date:</label>
+                <input
+                  type="date"
+                  className="form-control"
+                  style={{ fontSize: '0.85rem' }}
+                  value={grnStartDate}
+                  onChange={e => setGrnStartDate(e.target.value)}
+                />
+              </div>
+
+              {/* To Date */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: '1 1 140px', minWidth: '130px' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)' }}>To Date:</label>
+                <input
+                  type="date"
+                  className="form-control"
+                  style={{ fontSize: '0.85rem' }}
+                  value={grnEndDate}
+                  onChange={e => setGrnEndDate(e.target.value)}
+                />
+              </div>
+
+              {/* Sort By Filter */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: '1 1 180px', minWidth: '170px' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)' }}>Sort By:</label>
+                <select
+                  className="form-control"
+                  style={{ fontSize: '0.85rem', fontWeight: '600' }}
+                  value={grnSortBy}
+                  onChange={e => setGrnSortBy(e.target.value)}
+                >
+                  <option value="DATE_DESC">📅 Date: Newest First</option>
+                  <option value="DATE_ASC">📅 Date: Oldest First</option>
+                  <option value="GRN_DESC">🔢 GRN #: High to Low</option>
+                  <option value="GRN_ASC">🔢 GRN #: Low to High</option>
+                  <option value="QTY_DESC">⚖️ Quantity: High to Low</option>
+                  <option value="QTY_ASC">⚖️ Quantity: Low to High</option>
+                  <option value="VENDOR_ASC">🏢 Vendor: A to Z</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
           <div style={{ overflowX: 'auto' }}>
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>GRN Number</th>
+                  <th>GRN Number & Date</th>
                   <th>Ref PO #</th>
                   <th>Vendor Name</th>
                   <th>Invoice #</th>
-                  <th>Film Specs</th>
+                  <th>Film Specs / Description</th>
                   <th>Inward Qty (Kg)</th>
                   <th>Batch / Heat #</th>
                   <th>QC Status</th>
@@ -4155,79 +4420,94 @@ export default function InventoryManagement({
                 </tr>
               </thead>
               <tbody>
-                {grnPagination.paginatedItems.map(g => (
-                  <tr key={g.grnNo}>
-                    <td style={{ fontWeight: '700', color: 'var(--accent-color)' }}>{g.grnNo}</td>
-                    <td>{g.poNumber}</td>
-                    <td style={{ fontWeight: '600' }}>{g.vendorName}</td>
-                    <td>{g.invoiceNo}</td>
-                    <td>{g.filmType} ({g.micron}µ / {g.widthMm}mm)</td>
-                    <td style={{ fontWeight: '700', color: '#60a5fa' }}>{g.netWeightKg} kg ({g.rollsReceived} rolls)</td>
-                    <td><code>{g.batchNo}</code></td>
-                    <td>
-                      {((g.status || '').toLowerCase().includes('approved') || (g.qcStatus || '').toLowerCase().includes('approved')) && (
-                        <span className="badge badge-us" style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontWeight: '700' }}>APPROVED BY QC</span>
-                      )}
-                      {(((g.status || '').toLowerCase().includes('pending') || (!g.status && !g.qcStatus)) && !(g.status || '').toLowerCase().includes('approved')) && (
-                        <span className="badge badge-warning" style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', fontWeight: '700' }}>⏳ PENDING QC APPROVAL</span>
-                      )}
-                      {((g.status || '').toLowerCase().includes('reject') || (g.qcStatus || '').toLowerCase().includes('reject')) && (
-                        <span className="badge badge-warning" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', fontWeight: '700' }}>REJECTED BY QC</span>
-                      )}
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={() => setSelectedGRNForPDF(g)}>
-                          <Printer size={14} /> Print GRN
-                        </button>
-                        <button 
-                          className="btn-secondary" 
-                          style={{ padding: '6px 12px', fontSize: '0.8rem', color: '#059669', borderColor: '#a7f3d0' }}
-                          onClick={() => {
-                            const matchedRolls = (inventoryRolls || []).filter(r => 
-                              r.grnNo === g.grnNo || 
-                              (r.invoiceNo === g.invoiceNo && r.batchNo === g.batchNo && r.vendorName === g.vendorName)
-                            );
-                            const isFilm = g.category === 'Film Substrates';
-                            
-                            if (matchedRolls.length > 0) {
-                              setSelectedRollForBarcodeModal(matchedRolls);
-                            } else {
-                              const unitCount = Math.max(1, parseInt(g.rollsReceived) || 1);
-                              const unitQty = Number(((g.netWeightKg || 0) / unitCount).toFixed(2));
-                              const grnCode = (g.grnNo || 'GRN-000').replace('GRN-', '');
-                              const fallbackRolls = [];
-                              for (let i = 1; i <= unitCount; i++) {
-                                fallbackRolls.push({
-                                  barcodeId: unitCount > 1 ? `${isFilm ? 'RM-BC' : 'CON-BC'}-${grnCode}-${i}` : `${isFilm ? 'RM-BC' : 'CON-BC'}-${grnCode}`,
-                                  grnNo: g.grnNo,
-                                  unitNo: i,
-                                  totalUnits: unitCount,
-                                  rollType: isFilm ? 'RAW_MATERIAL' : 'CONSUMABLE_ITEM',
-                                  itemName: g.itemName || (isFilm ? `${g.filmType} (${g.micron}µ / ${g.widthMm}mm)` : `${g.category} Item`),
-                                  category: g.category || (isFilm ? 'Film Substrates' : 'General Store'),
-                                  unit: g.unit || (isFilm ? 'Kg' : 'Pcs'),
-                                  micron: isFilm && g.micron !== '-' ? parseFloat(g.micron) : 0,
-                                  widthMm: isFilm && g.widthMm !== '-' ? parseFloat(g.widthMm) : 0,
-                                  netWeightKg: unitQty,
-                                  availableWeightKg: unitQty,
-                                  purchaseRatePerKg: g.purchaseRatePerKg || g.purchaseRate || g.unitPrice || 0,
-                                  vendorName: g.vendorName,
-                                  invoiceNo: g.invoiceNo,
-                                  batchNo: g.batchNo,
-                                  stationId: 'SCALE_1_INWARD'
-                                });
+                {grnPagination.paginatedItems.length > 0 ? (
+                  grnPagination.paginatedItems.map(g => (
+                    <tr key={g.grnNo}>
+                      <td style={{ fontWeight: '700', color: 'var(--accent-color)' }}>
+                        {g.grnNo}
+                        <div style={{ fontSize: '0.75rem', fontWeight: '500', color: 'var(--text-muted)' }}>
+                          {g.receivedDate ? new Date(g.receivedDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                        </div>
+                      </td>
+                      <td>{g.poNumber || '—'}</td>
+                      <td style={{ fontWeight: '600' }}>{g.vendorName || '—'}</td>
+                      <td>{g.invoiceNo || '—'}</td>
+                      <td>{g.filmType} ({g.micron}µ / {g.widthMm}mm)</td>
+                      <td style={{ fontWeight: '700', color: '#60a5fa' }}>{g.netWeightKg} kg ({g.rollsReceived} rolls)</td>
+                      <td><code>{g.batchNo || '—'}</code></td>
+                      <td>
+                        {((g.status || '').toLowerCase().includes('approved') || (g.qcStatus || '').toLowerCase().includes('approved')) && (
+                          <span className="badge badge-us" style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontWeight: '700' }}>APPROVED BY QC</span>
+                        )}
+                        {(((g.status || '').toLowerCase().includes('pending') || (!g.status && !g.qcStatus)) && !(g.status || '').toLowerCase().includes('approved')) && (
+                          <span className="badge badge-warning" style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', fontWeight: '700' }}>⏳ PENDING QC APPROVAL</span>
+                        )}
+                        {((g.status || '').toLowerCase().includes('reject') || (g.qcStatus || '').toLowerCase().includes('reject')) && (
+                          <span className="badge badge-warning" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', fontWeight: '700' }}>REJECTED BY QC</span>
+                        )}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={() => setSelectedGRNForPDF(g)}>
+                            <Printer size={14} /> Print GRN
+                          </button>
+                          <button 
+                            className="btn-secondary" 
+                            style={{ padding: '6px 12px', fontSize: '0.8rem', color: '#059669', borderColor: '#a7f3d0' }}
+                            onClick={() => {
+                              const matchedRolls = (inventoryRolls || []).filter(r => 
+                                r.grnNo === g.grnNo || 
+                                (r.invoiceNo === g.invoiceNo && r.batchNo === g.batchNo && r.vendorName === g.vendorName)
+                              );
+                              const isFilm = g.category === 'Film Substrates';
+                              
+                              if (matchedRolls.length > 0) {
+                                setSelectedRollForBarcodeModal(matchedRolls);
+                              } else {
+                                const unitCount = Math.max(1, parseInt(g.rollsReceived) || 1);
+                                const unitQty = Number(((g.netWeightKg || 0) / unitCount).toFixed(2));
+                                const grnCode = (g.grnNo || 'GRN-000').replace('GRN-', '');
+                                const fallbackRolls = [];
+                                for (let i = 1; i <= unitCount; i++) {
+                                  fallbackRolls.push({
+                                    barcodeId: unitCount > 1 ? `${isFilm ? 'RM-BC' : 'CON-BC'}-${grnCode}-${i}` : `${isFilm ? 'RM-BC' : 'CON-BC'}-${grnCode}`,
+                                    grnNo: g.grnNo,
+                                    unitNo: i,
+                                    totalUnits: unitCount,
+                                    rollType: isFilm ? 'RAW_MATERIAL' : 'CONSUMABLE_ITEM',
+                                    itemName: g.itemName || (isFilm ? `${g.filmType} (${g.micron}µ / ${g.widthMm}mm)` : `${g.category} Item`),
+                                    category: g.category || (isFilm ? 'Film Substrates' : 'General Store'),
+                                    unit: g.unit || (isFilm ? 'Kg' : 'Pcs'),
+                                    micron: isFilm && g.micron !== '-' ? parseFloat(g.micron) : 0,
+                                    widthMm: isFilm && g.widthMm !== '-' ? parseFloat(g.widthMm) : 0,
+                                    netWeightKg: unitQty,
+                                    availableWeightKg: unitQty,
+                                    purchaseRatePerKg: g.purchaseRatePerKg || g.purchaseRate || g.unitPrice || 0,
+                                    vendorName: g.vendorName,
+                                    invoiceNo: g.invoiceNo,
+                                    batchNo: g.batchNo,
+                                    stationId: 'SCALE_1_INWARD'
+                                  });
+                                }
+                                setSelectedRollForBarcodeModal(fallbackRolls);
                               }
-                              setSelectedRollForBarcodeModal(fallbackRolls);
-                            }
-                          }}
-                        >
-                          <Printer size={14} /> Barcode
-                        </button>
-                      </div>
+                            }}
+                          >
+                            <Printer size={14} /> Barcode
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="9" className="center" style={{ padding: '36px', color: 'var(--text-muted)' }}>
+                      <Filter size={28} style={{ opacity: 0.5, marginBottom: '8px' }} />
+                      <div style={{ fontSize: '0.95rem', fontWeight: '600' }}>No Goods Receipt Notes (GRN) match the selected search & filter criteria.</div>
+                      <div style={{ fontSize: '0.82rem', marginTop: '4px' }}>Try clearing your search text, vendor dropdown, or date range filters.</div>
                     </td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>
