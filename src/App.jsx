@@ -591,6 +591,17 @@ export default function App() {
               setOrders(cleanSupa);
               setOrdersLoading(false);
 
+              // Auto-hydrate pressActiveRunningJob if an active in-production job exists in database orders
+              const runningInDb = cleanSupa.find(o => 
+                (o.status === 'In Production' || o.printingStatus === 'In Production') &&
+                o.printingStartTime &&
+                !o.printingEndTime &&
+                !o.isPrintingCompleted
+              );
+              if (runningInDb) {
+                setPressActiveRunningJob(runningInDb);
+              }
+
               // Clean up any legacy dummy records from DB in background
               supaOrders.filter(isDummyRecord).forEach(d => deleteOrderFromSupabase(d.id).catch(console.warn));
             }
@@ -1564,9 +1575,11 @@ export default function App() {
       printingStatus: 'In Production',
       machineId: machineId || order.machineId,
       printingStartTime: startIso,
-      printingEndTime: null
+      printingEndTime: null,
+      isPrintingCompleted: false
     };
     await handleUpdateOrder(updatedOrder);
+    await handleActiveRunningJobChange(updatedOrder);
 
     // Update or create corresponding Production Record
     const existingRec = productionRecords.find(r => r.orderId === order.id || r.id === order.id || r.jobCode === order.jobCode);
@@ -1632,6 +1645,7 @@ export default function App() {
       ...order,
       status: 'In Production',
       printingStatus: 'Completed',
+      isPrintingCompleted: true,
       printingEndTime: endIso,
       printingDurationMinutes: computedDurationMinutes,
       printingDurationFormatted: durationFormatted,
@@ -1641,6 +1655,7 @@ export default function App() {
       printingNotes: endData.notes || ''
     };
     await handleUpdateOrder(updatedOrder);
+    await handleActiveRunningJobChange(null);
 
     // Update corresponding Production Record (or create if missing)
     const existingRec = productionRecords.find(r => r.orderId === order.id || r.id === order.id || (r.jobCode && r.jobCode === order.jobCode));

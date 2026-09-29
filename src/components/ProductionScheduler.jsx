@@ -156,8 +156,13 @@ export default function ProductionScheduler({
   useEffect(() => {
     if (initialPressActiveRunningJob) {
       setActiveRunningJobState(initialPressActiveRunningJob);
+    } else if (allEnrichedOrders && allEnrichedOrders.length > 0) {
+      const activeInOrders = allEnrichedOrders.find(o => o.isCurrentlyInProduction);
+      if (activeInOrders) {
+        setActiveRunningJobState(activeInOrders);
+      }
     }
-  }, [initialPressActiveRunningJob]);
+  }, [initialPressActiveRunningJob, allEnrichedOrders]);
 
   useEffect(() => {
     if (initialPressMachineAssignments && Object.keys(initialPressMachineAssignments).length > 0) {

@@ -86,6 +86,15 @@ export async function fetchOrders() {
       const inkGsm = parseGsm(jd.inkGsm ?? jd.calculationDetails?.inkGsm ?? o.ink_gsm ?? o.inkGsm, 1.5);
       const adhesiveGsm = parseGsm(jd.adhesiveGsm ?? jd.calculationDetails?.adhesiveGsm ?? o.adhesive_gsm ?? o.adhesiveGsm, 1.5);
 
+      const printingStatus = meta.printingStatus || jd.printingStatus || o.printing_status || (o.status === 'In Production' ? 'In Production' : 'Scheduled');
+      const printingStartTime = meta.printingStartTime || jd.printingStartTime || o.printing_start_time || null;
+      const printingEndTime = meta.printingEndTime || jd.printingEndTime || o.printing_end_time || null;
+      const machineId = meta.machineId || jd.machineId || o.machine_id || null;
+      const inputRollsList = meta.inputRollsList || jd.inputRollsList || [];
+      const actualMetersPrinted = meta.actualMetersPrinted || jd.actualMetersPrinted || 0;
+      const printedOutputKg = meta.printedOutputKg || jd.printedOutputKg || 0;
+      const isPrintingCompleted = Boolean(meta.isPrintingCompleted || jd.isPrintingCompleted || false);
+
       return {
         id: o.id,
         jobName: jobName,
@@ -96,6 +105,14 @@ export async function fetchOrders() {
         targetDeliveryDate: o.target_delivery_date || o.delivery_date,
         orderDate: jd.orderDate || (o.created_at ? new Date(o.created_at).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB')),
         status: o.status || 'Scheduled',
+        printingStatus,
+        printingStartTime,
+        printingEndTime,
+        machineId,
+        inputRollsList,
+        actualMetersPrinted,
+        printedOutputKg,
+        isPrintingCompleted,
         wastagePct: Number(o.wastage_percentage) || Number(jd.wastagePct) || Number(jd.calculationDetails?.wastagePct) || 5,
         wastageKg: Number(jd.wastageKg) || Number(jd.calculationDetails?.wastageKg) || 0,
         structure: jd.structure || (layerList.length > 0 ? layerList.map(l => `${l.filmType} ${l.micron}µ`).join(' / ') : '—'),
@@ -120,7 +137,15 @@ export async function fetchOrders() {
           hasVariants: Boolean(jd.hasVariants || o.hasVariants || (Array.isArray(jd.variants || o.variants) && (jd.variants || o.variants).length > 0)),
           variants: Array.isArray(jd.variants) ? jd.variants : (Array.isArray(o.variants) ? o.variants : []),
           orderComments: commentsVal, 
-          comments: commentsVal 
+          comments: commentsVal,
+          printingStatus,
+          printingStartTime,
+          printingEndTime,
+          machineId,
+          inputRollsList,
+          actualMetersPrinted,
+          printedOutputKg,
+          isPrintingCompleted
         },
         materialRequirements: matReqs,
         rawMaterialRequirements: matReqs
@@ -156,6 +181,15 @@ export async function saveOrderToSupabase(order) {
   const inkGsmVal = parseGsm(order.inkGsm ?? order.jobDetails?.inkGsm ?? order.calculationDetails?.inkGsm, 1.5);
   const adhesiveGsmVal = parseGsm(order.adhesiveGsm ?? order.jobDetails?.adhesiveGsm ?? order.calculationDetails?.adhesiveGsm, 1.5);
 
+  const printingStatus = order.printingStatus || (order.status === 'In Production' ? 'In Production' : 'Scheduled');
+  const printingStartTime = order.printingStartTime || order.jobDetails?.printingStartTime || null;
+  const printingEndTime = order.printingEndTime || order.jobDetails?.printingEndTime || null;
+  const machineId = order.machineId || order.jobDetails?.machineId || null;
+  const inputRollsList = order.inputRollsList || order.jobDetails?.inputRollsList || [];
+  const actualMetersPrinted = order.actualMetersPrinted || order.jobDetails?.actualMetersPrinted || 0;
+  const printedOutputKg = order.printedOutputKg || order.jobDetails?.printedOutputKg || 0;
+  const isPrintingCompleted = Boolean(order.isPrintingCompleted || order.jobDetails?.isPrintingCompleted || false);
+
   const jobDetails = {
     ...(order.jobDetails || {}),
     inkGsm: inkGsmVal,
@@ -174,7 +208,15 @@ export async function saveOrderToSupabase(order) {
     poNumber: order.poNumber || '',
     orderComments: commentsVal,
     comments: commentsVal,
-    layers: order.layers || order.jobDetails?.layers || null
+    layers: order.layers || order.jobDetails?.layers || null,
+    printingStatus,
+    printingStartTime,
+    printingEndTime,
+    machineId,
+    inputRollsList,
+    actualMetersPrinted,
+    printedOutputKg,
+    isPrintingCompleted
   };
 
   const matReqs = order.materialRequirements || order.rawMaterialRequirements || [];
@@ -182,7 +224,15 @@ export async function saveOrderToSupabase(order) {
   // Pack everything into metadata envelope inside job_name string
   const metaEnvelope = {
     jobDetails,
-    raw_material_requirements: matReqs
+    raw_material_requirements: matReqs,
+    printingStatus,
+    printingStartTime,
+    printingEndTime,
+    machineId,
+    inputRollsList,
+    actualMetersPrinted,
+    printedOutputKg,
+    isPrintingCompleted
   };
   const combinedJobName = `${order.jobName || 'Untitled Job'} ||| ${JSON.stringify(metaEnvelope)}`;
 
