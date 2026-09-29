@@ -34,31 +34,60 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
 
 
   const {
-    jobName = "Britannia Bourbon 250g",
-    clientName = "Britannia Industries Ltd",
+    jobName = "",
+    clientName = "",
     printWidthMm: rawPrintWidth,
     repeatLengthMm: rawRepeatLength,
-    orderQtyKg = 1000,
+    orderQtyKg = 0,
     orderType = "Reel",
-    wastagePct = 5,
-    totalLaminateGsm = 45.2,
-    totalAreaSqm = 22123,
+    wastagePct = 0,
+    totalLaminateGsm = 0,
+    totalAreaSqm = 0,
     layerResults = [],
     inkDetails = {},
     adhesiveDetails = {},
     summary = {}
   } = calculationData || {};
 
-  const printWidthMm = rawPrintWidth || calculationData?.jobMasterData?.printWidthMm || calculationData?.orderData?.printWidthMm || 1000;
-  const repeatLengthMm = rawRepeatLength || calculationData?.jobMasterData?.repeatLengthMm || calculationData?.orderData?.repeatLengthMm || 400;
+  const resolvedJobName = jobName || calculationData?.jobMasterData?.jobName || calculationData?.orderData?.jobName || "—";
+  const resolvedClientName = clientName || calculationData?.jobMasterData?.clientName || calculationData?.orderData?.clientName || "";
+  const printWidthMm = rawPrintWidth || calculationData?.jobMasterData?.printWidthMm || calculationData?.orderData?.printWidthMm || 0;
+  const repeatLengthMm = rawRepeatLength || calculationData?.jobMasterData?.repeatLengthMm || calculationData?.orderData?.repeatLengthMm || 0;
+  const resolvedOrderQtyKg = orderQtyKg || calculationData?.jobMasterData?.orderQtyKg || calculationData?.orderData?.orderQtyKg || 0;
+  const resolvedLaminateGsm = totalLaminateGsm || summary.totalLaminateGsm || 0;
+  const resolvedAreaSqm = totalAreaSqm || summary.totalSurfaceAreaSqm || 0;
 
-  const layersList = layerResults.length > 0 ? layerResults : [
-    { filmType: "PET Film", micron: 12, density: 1.4, gsm: 16.8, netKg: 371.7, grossKg: 390.3, pricePerKg: 125, totalCost: 48787.5 },
-    { filmType: "Natural LD GP Film", micron: 30, density: 0.93, gsm: 27.9, netKg: 617.2, grossKg: 648.1, pricePerKg: 115, totalCost: 74531.5 }
-  ];
+  // Variants Resolution
+  const hasVariants = Boolean(
+    calculationData?.hasVariants ||
+    calculationData?.jobDetails?.hasVariants ||
+    calculationData?.orderData?.hasVariants ||
+    calculationData?.jobMasterData?.hasVariants ||
+    (calculationData?.variants && calculationData.variants.length > 0) ||
+    (calculationData?.jobDetails?.variants && calculationData.jobDetails.variants.length > 0) ||
+    (calculationData?.orderData?.variants && calculationData.orderData.variants.length > 0)
+  );
+
+  const rawVariants =
+    calculationData?.variants ||
+    calculationData?.jobDetails?.variants ||
+    calculationData?.orderData?.variants ||
+    calculationData?.jobMasterData?.variants ||
+    [];
+
+  const activeVariants = (Array.isArray(rawVariants) ? rawVariants : [])
+    .filter(v => v && (v.variantName || v.name || '').trim())
+    .map((v, i) => ({
+      id: v.id || i + 1,
+      variantName: v.variantName || v.name || `Variant #${i + 1}`,
+      allocatedQtyKg: parseFloat(v.allocatedQtyKg || v.qtyKg || v.quantity || 0) || 0,
+      notes: v.notes || ''
+    }));
+
+  const layersList = layerResults.length > 0 ? layerResults : [];
 
   // Resolve Client Details dynamically from Client Directory / Job Master
-  const targetClientName = calculationData?.clientName || clientName || "";
+  const targetClientName = calculationData?.clientName || resolvedClientName || "";
   const clientStore = (clients && clients.length > 0) ? clients : [];
 
   const matchedClient = 
@@ -75,15 +104,18 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
 
   const clientInfo = {
     name: matchedClient?.name || matchedClient?.companyName || targetClientName || "Client Name N/A",
-    address: matchedClient?.address || "Address Not Specified in Client Directory",
+    address: matchedClient?.address || "Address Not Specified",
     contactPerson: matchedClient?.contactPerson || "N/A",
-    email: matchedClient?.email || (matchedClient?.contactPerson ? `${matchedClient.contactPerson.toLowerCase().replace(/\s+/g, '.')}@${(matchedClient?.name || 'client').toLowerCase().replace(/[^a-z0-9]/g, '')}.com` : "N/A"),
+    email: matchedClient?.email || "N/A",
     contactNo: matchedClient?.phone || matchedClient?.contactNo || "N/A",
     gstin: matchedClient?.gstin || "N/A"
   };
 
-  const totalRawMaterialKg = (summary.totalFilmGrossKg || 0) + (inkDetails.grossKg || 0) + (adhesiveDetails.grossKg || 0) || 1088.4;
-  const totalTaxable = summary.totalRawMaterialCost || 135000;
+  const hasInk = Boolean(inkDetails && (inkDetails.grossKg > 0 || inkDetails.totalCost > 0 || inkDetails.netKg > 0));
+  const hasAdhesive = Boolean(adhesiveDetails && (adhesiveDetails.grossKg > 0 || adhesiveDetails.totalCost > 0 || adhesiveDetails.netKg > 0));
+
+  const totalRawMaterialKg = (summary.totalFilmGrossKg || 0) + (hasInk ? (inkDetails.grossKg || 0) : 0) + (hasAdhesive ? (adhesiveDetails.grossKg || 0) : 0);
+  const totalTaxable = summary.totalRawMaterialCost || summary.totalTaxable || 0;
   
   // Calculate Indian GST applicability (Intra-State 23 MP: CGST 9% + SGST 9% vs Inter-State: IGST 18%)
   const gstInfo = calculateGSTBreakdown(clientInfo.gstin, clientInfo.address, totalTaxable, 18, COMPANY_DETAILS.gstin || '23AAACS9988F1Z1');
@@ -141,8 +173,6 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
             </div>
           </div>
 
-
-
           {/* 3-Column Address Grid */}
           <table className="address-grid-table">
             <thead>
@@ -193,31 +223,87 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
                 </tr>
                 <tr>
                   <td className="label-col">Job Name</td>
-                  <td className="value-col">{jobName}</td>
+                  <td className="value-col">{resolvedJobName}</td>
                   <td className="label-col">Order Form</td>
                   <td className="value-col">{orderType} Form</td>
                 </tr>
                 <tr>
                   <td className="label-col">Print Size (Width x Repeat)</td>
-                  <td className="value-col">{printWidthMm} mm × {repeatLengthMm} mm</td>
+                  <td className="value-col">{printWidthMm ? `${printWidthMm} mm` : '—'} × {repeatLengthMm ? `${repeatLengthMm} mm` : '—'}</td>
                   <td className="label-col">Order Quantity</td>
-                  <td className="value-col">{orderQtyKg.toLocaleString()} Kg</td>
+                  <td className="value-col">{resolvedOrderQtyKg ? `${resolvedOrderQtyKg.toLocaleString()} Kg` : '0 Kg'}</td>
                 </tr>
                 <tr>
                   <td className="label-col">Total Laminate GSM</td>
-                  <td className="value-col">{totalLaminateGsm} g/m²</td>
+                  <td className="value-col">{resolvedLaminateGsm ? `${Number(resolvedLaminateGsm).toFixed(1)} g/m²` : '—'}</td>
                   <td className="label-col">Surface Area</td>
-                  <td className="value-col">{totalAreaSqm.toLocaleString()} m²</td>
+                  <td className="value-col">{resolvedAreaSqm ? `${resolvedAreaSqm.toLocaleString()} m²` : '—'}</td>
                 </tr>
                 <tr>
                   <td className="label-col">Wastage Allowed</td>
                   <td className="value-col">{wastagePct}%</td>
                   <td className="label-col">Calculated Rate / Kg</td>
-                  <td className="value-col">₹{summary.costPerKg || 135} / kg</td>
+                  <td className="value-col">₹{summary.costPerKg ? Number(summary.costPerKg).toFixed(2) : '0'} / kg</td>
                 </tr>
+                {hasVariants && (
+                  <tr>
+                    <td className="label-col">SKU / Variant Split</td>
+                    <td className="value-col" colSpan="3" style={{ fontWeight: '600', color: '#1d4ed8' }}>
+                      Enabled ({activeVariants.length} Variant{activeVariants.length !== 1 ? 's' : ''}: {activeVariants.map(v => `${v.variantName} - ${v.allocatedQtyKg}kg`).join(', ')})
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
+
+          {/* Variants Table if enabled */}
+          {hasVariants && activeVariants.length > 0 && (
+            <div className="details-section-container" style={{ marginTop: '10px' }}>
+              <div className="details-section-header" style={{ background: '#f3f4f6', color: '#111827', borderBottom: '1px solid #d1d5db' }}>
+                Order SKU Variants / Flavor Split Breakdown
+              </div>
+              <table className="items-table" style={{ marginTop: 0, marginBottom: 0 }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: '6%' }}>#</th>
+                    <th style={{ width: '44%' }}>SKU / Variant Name</th>
+                    <th style={{ width: '20%' }}>Allocated Qty (Kg)</th>
+                    <th style={{ width: '15%' }}>Share (%)</th>
+                    <th style={{ width: '15%' }}>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeVariants.map((v, index) => {
+                    const sharePct = resolvedOrderQtyKg > 0 ? ((v.allocatedQtyKg / resolvedOrderQtyKg) * 100).toFixed(1) : '0.0';
+                    return (
+                      <tr key={index}>
+                        <td className="center">{index + 1}</td>
+                        <td style={{ fontWeight: '600', color: '#1f2937' }}>{v.variantName}</td>
+                        <td className="right" style={{ fontWeight: 'bold' }}>{v.allocatedQtyKg.toLocaleString()} Kg</td>
+                        <td className="center">{sharePct}%</td>
+                        <td className="center" style={{ fontSize: '9px', color: '#6b7280' }}>{v.notes || '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan="2" className="right" style={{ fontWeight: 'bold' }}>Total Variant Quantity</td>
+                    <td className="right" style={{ fontWeight: 'bold' }}>
+                      {activeVariants.reduce((sum, v) => sum + v.allocatedQtyKg, 0).toLocaleString()} Kg
+                    </td>
+                    <td className="center" style={{ fontWeight: 'bold' }}>
+                      {resolvedOrderQtyKg > 0
+                        ? `${((activeVariants.reduce((sum, v) => sum + v.allocatedQtyKg, 0) / resolvedOrderQtyKg) * 100).toFixed(0)}%`
+                        : '100%'}
+                    </td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
 
           {/* Items / Layers Table */}
           <table className="items-table">
@@ -235,58 +321,72 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
               </tr>
             </thead>
             <tbody>
-              {layersList.map((layer, index) => {
-                const filmSize = layer.widthMm || layer.filmSize || layer.size || layer.slitWidth || (printWidthMm ? getFilmSlitWidth(layer.filmType, printWidthMm) : null);
-                return (
-                  <tr key={index}>
-                    <td className="center">{index + 1}</td>
-                    <td>
-                      <div className="item-name">{layer.filmType}</div>
-                      <div className="item-meta">
-                        Substrate Density: {layer.density} g/cm³
-                        {filmSize ? ` • Film Size: ${filmSize} mm` : ''}
-                      </div>
+              {layersList.length > 0 ? (
+                layersList.map((layer, index) => {
+                  const filmSize = layer.widthMm || layer.filmSize || layer.size || layer.slitWidth || (printWidthMm ? getFilmSlitWidth(layer.filmType, printWidthMm) : null);
+                  return (
+                    <tr key={index}>
+                      <td className="center">{index + 1}</td>
+                      <td>
+                        <div className="item-name">{layer.filmType}</div>
+                        <div className="item-meta">
+                          Substrate Density: {layer.density} g/cm³
+                          {filmSize ? ` • Film Size: ${filmSize} mm` : ''}
+                        </div>
+                      </td>
+                      <td className="center">{layer.micron} µ</td>
+                      <td className="center">{Number(layer.gsm).toFixed(1)}</td>
+                      <td className="right">{layer.netKg} Kg</td>
+                      <td className="center">{wastagePct}%</td>
+                      <td className="right" style={{ fontWeight: 'bold' }}>{layer.grossKg} Kg</td>
+                      <td className="right">₹{layer.pricePerKg}</td>
+                      <td className="right">{formatINR(layer.totalCost)}</td>
+                    </tr>
+                  );
+                })
+              ) : (
+                !hasInk && !hasAdhesive && (
+                  <tr>
+                    <td colSpan="9" className="center" style={{ padding: '12px', color: '#6b7280' }}>
+                      No substrate layer specifications available.
                     </td>
-                    <td className="center">{layer.micron} µ</td>
-                    <td className="center">{layer.gsm.toFixed(1)}</td>
-                    <td className="right">{layer.netKg} Kg</td>
-                    <td className="center">{wastagePct}%</td>
-                    <td className="right" style={{ fontWeight: 'bold' }}>{layer.grossKg} Kg</td>
-                    <td className="right">₹{layer.pricePerKg}</td>
-                    <td className="right">{formatINR(layer.totalCost)}</td>
                   </tr>
-                );
-              })}
+                )
+              )}
               {/* Ink Row */}
-              <tr>
-                <td className="center">{layersList.length + 1}</td>
-                <td>
-                  <div className="item-name">Liquid Inks & Solvents</div>
-                  <div className="item-meta">20% Weight Gain Allowance</div>
-                </td>
-                <td className="center">-</td>
-                <td className="center">{inkDetails.gsm || 1.5}</td>
-                <td className="right">{inkDetails.netKg || 33.2} Kg</td>
-                <td className="center">{wastagePct}%</td>
-                <td className="right" style={{ fontWeight: 'bold' }}>{inkDetails.grossKg || 34.8} Kg</td>
-                <td className="right">₹{inkDetails.pricePerKg || 1500}</td>
-                <td className="right">{formatINR(inkDetails.totalCost || 52200)}</td>
-              </tr>
+              {hasInk && (
+                <tr>
+                  <td className="center">{layersList.length + 1}</td>
+                  <td>
+                    <div className="item-name">Liquid Inks & Solvents</div>
+                    <div className="item-meta">Weight Gain / Coverage Allowance</div>
+                  </td>
+                  <td className="center">-</td>
+                  <td className="center">{inkDetails.gsm ? Number(inkDetails.gsm).toFixed(1) : '-'}</td>
+                  <td className="right">{inkDetails.netKg ? `${inkDetails.netKg} Kg` : '-'}</td>
+                  <td className="center">{wastagePct}%</td>
+                  <td className="right" style={{ fontWeight: 'bold' }}>{inkDetails.grossKg ? `${inkDetails.grossKg} Kg` : '-'}</td>
+                  <td className="right">{inkDetails.pricePerKg ? `₹${inkDetails.pricePerKg}` : '-'}</td>
+                  <td className="right">{formatINR(inkDetails.totalCost || 0)}</td>
+                </tr>
+              )}
               {/* Adhesive Row */}
-              <tr>
-                <td className="center">{layersList.length + 2}</td>
-                <td>
-                  <div className="item-name">Solvent-less Lamination Adhesive</div>
-                  <div className="item-meta">100% Solid Content</div>
-                </td>
-                <td className="center">-</td>
-                <td className="center">{adhesiveDetails.gsm || 1.5}</td>
-                <td className="right">{adhesiveDetails.netKg || 33.2} Kg</td>
-                <td className="center">{wastagePct}%</td>
-                <td className="right" style={{ fontWeight: 'bold' }}>{adhesiveDetails.grossKg || 34.8} Kg</td>
-                <td className="right">₹{adhesiveDetails.pricePerKg || 270}</td>
-                <td className="right">{formatINR(adhesiveDetails.totalCost || 9396)}</td>
-              </tr>
+              {hasAdhesive && (
+                <tr>
+                  <td className="center">{layersList.length + (hasInk ? 2 : 1)}</td>
+                  <td>
+                    <div className="item-name">Solvent-less Lamination Adhesive</div>
+                    <div className="item-meta">100% Solid Content</div>
+                  </td>
+                  <td className="center">-</td>
+                  <td className="center">{adhesiveDetails.gsm ? Number(adhesiveDetails.gsm).toFixed(1) : '-'}</td>
+                  <td className="right">{adhesiveDetails.netKg ? `${adhesiveDetails.netKg} Kg` : '-'}</td>
+                  <td className="center">{wastagePct}%</td>
+                  <td className="right" style={{ fontWeight: 'bold' }}>{adhesiveDetails.grossKg ? `${adhesiveDetails.grossKg} Kg` : '-'}</td>
+                  <td className="right">{adhesiveDetails.pricePerKg ? `₹${adhesiveDetails.pricePerKg}` : '-'}</td>
+                  <td className="right">{formatINR(adhesiveDetails.totalCost || 0)}</td>
+                </tr>
+              )}
             </tbody>
             <tfoot>
               <tr>

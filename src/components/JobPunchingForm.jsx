@@ -390,6 +390,15 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
 
   // Live calculation results
   const calculationResults = useMemo(() => {
+    const finalVariants = hasVariants 
+      ? variants.filter(v => v.variantName && v.variantName.trim()).map(v => ({
+          id: v.id,
+          variantName: v.variantName.trim(),
+          allocatedQtyKg: parseFloat(v.allocatedQtyKg) || 0,
+          notes: v.notes ? v.notes.trim() : ''
+        }))
+      : [];
+
     const calc = calculateJobRawMaterials({
       jobName,
       printWidthMm: parseFloat(printWidthMm) || 1000,
@@ -410,7 +419,9 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       clientName,
       clientDetails: matchedClient,
       printWidthMm: parseFloat(printWidthMm) || 1000,
-      repeatLengthMm: parseFloat(repeatLengthMm) || 400
+      repeatLengthMm: parseFloat(repeatLengthMm) || 400,
+      hasVariants: hasVariants && finalVariants.length > 0,
+      variants: finalVariants
     };
   }, [
     jobName,
@@ -424,7 +435,9 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
     adhesiveGsm,
     layers,
     inkPrice,
-    adhesivePrice
+    adhesivePrice,
+    hasVariants,
+    variants
   ]);
 
   const handleInitiatePunchJob = () => {
