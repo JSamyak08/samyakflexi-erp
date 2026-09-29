@@ -2011,6 +2011,82 @@ export default function App() {
 
     logAudit('CREATE', 'Cylinders', `Saved rotogravure cylinder ${newCyl.sku} for "${newCyl.jobName}"`, newCyl.id);
     syncCylinderToOrderManagement(newCyl);
+    await syncCylinderToJobMaster(newCyl);
+  };
+
+  const syncCylinderToJobMaster = async (cyl) => {
+    if (!cyl) return;
+    const targetCylId = cyl.id;
+    const targetJobMasterId = cyl.jobMasterId || cyl.job_master_id;
+    const targetSku = (cyl.sku || '').trim().toLowerCase();
+    const targetJobName = (cyl.jobName || '').trim().toLowerCase();
+
+    const matchedJobMasters = (jobMasters || []).filter(j => {
+      if (!j) return false;
+      if (targetJobMasterId && (j.id === targetJobMasterId || String(j.id) === String(targetJobMasterId))) return true;
+      if (j.cylinderId && (j.cylinderId === targetCylId || String(j.cylinderId) === String(targetCylId) || j.cylinderId === cyl.sku)) return true;
+      if (j.cylinderSku && targetSku && j.cylinderSku.trim().toLowerCase() === targetSku) return true;
+      if (j.skuCode && targetSku && j.skuCode.trim().toLowerCase() === targetSku) return true;
+      if (j.jobName && targetJobName && j.jobName.trim().toLowerCase() === targetJobName) return true;
+      return false;
+    });
+
+    if (matchedJobMasters.length === 0) return;
+
+    for (const jm of matchedJobMasters) {
+      const layers = Array.isArray(cyl.layers) && cyl.layers.length > 0 ? cyl.layers : (jm.layers || []);
+      const derivedStructure = (layers.length > 0)
+        ? layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
+        : (cyl.structure || jm.structure || '—');
+
+      const updatedJm = {
+        ...jm,
+        jobName: cyl.jobName || jm.jobName,
+        clientName: cyl.clientGroup || cyl.clientName || jm.clientName,
+        skuCode: cyl.sku || jm.skuCode,
+        cylinderSku: cyl.sku || jm.cylinderSku || jm.skuCode,
+        cylinderId: cyl.id || jm.cylinderId,
+        structure: derivedStructure,
+        layers: layers,
+        printWidthMm: cyl.printWidthMm !== undefined && cyl.printWidthMm !== null ? Number(cyl.printWidthMm) : jm.printWidthMm,
+        faceLengthMm: cyl.faceLengthMm !== undefined && cyl.faceLengthMm !== null ? Number(cyl.faceLengthMm) : jm.faceLengthMm,
+        repeatLengthMm: cyl.circumferenceMm !== undefined && cyl.circumferenceMm !== null ? Number(cyl.circumferenceMm) : (cyl.repeatLengthMm !== undefined ? Number(cyl.repeatLengthMm) : jm.repeatLengthMm),
+        pouchOpenWidth: cyl.pouchOpenWidth !== undefined && cyl.pouchOpenWidth !== null ? Number(cyl.pouchOpenWidth) : jm.pouchOpenWidth,
+        pouchHeight: cyl.pouchHeight !== undefined && cyl.pouchHeight !== null ? Number(cyl.pouchHeight) : jm.pouchHeight,
+        colorsCount: cyl.colorsCount !== undefined && cyl.colorsCount !== null ? Number(cyl.colorsCount) : jm.colorsCount,
+        cylinderCost: cyl.cylinderCost || cyl.costPerCylinder || jm.cylinderCost,
+        engravuresName: cyl.engravuresName || jm.engravuresName,
+        costBorneBy: cyl.costBorneBy || jm.costBorneBy,
+        utilisationLimit: cyl.utilisationLimit !== undefined && cyl.utilisationLimit !== null ? Number(cyl.utilisationLimit) : jm.utilisationLimit,
+        artworkUrl: cyl.artworkUrl || cyl.jobCardFileUrl || jm.artworkUrl,
+        jobCardFileUrl: cyl.jobCardFileUrl || cyl.artworkUrl || jm.jobCardFileUrl,
+        jobCardFileName: cyl.jobCardFileName || jm.jobCardFileName,
+        silLogo: cyl.silLogo !== undefined && cyl.silLogo !== null ? cyl.silLogo : jm.silLogo,
+        arcMark: cyl.arcMark || jm.arcMark,
+        slittingMark: cyl.slittingMark || jm.slittingMark,
+        trackerLine: cyl.trackerLine || jm.trackerLine,
+        specialInstructions: cyl.specialInstructions !== undefined ? cyl.specialInstructions : jm.specialInstructions,
+        chkEyemark: cyl.chkEyemark ?? jm.chkEyemark,
+        chkBarcode: cyl.chkBarcode ?? jm.chkBarcode,
+        chkOrientation: cyl.chkOrientation ?? jm.chkOrientation,
+        chkClientApproval: cyl.chkClientApproval ?? jm.chkClientApproval,
+        approvedByHead: cyl.approvedByHead ?? jm.approvedByHead,
+        approvedHeadName: cyl.approvedHeadName || jm.approvedHeadName,
+        approvedHeadDate: cyl.approvedHeadDate || jm.approvedHeadDate,
+        cylinderStatus: cyl.status || jm.cylinderStatus || jm.status,
+        cylinderDetails: { ...(jm.cylinderDetails || {}), ...cyl },
+        cylinderLocation: cyl.assignedPress || cyl.location || jm.cylinderLocation,
+        cylinders: Array.isArray(cyl.cylinders) ? cyl.cylinders : jm.cylinders
+      };
+
+      try {
+        await saveJobMasterToSupabase(updatedJm);
+      } catch (err) {
+        console.warn("Failed to persist synced Job Master to Supabase:", err);
+      }
+
+      setJobMasters(prev => prev.map(item => item.id === updatedJm.id ? updatedJm : item));
+    }
   };
 
   const handleBatchAddCylinders = async (newCylList) => {
@@ -2034,6 +2110,9 @@ export default function App() {
     });
 
     logAudit('CREATE', 'Cylinders', `Bulk uploaded ${newCylList.length} cylinder job(s) via CSV`, 'BULK_CSV');
+    for (const c of newCylList) {
+      await syncCylinderToJobMaster(c);
+    }
   };
 
   const handleUpdateCylinder = async (updatedCyl) => {
@@ -2067,6 +2146,7 @@ export default function App() {
 
     logAudit('UPDATE', 'Cylinders', `Updated rotogravure cylinder ${updatedCyl.sku} for "${updatedCyl.jobName}"`, updatedCyl.id);
     syncCylinderToOrderManagement(updatedCyl);
+    await syncCylinderToJobMaster(updatedCyl);
   };
 
   const handleDeleteCylinder = async (cylId) => {
