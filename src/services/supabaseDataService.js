@@ -75,6 +75,17 @@ export async function fetchOrders() {
       const layerList = jd.layers || jd.calculationDetails?.layerResults || o.layers || [];
       const commentsVal = jd.orderComments || jd.comments || jd.notes || o.notes || o.comments || o.job_details?.orderComments || o.job_details?.comments || '';
 
+      const parseGsm = (val, defaultVal = 1.5) => {
+        if (val !== undefined && val !== null && val !== '') {
+          const num = parseFloat(val);
+          if (!isNaN(num)) return num;
+        }
+        return defaultVal;
+      };
+
+      const inkGsm = parseGsm(jd.inkGsm ?? jd.calculationDetails?.inkGsm ?? o.ink_gsm ?? o.inkGsm, 1.5);
+      const adhesiveGsm = parseGsm(jd.adhesiveGsm ?? jd.calculationDetails?.adhesiveGsm ?? o.adhesive_gsm ?? o.adhesiveGsm, 1.5);
+
       return {
         id: o.id,
         jobName: jobName,
@@ -93,6 +104,8 @@ export async function fetchOrders() {
         colorsCount: jd.colorsCount || o.colors_count || 6,
         poIssued: jd.poIssued || false,
         poNumber: jd.poNumber || '',
+        inkGsm: inkGsm,
+        adhesiveGsm: adhesiveGsm,
         hasVariants: Boolean(jd.hasVariants || o.hasVariants || (Array.isArray(jd.variants || o.variants) && (jd.variants || o.variants).length > 0)),
         variants: Array.isArray(jd.variants) ? jd.variants : (Array.isArray(o.variants) ? o.variants : []),
         orderComments: commentsVal,
@@ -102,6 +115,8 @@ export async function fetchOrders() {
         calculationDetails: jd.calculationDetails || null,
         jobDetails: { 
           ...jd, 
+          inkGsm: inkGsm,
+          adhesiveGsm: adhesiveGsm,
           hasVariants: Boolean(jd.hasVariants || o.hasVariants || (Array.isArray(jd.variants || o.variants) && (jd.variants || o.variants).length > 0)),
           variants: Array.isArray(jd.variants) ? jd.variants : (Array.isArray(o.variants) ? o.variants : []),
           orderComments: commentsVal, 
@@ -127,12 +142,24 @@ export async function saveOrderToSupabase(order) {
   const parsedTarget = parseStandardDate(order.targetDeliveryDate || order.deliveryDate);
   const targetDateVal = parsedTarget ? parsedTarget.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
 
+  const parseGsm = (val, defaultVal = 1.5) => {
+    if (val !== undefined && val !== null && val !== '') {
+      const num = parseFloat(val);
+      if (!isNaN(num)) return num;
+    }
+    return defaultVal;
+  };
+
   const commentsVal = (order.orderComments || order.comments || order.notes || order.jobDetails?.orderComments || order.jobDetails?.comments || '').trim();
   const hasVariants = Boolean(order.hasVariants || order.jobDetails?.hasVariants || (Array.isArray(order.variants || order.jobDetails?.variants) && (order.variants || order.jobDetails?.variants).length > 0));
   const variants = Array.isArray(order.variants) ? order.variants : (Array.isArray(order.jobDetails?.variants) ? order.jobDetails?.variants : []);
+  const inkGsmVal = parseGsm(order.inkGsm ?? order.jobDetails?.inkGsm ?? order.calculationDetails?.inkGsm, 1.5);
+  const adhesiveGsmVal = parseGsm(order.adhesiveGsm ?? order.jobDetails?.adhesiveGsm ?? order.calculationDetails?.adhesiveGsm, 1.5);
 
   const jobDetails = {
     ...(order.jobDetails || {}),
+    inkGsm: inkGsmVal,
+    adhesiveGsm: adhesiveGsmVal,
     hasVariants,
     variants,
     structure: order.structure || order.jobDetails?.structure || '—',
@@ -2099,8 +2126,20 @@ export async function fetchJobMasters() {
     if (!data) return [];
 
     return data.map(j => {
-      const pm = j.press_marks || {};
-      let layers = Array.isArray(j.layers) ? j.layers : (pm.layers || []);
+      let rawJobName = j.job_name || '';
+      let meta = {};
+      if (rawJobName.includes(' ||| ')) {
+        const parts = rawJobName.split(' ||| ');
+        rawJobName = parts[0];
+        try {
+          meta = JSON.parse(parts[1]);
+        } catch (e) {
+          console.warn("Failed to parse metadata from job_name in fetchJobMasters:", e.message);
+        }
+      }
+
+      const pm = { ...meta, ...(j.press_marks || {}), ...(meta.pressMarks || {}) };
+      let layers = Array.isArray(j.layers) && j.layers.length > 0 ? j.layers : (Array.isArray(meta.layers) && meta.layers.length > 0 ? meta.layers : (pm.layers || []));
       const derivedStructure = (layers.length > 0)
         ? layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
         : (j.structure || j.film_structure || '—');
@@ -2109,11 +2148,22 @@ export async function fetchJobMasters() {
         layers = parseStructureStringToLayers(derivedStructure);
       }
 
+      const parseGsm = (val, defaultVal = 1.5) => {
+        if (val !== undefined && val !== null && val !== '') {
+          const num = parseFloat(val);
+          if (!isNaN(num)) return num;
+        }
+        return defaultVal;
+      };
+
+      const inkGsm = parseGsm(j.ink_gsm ?? j.inkGsm ?? meta.inkGsm ?? pm.inkGsm ?? pm.ink_gsm, 1.5);
+      const adhesiveGsm = parseGsm(j.adhesive_gsm ?? j.adhesiveGsm ?? meta.adhesiveGsm ?? pm.adhesiveGsm ?? pm.adhesive_gsm, 1.5);
+
       return {
         id: j.id,
-        skuCode: j.sku_code || j.sku || '',
-        jobName: j.job_name || '',
-        clientName: j.client_name || '',
+        skuCode: j.sku_code || j.sku || meta.skuCode || '',
+        jobName: rawJobName,
+        clientName: j.client_name || meta.clientName || '',
         structure: derivedStructure,
         printWidthMm: Number(j.print_width_mm || j.print_width || j.pouch_width_mm || j.width_mm || j.pouch_open_width) || 1000,
         faceLengthMm: Number(j.face_length_mm || j.face_length || j.shell_size || pm.faceLengthMm) || (Number(j.print_width_mm) || 1050),
@@ -2121,8 +2171,8 @@ export async function fetchJobMasters() {
         pouchOpenWidth: Number(j.pouch_open_width || pm.pouchOpenWidth) || 0,
         pouchHeight: Number(j.pouch_height || j.pouch_height_mm || pm.pouchHeight) || 0,
         layers: layers,
-        inkGsm: Number(j.ink_gsm ?? j.inkGsm ?? pm.inkGsm ?? 1.5) || 1.5,
-        adhesiveGsm: Number(j.adhesive_gsm ?? j.adhesiveGsm ?? pm.adhesiveGsm ?? 1.5) || 1.5,
+        inkGsm: inkGsm,
+        adhesiveGsm: adhesiveGsm,
         cylinderSku: j.cylinder_sku || j.sku_code || '',
         cylinderCost: j.cylinder_cost || '₹ 0',
         colorsCount: Number(j.colors_count) || 6,
@@ -2186,6 +2236,17 @@ export async function saveJobMasterToSupabase(jobMaster) {
   const fileUrl = jobMaster.jobCardFileUrl || jobMaster.artworkUrl || '';
   const fileName = jobMaster.jobCardFileName || (fileUrl ? 'Artwork_KLD_Proof.pdf' : '');
 
+  const parseGsm = (val, defaultVal = 1.5) => {
+    if (val !== undefined && val !== null && val !== '') {
+      const num = parseFloat(val);
+      if (!isNaN(num)) return num;
+    }
+    return defaultVal;
+  };
+
+  const inkGsmVal = parseGsm(jobMaster.inkGsm, 1.5);
+  const adhesiveGsmVal = parseGsm(jobMaster.adhesiveGsm, 1.5);
+
   const pressMarks = {
     silLogo: jobMaster.silLogo !== undefined && jobMaster.silLogo !== null ? jobMaster.silLogo : '',
     arcMark: jobMaster.arcMark || 'Yes',
@@ -2194,8 +2255,10 @@ export async function saveJobMasterToSupabase(jobMaster) {
     specialInstructions: jobMaster.specialInstructions || '',
     printWidthMm: printWidthMm,
     faceLengthMm: faceLengthMm,
-    inkGsm: Number(jobMaster.inkGsm) || 1.5,
-    adhesiveGsm: Number(jobMaster.adhesiveGsm) || 1.5,
+    inkGsm: inkGsmVal,
+    adhesiveGsm: adhesiveGsmVal,
+    ink_gsm: inkGsmVal,
+    adhesive_gsm: adhesiveGsmVal,
     chkEyemark: jobMaster.chkEyemark ?? false,
     chkBarcode: jobMaster.chkBarcode ?? false,
     chkOrientation: jobMaster.chkOrientation ?? false,
@@ -2211,10 +2274,22 @@ export async function saveJobMasterToSupabase(jobMaster) {
     processRouting: processRouting
   };
 
+  const metaEnvelope = {
+    inkGsm: inkGsmVal,
+    adhesiveGsm: adhesiveGsmVal,
+    pressMarks,
+    layers,
+    processRouting,
+    skuCode,
+    clientName,
+    jobName
+  };
+  const combinedJobName = `${jobName || 'Untitled Job'} ||| ${JSON.stringify(metaEnvelope)}`;
+
   const legacyPayload = {
     id,
     sku_code: skuCode,
-    job_name: jobName,
+    job_name: combinedJobName,
     client_name: clientName,
     film_structure: structure,
     pouch_width_mm: printWidthMm,
@@ -2237,8 +2312,8 @@ export async function saveJobMasterToSupabase(jobMaster) {
     pouch_open_width: Number(jobMaster.pouchOpenWidth) || 0,
     pouch_height: Number(jobMaster.pouchHeight) || 0,
     layers: Array.isArray(jobMaster.layers) ? jobMaster.layers : [],
-    ink_gsm: Number(jobMaster.inkGsm) || 1.5,
-    adhesive_gsm: Number(jobMaster.adhesiveGsm) || 1.5,
+    ink_gsm: inkGsmVal,
+    adhesive_gsm: adhesiveGsmVal,
     process_routing: processRouting,
     cylinder_sku: jobMaster.cylinderSku || skuCode,
     engravures_name: engraverName,

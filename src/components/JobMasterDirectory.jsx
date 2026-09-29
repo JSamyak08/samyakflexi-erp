@@ -929,8 +929,8 @@ export default function JobMasterDirectory({
     setSlittingMark(job.slittingMark || 'Yes');
     setTrackerLine(job.trackerLine || 'Yes');
     setSpecialInstructions(job.specialInstructions || '');
-    setInkGsm(job.inkGsm ? String(job.inkGsm) : '1.5');
-    setAdhesiveGsm(job.adhesiveGsm ? String(job.adhesiveGsm) : '1.5');
+    setInkGsm(job.inkGsm !== undefined && job.inkGsm !== null && job.inkGsm !== '' ? String(job.inkGsm) : '1.5');
+    setAdhesiveGsm(job.adhesiveGsm !== undefined && job.adhesiveGsm !== null && job.adhesiveGsm !== '' ? String(job.adhesiveGsm) : '1.5');
     
     let currentLayers = [];
     if (job.layers && job.layers.length > 0) {

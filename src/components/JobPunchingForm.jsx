@@ -20,7 +20,8 @@ import {
   DollarSign,
   AlertTriangle,
   RotateCcw,
-  Check
+  Check,
+  Tag
 } from 'lucide-react';
 import OrderConfirmationPDF from './OrderConfirmationPDF';
 import { notifyOrderPunched } from '../services/emailService';
@@ -38,8 +39,8 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
     if (fmt) return String(fmt).toLowerCase().includes('pouch') ? 'Pouching' : 'Reel';
     return 'Reel';
   }); // Reel or Pouching
-  const [inkGsm, setInkGsm] = useState(1.5);
-  const [adhesiveGsm, setAdhesiveGsm] = useState(1.5);
+  const [inkGsm, setInkGsm] = useState(() => (initialJobMasterData?.inkGsm !== undefined && initialJobMasterData?.inkGsm !== null && initialJobMasterData?.inkGsm !== '') ? initialJobMasterData.inkGsm : 1.5);
+  const [adhesiveGsm, setAdhesiveGsm] = useState(() => (initialJobMasterData?.adhesiveGsm !== undefined && initialJobMasterData?.adhesiveGsm !== null && initialJobMasterData?.adhesiveGsm !== '') ? initialJobMasterData.adhesiveGsm : 1.5);
   const [orderComments, setOrderComments] = useState('');
 
   // Order Variants State
@@ -150,6 +151,12 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       if (initialJobMasterData.printWidthMm) setPrintWidthMm(initialJobMasterData.printWidthMm);
       if (initialJobMasterData.repeatLengthMm) setRepeatLengthMm(initialJobMasterData.repeatLengthMm);
       if (initialJobMasterData.colorsCount) setColorsCount(initialJobMasterData.colorsCount);
+      if (initialJobMasterData.inkGsm !== undefined && initialJobMasterData.inkGsm !== null && initialJobMasterData.inkGsm !== '') {
+        setInkGsm(initialJobMasterData.inkGsm);
+      }
+      if (initialJobMasterData.adhesiveGsm !== undefined && initialJobMasterData.adhesiveGsm !== null && initialJobMasterData.adhesiveGsm !== '') {
+        setAdhesiveGsm(initialJobMasterData.adhesiveGsm);
+      }
       if (initialJobMasterData.layers && initialJobMasterData.layers.length > 0) {
         const pw = parseFloat(initialJobMasterData.printWidthMm) || 1000;
         setLayers(initialJobMasterData.layers.map(l => {
@@ -481,6 +488,8 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       printWidthMm: parseFloat(printWidthMm),
       repeatLengthMm: parseFloat(repeatLengthMm),
       colorsCount: parseInt(colorsCount),
+      inkGsm: parseFloat(inkGsm) || 0,
+      adhesiveGsm: parseFloat(adhesiveGsm) || 0,
       status: 'In Progress',
       hasVariants: hasVariants && finalVariants.length > 0,
       variants: finalVariants,
@@ -490,6 +499,8 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
         layers: finalLayers, 
         printWidthMm: parseFloat(printWidthMm), 
         repeatLengthMm: parseFloat(repeatLengthMm), 
+        inkGsm: parseFloat(inkGsm) || 0,
+        adhesiveGsm: parseFloat(adhesiveGsm) || 0,
         structure: finalLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / '), 
         hasVariants: hasVariants && finalVariants.length > 0,
         variants: finalVariants,
@@ -678,6 +689,8 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
                     if (selectedJM.printWidthMm) setPrintWidthMm(selectedJM.printWidthMm);
                     if (selectedJM.repeatLengthMm) setRepeatLengthMm(selectedJM.repeatLengthMm);
                     if (selectedJM.colorsCount) setColorsCount(selectedJM.colorsCount);
+                    if (selectedJM.inkGsm !== undefined && selectedJM.inkGsm !== null && selectedJM.inkGsm !== '') setInkGsm(selectedJM.inkGsm);
+                    if (selectedJM.adhesiveGsm !== undefined && selectedJM.adhesiveGsm !== null && selectedJM.adhesiveGsm !== '') setAdhesiveGsm(selectedJM.adhesiveGsm);
                     if (selectedJM.layers && selectedJM.layers.length > 0) {
                       setLayers(selectedJM.layers.map(l => ({ ...l, rate: l.rate ?? l.ratePerKg ?? '' })));
                     }
