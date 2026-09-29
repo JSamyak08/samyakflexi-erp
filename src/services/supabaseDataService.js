@@ -969,13 +969,16 @@ export async function saveGRNToSupabase(grn) {
 
   const combinedItemName = `${itemNameVal} ||| ${JSON.stringify(meta)}`;
 
+  const parsedDate = parseStandardDate(clean.receivedDate);
+  const dateVal = parsedDate ? parsedDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+
   const payload = {
     id: grnId,
     grn_number: clean.grnNo || grnId,
     vendor_id: clean.vendorName || clean.vendorId || 'General Vendor',
     po_number: clean.poNumber || '',
     invoice_number: clean.invoiceNo || '',
-    received_date: clean.receivedDate || new Date().toISOString(),
+    received_date: dateVal,
     item_name: combinedItemName,
     metallocene_pct: clean.metallocenePct || null,
     received_qty_kg: weightVal,
@@ -983,11 +986,11 @@ export async function saveGRNToSupabase(grn) {
     qc_remarks: clean.qcNotes || ''
   };
 
-  console.log('[GRNs] Saving GRN via schema-independent metadata envelope:', grnId);
+  console.log('[GRNs] Saving GRN to Supabase:', grnId, payload);
   const { error } = await supabase.from('grns').upsert(payload, { onConflict: 'id' });
   if (error) {
-    console.error('[GRNs] Failed to save GRN:', error.message);
-    handleSupabaseError(error, 'grns');
+    console.error('[GRNs] Failed to save GRN to Supabase:', error.message);
+    throw new Error(`Database save error for GRN ${grnId}: ${error.message}`);
   }
 }
 

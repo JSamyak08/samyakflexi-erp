@@ -1606,7 +1606,7 @@ export default function InventoryManagement({
   const isRecDue = isReconciliationDue(lastRecDateStr);
 
   // Inward GRN Submit (Supports Films, Inks, Solvents, Adhesives, Blades, Spares, PPE)
-  const handleSaveGRN = (e) => {
+  const handleSaveGRN = async (e) => {
     e.preventDefault();
     if (!grnInvoiceNo.trim() || !grnBatchNo.trim()) {
       alert("Invoice Number and Batch Number are required!");
@@ -1707,12 +1707,14 @@ export default function InventoryManagement({
       onUpdateInventory([...inventory, newInvItem]);
     }
 
+    const todayIsoDate = new Date().toISOString().split('T')[0];
+
     const newGRN = {
       grnNo: grnDocNo,
       poNumber: grnPoNo,
       vendorName: grnVendor,
       invoiceNo: grnInvoiceNo,
-      receivedDate: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
+      receivedDate: todayIsoDate,
       category: grnCategory,
       itemName: itemName,
       stockItemId: targetStockItemId,
@@ -1747,12 +1749,14 @@ export default function InventoryManagement({
       storeManager: currentUser?.name || "Store Manager"
     };
 
-    setGrnFreightAmount('');
-    setGrnTransporterName('');
-    setGrnItemRemarks('');
-
-    if (onAddGRN) {
-      onAddGRN(newGRN);
+    try {
+      if (onAddGRN) {
+        await onAddGRN(newGRN);
+      }
+    } catch (err) {
+      console.error('[GRN Inward] Save to database failed:', err);
+      alert(`❌ Failed to create GRN in database:\n${err.message || err}`);
+      return;
     }
 
     // Auto update linked Rotogravure Cylinder & Order status if Category is Rotogravure Cylinders or matches a Cylinder order/PO
@@ -1804,7 +1808,7 @@ export default function InventoryManagement({
         widthMm: isFilm ? (parseFloat(grnWidthMm) || 0) : 0,
         unit: isFilm ? 'Kg' : grnUnit,
         packagingType: grnPackagingType,
-        inwardDatetime: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
+        inwardDatetime: todayIsoDate,
         vendorName: grnVendor,
         invoiceNo: grnInvoiceNo,
         batchNo: grnBatchNo,
@@ -1828,15 +1832,31 @@ export default function InventoryManagement({
       return rollObj;
     });
 
-    newRolls.forEach(rollObj => {
-      if (onAddRoll) {
-        onAddRoll(rollObj);
-      }
-    });
+    if (onUpdateInventoryRolls) {
+      onUpdateInventoryRolls(newRolls);
+    } else {
+      newRolls.forEach(rollObj => {
+        if (onAddRoll) {
+          onAddRoll(rollObj);
+        }
+      });
+    }
+
+    setGrnFreightAmount('');
+    setGrnTransporterName('');
+    setGrnItemRemarks('');
+    setGrnInvoiceNo('');
+    setGrnBatchNo('');
+    setGrnPoNo('');
+    setGrnWeightKg('');
+    setGrnPurchaseRate('');
+    setGrnItemsList([
+      { id: `item-${Date.now()}-1`, grossWeightKg: '', tareWeightKg: grnDefaultTare || 0, netWeightKg: '', lengthMeters: '', vendorRollNo: '', notes: '' }
+    ]);
 
     setIsNewGRNModalOpen(false);
     setSelectedRollForBarcodeModal(newRolls);
-    alert(`✅ Inward GRN ${newGRN.grnNo} recorded! ${isCylinderCategory ? 'Stock approved.' : 'Submitted to QC Approval Lab for laboratory clearance.'} ${unitCount} barcode sticker(s) generated.`);
+    alert(`✅ Inward GRN ${newGRN.grnNo} recorded successfully!\n\n${isCylinderCategory ? 'Stock approved & linked to Cylinders.' : 'Submitted to Quality Control (QC) Lab Inspection Portal.'}\n${unitCount} barcode sticker(s) generated.`);
   };
 
   // QC Approval / Rejection (Updates Stock for Films, Inks, Solvents, Adhesives, Spares, PPE)
@@ -3054,8 +3074,17 @@ export default function InventoryManagement({
   };
 
   const pendingQCGRNs = (safeGrns || []).filter(g => {
-    const st = String(g.status || g.qcStatus || '').trim().toLowerCase();
-    return st.includes('pending') || st === 'awaiting qc clearance' || st === 'awaiting qc';
+    const st = String(g.status || '').trim().toLowerCase();
+    const qcSt = String(g.qcStatus || '').trim().toLowerCase();
+    const category = String(g.category || '').trim().toLowerCase();
+
+    // Auto-approved categories like Rotogravure Cylinders bypass QC lab inspection
+    if (category === 'rotogravure cylinders' || category.includes('cylinder')) return false;
+
+    if (st.includes('approved') || qcSt.includes('approved')) return false;
+    if (st.includes('hold') || qcSt.includes('hold') || st.includes('reject') || qcSt.includes('reject')) return false;
+
+    return st.includes('pending') || qcSt.includes('pending') || st.includes('awaiting') || qcSt.includes('awaiting') || (!st && !qcSt);
   });
 
   const filteredInventory = (groupedInventory || []).filter(i => {
