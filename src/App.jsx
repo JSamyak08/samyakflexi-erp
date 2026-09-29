@@ -2086,6 +2086,7 @@ export default function App() {
       }
 
       setJobMasters(prev => prev.map(item => item.id === updatedJm.id ? updatedJm : item));
+      await syncJobMasterToOrders(updatedJm);
     }
   };
 
@@ -2259,10 +2260,103 @@ export default function App() {
     logAudit('CREATE', 'Job Masters', `Created job master template "${newJobMaster.jobName}" (${newJobMaster.id})`, newJobMaster.id);
   };
 
+  const syncJobMasterToOrders = async (updatedJm) => {
+    if (!updatedJm) return;
+    const targetJmId = updatedJm.id || updatedJm.jobMasterId;
+    const targetJobName = (updatedJm.jobName || '').toLowerCase().trim();
+
+    // Find all matching orders in system
+    const matchingOrders = (orders || []).filter(o => {
+      if (!o) return false;
+      if (targetJmId && (o.jobMasterId === targetJmId || String(o.jobMasterId) === String(targetJmId))) return true;
+      if (targetJobName && (o.jobName || '').toLowerCase().trim() === targetJobName) return true;
+      return false;
+    });
+
+    if (matchingOrders.length === 0) return;
+
+    console.log(`[JOB MASTER SYNC] Syncing updated Job Master "${updatedJm.jobName}" (${updatedJm.id}) to ${matchingOrders.length} orders...`);
+
+    const updatedOrdersList = [];
+    for (const order of matchingOrders) {
+      // Retain existing order's locked structure, layers & rawMaterialRequirements!
+      const lockedStructure = (order.structure && order.structure !== '—' && order.structure !== 'PET / PE') 
+        ? order.structure 
+        : (order.jobDetails?.structure && order.jobDetails.structure !== '—' ? order.jobDetails.structure : updatedJm.structure);
+
+      const lockedLayers = (Array.isArray(order.layers) && order.layers.length > 0)
+        ? order.layers
+        : ((Array.isArray(order.jobDetails?.layers) && order.jobDetails.layers.length > 0) ? order.jobDetails.layers : updatedJm.layers);
+
+      const updatedOrder = {
+        ...order,
+        jobMasterId: updatedJm.id || order.jobMasterId,
+        jobName: updatedJm.jobName || order.jobName,
+        clientName: updatedJm.clientName || order.clientName,
+        structure: lockedStructure,
+        layers: lockedLayers,
+        materialFormat: updatedJm.materialForm || updatedJm.orderType || order.materialFormat || order.orderType,
+        orderType: updatedJm.materialForm || updatedJm.orderType || order.orderType || order.materialFormat,
+        printWidthMm: updatedJm.printWidthMm !== undefined && updatedJm.printWidthMm !== null ? Number(updatedJm.printWidthMm) : order.printWidthMm,
+        repeatLengthMm: updatedJm.repeatLengthMm !== undefined && updatedJm.repeatLengthMm !== null ? Number(updatedJm.repeatLengthMm) : order.repeatLengthMm,
+        pouchOpenWidth: updatedJm.pouchOpenWidth !== undefined && updatedJm.pouchOpenWidth !== null ? Number(updatedJm.pouchOpenWidth) : order.pouchOpenWidth,
+        pouchHeight: updatedJm.pouchHeight !== undefined && updatedJm.pouchHeight !== null ? Number(updatedJm.pouchHeight) : order.pouchHeight,
+        pouchType: updatedJm.pouchType || order.pouchType,
+        colorsCount: updatedJm.colorsCount !== undefined && updatedJm.colorsCount !== null ? Number(updatedJm.colorsCount) : order.colorsCount,
+        cylinderSku: updatedJm.cylinderSku || order.cylinderSku,
+        cylinderCost: updatedJm.cylinderCost || order.cylinderCost,
+        engravuresName: updatedJm.engravuresName || order.engravuresName,
+        costBorneBy: updatedJm.costBorneBy || order.costBorneBy,
+        variant: updatedJm.variant || order.variant,
+        printing: updatedJm.printing || order.printing,
+        invoiceTo: updatedJm.invoiceTo || order.invoiceTo,
+        shellSize: updatedJm.shellSize || order.shellSize,
+        petSize: updatedJm.petSize || order.petSize,
+        inkGsm: updatedJm.inkGsm !== undefined ? Number(updatedJm.inkGsm) : (order.inkGsm ?? 1.5),
+        adhesiveGsm: updatedJm.adhesiveGsm !== undefined ? Number(updatedJm.adhesiveGsm) : (order.adhesiveGsm ?? 1.5),
+        wastagePct: updatedJm.wastagePct !== undefined ? Number(updatedJm.wastagePct) : (order.wastagePct ?? 5),
+        pressMarks: updatedJm.pressMarks || order.pressMarks,
+        artworkUrl: updatedJm.artworkUrl || order.artworkUrl,
+        specialInstructions: updatedJm.specialInstructions !== undefined ? updatedJm.specialInstructions : order.specialInstructions,
+        jobDetails: {
+          ...(order.jobDetails || {}),
+          jobName: updatedJm.jobName || order.jobName,
+          clientName: updatedJm.clientName || order.clientName,
+          structure: lockedStructure,
+          layers: lockedLayers,
+          printWidthMm: updatedJm.printWidthMm !== undefined && updatedJm.printWidthMm !== null ? Number(updatedJm.printWidthMm) : order.jobDetails?.printWidthMm,
+          repeatLengthMm: updatedJm.repeatLengthMm !== undefined && updatedJm.repeatLengthMm !== null ? Number(updatedJm.repeatLengthMm) : order.jobDetails?.repeatLengthMm,
+          pouchOpenWidth: updatedJm.pouchOpenWidth !== undefined && updatedJm.pouchOpenWidth !== null ? Number(updatedJm.pouchOpenWidth) : order.jobDetails?.pouchOpenWidth,
+          pouchHeight: updatedJm.pouchHeight !== undefined && updatedJm.pouchHeight !== null ? Number(updatedJm.pouchHeight) : order.jobDetails?.pouchHeight,
+          pouchType: updatedJm.pouchType || order.jobDetails?.pouchType,
+          colorsCount: updatedJm.colorsCount !== undefined && updatedJm.colorsCount !== null ? Number(updatedJm.colorsCount) : order.jobDetails?.colorsCount,
+          inkGsm: updatedJm.inkGsm !== undefined ? Number(updatedJm.inkGsm) : (order.jobDetails?.inkGsm ?? 1.5),
+          adhesiveGsm: updatedJm.adhesiveGsm !== undefined ? Number(updatedJm.adhesiveGsm) : (order.jobDetails?.adhesiveGsm ?? 1.5),
+          wastagePct: updatedJm.wastagePct !== undefined ? Number(updatedJm.wastagePct) : (order.jobDetails?.wastagePct ?? 5),
+          pressMarks: updatedJm.pressMarks || order.jobDetails?.pressMarks,
+          artworkUrl: updatedJm.artworkUrl || order.jobDetails?.artworkUrl
+        }
+      };
+
+      try {
+        await saveOrderToSupabase(updatedOrder);
+        updatedOrdersList.push(updatedOrder);
+      } catch (err) {
+        console.warn(`Failed to save synced order ${updatedOrder.id}:`, err);
+      }
+    }
+
+    if (updatedOrdersList.length > 0) {
+      const updatedMap = new Map(updatedOrdersList.map(o => [o.id, o]));
+      setOrders(prev => prev.map(o => updatedMap.get(o.id) || o));
+    }
+  };
+
   const handleUpdateJobMaster = async (updatedJobMaster) => {
     requireDatabaseConnection('update job master');
     await saveJobMasterToSupabase(updatedJobMaster);
     setJobMasters(prev => prev.map(j => j.id === updatedJobMaster.id ? updatedJobMaster : j));
+    await syncJobMasterToOrders(updatedJobMaster);
     logAudit('UPDATE', 'Job Masters', `Updated job master template "${updatedJobMaster.jobName}" (${updatedJobMaster.id})`, updatedJobMaster.id);
   };
 

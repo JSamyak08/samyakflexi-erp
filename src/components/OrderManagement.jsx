@@ -47,24 +47,39 @@ export default function OrderManagement({
   onNavigateToPunching,
   onNavigateToProductionRecords
 }) {
-  // Helper: derive substrate structure from Job Master layers (authoritative source)
+  // Helper: derive substrate structure (preserves locked order structure for punched orders)
   const getSubstrateStructure = (order) => {
     if (order?.isCylinderOrder || order?.orderType === 'Rotogravure Cylinder' || order?.materialFormat === 'Rotogravure Cylinder') {
       return order.cylinderDetails?.description || order.structure || 'Rotogravure Cylinder Set';
     }
-    const jm = jobMasters.find(j =>
-      (j.jobName || '').toLowerCase().trim() === (order?.jobName || '').toLowerCase().trim()
-    );
-    if (jm && jm.layers && jm.layers.length > 0) {
-      return jm.layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
-    }
-    if (jm && jm.structure && jm.structure !== 'PET / PE' && jm.structure !== '—') {
-      return jm.structure;
-    }
+
+    // 1. Order's explicitly locked structure/layers (from order creation or manual order edit)
     if (order?.structure && order.structure !== 'PET / PE' && order.structure !== '—') {
       return order.structure;
     }
-    return jm?.structure || order?.structure || '—';
+    if (order?.jobDetails?.structure && order.jobDetails.structure !== 'PET / PE' && order.jobDetails.structure !== '—') {
+      return order.jobDetails.structure;
+    }
+    if (Array.isArray(order?.layers) && order.layers.length > 0) {
+      return order.layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
+    }
+    if (Array.isArray(order?.jobDetails?.layers) && order.jobDetails.layers.length > 0) {
+      return order.jobDetails.layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
+    }
+
+    // 2. Fallback: Job Master (for new or unassigned orders)
+    const jm = jobMasters.find(j =>
+      (order?.jobMasterId && (j.id === order.jobMasterId || j.jobMasterId === order.jobMasterId)) ||
+      ((j.jobName || '').toLowerCase().trim() === (order?.jobName || '').toLowerCase().trim())
+    );
+    if (jm && jm.structure && jm.structure !== 'PET / PE' && jm.structure !== '—') {
+      return jm.structure;
+    }
+    if (jm && jm.layers && jm.layers.length > 0) {
+      return jm.layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
+    }
+
+    return order?.structure || jm?.structure || '—';
   };
 
   // Helper: derive Material Form (Reel Form, Pouching Form, or Rotogravure Cylinder)
@@ -128,15 +143,33 @@ export default function OrderManagement({
     }
 
     const jm = jobMasters.find(j =>
-      (j.jobName || '').toLowerCase().trim() === (order?.jobName || '').toLowerCase().trim()
+      (order?.jobMasterId && (j.id === order.jobMasterId || j.jobMasterId === order.jobMasterId)) ||
+      ((j.jobName || '').toLowerCase().trim() === (order?.jobName || '').toLowerCase().trim())
     );
 
-    let layers = jm?.layers || order?.jobDetails?.layers;
+    // 1. Order's own locked layers / structure
+    let layers = order?.layers || order?.jobDetails?.layers;
+    const orderStructStr = (order?.structure || order?.jobDetails?.structure || '');
 
     if (!layers || layers.length === 0) {
-      const structStr = (jm?.structure || order?.structure || '');
-      if (structStr && structStr !== 'PET / PE' && structStr !== '—') {
-        const parts = structStr.split('/').map(p => p.trim());
+      if (orderStructStr && orderStructStr !== 'PET / PE' && orderStructStr !== '—') {
+        const parts = orderStructStr.split('/').map(p => p.trim());
+        layers = parts.map(part => {
+          const micronMatch = part.match(/(\d+(\.\d+)?)\s*µ?/i);
+          const micron = micronMatch ? parseFloat(micronMatch[1]) : 12;
+          let filmType = part.replace(/(\d+(\.\d+)?)\s*µ?/gi, '').trim();
+          if (!filmType) filmType = 'PET';
+          return { filmType, micron };
+        });
+      }
+    }
+
+    // 2. Fallback to Job Master layers / structure if order has no explicit structure
+    if (!layers || layers.length === 0) {
+      layers = jm?.layers;
+      const jmStructStr = jm?.structure || '';
+      if ((!layers || layers.length === 0) && jmStructStr && jmStructStr !== 'PET / PE' && jmStructStr !== '—') {
+        const parts = jmStructStr.split('/').map(p => p.trim());
         layers = parts.map(part => {
           const micronMatch = part.match(/(\d+(\.\d+)?)\s*µ?/i);
           const micron = micronMatch ? parseFloat(micronMatch[1]) : 12;
