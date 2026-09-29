@@ -166,6 +166,8 @@ export default function InventoryManagement({
   inventoryRolls = [],
   dispatchShipments = [],
   onAddRoll,
+  onUpdateRoll,
+  onUpdateInventoryRolls,
   onAddDispatchShipment,
   cylinders = [],
   onUpdateCylinder,
@@ -1666,6 +1668,48 @@ export default function InventoryManagement({
 
     const grnOverallRemark = (grnItemRemarks || '').trim();
 
+    // Ensure matching or creating an entry in central inventory list so its Stock Ledger can be clicked and viewed immediately even while Awaiting QC Approval!
+    let targetStockItemId = grnSelectedStockItemId;
+    const existingInvItem = (inventory || []).find(i => {
+      if (grnSelectedStockItemId && String(i.id) === String(grnSelectedStockItemId)) return true;
+      if (isFilm) {
+        return i.filmType === grnFilmType && Number(i.micron) === Number(grnMicron) && Number(i.widthMm) === Number(grnWidthMm);
+      }
+      return (i.itemName || '').toLowerCase() === itemName.toLowerCase();
+    });
+
+    if (existingInvItem) {
+      targetStockItemId = existingInvItem.id;
+    } else {
+      const newInvId = generateInventoryId(inventory);
+      targetStockItemId = newInvId;
+      const newInvItem = {
+        id: newInvId,
+        itemCode: newInvId,
+        itemName: itemName || (isFilm ? `${grnFilmType} (${grnMicron}µ x ${grnWidthMm}mm)` : `${grnCategory} Material`),
+        category: grnCategory || 'Film Substrates',
+        filmType: isFilm ? grnFilmType : grnCategory,
+        micron: isFilm ? (parseFloat(grnMicron) || 0) : '-',
+        widthMm: isFilm ? (parseFloat(grnWidthMm) || 0) : '-',
+        unit: isFilm ? 'Kg' : (isCylinderCategory ? 'Set' : grnUnit),
+        density: FILM_DENSITIES[grnFilmType] || 1.0,
+        availableQtyKg: isCylinderCategory ? totalNetQty : 0, // Auto-approved cylinders get stock immediately, others wait for QC
+        allocatedQtyKg: 0,
+        unitPrice: rateVal,
+        purchaseRatePerKg: rateVal,
+        purchaseValuation: isCylinderCategory ? Number((totalNetQty * rateVal).toFixed(2)) : 0,
+        location: isFilm ? "Bay A - Inward Dock" : "Consumables Store",
+        reorderLevelKg: 100,
+        lastVendor: grnVendor,
+        lastBatch: grnBatchNo
+      };
+      if (onSaveInventoryItem) {
+        onSaveInventoryItem(newInvItem);
+      } else if (onUpdateInventory) {
+        onUpdateInventory([...inventory, newInvItem]);
+      }
+    }
+
     const newGRN = {
       grnNo: grnDocNo,
       poNumber: grnPoNo,
@@ -1674,7 +1718,7 @@ export default function InventoryManagement({
       receivedDate: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
       category: grnCategory,
       itemName: itemName,
-      stockItemId: grnSelectedStockItemId || null,
+      stockItemId: targetStockItemId,
       filmType: isFilm ? grnFilmType : grnCategory,
       micron: isFilm ? parseFloat(grnMicron) : '-',
       widthMm: isFilm ? parseFloat(grnWidthMm) : '-',
@@ -1717,7 +1761,7 @@ export default function InventoryManagement({
     if (isCylinderCategory || grnPoNo.startsWith('PO-CYL-')) {
       const linkedCylinder = (cylinders || []).find(c => 
         (grnPoNo && c.poNumber === grnPoNo) ||
-        (grnSelectedStockItemId && String(c.id) === String(grnSelectedStockItemId)) ||
+        (targetStockItemId && String(c.id) === String(targetStockItemId)) ||
         (c.cylinderCode && itemName.toLowerCase().includes(c.cylinderCode.toLowerCase())) ||
         (c.jobName && itemName.toLowerCase().includes(c.jobName.toLowerCase()))
       );
@@ -1754,7 +1798,7 @@ export default function InventoryManagement({
         unitNo: item.unitNo,
         totalUnits: unitCount,
         rollType: isFilm ? 'RAW_MATERIAL' : 'CONSUMABLE_ITEM',
-        itemId: grnSelectedStockItemId || generateInventoryId(inventory),
+        itemId: targetStockItemId,
         itemName: itemName,
         category: grnCategory,
         filmType: isFilm ? grnFilmType : '-',
@@ -1776,7 +1820,7 @@ export default function InventoryManagement({
         purchaseRate: rateVal,
         unitPrice: rateVal,
         stationId: 'SCALE_1_INWARD',
-        locationBay: isFilm ? 'Bay A' : 'Consumables Store',
+        locationBay: isCylinderCategory ? (isFilm ? 'Bay A' : 'Consumables Store') : 'Pending QC Store',
         status: isCylinderCategory ? 'In Stock' : 'Pending QC',
         qcStatus: isCylinderCategory ? 'Approved' : 'Pending QC',
         itemRemarks: rollRemark,
@@ -1794,28 +1838,58 @@ export default function InventoryManagement({
 
     setIsNewGRNModalOpen(false);
     setSelectedRollForBarcodeModal(newRolls);
-    alert(`✅ Inward GRN ${newGRN.grnNo} recorded! ${isCylinderCategory ? 'Stock approved.' : 'Sent to QC Approval Lab for laboratory clearance.'} ${unitCount} barcode sticker(s) generated.`);
+    alert(`✅ Inward GRN ${newGRN.grnNo} recorded! ${isCylinderCategory ? 'Stock approved.' : 'Submitted to QC Approval Lab for laboratory clearance.'} ${unitCount} barcode sticker(s) generated.`);
   };
 
   // QC Approval / Rejection (Updates Stock for Films, Inks, Solvents, Adhesives, Spares, PPE)
   const handleQCAction = (status) => {
     if (!qcInspectingGRN) return;
 
-    const finalStatus = status === 'Approved' ? 'Approved' : 'Rejected';
+    const isApproved = status === 'Approved';
+    const finalStatus = isApproved ? 'Approved' : 'QC Hold';
+    const finalQcStatus = isApproved ? 'Approved' : 'Rejected';
+
     const updatedGRN = {
       ...qcInspectingGRN,
       status: finalStatus,
-      qcStatus: finalStatus,
-      qcNotes: qcNotesInput || (status === 'Approved' ? 'Inspected and passed all laboratory parameters.' : 'Rejected due to spec variation.'),
-      inspectedBy: 'QC Chemist Ramesh Kumar'
+      qcStatus: finalQcStatus,
+      location: isApproved ? (qcInspectingGRN.category === 'Film Substrates' ? 'Bay A' : 'Consumables Store') : 'QC Hold Store',
+      storeLocation: isApproved ? (qcInspectingGRN.category === 'Film Substrates' ? 'Bay A' : 'Consumables Store') : 'QC Hold Store',
+      qcNotes: qcNotesInput || (isApproved ? 'Inspected and passed all laboratory parameters.' : 'Rejected in QC Approval Lab due to spec variation. Transferred to QC Hold Store.'),
+      inspectedBy: currentUser?.name || 'QC Chemist Ramesh Kumar',
+      inspectedDate: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })
     };
 
     if (onUpdateGRN) {
       onUpdateGRN(updatedGRN);
     }
 
+    // Update associated child rolls/barcodes in inventoryRolls
+    const matchingRolls = (inventoryRolls || []).filter(r => 
+      (r.grnNo && (r.grnNo === qcInspectingGRN.grnNo || r.grnNo === qcInspectingGRN.id)) ||
+      (r.grn_no && (r.grn_no === qcInspectingGRN.grnNo || r.grn_no === qcInspectingGRN.id))
+    );
+
+    if (matchingRolls.length > 0) {
+      const updatedRollsList = matchingRolls.map(r => ({
+        ...r,
+        status: isApproved ? 'In Stock' : 'QC Hold',
+        qcStatus: finalQcStatus,
+        locationBay: isApproved ? (updatedGRN.category === 'Film Substrates' ? 'Bay A' : 'Consumables Store') : 'QC Hold Store',
+        notes: `${r.notes || ''} | QC ${finalStatus} by ${updatedGRN.inspectedBy}`.trim()
+      }));
+
+      if (onUpdateInventoryRolls) {
+        onUpdateInventoryRolls(updatedRollsList);
+      } else if (onUpdateRoll) {
+        updatedRollsList.forEach(r => onUpdateRoll(r));
+      } else if (onAddRoll) {
+        updatedRollsList.forEach(r => onAddRoll(r));
+      }
+    }
+
     // Handle Rotogravure Cylinder status update on QC Approval
-    if (status === 'Approved' && (updatedGRN.category === 'Rotogravure Cylinders' || (updatedGRN.poNumber && updatedGRN.poNumber.startsWith('PO-CYL-')))) {
+    if (isApproved && (updatedGRN.category === 'Rotogravure Cylinders' || (updatedGRN.poNumber && updatedGRN.poNumber.startsWith('PO-CYL-')))) {
       const linkedCylinder = (cylinders || []).find(c => 
         (updatedGRN.poNumber && c.poNumber === updatedGRN.poNumber) ||
         (updatedGRN.stockItemId && String(c.id) === String(updatedGRN.stockItemId)) ||
@@ -1844,7 +1918,7 @@ export default function InventoryManagement({
     }
 
     // If Approved, automatically add stock to central Inventory!
-    if (status === 'Approved' && onUpdateInventory) {
+    if (isApproved && (onSaveInventoryItem || onUpdateInventory)) {
       const isFilm = (updatedGRN.category || 'Film Substrates') === 'Film Substrates';
       const grnRate = parseFloat(updatedGRN.purchaseRatePerKg || updatedGRN.purchaseRate || updatedGRN.unitPrice) || 0;
 
@@ -1859,22 +1933,28 @@ export default function InventoryManagement({
 
       if (existingInvIndex >= 0) {
         const itemToUpdate = inventory[existingInvIndex];
-        const updatedInv = [...inventory];
-        const newAvailable = Number((itemToUpdate.availableQtyKg + updatedGRN.netWeightKg).toFixed(2));
+        const newAvailable = Number(((itemToUpdate.availableQtyKg || 0) + (updatedGRN.netWeightKg || 0)).toFixed(2));
         const finalPrice = grnRate > 0 ? grnRate : (itemToUpdate.unitPrice || 0);
 
-        updatedInv[existingInvIndex] = {
+        const updatedInvItem = {
           ...itemToUpdate,
           availableQtyKg: newAvailable,
           unitPrice: finalPrice,
           purchaseRatePerKg: finalPrice,
           purchaseValuation: Number((newAvailable * finalPrice).toFixed(2)),
-          lastVendor: updatedGRN.vendorName,
-          lastBatch: updatedGRN.batchNo
+          lastVendor: updatedGRN.vendorName || itemToUpdate.lastVendor,
+          lastBatch: updatedGRN.batchNo || itemToUpdate.lastBatch
         };
-        onUpdateInventory(updatedInv);
+
+        if (onSaveInventoryItem) {
+          onSaveInventoryItem(updatedInvItem);
+        } else if (onUpdateInventory) {
+          const updatedInv = [...inventory];
+          updatedInv[existingInvIndex] = updatedInvItem;
+          onUpdateInventory(updatedInv);
+        }
       } else {
-        const newAvailable = updatedGRN.netWeightKg;
+        const newAvailable = updatedGRN.netWeightKg || 0;
         const newInvId = generateInventoryId(inventory);
         const newInvItem = {
           id: newInvId,
@@ -1896,13 +1976,21 @@ export default function InventoryManagement({
           lastVendor: updatedGRN.vendorName,
           lastBatch: updatedGRN.batchNo
         };
-        onUpdateInventory([...inventory, newInvItem]);
+
+        if (onSaveInventoryItem) {
+          onSaveInventoryItem(newInvItem);
+        } else if (onUpdateInventory) {
+          onUpdateInventory([...inventory, newInvItem]);
+        }
       }
     }
 
     setQcInspectingGRN(null);
     setQcNotesInput('');
-    alert(`GRN ${updatedGRN.grnNo} has been marked as ${status}!`);
+    alert(isApproved 
+      ? `✅ GRN ${updatedGRN.grnNo} APPROVED!\nStock of ${updatedGRN.netWeightKg} ${updatedGRN.unit || 'Kg'} added to central Inventory & Item Ledger.`
+      : `🚫 GRN ${updatedGRN.grnNo} REJECTED!\nMaterial transferred to 'QC Hold Store'. Barcodes updated to QC Hold.`
+    );
   };
 
   // 2D Barcode / QR Code Scanner Resolution for Material Issue & Return
@@ -6247,6 +6335,7 @@ export default function InventoryManagement({
 
           return targetList.some(t => {
             // 1. Direct ID / Code match
+            if (candidate.stockItemId && (candidate.stockItemId === t.id || candidate.stockItemId === t.itemCode)) return true;
             if (candidate.itemId && (candidate.itemId === t.id || candidate.itemId === t.itemCode)) return true;
             if (candidate.id && (candidate.id === t.id || candidate.id === t.itemCode)) return true;
             if (candidate.itemCode && (candidate.itemCode === t.itemCode || candidate.itemCode === t.id)) return true;
@@ -6309,8 +6398,10 @@ export default function InventoryManagement({
         const matchingGRNs = (grns || []).filter(g => isItemMatch(g, item));
         const inwardTxLines = matchingGRNs.map(g => {
           const txId = `GRN_${g.grnNo || g.id}`;
-          const isApproved = g.status === 'Approved';
-          const isPending = !isApproved && (g.status === 'Pending QC' || g.status === 'Pending' || !g.status);
+          const isApproved = g.status === 'Approved' || g.qcStatus === 'Approved';
+          const isRejected = g.status === 'Rejected' || g.qcStatus === 'Rejected' || g.status === 'QC Hold' || g.qcStatus === 'QC Hold' || g.location === 'QC Hold Store';
+          const isPending = !isApproved && !isRejected;
+
           const rate = Number(g.purchaseRatePerKg || g.purchaseRate || g.unitPrice || item.unitPrice || item.purchaseRatePerKg || (DEFAULT_DAILY_RATES[g.filmType] || 0));
           const qty = g.netWeightKg || 0;
           // Find actual child rolls associated with this GRN
@@ -6341,11 +6432,22 @@ export default function InventoryManagement({
           const rollRemarksStr = matchingRolls.map(r => r.itemRemarks || r.remarks || r.notes).filter(Boolean).join('; ');
           const finalRemark = (grnRemark || rollRemarksStr || '').trim();
 
+          let typeStr = '📥 GRN Inward (Approved)';
+          let statusStr = 'Approved';
+          if (isPending) {
+            typeStr = '⏳ GRN Inward (Awaiting QC Approval)';
+            statusStr = 'Pending QC Approval';
+          } else if (isRejected) {
+            typeStr = '🚫 GRN Inward (Rejected - QC Hold Store)';
+            statusStr = 'QC Hold Store';
+          }
+
           return {
             txId,
             category: 'inward',
-            type: isApproved ? '📥 GRN Inward (Approved)' : '📥 GRN Inward (Pending QC)',
+            type: typeStr,
             isPendingQC: isPending,
+            isRejected: isRejected,
             date: g.receivedDate || '2026-07-24',
             refNo: g.grnNo,
             subRef: g.poNumber ? `PO: ${g.poNumber}` : 'Direct Receipt',
@@ -6360,7 +6462,7 @@ export default function InventoryManagement({
             barcode: resolvedBarcode,
             batchNo: g.batchNo || `GRN-${g.grnNo}`,
             invoiceNo: g.invoiceNo || '',
-            status: g.status || 'Pending QC',
+            status: statusStr,
             itemRemarks: finalRemark,
             remarks: finalRemark,
             notes: `${g.rollsReceived || matchingRolls.length || 1} pkg/roll(s) | Barcode: ${resolvedBarcode}${finalRemark ? ` | Remark: ${finalRemark}` : ''}`
@@ -6547,12 +6649,14 @@ export default function InventoryManagement({
         const allTxLines = [...openingStockLine, ...inwardTxLines, ...jobUsageLines, ...storeIssueLines, ...adjLines];
         allTxLines.sort((a, b) => parseTxDate(a.date) - parseTxDate(b.date));
 
-        // 7. Calculate Chronological Running Balance (Pending QC does NOT add to usable stock!)
+        // 7. Calculate Chronological Running Balance (Pending QC and Rejected QC Hold do NOT add to usable stock!)
         let runningStock = 0;
         const ledgerWithBalance = allTxLines.map(tx => {
-          const isPending = tx.isPendingQC || tx.status === 'Pending QC' || (tx.type && tx.type.includes('Pending QC'));
+          const isPending = tx.isPendingQC || tx.status === 'Pending QC Approval' || tx.status === 'Pending QC' || (tx.type && tx.type.includes('Awaiting QC'));
+          const isRejected = tx.isRejected || tx.status === 'QC Hold' || tx.status === 'QC Hold Store' || tx.status === 'Rejected' || (tx.type && tx.type.includes('Rejected'));
+          
           if (tx.category === 'inward') {
-            if (!isPending) {
+            if (!isPending && !isRejected) {
               runningStock += tx.inwardQtyKg;
             }
           } else if (tx.category === 'usage') {
@@ -6563,12 +6667,15 @@ export default function InventoryManagement({
           return { 
             ...tx, 
             isPendingQC: isPending,
+            isRejected: isRejected,
             runningBalance: Math.max(0, runningStock) 
           };
         });
 
         // 8. Reverse to Newest First for Display & Apply Filters
         const displayLines = [...ledgerWithBalance].reverse().filter(tx => {
+          if (ledgerFilterTab === 'pending_qc') return tx.isPendingQC;
+          if (ledgerFilterTab === 'qc_hold') return tx.isRejected;
           if (ledgerFilterTab !== 'all' && tx.category !== ledgerFilterTab) return false;
           if (ledgerSearchTerm.trim()) {
             const q = ledgerSearchTerm.toLowerCase();
@@ -6586,10 +6693,14 @@ export default function InventoryManagement({
         const paginatedLedgerItems = displayLines.slice((ledgerCurrentPage - 1) * ledgerPageSize, ledgerCurrentPage * ledgerPageSize);
 
         // Summary Calculations
-        const approvedInwardLines = inwardTxLines.filter(tx => !tx.isPendingQC);
+        const approvedInwardLines = inwardTxLines.filter(tx => !tx.isPendingQC && !tx.isRejected);
         const pendingInwardLines = inwardTxLines.filter(tx => tx.isPendingQC);
+        const rejectedInwardLines = inwardTxLines.filter(tx => tx.isRejected);
+
         const totalApprovedPurchasedQty = approvedInwardLines.reduce((sum, tx) => sum + tx.inwardQtyKg, 0) + openingStockQty;
         const totalPendingQcQty = pendingInwardLines.reduce((sum, tx) => sum + tx.inwardQtyKg, 0);
+        const totalRejectedQcQty = rejectedInwardLines.reduce((sum, tx) => sum + tx.inwardQtyKg, 0);
+
         const totalSpendRs = approvedInwardLines.reduce((sum, tx) => sum + tx.totalValue, 0) + (openingStockQty * itemActualUnitPrice);
         const avgPurchaseRate = totalApprovedPurchasedQty > 0 ? (totalSpendRs / totalApprovedPurchasedQty) : itemActualUnitPrice;
 
@@ -6704,6 +6815,11 @@ export default function InventoryManagement({
                       ⏳ +{totalPendingQcQty.toLocaleString()} {unitStr} Pending QC (Not in stock)
                     </div>
                   )}
+                  {totalRejectedQcQty > 0 && (
+                    <div style={{ fontSize: '0.72rem', color: '#991b1b', fontWeight: '700', marginTop: '4px', background: '#fef2f2', padding: '2px 6px', borderRadius: '4px', border: '1px solid #fecaca' }}>
+                      🚫 {totalRejectedQcQty.toLocaleString()} {unitStr} in QC Hold Store (Rejected)
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -6767,6 +6883,26 @@ export default function InventoryManagement({
                     📥 Inwards ({inwardTxLines.length + (openingStockQty > 0 ? 1 : 0) + storeIssueLines.filter(tx => tx.category === 'inward').length})
                   </button>
 
+                  {pendingInwardLines.length > 0 && (
+                    <button 
+                      className={`btn-secondary`}
+                      style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerFilterTab === 'pending_qc' ? '#ffffff' : 'transparent', fontWeight: ledgerFilterTab === 'pending_qc' ? '700' : '500', color: ledgerFilterTab === 'pending_qc' ? '#b45309' : 'var(--text-secondary)' }}
+                      onClick={() => setLedgerFilterTab('pending_qc')}
+                    >
+                      ⏳ Pending QC ({pendingInwardLines.length})
+                    </button>
+                  )}
+
+                  {rejectedInwardLines.length > 0 && (
+                    <button 
+                      className={`btn-secondary`}
+                      style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerFilterTab === 'qc_hold' ? '#ffffff' : 'transparent', fontWeight: ledgerFilterTab === 'qc_hold' ? '700' : '500', color: ledgerFilterTab === 'qc_hold' ? '#dc2626' : 'var(--text-secondary)' }}
+                      onClick={() => setLedgerFilterTab('qc_hold')}
+                    >
+                      🚫 QC Hold Store ({rejectedInwardLines.length})
+                    </button>
+                  )}
+
                   <button 
                     className={`btn-secondary`}
                     style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerFilterTab === 'usage' ? '#ffffff' : 'transparent', fontWeight: ledgerFilterTab === 'usage' ? '700' : '500', color: ledgerFilterTab === 'usage' ? '#7f1d1d' : 'var(--text-secondary)' }}
@@ -6814,7 +6950,7 @@ export default function InventoryManagement({
                       paginatedLedgerItems.map((tx, idx) => {
                         const isEditingThisBarcode = editingTxId === tx.txId;
                         return (
-                          <tr key={tx.txId || idx} style={{ background: tx.isPendingQC ? '#fffbeb' : (tx.category === 'reconciliation' ? '#f0f9ff' : (tx.category === 'usage' ? '#fff5f5' : 'transparent')) }}>
+                          <tr key={tx.txId || idx} style={{ background: tx.isPendingQC ? '#fffbeb' : (tx.isRejected ? '#fef2f2' : (tx.category === 'reconciliation' ? '#f0f9ff' : (tx.category === 'usage' ? '#fff5f5' : 'transparent'))) }}>
                             <td style={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>{tx.date}</td>
                             
                             {/* Category Badge */}
@@ -6824,9 +6960,9 @@ export default function InventoryManagement({
                                   className="badge" 
                                   style={{ 
                                     fontSize: '0.72rem', 
-                                    background: tx.isPendingQC ? '#fef3c7' : '#dcfce7', 
-                                    color: tx.isPendingQC ? '#92400e' : '#15803d',
-                                    border: tx.isPendingQC ? '1.5px solid #fde68a' : '1px solid #86efac',
+                                    background: tx.isPendingQC ? '#fef3c7' : (tx.isRejected ? '#fee2e2' : '#dcfce7'), 
+                                    color: tx.isPendingQC ? '#92400e' : (tx.isRejected ? '#991b1b' : '#15803d'),
+                                    border: tx.isPendingQC ? '1.5px solid #fde68a' : (tx.isRejected ? '1.5px solid #fca5a5' : '1px solid #86efac'),
                                     fontWeight: '700',
                                     padding: '3px 8px',
                                     borderRadius: '6px',
@@ -6835,7 +6971,7 @@ export default function InventoryManagement({
                                     gap: '4px'
                                   }}
                                 >
-                                  {tx.type || (tx.isPendingQC ? '📥 GRN Inward (Pending QC)' : '📥 GRN Inward (Approved)')}
+                                  {tx.type || (tx.isPendingQC ? '⏳ GRN Inward (Awaiting QC Approval)' : (tx.isRejected ? '🚫 GRN Inward (Rejected - QC Hold Store)' : '📥 GRN Inward (Approved)'))}
                                 </span>
                               )}
                               {tx.category === 'usage' && (

@@ -2085,6 +2085,30 @@ export default function App() {
     logAudit('CREATE', 'Inventory Rolls', `Generated child roll barcode ${rollId} (${newRoll.netWeightKg} kg)`, rollId);
   };
 
+  const handleUpdateRoll = async (updatedRoll) => {
+    requireDatabaseConnection('update inventory roll');
+    const rollId = updatedRoll.barcodeId || updatedRoll.id;
+    const cleanRoll = { ...updatedRoll, id: rollId, barcodeId: rollId };
+    await saveInventoryRollToSupabase(cleanRoll);
+    setInventoryRolls(prev => prev.map(r => (r.barcodeId || r.id) === rollId ? cleanRoll : r));
+    logAudit('UPDATE', 'Inventory Rolls', `Updated roll barcode ${rollId} status to "${updatedRoll.status || updatedRoll.qcStatus}"`, rollId);
+  };
+
+  const handleUpdateInventoryRolls = async (updatedRollsList) => {
+    if (!Array.isArray(updatedRollsList) || updatedRollsList.length === 0) return;
+    requireDatabaseConnection('update inventory rolls');
+    for (const roll of updatedRollsList) {
+      const rollId = roll.barcodeId || roll.id;
+      const cleanRoll = { ...roll, id: rollId, barcodeId: rollId };
+      await saveInventoryRollToSupabase(cleanRoll).catch(console.warn);
+    }
+    const updatedMap = new Map(updatedRollsList.map(r => [r.barcodeId || r.id, r]));
+    setInventoryRolls(prev => prev.map(r => {
+      const match = updatedMap.get(r.barcodeId || r.id);
+      return match ? { ...r, ...match } : r;
+    }));
+  };
+
   const handleAddDispatchShipment = async (newShipment) => {
     requireDatabaseConnection('create dispatch shipment');
     await saveDispatchShipmentToSupabase(newShipment);
@@ -3769,6 +3793,8 @@ export default function App() {
             onUpdateCylinder={handleUpdateCylinder}
             onUpdateOrder={handleUpdateOrder}
             onAddRoll={handleAddRoll}
+            onUpdateRoll={handleUpdateRoll}
+            onUpdateInventoryRolls={handleUpdateInventoryRolls}
             onAddDispatchShipment={handleAddDispatchShipment}
             onSaveProductionRecord={handleSaveProductionRecord}
           />
