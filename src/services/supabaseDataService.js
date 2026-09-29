@@ -861,8 +861,8 @@ export function sanitizeGRN(rawGRN) {
     ...meta,
     id: rawGRN.id || rawGRN.grn_number || rawGRN.grnNo,
     grnNo: rawGRN.grn_number || rawGRN.grnNo || rawGRN.id,
-    vendorId: rawGRN.vendor_id || rawGRN.vendorId || rawGRN.vendorName || meta.vendorName || 'General Vendor',
-    vendorName: rawGRN.vendorName || meta.vendorName || rawGRN.vendor_id || rawGRN.vendorId || 'General Vendor',
+    vendorId: rawGRN.vendorId || rawGRN.vendor_id || meta.vendorId || '',
+    vendorName: rawGRN.vendorName || meta.vendorName || (rawGRN.vendor_id && !rawGRN.vendor_id.startsWith('VEND-') ? rawGRN.vendor_id : 'General Vendor'),
     poNumber: rawGRN.po_number || rawGRN.poNumber || meta.poNumber || '',
     invoiceNo: rawGRN.invoice_number || rawGRN.invoiceNo || meta.invoiceNo || '',
     receivedDate: rawGRN.received_date || rawGRN.receivedDate || meta.receivedDate || new Date().toISOString(),
@@ -972,10 +972,38 @@ export async function saveGRNToSupabase(grn) {
   const parsedDate = parseStandardDate(clean.receivedDate);
   const dateVal = parsedDate ? parsedDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
 
+  // Resolve valid vendor_id referencing public.vendors(id) to satisfy foreign key constraint grns_vendor_id_fkey
+  let validVendorId = null;
+  const targetVId = clean.vendorId || grn.vendorId;
+  const targetVName = String(clean.vendorName || grn.vendorName || '').trim();
+
+  try {
+    const { data: allVendors } = await supabase.from('vendors').select('id, name');
+    if (allVendors && allVendors.length > 0) {
+      let match = null;
+      if (targetVId) {
+        match = allVendors.find(v => String(v.id) === String(targetVId));
+      }
+      if (!match && targetVName) {
+        const cleanSearch = targetVName.toLowerCase();
+        match = allVendors.find(v => {
+          const vid = String(v.id || '').toLowerCase();
+          const vname = String(v.name || '').toLowerCase();
+          return vid === cleanSearch || vname === cleanSearch || cleanSearch.includes(vname) || vname.includes(cleanSearch);
+        });
+      }
+      if (match) {
+        validVendorId = match.id;
+      }
+    }
+  } catch (err) {
+    console.warn('[GRNs] Vendor lookup failed:', err);
+  }
+
   const payload = {
     id: grnId,
     grn_number: clean.grnNo || grnId,
-    vendor_id: clean.vendorName || clean.vendorId || 'General Vendor',
+    vendor_id: validVendorId, // null if vendor ID is not in vendors table, preventing FK violations while preserving vendorName in metadata
     po_number: clean.poNumber || '',
     invoice_number: clean.invoiceNo || '',
     received_date: dateVal,

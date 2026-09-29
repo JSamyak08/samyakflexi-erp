@@ -1708,11 +1708,14 @@ export default function InventoryManagement({
     }
 
     const todayIsoDate = new Date().toISOString().split('T')[0];
+    const matchedVendor = (vendors || []).find(v => v.companyName === grnVendor || v.name === grnVendor || v.id === grnVendor);
+    const selectedVendorId = matchedVendor?.id || null;
 
     const newGRN = {
       grnNo: grnDocNo,
       poNumber: grnPoNo,
       vendorName: grnVendor,
+      vendorId: selectedVendorId,
       invoiceNo: grnInvoiceNo,
       receivedDate: todayIsoDate,
       category: grnCategory,
