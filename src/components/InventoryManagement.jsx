@@ -1445,7 +1445,7 @@ export default function InventoryManagement({
     setEditItemName(item.itemName || defaultName);
     
     // Pre-fill Item Code / SKU
-    setEditItemCode(item.itemCode || item.id || '');
+    setEditItemCode(item.itemCode || item.primaryId || item.id || '');
     
     // Pre-fill Unit
     const fallbackUnit = isFilm ? 'Kg' : (
@@ -1459,22 +1459,23 @@ export default function InventoryManagement({
     setEditUnit(normalizedUom);
     
     // Pre-fill Film / Sub-type attributes
-    setEditFilmType(item.filmType && FILM_DENSITIES[item.filmType] ? item.filmType : (subOrGrade && FILM_DENSITIES[subOrGrade] ? subOrGrade : 'PET'));
+    const initialFilmType = item.filmType || (subOrGrade && FILM_DENSITIES[subOrGrade] ? subOrGrade : 'PET');
+    setEditFilmType(initialFilmType);
     setEditMicron(item.micron && item.micron !== '-' ? item.micron : (isFilm ? 12 : ''));
     setEditWidthMm(item.widthMm && item.widthMm !== '-' ? item.widthMm : (isFilm ? 1000 : ''));
     setEditSubType(subOrGrade || (item.filmType && !FILM_DENSITIES[item.filmType] ? item.filmType : ''));
-    setEditDimensions(item.widthMm && item.widthMm !== '-' && !isFilm ? `${item.widthMm}mm` : (item.dimensions || ''));
+    setEditDimensions(item.dimensions || (item.widthMm && item.widthMm !== '-' && !isFilm ? `${item.widthMm}mm` : ''));
     
-    // Pre-fill Quantities & Thresholds (Accurate numbers from item)
+    // Pre-fill Quantities & Thresholds
     setEditAvailableQty(item.availableQtyKg ?? item.availableWeightKg ?? 0);
     setEditAllocatedQty(item.allocatedQtyKg ?? 0);
     setEditUnitPrice(item.unitPrice ?? item.purchaseRatePerKg ?? 0);
     setEditReorderLevel(item.reorderLevelKg ?? 100);
     
     // Pre-fill Location & Vendor Logistics
-    setEditLocation(item.location || item.locationBay || 'Bay A');
-    setEditLastVendor(item.lastVendor || item.vendorName || '');
-    setEditLastBatch(item.lastBatch || item.batchNo || '');
+    setEditLocation(item.location || item.locationBay || '');
+    setEditLastVendor(item.lastVendor || item.vendorName || Array.from(item.allVendors || [])[0] || '');
+    setEditLastBatch(item.lastBatch || item.batchNo || Array.from(item.allBatches || [])[0] || '');
   };
 
   const handleCategoryChangeInEdit = (newCategory) => {
@@ -1498,7 +1499,7 @@ export default function InventoryManagement({
     }
   };
 
-  const handleSaveStockEdit = (e) => {
+  const handleSaveStockEdit = async (e) => {
     e.preventDefault();
     if (!editingStockItem) return;
 
@@ -1518,14 +1519,17 @@ export default function InventoryManagement({
     const availQty = parseFloat(editAvailableQty) || 0;
     const valuation = Number((availQty * rateVal).toFixed(2));
 
-    const itemPayload = {
+    const targetId = editingStockItem.primaryId || editingStockItem.id || (editingStockItem.subItems && editingStockItem.subItems[0]?.id) || generateInventoryId(inventory);
+
+    const cleanItemPayload = {
+      id: String(targetId),
+      itemCode: editItemCode.trim() || String(targetId),
       category: editCategory,
       itemName: finalItemName,
       substrateOrGrade: finalSubstrateOrGrade,
       filmType: isFilm ? finalSubstrateOrGrade : (editSubType.trim() || finalSubstrateOrGrade),
       grade: finalSubstrateOrGrade,
       subType: editSubType.trim() || finalSubstrateOrGrade,
-      itemCode: editItemCode.trim() || editingStockItem.id,
       unit: editUnit,
       dimensions: !isFilm ? editDimensions.trim() : '',
       micron: isFilm ? (parseFloat(editMicron) || 12) : '-',
@@ -1538,46 +1542,37 @@ export default function InventoryManagement({
       unitPrice: rateVal,
       purchaseRatePerKg: rateVal,
       purchaseValuation: valuation,
-      location: editLocation.trim() || 'Bay A',
+      location: editLocation.trim() || 'Store Bay',
       reorderLevelKg: parseFloat(editReorderLevel) || 0,
       lastVendor: editLastVendor.trim() || '',
       lastBatch: editLastBatch.trim() || '',
       lastUpdated: new Date().toISOString()
     };
 
-    let updatedInv;
-    if (editingStockItem.isNew) {
-      const newItem = {
-        id: editingStockItem.id,
-        ...itemPayload
-      };
-      updatedInv = [newItem, ...inventory];
-    } else {
-      updatedInv = inventory.map(item => {
-        if (item.id === editingStockItem.id) {
-          return {
-            ...item,
-            ...itemPayload
-          };
+    // If editing a grouped item with multiple underlying raw items in subItems, consolidate into single master record
+    if (editingStockItem.subItems && editingStockItem.subItems.length > 1 && onDeleteInventoryItem) {
+      const secondaryItems = editingStockItem.subItems.slice(1);
+      for (const sec of secondaryItems) {
+        if (sec.id && String(sec.id) !== String(targetId)) {
+          try {
+            await onDeleteInventoryItem(sec.id);
+          } catch (err) {
+            console.warn('[handleSaveStockEdit] Error consolidating secondary subItem:', sec.id, err);
+          }
         }
-        return item;
-      });
+      }
     }
 
-    const itemWithId = editingStockItem.isNew 
-      ? { id: editingStockItem.id || generateInventoryId(inventory), ...itemPayload }
-      : { ...editingStockItem, ...itemPayload };
-
     if (onSaveInventoryItem) {
-      onSaveInventoryItem(itemWithId);
+      await onSaveInventoryItem(cleanItemPayload);
     } else if (onUpdateInventory) {
+      const updatedInv = inventory.map(item => String(item.id) === String(targetId) ? cleanItemPayload : item);
       onUpdateInventory(updatedInv);
     }
 
     const actionText = editingStockItem.isNew ? 'created' : 'updated';
-    const itemId = itemWithId.id;
     setEditingStockItem(null);
-    alert(`Stock item ${itemId} (${finalItemName}) ${actionText} successfully!`);
+    alert(`Stock item ${targetId} (${finalItemName}) ${actionText} successfully!`);
   };
 
   const handleDeleteStockItem = async (item) => {

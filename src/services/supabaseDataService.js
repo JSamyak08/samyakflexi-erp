@@ -584,7 +584,16 @@ export function findMatchingInventoryItem(inventoryList = [], target = {}) {
 export function sanitizeInventoryItem(rawItem) {
   if (!rawItem || typeof rawItem !== 'object') return rawItem;
 
-  let rawName = String(rawItem.itemName || rawItem.item_name || '').trim();
+  // Make a shallow copy and delete transient grouped properties if present
+  const cleanRaw = { ...rawItem };
+  delete cleanRaw.subItems;
+  delete cleanRaw.allInventoryIds;
+  delete cleanRaw.allLocations;
+  delete cleanRaw.allVendors;
+  delete cleanRaw.allBatches;
+  delete cleanRaw.primaryId;
+
+  let rawName = String(cleanRaw.itemName || cleanRaw.item_name || '').trim();
   let extractedMeta = {};
 
   // Thoroughly unpack any ||| envelopes (single or nested)
@@ -615,8 +624,15 @@ export function sanitizeInventoryItem(rawItem) {
     } catch (e) {}
   }
 
+  delete extractedMeta.subItems;
+  delete extractedMeta.allInventoryIds;
+  delete extractedMeta.allLocations;
+  delete extractedMeta.allVendors;
+  delete extractedMeta.allBatches;
+  delete extractedMeta.primaryId;
+
   // 1. Resolve true category with priority to extracted metadata
-  let category = extractedMeta.category || rawItem.category;
+  let category = extractedMeta.category || cleanRaw.category;
   const lowerName = rawName.toLowerCase();
 
   // If category is unspecified or defaulted to 'Film Substrates', check keywords
@@ -646,15 +662,15 @@ export function sanitizeInventoryItem(rawItem) {
 
   const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films';
 
-  const filmType = isFilm ? (extractedMeta.filmType || rawItem.filmType || (rawName ? rawName.split(/[\s-]/)[0] : 'PET')) : '';
+  const filmType = isFilm ? (extractedMeta.filmType || cleanRaw.filmType || (rawName ? rawName.split(/[\s-]/)[0] : 'PET')) : '';
   const micron = isFilm 
-    ? ((extractedMeta.micron !== undefined && extractedMeta.micron !== null && extractedMeta.micron !== '-') ? extractedMeta.micron : (rawItem.micron && rawItem.micron !== '-' ? rawItem.micron : 12)) 
+    ? ((extractedMeta.micron !== undefined && extractedMeta.micron !== null && extractedMeta.micron !== '-') ? extractedMeta.micron : (cleanRaw.micron && cleanRaw.micron !== '-' ? cleanRaw.micron : 12)) 
     : '-';
   const widthMm = isFilm 
-    ? ((extractedMeta.widthMm !== undefined && extractedMeta.widthMm !== null && extractedMeta.widthMm !== '-') ? extractedMeta.widthMm : (rawItem.widthMm && rawItem.widthMm !== '-' ? rawItem.widthMm : 1000)) 
+    ? ((extractedMeta.widthMm !== undefined && extractedMeta.widthMm !== null && extractedMeta.widthMm !== '-') ? extractedMeta.widthMm : (cleanRaw.widthMm && cleanRaw.widthMm !== '-' ? cleanRaw.widthMm : 1000)) 
     : '-';
   const metallocenePct = isFilm 
-    ? (extractedMeta.metallocenePct || rawItem.metallocene_pct || rawItem.metallocenePct || (rawName && isMetalloceneEligibleFilm(filmType) ? (rawName.match(/(\d{1,2}%)/)?.[1] || '') : ''))
+    ? (extractedMeta.metallocenePct || cleanRaw.metallocene_pct || cleanRaw.metallocenePct || (rawName && isMetalloceneEligibleFilm(filmType) ? (rawName.match(/(\d{1,2}%)/)?.[1] || '') : ''))
     : '';
 
   const fallbackUnit = isFilm ? 'Kg' : (
@@ -665,7 +681,7 @@ export function sanitizeInventoryItem(rawItem) {
     category === 'Machine Spare Parts' ? 'Nos' : 'Kg'
   );
 
-  const resolvedUnit = rawItem.unit || rawItem.unit_of_measure || extractedMeta.unit || fallbackUnit;
+  const resolvedUnit = cleanRaw.unit || cleanRaw.unit_of_measure || extractedMeta.unit || fallbackUnit;
 
   const cleanItemName = isFilm 
     ? formatFilmItemName(filmType, widthMm, micron, rawName, metallocenePct) 
@@ -673,9 +689,9 @@ export function sanitizeInventoryItem(rawItem) {
 
   return {
     ...extractedMeta,
-    ...rawItem,
-    id: String(rawItem.id || rawItem.item_code || 'INVT-0001'),
-    itemCode: rawItem.itemCode || rawItem.item_code || String(rawItem.id),
+    ...cleanRaw,
+    id: String(cleanRaw.id || cleanRaw.item_code || 'INVT-0001'),
+    itemCode: cleanRaw.itemCode || cleanRaw.item_code || String(cleanRaw.id),
     itemName: cleanItemName,
     category: category,
     filmType: isFilm ? filmType : '',
@@ -684,20 +700,20 @@ export function sanitizeInventoryItem(rawItem) {
     metallocenePct: metallocenePct,
     metallocene_pct: metallocenePct,
     unit: resolvedUnit,
-    availableQtyKg: Number(rawItem.availableQtyKg ?? rawItem.stock_qty_kg ?? extractedMeta.availableQtyKg ?? 0) || 0,
-    allocatedQtyKg: Number(rawItem.allocatedQtyKg ?? extractedMeta.allocatedQtyKg ?? 0) || 0,
-    reorderLevelKg: Number(rawItem.reorderLevelKg ?? extractedMeta.reorderLevelKg ?? 100) || 100,
-    unitPrice: Number(rawItem.unitPrice ?? rawItem.unit_price ?? extractedMeta.unitPrice ?? 0) || 0,
-    location: rawItem.location || extractedMeta.location || 'Store Bay',
-    lastVendor: rawItem.lastVendor || extractedMeta.lastVendor || '',
-    lastBatch: rawItem.lastBatch || extractedMeta.lastBatch || '',
-    density: rawItem.density !== undefined ? rawItem.density : (extractedMeta.density !== undefined ? extractedMeta.density : (isFilm ? 1.4 : 1.0)),
-    substrateOrGrade: rawItem.substrateOrGrade || rawItem.substrate_grade || extractedMeta.substrateOrGrade || (isFilm ? filmType : (rawItem.grade || rawItem.subType || '')),
-    grade: rawItem.grade || extractedMeta.grade || (isFilm ? filmType : ''),
-    subType: rawItem.subType || extractedMeta.subType || '',
-    shade: rawItem.shade || extractedMeta.shade || '',
-    dimensions: rawItem.dimensions || extractedMeta.dimensions || '',
-    lastUpdated: rawItem.lastUpdated || extractedMeta.lastUpdated || new Date().toISOString()
+    availableQtyKg: Number(cleanRaw.availableQtyKg ?? cleanRaw.stock_qty_kg ?? extractedMeta.availableQtyKg ?? 0) || 0,
+    allocatedQtyKg: Number(cleanRaw.allocatedQtyKg ?? extractedMeta.allocatedQtyKg ?? 0) || 0,
+    reorderLevelKg: Number(cleanRaw.reorderLevelKg ?? extractedMeta.reorderLevelKg ?? 100) || 100,
+    unitPrice: Number(cleanRaw.unitPrice ?? cleanRaw.unit_price ?? extractedMeta.unitPrice ?? 0) || 0,
+    location: cleanRaw.location || extractedMeta.location || 'Store Bay',
+    lastVendor: cleanRaw.lastVendor || extractedMeta.lastVendor || '',
+    lastBatch: cleanRaw.lastBatch || extractedMeta.lastBatch || '',
+    density: cleanRaw.density !== undefined ? cleanRaw.density : (extractedMeta.density !== undefined ? extractedMeta.density : (isFilm ? 1.4 : 1.0)),
+    substrateOrGrade: cleanRaw.substrateOrGrade || cleanRaw.substrate_grade || extractedMeta.substrateOrGrade || (isFilm ? filmType : (cleanRaw.grade || cleanRaw.subType || '')),
+    grade: cleanRaw.grade || extractedMeta.grade || (isFilm ? filmType : ''),
+    subType: cleanRaw.subType || extractedMeta.subType || '',
+    shade: cleanRaw.shade || extractedMeta.shade || '',
+    dimensions: cleanRaw.dimensions || extractedMeta.dimensions || '',
+    lastUpdated: cleanRaw.lastUpdated || extractedMeta.lastUpdated || new Date().toISOString()
   };
 }
 
@@ -723,8 +739,10 @@ export function mapInventoryItemToDbPayload(item) {
     widthMm: isFilm ? clean.widthMm : '-',
     metallocenePct: clean.metallocenePct || '',
     metallocene_pct: clean.metallocenePct || '',
+    availableQtyKg: clean.availableQtyKg,
     allocatedQtyKg: clean.allocatedQtyKg,
     reorderLevelKg: clean.reorderLevelKg,
+    unitPrice: clean.unitPrice,
     unit: clean.unit,
     density: clean.density,
     location: clean.location,
