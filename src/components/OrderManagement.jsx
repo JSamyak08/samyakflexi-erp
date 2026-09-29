@@ -308,6 +308,60 @@ export default function OrderManagement({
     setEditVendorName(order.vendorName || '');
   };
 
+  const handleSelectJobName = (selectedVal) => {
+    setEditJobName(selectedVal);
+    const jm = (jobMasters || []).find(j => 
+      (j.jobName || '').toLowerCase().trim() === (selectedVal || '').toLowerCase().trim() ||
+      (j.id || '').toLowerCase().trim() === (selectedVal || '').toLowerCase().trim()
+    );
+    if (jm) {
+      if (jm.clientName) setEditClientName(jm.clientName);
+      if (jm.structure) setEditStructure(jm.structure);
+      if (jm.metallocenePct || jm.metallocene_pct) setEditMetallocenePct(jm.metallocenePct || jm.metallocene_pct);
+      const formVal = jm.materialForm || jm.orderType || jm.materialFormat;
+      if (formVal) {
+        const s = String(formVal).toLowerCase();
+        if (s.includes('pouch') || s.includes('bag')) setEditOrderType('Pouching Form');
+        else if (s.includes('cylinder')) setEditOrderType('Rotogravure Cylinder');
+        else setEditOrderType('Reel Form');
+      }
+    }
+  };
+
+  const editJobNameOptions = useMemo(() => {
+    const list = (jobMasters || []).map(jm => ({
+      value: jm.jobName || jm.id,
+      label: jm.jobName || jm.id,
+      subtitle: `Client: ${jm.clientName || 'N/A'} • Structure: ${jm.structure || '—'}`
+    }));
+    if (editJobName && !list.some(o => o.value.toLowerCase().trim() === editJobName.toLowerCase().trim())) {
+      list.unshift({
+        value: editJobName,
+        label: editJobName,
+        subtitle: 'Current / Custom Job Name'
+      });
+    }
+    return list;
+  }, [jobMasters, editJobName]);
+
+  const editClientNameOptions = useMemo(() => {
+    const clientSet = new Set();
+    (jobMasters || []).forEach(j => { if (j.clientName) clientSet.add(j.clientName.trim()); });
+    (orders || []).forEach(o => { if (o.clientName) clientSet.add(o.clientName.trim()); });
+    
+    const list = Array.from(clientSet).map(c => ({
+      value: c,
+      label: c
+    }));
+    if (editClientName && !list.some(o => o.value.toLowerCase().trim() === editClientName.toLowerCase().trim())) {
+      list.unshift({
+        value: editClientName,
+        label: editClientName
+      });
+    }
+    return list;
+  }, [jobMasters, orders, editClientName]);
+
   const handleSaveEditedOrder = async (e) => {
     e.preventDefault();
     if (!editingOrder) return;
@@ -2550,24 +2604,24 @@ export default function OrderManagement({
               <form onSubmit={handleSaveEditedOrder} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                   <div className="form-group">
-                    <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>Job Name *</label>
-                    <input 
-                      type="text" 
-                      className="form-control" 
+                    <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>Job Name * (Search Job Masters)</label>
+                    <SearchableSelect 
+                      options={editJobNameOptions} 
                       value={editJobName} 
-                      onChange={e => setEditJobName(e.target.value)} 
-                      required 
+                      onChange={e => handleSelectJobName(e.target.value)} 
+                      placeholder="Search or select Job Name from Job Masters..."
+                      searchPlaceholder="Type job name..."
                     />
                   </div>
 
                   <div className="form-group">
-                    <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>Client Name *</label>
-                    <input 
-                      type="text" 
-                      className="form-control" 
+                    <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>Client Name * (Search Clients)</label>
+                    <SearchableSelect 
+                      options={editClientNameOptions} 
                       value={editClientName} 
                       onChange={e => setEditClientName(e.target.value)} 
-                      required 
+                      placeholder="Search or select Client Name..."
+                      searchPlaceholder="Type client name..."
                     />
                   </div>
 
