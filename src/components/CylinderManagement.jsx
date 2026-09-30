@@ -117,8 +117,61 @@ export default function CylinderManagement({
   onDeleteCylinder,
   onLinkCylinderToJobMaster,
   onCreateAndLinkPair,
-  machines = []
+  machines = [],
+  productionRecords = [],
+  orders = []
 }) {
+  // Compute actual printed volume (Kg) dynamically from production records & completed orders
+  const getCylinderPrintedQtyKg = (c) => {
+    if (!c) return 0;
+    const targetId = c.id;
+    const targetJmId = c.jobMasterId;
+    const targetSku = (c.sku || c.skuCode || '').trim().toLowerCase();
+    const targetJobName = (c.jobName || '').trim().toLowerCase();
+
+    let totalKg = 0;
+    let foundProd = false;
+
+    (productionRecords || []).forEach(r => {
+      if (!r) return;
+      const matches = (
+        (r.cylinderId && r.cylinderId === targetId) ||
+        (r.orderId && r.orderId === targetId) ||
+        (targetJmId && r.jobMasterId === targetJmId) ||
+        (targetSku && (r.skuCode || r.jobCode || '').trim().toLowerCase() === targetSku) ||
+        (targetJobName && (r.jobName || '').trim().toLowerCase() === targetJobName)
+      );
+      if (matches) {
+        foundProd = true;
+        const val = parseFloat(r.qtyFirstPassL1 || r.printedOutputKg || r.totalProductionQtyKg || r.grossProductionKg || 0);
+        totalKg += val;
+      }
+    });
+
+    (orders || []).forEach(o => {
+      if (!o) return;
+      const matches = (
+        (o.cylinderId && o.cylinderId === targetId) ||
+        (o.id && o.id === targetId) ||
+        (targetJmId && o.jobMasterId === targetJmId) ||
+        (targetSku && (o.skuCode || o.jobCode || '').trim().toLowerCase() === targetSku) ||
+        (targetJobName && (o.jobName || '').trim().toLowerCase() === targetJobName)
+      );
+      if (matches && (o.printedOutputKg > 0 || o.actualMetersPrinted > 0)) {
+        const inProdRecs = (productionRecords || []).some(r => r.orderId === o.id || r.id === o.id);
+        if (!inProdRecs) {
+          foundProd = true;
+          totalKg += parseFloat(o.printedOutputKg || 0);
+        }
+      }
+    });
+
+    if (foundProd && totalKg > 0) {
+      return Math.round(totalKg * 100) / 100;
+    }
+
+    return parseFloat(c.layer1PrintedQtyKg) || parseFloat(c.dispatchedQty) || 0;
+  };
   // Access Control: Only Admin and Plant Manager have Edit/Lock/Delete access
   const EDIT_ROLES = ['Admin', 'SuperAdmin', 'Plant Manager'];
   const userRole = currentUser?.role || 'Admin';
@@ -239,8 +292,8 @@ export default function CylinderManagement({
   const [circumferenceMm, setCircumferenceMm] = useState(400);
   const [faceLengthMm, setFaceLengthMm] = useState(1050);
   const [printWidthMm, setPrintWidthMm] = useState(1000);
-  const [layer1PrintedQtyKg, setLayer1PrintedQtyKg] = useState(385.5);
-  const [dispatchedQty, setDispatchedQty] = useState(3855);
+  const [layer1PrintedQtyKg, setLayer1PrintedQtyKg] = useState(0);
+  const [dispatchedQty, setDispatchedQty] = useState(0);
   const [utilisationLimit, setUtilisationLimit] = useState(10000);
   const [status, setStatus] = useState('Active In-Use');
   const [assignedPress, setAssignedPress] = useState('');
@@ -470,32 +523,44 @@ export default function CylinderManagement({
       return;
     }
 
+    const matchedJM = (jobMasters || []).find(j => 
+      (j.id && (j.id === cyl.jobMasterId || j.id === cyl.id)) ||
+      (j.skuCode && cyl.sku && j.skuCode.trim().toLowerCase() === cyl.sku.trim().toLowerCase()) ||
+      (j.jobName && cyl.jobName && j.jobName.trim().toLowerCase() === cyl.jobName.trim().toLowerCase())
+    );
+
+    const computedPrintedKg = getCylinderPrintedQtyKg(cyl);
+
     setEditingCylinder(cyl);
     setSku(cyl.sku || '');
     setJobName(cyl.jobName || '');
-    setClientGroup(cyl.clientGroup || '');
-    setColorsCount(cyl.colorsCount || 6);
-    setEngravuresName(cyl.engravuresName || '');
+    setClientGroup(cyl.clientGroup || matchedJM?.clientName || '');
+    setColorsCount(cyl.colorsCount || matchedJM?.colorsCount || 6);
+    setEngravuresName(cyl.engravuresName || matchedJM?.engravuresName || '');
     setRate(cyl.rate || cyl.ratePerSqInch || 1.60);
-    setCircumferenceMm(cyl.circumferenceMm || 400);
-    setFaceLengthMm(cyl.faceLengthMm || 1050);
-    setPrintWidthMm(cyl.printWidthMm || cyl.pouchOpenWidth || 1000);
-    setCylinderCost(`${cyl.cylinderCost || ''}`.replace(/[^0-9]/g, ''));
+    setCircumferenceMm(cyl.circumferenceMm || matchedJM?.repeatLengthMm || 400);
+    setFaceLengthMm(cyl.faceLengthMm || matchedJM?.faceLengthMm || 1050);
+    setPrintWidthMm(cyl.printWidthMm || cyl.pouchOpenWidth || matchedJM?.printWidthMm || 1000);
+    setCylinderCost(`${cyl.cylinderCost || matchedJM?.cylinderCost || ''}`.replace(/[^0-9]/g, ''));
     setCostPerCylinder(`${cyl.costPerCylinder || ''}`.replace(/[^0-9]/g, '') || String(Math.round((parseInt(`${cyl.cylinderCost || 0}`.replace(/[^0-9]/g, '')) || 0) / (cyl.colorsCount || 1))));
     setAutoCalculateCost(false);
-    setCostBorneBy(cyl.costBorneBy || 'Client (100%)');
+    setCostBorneBy(cyl.costBorneBy || matchedJM?.costBorneBy || 'Client (100%)');
     setCostBorneType(cyl.costBorneType || 'client');
-    setLayer1PrintedQtyKg(cyl.layer1PrintedQtyKg || 385);
-    setDispatchedQty(cyl.dispatchedQty || 0);
-    setUtilisationLimit(cyl.utilisationLimit || 10000);
+    setLayer1PrintedQtyKg(computedPrintedKg);
+    setDispatchedQty(cyl.dispatchedQty || computedPrintedKg || 0);
+    setUtilisationLimit(cyl.utilisationLimit || matchedJM?.utilisationLimit || 10000);
     setStatus(cyl.status || 'Active In-Use');
     setAssignedPress(cyl.assignedPress || printingPresses[0] || '');
-    setArtworkUrl(cyl.artworkUrl || '');
+    setArtworkUrl(cyl.artworkUrl || matchedJM?.artworkUrl || '');
 
-    if (cyl.layers && cyl.layers.length > 0) {
-      setLayers(cyl.layers);
-    } else if (cyl.structure) {
-      const parts = String(cyl.structure).split('/');
+    const resolvedLayers = (cyl.layers && cyl.layers.length > 0)
+      ? cyl.layers
+      : ((matchedJM?.layers && matchedJM.layers.length > 0) ? matchedJM.layers : []);
+
+    if (resolvedLayers.length > 0) {
+      setLayers(resolvedLayers);
+    } else if (cyl.structure || matchedJM?.structure) {
+      const parts = String(cyl.structure || matchedJM.structure).split('/');
       setLayers(parts.map((p, i) => {
         const trimmed = p.trim();
         const mMatch = trimmed.match(/(\d+)\s*µ?/);
@@ -511,13 +576,13 @@ export default function CylinderManagement({
       ]);
     }
     setCreateJobMaster(false);
-    setPouchOpenWidth(cyl.pouchOpenWidth || 0);
-    setPouchHeight(cyl.pouchHeight || 0);
-    setSilLogo((cyl.silLogo !== undefined && cyl.silLogo !== null) ? cyl.silLogo : '');
-    setArcMark(cyl.arcMark || 'Yes');
-    setSlittingMark(cyl.slittingMark || 'Yes');
-    setTrackerLine(cyl.trackerLine || 'Yes');
-    setSpecialInstructions(cyl.specialInstructions || '');
+    setPouchOpenWidth(cyl.pouchOpenWidth || matchedJM?.pouchOpenWidth || matchedJM?.printWidthMm || cyl.printWidthMm || 0);
+    setPouchHeight(cyl.pouchHeight || matchedJM?.pouchHeight || 0);
+    setSilLogo((cyl.silLogo !== undefined && cyl.silLogo !== null) ? cyl.silLogo : (matchedJM?.silLogo || ''));
+    setArcMark(cyl.arcMark || matchedJM?.arcMark || 'Yes');
+    setSlittingMark(cyl.slittingMark || matchedJM?.slittingMark || 'Yes');
+    setTrackerLine(cyl.trackerLine || matchedJM?.trackerLine || 'Yes');
+    setSpecialInstructions(cyl.specialInstructions || matchedJM?.specialInstructions || '');
     setIsModalOpen(true);
   };
 
@@ -1093,7 +1158,8 @@ export default function CylinderManagement({
                 </tr>
               ) : (
                 paginatedCylinders.map(c => {
-                  const util = calculateUtilisation(c.dispatchedQty, c.utilisationLimit || 10000);
+                  const actualPrintedKg = getCylinderPrintedQtyKg(c);
+                  const util = calculateUtilisation(actualPrintedKg, c.utilisationLimit || 10000);
                   const isWarning = util >= 80;
                   const cCirc = c.circumferenceMm || 400;
                   const cFace = c.faceLengthMm || 1050;
@@ -1230,7 +1296,7 @@ export default function CylinderManagement({
 
                       <td style={{ minWidth: '150px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-                          <span style={{ color: 'var(--text-secondary)' }}>{c.dispatchedQty}kg / {c.utilisationLimit || 10000}kg</span>
+                          <span style={{ color: 'var(--text-secondary)' }}>{actualPrintedKg.toLocaleString()}kg / {(c.utilisationLimit || 10000).toLocaleString()}kg</span>
                           <span style={{ color: isWarning ? 'var(--warning)' : 'var(--success)', fontWeight: 'bold' }}>{util}%</span>
                         </div>
                         <div className="progress-container" style={{ marginTop: '4px' }}>

@@ -371,6 +371,9 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         ? (String(src.totalHeight).includes('mm') ? src.totalHeight : `${src.totalHeight} mm`)
         : (src.circumferenceMm ? `${src.circumferenceMm} mm` : (src.repeatLengthMm ? `${src.repeatLengthMm} mm` : (src.pouchHeight ? `${src.pouchHeight} mm` : '')));
 
+      const rawPouchOpenWidth = initialData.pouchOpenWidth || matchingJM?.pouchOpenWidth || matchingJM?.printWidthMm || initialData.printWidthMm || '';
+      const rawPouchHeight = initialData.pouchHeight || matchingJM?.pouchHeight || '';
+
       setFormData({
         jobMasterId: src.jobMasterId || src.id || '',
         skuCode: src.sku || src.skuCode || '',
@@ -380,8 +383,8 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         invoiceTo: src.invoiceTo || 'Samyak International Ltd',
         variant: src.variant || '',
         printing: src.printing || 'Reverse',
-        pouchOpenWidth: src.pouchOpenWidth ? (String(src.pouchOpenWidth).includes('mm') ? src.pouchOpenWidth : `${src.pouchOpenWidth} mm`) : '',
-        pouchHeight: src.pouchHeight ? (String(src.pouchHeight).includes('mm') ? src.pouchHeight : `${src.pouchHeight} mm`) : '',
+        pouchOpenWidth: rawPouchOpenWidth ? (String(rawPouchOpenWidth).includes('mm') ? rawPouchOpenWidth : `${rawPouchOpenWidth} mm`) : '',
+        pouchHeight: rawPouchHeight ? (String(rawPouchHeight).includes('mm') ? rawPouchHeight : `${rawPouchHeight} mm`) : '',
         numberOfCylinders: src.colorsCount || src.numberOfCylinders ? `${src.colorsCount || src.numberOfCylinders}` : '',
         jobStructure: derivedStruct,
         printWidth: printWidthVal,

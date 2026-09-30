@@ -2105,6 +2105,76 @@ export default function App() {
     }
   };
 
+  const syncJobMasterToCylinder = async (jobMaster) => {
+    if (!jobMaster) return;
+    const targetJmId = jobMaster.id;
+    const targetSku = (jobMaster.skuCode || jobMaster.cylinderSku || jobMaster.sku || '').trim().toLowerCase();
+    const targetJobName = (jobMaster.jobName || '').trim().toLowerCase();
+
+    const matchedCylinders = (cylinders || []).filter(c => {
+      if (!c) return false;
+      if (targetJmId && (c.jobMasterId === targetJmId || c.job_master_id === targetJmId)) return true;
+      if (c.sku && targetSku && c.sku.trim().toLowerCase() === targetSku) return true;
+      if (c.skuCode && targetSku && c.skuCode.trim().toLowerCase() === targetSku) return true;
+      if (c.jobName && targetJobName && c.jobName.trim().toLowerCase() === targetJobName) return true;
+      return false;
+    });
+
+    if (matchedCylinders.length === 0) return;
+
+    console.log(`[JOB MASTER -> CYLINDER SYNC] Syncing updated Job Master "${jobMaster.jobName}" (${jobMaster.id}) to ${matchedCylinders.length} cylinders...`);
+
+    for (const cyl of matchedCylinders) {
+      const layers = Array.isArray(jobMaster.layers) && jobMaster.layers.length > 0 ? jobMaster.layers : (cyl.layers || []);
+      const derivedStructure = (layers.length > 0)
+        ? layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
+        : (jobMaster.structure || cyl.structure || '—');
+
+      const updatedCyl = {
+        ...cyl,
+        jobMasterId: jobMaster.id,
+        job_master_id: jobMaster.id,
+        sku: jobMaster.skuCode || jobMaster.cylinderSku || cyl.sku,
+        jobName: jobMaster.jobName || cyl.jobName,
+        clientGroup: jobMaster.clientName || cyl.clientGroup || cyl.clientName,
+        structure: derivedStructure,
+        layers: layers,
+        printWidthMm: jobMaster.printWidthMm !== undefined && jobMaster.printWidthMm !== null ? Number(jobMaster.printWidthMm) : cyl.printWidthMm,
+        faceLengthMm: jobMaster.faceLengthMm !== undefined && jobMaster.faceLengthMm !== null ? Number(jobMaster.faceLengthMm) : cyl.faceLengthMm,
+        circumferenceMm: jobMaster.repeatLengthMm !== undefined && jobMaster.repeatLengthMm !== null ? Number(jobMaster.repeatLengthMm) : cyl.circumferenceMm,
+        pouchOpenWidth: jobMaster.pouchOpenWidth !== undefined && jobMaster.pouchOpenWidth !== null ? Number(jobMaster.pouchOpenWidth) : cyl.pouchOpenWidth,
+        pouchHeight: jobMaster.pouchHeight !== undefined && jobMaster.pouchHeight !== null ? Number(jobMaster.pouchHeight) : cyl.pouchHeight,
+        colorsCount: jobMaster.colorsCount !== undefined && jobMaster.colorsCount !== null ? Number(jobMaster.colorsCount) : cyl.colorsCount,
+        cylinderCost: jobMaster.cylinderCost || cyl.cylinderCost,
+        engravuresName: jobMaster.engravuresName || cyl.engravuresName,
+        costBorneBy: jobMaster.costBorneBy || cyl.costBorneBy,
+        utilisationLimit: jobMaster.utilisationLimit !== undefined && jobMaster.utilisationLimit !== null ? Number(jobMaster.utilisationLimit) : cyl.utilisationLimit,
+        artworkUrl: jobMaster.artworkUrl || jobMaster.jobCardFileUrl || cyl.artworkUrl,
+        jobCardFileUrl: jobMaster.jobCardFileUrl || jobMaster.artworkUrl || cyl.jobCardFileUrl,
+        silLogo: jobMaster.silLogo !== undefined && jobMaster.silLogo !== null ? jobMaster.silLogo : cyl.silLogo,
+        arcMark: jobMaster.arcMark || cyl.arcMark,
+        slittingMark: jobMaster.slittingMark || cyl.slittingMark,
+        trackerLine: jobMaster.trackerLine || cyl.trackerLine,
+        specialInstructions: jobMaster.specialInstructions !== undefined ? jobMaster.specialInstructions : cyl.specialInstructions,
+        chkEyemark: jobMaster.chkEyemark ?? cyl.chkEyemark,
+        chkBarcode: jobMaster.chkBarcode ?? cyl.chkBarcode,
+        chkOrientation: jobMaster.chkOrientation ?? cyl.chkOrientation,
+        chkClientApproval: jobMaster.chkClientApproval ?? cyl.chkClientApproval,
+        approvedByHead: jobMaster.approvedByHead ?? cyl.approvedByHead,
+        approvedHeadName: jobMaster.approvedHeadName || cyl.approvedHeadName,
+        approvedHeadDate: jobMaster.approvedHeadDate || cyl.approvedHeadDate
+      };
+
+      try {
+        await saveCylinderToSupabase(updatedCyl);
+      } catch (err) {
+        console.warn("Failed to persist synced Cylinder to Supabase:", err);
+      }
+
+      setCylinders(prev => prev.map(item => item.id === updatedCyl.id ? updatedCyl : item));
+    }
+  };
+
   const handleBatchAddCylinders = async (newCylList) => {
     if (!Array.isArray(newCylList) || newCylList.length === 0) return;
     requireDatabaseConnection('batch add cylinders');
@@ -2273,6 +2343,7 @@ export default function App() {
     await saveJobMasterToSupabase(newJobMaster);
     setJobMasters(prev => [...prev.filter(j => j.id !== newJobMaster.id), newJobMaster]);
     logAudit('CREATE', 'Job Masters', `Created job master template "${newJobMaster.jobName}" (${newJobMaster.id})`, newJobMaster.id);
+    await syncJobMasterToCylinder(newJobMaster);
   };
 
   const syncJobMasterToOrders = async (updatedJm) => {
@@ -2372,6 +2443,7 @@ export default function App() {
     await saveJobMasterToSupabase(updatedJobMaster);
     setJobMasters(prev => prev.map(j => j.id === updatedJobMaster.id ? updatedJobMaster : j));
     await syncJobMasterToOrders(updatedJobMaster);
+    await syncJobMasterToCylinder(updatedJobMaster);
     logAudit('UPDATE', 'Job Masters', `Updated job master template "${updatedJobMaster.jobName}" (${updatedJobMaster.id})`, updatedJobMaster.id);
   };
 
@@ -2403,6 +2475,9 @@ export default function App() {
     });
 
     logAudit('CREATE', 'Job Masters', `Bulk uploaded ${newJmList.length} Job Master template(s) via CSV`, 'BULK_CSV');
+    for (const jm of newJmList) {
+      await syncJobMasterToCylinder(jm);
+    }
   };
 
   const handleLinkCylinderToJobMaster = async (cylinderId, jobMasterId) => {
@@ -4141,6 +4216,8 @@ export default function App() {
             onDeleteCylinder={handleDeleteCylinder}
             onLinkCylinderToJobMaster={handleLinkCylinderToJobMaster}
             onCreateAndLinkPair={handleCreateAndLinkPair}
+            productionRecords={productionRecords}
+            orders={orders}
           />
         )}
 
