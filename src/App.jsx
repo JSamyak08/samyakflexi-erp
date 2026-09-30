@@ -141,11 +141,17 @@ const DUMMY_ADV_IDS = new Set([
   'ADV-2026-001', 'ADV-2026-002'
 ]);
 
+const DUMMY_KEYWORDS = ['Chocolate Bites', 'Aadi Chemtrade', 'ISS-176883652985', 'CON-BC-20260816-533'];
+
 /**
- * Returns true if any id field of the item matches a known dummy seed ID.
+ * Returns true if any id field of the item matches a known dummy seed ID or dummy keyword.
  */
 function isDummyRecord(item) {
   if (!item || typeof item !== 'object') return false;
+  try {
+    const itemStr = JSON.stringify(item);
+    if (DUMMY_KEYWORDS.some(kw => itemStr.includes(kw))) return true;
+  } catch (e) {}
   const id = String(item.id || item.grnNo || item.itemCode || '');
   if (DUMMY_ORDER_IDS.has(id)) return true;
   if (DUMMY_PROD_IDS.has(id)) return true;
@@ -685,7 +691,13 @@ export default function App() {
         if (dbIndents && Array.isArray(dbIndents)) setIndents(dbIndents);
         if (dbIssues && Array.isArray(dbIssues)) setMachineIssues(dbIssues);
         if (dbConsumables && Array.isArray(dbConsumables)) setConsumables(dbConsumables);
-        if (dbStoreTx && Array.isArray(dbStoreTx)) setStoreIssueTransactions(stripDummyRecords(dbStoreTx));
+        if (dbStoreTx && Array.isArray(dbStoreTx)) {
+          const cleanStoreTx = stripDummyRecords(dbStoreTx);
+          setStoreIssueTransactions(cleanStoreTx);
+          if (cleanStoreTx.length !== dbStoreTx.length) {
+            saveSystemSetting('store_issue_transactions', cleanStoreTx).catch(console.warn);
+          }
+        }
         if (dbPressAssign && typeof dbPressAssign === 'object') setPressMachineAssignments(dbPressAssign);
         if (dbPressQueue && Array.isArray(dbPressQueue)) setPressQueueOrder(dbPressQueue);
         if (dbPressRunJob && typeof dbPressRunJob === 'object') setPressActiveRunningJob(dbPressRunJob);

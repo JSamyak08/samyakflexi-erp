@@ -460,6 +460,16 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
             </div>
           </div>
         )}
+
+        {/* Client Pending Orders Printable PDF Modal */}
+        {pendingOrdersPdfClient && (
+          <ClientPendingOrdersPDF
+            client={pendingOrdersPdfClient}
+            pendingOrders={clientOrders.pending}
+            jobMasters={jobMasters}
+            onClose={() => setPendingOrdersPdfClient(null)}
+          />
+        )}
       </div>
     );
   }

@@ -1090,7 +1090,8 @@ export async function fetchCylinders() {
 
     return data.map(c => {
       const pm = c.press_marks || {};
-      let layers = Array.isArray(c.layers) ? c.layers : (pm.layers || []);
+      let layers = safeParseLayers(c.layers);
+      if (layers.length === 0) layers = safeParseLayers(pm.layers);
       if (layers.length === 0 && c.structure && c.structure !== '—') {
         layers = parseStructureStringToLayers(c.structure);
       }
@@ -2227,19 +2228,51 @@ export async function deleteProductionScheduleFromSupabase(scheduleId) {
 // 12. JOB MASTERS DIRECTORY
 // ============================================================================
 
+export function safeParseLayers(val) {
+  if (!val) return [];
+  if (Array.isArray(val)) return val;
+  if (typeof val === 'string') {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) return parsed;
+    } catch (e) {
+      return [];
+    }
+  }
+  return [];
+}
+
 export function parseStructureStringToLayers(structureStr) {
   if (!structureStr || structureStr === '—') return [];
-  const parts = String(structureStr).split('/').map(p => p.trim());
+  const parts = String(structureStr).split('/').map(p => p.trim()).filter(Boolean);
   if (parts.length === 0) return [];
 
+  const filmKeys = Object.keys(FILM_DENSITIES);
+
   return parts.map((part, idx) => {
-    const micronMatch = part.match(/(\d+(\.\d+)?)\s*µ?/i);
+    const micronMatch = part.match(/(\d+(\.\d+)?)\s*(µ|mic|micron|u)?/i);
     const micron = micronMatch ? parseFloat(micronMatch[1]) : 12;
-    let rawType = part.replace(/(\d+(\.\d+)?)\s*µ?/gi, '').trim();
+    let rawType = part.replace(/(\d+(\.\d+)?)\s*(µ|mic|micron|u)?/gi, '').trim();
+
+    let matchedFilm = filmKeys.find(f => f.toLowerCase() === rawType.toLowerCase());
+    if (!matchedFilm && filmKeys.length > 0) {
+      matchedFilm = filmKeys.find(f => rawType.toLowerCase().includes(f.toLowerCase()) || f.toLowerCase().includes(rawType.toLowerCase()));
+    }
+    if (!matchedFilm) {
+      const upper = rawType.toUpperCase();
+      if (upper.includes('METPET')) matchedFilm = 'METPET';
+      else if (upper.includes('PET')) matchedFilm = 'PET';
+      else if (upper.includes('BOPP')) matchedFilm = 'BOPP';
+      else if (upper.includes('CPP')) matchedFilm = 'CPP';
+      else if (upper.includes('NGP')) matchedFilm = 'NGP';
+      else if (upper.includes('MGP')) matchedFilm = 'MGP';
+      else if (upper.includes('MATTA')) matchedFilm = 'MATTA';
+      else matchedFilm = rawType || 'PET';
+    }
 
     return {
       id: Date.now() + idx,
-      filmType: rawType || 'PET',
+      filmType: matchedFilm,
       micron: micron
     };
   });
@@ -2270,7 +2303,10 @@ export async function fetchJobMasters() {
       }
 
       const pm = { ...meta, ...(j.press_marks || {}), ...(meta.pressMarks || {}) };
-      let layers = Array.isArray(j.layers) && j.layers.length > 0 ? j.layers : (Array.isArray(meta.layers) && meta.layers.length > 0 ? meta.layers : (pm.layers || []));
+      let layers = safeParseLayers(j.layers);
+      if (layers.length === 0) layers = safeParseLayers(meta.layers);
+      if (layers.length === 0) layers = safeParseLayers(pm.layers);
+
       const derivedStructure = (layers.length > 0)
         ? layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
         : (j.structure || j.film_structure || '—');

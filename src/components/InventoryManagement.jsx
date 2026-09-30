@@ -6784,7 +6784,7 @@ export default function InventoryManagement({
             type: typeStr,
             isPendingQC: isPending,
             isRejected: isRejected,
-            date: g.receivedDate || '2026-07-24',
+            date: g.receivedDate || g.created_at || new Date().toISOString().split('T')[0],
             refNo: g.grnNo,
             subRef: g.poNumber ? `PO: ${g.poNumber}` : 'Direct Receipt',
             partyName: g.vendorName || item.lastVendor || 'Supplier',
@@ -6815,7 +6815,7 @@ export default function InventoryManagement({
             if (!alreadyIncluded && sub.availableQtyKg > 0) {
               const txId = `INVT_LOT_${sub.id}`;
               const oldestDate = getItemInwardDate(sub, safeGrns, inventoryRolls);
-              const inDate = sub.inwardDate || sub.receivedDate || sub.created_at || (oldestDate ? oldestDate.toISOString().split('T')[0] : '2026-09-25');
+              const inDate = sub.inwardDate || sub.receivedDate || sub.created_at || (oldestDate ? oldestDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
               const rate = parseFloat(sub.unitPrice || sub.purchaseRatePerKg) || itemActualUnitPrice;
               
               const isFilmSub = (sub.category || 'Film Substrates') === 'Film Substrates';
@@ -6871,7 +6871,7 @@ export default function InventoryManagement({
                 txId,
                 category: 'usage',
                 type: '📤 Job Production Usage',
-                date: rec.dateFilled || rec.approvalDate || '2026-07-23',
+                date: rec.dateFilled || rec.approvalDate || rec.created_at || new Date().toISOString().split('T')[0],
                 refNo: rec.jobName || 'Job Production',
                 subRef: `Order: ${rec.orderId || 'ORD'}`,
                 partyName: rec.clientName || 'Customer Job',
@@ -6902,7 +6902,7 @@ export default function InventoryManagement({
               txId: tx.id,
               category: isIssue ? 'usage' : 'inward',
               type: isIssue ? '📤 Store Issue' : '📥 Store Return',
-              date: tx.date || '2026-07-25',
+              date: tx.date || tx.created_at || new Date().toISOString().split('T')[0],
               refNo: tx.jobName || (isIssue ? 'Store Issue' : 'Store Return'),
               subRef: `Req: ${tx.id}`,
               partyName: tx.vendorName || tx.issuedBy || item.lastVendor || 'Store Manager',
@@ -6931,7 +6931,7 @@ export default function InventoryManagement({
               txId,
               category: 'reconciliation',
               type: a.type || (qty >= 0 ? '⚖️ Physical Audit (+)' : '⚖️ Physical Audit (-)'),
-              date: a.date || '2026-07-25',
+              date: a.date || a.created_at || new Date().toISOString().split('T')[0],
               refNo: `Audit Ref: ${a.id}`,
               subRef: a.type || 'Audit Variance',
               partyName: a.adjustedBy || 'Store Manager',
@@ -6959,7 +6959,7 @@ export default function InventoryManagement({
           txId: `OPEN_${item.id}`,
           category: 'inward',
           type: '📦 Opening Stock Balance',
-          date: '2026-07-01 08:00 AM',
+          date: item.created_at ? parseStandardDate(item.created_at) : (item.inwardDate || item.receivedDate || new Date().toISOString().split('T')[0]),
           refNo: item.itemCode || `OPN-${item.id}`,
           subRef: 'Baseline Store Opening',
           partyName: item.lastVendor || 'Verified Inventory Baseline',

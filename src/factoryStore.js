@@ -15,7 +15,7 @@ export const COMPANY_DETAILS = {
 
 
 
-import { getFilmSubstrates } from './services/settingsService';
+import { getFilmSubstrates } from './services/filmSubstratesService';
 
 export const getFilmSubstrateMap = () => {
   const substrates = getFilmSubstrates();
