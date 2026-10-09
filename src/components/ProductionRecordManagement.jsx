@@ -120,8 +120,44 @@ export default function ProductionRecordManagement({
 
     if (existingRec) {
       setSelectedRecord(existingRec);
-      setMaterialsList(Array.isArray(existingRec.materialsList) ? existingRec.materialsList : []);
-      setQtyFirstPassL1(existingRec.qtyFirstPassL1 || existingRec.qtyPrinting || 0);
+      
+      const existingMatList = Array.isArray(existingRec.materialsList) && existingRec.materialsList.length > 0 
+        ? existingRec.materialsList 
+        : [];
+      
+      const pressInputRolls = existingRec.inputRollsList || ord.inputRollsList || [];
+      if (existingMatList.length === 0 && pressInputRolls.length > 0) {
+        const prefilledPressMaterials = pressInputRolls.map((r, idx) => {
+          const consumed = parseFloat(r.consumedWeightKg) || parseFloat(r.initialWeightKg) || 0;
+          const defaultRate = DEFAULT_DAILY_RATES[r.filmType] || 140;
+          return {
+            id: `mat-press-${Date.now()}-${idx + 1}`,
+            itemId: `RM-${(r.filmType || 'FILM').substring(0, 3).toUpperCase()}-${idx + 1}`,
+            itemCode: `RM-${(r.filmType || 'FILM').substring(0, 3).toUpperCase()}-${idx + 1}`,
+            itemName: `${r.filmType || 'Substrate Film'} ${r.micron || 12}µ (${r.widthMm || 800}mm)`,
+            filmType: r.filmType || 'PET Film',
+            micron: String(r.micron || '12'),
+            widthMm: String(r.widthMm || '800'),
+            unit: 'Kg',
+            barcode: r.barcodeId || '',
+            issueQtyKg: consumed,
+            returnQtyKg: 0,
+            netConsumedQtyKg: consumed,
+            unitPricePerKg: defaultRate,
+            totalMaterialCost: consumed * defaultRate,
+            wastagePct: 0
+          };
+        });
+        setMaterialsList(prefilledPressMaterials);
+      } else {
+        setMaterialsList(existingMatList);
+      }
+
+      const outRolls = existingRec.outputRolls || existingRec.rollsBreakdown || ord.rollsBreakdown || ord.outputRolls || [];
+      const totalOutKg = outRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
+      const initialStage1Kg = existingRec.qtyFirstPassL1 || existingRec.qtyPrinting || totalOutKg || existingRec.printedOutputKg || ord.printedOutputKg || 0;
+
+      setQtyFirstPassL1(initialStage1Kg);
       setQtyInspection(existingRec.qtyInspection || 0);
       setQtyLaminationL1(existingRec.qtyLaminationL1 || 0);
       setAdhesiveConsumedL1Kg(existingRec.adhesiveConsumedL1Kg || 0);
@@ -2722,18 +2758,45 @@ export default function ProductionRecordManagement({
 
           {/* SFG & FG Master Rolls Output Banner for Selected Order */}
           {(() => {
-            const formLinkedRolls = (inventoryRolls || []).filter(r => {
-              if (!selectedOrder) return false;
-              const matchJob = (r.orderId && String(r.orderId) === String(selectedOrder.id)) ||
-                               (r.jobCode && String(r.jobCode).toUpperCase() === String(selectedOrder.jobCode || '').toUpperCase()) ||
-                               (r.jobName && (r.jobName || '').toLowerCase().trim() === (selectedOrder.jobName || '').toLowerCase().trim());
-              return matchJob && (r.rollType === 'SFG' || r.rollType === 'FG' || (r.category || '').includes('Semi-Finished') || (r.category || '').includes('Finished'));
+            const rawLinked = [
+              ...(inventoryRolls || []),
+              ...(selectedRecord?.outputRolls || []),
+              ...(selectedRecord?.rollsBreakdown || []),
+              ...(selectedRecord?.stages?.printing?.outputRolls || []),
+              ...(selectedOrder?.rollsBreakdown || []),
+              ...(selectedOrder?.outputRolls || [])
+            ];
+
+            const seenMap = new Map();
+            rawLinked.forEach(r => {
+              if (!r) return;
+              const idKey = String(r.barcodeId || r.id || r.rollNo || '').trim();
+              if (!idKey) return;
+
+              if (!selectedOrder && !selectedRecord) return;
+              const targetOrderId = selectedOrder?.id || selectedRecord?.orderId || selectedRecord?.id;
+              const targetJobCode = selectedOrder?.jobCode || selectedRecord?.jobCode || '';
+              const targetJobName = selectedOrder?.jobName || selectedRecord?.jobName || '';
+
+              const matchJob = (r.orderId && String(r.orderId) === String(targetOrderId)) ||
+                               (targetJobCode && r.jobCode && String(r.jobCode).toUpperCase() === String(targetJobCode).toUpperCase()) ||
+                               (targetJobName && r.jobName && String(r.jobName).toLowerCase().trim() === String(targetJobName).toLowerCase().trim()) ||
+                               (r.sfgBatchCode && String(r.sfgBatchCode).toLowerCase().includes(String(targetOrderId || '').toLowerCase()));
+
+              const isSfgFg = r.rollType === 'SFG' || r.rollType === 'FG' || r.rollType === 'SEMI_FINISHED_GOODS' || r.sfgType || (r.category || '').includes('Semi-Finished') || (r.category || '').includes('Finished') || r.barcodeId?.startsWith('SFG-') || r.barcodeId?.startsWith('FG-');
+
+              if (matchJob && isSfgFg) {
+                if (!seenMap.has(idKey)) {
+                  seenMap.set(idKey, r);
+                }
+              }
             });
 
-            const sfgRolls = formLinkedRolls.filter(r => r.rollType === 'SFG' || (r.category || '').includes('Semi-Finished'));
-            const fgRolls = formLinkedRolls.filter(r => r.rollType === 'FG' || (r.category || '').includes('Finished'));
-            const totalSfgKg = sfgRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
-            const totalFgKg = fgRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
+            const formLinkedRolls = Array.from(seenMap.values());
+            const sfgRolls = formLinkedRolls.filter(r => r.rollType === 'SFG' || r.rollType === 'SEMI_FINISHED_GOODS' || (r.category || '').includes('Semi-Finished') || r.barcodeId?.startsWith('SFG-'));
+            const fgRolls = formLinkedRolls.filter(r => r.rollType === 'FG' || (r.category || '').includes('Finished') || r.barcodeId?.startsWith('FG-'));
+            const totalSfgKg = sfgRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg || r.totalNetKg || r.availableWeightKg || 0) || 0), 0);
+            const totalFgKg = fgRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg || r.totalNetKg || r.availableWeightKg || 0) || 0), 0);
 
             return (
               <div style={{ marginBottom: '24px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', padding: '16px 20px' }}>
@@ -2743,7 +2806,7 @@ export default function ProductionRecordManagement({
                       <Barcode size={18} style={{ color: '#4f46e5' }} /> SFG / FG Output Barcode Master Rolls ({formLinkedRolls.length} Rolls Weighed)
                     </h4>
                     <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '2px 0 0 0' }}>
-                      Weigh master rolls on digital scale and issue barcodes linked to <strong>{selectedOrder?.jobName || 'this job'}</strong>.
+                      Weigh master rolls on digital scale and issue barcodes linked to <strong>{selectedOrder?.jobName || selectedRecord?.jobName || 'this job'}</strong>.
                     </p>
                   </div>
 
@@ -2771,13 +2834,13 @@ export default function ProductionRecordManagement({
                         style={{ padding: '4px 10px', fontSize: '0.76rem', display: 'flex', alignItems: 'center', gap: '4px' }}
                         onClick={() => setSelectedRollForBarcodeModal(formLinkedRolls)}
                       >
-                        <Printer size={12} /> Print Barcodes ({formLinkedRolls.length})
+                        <Printer size={12} /> Print All Barcodes ({formLinkedRolls.length})
                       </button>
                     )}
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', fontSize: '0.78rem' }}>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', fontSize: '0.78rem', marginBottom: formLinkedRolls.length > 0 ? '14px' : '0' }}>
                   <div style={{ background: '#ede9fe', border: '1px solid #c4b5fd', borderRadius: '6px', padding: '6px 12px', color: '#6d28d9', fontWeight: '700' }}>
                     SFG Output: <strong>{totalSfgKg.toFixed(1)} kg</strong> ({sfgRolls.length} rolls)
                   </div>
@@ -2788,6 +2851,105 @@ export default function ProductionRecordManagement({
                     Cumulative Production Recovery: <strong>{(totalSfgKg + totalFgKg).toFixed(1)} kg</strong>
                   </div>
                 </div>
+
+                {/* Master Rolls Table Breakdown */}
+                {formLinkedRolls.length > 0 && (
+                  <div style={{ background: '#ffffff', borderRadius: '8px', border: '1px solid #e2e8f0', overflow: 'hidden', marginTop: '10px' }}>
+                    <table className="data-table" style={{ width: '100%', margin: 0, fontSize: '0.78rem' }}>
+                      <thead>
+                        <tr style={{ background: '#f1f5f9' }}>
+                          <th>Roll Barcode / ID</th>
+                          <th>Type</th>
+                          <th>Specs & Substrate</th>
+                          <th>Net Wt (kg)</th>
+                          <th>Length (m)</th>
+                          <th>Substrate Traceability</th>
+                          <th>QC Status</th>
+                          <th style={{ textAlign: 'center' }}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {formLinkedRolls.map((r, idx) => {
+                          const barcode = r.barcodeId || r.id || r.sfgBatchCode || `SFG-BC-${idx + 1}`;
+                          const isSfg = r.rollType === 'SFG' || r.rollType === 'SEMI_FINISHED_GOODS' || barcode.startsWith('SFG-');
+                          const netWt = parseFloat(r.netWeightKg || r.totalNetKg || r.availableWeightKg || 0);
+                          const film = r.filmType || selectedOrder?.printFilmType || 'PET';
+                          const micron = r.micron || selectedOrder?.micron || 12;
+                          const width = r.widthMm || selectedOrder?.widthMm || 460;
+                          const inputBarcodes = r.inputSubstrateBarcodes || (r.inputRollsTraceability || []).map(inR => inR.barcodeId).filter(Boolean);
+
+                          return (
+                            <tr key={barcode || idx}>
+                              <td>
+                                <div style={{ fontWeight: '800', fontFamily: 'monospace', color: '#0284c7' }}>
+                                  {barcode}
+                                </div>
+                                <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                                  Roll #{r.rollNo || r.unitNo || idx + 1}
+                                </div>
+                              </td>
+                              <td>
+                                <span style={{
+                                  background: isSfg ? '#f5f3ff' : '#ecfdf5',
+                                  color: isSfg ? '#6d28d9' : '#059669',
+                                  border: `1px solid ${isSfg ? '#ddd6fe' : '#a7f3d0'}`,
+                                  fontSize: '0.7rem',
+                                  fontWeight: '800',
+                                  padding: '2px 6px',
+                                  borderRadius: '4px'
+                                }}>
+                                  {isSfg ? 'SFG' : 'FG'}
+                                </span>
+                              </td>
+                              <td>
+                                <div style={{ fontWeight: '700', color: '#1e293b' }}>{film}</div>
+                                <div style={{ fontSize: '0.7rem', color: '#64748b' }}>{micron}µ • {width}mm</div>
+                              </td>
+                              <td style={{ fontWeight: '800', color: '#0f172a' }}>
+                                {netWt.toFixed(2)} kg
+                              </td>
+                              <td style={{ fontWeight: '700', color: '#475569' }}>
+                                {r.lengthMeters ? `${r.lengthMeters} m` : '—'}
+                              </td>
+                              <td>
+                                {inputBarcodes && inputBarcodes.length > 0 ? (
+                                  <div style={{ fontSize: '0.7rem', fontFamily: 'monospace', color: '#059669', fontWeight: '700' }}>
+                                    🔗 {inputBarcodes.join(', ')}
+                                  </div>
+                                ) : (
+                                  <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Linked to Job</span>
+                                )}
+                              </td>
+                              <td>
+                                <span style={{
+                                  background: r.qcStatus === 'Passed' || r.qcStatus === 'Approved' ? '#dcfce7' : '#fef9c3',
+                                  color: r.qcStatus === 'Passed' || r.qcStatus === 'Approved' ? '#15803d' : '#854d0e',
+                                  fontSize: '0.68rem',
+                                  fontWeight: '800',
+                                  padding: '2px 6px',
+                                  borderRadius: '3px'
+                                }}>
+                                  {r.qcStatus || 'Approved'}
+                                </span>
+                              </td>
+                              <td style={{ textAlign: 'center' }}>
+                                <button
+                                  type="button"
+                                  className="btn-secondary"
+                                  style={{ padding: '3px 8px', fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#059669' }}
+                                  onClick={() => setSelectedRollForBarcodeModal(r)}
+                                  title="Print Barcode Tag for this roll"
+                                >
+                                  <Printer size={12} /> Tag
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             );
           })()}

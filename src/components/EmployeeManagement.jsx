@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import TablePagination, { usePagination } from './TablePagination';
 import EmployeePayslipPDF from './EmployeePayslipPDF';
+import SearchableSelect from './SearchableSelect';
 import { 
   EMPLOYEE_DEPARTMENTS, 
   EMPLOYEE_DESIGNATIONS, 
@@ -108,12 +109,38 @@ export default function EmployeeManagement({
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [shiftFilter, setShiftFilter] = useState('ALL');
 
-  // Salary Advances & EMI Recovery Schedule Filters State
-  const [advancesStartDate, setAdvancesStartDate] = useState('');
-  const [advancesEndDate, setAdvancesEndDate] = useState('');
-  const [advancesStatusFilter, setAdvancesStatusFilter] = useState('ALL');
-  const [advancesDepartmentFilter, setAdvancesDepartmentFilter] = useState('ALL');
-  const [advancesSearch, setAdvancesSearch] = useState('');
+  // Overtime Approvals Filters State
+  const [otEmployeeFilter, setOtEmployeeFilter] = useState('ALL');
+  const [otStatusFilter, setOtStatusFilter] = useState('ALL');
+  const [otSearchQuery, setOtSearchQuery] = useState('');
+
+  const filteredOtRecords = useMemo(() => {
+    return (attendanceRecords || []).filter(a => {
+      const otHrs = Number(a.overtimeHours) || 0;
+      if (otHrs <= 0) return false;
+
+      if (otEmployeeFilter !== 'ALL' && String(a.employeeId) !== String(otEmployeeFilter)) {
+        return false;
+      }
+
+      if (otStatusFilter !== 'ALL' && (a.overtimeStatus || 'Pending Approval') !== otStatusFilter) {
+        return false;
+      }
+
+      if (otSearchQuery.trim()) {
+        const q = otSearchQuery.toLowerCase().trim();
+        const emp = (employees || []).find(e => e.id === a.employeeId);
+        const nameMatch = (emp?.fullName || '').toLowerCase().includes(q);
+        const codeMatch = (emp?.empCode || a.employeeId || '').toLowerCase().includes(q);
+        const deptMatch = (emp?.department || '').toLowerCase().includes(q);
+        const reasonMatch = (a.overtimeReason || '').toLowerCase().includes(q);
+        const dateMatch = (a.date || '').toLowerCase().includes(q);
+        if (!nameMatch && !codeMatch && !deptMatch && !reasonMatch && !dateMatch) return false;
+      }
+
+      return true;
+    });
+  }, [attendanceRecords, otEmployeeFilter, otStatusFilter, otSearchQuery, employees]);
 
   // Selected Date for Daily Attendance Register
   const [attendanceDate, setAttendanceDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -447,6 +474,11 @@ export default function EmployeeManagement({
     const ot = parseFloat(attOtHours) || 0;
     const pto = Math.max(0, parseFloat(attPtoHours) || 0);
     const shiftHrs = markingAttendanceEmp.shiftDurationHours || 12;
+
+    if (ot > 0 && !attOtReason.trim()) {
+      alert("⚠️ Mandatory Requirement: Work / Machine Justification Note must be specified when logging Overtime Hours.");
+      return;
+    }
 
     const isExisting = Boolean(markingAttendanceEmp?.id && attendanceRecords.some(a => a.employeeId === markingAttendanceEmp.id && a.date === attendanceDate));
     if (isExisting && !isAdmin) {
@@ -1379,7 +1411,7 @@ export default function EmployeeManagement({
       {/* ========================================================================= */}
       {activeSubTab === 'overtime' && (
         <div>
-          <div className="glass-panel" style={{ padding: '16px 20px', marginBottom: '20px', background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+          <div className="glass-panel" style={{ padding: '16px 20px', marginBottom: '16px', background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <ShieldCheck size={24} style={{ color: '#16a34a' }} />
               <div>
@@ -1390,6 +1422,88 @@ export default function EmployeeManagement({
                   Rule Enforcement: Overtime logged on shop floor beyond standard shifts (8h, 10h, 12h) is subject to approval. Only approved overtime is counted into monthly salary calculations.
                 </p>
               </div>
+            </div>
+          </div>
+
+          {/* Searchable Employee & Status Filter Bar for Overtime Approvals */}
+          <div className="glass-panel" style={{ padding: '16px 20px', marginBottom: '20px', borderRadius: '12px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', alignItems: 'end' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '800', color: '#475569', marginBottom: '4px' }}>
+                  🔍 SELECT EMPLOYEE (SEARCHABLE)
+                </label>
+                <SearchableSelect
+                  value={otEmployeeFilter}
+                  onChange={val => setOtEmployeeFilter(val)}
+                  placeholder="Filter by employee..."
+                  options={[
+                    { value: 'ALL', label: 'All Employees' },
+                    ...(employees || []).map(e => ({
+                      value: e.id,
+                      label: `${e.fullName} (${e.empCode || e.id})`,
+                      subtitle: `${e.department} • ${e.designation}`
+                    }))
+                  ]}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '800', color: '#475569', marginBottom: '4px' }}>
+                  APPROVAL STATUS
+                </label>
+                <select 
+                  className="form-control" 
+                  value={otStatusFilter} 
+                  onChange={e => setOtStatusFilter(e.target.value)}
+                >
+                  <option value="ALL">All Statuses</option>
+                  <option value="Pending Approval">Pending Approval</option>
+                  <option value="Approved">Approved</option>
+                  <option value="Rejected">Rejected</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '800', color: '#475569', marginBottom: '4px' }}>
+                  SEARCH REASON / MACHINE / DEPT
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    style={{ paddingLeft: '32px' }}
+                    placeholder="Search name, code, dept, reason..." 
+                    value={otSearchQuery} 
+                    onChange={e => setOtSearchQuery(e.target.value)} 
+                  />
+                </div>
+              </div>
+
+              {(otEmployeeFilter !== 'ALL' || otStatusFilter !== 'ALL' || otSearchQuery) && (
+                <div>
+                  <button 
+                    type="button" 
+                    className="btn-secondary" 
+                    style={{ width: '100%', fontSize: '0.78rem', padding: '8px' }}
+                    onClick={() => {
+                      setOtEmployeeFilter('ALL');
+                      setOtStatusFilter('ALL');
+                      setOtSearchQuery('');
+                    }}
+                  >
+                    Reset Filters
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Overtime Metric Summary Strip */}
+            <div style={{ display: 'flex', gap: '16px', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #e2e8f0', fontSize: '0.78rem', color: '#64748b' }}>
+              <div>Showing Records: <strong style={{ color: '#0f172a' }}>{filteredOtRecords.length}</strong></div>
+              <div>Pending Approval: <strong style={{ color: '#d97706' }}>{filteredOtRecords.filter(a => (a.overtimeStatus || 'Pending Approval') === 'Pending Approval').length}</strong></div>
+              <div>Approved OT: <strong style={{ color: '#059669' }}>{filteredOtRecords.filter(a => a.overtimeStatus === 'Approved').length}</strong></div>
+              <div>Rejected OT: <strong style={{ color: '#dc2626' }}>{filteredOtRecords.filter(a => a.overtimeStatus === 'Rejected').length}</strong></div>
             </div>
           </div>
 
@@ -1408,14 +1522,14 @@ export default function EmployeeManagement({
                 </tr>
               </thead>
               <tbody>
-                {attendanceRecords.filter(a => Number(a.overtimeHours) > 0).length === 0 ? (
+                {filteredOtRecords.length === 0 ? (
                   <tr>
                     <td colSpan={8} style={{ textAlign: 'center', padding: '30px', color: '#94a3b8' }}>
-                      No overtime records logged.
+                      No overtime records found matching the selected filters.
                     </td>
                   </tr>
                 ) : (
-                  attendanceRecords.filter(a => Number(a.overtimeHours) > 0).map(att => {
+                  filteredOtRecords.map(att => {
                     const emp = employees.find(e => e.id === att.employeeId);
                     const struct = emp?.salaryStructure || {};
                     const fixedGross = (struct.basicSalary || 0) + (struct.hra || 0) + (struct.otherAllowance || 0);
@@ -1428,7 +1542,7 @@ export default function EmployeeManagement({
                         <td style={{ fontWeight: '800', color: '#0f172a' }}>{att.date}</td>
                         <td>
                           <div style={{ fontWeight: '800' }}>{emp?.fullName || att.employeeId}</div>
-                          <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{emp?.department} • {emp?.empCode}</div>
+                          <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{emp?.department} • {emp?.empCode || emp?.id}</div>
                         </td>
                         <td>
                           <span style={{ fontSize: '0.72rem', fontWeight: '800', background: '#f1f5f9', padding: '2px 6px', borderRadius: '3px' }}>
@@ -1456,11 +1570,11 @@ export default function EmployeeManagement({
                             color: att.overtimeStatus === 'Approved' ? '#166534' : att.overtimeStatus === 'Rejected' ? '#991b1b' : '#854d0e',
                             padding: '3px 8px', borderRadius: '4px', fontSize: '0.74rem', fontWeight: '800'
                           }}>
-                            {att.overtimeStatus}
+                            {att.overtimeStatus || 'Pending Approval'}
                           </span>
                         </td>
                         <td style={{ textAlign: 'center' }}>
-                          {att.overtimeStatus === 'Pending Approval' ? (
+                          {(!att.overtimeStatus || att.overtimeStatus === 'Pending Approval') ? (
                             <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
                               <button 
                                 type="button" 

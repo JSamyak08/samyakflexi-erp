@@ -1016,7 +1016,9 @@ export default function ProductionScheduler({
           status: 'In Stock (SFG)',
           qcStatus: 'Approved',
           inwardDatetime: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
-          locationBay: isReverseJob ? 'SFG Store (Bay B - Pre-Lamination)' : 'SFG Store (Bay C - Pre-Slitting)'
+          locationBay: isReverseJob ? 'SFG Store (Bay B - Pre-Lamination)' : 'SFG Store (Bay C - Pre-Slitting)',
+          inputSubstrateBarcodes: inputRollsList.map(r => r.barcodeId).filter(Boolean),
+          inputRollsTraceability: inputRollsList
         };
 
         createdSfgRolls.push(sfgRollObj);
