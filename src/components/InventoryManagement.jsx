@@ -44,6 +44,7 @@ import TablePagination, { usePagination } from './TablePagination';
 import SFGFGEntryModal, { SFG_TYPES, FG_TYPES } from './SFGFGEntryModal';
 import { getNextDocRefNumber, generateDocRefNumber, getInventoryAgeingSettings } from '../services/settingsService';
 import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo, sortBatchesByFifo, getItemInwardDate } from '../utils/fifoUtils';
+import { notifyGRNPendingQC, notifyGRNQCEscalation12h } from '../services/emailService';
 
 import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName } from '../services/supabaseDataService';
 import { 
@@ -153,6 +154,7 @@ export default function InventoryManagement({
   jobMasters = [],
   machines = [],
   currentUser = null,
+  users = [],
   productionRecords = [],
   storeIssueTransactions = [],
   onStoreIssueReturn,
@@ -175,6 +177,60 @@ export default function InventoryManagement({
 }) {
   const [activeTab, setActiveTab] = useState('stock'); // stock, grn_inward, qc_approval, issue_return, reconciliation
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Automated 12-Hour SLA Overdue QC Alert Monitor
+  useEffect(() => {
+    if (!safeGrns || safeGrns.length === 0) return;
+
+    const check12HourQCSLA = async () => {
+      const now = Date.now();
+      for (const grn of safeGrns) {
+        const isPendingQC = grn.status === 'Pending QC Approval' || 
+                            grn.qcStatus === 'Pending QC Approval' || 
+                            grn.status === 'Pending QC' ||
+                            grn.qcStatus === 'Pending QC';
+        
+        if (!isPendingQC || grn.qcEscalationSent) continue;
+
+        const dateStr = grn.receivedDate || grn.created_at || grn.inwardDatetime;
+        if (!dateStr) continue;
+
+        let grnTime = new Date(dateStr).getTime();
+        if (isNaN(grnTime)) {
+          const parts = String(dateStr).split(/[/.-]/);
+          if (parts.length === 3) {
+            grnTime = new Date(parts[2], parts[1] - 1, parts[0]).getTime();
+          }
+        }
+
+        if (isNaN(grnTime)) continue;
+
+        const hoursPending = (now - grnTime) / (1000 * 60 * 60);
+
+        if (hoursPending >= 12) {
+          console.log(`[QC SLA Check] GRN #${grn.grnNo || grn.id} pending QC for ${hoursPending.toFixed(1)} hrs. Dispatching 12h SLA alert to Admin, Plant Manager, Production Manager, Quality...`);
+          
+          await notifyGRNQCEscalation12h({
+            grn,
+            hoursPending: Math.round(hoursPending),
+            users
+          }).catch(err => console.warn('[QC SLA Check] Escalation email failed:', err));
+
+          const updatedGRN = {
+            ...grn,
+            qcEscalationSent: true,
+            qcEscalationSentAt: new Date().toISOString()
+          };
+
+          if (onUpdateGRN) {
+            await onUpdateGRN(updatedGRN).catch(console.warn);
+          }
+        }
+      }
+    };
+
+    check12HourQCSLA();
+  }, [safeGrns, users, onUpdateGRN]);
 
   // SFG & FG Creation Modal State
   const [isSfgFgModalOpen, setIsSfgFgModalOpen] = useState(false);
@@ -313,6 +369,8 @@ export default function InventoryManagement({
 
   // Modals state
   const [isNewGRNModalOpen, setIsNewGRNModalOpen] = useState(false);
+  const [grnConfirmationModal, setGrnConfirmationModal] = useState({ isOpen: false, pendingData: null });
+  const [grnSuccessModal, setGrnSuccessModal] = useState({ isOpen: false, grnRecord: null, newRolls: [] });
   const [selectedGRNForPDF, setSelectedGRNForPDF] = useState(null);
   const [qcInspectingGRN, setQcInspectingGRN] = useState(null);
   const [qcNotesInput, setQcNotesInput] = useState('');
@@ -1636,6 +1694,39 @@ export default function InventoryManagement({
     const grnDocNo = getNextDocRefNumber('grn');
     const grnCode = grnDocNo.replace('GRN-', '');
 
+    // =========================================================================
+    // DUPLICATE GRN CHECK & PREVENTION
+    // =========================================================================
+    const grnNoClean = String(grnDocNo).trim().toLowerCase();
+    const invNoClean = String(grnInvoiceNo).trim().toLowerCase();
+    const vendorClean = String(grnVendor).trim().toLowerCase();
+    const batchClean = String(grnBatchNo).trim().toLowerCase();
+    const itemClean = String(itemName).trim().toLowerCase();
+
+    // Check 1: Duplicate GRN Number
+    const dupByDocNo = (safeGrns || []).find(g => 
+      String(g.grnNo || g.id || g.grn_number || '').trim().toLowerCase() === grnNoClean
+    );
+    if (dupByDocNo) {
+      alert(`🚫 DUPLICATE GRN PREVENTED:\n\nA Goods Receipt Note with GRN #${grnDocNo} already exists in the system!\nPlease use a unique GRN Number.`);
+      return;
+    }
+
+    // Check 2: Duplicate Invoice No + Vendor Name + Item / Batch
+    const dupByInvoice = (safeGrns || []).find(g => {
+      const gInv = String(g.invoiceNo || '').trim().toLowerCase();
+      const gVendor = String(g.vendorName || '').trim().toLowerCase();
+      const gItem = String(g.itemName || '').trim().toLowerCase();
+      const gBatch = String(g.batchNo || '').trim().toLowerCase();
+      return gInv && gVendor && gInv === invNoClean && gVendor === vendorClean &&
+        (gItem === itemClean || gBatch === batchClean);
+    });
+
+    if (dupByInvoice) {
+      alert(`🚫 DUPLICATE INWARD PREVENTED:\n\nA GRN (GRN #${dupByInvoice.grnNo || dupByInvoice.id}) already exists for Supplier "${grnVendor}" with Invoice #${grnInvoiceNo} and Batch #${grnBatchNo}!\n\nDuplicate GRNs are blocked to maintain stock ledger accuracy.`);
+      return;
+    }
+
     // Pre-calculate individual roll/unit breakdown and barcodeId for each item
     const preparedItemsBreakdown = itemsToSave.map((item, index) => {
       const i = index + 1;
@@ -1669,7 +1760,6 @@ export default function InventoryManagement({
 
     const allBarcodes = preparedItemsBreakdown.map(b => b.barcodeId);
     const barcodeSummaryStr = allBarcodes.join(', ');
-
     const grnOverallRemark = (grnItemRemarks || '').trim();
 
     // Always generate a NEW & UNIQUE Inventory Code (Lot ID) for each inward receipt
@@ -1690,7 +1780,7 @@ export default function InventoryManagement({
       metallocene_pct: mPct,
       unit: isFilm ? 'Kg' : (isCylinderCategory ? 'Set' : grnUnit),
       density: FILM_DENSITIES[grnFilmType] || 1.0,
-      availableQtyKg: isCylinderCategory ? totalNetQty : 0, // Auto-approved cylinders get stock immediately, non-cylinders wait for QC
+      availableQtyKg: isCylinderCategory ? totalNetQty : 0,
       allocatedQtyKg: 0,
       unitPrice: rateVal,
       purchaseRatePerKg: rateVal,
@@ -1700,12 +1790,6 @@ export default function InventoryManagement({
       lastVendor: grnVendor,
       lastBatch: grnBatchNo
     };
-
-    if (onSaveInventoryItem) {
-      onSaveInventoryItem(newInvItem);
-    } else if (onUpdateInventory) {
-      onUpdateInventory([...inventory, newInvItem]);
-    }
 
     const todayIsoDate = new Date().toISOString().split('T')[0];
     const matchedVendor = (vendors || []).find(v => v.companyName === grnVendor || v.name === grnVendor || v.id === grnVendor);
@@ -1745,53 +1829,12 @@ export default function InventoryManagement({
       itemRemarks: grnOverallRemark,
       remarks: grnOverallRemark,
       notes: grnOverallRemark,
-      status: isCylinderCategory ? "Approved" : "Pending QC Approval", // Auto approve cylinder GRNs, non-cylinders require QC Lab Approval
+      status: isCylinderCategory ? "Approved" : "Pending QC Approval",
       qcStatus: isCylinderCategory ? "Approved" : "Pending QC Approval",
       qcNotes: isCylinderCategory ? "Engraved cylinder set received and verified." : "",
       inspectedBy: isCylinderCategory ? "Cylinder QC Inspector" : "",
       storeManager: currentUser?.name || "Store Manager"
     };
-
-    try {
-      if (onAddGRN) {
-        await onAddGRN(newGRN);
-      }
-    } catch (err) {
-      console.error('[GRN Inward] Save to database failed:', err);
-      alert(`❌ Failed to create GRN in database:\n${err.message || err}`);
-      return;
-    }
-
-    // Auto update linked Rotogravure Cylinder & Order status if Category is Rotogravure Cylinders or matches a Cylinder order/PO
-    if (isCylinderCategory || grnPoNo.startsWith('PO-CYL-')) {
-      const linkedCylinder = (cylinders || []).find(c => 
-        (grnPoNo && c.poNumber === grnPoNo) ||
-        (targetStockItemId && String(c.id) === String(targetStockItemId)) ||
-        (c.cylinderCode && itemName.toLowerCase().includes(c.cylinderCode.toLowerCase())) ||
-        (c.jobName && itemName.toLowerCase().includes(c.jobName.toLowerCase()))
-      );
-      if (linkedCylinder && onUpdateCylinder) {
-        onUpdateCylinder({
-          ...linkedCylinder,
-          status: 'Active In-Use',
-          inwardGrnNo: newGRN.grnNo,
-          receivedDate: newGRN.receivedDate
-        });
-      }
-      const linkedOrder = (orders || []).find(o => 
-        (grnPoNo && (o.engraverPoNumber === grnPoNo || o.poNumber === grnPoNo)) ||
-        (linkedCylinder && o.cylinderId === linkedCylinder.id) ||
-        (o.isCylinderOrder && o.jobName && itemName.toLowerCase().includes(o.jobName.toLowerCase()))
-      );
-      if (linkedOrder && onUpdateOrder) {
-        onUpdateOrder({
-          ...linkedOrder,
-          status: 'Completed',
-          cylinderStatus: 'Active In-Use',
-          inwardGrnNo: newGRN.grnNo
-        });
-      }
-    }
 
     // Generate individual barcode stickers for each box / roll / container unit received with its DISTINCT net weight!
     const newRolls = preparedItemsBreakdown.map((item) => {
@@ -1835,16 +1878,109 @@ export default function InventoryManagement({
       return rollObj;
     });
 
-    if (onUpdateInventoryRolls) {
-      onUpdateInventoryRolls(newRolls);
-    } else {
-      newRolls.forEach(rollObj => {
-        if (onAddRoll) {
-          onAddRoll(rollObj);
-        }
+    // Open Confirmation Pop-up Modal before saving
+    setGrnConfirmationModal({
+      isOpen: true,
+      pendingData: {
+        newGRN,
+        newInvItem,
+        newRolls,
+        isCylinderCategory,
+        targetStockItemId,
+        itemName,
+        grnPoNo,
+        unitCount,
+        totalNetQty,
+        rateVal,
+        totalAmountVal: Number((totalNetQty * rateVal).toFixed(2))
+      }
+    });
+  };
+
+  // Execute GRN registration upon user confirmation in pop-up modal
+  const executeConfirmedSaveGRN = async () => {
+    if (!grnConfirmationModal.pendingData) return;
+
+    const {
+      newGRN,
+      newInvItem,
+      newRolls,
+      isCylinderCategory,
+      targetStockItemId,
+      itemName,
+      grnPoNo,
+      unitCount
+    } = grnConfirmationModal.pendingData;
+
+    // 1. Add Master Stock Item
+    if (onSaveInventoryItem) {
+      await onSaveInventoryItem(newInvItem);
+    } else if (onUpdateInventory) {
+      onUpdateInventory([...inventory, newInvItem]);
+    }
+
+    // 2. Save GRN to Supabase Database
+    try {
+      if (onAddGRN) {
+        await onAddGRN(newGRN);
+      }
+    } catch (err) {
+      console.error('[GRN Inward] Save to database failed:', err);
+      alert(`❌ Failed to create GRN in database:\n${err.message || err}`);
+      setGrnConfirmationModal({ isOpen: false, pendingData: null });
+      return;
+    }
+
+    // 2b. Dispatch Email Notification to Quality (QC) Users for Pending QC Approval
+    if (newGRN.status === 'Pending QC Approval' || newGRN.qcStatus === 'Pending QC Approval' || newGRN.status === 'Pending QC') {
+      notifyGRNPendingQC({ grn: newGRN, users }).catch(err => {
+        console.warn('[GRN Inward] QC email notification error:', err);
       });
     }
 
+    // 3. Auto update linked Cylinder / Order if applicable
+    if (isCylinderCategory || (grnPoNo && grnPoNo.startsWith('PO-CYL-'))) {
+      const linkedCylinder = (cylinders || []).find(c => 
+        (grnPoNo && c.poNumber === grnPoNo) ||
+        (targetStockItemId && String(c.id) === String(targetStockItemId)) ||
+        (c.cylinderCode && itemName.toLowerCase().includes(c.cylinderCode.toLowerCase())) ||
+        (c.jobName && itemName.toLowerCase().includes(c.jobName.toLowerCase()))
+      );
+      if (linkedCylinder && onUpdateCylinder) {
+        onUpdateCylinder({
+          ...linkedCylinder,
+          status: 'Active In-Use',
+          inwardGrnNo: newGRN.grnNo,
+          receivedDate: newGRN.receivedDate
+        });
+      }
+      const linkedOrder = (orders || []).find(o => 
+        (grnPoNo && (o.engraverPoNumber === grnPoNo || o.poNumber === grnPoNo)) ||
+        (linkedCylinder && o.cylinderId === linkedCylinder.id) ||
+        (o.isCylinderOrder && o.jobName && itemName.toLowerCase().includes(o.jobName.toLowerCase()))
+      );
+      if (linkedOrder && onUpdateOrder) {
+        onUpdateOrder({
+          ...linkedOrder,
+          status: 'Completed',
+          cylinderStatus: 'Active In-Use',
+          inwardGrnNo: newGRN.grnNo
+        });
+      }
+    }
+
+    // 4. Register EACH INDIVIDUAL roll/item with its own separate barcode into stock rolls/batches ledger
+    if (onUpdateInventoryRolls) {
+      await onUpdateInventoryRolls(newRolls);
+    } else {
+      for (const rollObj of newRolls) {
+        if (onAddRoll) {
+          await onAddRoll(rollObj);
+        }
+      }
+    }
+
+    // Reset Form Fields
     setGrnFreightAmount('');
     setGrnTransporterName('');
     setGrnItemRemarks('');
@@ -1857,9 +1993,16 @@ export default function InventoryManagement({
       { id: `item-${Date.now()}-1`, grossWeightKg: '', tareWeightKg: grnDefaultTare || 0, netWeightKg: '', lengthMeters: '', vendorRollNo: '', notes: '' }
     ]);
 
+    // Close Create Modal and Confirmation Modal
     setIsNewGRNModalOpen(false);
-    setSelectedRollForBarcodeModal(newRolls);
-    alert(`✅ Inward GRN ${newGRN.grnNo} recorded successfully!\n\n${isCylinderCategory ? 'Stock approved & linked to Cylinders.' : 'Submitted to Quality Control (QC) Lab Inspection Portal.'}\n${unitCount} barcode sticker(s) generated.`);
+    setGrnConfirmationModal({ isOpen: false, pendingData: null });
+
+    // Open Success Animation Modal
+    setGrnSuccessModal({
+      isOpen: true,
+      grnRecord: newGRN,
+      newRolls: newRolls
+    });
   };
 
   // QC Approval / Rejection (Updates Stock for Films, Inks, Solvents, Adhesives, Spares, PPE)
@@ -5808,6 +5951,162 @@ export default function InventoryManagement({
           </div>
         </div>
       )}
+
+      {/* Confirmation Pop-Up Modal before saving Inward GRN */}
+      {grnConfirmationModal.isOpen && grnConfirmationModal.pendingData && (() => {
+        const p = grnConfirmationModal.pendingData;
+        return (
+          <div className="modal-overlay" style={{ zIndex: 10500 }} onClick={() => setGrnConfirmationModal({ isOpen: false, pendingData: null })}>
+            <div 
+              className="glass-card modal-content" 
+              style={{ width: '640px', maxWidth: '95vw', background: '#ffffff', borderRadius: '16px', border: '1px solid #cbd5e1', boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.25)', overflow: 'hidden' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding: '18px 24px', color: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ background: 'rgba(56, 189, 248, 0.2)', padding: '10px', borderRadius: '10px', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
+                    <Package size={22} />
+                  </div>
+                  <div>
+                    <h3 style={{ fontSize: '1.15rem', fontWeight: '800', margin: 0, color: '#ffffff' }}>Confirm Inward GRN Registration</h3>
+                    <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0 0' }}>Verify inward receipt details before generating barcodes & committing stock</p>
+                  </div>
+                </div>
+                <button type="button" className="modal-close-btn" onClick={() => setGrnConfirmationModal({ isOpen: false, pendingData: null })}>
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div style={{ padding: '24px' }}>
+                <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '14px', fontSize: '0.86rem' }}>
+                    <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>GRN Ref Number</span><strong style={{ color: '#0284c7', fontSize: '1.05rem', fontWeight: '800' }}>{p.newGRN.grnNo}</strong></div>
+                    <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Supplier / Vendor</span><strong style={{ color: '#0f172a', fontWeight: '700' }}>{p.newGRN.vendorName}</strong></div>
+                    <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Invoice Number</span><strong style={{ color: '#0f172a', fontWeight: '700', fontFamily: 'monospace' }}>{p.newGRN.invoiceNo || 'N/A'}</strong></div>
+                    <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Batch / Lot Number</span><strong style={{ color: '#0f172a', fontWeight: '700', fontFamily: 'monospace' }}>{p.newGRN.batchNo || 'N/A'}</strong></div>
+                    <div style={{ gridColumn: 'span 2' }}><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Item Name / Spec</span><strong style={{ color: '#0f172a', fontWeight: '700' }}>{p.itemName}</strong></div>
+                    <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Individual Units / Barcodes</span><strong style={{ color: '#059669', fontWeight: '800' }}>{p.unitCount} Unit(s) (Separate Barcodes)</strong></div>
+                    <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Total Inward Net Qty</span><strong style={{ color: '#0f172a', fontWeight: '800' }}>{p.totalNetQty.toLocaleString()} {p.newGRN.unit || 'Kg'}</strong></div>
+                    <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Purchase Rate</span><strong style={{ color: '#0f172a', fontWeight: '700' }}>₹{p.rateVal} / {p.newGRN.unit || 'Kg'}</strong></div>
+                    <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Total Purchase Valuation</span><strong style={{ color: '#2563eb', fontWeight: '800' }}>₹{p.totalAmountVal.toLocaleString('en-IN')}</strong></div>
+                  </div>
+                </div>
+
+                <div style={{ background: p.isCylinderCategory ? '#ecfdf5' : '#eff6ff', padding: '12px 16px', borderRadius: '8px', border: `1px solid ${p.isCylinderCategory ? '#a7f3d0' : '#bfdbfe'}`, fontSize: '0.82rem', color: p.isCylinderCategory ? '#065f46' : '#1e40af', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Info size={18} />
+                  <div>
+                    <strong>Stock & Barcode Rule:</strong> {p.isCylinderCategory ? 'Cylinder set will be auto-approved and added directly to active cylinder inventory.' : 'Each roll/unit will be registered individually with its distinct barcode sticker. Stock will enter QC Lab Approval inspection.'}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                  <button type="button" className="btn-secondary" style={{ padding: '10px 18px', fontWeight: '600' }} onClick={() => setGrnConfirmationModal({ isOpen: false, pendingData: null })}>
+                    Edit / Go Back
+                  </button>
+                  <button type="button" className="btn-primary" style={{ background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', padding: '10px 24px', fontWeight: '800', display: 'inline-flex', alignItems: 'center', gap: '8px' }} onClick={executeConfirmedSaveGRN}>
+                    <CheckCircle2 size={18} /> Confirm & Register Inward GRN
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Success Animation Modal after saving Inward GRN */}
+      {grnSuccessModal.isOpen && grnSuccessModal.grnRecord && (() => {
+        const g = grnSuccessModal.grnRecord;
+        const rolls = grnSuccessModal.newRolls || [];
+        return (
+          <div className="modal-overlay" style={{ zIndex: 10600 }} onClick={() => setGrnSuccessModal({ isOpen: false, grnRecord: null, newRolls: [] })}>
+            <div 
+              className="glass-card modal-content" 
+              style={{ width: '620px', maxWidth: '95vw', background: '#ffffff', borderRadius: '20px', border: '1px solid #cbd5e1', boxShadow: '0 25px 60px -15px rgba(15, 23, 42, 0.3)', overflow: 'hidden', textAlign: 'center' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div style={{ background: 'radial-gradient(circle at 50% 30%, #ecfdf5 0%, #ffffff 70%)', padding: '32px 24px 20px 24px', position: 'relative' }}>
+                {/* Animated Success Checkmark Ring */}
+                <div style={{ position: 'relative', width: '88px', height: '88px', margin: '0 auto 16px auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: 'rgba(16, 185, 129, 0.2)', animation: 'pulseRing 2s infinite ease-out' }}></div>
+                  <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 25px rgba(16, 185, 129, 0.4)', position: 'relative', zIndex: 2 }}>
+                    <CheckCircle2 size={44} style={{ strokeWidth: 2.5 }} />
+                  </div>
+                </div>
+
+                <h2 style={{ fontSize: '1.4rem', fontWeight: '900', color: '#0f172a', margin: '0 0 6px 0', letterSpacing: '-0.02em' }}>
+                  GRN #{g.grnNo} Registered Successfully!
+                </h2>
+                <p style={{ fontSize: '0.84rem', color: '#475569', margin: 0 }}>
+                  Inward receipt recorded & {rolls.length} individual barcode sticker(s) generated for unique item tracking.
+                </p>
+
+                {/* Quick Summary Cards */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginTop: '20px', textAlign: 'left' }}>
+                  <div style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b', display: 'block' }}>Individual Barcodes</span>
+                    <strong style={{ fontSize: '0.95rem', color: '#059669', fontWeight: '800' }}>{rolls.length} Sticker(s)</strong>
+                  </div>
+                  <div style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b', display: 'block' }}>Total Inward Qty</span>
+                    <strong style={{ fontSize: '0.95rem', color: '#0f172a', fontWeight: '800' }}>{(g.netWeightKg || 0).toLocaleString()} {g.unit || 'Kg'}</strong>
+                  </div>
+                  <div style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b', display: 'block' }}>QC Status</span>
+                    <strong style={{ fontSize: '0.85rem', color: g.status === 'Approved' ? '#059669' : '#d97706', fontWeight: '800' }}>{g.status}</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Breakdown List of Barcodes */}
+              <div style={{ padding: '0 24px 20px 24px', textAlign: 'left' }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Generated Individual Item Barcodes ({rolls.length}):</span>
+                  <span style={{ color: '#0284c7', fontSize: '0.74rem' }}>Invoice: {g.invoiceNo || 'N/A'}</span>
+                </div>
+                <div style={{ maxHeight: '130px', overflowY: 'auto', background: '#f1f5f9', padding: '8px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.78rem', fontFamily: 'monospace' }}>
+                  {rolls.map((r, idx) => (
+                    <div key={r.barcodeId || idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderBottom: idx < rolls.length - 1 ? '1px solid #e2e8f0' : 'none' }}>
+                      <span style={{ fontWeight: '700', color: '#0f172a' }}>📦 {r.barcodeId}</span>
+                      <span style={{ color: '#475569' }}>Item #{r.unitNo}: <strong>{r.netWeightKg} {r.unit || 'Kg'}</strong> {r.vendorRollNo ? `(Vendor Roll: ${r.vendorRollNo})` : ''}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
+                  <button 
+                    type="button" 
+                    className="btn-secondary" 
+                    style={{ flex: 1, padding: '10px', fontWeight: '600', justifyContent: 'center' }} 
+                    onClick={() => setGrnSuccessModal({ isOpen: false, grnRecord: null, newRolls: [] })}
+                  >
+                    Done / View Ledger
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn-primary" 
+                    style={{ flex: 1.3, background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', padding: '10px', fontWeight: '800', justifyContent: 'center', display: 'inline-flex', alignItems: 'center', gap: '8px' }} 
+                    onClick={() => {
+                      const rollsToPrint = grnSuccessModal.newRolls;
+                      setGrnSuccessModal({ isOpen: false, grnRecord: null, newRolls: [] });
+                      setSelectedRollForBarcodeModal(rollsToPrint);
+                    }}
+                  >
+                    <Printer size={18} /> Print Barcode Stickers ({rolls.length})
+                  </button>
+                </div>
+              </div>
+
+              <style>{`
+                @keyframes pulseRing {
+                  0% { transform: scale(0.95); opacity: 0.8; }
+                  50% { transform: scale(1.15); opacity: 0.3; }
+                  100% { transform: scale(0.95); opacity: 0.8; }
+                }
+              `}</style>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Modal: QC Inspection & Approval */}
       {qcInspectingGRN && (

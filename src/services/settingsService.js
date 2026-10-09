@@ -660,8 +660,66 @@ export const DEFAULT_EMAIL_TEMPLATES = {
 {wastageBreakdownHtml}
 <p style="font-size: 13px; color: #64748b; margin-top: 16px;">Please review shop-floor extrusion/printing setup logs and machine settings in the Plant Operations dashboard.</p>`,
     footerNote: 'Samyak International Ltd • Indore Packaging Division\nKheda Industrial Area, Sector 3, Pithampur, MP | GSTIN: 23AABCM3526F1ZY'
+  },
+  grn_pending_qc: {
+    key: 'grn_pending_qc',
+    name: 'GRN Inward Pending QC Approval Alert',
+    eventTitle: '🧪 Inward GRN Pending Quality Inspection: #{grnNo}',
+    subject: '🧪 Action Required: Inward GRN #{grnNo} Pending QC Approval — {vendorName}',
+    badgeText: 'Action Task: Pending QC Inspection',
+    badgeBgColor: '#d97706',
+    toEmail: 'quality@samyakinternational.in',
+    ccEmail: 'admin@samyakinternational.in',
+    enabled: true,
+    contentHtml: `<p style="font-size: 14px; color: #334155;">A new Goods Receipt Note (GRN) has been inwarded at the plant store and is currently <strong>Pending Quality Control (QC) Inspection & Approval</strong>.</p>
+<div class="info-card">
+  <table style="width: 100%; font-size: 13px;">
+    <tr><td><strong>GRN Document No:</strong></td><td><strong>{grnNo}</strong></td></tr>
+    <tr><td><strong>Supplier / Vendor:</strong></td><td>{vendorName}</td></tr>
+    <tr><td><strong>Invoice No & Date:</strong></td><td>{invoiceNo} ({receivedDate})</td></tr>
+    <tr><td><strong>Material Category:</strong></td><td>{category}</td></tr>
+    <tr><td><strong>Item Name:</strong></td><td>{itemName}</td></tr>
+    <tr><td><strong>Inward Net Quantity:</strong></td><td><strong>{netWeightKg}</strong></td></tr>
+    <tr><td><strong>Packages / Rolls Received:</strong></td><td>{unitCount}</td></tr>
+    <tr><td><strong>Supplier Batch No:</strong></td><td>{batchNo}</td></tr>
+    <tr><td><strong>Inwarded By (Store):</strong></td><td>{storeManager}</td></tr>
+    <tr><td><strong>Generated Barcodes:</strong></td><td><code>{barcodes}</code></td></tr>
+  </table>
+</div>
+<p style="font-size: 13px; color: #475569;"><strong>Action Required:</strong> Please perform physical quality sampling and parameter verification in the Inventory & Quality Control module to release material into active plant inventory.</p>`,
+    footerNote: 'Samyak International Ltd • Indore Packaging Division\nKheda Industrial Area, Sector 3, Pithampur, MP | GSTIN: 23AABCM3526F1ZY'
+  },
+  grn_qc_escalation_12h: {
+    key: 'grn_qc_escalation_12h',
+    name: 'GRN Pending QC Overdue (>12 Hours) Escalation Alert',
+    eventTitle: '🚨 SLA URGENT ALERT: QC Approval Overdue (>12 Hours) — GRN #{grnNo}',
+    subject: '🚨 OVERDUE QC APPROVAL ALERT (>12 hrs): GRN #{grnNo} — {vendorName}',
+    badgeText: '🚨 SLA Escalation Alert: QC Overdue',
+    badgeBgColor: '#dc2626',
+    toEmail: 'admin@samyakinternational.in',
+    ccEmail: 'plant.manager@plant.com, quality@samyakinternational.in',
+    enabled: true,
+    contentHtml: `<div style="background: #fef2f2; border: 1px solid #fca5a5; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+  <h3 style="color: #991b1b; font-size: 16px; margin: 0 0 6px 0;">🚨 12-Hour Quality Inspection SLA Exceeded</h3>
+  <p style="color: #7f1d1d; font-size: 13px; margin: 0;">Goods Receipt Note <strong>#{grnNo}</strong> has been pending Quality Control (QC) clearance for <strong style="color: #dc2626; font-size: 15px;">{hoursPending} hours</strong> without sign-off.</p>
+</div>
+<div class="info-card">
+  <table style="width: 100%; font-size: 13px;">
+    <tr><td><strong>GRN Document No:</strong></td><td><strong>{grnNo}</strong></td></tr>
+    <tr><td><strong>Supplier / Vendor:</strong></td><td>{vendorName}</td></tr>
+    <tr><td><strong>Invoice No & Date:</strong></td><td>{invoiceNo} ({receivedDate})</td></tr>
+    <tr><td><strong>Material Description:</strong></td><td>{itemName} ({category})</td></tr>
+    <tr><td><strong>Inward Net Quantity:</strong></td><td><strong>{netWeightKg}</strong></td></tr>
+    <tr><td><strong>Batch Number:</strong></td><td>{batchNo}</td></tr>
+    <tr><td><strong>Total SLA Delay:</strong></td><td><strong style="color: #dc2626;">{hoursPending} Hours</strong></td></tr>
+    <tr><td><strong>Inwarded By:</strong></td><td>{storeManager}</td></tr>
+  </table>
+</div>
+<p style="font-size: 13px; color: #1e293b; margin-top: 16px; font-weight: 600;">Escalated Roles Notified: Admin, Plant Manager, Production Manager, Quality Head.</p>`,
+    footerNote: 'Samyak International Ltd • Indore Packaging Division\nKheda Industrial Area, Sector 3, Pithampur, MP | GSTIN: 23AABCM3526F1ZY'
   }
 };
+
 
 /**
  * Replace placeholder variables like {jobName}, {orderId} in string templates

@@ -459,3 +459,213 @@ export const notifyOverWastageAlert = async ({ record, order, allowedWastagePct,
     text: `OVER WASTAGE WARNING: Job ${vars.jobName} recorded ${actualWastagePct}% scrap wastage vs ${targetWastagePct}% pre-costing target.`
   });
 };
+
+/**
+ * Helper to dynamically resolve email addresses by system roles from user list
+ */
+export const getEmailsForRoles = (users = [], targetRoles = [], defaultEmail = 'admin@samyakinternational.in') => {
+  if (!Array.isArray(users) || users.length === 0) return defaultEmail;
+
+  const matchedEmails = new Set();
+
+  users.forEach(u => {
+    if (!u || u.status === 'Inactive') return;
+    const userRole = String(u.role || '').trim().toLowerCase();
+    const userDept = String(u.department || '').trim().toLowerCase();
+    const email = u.email?.trim();
+
+    if (!email) return;
+
+    const matches = targetRoles.some(roleKey => {
+      const key = roleKey.toLowerCase();
+      if (key === 'quality' || key === 'qc' || key === 'qc chemist' || key === 'quality manager') {
+        return userRole.includes('qc') || userRole.includes('quality') || userDept.includes('quality') || userDept.includes('qc');
+      }
+      if (key === 'admin') {
+        return userRole.includes('admin');
+      }
+      if (key === 'plant manager') {
+        return userRole.includes('plant manager') || userRole === 'plant manager';
+      }
+      if (key === 'production manager') {
+        return userRole.includes('production manager') || userRole === 'production manager';
+      }
+      return userRole === key || userRole.includes(key);
+    });
+
+    if (matches) {
+      matchedEmails.add(email);
+    }
+  });
+
+  if (matchedEmails.size === 0) return defaultEmail;
+  return Array.from(matchedEmails).join(', ');
+};
+
+/**
+ * 9. ACTION TASK: GRN Inward Pending QC Approval Notification (Sent to QC / Quality User)
+ */
+export const notifyGRNPendingQC = async ({ grn, users = [], customTo }) => {
+  const qcTargetEmails = getEmailsForRoles(users, ['QC Chemist', 'Quality Manager', 'Quality', 'QC'], 'quality@samyakinternational.in');
+  const targetEmail = customTo || qcTargetEmails;
+
+  const barcodeListStr = Array.isArray(grn.barcodes) && grn.barcodes.length > 0
+    ? grn.barcodes.join(', ')
+    : (grn.barcodeId || 'N/A');
+
+  const unitCount = grn.rollsReceived || (Array.isArray(grn.itemsBreakdown) ? grn.itemsBreakdown.length : 1);
+  const netQty = Number(grn.netWeightKg || grn.receivedQtyKg || 0).toLocaleString();
+
+  const vars = {
+    grnNo: grn.grnNo || grn.id || '',
+    vendorName: grn.vendorName || 'Supplier',
+    invoiceNo: grn.invoiceNo || 'N/A',
+    receivedDate: grn.receivedDate || new Date().toISOString().split('T')[0],
+    itemName: grn.itemName || 'Raw Material Inward',
+    category: grn.category || 'Film Substrates',
+    unitCount: `${unitCount} ${unitCount === 1 ? 'Unit/Roll' : 'Units/Rolls'}`,
+    netWeightKg: `${netQty} ${grn.unit || 'Kg'}`,
+    batchNo: grn.batchNo || 'N/A',
+    storeManager: grn.storeManager || 'Store Manager',
+    barcodes: barcodeListStr
+  };
+
+  const tmpl = getActiveTemplate('grn_pending_qc', vars) || {
+    eventTitle: `🧪 Inward GRN Pending Quality Inspection: #${vars.grnNo}`,
+    subject: `🧪 Action Required: Inward GRN #${vars.grnNo} Pending QC Approval — ${vars.vendorName}`,
+    badgeText: 'Action Task: Pending QC Inspection',
+    badgeBgColor: '#d97706',
+    enabled: true
+  };
+
+  if (tmpl.enabled === false) return { success: false, message: 'Notification disabled.' };
+
+  const contentHtml = `
+    <p style="font-size: 14px; color: #334155;">
+      A new Goods Receipt Note (GRN) has been inwarded at the plant store and is currently <strong>Pending Quality Control (QC) Inspection & Approval</strong>.
+    </p>
+    <div class="info-card">
+      <table style="width: 100%; font-size: 13px;">
+        <tr><td><strong>GRN Document No:</strong></td><td><strong>${vars.grnNo}</strong></td></tr>
+        <tr><td><strong>Supplier / Vendor:</strong></td><td>${vars.vendorName}</td></tr>
+        <tr><td><strong>Invoice No & Date:</strong></td><td>${vars.invoiceNo} (${vars.receivedDate})</td></tr>
+        <tr><td><strong>Material Category:</strong></td><td>${vars.category}</td></tr>
+        <tr><td><strong>Item Name:</strong></td><td>${vars.itemName}</td></tr>
+        <tr><td><strong>Inward Net Quantity:</strong></td><td><strong>${vars.netWeightKg}</strong></td></tr>
+        <tr><td><strong>Packages / Rolls Received:</strong></td><td>${vars.unitCount}</td></tr>
+        <tr><td><strong>Supplier Batch No:</strong></td><td>${vars.batchNo}</td></tr>
+        <tr><td><strong>Inwarded By (Store):</strong></td><td>${vars.storeManager}</td></tr>
+        <tr><td><strong>Generated Barcodes:</strong></td><td><code style="background: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-size: 12px;">${vars.barcodes}</code></td></tr>
+      </table>
+    </div>
+    <p style="font-size: 13px; color: #475569;">
+      <strong>Action Required:</strong> Please perform physical quality sampling and parameter verification (Micron gauge, Dyne level, Tensile/Bond test) in the <strong>Inventory & Quality Control</strong> module to release material into active plant inventory.
+    </p>
+  `;
+
+  const html = buildEmailTemplate({
+    title: tmpl.eventTitle,
+    badgeText: tmpl.badgeText,
+    badgeBg: tmpl.badgeBgColor || '#d97706',
+    contentHtml,
+    footerNote: tmpl.footerNote
+  });
+
+  return await sendERPEmailNotification({
+    to: targetEmail,
+    cc: tmpl.ccEmail || 'admin@samyakinternational.in',
+    subject: tmpl.subject,
+    html,
+    text: `ACTION REQUIRED: GRN #${vars.grnNo} for ${vars.itemName} (${vars.netWeightKg}) from ${vars.vendorName} is pending QC approval.`
+  });
+};
+
+/**
+ * 10. ACTION TASK: GRN Pending QC > 12 Hours Escalation Alert (Sent to Admin, Plant Manager, Production Manager, Quality)
+ */
+export const notifyGRNQCEscalation12h = async ({ grn, hoursPending = 12, users = [], customTo }) => {
+  // Escalation alert sent dynamically to Admin, Plant Manager, Production Manager, and Quality roles
+  const escalationEmails = getEmailsForRoles(
+    users, 
+    ['Admin', 'Plant Manager', 'Production Manager', 'Quality Manager', 'QC Chemist', 'Quality', 'QC'], 
+    'admin@samyakinternational.in, plant.manager@plant.com, quality@samyakinternational.in'
+  );
+
+  const targetEmail = customTo || escalationEmails;
+
+  const unitCount = grn.rollsReceived || (Array.isArray(grn.itemsBreakdown) ? grn.itemsBreakdown.length : 1);
+  const netQty = Number(grn.netWeightKg || grn.receivedQtyKg || 0).toLocaleString();
+
+  const vars = {
+    grnNo: grn.grnNo || grn.id || '',
+    vendorName: grn.vendorName || 'Supplier',
+    invoiceNo: grn.invoiceNo || 'N/A',
+    receivedDate: grn.receivedDate || new Date().toISOString().split('T')[0],
+    itemName: grn.itemName || 'Raw Material Inward',
+    category: grn.category || 'Film Substrates',
+    netWeightKg: `${netQty} ${grn.unit || 'Kg'}`,
+    batchNo: grn.batchNo || 'N/A',
+    hoursPending: `${hoursPending}`,
+    storeManager: grn.storeManager || 'Store Manager'
+  };
+
+  const tmpl = getActiveTemplate('grn_qc_escalation_12h', vars) || {
+    eventTitle: `🚨 SLA URGENT ALERT: QC Approval Overdue (>12 Hours) — GRN #${vars.grnNo}`,
+    subject: `🚨 OVERDUE QC APPROVAL ALERT (>12 hrs): GRN #${vars.grnNo} — ${vars.vendorName}`,
+    badgeText: '🚨 SLA Escalation Alert: QC Overdue',
+    badgeBgColor: '#dc2626',
+    enabled: true
+  };
+
+  if (tmpl.enabled === false) return { success: false, message: 'Notification disabled.' };
+
+  const contentHtml = `
+    <div style="background: #fef2f2; border: 1px solid #fca5a5; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+      <h3 style="color: #991b1b; font-size: 16px; margin: 0 0 6px 0;">🚨 12-Hour Quality Inspection SLA Exceeded</h3>
+      <p style="color: #7f1d1d; font-size: 13px; margin: 0;">
+        Goods Receipt Note <strong>#${vars.grnNo}</strong> has been pending Quality Control (QC) clearance for 
+        <strong style="color: #dc2626; font-size: 15px;">${vars.hoursPending} hours</strong> without sign-off.
+      </p>
+    </div>
+
+    <div class="info-card">
+      <table style="width: 100%; font-size: 13px;">
+        <tr><td><strong>GRN Document No:</strong></td><td><strong>${vars.grnNo}</strong></td></tr>
+        <tr><td><strong>Supplier / Vendor:</strong></td><td>${vars.vendorName}</td></tr>
+        <tr><td><strong>Invoice No & Date:</strong></td><td>${vars.invoiceNo} (${vars.receivedDate})</td></tr>
+        <tr><td><strong>Material Description:</strong></td><td>${vars.itemName} (${vars.category})</td></tr>
+        <tr><td><strong>Inward Net Quantity:</strong></td><td><strong>${vars.netWeightKg}</strong></td></tr>
+        <tr><td><strong>Batch Number:</strong></td><td>${vars.batchNo}</td></tr>
+        <tr><td><strong>Time Inwarded:</strong></td><td>${vars.receivedDate}</td></tr>
+        <tr><td><strong>Total SLA Delay:</strong></td><td><strong style="color: #dc2626;">${vars.hoursPending} Hours</strong></td></tr>
+        <tr><td><strong>Inwarded By:</strong></td><td>${vars.storeManager}</td></tr>
+      </table>
+    </div>
+
+    <div style="background: #f8fafc; border-left: 4px solid #dc2626; padding: 12px 16px; margin-top: 16px;">
+      <p style="font-size: 13px; color: #1e293b; margin: 0; font-weight: 600;">
+        Escalated Roles Notified: Admin, Plant Manager, Production Manager, Quality Head.
+      </p>
+      <p style="font-size: 12px; color: #64748b; margin: 4px 0 0 0;">
+        Immediate quality inspection and sign-off are required to release this raw material for shop-floor printing & lamination job scheduling.
+      </p>
+    </div>
+  `;
+
+  const html = buildEmailTemplate({
+    title: tmpl.eventTitle,
+    badgeText: tmpl.badgeText,
+    badgeBg: tmpl.badgeBgColor || '#dc2626',
+    contentHtml,
+    footerNote: tmpl.footerNote
+  });
+
+  return await sendERPEmailNotification({
+    to: targetEmail,
+    cc: tmpl.ccEmail || 'admin@samyakinternational.in',
+    subject: tmpl.subject,
+    html,
+    text: `URGENT QC OVERDUE ALERT: GRN #${vars.grnNo} for ${vars.itemName} has been pending QC approval for ${vars.hoursPending} hours (>12h SLA limit).`
+  });
+};
+

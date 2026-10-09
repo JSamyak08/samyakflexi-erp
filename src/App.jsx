@@ -4054,6 +4054,7 @@ export default function App() {
             jobMasters={jobMasters}
             machines={machines}
             currentUser={currentUser}
+            users={users}
             productionRecords={productionRecords}
             storeIssueTransactions={storeIssueTransactions}
             onStoreIssueReturn={handleStoreIssueReturn}

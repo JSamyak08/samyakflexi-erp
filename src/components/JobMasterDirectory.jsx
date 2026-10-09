@@ -1242,7 +1242,7 @@ export default function JobMasterDirectory({
       {/* CREATE / EDIT JOB MASTER MODAL */}
       {isCreateModalOpen && (
         <div className="modal-overlay" onClick={() => setIsCreateModalOpen(false)}>
-          <div className="modal-content" style={{ width: '820px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+          <div className="modal-content" style={{ width: '920px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '1.2rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <FileCode size={20} style={{ color: 'var(--primary-brand)' }} />
@@ -1425,7 +1425,7 @@ export default function JobMasterDirectory({
                 </div>
 
                 {/* Multi-Layer Substrate */}
-                <div style={{ gridColumn: 'span 2', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                <div style={{ gridColumn: '1 / -1', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                     <div>
                       <strong style={{ fontSize: '0.9rem', color: '#1e293b' }}>Substrate Structure (Laminate Layers) <span style={{ color: '#dc2626' }}>*</span></strong>
@@ -1500,7 +1500,7 @@ export default function JobMasterDirectory({
                 </div>
 
                 {/* Simplified Process Routing & Machine Sequence */}
-                <div style={{ gridColumn: 'span 2', background: '#f8fafc', padding: '14px 16px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                <div style={{ gridColumn: '1 / -1', background: '#f8fafc', padding: '14px 16px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
                     <div>
                       <strong style={{ fontSize: '0.88rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -1558,15 +1558,15 @@ export default function JobMasterDirectory({
                     </div>
                   </div>
 
-                  {/* Compact Table */}
-                  <div style={{ background: '#ffffff', borderRadius: '6px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-                    <table className="data-table" style={{ margin: 0, fontSize: '0.8rem', width: '100%' }}>
+                  {/* Compact Scrollable Table */}
+                  <div style={{ background: '#ffffff', borderRadius: '6px', border: '1px solid #e2e8f0', overflowX: 'auto' }}>
+                    <table className="data-table" style={{ margin: 0, fontSize: '0.8rem', width: '100%', minWidth: '650px' }}>
                       <thead>
                         <tr style={{ background: '#f1f5f9' }}>
                           <th style={{ width: '36px', padding: '6px 8px', textAlign: 'center' }}>#</th>
-                          <th style={{ padding: '6px 8px' }}>Operation</th>
-                          <th style={{ padding: '6px 8px' }}>Machine (From Settings)</th>
-                          <th style={{ padding: '6px 8px' }}>Pass / Cycle</th>
+                          <th style={{ padding: '6px 8px', minWidth: '150px' }}>Operation</th>
+                          <th style={{ padding: '6px 8px', minWidth: '180px' }}>Machine (From Settings)</th>
+                          <th style={{ padding: '6px 8px', minWidth: '130px' }}>Pass / Cycle</th>
                           <th style={{ width: '80px', padding: '6px 8px', textAlign: 'center' }}>Type</th>
                           <th style={{ width: '50px', padding: '6px 8px', textAlign: 'center' }}></th>
                         </tr>
@@ -1585,7 +1585,7 @@ export default function JobMasterDirectory({
                               <td style={{ padding: '4px 6px' }}>
                                 <select 
                                   className="form-control" 
-                                  style={{ padding: '2px 6px', fontSize: '0.78rem', height: '28px' }}
+                                  style={{ padding: '2px 6px', fontSize: '0.78rem', height: '28px', minWidth: '140px' }}
                                   value={step.operation}
                                   onChange={e => handleUpdateRoutingStep(step.id, 'operation', e.target.value)}
                                 >
@@ -1603,7 +1603,7 @@ export default function JobMasterDirectory({
                               <td style={{ padding: '4px 6px' }}>
                                 <select 
                                   className="form-control" 
-                                  style={{ padding: '2px 6px', fontSize: '0.78rem', height: '28px', fontWeight: '600' }}
+                                  style={{ padding: '2px 6px', fontSize: '0.78rem', height: '28px', fontWeight: '600', minWidth: '170px' }}
                                   value={step.machineId}
                                   onChange={e => handleUpdateRoutingStep(step.id, 'machineId', e.target.value)}
                                 >
@@ -1626,7 +1626,7 @@ export default function JobMasterDirectory({
                               <td style={{ padding: '4px 6px' }}>
                                 <select 
                                   className="form-control" 
-                                  style={{ padding: '2px 6px', fontSize: '0.78rem', height: '28px' }}
+                                  style={{ padding: '2px 6px', fontSize: '0.78rem', height: '28px', minWidth: '120px' }}
                                   value={step.pass}
                                   onChange={e => handleUpdateRoutingStep(step.id, 'pass', e.target.value)}
                                 >
@@ -1689,7 +1689,7 @@ export default function JobMasterDirectory({
                 <div className="form-group"><label>Max Utilisation Limit (Kg)</label><input type="number" className="form-control" value={utilisationLimit} onChange={e => setUtilisationLimit(e.target.value)} /></div>
 
                 {/* Pre-Costing Target GSMs Section */}
-                <div style={{ gridColumn: 'span 2', background: '#eff6ff', padding: '16px', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
+                <div style={{ gridColumn: '1 / -1', background: '#eff6ff', padding: '16px', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
                   <h4 style={{ fontSize: '0.9rem', fontWeight: '800', color: '#1e40af', marginBottom: '12px', borderBottom: '1px solid #dbeafe', paddingBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <Layers size={16} /> Pre-Costing Target GSMs (Ink & Adhesive)
                   </h4>

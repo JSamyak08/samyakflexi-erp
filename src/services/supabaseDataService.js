@@ -176,8 +176,8 @@ export async function saveOrderToSupabase(order) {
   };
 
   const commentsVal = (order.orderComments || order.comments || order.notes || order.jobDetails?.orderComments || order.jobDetails?.comments || '').trim();
-  const hasVariants = Boolean(order.hasVariants || order.jobDetails?.hasVariants || (Array.isArray(order.variants || order.jobDetails?.variants) && (order.variants || order.jobDetails?.variants).length > 0));
   const variants = Array.isArray(order.variants) ? order.variants : (Array.isArray(order.jobDetails?.variants) ? order.jobDetails?.variants : []);
+  const hasVariants = Boolean(order.hasVariants || order.jobDetails?.hasVariants || (Array.isArray(variants) && variants.length > 0));
   const inkGsmVal = parseGsm(order.inkGsm ?? order.jobDetails?.inkGsm ?? order.calculationDetails?.inkGsm, 1.5);
   const adhesiveGsmVal = parseGsm(order.adhesiveGsm ?? order.jobDetails?.adhesiveGsm ?? order.calculationDetails?.adhesiveGsm, 1.5);
 
@@ -1063,6 +1063,28 @@ export async function saveGRNToSupabase(grn) {
     status: clean.status || 'Pending QC Approval',
     qc_remarks: clean.qcNotes || ''
   };
+
+  // Duplicate check: Verify if invoice_number + vendor match an existing GRN record in database
+  if (clean.invoiceNo && clean.vendorName) {
+    try {
+      const { data: existingGrns } = await supabase
+        .from('grns')
+        .select('id, grn_number, invoice_number')
+        .eq('invoice_number', clean.invoiceNo);
+
+      if (existingGrns && existingGrns.length > 0) {
+        const match = existingGrns.find(g => String(g.id) !== String(grnId) && String(g.grn_number) !== String(clean.grnNo));
+        if (match) {
+          console.warn('[GRNs] Duplicate GRN detected in database:', match);
+          throw new Error(`Duplicate Inward GRN: A GRN (#${match.grn_number || match.id}) with Invoice #${clean.invoiceNo} already exists in database.`);
+        }
+      }
+    } catch (checkErr) {
+      if (checkErr.message && checkErr.message.includes('Duplicate Inward GRN')) {
+        throw checkErr;
+      }
+    }
+  }
 
   console.log('[GRNs] Saving GRN to Supabase:', grnId, payload);
   const { error } = await supabase.from('grns').upsert(payload, { onConflict: 'id' });

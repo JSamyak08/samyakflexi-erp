@@ -83,6 +83,68 @@ const parseStructureLayers = (structureStr = '') => {
   });
 };
 
+function EndJobCalculationsBadges({ endJobTargetOrder, inputRollsList, jobMasters, inputPrintedOutputKg, inputActualMeters }) {
+  if (!endJobTargetOrder) return null;
+  const totalInputConsumedKg = (inputRollsList || []).reduce((sum, r) => sum + (parseFloat(r.consumedWeightKg) || 0), 0);
+  const matchingJM = (jobMasters || []).find(j => j.id === endJobTargetOrder.jobMasterId || j.jobCode === endJobTargetOrder.jobCode);
+  const printWidthMm = Number(endJobTargetOrder.printWidthMm || matchingJM?.printWidthMm || endJobTargetOrder.widthMm || 460);
+  const inputWidths = (inputRollsList || []).map(r => Number(r.widthMm) || printWidthMm);
+  const maxInputWidth = Math.max(...inputWidths, printWidthMm);
+  const isBiggerSize = maxInputWidth > printWidthMm;
+  const outputKgNum = parseFloat(inputPrintedOutputKg) || 0;
+  const actualMetersNum = parseFloat(inputActualMeters) || endJobTargetOrder.targetMeters || 0;
+
+  let excessFilmWastageKg = 0;
+  let excessFilmWastagePct = 0;
+  if (isBiggerSize && totalInputConsumedKg > 0) {
+    const trimRatio = (maxInputWidth - printWidthMm) / maxInputWidth;
+    excessFilmWastageKg = Number((totalInputConsumedKg * trimRatio).toFixed(2));
+    excessFilmWastagePct = Number(((excessFilmWastageKg / totalInputConsumedKg) * 100).toFixed(2));
+  }
+
+  let inkWeightGainKg = 0;
+  if (isBiggerSize) {
+    inkWeightGainKg = Number((outputKgNum - (totalInputConsumedKg - excessFilmWastageKg)).toFixed(2));
+  } else {
+    inkWeightGainKg = Number((outputKgNum - totalInputConsumedKg).toFixed(2));
+  }
+
+  const printedAreaM2 = (actualMetersNum * printWidthMm) / 1000;
+  let actualCalculatedInkGsm = 0;
+  if (printedAreaM2 > 0 && inkWeightGainKg > 0) {
+    actualCalculatedInkGsm = Number(((inkWeightGainKg * 0.20 * 1000) / printedAreaM2).toFixed(2));
+  }
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: isBiggerSize ? '1fr 1.2fr 1fr 1fr' : '1.2fr 1fr 1fr', gap: '8px' }}>
+      <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+        <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Total Substrate Consumed</span>
+        <div style={{ fontSize: '1rem', fontWeight: '900', color: '#0284c7' }}>{totalInputConsumedKg.toFixed(2)} kg</div>
+      </div>
+
+      {isBiggerSize && (
+        <div style={{ background: '#fffbeb', padding: '8px 10px', borderRadius: '6px', border: '1px solid #fde68a' }}>
+          <span style={{ fontSize: '0.68rem', color: '#b45309', fontWeight: '800', textTransform: 'uppercase' }}>✂️ Film Trimming Wastage</span>
+          <div style={{ fontSize: '1rem', fontWeight: '900', color: '#b45309' }}>
+            {excessFilmWastageKg} kg ({excessFilmWastagePct}%)
+          </div>
+          <span style={{ fontSize: '0.65rem', color: '#92400e' }}>Input {maxInputWidth}mm vs Print {printWidthMm}mm</span>
+        </div>
+      )}
+
+      <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+        <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Ink Weight Gain</span>
+        <div style={{ fontSize: '1rem', fontWeight: '900', color: '#059669' }}>{inkWeightGainKg} kg</div>
+      </div>
+
+      <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+        <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Calculated Ink GSM</span>
+        <div style={{ fontSize: '1rem', fontWeight: '900', color: '#7c3aed' }}>{actualCalculatedInkGsm} GSM</div>
+      </div>
+    </div>
+  );
+}
+
 export default function ProductionScheduler({
   orders = [],
   inventory = [],
@@ -152,17 +214,6 @@ export default function ProductionScheduler({
       return next;
     });
   };
-
-  useEffect(() => {
-    if (initialPressActiveRunningJob) {
-      setActiveRunningJobState(initialPressActiveRunningJob);
-    } else if (allEnrichedOrders && allEnrichedOrders.length > 0) {
-      const activeInOrders = allEnrichedOrders.find(o => o.isCurrentlyInProduction);
-      if (activeInOrders) {
-        setActiveRunningJobState(activeInOrders);
-      }
-    }
-  }, [initialPressActiveRunningJob, allEnrichedOrders]);
 
   useEffect(() => {
     if (initialPressMachineAssignments && Object.keys(initialPressMachineAssignments).length > 0) {
@@ -475,6 +526,17 @@ export default function ProductionScheduler({
       };
     });
   }, [orders, inventory, jobMasters, cylinders, productionRecords, queueOrderIds]);
+
+  useEffect(() => {
+    if (initialPressActiveRunningJob) {
+      setActiveRunningJobState(initialPressActiveRunningJob);
+    } else if (allEnrichedOrders && allEnrichedOrders.length > 0) {
+      const activeInOrders = allEnrichedOrders.find(o => o.isCurrentlyInProduction);
+      if (activeInOrders) {
+        setActiveRunningJobState(activeInOrders);
+      }
+    }
+  }, [initialPressActiveRunningJob, allEnrichedOrders]);
 
   // 1. Ready Queue Orders (Active & Unfinished Jobs Only)
   // Active/Running jobs ('In Production') are locked at the top of the press execution queue
@@ -2595,19 +2657,11 @@ export default function ProductionScheduler({
             </div>
 
             {/* STEP 1: SHOP FLOOR PRODUCTION INPUT FORM */}
-            {endJobStep === 'input' && (() => {
-              const targetMetersNum = endJobTargetOrder.targetMeters || 0;
-              const actualMetersNum = parseFloat(inputActualMeters) || 0;
-              const meterPercentage = (targetMetersNum > 0 && actualMetersNum > 0)
-                ? ((actualMetersNum / targetMetersNum) * 100).toFixed(1)
-                : null;
-              const isMetersShortfall = (actualMetersNum > 0 && targetMetersNum > 0 && actualMetersNum < targetMetersNum);
-
-              return (
-                <form onSubmit={handleProceedToConfirmation} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-                  
-                  {/* Field 1: Actual Meters Printed */}
-                  <div style={{ background: isMetersShortfall ? '#fffbeb' : '#f8fafc', padding: '16px', borderRadius: '10px', border: isMetersShortfall ? '1.5px solid #f59e0b' : '1px solid #e2e8f0', transition: 'all 0.2s ease' }}>
+            {endJobStep === 'input' && (
+              <form onSubmit={handleProceedToConfirmation} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                
+                {/* Field 1: Actual Meters Printed */}
+                <div style={{ background: endJobIsMetersShortfall ? '#fffbeb' : '#f8fafc', padding: '16px', borderRadius: '10px', border: endJobIsMetersShortfall ? '1.5px solid #f59e0b' : '1px solid #e2e8f0', transition: 'all 0.2s ease' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                       <label style={{ fontSize: '0.85rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
                         📏 Actual Meters Printed (m) *
@@ -2624,15 +2678,15 @@ export default function ProductionScheduler({
                       style={{ 
                         fontSize: '1.1rem', 
                         fontWeight: '800', 
-                        color: isMetersShortfall ? '#b45309' : '#0f172a', 
-                        border: isMetersShortfall ? '2px solid #d97706' : '1.5px solid #0284c7', 
+                        color: endJobIsMetersShortfall ? '#b45309' : '#0f172a', 
+                        border: endJobIsMetersShortfall ? '2px solid #d97706' : '1.5px solid #0284c7', 
                         background: '#ffffff' 
                       }}
                       placeholder="e.g. 5871"
                       value={inputActualMeters}
                       onChange={e => {
                         setInputActualMeters(e.target.value);
-                        if (printLessApproved && parseFloat(e.target.value) >= targetMetersNum) {
+                        if (printLessApproved && parseFloat(e.target.value) >= endJobTargetMetersNum) {
                           setPrintLessApproved(false);
                         }
                       }}
@@ -2644,34 +2698,34 @@ export default function ProductionScheduler({
                       <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
                         Enter final counter meter reading recorded on the press rewinder.
                       </span>
-                      {meterPercentage !== null && (
+                      {endJobMeterPercentage !== null && (
                         <span 
                           style={{ 
                             fontSize: '0.78rem', 
                             fontWeight: '900', 
                             padding: '2px 8px', 
                             borderRadius: '6px', 
-                            background: isMetersShortfall ? '#fef3c7' : (parseFloat(meterPercentage) >= 100 ? '#ecfdf5' : '#e0f2fe'),
-                            color: isMetersShortfall ? '#b45309' : (parseFloat(meterPercentage) >= 100 ? '#047857' : '#0369a1'),
-                            border: isMetersShortfall ? '1px solid #fde68a' : (parseFloat(meterPercentage) >= 100 ? '1px solid #a7f3d0' : '1px solid #bae6fd')
+                            background: endJobIsMetersShortfall ? '#fef3c7' : (parseFloat(endJobMeterPercentage) >= 100 ? '#ecfdf5' : '#e0f2fe'),
+                            color: endJobIsMetersShortfall ? '#b45309' : (parseFloat(endJobMeterPercentage) >= 100 ? '#047857' : '#0369a1'),
+                            border: endJobIsMetersShortfall ? '1px solid #fde68a' : (parseFloat(endJobMeterPercentage) >= 100 ? '1px solid #a7f3d0' : '1px solid #bae6fd')
                           }}
                         >
-                          📊 {meterPercentage}% of Target {isMetersShortfall ? `(${(targetMetersNum - actualMetersNum).toLocaleString()} m Shortfall)` : (actualMetersNum > targetMetersNum ? `(+${(actualMetersNum - targetMetersNum).toLocaleString()} m Extra)` : '(Target Met)')}
+                          📊 {endJobMeterPercentage}% of Target {endJobIsMetersShortfall ? `(${(endJobTargetMetersNum - endJobActualMetersNum).toLocaleString()} m Shortfall)` : (endJobActualMetersNum > endJobTargetMetersNum ? `(+${(endJobActualMetersNum - endJobTargetMetersNum).toLocaleString()} m Extra)` : '(Target Met)')}
                         </span>
                       )}
                     </div>
 
                     {/* Immediate Warning Box if Less Printed Than Target */}
-                    {isMetersShortfall && (
+                    {endJobIsMetersShortfall && (
                       <div style={{ marginTop: '14px', background: '#fef3c7', border: '1.5px solid #f59e0b', borderRadius: '8px', padding: '12px 14px' }}>
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
                           <AlertTriangle size={20} style={{ color: '#d97706', flexShrink: 0, marginTop: '2px' }} />
                           <div style={{ flex: 1 }}>
                             <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#92400e', marginBottom: '2px' }}>
-                              ⚠️ Shortfall Warning: Actual ({actualMetersNum.toLocaleString()} m) &lt; Target ({targetMetersNum.toLocaleString()} m)
+                              ⚠️ Shortfall Warning: Actual ({endJobActualMetersNum.toLocaleString()} m) &lt; Target ({endJobTargetMetersNum.toLocaleString()} m)
                             </div>
                             <p style={{ margin: 0, fontSize: '0.78rem', color: '#b45309', lineHeight: '1.4' }}>
-                              Printed meters are less than the target requirement ({meterPercentage}% of target achieved). Please print more meters to fulfill the run, or grant approval to receive less.
+                              Printed meters are less than the target requirement ({endJobMeterPercentage}% of target achieved). Please print more meters to fulfill the run, or grant approval to receive less.
                             </p>
 
                             <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
@@ -2891,8 +2945,7 @@ export default function ProductionScheduler({
                     </button>
                   </div>
                 </form>
-              );
-            })()}
+            )}
 
             {/* STEP 2: CONFIRMATION TAB & FINAL SUMMARY */}
             {endJobStep === 'confirm' && (
@@ -3020,66 +3073,13 @@ export default function ProductionScheduler({
                   </div>
 
                   {/* Calculations Summary Badges */}
-                  {(() => {
-                    const totalInputConsumedKg = inputRollsList.reduce((sum, r) => sum + (parseFloat(r.consumedWeightKg) || 0), 0);
-                    const matchingJM = (jobMasters || []).find(j => j.id === endJobTargetOrder.jobMasterId || j.jobCode === endJobTargetOrder.jobCode);
-                    const printWidthMm = Number(endJobTargetOrder.printWidthMm || matchingJM?.printWidthMm || endJobTargetOrder.widthMm || 460);
-                    const inputWidths = inputRollsList.map(r => Number(r.widthMm) || printWidthMm);
-                    const maxInputWidth = Math.max(...inputWidths, printWidthMm);
-                    const isBiggerSize = maxInputWidth > printWidthMm;
-                    const outputKgNum = parseFloat(inputPrintedOutputKg) || 0;
-                    const actualMetersNum = parseFloat(inputActualMeters) || endJobTargetOrder.targetMeters || 0;
-
-                    let excessFilmWastageKg = 0;
-                    let excessFilmWastagePct = 0;
-                    if (isBiggerSize && totalInputConsumedKg > 0) {
-                      const trimRatio = (maxInputWidth - printWidthMm) / maxInputWidth;
-                      excessFilmWastageKg = Number((totalInputConsumedKg * trimRatio).toFixed(2));
-                      excessFilmWastagePct = Number(((excessFilmWastageKg / totalInputConsumedKg) * 100).toFixed(2));
-                    }
-
-                    let inkWeightGainKg = 0;
-                    if (isBiggerSize) {
-                      inkWeightGainKg = Number((outputKgNum - (totalInputConsumedKg - excessFilmWastageKg)).toFixed(2));
-                    } else {
-                      inkWeightGainKg = Number((outputKgNum - totalInputConsumedKg).toFixed(2));
-                    }
-
-                    const printedAreaM2 = (actualMetersNum * printWidthMm) / 1000;
-                    let actualCalculatedInkGsm = 0;
-                    if (printedAreaM2 > 0 && inkWeightGainKg > 0) {
-                      actualCalculatedInkGsm = Number(((inkWeightGainKg * 0.20 * 1000) / printedAreaM2).toFixed(2));
-                    }
-
-                    return (
-                      <div style={{ display: 'grid', gridTemplateColumns: isBiggerSize ? '1fr 1.2fr 1fr 1fr' : '1.2fr 1fr 1fr', gap: '8px' }}>
-                        <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                          <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Total Substrate Consumed</span>
-                          <div style={{ fontSize: '1rem', fontWeight: '900', color: '#0284c7' }}>{totalInputConsumedKg.toFixed(2)} kg</div>
-                        </div>
-
-                        {isBiggerSize && (
-                          <div style={{ background: '#fffbeb', padding: '8px 10px', borderRadius: '6px', border: '1px solid #fde68a' }}>
-                            <span style={{ fontSize: '0.68rem', color: '#b45309', fontWeight: '800', textTransform: 'uppercase' }}>✂️ Film Trimming Wastage</span>
-                            <div style={{ fontSize: '1rem', fontWeight: '900', color: '#b45309' }}>
-                              {excessFilmWastageKg} kg ({excessFilmWastagePct}%)
-                            </div>
-                            <span style={{ fontSize: '0.65rem', color: '#92400e' }}>Input {maxInputWidth}mm vs Print {printWidthMm}mm</span>
-                          </div>
-                        )}
-
-                        <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                          <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Ink Weight Gain</span>
-                          <div style={{ fontSize: '1rem', fontWeight: '900', color: '#059669' }}>{inkWeightGainKg} kg</div>
-                        </div>
-
-                        <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                          <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Calculated Ink GSM</span>
-                          <div style={{ fontSize: '1rem', fontWeight: '900', color: '#7c3aed' }}>{actualCalculatedInkGsm} GSM</div>
-                        </div>
-                      </div>
-                    );
-                  })()}
+                  <EndJobCalculationsBadges 
+                    endJobTargetOrder={endJobTargetOrder} 
+                    inputRollsList={inputRollsList} 
+                    jobMasters={jobMasters} 
+                    inputPrintedOutputKg={inputPrintedOutputKg} 
+                    inputActualMeters={inputActualMeters} 
+                  />
                 </div>
 
                 {inputOperatorNotes && (
