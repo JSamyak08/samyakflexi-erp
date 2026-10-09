@@ -256,6 +256,14 @@ export default function ProductionScheduler({
   const [isAutosavingRolls, setIsAutosavingRolls] = useState(false);
   const [lastAutosavedTime, setLastAutosavedTime] = useState(null);
 
+  // Derived End-Job Target & Meter Shortfall Calculations
+  const endJobTargetMetersNum = endJobTargetOrder ? parseFloat(endJobTargetOrder.targetMeters || 0) : 0;
+  const endJobActualMetersNum = parseFloat(inputActualMeters) || 0;
+  const endJobMeterPercentage = (endJobTargetMetersNum > 0 && endJobActualMetersNum > 0)
+    ? ((endJobActualMetersNum / endJobTargetMetersNum) * 100).toFixed(1)
+    : null;
+  const endJobIsMetersShortfall = endJobTargetMetersNum > 0 && endJobActualMetersNum > 0 && endJobActualMetersNum < endJobTargetMetersNum;
+
   // Custom Queue Ordering State
   const [queueOrderIds, setQueueOrderIds] = useState(() => {
     if (initialPressQueueOrder && Array.isArray(initialPressQueueOrder) && initialPressQueueOrder.length > 0) {
