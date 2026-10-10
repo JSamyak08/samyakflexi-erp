@@ -53,6 +53,71 @@ import {
 } from '../services/supabaseDataService';
 import { pushSlugState } from '../utils/slugRouter';
 
+export function calculateOvertimeTimeWindow(att) {
+  if (!att) return { otStartTime: '', otEndTime: '', displayStr: '' };
+
+  const startTime = att.overtimeStartTime || att.overtime_start_time || '';
+  const endTime = att.overtimeEndTime || att.overtime_end_time || '';
+  if (startTime && endTime) {
+    return {
+      otStartTime: startTime,
+      otEndTime: endTime,
+      displayStr: `${startTime} - ${endTime}`
+    };
+  }
+
+  const otHrs = Number(att.overtimeHours || att.overtime_hours) || 0;
+  if (otHrs <= 0) {
+    return { otStartTime: '', otEndTime: '', displayStr: '' };
+  }
+
+  const checkIn = att.checkIn || att.check_in || '';
+  const checkOut = att.checkOut || att.check_out || '';
+  const shiftHrs = Number(att.shiftHours || att.shift_hours) || 12;
+
+  const formatHHMM = (totalMins) => {
+    const norm = (Math.round(totalMins) % 1440 + 1440) % 1440;
+    const h = Math.floor(norm / 60);
+    const m = norm % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  };
+
+  if (checkOut && checkOut.includes(':')) {
+    const [cOutH, cOutM] = checkOut.split(':').map(Number);
+    if (!isNaN(cOutH) && !isNaN(cOutM)) {
+      const outMins = cOutH * 60 + cOutM;
+      const otMins = otHrs * 60;
+      const startMins = outMins - otMins;
+      const calculatedStart = formatHHMM(startMins);
+      const calculatedEnd = formatHHMM(outMins);
+      return {
+        otStartTime: startTime || calculatedStart,
+        otEndTime: endTime || calculatedEnd,
+        displayStr: `${startTime || calculatedStart} - ${endTime || calculatedEnd}`
+      };
+    }
+  }
+
+  if (checkIn && checkIn.includes(':')) {
+    const [cInH, cInM] = checkIn.split(':').map(Number);
+    if (!isNaN(cInH) && !isNaN(cInM)) {
+      const inMins = cInH * 60 + cInM;
+      const shiftMins = shiftHrs * 60;
+      const startMins = inMins + shiftMins;
+      const endMins = startMins + (otHrs * 60);
+      const calculatedStart = formatHHMM(startMins);
+      const calculatedEnd = formatHHMM(endMins);
+      return {
+        otStartTime: startTime || calculatedStart,
+        otEndTime: endTime || calculatedEnd,
+        displayStr: `${startTime || calculatedStart} - ${endTime || calculatedEnd}`
+      };
+    }
+  }
+
+  return { otStartTime: startTime, otEndTime: endTime, displayStr: startTime && endTime ? `${startTime} - ${endTime}` : '' };
+}
+
 export default function EmployeeManagement({
   urlParams = {},
   employees = [],
@@ -219,6 +284,8 @@ export default function EmployeeManagement({
   const [attCheckIn, setAttCheckIn] = useState('08:00');
   const [attCheckOut, setAttCheckOut] = useState('20:00');
   const [attOtHours, setAttOtHours] = useState(0);
+  const [attOtStartTime, setAttOtStartTime] = useState('');
+  const [attOtEndTime, setAttOtEndTime] = useState('');
   const [attPtoHours, setAttPtoHours] = useState('0');
   const [attOtReason, setAttOtReason] = useState('');
 
@@ -460,14 +527,21 @@ export default function EmployeeManagement({
       setAttCheckIn(existing.checkIn || '08:00');
       setAttCheckOut(existing.checkOut || '20:00');
       setAttOtHours(existing.overtimeHours || 0);
+      const otWin = calculateOvertimeTimeWindow(existing);
+      setAttOtStartTime(existing.overtimeStartTime || existing.overtime_start_time || otWin.otStartTime || '');
+      setAttOtEndTime(existing.overtimeEndTime || existing.overtime_end_time || otWin.otEndTime || '');
       setAttPtoHours(existing.ptoHours !== undefined ? String(existing.ptoHours) : (existing.pto_hours !== undefined ? String(existing.pto_hours) : '0'));
       setAttOtReason(existing.overtimeReason || '');
     } else {
       setAttStatus('Present');
       setAttShiftType(emp.defaultShift || 'Shift A: Day (08:00 - 20:00)');
-      setAttCheckIn(emp.shiftDurationHours === 8 ? '09:00' : '08:00');
-      setAttCheckOut(emp.shiftDurationHours === 8 ? '17:00' : emp.shiftDurationHours === 10 ? '18:00' : '20:00');
+      const cIn = emp.shiftDurationHours === 8 ? '09:00' : '08:00';
+      const cOut = emp.shiftDurationHours === 8 ? '17:00' : emp.shiftDurationHours === 10 ? '18:00' : '20:00';
+      setAttCheckIn(cIn);
+      setAttCheckOut(cOut);
       setAttOtHours(0);
+      setAttOtStartTime('');
+      setAttOtEndTime('');
       setAttPtoHours('0');
       setAttOtReason('');
     }
@@ -493,6 +567,19 @@ export default function EmployeeManagement({
       return;
     }
 
+    let otStart = attOtStartTime;
+    let otEnd = attOtEndTime;
+    if (ot > 0 && (!otStart || !otEnd)) {
+      const otWin = calculateOvertimeTimeWindow({
+        checkIn: attCheckIn,
+        checkOut: attCheckOut,
+        shiftHours: shiftHrs,
+        overtimeHours: ot
+      });
+      otStart = otWin.otStartTime;
+      otEnd = otWin.otEndTime;
+    }
+
     const netShiftHours = attStatus === 'Present' 
       ? Math.max(0, (shiftHrs - pto + ot)) 
       : attStatus === 'Half Day' 
@@ -510,6 +597,10 @@ export default function EmployeeManagement({
       checkOut: attCheckOut,
       totalHoursWorked: Number(netShiftHours.toFixed(2)),
       overtimeHours: ot,
+      overtimeStartTime: otStart,
+      overtimeEndTime: otEnd,
+      overtime_start_time: otStart,
+      overtime_end_time: otEnd,
       ptoHours: pto,
       pto_hours: pto,
       overtimeReason: attOtReason.trim(),
@@ -1333,8 +1424,15 @@ export default function EmployeeManagement({
                       </td>
                       <td>
                         {otHours > 0 ? (
-                          <div style={{ fontWeight: '800', color: '#059669', fontSize: '0.82rem' }}>
-                            +{otHours} hrs OT
+                          <div>
+                            <div style={{ fontWeight: '800', color: '#059669', fontSize: '0.82rem' }}>
+                              +{otHours} hrs OT
+                            </div>
+                            {calculateOvertimeTimeWindow(att).displayStr ? (
+                              <div style={{ fontSize: '0.68rem', color: '#15803d', fontWeight: '700' }}>
+                                {calculateOvertimeTimeWindow(att).displayStr}
+                              </div>
+                            ) : null}
                           </div>
                         ) : (
                           <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>None</span>
@@ -1546,6 +1644,7 @@ export default function EmployeeManagement({
                     const shiftHrs = emp?.shiftDurationHours || att.shiftHours || 12;
                     const hourly = fixedGross / (26 * shiftHrs);
                     const estPayout = Math.round(hourly * att.overtimeHours);
+                    const otWin = calculateOvertimeTimeWindow(att);
 
                     return (
                       <tr key={att.id}>
@@ -1561,10 +1660,15 @@ export default function EmployeeManagement({
                         </td>
                         <td>
                           <div style={{ fontWeight: '900', color: '#059669', fontSize: '0.9rem' }}>
-                            +{att.overtimeHours} hrs
+                            +{att.overtimeHours} Hrs
                           </div>
-                          <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
-                            Time: {att.checkIn} - {att.checkOut}
+                          {otWin.displayStr ? (
+                            <div style={{ fontSize: '0.74rem', color: '#15803d', fontWeight: '800', marginTop: '2px' }}>
+                              Time: {otWin.displayStr}
+                            </div>
+                          ) : null}
+                          <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '1px' }}>
+                            Shift: {att.checkIn || '08:00'} - {att.checkOut || '20:00'}
                           </div>
                         </td>
                         <td style={{ maxWidth: '280px', fontSize: '0.8rem', color: '#334155' }}>
@@ -2522,17 +2626,30 @@ export default function EmployeeManagement({
             {/* Overtime Logging Section */}
             <div style={{ background: '#f8fafc', padding: '12px 16px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '18px' }}>
               <div style={{ fontWeight: '800', fontSize: '0.85rem', color: '#0f172a', marginBottom: '8px' }}>
-                ⏱️ Overtime Hours (Beyond {markingAttendanceEmp.shiftDurationHours || 12}h Standard Shift)
+                ⏱️ Overtime Hours & Time Window (Beyond {markingAttendanceEmp.shiftDurationHours || 12}h Standard Shift)
               </div>
-              <div className="form-grid-2">
+              <div className="form-grid-2" style={{ marginBottom: '10px' }}>
                 <div>
                   <label className="form-label">OT Hours Logged</label>
                   <input 
                     type="number" 
-                    step="0.5" 
+                    step="0.25" 
                     className="form-control" 
                     value={attOtHours} 
-                    onChange={e => setAttOtHours(e.target.value)} 
+                    onChange={e => {
+                      const val = e.target.value;
+                      setAttOtHours(val);
+                      if (Number(val) > 0 && (!attOtStartTime || !attOtEndTime)) {
+                        const win = calculateOvertimeTimeWindow({
+                          checkIn: attCheckIn,
+                          checkOut: attCheckOut,
+                          shiftHours: markingAttendanceEmp.shiftDurationHours || 12,
+                          overtimeHours: parseFloat(val) || 0
+                        });
+                        setAttOtStartTime(win.otStartTime);
+                        setAttOtEndTime(win.otEndTime);
+                      }
+                    }} 
                     placeholder="0"
                   />
                 </div>
@@ -2547,6 +2664,29 @@ export default function EmployeeManagement({
                   />
                 </div>
               </div>
+
+              {Number(attOtHours) > 0 && (
+                <div className="form-grid-2" style={{ marginBottom: '10px' }}>
+                  <div>
+                    <label className="form-label">Overtime Start Time</label>
+                    <input 
+                      type="time" 
+                      className="form-control" 
+                      value={attOtStartTime} 
+                      onChange={e => setAttOtStartTime(e.target.value)} 
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label">Overtime End Time</label>
+                    <input 
+                      type="time" 
+                      className="form-control" 
+                      value={attOtEndTime} 
+                      onChange={e => setAttOtEndTime(e.target.value)} 
+                    />
+                  </div>
+                </div>
+              )}
               <div style={{ marginTop: '8px' }}>
                 <label className="form-label">Work / Machine Justification Note</label>
                 <input 
