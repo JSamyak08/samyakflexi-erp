@@ -114,6 +114,13 @@ export default function EmployeeManagement({
   const [otStatusFilter, setOtStatusFilter] = useState('ALL');
   const [otSearchQuery, setOtSearchQuery] = useState('');
 
+  // Salary Advances Filter States
+  const [advancesStartDate, setAdvancesStartDate] = useState('');
+  const [advancesEndDate, setAdvancesEndDate] = useState('');
+  const [advancesStatusFilter, setAdvancesStatusFilter] = useState('ALL');
+  const [advancesDepartmentFilter, setAdvancesDepartmentFilter] = useState('ALL');
+  const [advancesSearch, setAdvancesSearch] = useState('');
+
   const filteredOtRecords = useMemo(() => {
     return (attendanceRecords || []).filter(a => {
       const otHrs = Number(a.overtimeHours) || 0;
