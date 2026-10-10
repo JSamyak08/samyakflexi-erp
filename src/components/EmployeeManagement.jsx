@@ -1441,14 +1441,17 @@ export default function EmployeeManagement({
                 </label>
                 <SearchableSelect
                   value={otEmployeeFilter}
-                  onChange={val => setOtEmployeeFilter(val)}
+                  onChange={e => {
+                    const selectedVal = e?.target?.value !== undefined ? e.target.value : (typeof e === 'object' && e?.value !== undefined ? e.value : e);
+                    setOtEmployeeFilter(selectedVal || 'ALL');
+                  }}
                   placeholder="Filter by employee..."
                   options={[
                     { value: 'ALL', label: 'All Employees' },
                     ...(employees || []).map(e => ({
                       value: e.id,
-                      label: `${e.fullName} (${e.empCode || e.id})`,
-                      subtitle: `${e.department} • ${e.designation}`
+                      label: `${e.fullName || e.name || 'Employee'} (${e.empCode || e.id})`,
+                      subtitle: `${e.department || 'General'} • ${e.designation || 'Staff'}`
                     }))
                   ]}
                 />

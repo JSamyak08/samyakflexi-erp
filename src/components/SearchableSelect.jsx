@@ -110,11 +110,21 @@ const SearchableSelect = React.forwardRef(({
     });
   }, [parsedOptions, searchTerm]);
 
+  // Extract string value safely even if an object or synthetic event is passed as value
+  const stringVal = useMemo(() => {
+    if (value === undefined || value === null) return "";
+    if (typeof value === 'object') {
+      if (value.target && value.target.value !== undefined) return String(value.target.value);
+      if (value.value !== undefined) return String(value.value);
+      return "";
+    }
+    return String(value);
+  }, [value]);
+
   // Find currently selected option label
   const selectedOption = useMemo(() => {
-    const stringVal = value !== undefined && value !== null ? String(value) : "";
     return parsedOptions.find(opt => opt.value === stringVal);
-  }, [parsedOptions, value]);
+  }, [parsedOptions, stringVal]);
 
   // Handle clicking outside to close dropdown
   useEffect(() => {
@@ -238,7 +248,7 @@ const SearchableSelect = React.forwardRef(({
   }, [highlightedIndex]);
 
   // Display Text logic
-  const displayLabel = selectedOption ? selectedOption.label : (value ? String(value) : "");
+  const displayLabel = selectedOption ? selectedOption.label : (stringVal && stringVal !== '[object Object]' ? stringVal : "");
   const showPlaceholder = !displayLabel;
 
   return (
