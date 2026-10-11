@@ -46,7 +46,8 @@ import { getNextDocRefNumber, generateDocRefNumber, getInventoryAgeingSettings }
 import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo, sortBatchesByFifo, getItemInwardDate } from '../utils/fifoUtils';
 import { notifyGRNPendingQC, notifyGRNQCEscalation12h } from '../services/emailService';
 
-import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName } from '../services/supabaseDataService';
+import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, saveSystemSetting } from '../services/supabaseDataService';
+import { safeLocalStorageSet, safeLocalStorageGet } from '../utils/safeStorage';
 import { 
   isReconciliationDue, 
   FILM_DENSITIES, 
@@ -378,26 +379,12 @@ export default function InventoryManagement({
 
   // Updatable Barcodes & Stock Ledger Adjustments state
   const [customBarcodesMap, setCustomBarcodesMap] = useState(() => {
-    try {
-      const saved = localStorage.getItem('samyak_erp_custom_barcodes');
-      return saved ? JSON.parse(saved) : {};
-    } catch (e) {
-      return {};
-    }
+    return safeLocalStorageGet('samyak_erp_custom_barcodes', {});
   });
 
   const [stockLedgerAdjustments, setStockLedgerAdjustments] = useState(() => {
-    try {
-      const saved = localStorage.getItem('samyak_erp_stock_adjustments');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // Clean up legacy hardcoded dummy data from local storage
-        return parsed.filter(adj => !['ADJ-2026-001', 'ADJ-2026-002'].includes(adj.id));
-      }
-      return [];
-    } catch (e) {
-      return [];
-    }
+    const list = safeLocalStorageGet('samyak_erp_stock_adjustments', []);
+    return Array.isArray(list) ? list.filter(adj => !['ADJ-2026-001', 'ADJ-2026-002'].includes(adj.id)) : [];
   });
 
   const [localStoreIssueTransactions, setLocalStoreIssueTransactions] = useState(() => {
@@ -487,6 +474,11 @@ export default function InventoryManagement({
     if (!newBarcodeStr.trim()) return;
     const updated = { ...customBarcodesMap, [txId]: newBarcodeStr.trim() };
     setCustomBarcodesMap(updated);
+    safeLocalStorageSet('samyak_erp_custom_barcodes', updated);
+    saveSystemSetting('custom_barcodes', updated).catch(console.warn);
+    if (typeof window !== 'undefined' && window.__samyakBroadcastSync) {
+      window.__samyakBroadcastSync('system_settings');
+    }
     setEditingTxId(null);
     setEditingBarcodeVal('');
   };
@@ -517,6 +509,11 @@ export default function InventoryManagement({
 
     const updated = [newAdj, ...stockLedgerAdjustments];
     setStockLedgerAdjustments(updated);
+    safeLocalStorageSet('samyak_erp_stock_adjustments', updated);
+    saveSystemSetting('stock_adjustments', updated).catch(console.warn);
+    if (typeof window !== 'undefined' && window.__samyakBroadcastSync) {
+      window.__samyakBroadcastSync('system_settings');
+    }
 
     // Update item available stock in main inventory list for the specific item
     if (onUpdateInventory) {
@@ -1025,12 +1022,7 @@ export default function InventoryManagement({
   const [resolutionAction, setResolutionAction] = useState('UPDATE_PO_RATE'); // 'UPDATE_PO_RATE' or 'ENFORCE_PO_RATE'
   const [resolutionNotes, setResolutionNotes] = useState('');
   const [poResolutions, setPoResolutions] = useState(() => {
-    try {
-      const saved = localStorage.getItem('samyak_po_discrepancy_resolutions');
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
+    return safeLocalStorageGet('samyak_po_discrepancy_resolutions', {});
   });
 
   // Unified Platform-wide Issued Purchase Orders Aggregator
@@ -1038,22 +1030,19 @@ export default function InventoryManagement({
     const list = [];
     const seenPoNumbers = new Set();
 
-    // 1. Load from localStorage / cached POs
-    try {
-      const saved = localStorage.getItem('samyak_erp_issued_pos');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        Object.values(parsed).forEach(po => {
-          if (po && po.poNumber && !seenPoNumbers.has(po.poNumber)) {
-            seenPoNumbers.add(po.poNumber);
-            list.push({
-              ...po,
-              source: po.source || 'Vendor / Purchase Requisition'
-            });
-          }
-        });
-      }
-    } catch (e) {}
+    // 1. Load from safeLocalStorage / cached POs
+    const parsed = safeLocalStorageGet('samyak_erp_issued_pos', {});
+    if (parsed && typeof parsed === 'object') {
+      Object.values(parsed).forEach(po => {
+        if (po && po.poNumber && !seenPoNumbers.has(po.poNumber)) {
+          seenPoNumbers.add(po.poNumber);
+          list.push({
+            ...po,
+            source: po.source || 'Vendor / Purchase Requisition'
+          });
+        }
+      });
+    }
 
     // 2. Scrape from Order Material Requirements
     (orders || []).forEach(ord => {
@@ -1223,12 +1212,17 @@ export default function InventoryManagement({
       resolvedAt
     };
 
-    // 1. Update poResolutions state & localStorage
+    // 1. Update poResolutions state & safeLocalStorage & Supabase
     const updatedResolutions = {
       ...poResolutions,
       [po.poNumber]: resolutionObj
     };
     setPoResolutions(updatedResolutions);
+    safeLocalStorageSet('samyak_po_discrepancy_resolutions', updatedResolutions);
+    saveSystemSetting('po_discrepancy_resolutions', updatedResolutions).catch(console.warn);
+    if (typeof window !== 'undefined' && window.__samyakBroadcastSync) {
+      window.__samyakBroadcastSync('system_settings');
+    }
 
     // 2. If Option 2 (Enforce PO Rate): update matching GRN in safeGrns / grns
     if (mismatch.grnNo && grns && Array.isArray(grns)) {

@@ -777,6 +777,235 @@ ALTER TABLE public.grns ADD COLUMN IF NOT EXISTS master_item_id TEXT;
 -- Employee Attendance PTO (Personal Time Off) Hours Column Alignment
 ALTER TABLE public.employee_attendance ADD COLUMN IF NOT EXISTS pto_hours NUMERIC DEFAULT 0;
 
+-- =========================================================================
+-- 23. EMPLOYEES & WORKFORCE HR TABLES
+-- =========================================================================
+CREATE TABLE IF NOT EXISTS public.employees (
+    id TEXT PRIMARY KEY,
+    emp_code TEXT,
+    full_name TEXT NOT NULL,
+    gender TEXT DEFAULT 'Male',
+    dob DATE,
+    phone TEXT,
+    email TEXT,
+    department TEXT DEFAULT 'Rotogravure Printing',
+    designation TEXT DEFAULT 'Printing Operator',
+    joining_date DATE DEFAULT CURRENT_DATE,
+    status TEXT DEFAULT 'Active',
+    shift_duration_hours NUMERIC DEFAULT 12,
+    default_shift TEXT DEFAULT 'Shift A: Day (08:00 - 20:00)',
+    address TEXT,
+    aadhar_no TEXT,
+    pan_no TEXT,
+    uan_no TEXT,
+    esic_no TEXT,
+    emergency_contact TEXT,
+    bank_details JSONB DEFAULT '{}'::jsonb,
+    salary_structure JSONB DEFAULT '{}'::jsonb,
+    offboarding JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 
+CREATE TABLE IF NOT EXISTS public.employee_attendance (
+    id TEXT PRIMARY KEY,
+    employee_id TEXT NOT NULL,
+    date DATE NOT NULL,
+    shift_type TEXT DEFAULT 'Shift A: Day (08:00 - 20:00)',
+    shift_hours NUMERIC DEFAULT 12,
+    status TEXT DEFAULT 'Present',
+    check_in TEXT DEFAULT '08:00',
+    check_out TEXT DEFAULT '20:00',
+    total_hours_worked NUMERIC DEFAULT 12,
+    overtime_hours NUMERIC DEFAULT 0,
+    overtime_start_time TEXT,
+    overtime_end_time TEXT,
+    pto_hours NUMERIC DEFAULT 0,
+    overtime_reason TEXT,
+    overtime_status TEXT DEFAULT 'Pending Approval',
+    overtime_approved_by TEXT,
+    overtime_approved_date TEXT,
+    dinner_allowance_eligible BOOLEAN DEFAULT FALSE,
+    marked_by TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 
+ALTER TABLE public.employee_attendance ADD COLUMN IF NOT EXISTS overtime_start_time TEXT;
+ALTER TABLE public.employee_attendance ADD COLUMN IF NOT EXISTS overtime_end_time TEXT;
+ALTER TABLE public.employee_attendance ADD COLUMN IF NOT EXISTS pto_hours NUMERIC DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS public.salary_advances (
+    id TEXT PRIMARY KEY,
+    employee_id TEXT NOT NULL,
+    employee_name TEXT,
+    department TEXT,
+    request_date DATE DEFAULT CURRENT_DATE,
+    advance_amount NUMERIC DEFAULT 0,
+    repayment_tenure_months INTEGER DEFAULT 1,
+    monthly_emi_amount NUMERIC DEFAULT 0,
+    reason TEXT,
+    status TEXT DEFAULT 'Pending Approval',
+    approved_by TEXT,
+    approved_date TEXT,
+    disbursed_date TEXT,
+    total_recovered_amount NUMERIC DEFAULT 0,
+    remaining_balance NUMERIC DEFAULT 0,
+    deduction_history JSONB DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.salary_payments (
+    id TEXT PRIMARY KEY,
+    month_key TEXT NOT NULL,
+    employee_id TEXT NOT NULL,
+    employee_name TEXT,
+    emp_code TEXT,
+    department TEXT,
+    net_amount_paid NUMERIC DEFAULT 0,
+    payment_date DATE DEFAULT CURRENT_DATE,
+    payment_time TEXT,
+    payment_timestamp TIMESTAMPTZ DEFAULT NOW(),
+    payment_mode TEXT DEFAULT 'Bank Transfer (NEFT)',
+    transaction_reference TEXT,
+    bank_name TEXT,
+    account_number TEXT,
+    status TEXT DEFAULT 'Paid',
+    disbursed_by TEXT,
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =========================================================================
+-- 24. PELLET FUEL STOCK & CONSUMPTION TABLES
+-- =========================================================================
+CREATE TABLE IF NOT EXISTS public.pellet_inwards (
+    id TEXT PRIMARY KEY,
+    inward_date DATE DEFAULT CURRENT_DATE,
+    vehicle_no TEXT,
+    driver_name TEXT,
+    vendor_name TEXT,
+    invoice_no TEXT,
+    gross_weight_kg NUMERIC DEFAULT 0,
+    tare_weight_kg NUMERIC DEFAULT 0,
+    net_weight_kg NUMERIC DEFAULT 0,
+    rate_per_kg NUMERIC DEFAULT 0,
+    total_cost NUMERIC DEFAULT 0,
+    batch_no TEXT,
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.pellet_consumptions (
+    id TEXT PRIMARY KEY,
+    consumption_date DATE DEFAULT CURRENT_DATE,
+    consumed_qty_kg NUMERIC DEFAULT 0,
+    operating_hours NUMERIC DEFAULT 0,
+    reference_printing_done_kg NUMERIC DEFAULT 0,
+    payload JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =========================================================================
+-- 25. PERFORMANCE INDEXES FOR SUB-SECOND QUERY SPEEDS
+-- =========================================================================
+CREATE INDEX IF NOT EXISTS idx_orders_created_at ON public.orders(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON public.orders(status);
+CREATE INDEX IF NOT EXISTS idx_inventory_item_code ON public.inventory(item_code);
+CREATE INDEX IF NOT EXISTS idx_inventory_category ON public.inventory(category);
+CREATE INDEX IF NOT EXISTS idx_inventory_stock_qty ON public.inventory(stock_qty_kg);
+CREATE INDEX IF NOT EXISTS idx_cylinders_sku ON public.cylinders(sku);
+CREATE INDEX IF NOT EXISTS idx_cylinders_status ON public.cylinders(status);
+CREATE INDEX IF NOT EXISTS idx_cylinders_job_name ON public.cylinders(job_name);
+CREATE INDEX IF NOT EXISTS idx_prod_rec_order_id ON public.production_records(order_id);
+CREATE INDEX IF NOT EXISTS idx_prod_rec_recorded_at ON public.production_records(recorded_at DESC);
+CREATE INDEX IF NOT EXISTS idx_grns_created_at ON public.grns(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_rolls_barcode ON public.inventory_rolls(barcode_id);
+CREATE INDEX IF NOT EXISTS idx_rolls_order_id ON public.inventory_rolls(order_id);
+CREATE INDEX IF NOT EXISTS idx_rolls_status ON public.inventory_rolls(status);
+CREATE INDEX IF NOT EXISTS idx_jm_sku_code ON public.job_masters(sku_code);
+CREATE INDEX IF NOT EXISTS idx_jm_job_name ON public.job_masters(job_name);
+CREATE INDEX IF NOT EXISTS idx_employees_status ON public.employees(status);
+CREATE INDEX IF NOT EXISTS idx_emp_att_date_emp ON public.employee_attendance(date, employee_id);
+CREATE INDEX IF NOT EXISTS idx_emp_att_date ON public.employee_attendance(date DESC);
+CREATE INDEX IF NOT EXISTS idx_salary_adv_emp ON public.salary_advances(employee_id);
+CREATE INDEX IF NOT EXISTS idx_salary_pay_month ON public.salary_payments(month_key);
+CREATE INDEX IF NOT EXISTS idx_sys_settings_key ON public.system_settings(setting_key);
+CREATE INDEX IF NOT EXISTS idx_pellet_inward_date ON public.pellet_inwards(inward_date DESC);
+CREATE INDEX IF NOT EXISTS idx_pellet_consum_date ON public.pellet_consumptions(consumption_date DESC);
+
+-- =========================================================================
+-- 26. RLS & PERMISSIONS FOR NEW TABLES
+-- =========================================================================
+ALTER TABLE public.employees ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow anon and auth full access on employees" ON public.employees;
+CREATE POLICY "Allow anon and auth full access on employees" ON public.employees FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE public.employee_attendance ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow anon and auth full access on employee_attendance" ON public.employee_attendance;
+CREATE POLICY "Allow anon and auth full access on employee_attendance" ON public.employee_attendance FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE public.salary_advances ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow anon and auth full access on salary_advances" ON public.salary_advances;
+CREATE POLICY "Allow anon and auth full access on salary_advances" ON public.salary_advances FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE public.salary_payments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow anon and auth full access on salary_payments" ON public.salary_payments;
+CREATE POLICY "Allow anon and auth full access on salary_payments" ON public.salary_payments FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE public.pellet_inwards ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow anon and auth full access on pellet_inwards" ON public.pellet_inwards;
+CREATE POLICY "Allow anon and auth full access on pellet_inwards" ON public.pellet_inwards FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE public.pellet_consumptions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow anon and auth full access on pellet_consumptions" ON public.pellet_consumptions;
+CREATE POLICY "Allow anon and auth full access on pellet_consumptions" ON public.pellet_consumptions FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+-- =========================================================================
+-- 27. REALTIME REPLICATION CONFIGURATION FOR LIVE MULTI-SESSION SYNC
+-- =========================================================================
+DO $$
+DECLARE
+  tbl_record RECORD;
+BEGIN
+  -- 1. Set REPLICA IDENTITY FULL on all public tables for complete update/delete payloads
+  FOR tbl_record IN 
+    SELECT tablename 
+    FROM pg_tables 
+    WHERE schemaname = 'public'
+  LOOP
+    BEGIN
+      EXECUTE format('ALTER TABLE public.%I REPLICA IDENTITY FULL;', tbl_record.tablename);
+    EXCEPTION WHEN OTHERS THEN
+      -- ignore tables where replica identity cannot be set
+    END;
+  END LOOP;
+
+  -- 2. Add all public tables to supabase_realtime publication
+  IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    FOR tbl_record IN 
+      SELECT tablename 
+      FROM pg_tables 
+      WHERE schemaname = 'public'
+        AND tablename NOT IN (
+          SELECT tablename FROM pg_publication_tables WHERE pubname = 'supabase_realtime'
+        )
+    LOOP
+      BEGIN
+        EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE public.%I;', tbl_record.tablename);
+      EXCEPTION WHEN duplicate_object THEN
+        -- Table is already in publication, ignore
+      WHEN OTHERS THEN
+        -- Ignore other individual table errors
+      END;
+    END LOOP;
+  END IF;
+END $$;
+
+-- Reload PostgREST schema cache immediately
+NOTIFY pgrst, 'reload schema';
 

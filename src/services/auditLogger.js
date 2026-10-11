@@ -38,7 +38,7 @@ export function mapAuditLogToDbPayload(entry) {
 /**
  * Fetch Audit Logs from Supabase with fallback to local storage
  */
-export async function fetchAuditLogsFromSupabase() {
+export async function fetchAuditLogsFromSupabase(limit = 100) {
   if (!isSupabaseConfigured()) {
     const local = safeLocalStorageGet(AUDIT_LOGS_KEY, []);
     return pruneOldAuditLogs(local);
@@ -48,7 +48,7 @@ export async function fetchAuditLogsFromSupabase() {
       .from('audit_logs')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(1000);
+      .limit(limit);
 
     if (error) {
       // If table audit_logs does not exist yet or throws RLS, try system settings envelope

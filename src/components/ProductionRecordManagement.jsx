@@ -33,6 +33,8 @@ import { DEFAULT_DAILY_RATES, generateBarcodeId, calculateJobRawMaterials, calcu
 import { notifyProductionRecordSubmitted, notifyProductionRecordApproved, notifyOverWastageAlert } from '../services/emailService';
 import { pushSlugState } from '../utils/slugRouter';
 import TablePagination, { usePagination } from './TablePagination';
+import { saveSystemSetting } from '../services/supabaseDataService';
+import { safeLocalStorageSet, safeLocalStorageGet } from '../utils/safeStorage';
 
 export default function ProductionRecordManagement({
   urlParams = {},
@@ -453,12 +455,7 @@ export default function ProductionRecordManagement({
   };
 
   const [scrapDisposals, setScrapDisposals] = useState(() => {
-    try {
-      const saved = localStorage.getItem('samyak_erp_scrap_disposals');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
+    return safeLocalStorageGet('samyak_erp_scrap_disposals', []);
   });
 
   const [isDisposeModalOpen, setIsDisposeModalOpen] = useState(false);
@@ -688,6 +685,11 @@ export default function ProductionRecordManagement({
 
     const updated = [newDisposal, ...scrapDisposals];
     setScrapDisposals(updated);
+    safeLocalStorageSet('samyak_erp_scrap_disposals', updated);
+    saveSystemSetting('scrap_disposals', updated).catch(console.warn);
+    if (typeof window !== 'undefined' && window.__samyakBroadcastSync) {
+      window.__samyakBroadcastSync('system_settings');
+    }
 
     setDisposeQtyKg('');
     setDisposeVendor('');

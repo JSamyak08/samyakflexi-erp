@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { generateVendorId } from '../factoryStore';
 import TablePagination, { usePagination } from './TablePagination';
+import { safeLocalStorageGet } from '../utils/safeStorage';
 function VendorMaterialItemsCell({ items = [] }) {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -210,14 +211,8 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
   const getVendorPoHistory = (vendor) => {
     if (!vendor) return [];
     
-    // 1. Read cached POs from localStorage
-    let cachedPos = {};
-    try {
-      const saved = localStorage.getItem('samyak_erp_issued_pos');
-      if (saved) cachedPos = JSON.parse(saved);
-    } catch (e) {
-      console.warn("Error reading issued pos", e);
-    }
+    // 1. Read cached POs from safeLocalStorage
+    const cachedPos = safeLocalStorageGet('samyak_erp_issued_pos', {});
 
     const historyList = [];
 

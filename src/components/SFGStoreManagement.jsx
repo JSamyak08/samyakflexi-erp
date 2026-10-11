@@ -37,6 +37,8 @@ import SFGFGEntryModal from './SFGFGEntryModal';
 import TablePagination, { usePagination } from './TablePagination';
 import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo } from '../utils/fifoUtils';
 import { getInventoryAgeingSettings } from '../services/settingsService';
+import { saveSystemSetting } from '../services/supabaseDataService';
+import { safeLocalStorageSet, safeLocalStorageGet } from '../utils/safeStorage';
 
 export default function SFGStoreManagement({
   sfgGoods = [],
@@ -60,36 +62,26 @@ export default function SFGStoreManagement({
 
   // QC Hold Store & Scrap Store Persisted State
   const [qcHoldItems, setQcHoldItems] = useState(() => {
-    try {
-      const saved = localStorage.getItem('sfg_qc_hold_items');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
+    return safeLocalStorageGet('sfg_qc_hold_items', []);
   });
 
   const [scrapItems, setScrapItems] = useState(() => {
-    try {
-      const saved = localStorage.getItem('sfg_scrap_items');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
+    return safeLocalStorageGet('sfg_scrap_items', []);
   });
 
   useEffect(() => {
-    try {
-      localStorage.setItem('sfg_qc_hold_items', JSON.stringify(qcHoldItems));
-    } catch (e) {
-      console.error("Error saving sfg_qc_hold_items:", e);
+    safeLocalStorageSet('sfg_qc_hold_items', qcHoldItems);
+    saveSystemSetting('sfg_qc_hold_items', qcHoldItems).catch(console.warn);
+    if (typeof window !== 'undefined' && window.__samyakBroadcastSync) {
+      window.__samyakBroadcastSync('system_settings');
     }
   }, [qcHoldItems]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('sfg_scrap_items', JSON.stringify(scrapItems));
-    } catch (e) {
-      console.error("Error saving sfg_scrap_items:", e);
+    safeLocalStorageSet('sfg_scrap_items', scrapItems);
+    saveSystemSetting('sfg_scrap_items', scrapItems).catch(console.warn);
+    if (typeof window !== 'undefined' && window.__samyakBroadcastSync) {
+      window.__samyakBroadcastSync('system_settings');
     }
   }, [scrapItems]);
 

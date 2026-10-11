@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import QRCode2D from './QRCode2D';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
+import { safeLocalStorageGet } from '../utils/safeStorage';
 
 /**
  * Universal Barcode & 2D QR Inspector Modal
@@ -753,11 +754,11 @@ export default function UniversalBarcodeScannerModal({
       return { notFound: true, query: activeBarcode };
     }
 
-    // Check localStorage issued POs first
+    // Check safeLocalStorage / cached issued POs first
     let matchedPoData = null;
     let matchedPoNo = '';
-    try {
-      const savedPos = JSON.parse(localStorage.getItem('samyak_erp_issued_pos') || '{}');
+    const savedPos = safeLocalStorageGet('samyak_erp_issued_pos', {});
+    if (savedPos && typeof savedPos === 'object') {
       for (const [key, val] of Object.entries(savedPos)) {
         const cleanKey = key.toLowerCase();
         if (cleanKey.length > 0 && (cleanKey === cleanPoQuery || (cleanPoQuery.length >= 4 && cleanKey.includes(cleanPoQuery)))) {
@@ -766,8 +767,6 @@ export default function UniversalBarcodeScannerModal({
           break;
         }
       }
-    } catch {
-      // ignore
     }
 
     // Check across orders for issued PO numbers if not in store

@@ -96,7 +96,7 @@ import {
   fetchPelletInwardsFromSupabase, savePelletInwardToSupabase, deletePelletInwardFromSupabase,
   fetchPelletConsumptionsFromSupabase, savePelletConsumptionToSupabase, deletePelletConsumptionFromSupabase,
   fetchFilmSubstratesFromSupabase,
-  fetchSystemSetting, saveSystemSetting
+  fetchSystemSetting, saveSystemSetting, fetchAllSystemSettings
 } from './services/supabaseDataService';
 import { createUserInSupabaseAuth } from './services/authService';
 
@@ -181,45 +181,15 @@ function stripDummyRecords(arr, idFields = ['id', 'orderId', 'jobId']) {
  * Runs synchronously before any React state initializes.
  */
 // ============================================================================
-// PERMANENT BOOT-TIME PURGE: Disable all local data persistence for transactional ERP data.
-// Strip all legacy cached transactional keys from localStorage on boot.
+// SAFE BOOT-TIME CLEANUP: Purge legacy mock development seeds only.
+// Ensures user data, issued POs, adjustments, and operational caches are preserved.
 // ============================================================================
-(function purgeTransactionalLocalStorage() {
+(function purgeLegacyMockData() {
   if (typeof window === 'undefined' || !window.localStorage) return;
-  const keysToRemove = [
-    'samyak_erp_orders', 'orders',
-    'samyak_erp_vendors', 'vendors',
-    'samyak_erp_clients', 'clients',
-    'samyak_erp_inventory', 'inventory',
-    'samyak_erp_grns', 'grns',
-    'samyak_erp_cylinders', 'cylinders',
-    'samyak_erp_production_records', 'production_records',
-    'samyak_erp_production_schedules', 'production_schedules',
-    'samyak_erp_job_datasheets', 'job_datasheets',
-    'samyak_erp_inventory_rolls', 'inventory_rolls',
-    'samyak_erp_dispatch_shipments', 'dispatch_shipments',
-    'samyak_erp_printing_machines', 'printing_machines',
-    'samyak_erp_job_masters', 'job_masters',
-    'samyak_erp_sales_quotations', 'sales_quotations',
-    'samyak_erp_inks', 'inks',
-    'samyak_erp_employees', 'employees',
-    'samyak_erp_employee_attendance', 'employee_attendance',
-    'samyak_erp_salary_advances', 'salary_advances',
-    'samyak_erp_salary_payments', 'salary_payments',
-    'samyak_erp_sfg_goods', 'sfg_goods',
-    'samyak_erp_delivery_challans', 'delivery_challans',
-    'samyak_erp_certificate_of_analyses', 'certificate_of_analyses',
-    'samyak_erp_material_indents', 'material_indents',
-    'samyak_erp_machine_issues', 'machine_issues',
-    'samyak_erp_consumables', 'consumables',
-    'samyak_erp_store_issue_transactions', 'store_issue_transactions',
-    'samyak_erp_issued_pos',
-    'samyak_erp_custom_barcodes',
-    'samyak_erp_stock_adjustments',
-    'samyak_po_discrepancy_resolutions',
-    'samyak_erp_scrap_disposals'
+  const legacyMockKeys = [
+    'dummy_data', 'mock_orders', 'seed_inventory', 'test_dummy_cylinders'
   ];
-  for (const k of keysToRemove) {
+  for (const k of legacyMockKeys) {
     try { localStorage.removeItem(k); } catch (e) {}
   }
 })();
@@ -322,50 +292,50 @@ export default function App() {
     } catch (e) { return false; }
   };
 
-  // SUPABASE DATABASE IS THE SINGLE SOURCE OF TRUTH.
-  // All transactional entity states initialize to empty arrays []. Zero local storage caching or offline fallback.
-  const [orders, setOrders] = useState([]);
-  const [ordersLoading, setOrdersLoading] = useState(true);
+  // CACHE-FIRST REACT STATE INITIALIZATION:
+  // Instantly rehydrates from local safe storage cache so tables and dashboard never show empty data on refresh.
+  const [orders, setOrders] = useState(() => safeLocalStorageGet('samyak_cache_orders', []));
+  const [ordersLoading, setOrdersLoading] = useState(() => safeLocalStorageGet('samyak_cache_orders', []).length === 0);
   const [ordersError, setOrdersError] = useState(null);
-  const [isDataLoading, setIsDataLoading] = useState(true);
-  const [isDataFetched, setIsDataFetched] = useState(false);
+  const [isDataLoading, setIsDataLoading] = useState(() => safeLocalStorageGet('samyak_cache_orders', []).length === 0);
+  const [isDataFetched, setIsDataFetched] = useState(() => safeLocalStorageGet('samyak_cache_orders', []).length > 0);
   const [deletingOrderId, setDeletingOrderId] = useState(null);
   const deletedOrderIdsRef = useRef(new Set());
   const ordersFetchVersion = useRef(0);
 
-  const [vendors, setVendors] = useState([]);
-  const [inventory, setInventory] = useState([]);
-  const [grns, setGrns] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [jobDataSheets, setJobDataSheets] = useState([]);
-  const [cylinders, setCylinders] = useState([]);
-  const [productionRecords, setProductionRecords] = useState([]);
-  const [inventoryRolls, setInventoryRolls] = useState([]);
-  const [dispatchShipments, setDispatchShipments] = useState([]);
-  const [deliveryChallans, setDeliveryChallans] = useState([]);
-  const [certificateOfAnalyses, setCertificateOfAnalyses] = useState([]);
-  const [machines, setMachines] = useState([]);
-  const [schedules, setSchedules] = useState([]);
-  const [pressQueueOrder, setPressQueueOrder] = useState([]);
-  const [pressMachineAssignments, setPressMachineAssignments] = useState({});
-  const [pressActiveRunningJob, setPressActiveRunningJob] = useState(null);
-  const [clients, setClients] = useState([]);
-  const [jobMasters, setJobMasters] = useState([]);
-  const [inks, setInks] = useState([]);
+  const [vendors, setVendors] = useState(() => safeLocalStorageGet('samyak_cache_vendors', []));
+  const [inventory, setInventory] = useState(() => safeLocalStorageGet('samyak_cache_inventory', []));
+  const [grns, setGrns] = useState(() => safeLocalStorageGet('samyak_cache_grns', []));
+  const [users, setUsers] = useState(() => safeLocalStorageGet('samyak_cache_users', []));
+  const [jobDataSheets, setJobDataSheets] = useState(() => safeLocalStorageGet('samyak_cache_job_datasheets', []));
+  const [cylinders, setCylinders] = useState(() => safeLocalStorageGet('samyak_cache_cylinders', []));
+  const [productionRecords, setProductionRecords] = useState(() => safeLocalStorageGet('samyak_cache_production_records', []));
+  const [inventoryRolls, setInventoryRolls] = useState(() => safeLocalStorageGet('samyak_cache_inventory_rolls', []));
+  const [dispatchShipments, setDispatchShipments] = useState(() => safeLocalStorageGet('samyak_cache_dispatch_shipments', []));
+  const [deliveryChallans, setDeliveryChallans] = useState(() => safeLocalStorageGet('samyak_cache_delivery_challans', []));
+  const [certificateOfAnalyses, setCertificateOfAnalyses] = useState(() => safeLocalStorageGet('samyak_cache_certificate_of_analyses', []));
+  const [machines, setMachines] = useState(() => safeLocalStorageGet('samyak_cache_printing_machines', []));
+  const [schedules, setSchedules] = useState(() => safeLocalStorageGet('samyak_cache_production_schedules', []));
+  const [pressQueueOrder, setPressQueueOrder] = useState(() => safeLocalStorageGet('samyak_cache_press_queue_order', []));
+  const [pressMachineAssignments, setPressMachineAssignments] = useState(() => safeLocalStorageGet('samyak_cache_press_machine_assignments', {}));
+  const [pressActiveRunningJob, setPressActiveRunningJob] = useState(() => safeLocalStorageGet('samyak_cache_press_running_job', null));
+  const [clients, setClients] = useState(() => safeLocalStorageGet('samyak_cache_clients', []));
+  const [jobMasters, setJobMasters] = useState(() => safeLocalStorageGet('samyak_cache_job_masters', []));
+  const [inks, setInks] = useState(() => safeLocalStorageGet('samyak_cache_inks', []));
   const [selectedJobMasterForPunch, setSelectedJobMasterForPunch] = useState(null);
-  const [rolePermissions, setRolePermissions] = useState(DEFAULT_ROLE_PERMISSIONS);
-  const [indents, setIndents] = useState([]);
-  const [machineIssues, setMachineIssues] = useState([]);
-  const [consumables, setConsumables] = useState([]);
-  const [storeIssueTransactions, setStoreIssueTransactions] = useState([]);
-  const [auditLogs, setAuditLogs] = useState([]);
-  const [employees, setEmployees] = useState([]);
-  const [employeeAttendance, setEmployeeAttendance] = useState([]);
-  const [salaryAdvances, setSalaryAdvances] = useState([]);
-  const [salaryPayments, setSalaryPayments] = useState([]);
-  const [sfgGoods, setSfgGoods] = useState([]);
-  const [pelletInwards, setPelletInwards] = useState([]);
-  const [pelletConsumptions, setPelletConsumptions] = useState([]);
+  const [rolePermissions, setRolePermissions] = useState(() => safeLocalStorageGet('samyak_cache_role_permissions', DEFAULT_ROLE_PERMISSIONS));
+  const [indents, setIndents] = useState(() => safeLocalStorageGet('samyak_cache_material_indents', []));
+  const [machineIssues, setMachineIssues] = useState(() => safeLocalStorageGet('samyak_cache_machine_issues', []));
+  const [consumables, setConsumables] = useState(() => safeLocalStorageGet('samyak_cache_consumables', []));
+  const [storeIssueTransactions, setStoreIssueTransactions] = useState(() => safeLocalStorageGet('samyak_cache_store_issue_transactions', []));
+  const [auditLogs, setAuditLogs] = useState(() => safeLocalStorageGet('samyak_cache_audit_logs', []));
+  const [employees, setEmployees] = useState(() => safeLocalStorageGet('samyak_cache_employees', []));
+  const [employeeAttendance, setEmployeeAttendance] = useState(() => safeLocalStorageGet('samyak_cache_employee_attendance', []));
+  const [salaryAdvances, setSalaryAdvances] = useState(() => safeLocalStorageGet('samyak_cache_salary_advances', []));
+  const [salaryPayments, setSalaryPayments] = useState(() => safeLocalStorageGet('samyak_cache_salary_payments', []));
+  const [sfgGoods, setSfgGoods] = useState(() => safeLocalStorageGet('samyak_cache_sfg_goods', []));
+  const [pelletInwards, setPelletInwards] = useState(() => safeLocalStorageGet('samyak_cache_pellet_inwards', []));
+  const [pelletConsumptions, setPelletConsumptions] = useState(() => safeLocalStorageGet('samyak_cache_pellet_consumptions', []));
 
   const handleSavePelletInward = async (item) => {
     if (!item) return;
@@ -552,26 +522,26 @@ export default function App() {
       setIsDataLoading(true);
       setIsDataFetched(false);
 
-      // Failsafe timer: Ensure loading state unlocks after 4 seconds max no matter what
+      // Failsafe timer: Ensure UI unblocks gracefully within 15 seconds even on poor network
       const failsafeTimer = setTimeout(() => {
         if (isMounted) {
-          console.warn('[Supabase Load Failsafe] 4s elapsed, unlocking UI.');
+          console.warn('[Supabase Load Failsafe] 15s elapsed, unlocking UI.');
           setIsDataLoading(false);
           setOrdersLoading(false);
           setIsDataFetched(true);
         }
-      }, 4000);
+      }, 15000);
 
-      const fetchWithTimeout = (promise, ms = 4000) => {
+      const fetchWithTimeout = (promise, ms = 12000) => {
         return Promise.race([
           promise,
           new Promise((_, reject) => setTimeout(() => reject(new Error('Fetch timeout')), ms))
         ]);
       };
 
-      const fetchSafe = async (fn, label) => {
+      const fetchSafe = async (fn, label, ms = 12000) => {
         try {
-          const res = await fetchWithTimeout(fn(), 4000);
+          const res = await fetchWithTimeout(fn(), ms);
           return res;
         } catch (e) {
           console.warn(`[Supabase Load Notice] ${label}:`, e?.message || e);
@@ -580,141 +550,75 @@ export default function App() {
       };
 
       try {
-        // Dedicated Order fetch with strict error handling & request versioning
         const currentOrdersVersion = ++ordersFetchVersion.current;
         setOrdersLoading(true);
         setOrdersError(null);
 
-        const ordersTask = (async () => {
-          try {
-            console.log('[ORDERS][FETCH] Starting Supabase fetch');
-            const supaOrders = await fetchWithTimeout(fetchOrders(), 4000);
-            console.log(`[ORDERS][FETCH] Received ${supaOrders ? supaOrders.length : 0} records`);
-            if (isMounted && currentOrdersVersion === ordersFetchVersion.current) {
-              const cleanSupa = stripDummyRecords(supaOrders).filter(
-                o => o && o.id && !deletedOrderIdsRef.current.has(o.id)
-              );
-              setOrders(cleanSupa);
-              setOrdersLoading(false);
-
-              // Auto-hydrate pressActiveRunningJob if an active in-production job exists in database orders
-              const runningInDb = cleanSupa.find(o => 
-                (o.status === 'In Production' || o.printingStatus === 'In Production') &&
-                o.printingStartTime &&
-                !o.printingEndTime &&
-                !o.isPrintingCompleted
-              );
-              if (runningInDb) {
-                setPressActiveRunningJob(runningInDb);
-              }
-
-              // Clean up any legacy dummy records from DB in background
-              supaOrders.filter(isDummyRecord).forEach(d => deleteOrderFromSupabase(d.id).catch(console.warn));
-            }
-          } catch (err) {
-            console.error('[ORDERS][FETCH] Failed to load from Supabase:', err);
-            if (isMounted && currentOrdersVersion === ordersFetchVersion.current) {
-              setOrdersError(err.message || 'Failed to fetch orders from Supabase.');
-              setOrdersLoading(false);
-            }
-          }
-        })();
-
-        let [
-          _ordersRes,
-          supaVendors, supaInv, supaGRNs, supaCyls, 
-          supaProd, supaUsers, supaSheets, supaRolls, supaShipments,
-          supaMachines, supaSchedules, supaClients, supaJobMasters,
-          supaInks, supaEmployees, supaAttendance, supaAdvances,
-          supaRolePerms, supaAuditLogs, supaSFG, supaDCs, supaCoAs,
-          supaPelletInwards, supaPelletConsumptions
-        ] = await Promise.all([
-          ordersTask,
-          fetchSafe(fetchVendors, 'Vendors'),
-          fetchSafe(fetchInventory, 'Inventory'),
-          fetchSafe(fetchGRNs, 'GRNs'),
-          fetchSafe(fetchCylinders, 'Cylinders'),
-          fetchSafe(fetchProductionRecords, 'Production Records'),
-          fetchSafe(fetchUsers, 'Users'),
-          fetchSafe(fetchJobDataSheets, 'Job Data Sheets'),
-          fetchSafe(fetchInventoryRolls, 'Inventory Rolls'),
-          fetchSafe(fetchDispatchShipments, 'Dispatch Shipments'),
-          fetchSafe(fetchPrintingMachines, 'Printing Machines'),
-          fetchSafe(fetchProductionSchedules, 'Production Schedules'),
-          fetchSafe(fetchClients, 'Clients'),
-          fetchSafe(fetchJobMasters, 'Job Masters'),
-          fetchSafe(fetchInks, 'Inks'),
-          fetchSafe(fetchEmployeesFromSupabase, 'Employees'),
-          fetchSafe(fetchEmployeeAttendanceFromSupabase, 'Attendance'),
-          fetchSafe(fetchSalaryAdvancesFromSupabase, 'Salary Advances'),
-          fetchSafe(fetchSalaryPaymentsFromSupabase, 'Salary Payments'),
-          fetchSafe(fetchRolePermissionsFromSupabase, 'Role Permissions'),
-          fetchSafe(fetchAuditLogsFromSupabase, 'Audit Logs'),
-          fetchSafe(fetchSFGGoodsFromSupabase, 'SFG Goods'),
-          fetchSafe(fetchDeliveryChallansFromSupabase, 'Delivery Challans'),
-          fetchSafe(fetchCertificatesOfAnalysisFromSupabase, 'Certificates of Analysis'),
-          fetchSafe(fetchPelletInwardsFromSupabase, 'Pellet Inwards'),
-          fetchSafe(fetchPelletConsumptionsFromSupabase, 'Pellet Consumptions')
-        ]);
-
-
-        // Fetch schema-independent system settings & lifted store states
+        // ====================================================================
+        // STAGE 1: CORE OPERATIONAL ESSENTIALS (Priority 1)
+        // Fetches orders, jobs, inventory, cylinders, partners, and schedules.
+        // Once completed, unblocks the UI so users experience near-instant load.
+        // ====================================================================
+        console.log('[Supabase Load] Stage 1: Loading core operational essentials...');
         const [
-          dbPrefixes, dbTerms, dbLogo, dbSignature,
-          dbIndents, dbIssues, dbConsumables, dbStoreTx, dbFilmSubstrates,
-          dbPressAssign, dbPressQueue, dbPressRunJob
+          supaOrders,
+          supaJobMasters,
+          supaInv,
+          supaCyls,
+          supaVendors,
+          supaClients,
+          supaMachines,
+          supaSchedules
         ] = await Promise.all([
-          fetchSafe(() => fetchSystemSetting('doc_prefixes'), 'Prefixes'),
-          fetchSafe(() => fetchSystemSetting('doc_terms'), 'Terms'),
-          fetchSafe(() => fetchSystemSetting('company_logo'), 'Logo'),
-          fetchSafe(() => fetchSystemSetting('auth_signature'), 'Signature'),
-          fetchSafe(() => fetchSystemSetting('material_indents'), 'Indents'),
-          fetchSafe(() => fetchSystemSetting('machine_issues'), 'Machine Issues'),
-          fetchSafe(() => fetchSystemSetting('consumables'), 'Consumables'),
-          fetchSafe(() => fetchSystemSetting('store_issue_transactions'), 'Store Issue Transactions'),
-          fetchSafe(fetchFilmSubstratesFromSupabase, 'Film Substrates Master'),
-          fetchSafe(() => fetchSystemSetting('printing_press_machine_assignments'), 'Press Assignments'),
-          fetchSafe(() => fetchSystemSetting('printing_press_queue_order'), 'Press Queue'),
-          fetchSafe(() => fetchSystemSetting('printing_press_active_running_job'), 'Press Active Job')
+          fetchWithTimeout(fetchOrders(), 12000).catch(err => {
+            console.error('[ORDERS][FETCH] Failed to load from Supabase:', err);
+            return null;
+          }),
+          fetchSafe(fetchJobMasters, 'Job Masters'),
+          fetchSafe(fetchInventory, 'Inventory'),
+          fetchSafe(fetchCylinders, 'Cylinders'),
+          fetchSafe(fetchVendors, 'Vendors'),
+          fetchSafe(fetchClients, 'Clients'),
+          fetchSafe(fetchPrintingMachines, 'Printing Machines'),
+          fetchSafe(fetchProductionSchedules, 'Production Schedules')
         ]);
 
         if (!isMounted) return;
 
-        if (Array.isArray(supaSFG)) setSfgGoods(stripDummyRecords(supaSFG));
-        if (Array.isArray(supaDCs)) setDeliveryChallans(stripDummyRecords(supaDCs));
-        if (Array.isArray(supaCoAs)) setCertificateOfAnalyses(stripDummyRecords(supaCoAs));
-        if (Array.isArray(supaAuditLogs)) setAuditLogs(pruneOldAuditLogs(supaAuditLogs));
-        if (dbPrefixes) safeLocalStorageSet('samyak_doc_prefixes', dbPrefixes);
-        if (dbTerms) safeLocalStorageSet('samyak_doc_terms', dbTerms);
-        if (dbLogo) safeLocalStorageSet('samyak_company_logo', dbLogo);
-        if (dbSignature) safeLocalStorageSet('samyak_authorised_signature', dbSignature);
-        if (dbIndents && Array.isArray(dbIndents)) setIndents(dbIndents);
-        if (dbIssues && Array.isArray(dbIssues)) setMachineIssues(dbIssues);
-        if (dbConsumables && Array.isArray(dbConsumables)) setConsumables(dbConsumables);
-        if (dbStoreTx && Array.isArray(dbStoreTx)) {
-          const cleanStoreTx = stripDummyRecords(dbStoreTx);
-          setStoreIssueTransactions(cleanStoreTx);
-          if (cleanStoreTx.length !== dbStoreTx.length) {
-            saveSystemSetting('store_issue_transactions', cleanStoreTx).catch(console.warn);
-          }
+        // Hydrate Orders
+        if (Array.isArray(supaOrders)) {
+          const cleanOrders = stripDummyRecords(supaOrders).filter(
+            o => o && o.id && !deletedOrderIdsRef.current.has(o.id)
+          );
+          setOrders(cleanOrders);
+          safeLocalStorageSet('samyak_cache_orders', cleanOrders);
+
+          const runningInDb = cleanOrders.find(o => 
+            (o.status === 'In Production' || o.printingStatus === 'In Production') &&
+            o.printingStartTime &&
+            !o.printingEndTime &&
+            !o.isPrintingCompleted
+          );
+          if (runningInDb) setPressActiveRunningJob(runningInDb);
+
+          supaOrders.filter(isDummyRecord).forEach(d => deleteOrderFromSupabase(d.id).catch(console.warn));
         }
-        if (dbPressAssign && typeof dbPressAssign === 'object') setPressMachineAssignments(dbPressAssign);
-        if (dbPressQueue && Array.isArray(dbPressQueue)) setPressQueueOrder(dbPressQueue);
-        if (dbPressRunJob && typeof dbPressRunJob === 'object') setPressActiveRunningJob(dbPressRunJob);
-        if (dbFilmSubstrates && Array.isArray(dbFilmSubstrates) && dbFilmSubstrates.length > 0) {
-          safeLocalStorageSet('samyak_film_substrates_master', JSON.stringify(dbFilmSubstrates));
+        setOrdersLoading(false);
+
+        // Hydrate Job Masters
+        if (Array.isArray(supaJobMasters)) {
+          const cleanJM = stripDummyRecords(supaJobMasters);
+          setJobMasters(cleanJM);
+          safeLocalStorageSet('samyak_cache_job_masters', cleanJM);
+          supaJobMasters.filter(isDummyRecord).forEach(d => deleteJobMasterFromSupabase(d.id).catch(console.warn));
         }
 
-        if (Array.isArray(supaVendors)) {
-          const cleanSupa = stripDummyRecords(supaVendors);
-          setVendors(cleanSupa);
-          supaVendors.filter(isDummyRecord).forEach(d => deleteVendorFromSupabase(d.id).catch(console.warn));
-        }
-
+        // Hydrate Inventory
         if (Array.isArray(supaInv)) {
-          const cleanSupa = stripDummyRecords(supaInv).map(sanitizeInventoryItem);
-          setInventory(cleanSupa);
-          cleanSupa.forEach(item => {
+          const cleanInv = stripDummyRecords(supaInv).map(sanitizeInventoryItem);
+          setInventory(cleanInv);
+          safeLocalStorageSet('samyak_cache_inventory', cleanInv);
+          cleanInv.forEach(item => {
             if (item && item.itemName && (item.itemName.includes('|||') || item.itemName.startsWith('{'))) {
               saveInventoryItemToSupabase(sanitizeInventoryItem(item)).catch(console.warn);
             }
@@ -722,106 +626,298 @@ export default function App() {
           supaInv.filter(isDummyRecord).forEach(d => deleteInventoryItemFromSupabase(d.id).catch(console.warn));
         }
 
-        if (Array.isArray(supaGRNs)) {
-          const cleanSupa = stripDummyRecords(supaGRNs).map(sanitizeGRN);
-          setGrns(cleanSupa);
-          supaGRNs.filter(isDummyRecord).forEach(d => deleteGRNFromSupabase(d.id || d.grnNo).catch(console.warn));
-        }
-
+        // Hydrate Cylinders
         if (Array.isArray(supaCyls)) {
-          const cleanSupa = stripDummyRecords(supaCyls);
-          setCylinders(cleanSupa);
+          const cleanCyls = stripDummyRecords(supaCyls);
+          setCylinders(cleanCyls);
+          safeLocalStorageSet('samyak_cache_cylinders', cleanCyls);
           supaCyls.filter(isDummyRecord).forEach(d => deleteCylinderFromSupabase(d.id).catch(console.warn));
         }
 
+        // Hydrate Vendors
+        if (Array.isArray(supaVendors)) {
+          const cleanVendors = stripDummyRecords(supaVendors);
+          setVendors(cleanVendors);
+          safeLocalStorageSet('samyak_cache_vendors', cleanVendors);
+          supaVendors.filter(isDummyRecord).forEach(d => deleteVendorFromSupabase(d.id).catch(console.warn));
+        }
+
+        // Hydrate Clients
+        if (Array.isArray(supaClients)) {
+          const cleanClients = stripDummyRecords(supaClients);
+          setClients(cleanClients);
+          safeLocalStorageSet('samyak_cache_clients', cleanClients);
+          supaClients.filter(isDummyRecord).forEach(d => deleteClientFromSupabase(d.id).catch(console.warn));
+        }
+
+        // Hydrate Machines
+        if (Array.isArray(supaMachines)) {
+          const cleanMachines = stripDummyRecords(supaMachines);
+          setMachines(cleanMachines);
+          safeLocalStorageSet('samyak_cache_printing_machines', cleanMachines);
+        }
+
+        // Hydrate Schedules
+        if (Array.isArray(supaSchedules)) {
+          const cleanSchedules = stripDummyRecords(supaSchedules);
+          setSchedules(cleanSchedules);
+          safeLocalStorageSet('samyak_cache_production_schedules', cleanSchedules);
+          supaSchedules.filter(isDummyRecord).forEach(d => deleteProductionScheduleFromSupabase(d.id).catch(console.warn));
+        }
+
+        // UNBLOCK UI: User can now interact with core views while background stages finish
+        setIsDataLoading(false);
+        setIsDataFetched(true);
+
+        // ====================================================================
+        // STAGE 2: SECONDARY OPERATIONAL RECORDS (Priority 2)
+        // Loads records, GRNs, rolls, shipments, quality certificates, SFG & pellets
+        // ====================================================================
+        console.log('[Supabase Load] Stage 2: Loading secondary records & supply-chain...');
+        const [
+          supaGRNs,
+          supaProd,
+          supaUsers,
+          supaSheets,
+          supaRolls,
+          supaShipments,
+          supaInks,
+          supaSFG,
+          supaDCs,
+          supaCoAs,
+          supaPelletInwards,
+          supaPelletConsumptions
+        ] = await Promise.all([
+          fetchSafe(fetchGRNs, 'GRNs'),
+          fetchSafe(fetchProductionRecords, 'Production Records'),
+          fetchSafe(fetchUsers, 'Users'),
+          fetchSafe(fetchJobDataSheets, 'Job Data Sheets'),
+          fetchSafe(fetchInventoryRolls, 'Inventory Rolls'),
+          fetchSafe(fetchDispatchShipments, 'Dispatch Shipments'),
+          fetchSafe(fetchInks, 'Inks'),
+          fetchSafe(fetchSFGGoodsFromSupabase, 'SFG Goods'),
+          fetchSafe(fetchDeliveryChallansFromSupabase, 'Delivery Challans'),
+          fetchSafe(fetchCertificatesOfAnalysisFromSupabase, 'Certificates of Analysis'),
+          fetchSafe(fetchPelletInwardsFromSupabase, 'Pellet Inwards'),
+          fetchSafe(fetchPelletConsumptionsFromSupabase, 'Pellet Consumptions')
+        ]);
+
+        if (!isMounted) return;
+
+        if (Array.isArray(supaGRNs)) {
+          const cleanGRNs = stripDummyRecords(supaGRNs).map(sanitizeGRN);
+          setGrns(cleanGRNs);
+          safeLocalStorageSet('samyak_cache_grns', cleanGRNs);
+          supaGRNs.filter(isDummyRecord).forEach(d => deleteGRNFromSupabase(d.id || d.grnNo).catch(console.warn));
+        }
+
         if (Array.isArray(supaProd)) {
-          const cleanSupa = stripDummyRecords(supaProd);
-          setProductionRecords(cleanSupa);
+          const cleanProd = stripDummyRecords(supaProd);
+          setProductionRecords(cleanProd);
+          safeLocalStorageSet('samyak_cache_production_records', cleanProd);
           supaProd.filter(isDummyRecord).forEach(d => deleteProductionRecordFromSupabase(d.id).catch(console.warn));
         }
 
         if (Array.isArray(supaUsers) && supaUsers.length > 0) {
           setUsers(supaUsers);
+          safeLocalStorageSet('samyak_cache_users', supaUsers);
         }
 
         if (Array.isArray(supaSheets)) {
-          const cleanSupa = stripDummyRecords(supaSheets);
-          setJobDataSheets(cleanSupa);
+          const cleanSheets = stripDummyRecords(supaSheets);
+          setJobDataSheets(cleanSheets);
+          safeLocalStorageSet('samyak_cache_job_datasheets', cleanSheets);
           supaSheets.filter(isDummyRecord).forEach(d => deleteJobDataSheetFromSupabase(d.id).catch(console.warn));
         }
 
-        if (Array.isArray(supaRolls)) setInventoryRolls(stripDummyRecords(supaRolls));
-        if (Array.isArray(supaShipments)) setDispatchShipments(stripDummyRecords(supaShipments));
-        if (Array.isArray(supaMachines)) setMachines(stripDummyRecords(supaMachines));
-
-        if (Array.isArray(supaSchedules)) {
-          const cleanSupa = stripDummyRecords(supaSchedules);
-          setSchedules(cleanSupa);
-          supaSchedules.filter(isDummyRecord).forEach(d => deleteProductionScheduleFromSupabase(d.id).catch(console.warn));
+        if (Array.isArray(supaRolls)) {
+          const cleanRolls = stripDummyRecords(supaRolls);
+          setInventoryRolls(cleanRolls);
+          safeLocalStorageSet('samyak_cache_inventory_rolls', cleanRolls);
         }
 
-        if (Array.isArray(supaClients)) {
-          const cleanSupa = stripDummyRecords(supaClients);
-          setClients(cleanSupa);
-          supaClients.filter(isDummyRecord).forEach(d => deleteClientFromSupabase(d.id).catch(console.warn));
-        }
-
-        if (Array.isArray(supaJobMasters)) {
-          const cleanSupa = stripDummyRecords(supaJobMasters);
-          setJobMasters(cleanSupa);
-          supaJobMasters.filter(isDummyRecord).forEach(d => deleteJobMasterFromSupabase(d.id).catch(console.warn));
+        if (Array.isArray(supaShipments)) {
+          const cleanShip = stripDummyRecords(supaShipments);
+          setDispatchShipments(cleanShip);
+          safeLocalStorageSet('samyak_cache_dispatch_shipments', cleanShip);
         }
 
         if (Array.isArray(supaInks)) {
           setInks(supaInks);
+          safeLocalStorageSet('samyak_cache_inks', supaInks);
         }
 
+        if (Array.isArray(supaSFG)) {
+          const cleanSFG = stripDummyRecords(supaSFG);
+          setSfgGoods(cleanSFG);
+          safeLocalStorageSet('samyak_cache_sfg_goods', cleanSFG);
+        }
+
+        if (Array.isArray(supaDCs)) {
+          const cleanDCs = stripDummyRecords(supaDCs);
+          setDeliveryChallans(cleanDCs);
+          safeLocalStorageSet('samyak_cache_delivery_challans', cleanDCs);
+        }
+
+        if (Array.isArray(supaCoAs)) {
+          const cleanCoAs = stripDummyRecords(supaCoAs);
+          setCertificateOfAnalyses(cleanCoAs);
+          safeLocalStorageSet('samyak_cache_certificate_of_analyses', cleanCoAs);
+        }
+
+        if (Array.isArray(supaPelletInwards)) {
+          setPelletInwards(supaPelletInwards);
+          safeLocalStorageSet('samyak_cache_pellet_inwards', supaPelletInwards);
+        }
+
+        if (Array.isArray(supaPelletConsumptions)) {
+          setPelletConsumptions(supaPelletConsumptions);
+          safeLocalStorageSet('samyak_cache_pellet_consumptions', supaPelletConsumptions);
+        }
+
+        // ====================================================================
+        // STAGE 3: HR, PAYROLL, AUDIT & ALL SYSTEM SETTINGS (Batch-loaded)
+        // Uses batch `fetchAllSystemSettings()` in a single query
+        // ====================================================================
+        console.log('[Supabase Load] Stage 3: Loading HR, compliance & batch system settings...');
+        const [
+          supaEmployees,
+          supaAttendance,
+          supaAdvances,
+          supaPayments,
+          supaRolePerms,
+          supaAuditLogs,
+          allSettings
+        ] = await Promise.all([
+          fetchSafe(fetchEmployeesFromSupabase, 'Employees'),
+          fetchSafe(fetchEmployeeAttendanceFromSupabase, 'Attendance'),
+          fetchSafe(fetchSalaryAdvancesFromSupabase, 'Salary Advances'),
+          fetchSafe(fetchSalaryPaymentsFromSupabase, 'Salary Payments'),
+          fetchSafe(fetchRolePermissionsFromSupabase, 'Role Permissions'),
+          fetchSafe(fetchAuditLogsFromSupabase, 'Audit Logs'),
+          fetchSafe(fetchAllSystemSettings, 'All System Settings')
+        ]);
+
+        if (!isMounted) return;
+
         if (Array.isArray(supaEmployees)) {
-          const cleanSupa = stripDummyRecords(supaEmployees);
-          setEmployees(cleanSupa);
+          const cleanEmps = stripDummyRecords(supaEmployees);
+          setEmployees(cleanEmps);
+          safeLocalStorageSet('samyak_cache_employees', cleanEmps);
           supaEmployees.filter(isDummyRecord).forEach(d => deleteEmployeeFromSupabase(d.id).catch(console.warn));
         }
 
         if (Array.isArray(supaAttendance)) {
-          const cleanSupa = stripDummyRecords(supaAttendance);
+          const cleanAtt = stripDummyRecords(supaAttendance);
           setEmployeeAttendance(prev => {
             const map = new Map();
-            cleanSupa.forEach(a => { if (a && a.id && !isDummyRecord(a)) map.set(a.id, a); });
+            cleanAtt.forEach(a => { if (a && a.id && !isDummyRecord(a)) map.set(a.id, a); });
             (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
-            return Array.from(map.values());
+            const merged = Array.from(map.values());
+            safeLocalStorageSet('samyak_cache_employee_attendance', merged);
+            return merged;
           });
         }
 
         if (Array.isArray(supaAdvances)) {
-          const cleanSupa = stripDummyRecords(supaAdvances);
+          const cleanAdv = stripDummyRecords(supaAdvances);
           setSalaryAdvances(prev => {
             const map = new Map();
-            cleanSupa.forEach(adv => { if (adv && adv.id && !isDummyRecord(adv)) map.set(adv.id, adv); });
+            cleanAdv.forEach(adv => { if (adv && adv.id && !isDummyRecord(adv)) map.set(adv.id, adv); });
             (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
-            return Array.from(map.values());
+            const merged = Array.from(map.values());
+            safeLocalStorageSet('samyak_cache_salary_advances', merged);
+            return merged;
           });
         }
 
         if (Array.isArray(supaPayments)) {
-          const cleanSupa = stripDummyRecords(supaPayments);
+          const cleanPay = stripDummyRecords(supaPayments);
           setSalaryPayments(prev => {
             const map = new Map();
-            cleanSupa.forEach(pay => { if (pay && pay.id && !isDummyRecord(pay)) map.set(pay.id, pay); });
+            cleanPay.forEach(pay => { if (pay && pay.id && !isDummyRecord(pay)) map.set(pay.id, pay); });
             (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
-            return Array.from(map.values());
+            const merged = Array.from(map.values());
+            safeLocalStorageSet('samyak_cache_salary_payments', merged);
+            return merged;
           });
         }
 
         if (supaRolePerms && typeof supaRolePerms === 'object' && Object.keys(supaRolePerms).length > 0) {
           setRolePermissions(supaRolePerms);
+          safeLocalStorageSet('samyak_cache_role_permissions', supaRolePerms);
         }
 
-        if (Array.isArray(supaPelletInwards)) {
-          setPelletInwards(supaPelletInwards);
+        if (Array.isArray(supaAuditLogs)) {
+          const pruned = pruneOldAuditLogs(supaAuditLogs);
+          setAuditLogs(pruned);
+          safeLocalStorageSet('samyak_cache_audit_logs', pruned);
         }
-        if (Array.isArray(supaPelletConsumptions)) {
-          setPelletConsumptions(supaPelletConsumptions);
+
+        // Process batch settings returned from single query
+        if (allSettings && typeof allSettings === 'object') {
+          if (allSettings.doc_prefixes) safeLocalStorageSet('samyak_doc_prefixes', allSettings.doc_prefixes);
+          if (allSettings.doc_terms) safeLocalStorageSet('samyak_doc_terms', allSettings.doc_terms);
+          if (allSettings.company_logo) safeLocalStorageSet('samyak_company_logo', allSettings.company_logo);
+          if (allSettings.auth_signature) safeLocalStorageSet('samyak_authorised_signature', allSettings.auth_signature);
+          if (allSettings.film_substrates_master && Array.isArray(allSettings.film_substrates_master)) {
+            safeLocalStorageSet('samyak_film_substrates_master', JSON.stringify(allSettings.film_substrates_master));
+          }
+
+          // Operational local storage persistence keys synced from Supabase system_settings:
+          if (allSettings.issued_pos || allSettings.samyak_erp_issued_pos) {
+            safeLocalStorageSet('samyak_erp_issued_pos', allSettings.issued_pos || allSettings.samyak_erp_issued_pos);
+          }
+          if (allSettings.stock_adjustments || allSettings.samyak_erp_stock_adjustments) {
+            safeLocalStorageSet('samyak_erp_stock_adjustments', allSettings.stock_adjustments || allSettings.samyak_erp_stock_adjustments);
+          }
+          if (allSettings.custom_barcodes || allSettings.samyak_erp_custom_barcodes) {
+            safeLocalStorageSet('samyak_erp_custom_barcodes', allSettings.custom_barcodes || allSettings.samyak_erp_custom_barcodes);
+          }
+          if (allSettings.po_discrepancy_resolutions || allSettings.samyak_po_discrepancy_resolutions) {
+            safeLocalStorageSet('samyak_po_discrepancy_resolutions', allSettings.po_discrepancy_resolutions || allSettings.samyak_po_discrepancy_resolutions);
+          }
+          if (allSettings.scrap_disposals || allSettings.samyak_erp_scrap_disposals) {
+            safeLocalStorageSet('samyak_erp_scrap_disposals', allSettings.scrap_disposals || allSettings.samyak_erp_scrap_disposals);
+          }
+          if (allSettings.sfg_scrap_items) {
+            safeLocalStorageSet('sfg_scrap_items', allSettings.sfg_scrap_items);
+          }
+          if (allSettings.sfg_qc_hold_items) {
+            safeLocalStorageSet('sfg_qc_hold_items', allSettings.sfg_qc_hold_items);
+          }
+
+          if (allSettings.material_indents && Array.isArray(allSettings.material_indents)) {
+            setIndents(allSettings.material_indents);
+            safeLocalStorageSet('samyak_cache_material_indents', allSettings.material_indents);
+          }
+          if (allSettings.machine_issues && Array.isArray(allSettings.machine_issues)) {
+            setMachineIssues(allSettings.machine_issues);
+            safeLocalStorageSet('samyak_cache_machine_issues', allSettings.machine_issues);
+          }
+          if (allSettings.consumables && Array.isArray(allSettings.consumables)) {
+            setConsumables(allSettings.consumables);
+            safeLocalStorageSet('samyak_cache_consumables', allSettings.consumables);
+          }
+          if (allSettings.store_issue_transactions && Array.isArray(allSettings.store_issue_transactions)) {
+            const cleanStoreTx = stripDummyRecords(allSettings.store_issue_transactions);
+            setStoreIssueTransactions(cleanStoreTx);
+            safeLocalStorageSet('samyak_cache_store_issue_transactions', cleanStoreTx);
+          }
+          if (allSettings.printing_press_machine_assignments && typeof allSettings.printing_press_machine_assignments === 'object') {
+            setPressMachineAssignments(allSettings.printing_press_machine_assignments);
+            safeLocalStorageSet('samyak_cache_press_machine_assignments', allSettings.printing_press_machine_assignments);
+          }
+          if (allSettings.printing_press_queue_order && Array.isArray(allSettings.printing_press_queue_order)) {
+            setPressQueueOrder(allSettings.printing_press_queue_order);
+            safeLocalStorageSet('samyak_cache_press_queue_order', allSettings.printing_press_queue_order);
+          }
+          if (allSettings.printing_press_active_running_job && typeof allSettings.printing_press_active_running_job === 'object') {
+            setPressActiveRunningJob(allSettings.printing_press_active_running_job);
+            safeLocalStorageSet('samyak_cache_press_running_job', allSettings.printing_press_active_running_job);
+          }
         }
+        console.log('[Supabase Load] All 3 stages completed successfully!');
       } catch (err) {
         console.error('[Supabase Load Error]', err);
       } finally {
@@ -839,102 +935,147 @@ export default function App() {
   }, [isSupaActive, isAuthReady, isAuthenticated]);
 
 
-  // Realtime subscription for public.inventory to keep live stock and dashboard metrics 100% in sync
+  // ============================================================================
+  // UNIFIED REALTIME & CROSS-TAB BROADCAST CHANNEL SYNC
+  // Keeps multiple tabs and remote client sessions 100% synchronized in real time
+  // ============================================================================
   useEffect(() => {
     if (!isSupaActive || !isAuthReady || !isAuthenticated) return;
 
-    const channel = supabase
-      .channel('public:inventory_changes')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'inventory' },
-        (payload) => {
-          if (payload.eventType === 'INSERT') {
-            const newRow = payload.new;
-            if (!newRow || !newRow.id) return;
-            setInventory(prev => {
-              if (prev.some(i => String(i.id) === String(newRow.id))) return prev;
-              const category = newRow.category || 'Film Substrates';
-              const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films' || Boolean(newRow.film_type && FILM_DENSITIES[newRow.film_type]);
-              const filmTypeVal = newRow.film_type || (isFilm && newRow.item_name ? newRow.item_name.split(' ')[0] : '');
-              const fallbackUnit = isFilm ? 'Kg' : (
-                category === 'Chemicals & Solvents' || category === 'Solvents' ? 'Litres' : 
-                category === 'Doctor Blades & Wipers' ? 'Meters' : 
-                category === 'Tapes & Consumables' ? 'Rolls' : 
-                category === 'Safety Gear (PPE)' ? 'Boxes' : 
-                category === 'Machine Spare Parts' ? 'Nos' : 'Kg'
-              );
-              const mapped = {
-                id: String(newRow.id),
-                itemCode: newRow.item_code || String(newRow.id),
-                itemName: newRow.item_name || 'Stock Item',
-                category: category,
-                filmType: filmTypeVal || (isFilm ? 'PET' : ''),
-                micron: isFilm ? ((newRow.micron !== null && newRow.micron !== undefined && !isNaN(Number(newRow.micron))) ? Number(newRow.micron) : 12) : '-',
-                widthMm: (newRow.width_mm !== null && newRow.width_mm !== undefined && !isNaN(Number(newRow.width_mm))) ? Number(newRow.width_mm) : (isFilm ? 1000 : '-'),
-                availableQtyKg: Number(newRow.stock_qty_kg ?? newRow.available_qty_kg ?? 0) || 0,
-                allocatedQtyKg: Number(newRow.allocated_qty_kg ?? 0) || 0,
-                reorderLevelKg: Number(newRow.reorder_level_kg ?? 0) || 0,
-                unitPrice: Number(newRow.unit_price ?? 0) || 0,
-                unit: newRow.unit || fallbackUnit,
-                density: (newRow.density !== null && newRow.density !== undefined && !isNaN(Number(newRow.density))) ? Number(newRow.density) : (isFilm ? 1.4 : 1.0),
-                location: newRow.location || 'Bay A',
-                lastVendor: newRow.last_vendor || '',
-                lastBatch: newRow.last_batch || '',
-                lastUpdated: newRow.last_updated || new Date().toISOString()
-              };
-              return [mapped, ...prev];
-            });
-          } else if (payload.eventType === 'UPDATE') {
-            const updatedRow = payload.new;
-            if (!updatedRow || !updatedRow.id) return;
-            setInventory(prev => prev.map(i => {
-              if (String(i.id) === String(updatedRow.id)) {
-                const category = updatedRow.category || i.category || 'Film Substrates';
-                const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films' || Boolean((updatedRow.film_type || i.filmType) && FILM_DENSITIES[updatedRow.film_type || i.filmType]);
-                const filmTypeVal = updatedRow.film_type || (isFilm && updatedRow.item_name ? updatedRow.item_name.split(' ')[0] : (i.filmType || ''));
-                const fallbackUnit = isFilm ? 'Kg' : (
-                  category === 'Chemicals & Solvents' || category === 'Solvents' ? 'Litres' : 
-                  category === 'Doctor Blades & Wipers' ? 'Meters' : 
-                  category === 'Tapes & Consumables' ? 'Rolls' : 
-                  category === 'Safety Gear (PPE)' ? 'Boxes' : 
-                  category === 'Machine Spare Parts' ? 'Nos' : 'Kg'
-                );
-                return {
-                  ...i,
-                  id: String(updatedRow.id),
-                  itemCode: updatedRow.item_code || i.itemCode || String(updatedRow.id),
-                  itemName: updatedRow.item_name || i.itemName,
-                  category: category,
-                  filmType: filmTypeVal,
-                  micron: isFilm ? ((updatedRow.micron !== null && updatedRow.micron !== undefined && !isNaN(Number(updatedRow.micron))) ? Number(updatedRow.micron) : 12) : '-',
-                  widthMm: (updatedRow.width_mm !== null && updatedRow.width_mm !== undefined && !isNaN(Number(updatedRow.width_mm))) ? Number(updatedRow.width_mm) : (isFilm ? 1000 : '-'),
-                  availableQtyKg: Number(updatedRow.stock_qty_kg ?? updatedRow.available_qty_kg ?? 0) || 0,
-                  allocatedQtyKg: Number(updatedRow.allocated_qty_kg ?? 0) || 0,
-                  reorderLevelKg: Number(updatedRow.reorder_level_kg ?? 0) || 0,
-                  unitPrice: Number(updatedRow.unit_price ?? 0) || 0,
-                  unit: updatedRow.unit || i.unit || fallbackUnit,
-                  density: (updatedRow.density !== null && updatedRow.density !== undefined && !isNaN(Number(updatedRow.density))) ? Number(updatedRow.density) : (i.density || 1.0),
-                  location: updatedRow.location || i.location || 'Bay A',
-                  lastVendor: updatedRow.last_vendor || i.lastVendor || '',
-                  lastBatch: updatedRow.last_batch || i.lastBatch || '',
-                  lastUpdated: updatedRow.last_updated || new Date().toISOString()
-                };
-              }
-              return i;
-            }));
-          } else if (payload.eventType === 'DELETE') {
-            const oldId = payload.old?.id;
-            if (oldId) {
-              setInventory(prev => prev.filter(i => String(i.id) !== String(oldId)));
+    let bc;
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        bc = new BroadcastChannel('samyak_erp_unified_sync');
+        bc.onmessage = (event) => {
+          const { table } = event.data || {};
+          if (!table) return;
+          console.log(`[Cross-Tab Broadcast] Received sync notice for: ${table}`);
+          refreshEntity(table);
+        };
+      }
+    } catch (e) {
+      console.warn('[Cross-Tab Sync] BroadcastChannel init notice:', e);
+    }
+
+    // Expose global broadcaster helper
+    window.__samyakBroadcastSync = (table) => {
+      try {
+        if (bc) bc.postMessage({ table, timestamp: Date.now() });
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    // Debounced refresh handler to prevent burst queries
+    const debounceTimers = {};
+    const refreshEntity = (table) => {
+      if (debounceTimers[table]) clearTimeout(debounceTimers[table]);
+      debounceTimers[table] = setTimeout(async () => {
+        try {
+          if (table === 'orders') {
+            const data = await fetchOrders();
+            if (Array.isArray(data)) {
+              const clean = stripDummyRecords(data).filter(o => o && o.id && !deletedOrderIdsRef.current.has(o.id));
+              setOrders(clean);
+              safeLocalStorageSet('samyak_cache_orders', clean);
+            }
+          } else if (table === 'inventory') {
+            const data = await fetchInventory();
+            if (Array.isArray(data)) {
+              const clean = stripDummyRecords(data).map(sanitizeInventoryItem);
+              setInventory(clean);
+              safeLocalStorageSet('samyak_cache_inventory', clean);
+            }
+          } else if (table === 'cylinders') {
+            const data = await fetchCylinders();
+            if (Array.isArray(data)) {
+              const clean = stripDummyRecords(data);
+              setCylinders(clean);
+              safeLocalStorageSet('samyak_cache_cylinders', clean);
+            }
+          } else if (table === 'production_records') {
+            const data = await fetchProductionRecords();
+            if (Array.isArray(data)) {
+              const clean = stripDummyRecords(data);
+              setProductionRecords(clean);
+              safeLocalStorageSet('samyak_cache_production_records', clean);
+            }
+          } else if (table === 'grns') {
+            const data = await fetchGRNs();
+            if (Array.isArray(data)) {
+              const clean = stripDummyRecords(data).map(sanitizeGRN);
+              setGrns(clean);
+              safeLocalStorageSet('samyak_cache_grns', clean);
+            }
+          } else if (table === 'job_masters') {
+            const data = await fetchJobMasters();
+            if (Array.isArray(data)) {
+              const clean = stripDummyRecords(data);
+              setJobMasters(clean);
+              safeLocalStorageSet('samyak_cache_job_masters', clean);
+            }
+          } else if (table === 'employees') {
+            const data = await fetchEmployeesFromSupabase();
+            if (Array.isArray(data)) {
+              const clean = stripDummyRecords(data);
+              setEmployees(clean);
+              safeLocalStorageSet('samyak_cache_employees', clean);
+            }
+          } else if (table === 'employee_attendance') {
+            const data = await fetchEmployeeAttendanceFromSupabase();
+            if (Array.isArray(data)) {
+              const clean = stripDummyRecords(data);
+              setEmployeeAttendance(clean);
+              safeLocalStorageSet('samyak_cache_employee_attendance', clean);
+            }
+          } else if (table === 'salary_advances') {
+            const data = await fetchSalaryAdvancesFromSupabase();
+            if (Array.isArray(data)) {
+              const clean = stripDummyRecords(data);
+              setSalaryAdvances(clean);
+              safeLocalStorageSet('samyak_cache_salary_advances', clean);
+            }
+          } else if (table === 'delivery_challans') {
+            const data = await fetchDeliveryChallansFromSupabase();
+            if (Array.isArray(data)) {
+              const clean = stripDummyRecords(data);
+              setDeliveryChallans(clean);
+              safeLocalStorageSet('samyak_cache_delivery_challans', clean);
+            }
+          } else if (table === 'system_settings') {
+            const settings = await fetchAllSystemSettings();
+            if (settings && typeof settings === 'object') {
+              if (settings.material_indents) setIndents(settings.material_indents);
+              if (settings.machine_issues) setMachineIssues(settings.machine_issues);
+              if (settings.consumables) setConsumables(settings.consumables);
+              if (settings.store_issue_transactions) setStoreIssueTransactions(settings.store_issue_transactions);
             }
           }
+        } catch (err) {
+          console.warn(`[Realtime Refresh Notice] ${table}:`, err?.message || err);
         }
-      )
+      }, 350);
+    };
+
+    // Unified Supabase Realtime channel across core operational tables
+    const channel = supabase
+      .channel('public:erp_unified_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => refreshEntity('orders'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => refreshEntity('inventory'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cylinders' }, () => refreshEntity('cylinders'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_records' }, () => refreshEntity('production_records'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'grns' }, () => refreshEntity('grns'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'job_masters' }, () => refreshEntity('job_masters'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_attendance' }, () => refreshEntity('employee_attendance'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, () => refreshEntity('employees'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'salary_advances' }, () => refreshEntity('salary_advances'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'system_settings' }, () => refreshEntity('system_settings'))
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      if (channel) supabase.removeChannel(channel);
+      if (bc) bc.close();
+      Object.values(debounceTimers).forEach(t => clearTimeout(t));
     };
   }, [isSupaActive, isAuthReady, isAuthenticated]);
 

@@ -2000,28 +2000,20 @@ export async function fetchDispatchShipments() {
       console.warn('[dispatch_shipments] Table query exception:', err.message);
     }
 
-    // Dual Persistence Merge with system_settings 'dispatch_shipments'
+    // If records were found in the dedicated table, return them directly for maximum performance
+    if (tableRecords.length > 0) {
+      tableRecords.sort((a, b) => {
+        const timeA = new Date(a.dispatchDate || a.createdAt || 0).getTime();
+        const timeB = new Date(b.dispatchDate || b.createdAt || 0).getTime();
+        return timeB - timeA;
+      });
+      return tableRecords;
+    }
+
+    // Fallback: system_settings 'dispatch_shipments' if table is empty
     const settingData = await fetchSystemSetting('dispatch_shipments').catch(() => null);
-    const backupRecords = Array.isArray(settingData) ? settingData : [];
-
-    const recordMap = new Map();
-    backupRecords.forEach(r => {
-      const recId = String(r.dispatchId || r.id || '');
-      if (recId) recordMap.set(recId, r);
-    });
-    tableRecords.forEach(r => {
-      const recId = String(r.dispatchId || r.id || '');
-      if (recId) recordMap.set(recId, r);
-    });
-
-    const allShipments = Array.from(recordMap.values());
-    allShipments.sort((a, b) => {
-      const timeA = new Date(a.dispatchDate || a.createdAt || 0).getTime();
-      const timeB = new Date(b.dispatchDate || b.createdAt || 0).getTime();
-      return timeB - timeA;
-    });
-
-    return allShipments;
+    if (Array.isArray(settingData) && settingData.length > 0) return settingData;
+    return [];
   } catch (err) {
     console.error("Error fetching dispatch shipments from Supabase:", err);
     const settingData = await fetchSystemSetting('dispatch_shipments').catch(() => null);
@@ -2853,6 +2845,29 @@ export async function saveSystemSetting(key, value) {
   }
 }
 
+export async function fetchAllSystemSettings() {
+  if (!isSupabaseConfigured()) return {};
+  try {
+    const { data, error } = await supabase
+      .from('system_settings')
+      .select('setting_key, setting_value');
+    if (error || !data) return {};
+    const result = {};
+    for (const item of data) {
+      if (!item || !item.setting_key) continue;
+      try {
+        result[item.setting_key] = JSON.parse(item.setting_value);
+      } catch (e) {
+        result[item.setting_key] = item.setting_value;
+      }
+    }
+    return result;
+  } catch (err) {
+    console.warn('[System Setting] Exception fetching all settings:', err?.message || err);
+    return {};
+  }
+}
+
 export async function fetchSystemSetting(key) {
   if (!isSupabaseConfigured()) return null;
   try {
@@ -3111,18 +3126,13 @@ export async function fetchEmployeesFromSupabase() {
       console.warn('[employees] Table query exception:', err.message);
     }
 
+    if (tableRecords.length > 0) {
+      return tableRecords;
+    }
+
     const settingData = await fetchSystemSetting('employees').catch(() => null);
-    const backupRecords = Array.isArray(settingData) ? settingData : [];
-
-    const recordMap = new Map();
-    backupRecords.forEach(r => {
-      if (r && r.id) recordMap.set(String(r.id), r);
-    });
-    tableRecords.forEach(r => {
-      if (r && r.id) recordMap.set(String(r.id), r);
-    });
-
-    return Array.from(recordMap.values());
+    if (Array.isArray(settingData) && settingData.length > 0) return settingData;
+    return [];
   } catch (e) {
     console.error("Error fetching employees from Supabase:", e);
     const settingData = await fetchSystemSetting('employees').catch(() => null);
@@ -3244,18 +3254,13 @@ export async function fetchEmployeeAttendanceFromSupabase() {
       console.warn('[employee_attendance] Table query exception:', err.message);
     }
 
+    if (tableRecords.length > 0) {
+      return tableRecords;
+    }
+
     const settingData = await fetchSystemSetting('employee_attendance').catch(() => null);
-    const backupRecords = Array.isArray(settingData) ? settingData : [];
-
-    const recordMap = new Map();
-    backupRecords.forEach(r => {
-      if (r && r.id) recordMap.set(String(r.id), r);
-    });
-    tableRecords.forEach(r => {
-      if (r && r.id) recordMap.set(String(r.id), r);
-    });
-
-    return Array.from(recordMap.values());
+    if (Array.isArray(settingData) && settingData.length > 0) return settingData;
+    return [];
   } catch (e) {
     console.error("Error fetching employee attendance from Supabase:", e);
     const settingData = await fetchSystemSetting('employee_attendance').catch(() => null);
@@ -3348,18 +3353,13 @@ export async function fetchSalaryAdvancesFromSupabase() {
       console.warn('[salary_advances] Table query exception:', err.message);
     }
 
+    if (tableRecords.length > 0) {
+      return tableRecords;
+    }
+
     const settingData = await fetchSystemSetting('salary_advances').catch(() => null);
-    const backupRecords = Array.isArray(settingData) ? settingData : [];
-
-    const recordMap = new Map();
-    backupRecords.forEach(r => {
-      if (r && r.id) recordMap.set(String(r.id), r);
-    });
-    tableRecords.forEach(r => {
-      if (r && r.id) recordMap.set(String(r.id), r);
-    });
-
-    return Array.from(recordMap.values());
+    if (Array.isArray(settingData) && settingData.length > 0) return settingData;
+    return [];
   } catch (e) {
     console.error("Error fetching salary advances from Supabase:", e);
     const settingData = await fetchSystemSetting('salary_advances').catch(() => null);
@@ -3451,18 +3451,13 @@ export async function fetchSalaryPaymentsFromSupabase() {
       console.warn('[salary_payments] Table query exception:', err.message);
     }
 
+    if (tableRecords.length > 0) {
+      return tableRecords;
+    }
+
     const settingData = await fetchSystemSetting('salary_payments').catch(() => null);
-    const backupRecords = Array.isArray(settingData) ? settingData : [];
-
-    const recordMap = new Map();
-    backupRecords.forEach(r => {
-      if (r && r.id) recordMap.set(String(r.id), r);
-    });
-    tableRecords.forEach(r => {
-      if (r && r.id) recordMap.set(String(r.id), r);
-    });
-
-    return Array.from(recordMap.values());
+    if (Array.isArray(settingData) && settingData.length > 0) return settingData;
+    return [];
   } catch (e) {
     console.error("Error fetching salary payments from Supabase:", e);
     const settingData = await fetchSystemSetting('salary_payments').catch(() => null);
@@ -3716,27 +3711,18 @@ export async function fetchDeliveryChallansFromSupabase() {
       console.warn('[delivery_challans] Table query exception:', err.message);
     }
     
-    // Fallback & Merge with system_settings 'delivery_challans'
+    if (tableRecords.length > 0) {
+      tableRecords.sort((a, b) => {
+        const timeA = new Date(a.createdDate || a.dispatchDateTime || a.date || 0).getTime();
+        const timeB = new Date(b.createdDate || b.dispatchDateTime || b.date || 0).getTime();
+        return timeB - timeA;
+      });
+      return tableRecords;
+    }
+
     const settingData = await fetchSystemSetting('delivery_challans').catch(() => null);
-    const backupRecords = Array.isArray(settingData) ? settingData : [];
-
-    // Merge records by ID
-    const recordMap = new Map();
-    backupRecords.forEach(r => {
-      if (r && r.id) recordMap.set(String(r.id), r);
-    });
-    tableRecords.forEach(r => {
-      if (r && r.id) recordMap.set(String(r.id), r);
-    });
-
-    const allDCs = Array.from(recordMap.values());
-    allDCs.sort((a, b) => {
-      const timeA = new Date(a.createdDate || a.dispatchDateTime || a.date || 0).getTime();
-      const timeB = new Date(b.createdDate || b.dispatchDateTime || b.date || 0).getTime();
-      return timeB - timeA;
-    });
-
-    return allDCs;
+    if (Array.isArray(settingData) && settingData.length > 0) return settingData;
+    return [];
   } catch (e) {
     console.error("Error fetching delivery challans from Supabase:", e);
     const settingData = await fetchSystemSetting('delivery_challans').catch(() => null);
@@ -3820,25 +3806,18 @@ export async function fetchCertificatesOfAnalysisFromSupabase() {
       console.warn('[certificate_of_analyses] Table query exception:', err.message);
     }
 
+    if (tableRecords.length > 0) {
+      tableRecords.sort((a, b) => {
+        const timeA = new Date(a.createdDate || a.testDate || 0).getTime();
+        const timeB = new Date(b.createdDate || b.testDate || 0).getTime();
+        return timeB - timeA;
+      });
+      return tableRecords;
+    }
+
     const settingData = await fetchSystemSetting('certificate_of_analyses').catch(() => null);
-    const backupRecords = Array.isArray(settingData) ? settingData : [];
-
-    const recordMap = new Map();
-    backupRecords.forEach(r => {
-      if (r && r.id) recordMap.set(String(r.id), r);
-    });
-    tableRecords.forEach(r => {
-      if (r && r.id) recordMap.set(String(r.id), r);
-    });
-
-    const allCoAs = Array.from(recordMap.values());
-    allCoAs.sort((a, b) => {
-      const timeA = new Date(a.createdDate || a.testDate || 0).getTime();
-      const timeB = new Date(b.createdDate || b.testDate || 0).getTime();
-      return timeB - timeA;
-    });
-
-    return allCoAs;
+    if (Array.isArray(settingData) && settingData.length > 0) return settingData;
+    return [];
   } catch (e) {
     console.error("Error fetching certificate of analyses from Supabase:", e);
     const settingData = await fetchSystemSetting('certificate_of_analyses').catch(() => null);
@@ -3925,26 +3904,18 @@ export async function fetchPelletInwardsFromSupabase() {
       console.warn('[pellet_inwards] Table query exception:', err.message);
     }
     
-    // Fallback & Merge with system_settings 'pellet_inwards'
+    if (tableRecords.length > 0) {
+      tableRecords.sort((a, b) => {
+        const timeA = new Date(a.inwardDate || a.createdDate || 0).getTime();
+        const timeB = new Date(b.inwardDate || b.createdDate || 0).getTime();
+        return timeB - timeA;
+      });
+      return tableRecords;
+    }
+
     const settingData = await fetchSystemSetting('pellet_inwards').catch(() => null);
-    const backupRecords = Array.isArray(settingData) ? settingData : [];
-
-    const recordMap = new Map();
-    backupRecords.forEach(r => {
-      if (r && r.id) recordMap.set(String(r.id), r);
-    });
-    tableRecords.forEach(r => {
-      if (r && r.id) recordMap.set(String(r.id), r);
-    });
-
-    const allInwards = Array.from(recordMap.values());
-    allInwards.sort((a, b) => {
-      const timeA = new Date(a.inwardDate || a.createdDate || 0).getTime();
-      const timeB = new Date(b.inwardDate || b.createdDate || 0).getTime();
-      return timeB - timeA;
-    });
-
-    return allInwards;
+    if (Array.isArray(settingData) && settingData.length > 0) return settingData;
+    return [];
   } catch (e) {
     console.error("Error fetching pellet inwards from Supabase:", e);
     const settingData = await fetchSystemSetting('pellet_inwards').catch(() => null);
@@ -4031,25 +4002,18 @@ export async function fetchPelletConsumptionsFromSupabase() {
       console.warn('[pellet_consumptions] Table query exception:', err.message);
     }
 
+    if (tableRecords.length > 0) {
+      tableRecords.sort((a, b) => {
+        const timeA = new Date(a.consumptionDate || a.date || 0).getTime();
+        const timeB = new Date(b.consumptionDate || b.date || 0).getTime();
+        return timeB - timeA;
+      });
+      return tableRecords;
+    }
+
     const settingData = await fetchSystemSetting('pellet_consumptions').catch(() => null);
-    const backupRecords = Array.isArray(settingData) ? settingData : [];
-
-    const recordMap = new Map();
-    backupRecords.forEach(r => {
-      if (r && r.id) recordMap.set(String(r.id), r);
-    });
-    tableRecords.forEach(r => {
-      if (r && r.id) recordMap.set(String(r.id), r);
-    });
-
-    const allConsum = Array.from(recordMap.values());
-    allConsum.sort((a, b) => {
-      const timeA = new Date(a.consumptionDate || a.date || 0).getTime();
-      const timeB = new Date(b.consumptionDate || b.date || 0).getTime();
-      return timeB - timeA;
-    });
-
-    return allConsum;
+    if (Array.isArray(settingData) && settingData.length > 0) return settingData;
+    return [];
   } catch (e) {
     console.error("Error fetching pellet consumptions from Supabase:", e);
     const settingData = await fetchSystemSetting('pellet_consumptions').catch(() => null);
