@@ -32,7 +32,12 @@ import {
   Layers,
   FileSpreadsheet,
   Lock,
-  CreditCard
+  CreditCard,
+  RotateCcw,
+  ChevronDown,
+  ChevronUp,
+  BarChart2,
+  TrendingUp
 } from 'lucide-react';
 import TablePagination, { usePagination } from './TablePagination';
 import EmployeePayslipPDF from './EmployeePayslipPDF';
@@ -118,6 +123,95 @@ export function calculateOvertimeTimeWindow(att) {
   return { otStartTime: startTime, otEndTime: endTime, displayStr: startTime && endTime ? `${startTime} - ${endTime}` : '' };
 }
 
+export function getRecordOtPayout(att, employees = []) {
+  if (!att) return { hourlyRate: 0, payout: 0, emp: null, fixedGross: 0, shiftHrs: 12 };
+  const emp = (employees || []).find(e => String(e.id) === String(att.employeeId));
+  const struct = emp?.salaryStructure || {};
+  const fixedGross = (Number(struct.basicSalary) || 0) + (Number(struct.hra) || 0) + (Number(struct.otherAllowance) || 0);
+  const shiftHrs = Number(emp?.shiftDurationHours) || Number(att.shiftHours) || 12;
+  const totalStandardMonthHours = 26 * shiftHrs;
+  const hourlyRate = totalStandardMonthHours > 0 ? (fixedGross / totalStandardMonthHours) : 0;
+  const otHrs = Number(att.overtimeHours) || 0;
+  const payout = Math.round(hourlyRate * otHrs);
+  return {
+    hourlyRate: Math.round(hourlyRate),
+    payout,
+    emp,
+    fixedGross,
+    shiftHrs
+  };
+}
+
+export function getWeekRangeInfo(dateStr) {
+  if (!dateStr) return { key: 'unknown', label: 'Unknown Week', start: '', end: '', sortKey: '0000-00-00', weekNum: 0 };
+  try {
+    const d = new Date(dateStr + 'T00:00:00');
+    if (isNaN(d.getTime())) return { key: dateStr, label: dateStr, start: dateStr, end: dateStr, sortKey: dateStr, weekNum: 0 };
+    const day = d.getDay();
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    const monday = new Date(d);
+    monday.setDate(d.getDate() + diffToMonday);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+
+    const startStr = monday.toISOString().split('T')[0];
+    const endStr = sunday.toISOString().split('T')[0];
+
+    const tempDate = new Date(monday.getTime());
+    tempDate.setHours(0, 0, 0, 0);
+    tempDate.setDate(tempDate.getDate() + 3 - (tempDate.getDay() + 6) % 7);
+    const week1 = new Date(tempDate.getFullYear(), 0, 4);
+    const weekNum = 1 + Math.round(((tempDate.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const m1 = months[monday.getMonth()];
+    const m2 = months[sunday.getMonth()];
+    const label = `${String(monday.getDate()).padStart(2, '0')} ${m1} – ${String(sunday.getDate()).padStart(2, '0')} ${m2} ${sunday.getFullYear()} (Week ${weekNum})`;
+
+    return {
+      key: `${startStr}_${endStr}`,
+      label,
+      start: startStr,
+      end: endStr,
+      weekNum,
+      sortKey: startStr
+    };
+  } catch (e) {
+    return { key: dateStr, label: dateStr, start: dateStr, end: dateStr, sortKey: dateStr, weekNum: 0 };
+  }
+}
+
+export function getMonthRangeInfo(dateStr) {
+  if (!dateStr || dateStr.length < 7) return { key: 'unknown', label: 'Unknown Month', sortKey: '0000-00' };
+  try {
+    const monthKey = dateStr.slice(0, 7);
+    const [year, month] = monthKey.split('-');
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const monthName = months[parseInt(month, 10) - 1] || month;
+    return {
+      key: monthKey,
+      label: `${monthName} ${year}`,
+      sortKey: monthKey
+    };
+  } catch (e) {
+    return { key: dateStr, label: dateStr, sortKey: dateStr };
+  }
+}
+
+export function formatDateDisplay(dateStr) {
+  if (!dateStr) return '—';
+  try {
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      const [y, m, d] = parts;
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const monthName = months[parseInt(m, 10) - 1] || m;
+      return `${d} ${monthName} ${y}`;
+    }
+  } catch (e) {}
+  return dateStr;
+}
+
 export default function EmployeeManagement({
   urlParams = {},
   employees = [],
@@ -174,10 +268,20 @@ export default function EmployeeManagement({
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [shiftFilter, setShiftFilter] = useState('ALL');
 
-  // Overtime Approvals Filters State
+  // Overtime Approvals Filters & Views State
+  const [otViewMode, setOtViewMode] = useState('register'); // 'register' | 'daily' | 'weekly' | 'monthly'
   const [otEmployeeFilter, setOtEmployeeFilter] = useState('ALL');
   const [otStatusFilter, setOtStatusFilter] = useState('ALL');
+  const [otMonthFilter, setOtMonthFilter] = useState('ALL');
   const [otSearchQuery, setOtSearchQuery] = useState('');
+  const [expandedOtPeriods, setExpandedOtPeriods] = useState({});
+
+  const toggleOtPeriodExpand = (key) => {
+    setExpandedOtPeriods(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
 
   // Salary Advances Filter States
   const [advancesStartDate, setAdvancesStartDate] = useState('');
@@ -186,10 +290,27 @@ export default function EmployeeManagement({
   const [advancesDepartmentFilter, setAdvancesDepartmentFilter] = useState('ALL');
   const [advancesSearch, setAdvancesSearch] = useState('');
 
+  // Available Months for Overtime Filtering
+  const otAvailableMonths = useMemo(() => {
+    const monthSet = new Set();
+    (attendanceRecords || []).forEach(a => {
+      const otHrs = Number(a.overtimeHours) || 0;
+      if (otHrs > 0 && a.date && a.date.length >= 7) {
+        monthSet.add(a.date.slice(0, 7));
+      }
+    });
+    return Array.from(monthSet).sort().reverse();
+  }, [attendanceRecords]);
+
+  // Filtered Overtime Records
   const filteredOtRecords = useMemo(() => {
     return (attendanceRecords || []).filter(a => {
       const otHrs = Number(a.overtimeHours) || 0;
       if (otHrs <= 0) return false;
+
+      if (otMonthFilter !== 'ALL' && !(a.date || '').startsWith(otMonthFilter)) {
+        return false;
+      }
 
       if (otEmployeeFilter !== 'ALL' && String(a.employeeId) !== String(otEmployeeFilter)) {
         return false;
@@ -201,8 +322,8 @@ export default function EmployeeManagement({
 
       if (otSearchQuery.trim()) {
         const q = otSearchQuery.toLowerCase().trim();
-        const emp = (employees || []).find(e => e.id === a.employeeId);
-        const nameMatch = (emp?.fullName || '').toLowerCase().includes(q);
+        const emp = (employees || []).find(e => String(e.id) === String(a.employeeId));
+        const nameMatch = (emp?.fullName || emp?.name || '').toLowerCase().includes(q);
         const codeMatch = (emp?.empCode || a.employeeId || '').toLowerCase().includes(q);
         const deptMatch = (emp?.department || '').toLowerCase().includes(q);
         const reasonMatch = (a.overtimeReason || '').toLowerCase().includes(q);
@@ -212,7 +333,220 @@ export default function EmployeeManagement({
 
       return true;
     });
-  }, [attendanceRecords, otEmployeeFilter, otStatusFilter, otSearchQuery, employees]);
+  }, [attendanceRecords, otMonthFilter, otEmployeeFilter, otStatusFilter, otSearchQuery, employees]);
+
+  // Grand Totals across filtered Overtime records
+  const otGrandTotals = useMemo(() => {
+    let totalHours = 0;
+    let approvedHours = 0;
+    let pendingHours = 0;
+    let rejectedHours = 0;
+    let totalAmount = 0;
+    let approvedAmount = 0;
+    let pendingAmount = 0;
+    let rejectedAmount = 0;
+    const uniqueEmpIds = new Set();
+    const pendingRecords = [];
+
+    filteredOtRecords.forEach(att => {
+      const otHrs = Number(att.overtimeHours) || 0;
+      const { payout } = getRecordOtPayout(att, employees);
+      const status = att.overtimeStatus || 'Pending Approval';
+      uniqueEmpIds.add(String(att.employeeId));
+
+      totalHours += otHrs;
+      totalAmount += payout;
+
+      if (status === 'Approved') {
+        approvedHours += otHrs;
+        approvedAmount += payout;
+      } else if (status === 'Rejected') {
+        rejectedHours += otHrs;
+        rejectedAmount += payout;
+      } else {
+        pendingHours += otHrs;
+        pendingAmount += payout;
+        pendingRecords.push(att);
+      }
+    });
+
+    return {
+      totalHours,
+      approvedHours,
+      pendingHours,
+      rejectedHours,
+      totalAmount,
+      approvedAmount,
+      pendingAmount,
+      rejectedAmount,
+      uniqueEmployeesCount: uniqueEmpIds.size,
+      recordsCount: filteredOtRecords.length,
+      pendingCount: pendingRecords.length
+    };
+  }, [filteredOtRecords, employees]);
+
+  // Daily Overtime Aggregates
+  const otDailyAggregates = useMemo(() => {
+    const map = {};
+    filteredOtRecords.forEach(att => {
+      const dateKey = att.date || 'Unknown';
+      if (!map[dateKey]) {
+        let dayName = '';
+        try {
+          const d = new Date(dateKey + 'T00:00:00');
+          dayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()] || '';
+        } catch (e) {}
+        map[dateKey] = {
+          key: dateKey,
+          date: dateKey,
+          dayName,
+          records: [],
+          uniqueEmpIds: new Set(),
+          totalHours: 0,
+          approvedHours: 0,
+          pendingHours: 0,
+          rejectedHours: 0,
+          totalAmount: 0,
+          approvedAmount: 0,
+          pendingAmount: 0,
+          rejectedAmount: 0
+        };
+      }
+      const g = map[dateKey];
+      const otHrs = Number(att.overtimeHours) || 0;
+      const payoutInfo = getRecordOtPayout(att, employees);
+      const status = att.overtimeStatus || 'Pending Approval';
+      g.records.push({ att, ...payoutInfo });
+      g.uniqueEmpIds.add(String(att.employeeId));
+      g.totalHours += otHrs;
+      g.totalAmount += payoutInfo.payout;
+      if (status === 'Approved') {
+        g.approvedHours += otHrs;
+        g.approvedAmount += payoutInfo.payout;
+      } else if (status === 'Rejected') {
+        g.rejectedHours += otHrs;
+        g.rejectedAmount += payoutInfo.payout;
+      } else {
+        g.pendingHours += otHrs;
+        g.pendingAmount += payoutInfo.payout;
+      }
+    });
+
+    return Object.values(map)
+      .map(g => ({ ...g, employeeCount: g.uniqueEmpIds.size }))
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  }, [filteredOtRecords, employees]);
+
+  // Weekly Overtime Aggregates (Monday to Sunday)
+  const otWeeklyAggregates = useMemo(() => {
+    const map = {};
+    filteredOtRecords.forEach(att => {
+      const weekInfo = getWeekRangeInfo(att.date);
+      const weekKey = weekInfo.key;
+      if (!map[weekKey]) {
+        map[weekKey] = {
+          key: weekKey,
+          label: weekInfo.label,
+          start: weekInfo.start,
+          end: weekInfo.end,
+          weekNum: weekInfo.weekNum,
+          sortKey: weekInfo.sortKey,
+          records: [],
+          uniqueEmpIds: new Set(),
+          datesWorked: new Set(),
+          totalHours: 0,
+          approvedHours: 0,
+          pendingHours: 0,
+          rejectedHours: 0,
+          totalAmount: 0,
+          approvedAmount: 0,
+          pendingAmount: 0,
+          rejectedAmount: 0
+        };
+      }
+      const g = map[weekKey];
+      const otHrs = Number(att.overtimeHours) || 0;
+      const payoutInfo = getRecordOtPayout(att, employees);
+      const status = att.overtimeStatus || 'Pending Approval';
+      g.records.push({ att, ...payoutInfo });
+      g.uniqueEmpIds.add(String(att.employeeId));
+      if (att.date) g.datesWorked.add(att.date);
+      g.totalHours += otHrs;
+      g.totalAmount += payoutInfo.payout;
+      if (status === 'Approved') {
+        g.approvedHours += otHrs;
+        g.approvedAmount += payoutInfo.payout;
+      } else if (status === 'Rejected') {
+        g.rejectedHours += otHrs;
+        g.rejectedAmount += payoutInfo.payout;
+      } else {
+        g.pendingHours += otHrs;
+        g.pendingAmount += payoutInfo.payout;
+      }
+    });
+
+    return Object.values(map)
+      .map(g => ({
+        ...g,
+        employeeCount: g.uniqueEmpIds.size,
+        daysCount: g.datesWorked.size
+      }))
+      .sort((a, b) => (b.sortKey || '').localeCompare(a.sortKey || ''));
+  }, [filteredOtRecords, employees]);
+
+  // Monthly Overtime Aggregates
+  const otMonthlyAggregates = useMemo(() => {
+    const map = {};
+    filteredOtRecords.forEach(att => {
+      const mInfo = getMonthRangeInfo(att.date);
+      const monthKey = mInfo.key;
+      if (!map[monthKey]) {
+        map[monthKey] = {
+          key: monthKey,
+          label: mInfo.label,
+          sortKey: mInfo.sortKey,
+          records: [],
+          uniqueEmpIds: new Set(),
+          datesWorked: new Set(),
+          totalHours: 0,
+          approvedHours: 0,
+          pendingHours: 0,
+          rejectedHours: 0,
+          totalAmount: 0,
+          approvedAmount: 0,
+          pendingAmount: 0,
+          rejectedAmount: 0
+        };
+      }
+      const g = map[monthKey];
+      const otHrs = Number(att.overtimeHours) || 0;
+      const payoutInfo = getRecordOtPayout(att, employees);
+      const status = att.overtimeStatus || 'Pending Approval';
+      g.records.push({ att, ...payoutInfo });
+      g.uniqueEmpIds.add(String(att.employeeId));
+      if (att.date) g.datesWorked.add(att.date);
+      g.totalHours += otHrs;
+      g.totalAmount += payoutInfo.payout;
+      if (status === 'Approved') {
+        g.approvedHours += otHrs;
+        g.approvedAmount += payoutInfo.payout;
+      } else if (status === 'Rejected') {
+        g.rejectedHours += otHrs;
+        g.rejectedAmount += payoutInfo.payout;
+      } else {
+        g.pendingHours += otHrs;
+        g.pendingAmount += payoutInfo.payout;
+      }
+    });
+
+    return Object.values(map)
+      .map(g => ({
+        ...g,
+        employeeCount: g.uniqueEmpIds.size,
+        daysCount: g.datesWorked.size
+      }))
+      .sort((a, b) => (b.sortKey || '').localeCompare(a.sortKey || ''));
+  }, [filteredOtRecords, employees]);
 
   // Selected Date for Daily Attendance Register
   const [attendanceDate, setAttendanceDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -661,15 +995,114 @@ export default function EmployeeManagement({
       alert("Only Plant Head, HR Manager, or Admin can approve Overtime requests!");
       return;
     }
+    const emp = (employees || []).find(e => String(e.id) === String(attRecord.employeeId));
+    const empName = emp?.fullName || emp?.name || attRecord.employeeId;
+    const { payout } = getRecordOtPayout(attRecord, employees);
+
+    const actionText = isApproved ? 'Approve' : 'Reject';
+    const confirmMsg = isApproved
+      ? `Confirm Overtime Approval for ${empName}?\n• Date: ${attRecord.date}\n• Hours: ${attRecord.overtimeHours} hrs\n• Salary Payout Addition: ₹ ${payout.toLocaleString()}\n\nClick OK to approve and credit into monthly salary.`
+      : `Confirm Overtime Rejection for ${empName}?\n• Date: ${attRecord.date}\n• Hours: ${attRecord.overtimeHours} hrs\n\nClick OK to reject this overtime request.`;
+
+    if (!window.confirm(confirmMsg)) return;
+
     const updated = {
       ...attRecord,
       overtimeStatus: isApproved ? 'Approved' : 'Rejected',
       overtimeApprovedBy: currentUser?.name || 'Plant Head',
-      overtimeApprovedDate: new Date().toISOString().split('T')[0]
+      overtimeApprovedDate: new Date().toISOString().split('T')[0],
+      overtimeApprovalAmount: payout
     };
     if (onSaveAttendance) onSaveAttendance(updated);
     saveEmployeeAttendanceToSupabase(updated);
-    alert(`Overtime request for ${attRecord.employeeId} on ${attRecord.date} has been marked as ${updated.overtimeStatus}!`);
+    alert(`Overtime request for ${empName} on ${attRecord.date} has been ${updated.overtimeStatus} (₹${payout.toLocaleString()})!`);
+  };
+
+  // Revert Overtime Approval or Rejection
+  const handleRevertOvertime = (attRecord) => {
+    if (!canApprove) {
+      alert("Only Plant Head, HR Manager, or Admin can revert Overtime approvals!");
+      return;
+    }
+    const emp = (employees || []).find(e => String(e.id) === String(attRecord.employeeId));
+    const empName = emp?.fullName || emp?.name || attRecord.employeeId;
+    const currentStatus = attRecord.overtimeStatus || 'Pending Approval';
+    const { payout } = getRecordOtPayout(attRecord, employees);
+
+    const confirmMsg = currentStatus === 'Approved'
+      ? `⚠️ REVERT OVERTIME APPROVAL?\n\nEmployee: ${empName} (${emp?.empCode || emp?.id})\nDate: ${attRecord.date} | Hours: ${attRecord.overtimeHours} hrs\nApproved Payout: ₹ ${payout.toLocaleString()}\n\nReverting will reset the status back to 'Pending Approval' and IMMEDIATELY DEDUCT ₹ ${payout.toLocaleString()} from ${empName}'s calculated monthly salary.\n\nDo you want to proceed?`
+      : `Revert overtime rejection for ${empName} on ${attRecord.date}?\nStatus will be reset to 'Pending Approval' for reconsideration.`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    const updated = {
+      ...attRecord,
+      overtimeStatus: 'Pending Approval',
+      overtimeApprovedBy: null,
+      overtimeApprovedDate: null,
+      overtimeRevertedBy: currentUser?.name || 'Plant Head',
+      overtimeRevertedDate: new Date().toISOString().split('T')[0]
+    };
+    if (onSaveAttendance) onSaveAttendance(updated);
+    saveEmployeeAttendanceToSupabase(updated);
+
+    if (currentStatus === 'Approved') {
+      alert(`✅ Approval reverted for ${empName}!\n₹ ${payout.toLocaleString()} has been deducted from their salary calculation.`);
+    } else {
+      alert(`✅ Rejection reverted for ${empName}. Request is now Pending Approval.`);
+    }
+  };
+
+  // Export Overtime Data to CSV based on current active View
+  const handleExportOtCSV = () => {
+    if (otViewMode === 'daily') {
+      let csv = "Date,Day,Unique Employees,Total Hours Worked,Approved Hours,Pending Hours,Rejected Hours,Total OT Amount (₹),Approved Amount (₹),Pending Amount (₹)\n";
+      otDailyAggregates.forEach(row => {
+        csv += `"${row.date}","${row.dayName}",${row.employeeCount},${row.totalHours},${row.approvedHours},${row.pendingHours},${row.rejectedHours},${row.totalAmount},${row.approvedAmount},${row.pendingAmount}\n`;
+      });
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Overtime_Daily_Summary_${new Date().toISOString().split('T')[0]}.csv`;
+      link.click();
+    } else if (otViewMode === 'weekly') {
+      let csv = "Week Period,Week No,Start Date,End Date,Days With OT,Unique Employees,Total Hours Worked,Approved Hours,Pending Hours,Rejected Hours,Total OT Amount (₹),Approved Amount (₹),Pending Amount (₹)\n";
+      otWeeklyAggregates.forEach(row => {
+        csv += `"${row.label}",${row.weekNum},"${row.start}","${row.end}",${row.daysCount},${row.employeeCount},${row.totalHours},${row.approvedHours},${row.pendingHours},${row.rejectedHours},${row.totalAmount},${row.approvedAmount},${row.pendingAmount}\n`;
+      });
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Overtime_Weekly_Summary_${new Date().toISOString().split('T')[0]}.csv`;
+      link.click();
+    } else if (otViewMode === 'monthly') {
+      let csv = "Month,Days With OT,Unique Employees,Total Hours Worked,Approved Hours,Pending Hours,Rejected Hours,Total OT Amount (₹),Approved Amount (₹),Pending Amount (₹)\n";
+      otMonthlyAggregates.forEach(row => {
+        csv += `"${row.label}",${row.daysCount},${row.employeeCount},${row.totalHours},${row.approvedHours},${row.pendingHours},${row.rejectedHours},${row.totalAmount},${row.approvedAmount},${row.pendingAmount}\n`;
+      });
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Overtime_Monthly_Summary_${new Date().toISOString().split('T')[0]}.csv`;
+      link.click();
+    } else {
+      let csv = "Date,Employee Code,Employee Name,Department,Standard Shift (Hrs),Check-In,Check-Out,OT Hours,OT Window,Hourly Rate (₹),Est Payout (₹),Status,Reason / Extension,Approved By,Approved Date\n";
+      filteredOtRecords.forEach(att => {
+        const payoutInfo = getRecordOtPayout(att, employees);
+        const emp = payoutInfo.emp;
+        const otWin = calculateOvertimeTimeWindow(att);
+        csv += `"${att.date || ''}","${emp?.empCode || att.employeeId || ''}","${emp?.fullName || emp?.name || ''}","${emp?.department || ''}",${payoutInfo.shiftHrs},"${att.checkIn || ''}","${att.checkOut || ''}",${att.overtimeHours || 0},"${otWin.displayStr || ''}",${payoutInfo.hourlyRate},${payoutInfo.payout},"${att.overtimeStatus || 'Pending Approval'}","${(att.overtimeReason || '').replace(/"/g, '""')}","${att.overtimeApprovedBy || ''}","${att.overtimeApprovedDate || ''}"\n`;
+      });
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Overtime_Register_${new Date().toISOString().split('T')[0]}.csv`;
+      link.click();
+    }
   };
 
   // Open New Salary Advance Request Modal
@@ -1514,214 +1947,964 @@ export default function EmployeeManagement({
       {/* ========================================================================= */}
       {/* SUB-TAB 3: OVERTIME (OT) APPROVALS                                        */}
       {/* ========================================================================= */}
-      {activeSubTab === 'overtime' && (
-        <div>
-          <div className="glass-panel" style={{ padding: '16px 20px', marginBottom: '16px', background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <ShieldCheck size={24} style={{ color: '#16a34a' }} />
-              <div>
-                <h4 style={{ margin: 0, fontWeight: '800', color: '#166534', fontSize: '0.95rem' }}>
-                  Factory Overtime Authorization Protocol
-                </h4>
-                <p style={{ margin: '2px 0 0 0', fontSize: '0.8rem', color: '#15803d' }}>
-                  Rule Enforcement: Overtime logged on shop floor beyond standard shifts (8h, 10h, 12h) is subject to approval. Only approved overtime is counted into monthly salary calculations.
-                </p>
+      {/* ========================================================================= */}
+      {/* SUB-TAB 3: OVERTIME (OT) APPROVALS & MULTI-VIEW AUDIT                     */}
+      {/* ========================================================================= */}
+      {activeSubTab === 'overtime' && (() => {
+        // Sub-table renderer for expandable groups in Daily, Weekly, and Monthly views
+        const renderOtSubTable = (records, periodTitle) => (
+          <div style={{ padding: '14px 18px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', borderRadius: '0 0 8px 8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <div style={{ fontSize: '0.78rem', fontWeight: '800', color: '#334155', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Employee Breakdown • {periodTitle} ({records.length} {records.length === 1 ? 'Record' : 'Records'})
+              </div>
+              <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                Total Payout: <strong style={{ color: '#0f172a' }}>₹ {records.reduce((sum, r) => sum + r.payout, 0).toLocaleString()}</strong>
               </div>
             </div>
-          </div>
-
-          {/* Searchable Employee & Status Filter Bar for Overtime Approvals */}
-          <div className="glass-panel" style={{ padding: '16px 20px', marginBottom: '20px', borderRadius: '12px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', alignItems: 'end' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '800', color: '#475569', marginBottom: '4px' }}>
-                  🔍 SELECT EMPLOYEE (SEARCHABLE)
-                </label>
-                <SearchableSelect
-                  value={otEmployeeFilter}
-                  onChange={e => {
-                    const selectedVal = e?.target?.value !== undefined ? e.target.value : (typeof e === 'object' && e?.value !== undefined ? e.value : e);
-                    setOtEmployeeFilter(selectedVal || 'ALL');
-                  }}
-                  placeholder="Filter by employee..."
-                  options={[
-                    { value: 'ALL', label: 'All Employees' },
-                    ...(employees || []).map(e => ({
-                      value: e.id,
-                      label: `${e.fullName || e.name || 'Employee'} (${e.empCode || e.id})`,
-                      subtitle: `${e.department || 'General'} • ${e.designation || 'Staff'}`
-                    }))
-                  ]}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '800', color: '#475569', marginBottom: '4px' }}>
-                  APPROVAL STATUS
-                </label>
-                <select 
-                  className="form-control" 
-                  value={otStatusFilter} 
-                  onChange={e => setOtStatusFilter(e.target.value)}
-                >
-                  <option value="ALL">All Statuses</option>
-                  <option value="Pending Approval">Pending Approval</option>
-                  <option value="Approved">Approved</option>
-                  <option value="Rejected">Rejected</option>
-                </select>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '800', color: '#475569', marginBottom: '4px' }}>
-                  SEARCH REASON / MACHINE / DEPT
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    style={{ paddingLeft: '32px' }}
-                    placeholder="Search name, code, dept, reason..." 
-                    value={otSearchQuery} 
-                    onChange={e => setOtSearchQuery(e.target.value)} 
-                  />
-                </div>
-              </div>
-
-              {(otEmployeeFilter !== 'ALL' || otStatusFilter !== 'ALL' || otSearchQuery) && (
-                <div>
-                  <button 
-                    type="button" 
-                    className="btn-secondary" 
-                    style={{ width: '100%', fontSize: '0.78rem', padding: '8px' }}
-                    onClick={() => {
-                      setOtEmployeeFilter('ALL');
-                      setOtStatusFilter('ALL');
-                      setOtSearchQuery('');
-                    }}
-                  >
-                    Reset Filters
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Overtime Metric Summary Strip */}
-            <div style={{ display: 'flex', gap: '16px', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #e2e8f0', fontSize: '0.78rem', color: '#64748b' }}>
-              <div>Showing Records: <strong style={{ color: '#0f172a' }}>{filteredOtRecords.length}</strong></div>
-              <div>Pending Approval: <strong style={{ color: '#d97706' }}>{filteredOtRecords.filter(a => (a.overtimeStatus || 'Pending Approval') === 'Pending Approval').length}</strong></div>
-              <div>Approved OT: <strong style={{ color: '#059669' }}>{filteredOtRecords.filter(a => a.overtimeStatus === 'Approved').length}</strong></div>
-              <div>Rejected OT: <strong style={{ color: '#dc2626' }}>{filteredOtRecords.filter(a => a.overtimeStatus === 'Rejected').length}</strong></div>
-            </div>
-          </div>
-
-          <div className="glass-panel" style={{ padding: '0', overflow: 'hidden' }}>
-            <table className="data-table" style={{ width: '100%', margin: 0 }}>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Employee Name & Dept</th>
-                  <th>Standard Shift</th>
-                  <th>Overtime Hours</th>
-                  <th>Reason / Machine Extension</th>
-                  <th>Est. OT Payout (1x)</th>
-                  <th>Status</th>
-                  <th style={{ textAlign: 'center' }}>Approval Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredOtRecords.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} style={{ textAlign: 'center', padding: '30px', color: '#94a3b8' }}>
-                      No overtime records found matching the selected filters.
-                    </td>
+            <div style={{ overflowX: 'auto', background: '#ffffff', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <table className="data-table" style={{ width: '100%', margin: 0, fontSize: '0.8rem' }}>
+                <thead>
+                  <tr style={{ background: '#f1f5f9' }}>
+                    <th style={{ padding: '8px 10px' }}>Date</th>
+                    <th style={{ padding: '8px 10px' }}>Employee</th>
+                    <th style={{ padding: '8px 10px' }}>Shift & Timing</th>
+                    <th style={{ padding: '8px 10px' }}>OT Hours</th>
+                    <th style={{ padding: '8px 10px' }}>Reason / Extension</th>
+                    <th style={{ padding: '8px 10px' }}>Rate & Payout</th>
+                    <th style={{ padding: '8px 10px' }}>Status</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'center' }}>Approval & Revert Actions</th>
                   </tr>
-                ) : (
-                  filteredOtRecords.map(att => {
-                    const emp = employees.find(e => e.id === att.employeeId);
-                    const struct = emp?.salaryStructure || {};
-                    const fixedGross = (struct.basicSalary || 0) + (struct.hra || 0) + (struct.otherAllowance || 0);
-                    const shiftHrs = emp?.shiftDurationHours || att.shiftHours || 12;
-                    const hourly = fixedGross / (26 * shiftHrs);
-                    const estPayout = Math.round(hourly * att.overtimeHours);
+                </thead>
+                <tbody>
+                  {records.map(({ att, payout, hourlyRate, emp, shiftHrs }) => {
                     const otWin = calculateOvertimeTimeWindow(att);
-
+                    const status = att.overtimeStatus || 'Pending Approval';
                     return (
                       <tr key={att.id}>
-                        <td style={{ fontWeight: '800', color: '#0f172a' }}>{att.date}</td>
-                        <td>
-                          <div style={{ fontWeight: '800' }}>{emp?.fullName || att.employeeId}</div>
-                          <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{emp?.department} • {emp?.empCode || emp?.id}</div>
+                        <td style={{ padding: '8px 10px', fontWeight: '800', color: '#0f172a', whiteSpace: 'nowrap' }}>
+                          {formatDateDisplay(att.date)}
                         </td>
-                        <td>
-                          <span style={{ fontSize: '0.72rem', fontWeight: '800', background: '#f1f5f9', padding: '2px 6px', borderRadius: '3px' }}>
-                            {shiftHrs} Hours Shift
+                        <td style={{ padding: '8px 10px' }}>
+                          <div style={{ fontWeight: '800', color: '#0f172a' }}>{emp?.fullName || emp?.name || att.employeeId}</div>
+                          <div style={{ fontSize: '0.7rem', color: '#64748b' }}>{emp?.department || 'General'} • {emp?.empCode || emp?.id}</div>
+                        </td>
+                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
+                          <span style={{ fontSize: '0.7rem', fontWeight: '800', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>
+                            {shiftHrs}h Shift
                           </span>
-                        </td>
-                        <td>
-                          <div style={{ fontWeight: '900', color: '#059669', fontSize: '0.9rem' }}>
-                            +{att.overtimeHours} Hrs
-                          </div>
-                          {otWin.displayStr ? (
-                            <div style={{ fontSize: '0.74rem', color: '#15803d', fontWeight: '800', marginTop: '2px' }}>
-                              Time: {otWin.displayStr}
-                            </div>
-                          ) : null}
-                          <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '1px' }}>
-                            Shift: {att.checkIn || '08:00'} - {att.checkOut || '20:00'}
+                          <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '2px' }}>
+                            {att.checkIn || '08:00'} - {att.checkOut || '20:00'}
                           </div>
                         </td>
-                        <td style={{ maxWidth: '280px', fontSize: '0.8rem', color: '#334155' }}>
-                          {att.overtimeReason || 'Production job run extended.'}
+                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
+                          <div style={{ fontWeight: '900', color: '#059669', fontSize: '0.85rem' }}>+{att.overtimeHours} hrs</div>
+                          {otWin.displayStr && <div style={{ fontSize: '0.68rem', color: '#166534', fontWeight: '700' }}>{otWin.displayStr}</div>}
                         </td>
-                        <td>
-                          <div style={{ fontWeight: '800', color: '#0f172a' }}>₹ {estPayout.toLocaleString()}</div>
-                          <div style={{ fontSize: '0.68rem', color: '#64748b' }}>@ ₹{Math.round(hourly)}/hr</div>
+                        <td style={{ padding: '8px 10px', maxWidth: '220px', fontSize: '0.75rem', color: '#334155' }}>
+                          {att.overtimeReason || 'Production job extended.'}
                         </td>
-                        <td>
-                          <span style={{ 
-                            background: att.overtimeStatus === 'Approved' ? '#dcfce7' : att.overtimeStatus === 'Rejected' ? '#fee2e2' : '#fef9c3',
-                            color: att.overtimeStatus === 'Approved' ? '#166534' : att.overtimeStatus === 'Rejected' ? '#991b1b' : '#854d0e',
-                            padding: '3px 8px', borderRadius: '4px', fontSize: '0.74rem', fontWeight: '800'
+                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
+                          <div style={{ fontWeight: '800', color: '#0f172a' }}>₹ {payout.toLocaleString()}</div>
+                          <div style={{ fontSize: '0.68rem', color: '#64748b' }}>@ ₹{hourlyRate}/hr</div>
+                        </td>
+                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
+                          <span style={{
+                            background: status === 'Approved' ? '#dcfce7' : status === 'Rejected' ? '#fee2e2' : '#fef3c7',
+                            color: status === 'Approved' ? '#166534' : status === 'Rejected' ? '#991b1b' : '#92400e',
+                            border: `1px solid ${status === 'Approved' ? '#bbf7d0' : status === 'Rejected' ? '#fecaca' : '#fde68a'}`,
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            fontSize: '0.72rem',
+                            fontWeight: '800'
                           }}>
-                            {att.overtimeStatus || 'Pending Approval'}
+                            {status}
                           </span>
                         </td>
-                        <td style={{ textAlign: 'center' }}>
-                          {(!att.overtimeStatus || att.overtimeStatus === 'Pending Approval') ? (
-                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                              <button 
-                                type="button" 
-                                className="btn-primary" 
-                                style={{ padding: '3px 10px', fontSize: '0.75rem', background: '#059669', borderColor: '#059669' }}
+                        <td style={{ padding: '8px 10px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          {status === 'Pending Approval' ? (
+                            <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                              <button
+                                type="button"
+                                className="btn-primary"
+                                style={{ padding: '3px 8px', fontSize: '0.72rem', background: '#059669', borderColor: '#059669', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
                                 onClick={() => handleApproveOvertime(att, true)}
+                                title="Approve overtime and add to monthly salary"
                               >
-                                <Check size={13} /> Approve
+                                <Check size={12} /> Approve
                               </button>
-                              <button 
-                                type="button" 
-                                className="btn-secondary" 
-                                style={{ padding: '3px 8px', fontSize: '0.75rem', color: '#dc2626' }}
+                              <button
+                                type="button"
+                                className="btn-secondary"
+                                style={{ padding: '3px 6px', fontSize: '0.72rem', color: '#dc2626', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
                                 onClick={() => handleApproveOvertime(att, false)}
+                                title="Reject overtime request"
                               >
-                                <X size={13} /> Reject
+                                <X size={12} /> Reject
                               </button>
+                            </div>
+                          ) : status === 'Approved' ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
+                              <button
+                                type="button"
+                                className="btn-secondary"
+                                style={{
+                                  padding: '3px 8px',
+                                  fontSize: '0.72rem',
+                                  color: '#b45309',
+                                  background: '#fffbeb',
+                                  borderColor: '#fcd34d',
+                                  fontWeight: '800',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                                onClick={() => handleRevertOvertime(att)}
+                                title={`Revert approval and automatically deduct ₹${payout.toLocaleString()} from employee's monthly salary`}
+                              >
+                                <RotateCcw size={12} /> Revert (Deduct ₹{payout.toLocaleString()})
+                              </button>
+                              <span style={{ fontSize: '0.65rem', color: '#64748b' }}>
+                                by {att.overtimeApprovedBy || 'Admin'}
+                              </span>
                             </div>
                           ) : (
-                            <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                              {att.overtimeStatus} by {att.overtimeApprovedBy || 'Admin'}
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
+                              <button
+                                type="button"
+                                className="btn-secondary"
+                                style={{
+                                  padding: '3px 8px',
+                                  fontSize: '0.72rem',
+                                  color: '#475569',
+                                  background: '#f8fafc',
+                                  fontWeight: '700',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                                onClick={() => handleRevertOvertime(att)}
+                                title="Revert rejection and restore to Pending Approval"
+                              >
+                                <RotateCcw size={12} /> Revert Rejection
+                              </button>
+                              <span style={{ fontSize: '0.65rem', color: '#64748b' }}>
+                                by {att.overtimeApprovedBy || 'Admin'}
+                              </span>
                             </div>
                           )}
                         </td>
                       </tr>
                     );
-                  })
-                )}
-              </tbody>
-            </table>
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
+        );
+
+        return (
+          <div>
+            {/* Protocol Notice Banner */}
+            <div className="glass-panel" style={{ padding: '16px 20px', marginBottom: '16px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <ShieldCheck size={26} style={{ color: '#16a34a', flexShrink: 0 }} />
+                <div>
+                  <h4 style={{ margin: 0, fontWeight: '800', color: '#166534', fontSize: '0.95rem' }}>
+                    Factory Overtime Authorization Protocol & Wage Impact
+                  </h4>
+                  <p style={{ margin: '3px 0 0 0', fontSize: '0.8rem', color: '#15803d', lineHeight: '1.4' }}>
+                    Rule Enforcement: Overtime logged on shop floor beyond standard shifts (8h, 10h, 12h) requires plant authorization. 
+                    Approved overtime is automatically credited to the employee’s monthly gross earnings. 
+                    <strong> Reverting an approval will immediately deduct the added overtime pay from the employee’s calculated monthly salary.</strong>
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* View Mode Switcher & Export Bar */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+              <div style={{ display: 'inline-flex', background: '#f1f5f9', padding: '4px', borderRadius: '10px', gap: '4px', border: '1px solid #e2e8f0' }}>
+                <button
+                  type="button"
+                  onClick={() => setOtViewMode('register')}
+                  style={{
+                    padding: '7px 14px',
+                    fontSize: '0.8rem',
+                    fontWeight: '800',
+                    borderRadius: '7px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: otViewMode === 'register' ? '#0f172a' : 'transparent',
+                    color: otViewMode === 'register' ? '#ffffff' : '#64748b',
+                    boxShadow: otViewMode === 'register' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <FileText size={14} />
+                  Detailed Register ({filteredOtRecords.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOtViewMode('daily')}
+                  style={{
+                    padding: '7px 14px',
+                    fontSize: '0.8rem',
+                    fontWeight: '800',
+                    borderRadius: '7px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: otViewMode === 'daily' ? '#0f172a' : 'transparent',
+                    color: otViewMode === 'daily' ? '#ffffff' : '#64748b',
+                    boxShadow: otViewMode === 'daily' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <Calendar size={14} />
+                  Daily View ({otDailyAggregates.length} Days)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOtViewMode('weekly')}
+                  style={{
+                    padding: '7px 14px',
+                    fontSize: '0.8rem',
+                    fontWeight: '800',
+                    borderRadius: '7px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: otViewMode === 'weekly' ? '#0f172a' : 'transparent',
+                    color: otViewMode === 'weekly' ? '#ffffff' : '#64748b',
+                    boxShadow: otViewMode === 'weekly' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <BarChart2 size={14} />
+                  Weekly View ({otWeeklyAggregates.length} Weeks)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOtViewMode('monthly')}
+                  style={{
+                    padding: '7px 14px',
+                    fontSize: '0.8rem',
+                    fontWeight: '800',
+                    borderRadius: '7px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: otViewMode === 'monthly' ? '#0f172a' : 'transparent',
+                    color: otViewMode === 'monthly' ? '#ffffff' : '#64748b',
+                    boxShadow: otViewMode === 'monthly' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <TrendingUp size={14} />
+                  Monthly View ({otMonthlyAggregates.length} Months)
+                </button>
+              </div>
+
+              {/* CSV Export Button */}
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: '800', padding: '7px 14px' }}
+                onClick={handleExportOtCSV}
+              >
+                <Download size={14} /> Export {otViewMode === 'register' ? 'Register' : otViewMode === 'daily' ? 'Daily Summary' : otViewMode === 'weekly' ? 'Weekly Summary' : 'Monthly Summary'} (CSV)
+              </button>
+            </div>
+
+            {/* KPI Cards: Total Amount, Total Hours, No. of Employees, Pending Approvals */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', marginBottom: '18px' }}>
+              {/* Card 1: Total Overtime Amount */}
+              <div className="glass-panel" style={{ padding: '16px 18px', borderLeft: '4px solid #10b981', borderRadius: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={{ fontSize: '0.72rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Total Overtime Amount
+                    </div>
+                    <div style={{ fontSize: '1.45rem', fontWeight: '900', color: '#0f172a', marginTop: '4px' }}>
+                      ₹ {otGrandTotals.totalAmount.toLocaleString()}
+                    </div>
+                  </div>
+                  <div style={{ background: '#ecfdf5', padding: '8px', borderRadius: '8px', color: '#059669' }}>
+                    <Coins size={20} />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '10px', marginTop: '8px', fontSize: '0.72rem', color: '#64748b' }}>
+                  <span>Approved: <strong style={{ color: '#059669' }}>₹ {otGrandTotals.approvedAmount.toLocaleString()}</strong></span>
+                  <span>•</span>
+                  <span>Pending: <strong style={{ color: '#d97706' }}>₹ {otGrandTotals.pendingAmount.toLocaleString()}</strong></span>
+                </div>
+              </div>
+
+              {/* Card 2: Total Hours Worked */}
+              <div className="glass-panel" style={{ padding: '16px 18px', borderLeft: '4px solid #2563eb', borderRadius: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={{ fontSize: '0.72rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Total Hours Worked
+                    </div>
+                    <div style={{ fontSize: '1.45rem', fontWeight: '900', color: '#0f172a', marginTop: '4px' }}>
+                      {otGrandTotals.totalHours} hrs
+                    </div>
+                  </div>
+                  <div style={{ background: '#eff6ff', padding: '8px', borderRadius: '8px', color: '#2563eb' }}>
+                    <Clock size={20} />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '10px', marginTop: '8px', fontSize: '0.72rem', color: '#64748b' }}>
+                  <span>Approved: <strong style={{ color: '#059669' }}>{otGrandTotals.approvedHours}h</strong></span>
+                  <span>•</span>
+                  <span>Pending: <strong style={{ color: '#d97706' }}>{otGrandTotals.pendingHours}h</strong></span>
+                </div>
+              </div>
+
+              {/* Card 3: Employees Working OT */}
+              <div className="glass-panel" style={{ padding: '16px 18px', borderLeft: '4px solid #9333ea', borderRadius: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={{ fontSize: '0.72rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Employees Working OT
+                    </div>
+                    <div style={{ fontSize: '1.45rem', fontWeight: '900', color: '#0f172a', marginTop: '4px' }}>
+                      {otGrandTotals.uniqueEmployeesCount} Personnel
+                    </div>
+                  </div>
+                  <div style={{ background: '#faf5ff', padding: '8px', borderRadius: '8px', color: '#9333ea' }}>
+                    <Users size={20} />
+                  </div>
+                </div>
+                <div style={{ marginTop: '8px', fontSize: '0.72rem', color: '#64748b' }}>
+                  Logged across <strong style={{ color: '#0f172a' }}>{otGrandTotals.recordsCount}</strong> individual shifts
+                </div>
+              </div>
+
+              {/* Card 4: Pending Authorizations */}
+              <div className="glass-panel" style={{ padding: '16px 18px', borderLeft: '4px solid #f59e0b', borderRadius: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={{ fontSize: '0.72rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Pending Authorizations
+                    </div>
+                    <div style={{ fontSize: '1.45rem', fontWeight: '900', color: otGrandTotals.pendingCount > 0 ? '#d97706' : '#059669', marginTop: '4px' }}>
+                      {otGrandTotals.pendingCount} Pending
+                    </div>
+                  </div>
+                  <div style={{ background: '#fffbeb', padding: '8px', borderRadius: '8px', color: '#d97706' }}>
+                    <AlertCircle size={20} />
+                  </div>
+                </div>
+                <div style={{ marginTop: '8px', fontSize: '0.72rem', color: '#64748b' }}>
+                  Pending Wage Value: <strong style={{ color: '#d97706' }}>₹ {otGrandTotals.pendingAmount.toLocaleString()}</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* Filter Bar: Month, Employee, Status, Search Text */}
+            <div className="glass-panel" style={{ padding: '16px 20px', marginBottom: '20px', borderRadius: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', alignItems: 'end' }}>
+                {/* Month Filter */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '800', color: '#475569', marginBottom: '4px' }}>
+                    🗓️ FILTER BY MONTH
+                  </label>
+                  <select
+                    className="form-control"
+                    value={otMonthFilter}
+                    onChange={e => setOtMonthFilter(e.target.value)}
+                  >
+                    <option value="ALL">All Months ({otAvailableMonths.length} Active)</option>
+                    {otAvailableMonths.map(m => {
+                      const mInfo = getMonthRangeInfo(m);
+                      return (
+                        <option key={m} value={m}>
+                          {mInfo.label} ({m})
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+
+                {/* Employee Filter */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '800', color: '#475569', marginBottom: '4px' }}>
+                    🔍 SELECT EMPLOYEE
+                  </label>
+                  <SearchableSelect
+                    value={otEmployeeFilter}
+                    onChange={e => {
+                      const selectedVal = e?.target?.value !== undefined ? e.target.value : (typeof e === 'object' && e?.value !== undefined ? e.value : e);
+                      setOtEmployeeFilter(selectedVal || 'ALL');
+                    }}
+                    placeholder="Filter by employee..."
+                    options={[
+                      { value: 'ALL', label: 'All Employees' },
+                      ...(employees || []).map(e => ({
+                        value: e.id,
+                        label: `${e.fullName || e.name || 'Employee'} (${e.empCode || e.id})`,
+                        subtitle: `${e.department || 'General'} • ${e.designation || 'Staff'}`
+                      }))
+                    ]}
+                  />
+                </div>
+
+                {/* Approval Status Filter */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '800', color: '#475569', marginBottom: '4px' }}>
+                    APPROVAL STATUS
+                  </label>
+                  <select 
+                    className="form-control" 
+                    value={otStatusFilter} 
+                    onChange={e => setOtStatusFilter(e.target.value)}
+                  >
+                    <option value="ALL">All Statuses</option>
+                    <option value="Pending Approval">Pending Approval</option>
+                    <option value="Approved">Approved</option>
+                    <option value="Rejected">Rejected</option>
+                  </select>
+                </div>
+
+                {/* Search query */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '800', color: '#475569', marginBottom: '4px' }}>
+                    SEARCH REASON / DEPT / DATE
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      style={{ paddingLeft: '32px' }}
+                      placeholder="Search name, code, reason, dept..." 
+                      value={otSearchQuery} 
+                      onChange={e => setOtSearchQuery(e.target.value)} 
+                    />
+                  </div>
+                </div>
+
+                {/* Reset Filters */}
+                {(otMonthFilter !== 'ALL' || otEmployeeFilter !== 'ALL' || otStatusFilter !== 'ALL' || otSearchQuery) && (
+                  <div>
+                    <button 
+                      type="button" 
+                      className="btn-secondary" 
+                      style={{ width: '100%', fontSize: '0.78rem', padding: '8px' }}
+                      onClick={() => {
+                        setOtMonthFilter('ALL');
+                        setOtEmployeeFilter('ALL');
+                        setOtStatusFilter('ALL');
+                        setOtSearchQuery('');
+                      }}
+                    >
+                      Reset Filters
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Active Filter Metrics Strip */}
+              <div style={{ display: 'flex', gap: '16px', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #e2e8f0', fontSize: '0.78rem', color: '#64748b', flexWrap: 'wrap' }}>
+                <div>Records: <strong style={{ color: '#0f172a' }}>{filteredOtRecords.length}</strong></div>
+                <div>Pending: <strong style={{ color: '#d97706' }}>{otGrandTotals.pendingCount}</strong></div>
+                <div>Approved: <strong style={{ color: '#059669' }}>{filteredOtRecords.filter(a => a.overtimeStatus === 'Approved').length}</strong></div>
+                <div>Rejected: <strong style={{ color: '#dc2626' }}>{filteredOtRecords.filter(a => a.overtimeStatus === 'Rejected').length}</strong></div>
+                <div>Active Employees: <strong style={{ color: '#0f172a' }}>{otGrandTotals.uniqueEmployeesCount}</strong></div>
+              </div>
+            </div>
+
+            {/* ================================================================= */}
+            {/* VIEW 1: DETAILED REGISTER                                         */}
+            {/* ================================================================= */}
+            {otViewMode === 'register' && (
+              <div className="glass-panel" style={{ padding: '0', overflow: 'hidden', borderRadius: '12px' }}>
+                <table className="data-table" style={{ width: '100%', margin: 0 }}>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Employee Name & Dept</th>
+                      <th>Standard Shift</th>
+                      <th>Overtime Hours</th>
+                      <th>Reason / Machine Extension</th>
+                      <th>Est. OT Payout (1x)</th>
+                      <th>Status</th>
+                      <th style={{ textAlign: 'center' }}>Approval & Revert Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredOtRecords.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} style={{ textAlign: 'center', padding: '36px', color: '#94a3b8' }}>
+                          No overtime records found matching the selected filters.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredOtRecords.map(att => {
+                        const payoutInfo = getRecordOtPayout(att, employees);
+                        const emp = payoutInfo.emp;
+                        const otWin = calculateOvertimeTimeWindow(att);
+                        const status = att.overtimeStatus || 'Pending Approval';
+
+                        return (
+                          <tr key={att.id}>
+                            <td style={{ fontWeight: '800', color: '#0f172a', whiteSpace: 'nowrap' }}>
+                              {formatDateDisplay(att.date)}
+                            </td>
+                            <td>
+                              <div style={{ fontWeight: '800', color: '#0f172a' }}>{emp?.fullName || emp?.name || att.employeeId}</div>
+                              <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{emp?.department || 'General'} • {emp?.empCode || emp?.id}</div>
+                            </td>
+                            <td style={{ whiteSpace: 'nowrap' }}>
+                              <span style={{ fontSize: '0.72rem', fontWeight: '800', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>
+                                {payoutInfo.shiftHrs} Hours Shift
+                              </span>
+                              <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '2px' }}>
+                                Shift: {att.checkIn || '08:00'} - {att.checkOut || '20:00'}
+                              </div>
+                            </td>
+                            <td style={{ whiteSpace: 'nowrap' }}>
+                              <div style={{ fontWeight: '900', color: '#059669', fontSize: '0.9rem' }}>
+                                +{att.overtimeHours} Hrs
+                              </div>
+                              {otWin.displayStr ? (
+                                <div style={{ fontSize: '0.74rem', color: '#15803d', fontWeight: '800', marginTop: '2px' }}>
+                                  Time: {otWin.displayStr}
+                                </div>
+                              ) : null}
+                            </td>
+                            <td style={{ maxWidth: '280px', fontSize: '0.8rem', color: '#334155' }}>
+                              {att.overtimeReason || 'Production job run extended.'}
+                            </td>
+                            <td style={{ whiteSpace: 'nowrap' }}>
+                              <div style={{ fontWeight: '800', color: '#0f172a' }}>₹ {payoutInfo.payout.toLocaleString()}</div>
+                              <div style={{ fontSize: '0.68rem', color: '#64748b' }}>@ ₹{payoutInfo.hourlyRate}/hr</div>
+                            </td>
+                            <td style={{ whiteSpace: 'nowrap' }}>
+                              <span style={{ 
+                                background: status === 'Approved' ? '#dcfce7' : status === 'Rejected' ? '#fee2e2' : '#fef3c7',
+                                color: status === 'Approved' ? '#166534' : status === 'Rejected' ? '#991b1b' : '#92400e',
+                                border: `1px solid ${status === 'Approved' ? '#bbf7d0' : status === 'Rejected' ? '#fecaca' : '#fde68a'}`,
+                                padding: '3px 8px', borderRadius: '4px', fontSize: '0.74rem', fontWeight: '800'
+                              }}>
+                                {status}
+                              </span>
+                            </td>
+                            <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                              {status === 'Pending Approval' ? (
+                                <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                                  <button 
+                                    type="button" 
+                                    className="btn-primary" 
+                                    style={{ padding: '4px 10px', fontSize: '0.75rem', background: '#059669', borderColor: '#059669', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                    onClick={() => handleApproveOvertime(att, true)}
+                                    title="Approve overtime and credit to monthly salary"
+                                  >
+                                    <Check size={13} /> Approve
+                                  </button>
+                                  <button 
+                                    type="button" 
+                                    className="btn-secondary" 
+                                    style={{ padding: '4px 8px', fontSize: '0.75rem', color: '#dc2626', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                    onClick={() => handleApproveOvertime(att, false)}
+                                    title="Reject overtime request"
+                                  >
+                                    <X size={13} /> Reject
+                                  </button>
+                                </div>
+                              ) : status === 'Approved' ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
+                                  <button
+                                    type="button"
+                                    className="btn-secondary"
+                                    style={{
+                                      padding: '4px 10px',
+                                      fontSize: '0.75rem',
+                                      color: '#b45309',
+                                      background: '#fffbeb',
+                                      borderColor: '#fcd34d',
+                                      fontWeight: '800',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px'
+                                    }}
+                                    onClick={() => handleRevertOvertime(att)}
+                                    title={`Revert approval and immediately deduct ₹${payoutInfo.payout.toLocaleString()} from employee's monthly salary`}
+                                  >
+                                    <RotateCcw size={13} /> Revert (Deduct ₹{payoutInfo.payout.toLocaleString()})
+                                  </button>
+                                  <div style={{ fontSize: '0.68rem', color: '#64748b' }}>
+                                    Approved by {att.overtimeApprovedBy || 'Admin'}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
+                                  <button
+                                    type="button"
+                                    className="btn-secondary"
+                                    style={{
+                                      padding: '4px 10px',
+                                      fontSize: '0.75rem',
+                                      color: '#475569',
+                                      background: '#f8fafc',
+                                      fontWeight: '700',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px'
+                                    }}
+                                    onClick={() => handleRevertOvertime(att)}
+                                    title="Revert rejection and return to Pending Approval"
+                                  >
+                                    <RotateCcw size={13} /> Revert Rejection
+                                  </button>
+                                  <div style={{ fontSize: '0.68rem', color: '#64748b' }}>
+                                    Rejected by {att.overtimeApprovedBy || 'Admin'}
+                                  </div>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* ================================================================= */}
+            {/* VIEW 2: DAILY OVERTIME VIEW                                       */}
+            {/* ================================================================= */}
+            {otViewMode === 'daily' && (
+              <div className="glass-panel" style={{ padding: '0', overflow: 'hidden', borderRadius: '12px' }}>
+                <table className="data-table" style={{ width: '100%', margin: 0 }}>
+                  <thead>
+                    <tr>
+                      <th>Date & Day</th>
+                      <th>No. of Employees</th>
+                      <th>Hours Worked</th>
+                      <th>Total OT Amount</th>
+                      <th>Approval Breakdown</th>
+                      <th style={{ textAlign: 'center' }}>Details & Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {otDailyAggregates.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} style={{ textAlign: 'center', padding: '36px', color: '#94a3b8' }}>
+                          No daily overtime records found for the selected filters.
+                        </td>
+                      </tr>
+                    ) : (
+                      otDailyAggregates.map(dayGroup => {
+                        const isExpanded = Boolean(expandedOtPeriods[dayGroup.key]);
+                        return (
+                          <React.Fragment key={dayGroup.key}>
+                            <tr style={{ background: isExpanded ? '#f0fdf4' : 'transparent', transition: 'background 0.15s ease' }}>
+                              <td style={{ fontWeight: '800', color: '#0f172a' }}>
+                                <div style={{ fontSize: '0.92rem' }}>{formatDateDisplay(dayGroup.date)}</div>
+                                <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{dayGroup.dayName || 'Shift Day'}</div>
+                              </td>
+                              <td>
+                                <div style={{ fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <Users size={15} style={{ color: '#9333ea' }} />
+                                  {dayGroup.employeeCount} {dayGroup.employeeCount === 1 ? 'Employee' : 'Employees'}
+                                </div>
+                                <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                                  {dayGroup.records.length} {dayGroup.records.length === 1 ? 'Shift' : 'Shifts'} logged
+                                </div>
+                              </td>
+                              <td>
+                                <div style={{ fontWeight: '900', color: '#2563eb', fontSize: '0.95rem' }}>
+                                  {dayGroup.totalHours} hrs
+                                </div>
+                                <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                                  Appr: <span style={{ color: '#059669', fontWeight: '700' }}>{dayGroup.approvedHours}h</span> • Pend: <span style={{ color: '#d97706', fontWeight: '700' }}>{dayGroup.pendingHours}h</span>
+                                </div>
+                              </td>
+                              <td>
+                                <div style={{ fontWeight: '900', color: '#0f172a', fontSize: '0.95rem' }}>
+                                  ₹ {dayGroup.totalAmount.toLocaleString()}
+                                </div>
+                                <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                                  Appr: <span style={{ color: '#059669', fontWeight: '700' }}>₹{dayGroup.approvedAmount.toLocaleString()}</span> • Pend: <span style={{ color: '#d97706', fontWeight: '700' }}>₹{dayGroup.pendingAmount.toLocaleString()}</span>
+                                </div>
+                              </td>
+                              <td>
+                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                  {dayGroup.approvedHours > 0 && (
+                                    <span style={{ fontSize: '0.7rem', fontWeight: '800', background: '#dcfce7', color: '#166534', padding: '2px 6px', borderRadius: '4px' }}>
+                                      {dayGroup.records.filter(r => r.att.overtimeStatus === 'Approved').length} Approved
+                                    </span>
+                                  )}
+                                  {dayGroup.pendingHours > 0 && (
+                                    <span style={{ fontSize: '0.7rem', fontWeight: '800', background: '#fef3c7', color: '#92400e', padding: '2px 6px', borderRadius: '4px' }}>
+                                      {dayGroup.records.filter(r => (r.att.overtimeStatus || 'Pending Approval') === 'Pending Approval').length} Pending
+                                    </span>
+                                  )}
+                                  {dayGroup.rejectedHours > 0 && (
+                                    <span style={{ fontSize: '0.7rem', fontWeight: '800', background: '#fee2e2', color: '#991b1b', padding: '2px 6px', borderRadius: '4px' }}>
+                                      {dayGroup.records.filter(r => r.att.overtimeStatus === 'Rejected').length} Rejected
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td style={{ textAlign: 'center' }}>
+                                <button
+                                  type="button"
+                                  className="btn-secondary"
+                                  style={{
+                                    padding: '5px 12px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: '800',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '5px',
+                                    color: isExpanded ? '#166534' : '#0f172a',
+                                    background: isExpanded ? '#dcfce7' : '#ffffff',
+                                    borderColor: isExpanded ? '#86efac' : '#cbd5e1'
+                                  }}
+                                  onClick={() => toggleOtPeriodExpand(dayGroup.key)}
+                                >
+                                  {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                                  {isExpanded ? 'Hide Details' : `View ${dayGroup.records.length} Employees`}
+                                </button>
+                              </td>
+                            </tr>
+                            {isExpanded && (
+                              <tr>
+                                <td colSpan={6} style={{ padding: 0, borderTop: 'none' }}>
+                                  {renderOtSubTable(dayGroup.records, `${formatDateDisplay(dayGroup.date)} (${dayGroup.dayName})`)}
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* ================================================================= */}
+            {/* VIEW 3: WEEKLY OVERTIME VIEW                                      */}
+            {/* ================================================================= */}
+            {otViewMode === 'weekly' && (
+              <div className="glass-panel" style={{ padding: '0', overflow: 'hidden', borderRadius: '12px' }}>
+                <table className="data-table" style={{ width: '100%', margin: 0 }}>
+                  <thead>
+                    <tr>
+                      <th>Week Period</th>
+                      <th>Days With OT</th>
+                      <th>No. of Employees</th>
+                      <th>Hours Worked</th>
+                      <th>Total OT Amount</th>
+                      <th style={{ textAlign: 'center' }}>Details & Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {otWeeklyAggregates.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} style={{ textAlign: 'center', padding: '36px', color: '#94a3b8' }}>
+                          No weekly overtime records found for the selected filters.
+                        </td>
+                      </tr>
+                    ) : (
+                      otWeeklyAggregates.map(weekGroup => {
+                        const isExpanded = Boolean(expandedOtPeriods[weekGroup.key]);
+                        return (
+                          <React.Fragment key={weekGroup.key}>
+                            <tr style={{ background: isExpanded ? '#f0fdf4' : 'transparent', transition: 'background 0.15s ease' }}>
+                              <td style={{ fontWeight: '800', color: '#0f172a' }}>
+                                <div style={{ fontSize: '0.92rem' }}>{weekGroup.label}</div>
+                                <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                                  {formatDateDisplay(weekGroup.start)} to {formatDateDisplay(weekGroup.end)}
+                                </div>
+                              </td>
+                              <td>
+                                <span style={{ fontSize: '0.75rem', fontWeight: '800', background: '#eff6ff', color: '#1e40af', padding: '3px 8px', borderRadius: '4px' }}>
+                                  {weekGroup.daysCount} {weekGroup.daysCount === 1 ? 'Day' : 'Days'} Active
+                                </span>
+                              </td>
+                              <td>
+                                <div style={{ fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <Users size={15} style={{ color: '#9333ea' }} />
+                                  {weekGroup.employeeCount} {weekGroup.employeeCount === 1 ? 'Employee' : 'Employees'}
+                                </div>
+                                <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                                  {weekGroup.records.length} Overtime Shifts
+                                </div>
+                              </td>
+                              <td>
+                                <div style={{ fontWeight: '900', color: '#2563eb', fontSize: '0.95rem' }}>
+                                  {weekGroup.totalHours} hrs
+                                </div>
+                                <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                                  Appr: <span style={{ color: '#059669', fontWeight: '700' }}>{weekGroup.approvedHours}h</span> • Pend: <span style={{ color: '#d97706', fontWeight: '700' }}>{weekGroup.pendingHours}h</span>
+                                </div>
+                              </td>
+                              <td>
+                                <div style={{ fontWeight: '900', color: '#0f172a', fontSize: '0.95rem' }}>
+                                  ₹ {weekGroup.totalAmount.toLocaleString()}
+                                </div>
+                                <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                                  Appr: <span style={{ color: '#059669', fontWeight: '700' }}>₹{weekGroup.approvedAmount.toLocaleString()}</span> • Pend: <span style={{ color: '#d97706', fontWeight: '700' }}>₹{weekGroup.pendingAmount.toLocaleString()}</span>
+                                </div>
+                              </td>
+                              <td style={{ textAlign: 'center' }}>
+                                <button
+                                  type="button"
+                                  className="btn-secondary"
+                                  style={{
+                                    padding: '5px 12px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: '800',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '5px',
+                                    color: isExpanded ? '#166534' : '#0f172a',
+                                    background: isExpanded ? '#dcfce7' : '#ffffff',
+                                    borderColor: isExpanded ? '#86efac' : '#cbd5e1'
+                                  }}
+                                  onClick={() => toggleOtPeriodExpand(weekGroup.key)}
+                                >
+                                  {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                                  {isExpanded ? 'Hide Details' : `View ${weekGroup.records.length} Records`}
+                                </button>
+                              </td>
+                            </tr>
+                            {isExpanded && (
+                              <tr>
+                                <td colSpan={6} style={{ padding: 0, borderTop: 'none' }}>
+                                  {renderOtSubTable(weekGroup.records, weekGroup.label)}
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* ================================================================= */}
+            {/* VIEW 4: MONTHLY OVERTIME VIEW                                     */}
+            {/* ================================================================= */}
+            {otViewMode === 'monthly' && (
+              <div className="glass-panel" style={{ padding: '0', overflow: 'hidden', borderRadius: '12px' }}>
+                <table className="data-table" style={{ width: '100%', margin: 0 }}>
+                  <thead>
+                    <tr>
+                      <th>Month</th>
+                      <th>Days With OT</th>
+                      <th>No. of Employees</th>
+                      <th>Hours Worked</th>
+                      <th>Total OT Amount</th>
+                      <th style={{ textAlign: 'center' }}>Details & Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {otMonthlyAggregates.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} style={{ textAlign: 'center', padding: '36px', color: '#94a3b8' }}>
+                          No monthly overtime records found for the selected filters.
+                        </td>
+                      </tr>
+                    ) : (
+                      otMonthlyAggregates.map(monthGroup => {
+                        const isExpanded = Boolean(expandedOtPeriods[monthGroup.key]);
+                        return (
+                          <React.Fragment key={monthGroup.key}>
+                            <tr style={{ background: isExpanded ? '#f0fdf4' : 'transparent', transition: 'background 0.15s ease' }}>
+                              <td style={{ fontWeight: '800', color: '#0f172a' }}>
+                                <div style={{ fontSize: '0.95rem' }}>{monthGroup.label}</div>
+                                <div style={{ fontSize: '0.72rem', color: '#64748b' }}>Period Key: {monthGroup.key}</div>
+                              </td>
+                              <td>
+                                <span style={{ fontSize: '0.75rem', fontWeight: '800', background: '#eff6ff', color: '#1e40af', padding: '3px 8px', borderRadius: '4px' }}>
+                                  {monthGroup.daysCount} {monthGroup.daysCount === 1 ? 'Day' : 'Days'} with OT
+                                </span>
+                              </td>
+                              <td>
+                                <div style={{ fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <Users size={15} style={{ color: '#9333ea' }} />
+                                  {monthGroup.employeeCount} {monthGroup.employeeCount === 1 ? 'Employee' : 'Employees'}
+                                </div>
+                                <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                                  {monthGroup.records.length} Overtime Shifts
+                                </div>
+                              </td>
+                              <td>
+                                <div style={{ fontWeight: '900', color: '#2563eb', fontSize: '0.95rem' }}>
+                                  {monthGroup.totalHours} hrs
+                                </div>
+                                <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                                  Appr: <span style={{ color: '#059669', fontWeight: '700' }}>{monthGroup.approvedHours}h</span> • Pend: <span style={{ color: '#d97706', fontWeight: '700' }}>{monthGroup.pendingHours}h</span>
+                                </div>
+                              </td>
+                              <td>
+                                <div style={{ fontWeight: '900', color: '#0f172a', fontSize: '0.95rem' }}>
+                                  ₹ {monthGroup.totalAmount.toLocaleString()}
+                                </div>
+                                <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                                  Appr: <span style={{ color: '#059669', fontWeight: '700' }}>₹{monthGroup.approvedAmount.toLocaleString()}</span> • Pend: <span style={{ color: '#d97706', fontWeight: '700' }}>₹{monthGroup.pendingAmount.toLocaleString()}</span>
+                                </div>
+                              </td>
+                              <td style={{ textAlign: 'center' }}>
+                                <button
+                                  type="button"
+                                  className="btn-secondary"
+                                  style={{
+                                    padding: '5px 12px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: '800',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '5px',
+                                    color: isExpanded ? '#166534' : '#0f172a',
+                                    background: isExpanded ? '#dcfce7' : '#ffffff',
+                                    borderColor: isExpanded ? '#86efac' : '#cbd5e1'
+                                  }}
+                                  onClick={() => toggleOtPeriodExpand(monthGroup.key)}
+                                >
+                                  {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                                  {isExpanded ? 'Hide Details' : `View ${monthGroup.records.length} Records`}
+                                </button>
+                              </td>
+                            </tr>
+                            {isExpanded && (
+                              <tr>
+                                <td colSpan={6} style={{ padding: 0, borderTop: 'none' }}>
+                                  {renderOtSubTable(monthGroup.records, monthGroup.label)}
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ========================================================================= */}
       {/* SUB-TAB 4: SALARY ADVANCES & AMORTIZATION                                  */}
