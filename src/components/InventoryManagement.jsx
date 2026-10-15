@@ -59,7 +59,9 @@ import {
   generateInventoryId,
   PACKAGING_MATERIAL_TYPES,
   isMetalloceneEligibleFilm,
-  METALLOCENE_OPTIONS
+  METALLOCENE_OPTIONS,
+  calculateOrderStockReservations,
+  parseStandardDate
 } from '../factoryStore';
 
 export const INVENTORY_CATEGORIES = [
@@ -179,6 +181,40 @@ export default function InventoryManagement({
   const [activeTab, setActiveTab] = useState('stock'); // stock, grn_inward, qc_approval, issue_return, reconciliation
   const [searchTerm, setSearchTerm] = useState('');
 
+  // SFG & FG Creation Modal State
+  const [isSfgFgModalOpen, setIsSfgFgModalOpen] = useState(false);
+  const [sfgFgModalMode, setSfgFgModalMode] = useState('SFG'); // 'SFG' | 'FG'
+
+  // Inventory Ageing Settings Configuration & FIFO Metrics
+  const ageingSettings = useMemo(() => getInventoryAgeingSettings(), []);
+
+  const safeGrns = useMemo(() => (grns || []).map(sanitizeGRN), [grns]);
+
+  // Sanitize all inventory and GRN records, applying FIFO sorting by true oldest inward date
+  const safeInventory = useMemo(() => {
+    const sanitized = (inventory || []).map(sanitizeInventoryItem);
+    // Filter out Semi-Finished Goods (SFG) and Finished Goods (FG) as they belong exclusively in SFG & FG Store module!
+    const rawMaterialsOnly = sanitized.filter(item => {
+      const cat = String(item.category || '').toLowerCase().trim();
+      const code = String(item.itemCode || item.id || '').toLowerCase().trim();
+      const rollType = String(item.rollType || '').toUpperCase().trim();
+      
+      const isSFGorFG = 
+        cat.includes('semi-finished') || 
+        cat.includes('finished goods') || 
+        cat === 'sfg' || 
+        cat === 'fg' || 
+        code.startsWith('sfg-') || 
+        code.startsWith('fg-') ||
+        rollType === 'SEMI_FINISHED_GOODS' ||
+        rollType === 'FINISHED_GOODS';
+
+      return !isSFGorFG;
+    });
+
+    return sortInventoryByFifo(rawMaterialsOnly, safeGrns, inventoryRolls);
+  }, [inventory, safeGrns, inventoryRolls]);
+
   // Automated 12-Hour SLA Overdue QC Alert Monitor
   useEffect(() => {
     if (!safeGrns || safeGrns.length === 0) return;
@@ -232,40 +268,6 @@ export default function InventoryManagement({
 
     check12HourQCSLA();
   }, [safeGrns, users, onUpdateGRN]);
-
-  // SFG & FG Creation Modal State
-  const [isSfgFgModalOpen, setIsSfgFgModalOpen] = useState(false);
-  const [sfgFgModalMode, setSfgFgModalMode] = useState('SFG'); // 'SFG' | 'FG'
-
-  // Inventory Ageing Settings Configuration & FIFO Metrics
-  const ageingSettings = useMemo(() => getInventoryAgeingSettings(), []);
-
-  const safeGrns = useMemo(() => (grns || []).map(sanitizeGRN), [grns]);
-
-  // Sanitize all inventory and GRN records, applying FIFO sorting by true oldest inward date
-  const safeInventory = useMemo(() => {
-    const sanitized = (inventory || []).map(sanitizeInventoryItem);
-    // Filter out Semi-Finished Goods (SFG) and Finished Goods (FG) as they belong exclusively in SFG & FG Store module!
-    const rawMaterialsOnly = sanitized.filter(item => {
-      const cat = String(item.category || '').toLowerCase().trim();
-      const code = String(item.itemCode || item.id || '').toLowerCase().trim();
-      const rollType = String(item.rollType || '').toUpperCase().trim();
-      
-      const isSFGorFG = 
-        cat.includes('semi-finished') || 
-        cat.includes('finished goods') || 
-        cat === 'sfg' || 
-        cat === 'fg' || 
-        code.startsWith('sfg-') || 
-        code.startsWith('fg-') ||
-        rollType === 'SEMI_FINISHED_GOODS' ||
-        rollType === 'FINISHED_GOODS';
-
-      return !isSFGorFG;
-    });
-
-    return sortInventoryByFifo(rawMaterialsOnly, safeGrns, inventoryRolls);
-  }, [inventory, safeGrns, inventoryRolls]);
 
   // Group inventory items by Item Name / Specs so films of same 'Item Name' but different Inventory Code/ID are consolidated into the same Item row
   const groupedInventory = useMemo(() => {
@@ -340,6 +342,72 @@ export default function InventoryManagement({
       };
     });
   }, [safeInventory]);
+
+  // Live pool of stock reservations across all active customer orders
+  const stockReservations = useMemo(() => {
+    return calculateOrderStockReservations(orders, safeInventory, jobMasters);
+  }, [orders, safeInventory, jobMasters]);
+
+  const getItemReservations = (targetItem) => {
+    if (!targetItem || !stockReservations?.pool) return { totalReservedKg: 0, remainingStockKg: 0, reservations: [] };
+    const ids = targetItem.allInventoryIds || [targetItem.id];
+    let totalReservedKg = 0;
+    const seenReqKeys = new Set();
+    const reservations = [];
+
+    // 1. Direct ID match
+    ids.forEach(id => {
+      const entry = stockReservations.pool[String(id)];
+      if (entry) {
+        (entry.reservations || []).forEach(res => {
+          const key = `${res.orderId}_${res.reqId}`;
+          if (!seenReqKeys.has(key)) {
+            seenReqKeys.add(key);
+            reservations.push(res);
+            totalReservedKg += res.reservedKg || 0;
+          }
+        });
+      }
+    });
+
+    // 2. Spec / item matching fallback
+    const targetFilm = ((targetItem.filmType || targetItem.itemName || '')).trim().toLowerCase();
+    const targetMicron = parseFloat(targetItem.micron);
+    const targetWidth = parseFloat(targetItem.widthMm);
+
+    Object.values(stockReservations.pool).forEach(entry => {
+      if (!entry || !entry.item) return;
+      const inv = entry.item;
+      if (ids.some(id => String(id) === String(inv.id))) return;
+
+      const invFilm = (inv.filmType || inv.itemName || '').trim().toLowerCase();
+      const invMicron = parseFloat(inv.micron);
+      const invWidth = parseFloat(inv.widthMm);
+
+      const filmMatch = targetFilm && invFilm && (targetFilm === invFilm || targetFilm.includes(invFilm) || invFilm.includes(targetFilm));
+      const micronMatch = (isNaN(targetMicron) && isNaN(invMicron)) || targetMicron === invMicron;
+      const widthMatch = (isNaN(targetWidth) && isNaN(invWidth)) || targetWidth === invWidth;
+
+      if (filmMatch && micronMatch && widthMatch) {
+        (entry.reservations || []).forEach(res => {
+          const key = `${res.orderId}_${res.reqId}`;
+          if (!seenReqKeys.has(key)) {
+            seenReqKeys.add(key);
+            reservations.push(res);
+            totalReservedKg += res.reservedKg || 0;
+          }
+        });
+      }
+    });
+
+    const grossStock = Number(targetItem.availableQtyKg ?? 0);
+    const remainingStockKg = Math.max(0, Number((grossStock - totalReservedKg).toFixed(2)));
+    return {
+      totalReservedKg: Number(totalReservedKg.toFixed(2)),
+      remainingStockKg,
+      reservations
+    };
+  };
 
   // Calculate items exceeding category ageing limits
   const overAgedItemsCount = useMemo(() => {
@@ -4230,6 +4298,11 @@ export default function InventoryManagement({
                   );
                   const pendingQcQty = pendingGRNs.reduce((sum, g) => sum + (Number(g.netWeightKg) || 0), 0);
 
+                  const itemResInfo = getItemReservations(item);
+                  const allocatedForOrders = itemResInfo.totalReservedKg;
+                  const effectiveAllocated = Number(((item.allocatedQtyKg || 0) + allocatedForOrders).toFixed(2));
+                  const usableFreeStock = Math.max(0, Number(((item.availableQtyKg || 0) - allocatedForOrders).toFixed(2)));
+
                   return (
                     <tr key={item.id} style={{ background: isOverAged ? '#fff5f5' : 'transparent' }}>
                       <td style={{ fontWeight: '700', color: 'var(--accent-color)' }}>
@@ -4278,11 +4351,16 @@ export default function InventoryManagement({
                       <td style={{ fontSize: '0.85rem' }}>
                         {isFilm ? `${item.micron} Micron × ${item.widthMm}mm` : (item.widthMm && item.widthMm !== '-' ? `${item.widthMm}mm` : '-')}
                       </td>
-                      <td style={{ fontSize: '1.1rem', fontWeight: '800', color: isLow ? (availQty === 0 && pendingQcQty > 0 ? '#d97706' : '#ef4444') : '#047857' }}>
-                        {(item.availableQtyKg ?? 0).toLocaleString()} {unitStr}
-                        {pendingQcQty > 0 && (
+                      <td style={{ fontSize: '1.1rem', fontWeight: '800', color: (usableFreeStock ?? 0) === 0 ? (availQty === 0 && (pendingQcQty ?? 0) > 0 ? '#d97706' : '#ef4444') : (isLow ? '#d97706' : '#047857') }}>
+                        {(usableFreeStock ?? 0).toLocaleString()} {unitStr}
+                        {(allocatedForOrders ?? 0) > 0 && (
+                          <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '600', marginTop: '2px' }}>
+                            On-hand: {(item.availableQtyKg ?? 0).toLocaleString()} {unitStr}
+                          </div>
+                        )}
+                        {(pendingQcQty ?? 0) > 0 && (
                           <div style={{ fontSize: '0.7rem', color: '#92400e', fontWeight: '700', marginTop: '2px', background: '#fef3c7', padding: '1px 5px', borderRadius: '4px', border: '1px solid #fde68a', display: 'inline-block' }}>
-                            ⏳ +{pendingQcQty.toLocaleString()} {unitStr} Pending QC
+                            ⏳ +{(pendingQcQty ?? 0).toLocaleString()} {unitStr} Pending QC
                           </div>
                         )}
                       </td>
@@ -4292,7 +4370,14 @@ export default function InventoryManagement({
                       <td style={{ fontWeight: '800', color: '#047857' }}>
                         ₹{itemValuation > 0 ? itemValuation.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '0.00'}
                       </td>
-                      <td style={{ color: 'var(--text-secondary)' }}>{(item.allocatedQtyKg ?? 0).toLocaleString()} {unitStr}</td>
+                      <td style={{ color: 'var(--text-secondary)' }}>
+                        {(effectiveAllocated ?? 0).toLocaleString()} {unitStr}
+                        {(allocatedForOrders ?? 0) > 0 && (
+                          <div style={{ fontSize: '0.7rem', color: '#15803d', fontWeight: '700', marginTop: '2px', background: '#dcfce7', padding: '1px 5px', borderRadius: '4px', border: '1px solid #86efac', display: 'inline-block', whiteSpace: 'nowrap' }}>
+                            🔒 {(allocatedForOrders ?? 0).toLocaleString()} {unitStr} Reserved
+                          </div>
+                        )}
+                      </td>
                       <td>{item.location}</td>
                       <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                         <div>{item.lastVendor}</div>
@@ -5911,7 +5996,7 @@ export default function InventoryManagement({
                         </span>
                       </div>
                       <div style={{ color: '#047857' }}>
-                        <strong>{effectiveNetWeight.toLocaleString()} {unitDisplay}</strong> total net weight across <strong>{effectivePkgCount} {grnPackagingType}(s)</strong>
+                        <strong>{(effectiveNetWeight ?? 0).toLocaleString()} {unitDisplay}</strong> total net weight across <strong>{effectivePkgCount} {grnPackagingType}(s)</strong>
                         {effectivePkgCount > 1 && (
                           <span style={{ marginLeft: '4px', fontStyle: 'italic', color: '#065f46' }}>
                             (Avg: <strong>{avgPerPkg} {unitDisplay}</strong> per {grnPackagingType})
@@ -5980,9 +6065,9 @@ export default function InventoryManagement({
                     <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Batch / Lot Number</span><strong style={{ color: '#0f172a', fontWeight: '700', fontFamily: 'monospace' }}>{p.newGRN.batchNo || 'N/A'}</strong></div>
                     <div style={{ gridColumn: 'span 2' }}><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Item Name / Spec</span><strong style={{ color: '#0f172a', fontWeight: '700' }}>{p.itemName}</strong></div>
                     <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Individual Units / Barcodes</span><strong style={{ color: '#059669', fontWeight: '800' }}>{p.unitCount} Unit(s) (Separate Barcodes)</strong></div>
-                    <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Total Inward Net Qty</span><strong style={{ color: '#0f172a', fontWeight: '800' }}>{p.totalNetQty.toLocaleString()} {p.newGRN.unit || 'Kg'}</strong></div>
+                    <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Total Inward Net Qty</span><strong style={{ color: '#0f172a', fontWeight: '800' }}>{(p.totalNetQty ?? 0).toLocaleString()} {p.newGRN.unit || 'Kg'}</strong></div>
                     <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Purchase Rate</span><strong style={{ color: '#0f172a', fontWeight: '700' }}>₹{p.rateVal} / {p.newGRN.unit || 'Kg'}</strong></div>
-                    <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Total Purchase Valuation</span><strong style={{ color: '#2563eb', fontWeight: '800' }}>₹{p.totalAmountVal.toLocaleString('en-IN')}</strong></div>
+                    <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Total Purchase Valuation</span><strong style={{ color: '#2563eb', fontWeight: '800' }}>₹{(p.totalAmountVal ?? 0).toLocaleString('en-IN')}</strong></div>
                   </div>
                 </div>
 
@@ -7240,6 +7325,35 @@ export default function InventoryManagement({
             };
           });
 
+        // 4b. Gather Active Customer Order Stock Reservations
+        const ledgerResInfo = getItemReservations(item);
+        const orderResTxLines = (ledgerResInfo.reservations || []).map((res, rIdx) => {
+          const txId = `RES_${res.orderId}_${res.reqId || rIdx}`;
+          const rate = itemActualUnitPrice;
+          const isFully = res.isFullyReserved;
+          const orderDate = res.order?.created_at ? parseStandardDate(res.order.created_at) : (res.order?.targetDeliveryDate || new Date().toISOString().split('T')[0]);
+          return {
+            txId,
+            category: 'reservation',
+            type: isFully ? '🔒 Reserved (Order PO Not Req)' : '🔒 Reserved for Order',
+            date: orderDate,
+            refNo: res.order?.orderId || res.order?.id || res.orderId,
+            subRef: res.order?.jobName || res.req?.filmType || 'Active Order Commitment',
+            partyName: res.order?.clientName || res.order?.customer || 'Customer Order',
+            subParty: `Target Delivery: ${res.order?.targetDeliveryDate || 'Scheduled'}`,
+            inwardQtyKg: 0,
+            outwardQtyKg: res.reservedKg,
+            adjQtyKg: 0,
+            ratePerKg: rate,
+            unitPrice: rate,
+            totalValue: res.reservedKg * rate,
+            barcode: `RES-${(res.order?.orderId || res.orderId || '').replace(/[^a-zA-Z0-9]/g, '')}`,
+            batchNo: item.lastBatch || 'Reserved Stock',
+            status: isFully ? 'Fully Reserved (No PO Required)' : 'Partially Reserved',
+            notes: `Gross Required: ${res.grossReqKg} kg | Reserved: ${res.reservedKg} kg | Balance PO: ${res.balanceKg} kg`
+          };
+        });
+
         // 5. Calculate Opening Stock Baseline (Excluding Pending QC from movement so net matches usable stock)
         const totalApprovedInwards = inwardTxLines.filter(tx => !tx.isPendingQC).reduce((sum, tx) => sum + tx.inwardQtyKg, 0) + storeIssueLines.filter(tx => tx.category === 'inward').reduce((sum, tx) => sum + tx.inwardQtyKg, 0);
         const totalTxOutwards = jobUsageLines.reduce((sum, tx) => sum + tx.outwardQtyKg, 0) + storeIssueLines.filter(tx => tx.category === 'usage').reduce((sum, tx) => sum + tx.outwardQtyKg, 0);
@@ -7275,7 +7389,7 @@ export default function InventoryManagement({
           return new Date(dStr).getTime() || 0;
         };
 
-        const allTxLines = [...openingStockLine, ...inwardTxLines, ...jobUsageLines, ...storeIssueLines, ...adjLines];
+        const allTxLines = [...openingStockLine, ...inwardTxLines, ...jobUsageLines, ...storeIssueLines, ...adjLines, ...orderResTxLines];
         allTxLines.sort((a, b) => parseTxDate(a.date) - parseTxDate(b.date));
 
         // 7. Calculate Chronological Running Balance (Pending QC and Rejected QC Hold do NOT add to usable stock!)
@@ -7289,6 +7403,8 @@ export default function InventoryManagement({
               runningStock += tx.inwardQtyKg;
             }
           } else if (tx.category === 'usage') {
+            runningStock -= tx.outwardQtyKg;
+          } else if (tx.category === 'reservation') {
             runningStock -= tx.outwardQtyKg;
           } else if (tx.category === 'reconciliation') {
             runningStock += tx.adjQtyKg;
@@ -7335,6 +7451,7 @@ export default function InventoryManagement({
 
         const totalConsumedJobQty = jobUsageLines.reduce((sum, tx) => sum + tx.outwardQtyKg, 0) + storeIssueLines.filter(tx => tx.category === 'usage').reduce((sum, tx) => sum + tx.outwardQtyKg, 0);
         const totalReconciliationAdjQty = adjLines.reduce((sum, tx) => sum + tx.adjQtyKg, 0);
+        const totalReservedOrdersQty = orderResTxLines.reduce((sum, tx) => sum + tx.outwardQtyKg, 0);
         const netAvailableBalance = Math.max(0, runningStock);
 
         return (
@@ -7441,12 +7558,12 @@ export default function InventoryManagement({
                   </div>
                   {totalPendingQcQty > 0 && (
                     <div style={{ fontSize: '0.72rem', color: '#92400e', fontWeight: '700', marginTop: '4px', background: '#fef3c7', padding: '2px 6px', borderRadius: '4px', border: '1px solid #fde68a' }}>
-                      ⏳ +{totalPendingQcQty.toLocaleString()} {unitStr} Pending QC (Not in stock)
+                      ⏳ +{(totalPendingQcQty ?? 0).toLocaleString()} {unitStr} Pending QC (Not in stock)
                     </div>
                   )}
                   {totalRejectedQcQty > 0 && (
                     <div style={{ fontSize: '0.72rem', color: '#991b1b', fontWeight: '700', marginTop: '4px', background: '#fef2f2', padding: '2px 6px', borderRadius: '4px', border: '1px solid #fecaca' }}>
-                      🚫 {totalRejectedQcQty.toLocaleString()} {unitStr} in QC Hold Store (Rejected)
+                      🚫 {(totalRejectedQcQty ?? 0).toLocaleString()} {unitStr} in QC Hold Store (Rejected)
                     </div>
                   )}
                 </div>
@@ -7475,6 +7592,16 @@ export default function InventoryManagement({
                   <div style={{ fontSize: '0.75rem', color: '#2563eb', fontWeight: '600' }}>
                     Avg Rate: ₹ {avgPurchaseRate.toFixed(2)}/{unitStr}
                   </div>
+                  {totalReservedOrdersQty > 0 && (
+                    <div style={{ fontSize: '0.72rem', color: '#166534', fontWeight: '700', marginTop: '4px', background: '#dcfce7', padding: '2px 6px', borderRadius: '4px', border: '1px solid #86efac' }}>
+                      🔒 {(totalReservedOrdersQty ?? 0).toLocaleString()} {unitStr} Reserved for Active Orders
+                    </div>
+                  )}
+                  {totalReservedOrdersQty > 0 && (
+                    <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: '600', marginTop: '2px' }}>
+                      Gross On-hand: {(item.availableQtyKg || 0).toLocaleString()} {unitStr}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -7547,6 +7674,16 @@ export default function InventoryManagement({
                   >
                     ⚖️ Audit Adj ({adjLines.length})
                   </button>
+
+                  {orderResTxLines.length > 0 && (
+                    <button 
+                      className={`btn-secondary`}
+                      style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerFilterTab === 'reservation' ? '#ffffff' : 'transparent', fontWeight: ledgerFilterTab === 'reservation' ? '700' : '500', color: ledgerFilterTab === 'reservation' ? '#15803d' : 'var(--text-secondary)' }}
+                      onClick={() => setLedgerFilterTab('reservation')}
+                    >
+                      🔒 Order Reservations ({orderResTxLines.length})
+                    </button>
+                  )}
                 </div>
 
               </div>
@@ -7579,7 +7716,7 @@ export default function InventoryManagement({
                       paginatedLedgerItems.map((tx, idx) => {
                         const isEditingThisBarcode = editingTxId === tx.txId;
                         return (
-                          <tr key={tx.txId || idx} style={{ background: tx.isPendingQC ? '#fffbeb' : (tx.isRejected ? '#fef2f2' : (tx.category === 'reconciliation' ? '#f0f9ff' : (tx.category === 'usage' ? '#fff5f5' : 'transparent'))) }}>
+                          <tr key={tx.txId || idx} style={{ background: tx.isPendingQC ? '#fffbeb' : (tx.isRejected ? '#fef2f2' : (tx.category === 'reservation' ? '#f0fdf4' : (tx.category === 'reconciliation' ? '#f0f9ff' : (tx.category === 'usage' ? '#fff5f5' : 'transparent')))) }}>
                             <td style={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>{tx.date}</td>
                             
                             {/* Category Badge */}
@@ -7608,6 +7745,25 @@ export default function InventoryManagement({
                                   {tx.type || '📤 Job Usage'}
                                 </span>
                               )}
+                              {tx.category === 'reservation' && (
+                                <span 
+                                  className="badge" 
+                                  style={{ 
+                                    fontSize: '0.72rem', 
+                                    background: '#dcfce7', 
+                                    color: '#15803d', 
+                                    border: '1px solid #86efac', 
+                                    fontWeight: '700',
+                                    padding: '3px 8px',
+                                    borderRadius: '6px',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                  }}
+                                >
+                                  {tx.type || '🔒 Order Reservation'}
+                                </span>
+                              )}
                               {tx.category === 'reconciliation' && (
                                 <span className="badge badge-warning" style={{ fontSize: '0.72rem', background: '#e0f2fe', color: '#0369a1' }}>
                                   {tx.type || '⚖️ Physical Audit'}
@@ -7617,7 +7773,7 @@ export default function InventoryManagement({
 
                             {/* Ref Doc / Job */}
                             <td>
-                              <div style={{ fontWeight: '700', color: tx.category === 'usage' ? '#991b1b' : '#2563eb' }}>
+                              <div style={{ fontWeight: '700', color: tx.category === 'reservation' ? '#15803d' : (tx.category === 'usage' ? '#991b1b' : '#2563eb') }}>
                                 {tx.refNo}
                               </div>
                               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{tx.subRef}</div>
@@ -7819,9 +7975,18 @@ export default function InventoryManagement({
                               ) : '-'}
                             </td>
 
-                            {/* Job Usage Qty */}
-                            <td style={{ fontWeight: '700', color: tx.outwardQtyKg > 0 ? '#dc2626' : 'var(--text-muted)' }}>
-                              {tx.outwardQtyKg > 0 ? `- ${(tx.outwardQtyKg ?? 0).toLocaleString()} ${unitStr}` : '-'}
+                            {/* Job Usage / Reservation Qty */}
+                            <td style={{ fontWeight: '700' }}>
+                              {tx.category === 'reservation' ? (
+                                <div>
+                                  <span style={{ color: '#15803d' }}>- {(tx.outwardQtyKg ?? 0).toLocaleString()} {unitStr}</span>
+                                  <span style={{ display: 'block', fontSize: '0.68rem', color: '#166534', fontWeight: '600' }}>🔒 Reserved</span>
+                                </div>
+                              ) : tx.outwardQtyKg > 0 ? (
+                                <span style={{ color: '#dc2626' }}>- {(tx.outwardQtyKg ?? 0).toLocaleString()} {unitStr}</span>
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)' }}>-</span>
+                              )}
                             </td>
 
                             {/* Audit Adj Qty */}
@@ -7839,8 +8004,8 @@ export default function InventoryManagement({
 
                             {/* Rate & Total Value */}
                             <td>
-                              <div style={{ fontWeight: '700', color: tx.isPendingQC ? '#b45309' : '#047857' }}>₹ {tx.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
-                              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>₹ {tx.ratePerKg.toFixed(2)}/{unitStr}</div>
+                              <div style={{ fontWeight: '700', color: tx.isPendingQC ? '#b45309' : '#047857' }}>₹ {((tx.totalValue ?? 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>₹ {((tx.ratePerKg ?? 0)).toFixed(2)}/{unitStr}</div>
                             </td>
                           </tr>
                         );

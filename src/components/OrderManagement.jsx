@@ -27,7 +27,14 @@ import {
 import PurchaseOrderPDF from './PurchaseOrderPDF';
 import TablePagination, { usePagination } from './TablePagination';
 import { pushSlugState } from '../utils/slugRouter';
-import { calculateJobRawMaterials, isOrderOverdue, isOrderNearingDeadline, getOrderStatusInfo } from '../factoryStore';
+import { 
+  calculateJobRawMaterials, 
+  isOrderOverdue, 
+  isOrderNearingDeadline, 
+  getOrderStatusInfo,
+  getOrderMaterialRequirements as getOrderMaterialRequirementsFromStore,
+  calculateOrderStockReservations
+} from '../factoryStore';
 import { saveOrderToSupabase, fetchSystemSetting, saveSystemSetting } from '../services/supabaseDataService';
 import { getNextDocRefNumber } from '../services/settingsService';
 
@@ -132,113 +139,7 @@ export default function OrderManagement({
 
   // Helper: ensure Itemized Raw Material Requirements are always calculated and loaded up
   const getOrderMaterialRequirements = (order) => {
-    if (!order) return [];
-    if (order.isCylinderOrder || order.orderType === 'Rotogravure Cylinder' || order.materialFormat === 'Rotogravure Cylinder' || (order.jobName || '').toLowerCase().includes('cylinder')) {
-      return [];
-    }
-
-    const existing = order.materialRequirements || order.rawMaterialRequirements;
-    if (Array.isArray(existing) && existing.length > 0) {
-      return existing;
-    }
-
-    const jm = jobMasters.find(j =>
-      (order?.jobMasterId && (j.id === order.jobMasterId || j.jobMasterId === order.jobMasterId)) ||
-      ((j.jobName || '').toLowerCase().trim() === (order?.jobName || '').toLowerCase().trim())
-    );
-
-    // 1. Order's own locked layers / structure
-    let layers = order?.layers || order?.jobDetails?.layers;
-    const orderStructStr = (order?.structure || order?.jobDetails?.structure || '');
-
-    if (!layers || layers.length === 0) {
-      if (orderStructStr && orderStructStr !== 'PET / PE' && orderStructStr !== '—') {
-        const parts = orderStructStr.split('/').map(p => p.trim());
-        layers = parts.map(part => {
-          const micronMatch = part.match(/(\d+(\.\d+)?)\s*µ?/i);
-          const micron = micronMatch ? parseFloat(micronMatch[1]) : 12;
-          let filmType = part.replace(/(\d+(\.\d+)?)\s*µ?/gi, '').trim();
-          if (!filmType) filmType = 'PET';
-          return { filmType, micron };
-        });
-      }
-    }
-
-    // 2. Fallback to Job Master layers / structure if order has no explicit structure
-    if (!layers || layers.length === 0) {
-      layers = jm?.layers;
-      const jmStructStr = jm?.structure || '';
-      if ((!layers || layers.length === 0) && jmStructStr && jmStructStr !== 'PET / PE' && jmStructStr !== '—') {
-        const parts = jmStructStr.split('/').map(p => p.trim());
-        layers = parts.map(part => {
-          const micronMatch = part.match(/(\d+(\.\d+)?)\s*µ?/i);
-          const micron = micronMatch ? parseFloat(micronMatch[1]) : 12;
-          let filmType = part.replace(/(\d+(\.\d+)?)\s*µ?/gi, '').trim();
-          if (!filmType) filmType = 'PET';
-          return { filmType, micron };
-        });
-      }
-    }
-
-    if (!layers || layers.length === 0) {
-      layers = [
-        { filmType: 'PET', micron: 12 },
-        { filmType: 'Natural GP LD', micron: 35 }
-      ];
-    }
-
-    const calc = calculateJobRawMaterials({
-      jobName: order?.jobName || 'Job',
-      printWidthMm: parseFloat(order?.printWidthMm || jm?.printWidthMm) || 1000,
-      repeatLengthMm: parseFloat(order?.repeatLengthMm || jm?.repeatLengthMm) || 400,
-      orderQtyKg: parseFloat(order?.orderQtyKg) || 1000,
-      orderType: getMaterialForm(order),
-      layers
-    });
-
-    const reqs = [];
-    if (calc && calc.layerResults) {
-      calc.layerResults.forEach((layer, idx) => {
-        reqs.push({
-          id: `REQ-${order?.id || 'ORD'}-${idx + 1}`,
-          filmType: layer.filmType,
-          micron: layer.micron,
-          widthMm: layer.widthMm || parseFloat(order?.printWidthMm || jm?.printWidthMm) || 1000,
-          qtyKg: layer.grossKg || 0,
-          preferredVendor: (layer.filmType || '').toLowerCase().includes('ld') ? 'Malwa Extrusions Pvt Ltd' : 'FlexiPoly Films Ltd',
-          poIssued: false,
-          poNumber: ""
-        });
-      });
-
-      if (calc.inkDetails && calc.inkDetails.grossKg > 0) {
-        reqs.push({
-          id: `REQ-${order?.id || 'ORD'}-${reqs.length + 1}`,
-          filmType: 'Liquid Inks',
-          micron: '-',
-          widthMm: '-',
-          qtyKg: calc.inkDetails.grossKg,
-          preferredVendor: 'Siegwerk Inks Ltd',
-          poIssued: false,
-          poNumber: ""
-        });
-      }
-
-      if (calc.adhesiveDetails && calc.adhesiveDetails.grossKg > 0) {
-        reqs.push({
-          id: `REQ-${order?.id || 'ORD'}-${reqs.length + 1}`,
-          filmType: 'Solvent-less Adhesive',
-          micron: '-',
-          widthMm: '-',
-          qtyKg: calc.adhesiveDetails.grossKg,
-          preferredVendor: 'Siegwerk Inks Ltd',
-          poIssued: false,
-          poNumber: ""
-        });
-      }
-    }
-
-    return reqs;
+    return getOrderMaterialRequirementsFromStore(order, jobMasters);
   };
 
   // Handler to edit Raw Material Size Width, Micron, Quantity or Preferred Vendor for any itemized requirement
@@ -459,45 +360,13 @@ export default function OrderManagement({
   const [reqVendorFilter, setReqVendorFilter] = useState('ALL');
   const [reqCategoryFilter, setReqCategoryFilter] = useState('ALL'); // 'ALL' | 'Film' | 'Ink' | 'Adhesive'
 
-  // Helper for automatic stock checking & reservation matching
-  const getStockCheckForReq = (req) => {
-    const reqQty = parseFloat(req.qtyKg) || 0;
-    if (reqQty <= 0) return { reqQty: 0, totalInStock: 0, reservedKg: 0, balanceKg: 0, isFullyAvailable: false, isPartiallyAvailable: false };
+  // Multi-order coordinated stock reservation engine
+  const stockReservations = useMemo(() => {
+    return calculateOrderStockReservations(orders, inventory, jobMasters);
+  }, [orders, inventory, jobMasters]);
 
-    const reqFilm = (req.filmType || '').toLowerCase();
-    const reqMicron = String(req.micron || '').replace('µ', '').trim();
-    const reqWidth = String(req.widthMm || '').replace('mm', '').trim();
-
-    // Match against inventory items
-    const match = inventory.find(inv => {
-      const invFilm = (inv.filmType || '').toLowerCase();
-      const invMicron = String(inv.micron || '').replace('µ', '').trim();
-      const invWidth = String(inv.widthMm || '').replace('mm', '').trim();
-
-      const filmMatch = invFilm.includes(reqFilm) || reqFilm.includes(invFilm) || 
-                        (reqFilm.includes('pet') && invFilm.includes('pet')) ||
-                        (reqFilm.includes('metpet') && invFilm.includes('metpet')) ||
-                        (reqFilm.includes('ld') && invFilm.includes('ld'));
-
-      const micronMatch = !reqMicron || reqMicron === '-' || !invMicron || invMicron === '-' || invMicron === reqMicron;
-      const widthMatch = !reqWidth || reqWidth === '-' || !invWidth || invWidth === '-' || invWidth === reqWidth;
-
-      return filmMatch && micronMatch && widthMatch;
-    });
-
-    let totalInStock = match ? (parseFloat(match.availableQtyKg) || 0) : 0;
-
-    const reservedKg = Math.min(reqQty, totalInStock);
-    const balanceKg = Math.max(0, reqQty - reservedKg);
-
-    return {
-      reqQty,
-      totalInStock,
-      reservedKg,
-      balanceKg,
-      isFullyAvailable: reservedKg >= reqQty,
-      isPartiallyAvailable: reservedKg > 0 && reservedKg < reqQty
-    };
+  const getStockCheckForReq = (req, orderId) => {
+    return stockReservations.getReqStockInfo(req, orderId);
   };
 
   // Aggregated Consolidated Material Requirements List across all active orders
@@ -507,15 +376,17 @@ export default function OrderManagement({
       // Exclude completed orders from active requirement replenishment
       if (order.status === 'Completed') return;
 
-      const reqs = getOrderMaterialRequirements(order);
+      const reqs = getOrderMaterialRequirements(order, jobMasters);
       const statusInfo = getOrderStatusInfo(order);
 
       reqs.forEach(req => {
-        const stockInfo = getStockCheckForReq(req);
+        const stockInfo = getStockCheckForReq(req, order.id) || { balanceKg: 0, reservedKg: 0, reqQty: parseFloat(req.qtyKg) || 0, isFullyAvailable: false, isPartiallyAvailable: false };
         const filmLow = (req.filmType || '').toLowerCase();
         let category = 'Film';
         if (filmLow.includes('ink')) category = 'Ink';
         else if (filmLow.includes('adhesive')) category = 'Adhesive';
+
+        const poStatus = req.poIssued ? 'PO Issued' : (stockInfo?.isFullyAvailable ? 'PO Not Required' : 'Pending PO');
 
         list.push({
           ...req,
@@ -532,13 +403,14 @@ export default function OrderManagement({
           structure: getSubstrateStructure(order),
           category,
           stockInfo,
+          poStatus,
           // True if shortage / balance to order and PO not yet issued
-          isShortage: stockInfo.balanceKg > 0 && !req.poIssued
+          isShortage: (stockInfo?.balanceKg ?? 0) > 0 && !req.poIssued
         });
       });
     });
     return list;
-  }, [orders, jobMasters, inventory]);
+  }, [orders, jobMasters, inventory, stockReservations]);
 
   // Summary Metrics for Requirements
   const reqMetrics = useMemo(() => {
@@ -547,11 +419,15 @@ export default function OrderManagement({
 
     const shortageItems = allMaterialRequirements.filter(r => r.isShortage);
     const shortageLines = shortageItems.length;
-    const shortageBalanceKg = shortageItems.reduce((sum, r) => sum + (parseFloat(r.stockInfo.balanceKg) || 0), 0);
+    const shortageBalanceKg = shortageItems.reduce((sum, r) => sum + (parseFloat(r.stockInfo?.balanceKg) || 0), 0);
 
-    const inStockItems = allMaterialRequirements.filter(r => r.stockInfo.isFullyAvailable);
+    const inStockItems = allMaterialRequirements.filter(r => r.stockInfo?.isFullyAvailable);
     const inStockLines = inStockItems.length;
-    const inStockKg = inStockItems.reduce((sum, r) => sum + (parseFloat(r.stockInfo.reservedKg) || 0), 0);
+    const inStockKg = inStockItems.reduce((sum, r) => sum + (parseFloat(r.stockInfo?.reservedKg) || 0), 0);
+
+    const poNotRequiredItems = allMaterialRequirements.filter(r => !r.poIssued && r.stockInfo?.isFullyAvailable);
+    const poNotRequiredLines = poNotRequiredItems.length;
+    const poNotRequiredKg = poNotRequiredItems.reduce((sum, r) => sum + (parseFloat(r.qtyKg) || 0), 0);
 
     const poIssuedItems = allMaterialRequirements.filter(r => r.poIssued);
     const poIssuedLines = poIssuedItems.length;
@@ -564,6 +440,8 @@ export default function OrderManagement({
       shortageBalanceKg,
       inStockLines,
       inStockKg,
+      poNotRequiredLines,
+      poNotRequiredKg,
       poIssuedLines,
       poIssuedKg
     };
@@ -589,8 +467,9 @@ export default function OrderManagement({
 
       // Status filter
       if (reqStatusFilter === 'SHORTAGE' && !r.isShortage) return false;
-      if (reqStatusFilter === 'PENDING_PO' && r.poIssued) return false;
-      if (reqStatusFilter === 'IN_STOCK' && !r.stockInfo.isFullyAvailable) return false;
+      if (reqStatusFilter === 'PENDING_PO' && (r.poIssued || r.stockInfo?.isFullyAvailable)) return false;
+      if (reqStatusFilter === 'PO_NOT_REQUIRED' && (r.poIssued || !r.stockInfo?.isFullyAvailable)) return false;
+      if (reqStatusFilter === 'IN_STOCK' && !r.stockInfo?.isFullyAvailable) return false;
       if (reqStatusFilter === 'PO_ISSUED' && !r.poIssued) return false;
 
       // Vendor filter
@@ -785,7 +664,7 @@ export default function OrderManagement({
       else if (req.filmType.includes('Ink')) rate = 1500;
       else if (req.filmType.includes('Adhesive')) rate = 270;
 
-      const stockInfo = getStockCheckForReq(req);
+      const stockInfo = getStockCheckForReq(req, req.orderId) || { balanceKg: 0, reservedKg: 0, reqQty: parseFloat(req.qtyKg) || 0, isFullyAvailable: false, isPartiallyAvailable: false };
 
       return {
         id: req.id,
@@ -795,8 +674,8 @@ export default function OrderManagement({
         micron: req.micron,
         widthMm: req.widthMm,
         grossQtyKg: req.qtyKg,
-        reservedKg: stockInfo.reservedKg,
-        qtyKg: stockInfo.balanceKg > 0 ? stockInfo.balanceKg : req.qtyKg, // Defaults to shortage balance or gross qty
+        reservedKg: stockInfo?.reservedKg ?? 0,
+        qtyKg: (stockInfo?.balanceKg ?? 0) > 0 ? stockInfo.balanceKg : req.qtyKg, // Defaults to shortage balance or gross qty
         rate: rate
       };
     });
@@ -1802,7 +1681,7 @@ export default function OrderManagement({
                                 <tbody>
                                   {reqs.map(req => {
                                     const isChecked = !!selectedReqIds[req.id];
-                                    const stockInfo = getStockCheckForReq(req);
+                                    const stockInfo = getStockCheckForReq(req, order.id) || { balanceKg: 0, reservedKg: 0, reqQty: parseFloat(req.qtyKg) || 0, isFullyAvailable: false, isPartiallyAvailable: false };
 
                                     return (
                                       <tr key={req.id} style={{ background: isChecked ? '#eff6ff' : 'transparent' }}>
@@ -1872,31 +1751,31 @@ export default function OrderManagement({
 
                                         {/* Stock Check & Reservation Status */}
                                         <td>
-                                          {stockInfo.isFullyAvailable ? (
+                                          {stockInfo?.isFullyAvailable ? (
                                             <div style={{ background: '#dcfce7', border: '1px solid #86efac', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#15803d', whiteSpace: 'nowrap' }}>
-                                              <strong>✅ {stockInfo.reservedKg} kg / {stockInfo.reqQty} kg in stock</strong>
+                                              <strong>✅ {stockInfo.reservedKg ?? 0} kg / {stockInfo.reqQty ?? req.qtyKg ?? 0} kg in stock</strong>
                                               <div style={{ fontSize: '0.7rem', color: '#166534' }}>
                                                 Fully Reserved for Order (No PO Required)
                                               </div>
                                             </div>
-                                          ) : stockInfo.isPartiallyAvailable ? (
+                                          ) : stockInfo?.isPartiallyAvailable ? (
                                             <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#047857', whiteSpace: 'nowrap' }}>
-                                              <strong>🟢 {stockInfo.reservedKg} kg out of {stockInfo.reqQty} kg available</strong>
+                                              <strong>🟢 {stockInfo.reservedKg ?? 0} kg out of {stockInfo.reqQty ?? req.qtyKg ?? 0} kg available</strong>
                                               <div style={{ fontSize: '0.7rem', color: '#065f46' }}>
-                                                {stockInfo.reservedKg} kg Reserved for Order
+                                                {stockInfo.reservedKg ?? 0} kg Reserved for Order
                                               </div>
                                             </div>
                                           ) : (
                                             <div style={{ background: '#fffbe6', border: '1px solid #ffe58f', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#d48806', whiteSpace: 'nowrap' }}>
-                                              <span>⚠️ 0 kg in stock (Full {stockInfo.reqQty} kg needed)</span>
+                                              <span>⚠️ 0 kg in stock (Full {stockInfo?.reqQty ?? req.qtyKg ?? 0} kg needed)</span>
                                             </div>
                                           )}
                                         </td>
 
                                         {/* Balance Quantity Only to Order */}
                                         <td>
-                                          <span className="badge" style={{ background: stockInfo.balanceKg > 0 ? '#e0f2fe' : '#f1f5f9', color: stockInfo.balanceKg > 0 ? '#0369a1' : '#64748b', fontWeight: '800', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
-                                            {stockInfo.balanceKg} kg
+                                          <span className="badge" style={{ background: (stockInfo?.balanceKg ?? 0) > 0 ? '#e0f2fe' : '#f1f5f9', color: (stockInfo?.balanceKg ?? 0) > 0 ? '#0369a1' : '#64748b', fontWeight: '800', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                                            {stockInfo?.balanceKg ?? 0} kg
                                           </span>
                                         </td>
 
@@ -1943,6 +1822,20 @@ export default function OrderManagement({
                                             >
                                               <FileText size={13} /> {req.poNumber || order.poNumber || 'PO-2026-101'}
                                             </button>
+                                          ) : stockInfo?.isFullyAvailable ? (
+                                            <span 
+                                              className="badge badge-success" 
+                                              style={{ 
+                                                background: '#dcfce7', 
+                                                color: '#15803d', 
+                                                border: '1px solid #86efac', 
+                                                fontWeight: '700', 
+                                                whiteSpace: 'nowrap',
+                                                padding: '4px 8px'
+                                              }}
+                                            >
+                                              PO Not Required
+                                            </span>
                                           ) : (
                                             <span className="badge badge-warning" style={{ whiteSpace: 'nowrap' }}>Pending PO</span>
                                           )}
@@ -1984,14 +1877,14 @@ export default function OrderManagement({
                   <Layers size={18} style={{ color: 'var(--primary-brand)' }} />
                 </div>
                 <div style={{ fontSize: '1.45rem', fontWeight: '800', marginTop: '6px', color: 'var(--text-primary)' }}>
-                  {reqMetrics.totalGrossKg.toLocaleString()} <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>kg</span>
+                  {(reqMetrics.totalGrossKg ?? 0).toLocaleString()} <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>kg</span>
                 </div>
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                  Across {reqMetrics.totalLines} material lines in active orders
+                  Across {reqMetrics.totalLines ?? 0} material lines in active orders
                 </div>
               </div>
 
-              <div className="glass-panel" style={{ padding: '16px 20px', borderLeft: '4px solid #ef4444', background: reqMetrics.shortageLines > 0 ? '#fffbfb' : 'transparent' }}>
+              <div className="glass-panel" style={{ padding: '16px 20px', borderLeft: '4px solid #ef4444', background: (reqMetrics.shortageLines ?? 0) > 0 ? '#fffbfb' : 'transparent' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <span style={{ fontSize: '0.78rem', fontWeight: '700', textTransform: 'uppercase', color: '#b91c1c', letterSpacing: '0.04em' }}>
                     Pending PO / Shortage
@@ -1999,10 +1892,10 @@ export default function OrderManagement({
                   <PackageX size={18} style={{ color: '#ef4444' }} />
                 </div>
                 <div style={{ fontSize: '1.45rem', fontWeight: '800', marginTop: '6px', color: '#dc2626' }}>
-                  {reqMetrics.shortageBalanceKg.toLocaleString()} <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>kg</span>
+                  {(reqMetrics.shortageBalanceKg ?? 0).toLocaleString()} <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>kg</span>
                 </div>
                 <div style={{ fontSize: '0.78rem', color: '#991b1b', marginTop: '4px', fontWeight: '600' }}>
-                  {reqMetrics.shortageLines} lines requiring Purchase Orders
+                  {reqMetrics.shortageLines ?? 0} lines requiring Purchase Orders
                 </div>
               </div>
 
@@ -2014,10 +1907,10 @@ export default function OrderManagement({
                   <PackageCheck size={18} style={{ color: '#10b981' }} />
                 </div>
                 <div style={{ fontSize: '1.45rem', fontWeight: '800', marginTop: '6px', color: '#059669' }}>
-                  {reqMetrics.inStockKg.toLocaleString()} <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>kg</span>
+                  {(reqMetrics.inStockKg ?? 0).toLocaleString()} <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>kg</span>
                 </div>
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                  {reqMetrics.inStockLines} lines covered by inventory stock
+                  {reqMetrics.inStockLines ?? 0} lines covered by inventory stock
                 </div>
               </div>
 
@@ -2029,10 +1922,10 @@ export default function OrderManagement({
                   <FileText size={18} style={{ color: '#3b82f6' }} />
                 </div>
                 <div style={{ fontSize: '1.45rem', fontWeight: '800', marginTop: '6px', color: '#2563eb' }}>
-                  {reqMetrics.poIssuedKg.toLocaleString()} <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>kg</span>
+                  {(reqMetrics.poIssuedKg ?? 0).toLocaleString()} <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>kg</span>
                 </div>
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                  {reqMetrics.poIssuedLines} lines with issued vendor POs
+                  {reqMetrics.poIssuedLines ?? 0} lines with issued vendor POs
                 </div>
               </div>
             </div>
@@ -2062,8 +1955,9 @@ export default function OrderManagement({
                 >
                   <option value="SHORTAGE">⚠️ Pending PO / Shortage ({reqMetrics.shortageLines})</option>
                   <option value="ALL">All Material Lines ({reqMetrics.totalLines})</option>
-                  <option value="PENDING_PO">Pending PO (Any stock) ({allMaterialRequirements.filter(r => !r.poIssued).length})</option>
-                  <option value="IN_STOCK">✅ Fully In-Stock ({reqMetrics.inStockLines})</option>
+                  <option value="PO_NOT_REQUIRED">✅ PO Not Required ({reqMetrics.poNotRequiredLines})</option>
+                  <option value="PENDING_PO">⏳ Pending PO ({allMaterialRequirements.filter(r => !r.poIssued && !r.stockInfo?.isFullyAvailable).length})</option>
+                  <option value="IN_STOCK">📦 Fully In-Stock ({reqMetrics.inStockLines})</option>
                   <option value="PO_ISSUED">📄 PO Already Issued ({reqMetrics.poIssuedLines})</option>
                 </SearchableSelect>
               </div>
@@ -2172,7 +2066,7 @@ export default function OrderManagement({
                     ) : (
                       requirementsPagination.paginatedItems.map(req => {
                         const isChecked = !!selectedReqIds[req.id];
-                        const stockInfo = req.stockInfo;
+                        const stockInfo = req.stockInfo || { balanceKg: 0, reservedKg: 0, reqQty: parseFloat(req.qtyKg) || 0, isFullyAvailable: false, isPartiallyAvailable: false };
 
                         return (
                           <tr 
@@ -2294,25 +2188,25 @@ export default function OrderManagement({
 
                             {/* Stock Check & Reservation */}
                             <td>
-                              {stockInfo.isFullyAvailable ? (
+                              {stockInfo?.isFullyAvailable ? (
                                 <div style={{ background: '#dcfce7', border: '1px solid #86efac', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#15803d' }}>
-                                  <strong>✅ {stockInfo.reservedKg} kg in stock</strong>
+                                  <strong>✅ {stockInfo.reservedKg ?? 0} kg in stock</strong>
                                   <div style={{ fontSize: '0.7rem', color: '#166534' }}>
                                     Fully Reserved (No PO Required)
                                   </div>
                                 </div>
-                              ) : stockInfo.isPartiallyAvailable ? (
+                              ) : stockInfo?.isPartiallyAvailable ? (
                                 <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#047857' }}>
-                                  <strong>🟢 {stockInfo.reservedKg} / {stockInfo.reqQty} kg in stock</strong>
+                                  <strong>🟢 {stockInfo.reservedKg ?? 0} / {stockInfo.reqQty ?? req.qtyKg ?? 0} kg in stock</strong>
                                   <div style={{ fontSize: '0.7rem', color: '#065f46' }}>
-                                    {stockInfo.reservedKg} kg Reserved • <strong>{stockInfo.balanceKg} kg Shortage</strong>
+                                    {stockInfo.reservedKg ?? 0} kg Reserved • <strong>{stockInfo.balanceKg ?? 0} kg Shortage</strong>
                                   </div>
                                 </div>
                               ) : (
                                 <div style={{ background: '#fee2e2', border: '1px solid #fecaca', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#dc2626' }}>
                                   <strong>⚠️ 0 kg in stock</strong>
                                   <div style={{ fontSize: '0.7rem', color: '#991b1b' }}>
-                                    Full {stockInfo.reqQty} kg Shortage
+                                    Full {stockInfo?.reqQty ?? req.qtyKg ?? 0} kg Shortage
                                   </div>
                                 </div>
                               )}
@@ -2321,13 +2215,13 @@ export default function OrderManagement({
                             {/* Balance Qty for PO */}
                             <td>
                               <span className="badge" style={{ 
-                                background: stockInfo.balanceKg > 0 ? '#fee2e2' : '#f1f5f9', 
-                                color: stockInfo.balanceKg > 0 ? '#b91c1c' : '#64748b', 
-                                border: stockInfo.balanceKg > 0 ? '1px solid #fca5a5' : '1px solid var(--border-color)',
+                                background: (stockInfo?.balanceKg ?? 0) > 0 ? '#fee2e2' : '#f1f5f9', 
+                                color: (stockInfo?.balanceKg ?? 0) > 0 ? '#b91c1c' : '#64748b', 
+                                border: (stockInfo?.balanceKg ?? 0) > 0 ? '1px solid #fca5a5' : '1px solid var(--border-color)',
                                 fontWeight: '800', 
                                 fontSize: '0.82rem' 
                               }}>
-                                {stockInfo.balanceKg.toLocaleString()} kg
+                                {(stockInfo?.balanceKg ?? 0).toLocaleString()} kg
                               </span>
                             </td>
 
@@ -2394,6 +2288,21 @@ export default function OrderManagement({
                                 >
                                   <FileText size={12} /> {req.poNumber || req.order?.poNumber || 'PO-2026-101'}
                                 </button>
+                              ) : stockInfo?.isFullyAvailable ? (
+                                <span 
+                                  className="badge badge-success" 
+                                  style={{ 
+                                    fontSize: '0.72rem', 
+                                    padding: '3px 6px',
+                                    background: '#dcfce7',
+                                    color: '#15803d',
+                                    border: '1px solid #86efac',
+                                    fontWeight: '700',
+                                    whiteSpace: 'nowrap'
+                                  }}
+                                >
+                                  PO Not Required
+                                </span>
                               ) : (
                                 <span className="badge badge-warning" style={{ fontSize: '0.72rem', padding: '3px 6px' }}>
                                   Pending PO

@@ -280,7 +280,7 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
                       <tr key={index}>
                         <td className="center">{index + 1}</td>
                         <td style={{ fontWeight: '600', color: '#1f2937' }}>{v.variantName}</td>
-                        <td className="right" style={{ fontWeight: 'bold' }}>{v.allocatedQtyKg.toLocaleString()} Kg</td>
+                        <td className="right" style={{ fontWeight: 'bold' }}>{(v.allocatedQtyKg ?? 0).toLocaleString()} Kg</td>
                         <td className="center">{sharePct}%</td>
                         <td className="center" style={{ fontSize: '9px', color: '#6b7280' }}>{v.notes || '—'}</td>
                       </tr>
@@ -291,7 +291,7 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
                   <tr>
                     <td colSpan="2" className="right" style={{ fontWeight: 'bold' }}>Total Variant Quantity</td>
                     <td className="right" style={{ fontWeight: 'bold' }}>
-                      {activeVariants.reduce((sum, v) => sum + v.allocatedQtyKg, 0).toLocaleString()} Kg
+                      {(activeVariants.reduce((sum, v) => sum + (v.allocatedQtyKg || 0), 0) ?? 0).toLocaleString()} Kg
                     </td>
                     <td className="center" style={{ fontWeight: 'bold' }}>
                       {resolvedOrderQtyKg > 0

@@ -355,6 +355,322 @@ export const calculateJobRawMaterials = ({
 };
 
 /**
+ * Universal Raw Material Requirements Extractor for an Order
+ */
+export const getOrderMaterialRequirements = (order, jobMasters = []) => {
+  if (!order) return [];
+  if (order.isCylinderOrder || order.orderType === 'Rotogravure Cylinder' || order.materialFormat === 'Rotogravure Cylinder' || (order.jobName || '').toLowerCase().includes('cylinder')) {
+    return [];
+  }
+
+  const existing = order.materialRequirements || order.rawMaterialRequirements;
+  if (Array.isArray(existing) && existing.length > 0) {
+    return existing;
+  }
+
+  const jm = (jobMasters || []).find(j =>
+    (order?.jobMasterId && (j.id === order.jobMasterId || j.jobMasterId === order.jobMasterId)) ||
+    ((j.jobName || '').toLowerCase().trim() === (order?.jobName || '').toLowerCase().trim())
+  );
+
+  // 1. Order's own locked layers / structure
+  let layers = order?.layers || order?.jobDetails?.layers;
+  const orderStructStr = (order?.structure || order?.jobDetails?.structure || '');
+
+  if (!layers || layers.length === 0) {
+    if (orderStructStr && orderStructStr !== 'PET / PE' && orderStructStr !== '—') {
+      const parts = orderStructStr.split('/').map(p => p.trim());
+      layers = parts.map(part => {
+        const micronMatch = part.match(/(\d+(\.\d+)?)\s*µ?/i);
+        const micron = micronMatch ? parseFloat(micronMatch[1]) : 12;
+        let filmType = part.replace(/(\d+(\.\d+)?)\s*µ?/gi, '').trim();
+        if (!filmType) filmType = 'PET';
+        return { filmType, micron };
+      });
+    }
+  }
+
+  // 2. Fallback to Job Master layers / structure if order has no explicit structure
+  if (!layers || layers.length === 0) {
+    layers = jm?.layers;
+    const jmStructStr = jm?.structure || '';
+    if ((!layers || layers.length === 0) && jmStructStr && jmStructStr !== 'PET / PE' && jmStructStr !== '—') {
+      const parts = jmStructStr.split('/').map(p => p.trim());
+      layers = parts.map(part => {
+        const micronMatch = part.match(/(\d+(\.\d+)?)\s*µ?/i);
+        const micron = micronMatch ? parseFloat(micronMatch[1]) : 12;
+        let filmType = part.replace(/(\d+(\.\d+)?)\s*µ?/gi, '').trim();
+        if (!filmType) filmType = 'PET';
+        return { filmType, micron };
+      });
+    }
+  }
+
+  if (!layers || layers.length === 0) {
+    layers = [
+      { filmType: 'PET', micron: 12 },
+      { filmType: 'Natural GP LD', micron: 35 }
+    ];
+  }
+
+  const getMaterialForm = (o) => {
+    const type = (o?.orderType || o?.materialFormat || '').toLowerCase();
+    if (type.includes('pouch') || type.includes('zipper') || type.includes('stand')) return 'Pouching';
+    return 'Reel';
+  };
+
+  const calc = calculateJobRawMaterials({
+    jobName: order?.jobName || 'Job',
+    printWidthMm: parseFloat(order?.printWidthMm || jm?.printWidthMm) || 1000,
+    repeatLengthMm: parseFloat(order?.repeatLengthMm || jm?.repeatLengthMm) || 400,
+    orderQtyKg: parseFloat(order?.orderQtyKg) || 1000,
+    orderType: getMaterialForm(order),
+    layers
+  });
+
+  const reqs = [];
+  if (calc && calc.layerResults) {
+    calc.layerResults.forEach((layer, idx) => {
+      reqs.push({
+        id: `REQ-${order?.id || 'ORD'}-${idx + 1}`,
+        filmType: layer.filmType,
+        micron: layer.micron,
+        widthMm: layer.widthMm || parseFloat(order?.printWidthMm || jm?.printWidthMm) || 1000,
+        qtyKg: layer.grossKg || 0,
+        preferredVendor: (layer.filmType || '').toLowerCase().includes('ld') ? 'Malwa Extrusions Pvt Ltd' : 'FlexiPoly Films Ltd',
+        poIssued: false,
+        poNumber: ""
+      });
+    });
+
+    if (calc.inkDetails && calc.inkDetails.grossKg > 0) {
+      reqs.push({
+        id: `REQ-${order?.id || 'ORD'}-${reqs.length + 1}`,
+        filmType: 'Liquid Inks',
+        micron: '-',
+        widthMm: '-',
+        qtyKg: calc.inkDetails.grossKg,
+        preferredVendor: 'Siegwerk Inks Ltd',
+        poIssued: false,
+        poNumber: ""
+      });
+    }
+
+    if (calc.adhesiveDetails && calc.adhesiveDetails.grossKg > 0) {
+      reqs.push({
+        id: `REQ-${order?.id || 'ORD'}-${reqs.length + 1}`,
+        filmType: 'Solvent-less Adhesive',
+        micron: '-',
+        widthMm: '-',
+        qtyKg: calc.adhesiveDetails.grossKg,
+        preferredVendor: 'Siegwerk Inks Ltd',
+        poIssued: false,
+        poNumber: ""
+      });
+    }
+  }
+
+  return reqs;
+};
+
+/**
+ * Universal Matcher for Material Requirement against Inventory Items
+ */
+export const matchRequirementToInventoryItem = (req, inventory = []) => {
+  if (!req || !Array.isArray(inventory)) return null;
+
+  const reqId = String(req.stockItemId || req.itemId || req.inventoryId || '');
+  const reqFilm = (req.filmType || req.itemName || '').toLowerCase().trim();
+  const reqMicron = String(req.micron || '').replace('µ', '').trim();
+  const reqWidth = String(req.widthMm || '').replace('mm', '').trim();
+
+  const isReqMetpet = reqFilm.includes('metpet') || reqFilm.includes('met-pet');
+  const isReqMetbopp = reqFilm.includes('metbopp') || reqFilm.includes('met-bopp');
+
+  return inventory.find(inv => {
+    // 1. Direct ID / Code match
+    if (reqId && (String(inv.id) === reqId || String(inv.itemCode) === reqId)) return true;
+
+    // Check subItems if any
+    const candidates = inv.subItems && inv.subItems.length > 0 ? [inv, ...inv.subItems] : [inv];
+
+    return candidates.some(c => {
+      const invId = String(c.id || c.itemCode || '');
+      if (reqId && invId === reqId) return true;
+
+      const invFilm = (c.filmType || c.itemName || '').toLowerCase().trim();
+      const invMicron = String(c.micron || '').replace('µ', '').trim();
+      const invWidth = String(c.widthMm || '').replace('mm', '').trim();
+
+      const isInvMetpet = invFilm.includes('metpet') || invFilm.includes('met-pet');
+      const isInvMetbopp = invFilm.includes('metbopp') || invFilm.includes('met-bopp');
+
+      // Substrate differentiation: Plain PET vs METPET, Plain BOPP vs METBOPP
+      if (isReqMetpet !== isInvMetpet) return false;
+      if (isReqMetbopp !== isInvMetbopp) return false;
+
+      // Film substrate matching
+      const filmMatch = invFilm === reqFilm || 
+                        invFilm.includes(reqFilm) || reqFilm.includes(invFilm) || 
+                        (reqFilm.includes('pet') && invFilm.includes('pet')) ||
+                        (reqFilm.includes('metpet') && invFilm.includes('metpet')) ||
+                        (reqFilm.includes('ld') && invFilm.includes('ld')) ||
+                        (reqFilm.includes('poly') && invFilm.includes('poly')) ||
+                        (reqFilm.includes('bopp') && invFilm.includes('bopp')) ||
+                        (reqFilm.includes('ink') && invFilm.includes('ink')) ||
+                        (reqFilm.includes('adhesive') && invFilm.includes('adhesive'));
+
+      if (!filmMatch) return false;
+
+      const micronMatch = !reqMicron || reqMicron === '-' || !invMicron || invMicron === '-' || 
+                          invMicron === reqMicron || Math.abs((parseFloat(invMicron) || 0) - (parseFloat(reqMicron) || 0)) <= 0.5;
+
+      const widthMatch = !reqWidth || reqWidth === '-' || !invWidth || invWidth === '-' || 
+                         invWidth === reqWidth || Math.abs((parseFloat(invWidth) || 0) - (parseFloat(reqWidth) || 0)) <= 2;
+
+      return micronMatch && widthMatch;
+    });
+  }) || null;
+};
+
+/**
+ * Multi-Order Coordinated Stock Checking & Material Reservation Engine
+ * Tracks live stock pools across all active orders and allocates stock sequentially.
+ */
+export const calculateOrderStockReservations = (orders = [], inventory = [], jobMasters = []) => {
+  // Pool of available stock per inventory item
+  const pool = {};
+  (inventory || []).forEach(item => {
+    const qty = Number(item.availableQtyKg ?? item.stockQtyKg ?? item.stock_qty_kg ?? 0) || 0;
+    const itemIdStr = String(item.id);
+    pool[itemIdStr] = {
+      item,
+      totalStockKg: qty,
+      remainingStockKg: qty,
+      totalReservedKg: 0,
+      reservations: [] // array of { orderId, order, reqId, req, grossReqKg, reservedKg, balanceKg, isFullyReserved }
+    };
+  });
+
+  const reqStockInfoMap = {};
+
+  // Active orders sorted chronologically by delivery commitment
+  const activeOrders = (orders || []).filter(o => 
+    o && o.status !== 'Completed' && o.status !== 'Cancelled'
+  );
+
+  activeOrders.sort((a, b) => {
+    const dateA = a.targetDeliveryDate || a.deliveryDate || '9999-99-99';
+    const dateB = b.targetDeliveryDate || b.deliveryDate || '9999-99-99';
+    return dateA.localeCompare(dateB);
+  });
+
+  activeOrders.forEach(order => {
+    const reqs = getOrderMaterialRequirements(order, jobMasters);
+    reqs.forEach((req, idx) => {
+      const reqQty = parseFloat(req.qtyKg) || 0;
+      const matchedInv = matchRequirementToInventoryItem(req, inventory);
+      const reqKey = req.id || `REQ-${order.id}-${idx}`;
+
+      if (!matchedInv || reqQty <= 0) {
+        reqStockInfoMap[reqKey] = {
+          reqQty,
+          totalInStock: 0,
+          reservedKg: 0,
+          balanceKg: reqQty,
+          isFullyAvailable: false,
+          isPartiallyAvailable: false,
+          matchedItemId: null,
+          matchedItem: null,
+          poStatus: req.poIssued ? 'PO Issued' : 'Pending PO'
+        };
+        return;
+      }
+
+      const invKey = String(matchedInv.id);
+      const poolEntry = pool[invKey];
+      const availForThis = poolEntry ? poolEntry.remainingStockKg : 0;
+      const reservedKg = Math.min(reqQty, availForThis);
+      const balanceKg = Math.max(0, Number((reqQty - reservedKg).toFixed(2)));
+      const isFullyAvailable = reservedKg >= reqQty;
+      const isPartiallyAvailable = reservedKg > 0 && reservedKg < reqQty;
+
+      if (poolEntry) {
+        poolEntry.remainingStockKg = Math.max(0, Number((poolEntry.remainingStockKg - reservedKg).toFixed(2)));
+        poolEntry.totalReservedKg = Number((poolEntry.totalReservedKg + reservedKg).toFixed(2));
+
+        if (reservedKg > 0) {
+          poolEntry.reservations.push({
+            orderId: order.id,
+            order,
+            reqId: reqKey,
+            req,
+            grossReqKg: reqQty,
+            reservedKg,
+            balanceKg,
+            isFullyReserved: isFullyAvailable,
+            isPartiallyReserved: isPartiallyAvailable,
+            poStatus: req.poIssued ? 'PO Issued' : (isFullyAvailable ? 'PO Not Required' : 'Pending PO')
+          });
+        }
+      }
+
+      reqStockInfoMap[reqKey] = {
+        reqQty,
+        totalInStock: poolEntry ? poolEntry.totalStockKg : 0,
+        reservedKg,
+        balanceKg,
+        isFullyAvailable,
+        isPartiallyAvailable,
+        matchedItemId: matchedInv.id,
+        matchedItem: matchedInv,
+        poStatus: req.poIssued ? 'PO Issued' : (isFullyAvailable ? 'PO Not Required' : 'Pending PO')
+      };
+    });
+  });
+
+  return {
+    pool,
+    reqStockInfoMap,
+    getReqStockInfo: (req, orderId) => {
+      if (!req) return { reqQty: 0, totalInStock: 0, reservedKg: 0, balanceKg: 0, isFullyAvailable: false, isPartiallyAvailable: false, poStatus: 'Pending PO' };
+      const reqKey = req.id || (orderId ? `REQ-${orderId}-${req.filmType}` : null);
+      if (reqKey && reqStockInfoMap[reqKey]) {
+        return reqStockInfoMap[reqKey];
+      }
+      const matched = matchRequirementToInventoryItem(req, inventory);
+      if (!matched) {
+        return {
+          reqQty: parseFloat(req.qtyKg) || 0,
+          totalInStock: 0,
+          reservedKg: 0,
+          balanceKg: parseFloat(req.qtyKg) || 0,
+          isFullyAvailable: false,
+          isPartiallyAvailable: false,
+          poStatus: req.poIssued ? 'PO Issued' : 'Pending PO'
+        };
+      }
+      const entry = pool[String(matched.id)];
+      const reqQty = parseFloat(req.qtyKg) || 0;
+      const totalInStock = entry ? entry.totalStockKg : (Number(matched.availableQtyKg) || 0);
+      const reservedKg = Math.min(reqQty, entry ? entry.remainingStockKg : totalInStock);
+      const isFully = reservedKg >= reqQty;
+      return {
+        reqQty,
+        totalInStock,
+        reservedKg,
+        balanceKg: Math.max(0, Number((reqQty - reservedKg).toFixed(2))),
+        isFullyAvailable: isFully,
+        isPartiallyAvailable: reservedKg > 0 && reservedKg < reqQty,
+        matchedItemId: matched.id,
+        matchedItem: matched,
+        poStatus: req.poIssued ? 'PO Issued' : (isFully ? 'PO Not Required' : 'Pending PO')
+      };
+    }
+  };
+};
+
+/**
  * Seed Users & Role-Based Access Control (RBAC)
  */
 // PRODUCTION: No seed users. All user accounts come from Supabase Auth / DB.
