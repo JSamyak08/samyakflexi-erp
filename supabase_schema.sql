@@ -911,7 +911,39 @@ CREATE TABLE IF NOT EXISTS public.pellet_consumptions (
 );
 
 -- =========================================================================
--- 25. PERFORMANCE INDEXES FOR SUB-SECOND QUERY SPEEDS
+-- 25. PURCHASE ORDERS TABLE (PO MANAGEMENT MODULE)
+-- =========================================================================
+CREATE TABLE IF NOT EXISTS public.purchase_orders (
+    id TEXT PRIMARY KEY,
+    po_number TEXT UNIQUE NOT NULL,
+    po_date DATE DEFAULT CURRENT_DATE,
+    delivery_date DATE,
+    promised_delivery_date DATE,
+    vendor_id TEXT REFERENCES public.vendors(id) ON DELETE SET NULL,
+    vendor_name TEXT NOT NULL,
+    vendor_details JSONB DEFAULT '{}'::jsonb,
+    category TEXT DEFAULT 'Film Substrates',
+    items JSONB DEFAULT '[]'::jsonb,
+    total_qty_kg NUMERIC DEFAULT 0,
+    subtotal NUMERIC DEFAULT 0,
+    tax_amount NUMERIC DEFAULT 0,
+    total_amount NUMERIC DEFAULT 0,
+    payment_terms TEXT DEFAULT '30 Days Net',
+    logistic_details TEXT DEFAULT 'Freight Included within Indore',
+    notes TEXT,
+    remarks TEXT,
+    status TEXT DEFAULT 'Pending Delivery', -- 'Pending Delivery', 'Partially Received', 'Received', 'Cancelled'
+    source TEXT DEFAULT 'Direct PO Module', -- 'Direct PO Module', 'Order Raw Material Requirement', 'Engraver Cylinder', 'Material Indent'
+    linked_order_id TEXT,
+    linked_order_name TEXT,
+    linked_requirements JSONB DEFAULT '[]'::jsonb,
+    created_by TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =========================================================================
+-- 26. PERFORMANCE INDEXES FOR SUB-SECOND QUERY SPEEDS
 -- =========================================================================
 CREATE INDEX IF NOT EXISTS idx_orders_created_at ON public.orders(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON public.orders(status);
@@ -924,6 +956,13 @@ CREATE INDEX IF NOT EXISTS idx_cylinders_job_name ON public.cylinders(job_name);
 CREATE INDEX IF NOT EXISTS idx_prod_rec_order_id ON public.production_records(order_id);
 CREATE INDEX IF NOT EXISTS idx_prod_rec_recorded_at ON public.production_records(recorded_at DESC);
 CREATE INDEX IF NOT EXISTS idx_grns_created_at ON public.grns(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_grns_po_number ON public.grns(po_number);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_po_number ON public.purchase_orders(po_number);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_vendor_id ON public.purchase_orders(vendor_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_vendor_name ON public.purchase_orders(vendor_name);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_po_date ON public.purchase_orders(po_date DESC);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_status ON public.purchase_orders(status);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_delivery_date ON public.purchase_orders(delivery_date);
 CREATE INDEX IF NOT EXISTS idx_rolls_barcode ON public.inventory_rolls(barcode_id);
 CREATE INDEX IF NOT EXISTS idx_rolls_order_id ON public.inventory_rolls(order_id);
 CREATE INDEX IF NOT EXISTS idx_rolls_status ON public.inventory_rolls(status);
@@ -939,7 +978,7 @@ CREATE INDEX IF NOT EXISTS idx_pellet_inward_date ON public.pellet_inwards(inwar
 CREATE INDEX IF NOT EXISTS idx_pellet_consum_date ON public.pellet_consumptions(consumption_date DESC);
 
 -- =========================================================================
--- 26. RLS & PERMISSIONS FOR NEW TABLES
+-- 27. RLS & PERMISSIONS FOR TABLES
 -- =========================================================================
 ALTER TABLE public.employees ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow anon and auth full access on employees" ON public.employees;
@@ -964,6 +1003,10 @@ CREATE POLICY "Allow anon and auth full access on pellet_inwards" ON public.pell
 ALTER TABLE public.pellet_consumptions ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow anon and auth full access on pellet_consumptions" ON public.pellet_consumptions;
 CREATE POLICY "Allow anon and auth full access on pellet_consumptions" ON public.pellet_consumptions FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE public.purchase_orders ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow anon and auth full access on purchase_orders" ON public.purchase_orders;
+CREATE POLICY "Allow anon and auth full access on purchase_orders" ON public.purchase_orders FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
 -- =========================================================================
 -- 27. REALTIME REPLICATION CONFIGURATION FOR LIVE MULTI-SESSION SYNC

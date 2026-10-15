@@ -63,6 +63,7 @@ import AuditLogsManagement from './components/AuditLogsManagement';
 import InkManagement from './components/InkManagement';
 import DispatchManagement from './components/DispatchManagement';
 import SFGStoreManagement from './components/SFGStoreManagement';
+import PurchaseOrderManagement from './components/PurchaseOrderManagement';
 import WeighingScaleWidget from './components/WeighingScaleWidget';
 import UniversalBarcodeScannerModal from './components/UniversalBarcodeScannerModal';
 import Preloader from './components/Preloader';
@@ -95,6 +96,7 @@ import {
   fetchCertificatesOfAnalysisFromSupabase, saveCertificateOfAnalysisToSupabase, deleteCertificateOfAnalysisFromSupabase,
   fetchPelletInwardsFromSupabase, savePelletInwardToSupabase, deletePelletInwardFromSupabase,
   fetchPelletConsumptionsFromSupabase, savePelletConsumptionToSupabase, deletePelletConsumptionFromSupabase,
+  fetchPurchaseOrders, savePurchaseOrderToSupabase, deletePurchaseOrderFromSupabase, sanitizePurchaseOrder,
   fetchFilmSubstratesFromSupabase,
   fetchSystemSetting, saveSystemSetting, fetchAllSystemSettings
 } from './services/supabaseDataService';
@@ -336,6 +338,39 @@ export default function App() {
   const [sfgGoods, setSfgGoods] = useState(() => safeLocalStorageGet('samyak_cache_sfg_goods', []));
   const [pelletInwards, setPelletInwards] = useState(() => safeLocalStorageGet('samyak_cache_pellet_inwards', []));
   const [pelletConsumptions, setPelletConsumptions] = useState(() => safeLocalStorageGet('samyak_cache_pellet_consumptions', []));
+  const [purchaseOrders, setPurchaseOrders] = useState(() => safeLocalStorageGet('samyak_cache_purchase_orders', []));
+
+  const handleSavePurchaseOrder = async (po) => {
+    requireDatabaseConnection('save purchase order');
+    const saved = await savePurchaseOrderToSupabase(po);
+    setPurchaseOrders(prev => {
+      const copy = [saved, ...prev.filter(p => p.poNumber !== saved.poNumber && p.id !== saved.id)];
+      safeLocalStorageSet('samyak_cache_purchase_orders', copy);
+      return copy;
+    });
+    return saved;
+  };
+
+  const handleUpdatePurchaseOrder = async (po) => {
+    requireDatabaseConnection('update purchase order');
+    const updated = await savePurchaseOrderToSupabase(po);
+    setPurchaseOrders(prev => {
+      const copy = prev.map(p => (p.poNumber === updated.poNumber || p.id === updated.id) ? updated : p);
+      safeLocalStorageSet('samyak_cache_purchase_orders', copy);
+      return copy;
+    });
+    return updated;
+  };
+
+  const handleDeletePurchaseOrder = async (poId) => {
+    requireDatabaseConnection('delete purchase order');
+    await deletePurchaseOrderFromSupabase(poId);
+    setPurchaseOrders(prev => {
+      const copy = prev.filter(p => p.id !== poId && p.poNumber !== poId);
+      safeLocalStorageSet('samyak_cache_purchase_orders', copy);
+      return copy;
+    });
+  };
 
   const handleSavePelletInward = async (item) => {
     if (!item) return;
@@ -686,7 +721,8 @@ export default function App() {
           supaDCs,
           supaCoAs,
           supaPelletInwards,
-          supaPelletConsumptions
+          supaPelletConsumptions,
+          supaPOs
         ] = await Promise.all([
           fetchSafe(fetchGRNs, 'GRNs'),
           fetchSafe(fetchProductionRecords, 'Production Records'),
@@ -699,7 +735,8 @@ export default function App() {
           fetchSafe(fetchDeliveryChallansFromSupabase, 'Delivery Challans'),
           fetchSafe(fetchCertificatesOfAnalysisFromSupabase, 'Certificates of Analysis'),
           fetchSafe(fetchPelletInwardsFromSupabase, 'Pellet Inwards'),
-          fetchSafe(fetchPelletConsumptionsFromSupabase, 'Pellet Consumptions')
+          fetchSafe(fetchPelletConsumptionsFromSupabase, 'Pellet Consumptions'),
+          fetchSafe(fetchPurchaseOrders, 'Purchase Orders')
         ]);
 
         if (!isMounted) return;
@@ -773,6 +810,12 @@ export default function App() {
         if (Array.isArray(supaPelletConsumptions)) {
           setPelletConsumptions(supaPelletConsumptions);
           safeLocalStorageSet('samyak_cache_pellet_consumptions', supaPelletConsumptions);
+        }
+
+        if (Array.isArray(supaPOs)) {
+          const cleanPOs = stripDummyRecords(supaPOs).map(sanitizePurchaseOrder);
+          setPurchaseOrders(cleanPOs);
+          safeLocalStorageSet('samyak_cache_purchase_orders', cleanPOs);
         }
 
         // ====================================================================
@@ -1042,6 +1085,13 @@ export default function App() {
               setDeliveryChallans(clean);
               safeLocalStorageSet('samyak_cache_delivery_challans', clean);
             }
+          } else if (table === 'purchase_orders') {
+            const data = await fetchPurchaseOrders();
+            if (Array.isArray(data)) {
+              const clean = stripDummyRecords(data).map(sanitizePurchaseOrder);
+              setPurchaseOrders(clean);
+              safeLocalStorageSet('samyak_cache_purchase_orders', clean);
+            }
           } else if (table === 'system_settings') {
             const settings = await fetchAllSystemSettings();
             if (settings && typeof settings === 'object') {
@@ -1065,6 +1115,7 @@ export default function App() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cylinders' }, () => refreshEntity('cylinders'))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_records' }, () => refreshEntity('production_records'))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'grns' }, () => refreshEntity('grns'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'purchase_orders' }, () => refreshEntity('purchase_orders'))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'job_masters' }, () => refreshEntity('job_masters'))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_attendance' }, () => refreshEntity('employee_attendance'))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, () => refreshEntity('employees'))
@@ -3081,13 +3132,30 @@ export default function App() {
           )}
 
           {/* Group 4: Supply Chain & Logistics */}
-          {(isTabAllowed('inventory') || isTabAllowed('sfg_store') || isTabAllowed('ink_management') || isTabAllowed('material_indents') || isTabAllowed('vendors') || isTabAllowed('dispatch')) && (
+          {(isTabAllowed('inventory') || isTabAllowed('purchase_orders') || isTabAllowed('sfg_store') || isTabAllowed('ink_management') || isTabAllowed('material_indents') || isTabAllowed('vendors') || isTabAllowed('dispatch')) && (
             <>
               <div className="sidebar-section-header">Supply Chain & Store</div>
 
+              {isTabAllowed('purchase_orders') && (
+                <div 
+                  className={`nav-item ${activeTab === 'purchase_orders' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('purchase_orders')}
+                >
+                  <span className="nav-icon-box" style={{ color: '#4f46e5' }}>
+                    <ShoppingBag size={18} />
+                  </span>
+                  <span>Purchase Orders</span>
+                  {purchaseOrders.length > 0 && (
+                    <span className="nav-badge-pill nav-badge-neutral">
+                      {purchaseOrders.length}
+                    </span>
+                  )}
+                </div>
+              )}
+
               {isTabAllowed('inventory') && (
                 <div 
-                  className={`nav-item ${activeTab === 'inventory' && (!urlParams?.tab || urlParams?.tab !== 'issued_pos') ? 'active' : ''}`}
+                  className={`nav-item ${activeTab === 'inventory' ? 'active' : ''}`}
                   onClick={() => handleTabChange('inventory')}
                 >
                   <span className="nav-icon-box" style={{ color: '#0284c7' }}>
@@ -3099,18 +3167,6 @@ export default function App() {
                       {pendingQCGRNsCount} QC
                     </span>
                   )}
-                </div>
-              )}
-
-              {isTabAllowed('inventory') && (
-                <div 
-                  className={`nav-item ${activeTab === 'inventory' && urlParams?.tab === 'issued_pos' ? 'active' : ''}`}
-                  onClick={() => handleTabChange('inventory', { tab: 'issued_pos' })}
-                >
-                  <span className="nav-icon-box" style={{ color: '#4f46e5' }}>
-                    <FileCheck size={18} />
-                  </span>
-                  <span>Issued Purchase Orders</span>
                 </div>
               )}
 
@@ -3313,6 +3369,7 @@ export default function App() {
               {activeTab === 'job_masters' && 'Job Master Technical Directory & Specs'}
               {activeTab === 'clients' && 'Client Onboarding & Directory'}
               {activeTab === 'vendors' && 'Vendor Onboarding & Directory'}
+              {activeTab === 'purchase_orders' && 'Purchase Order Management & Procurement Engine'}
               {activeTab === 'inventory' && 'Raw Material Inventory, GRN & Quality Control'}
               {activeTab === 'ink_management' && 'Ink Master Directory, Solid Costing & Stock Management'}
               {activeTab === 'material_indents' && 'Material Indents Requisitions & Consumable Store'}
@@ -4157,6 +4214,9 @@ export default function App() {
             orders={orders} 
             vendors={vendors}
             inventory={inventory}
+            grns={grns}
+            purchaseOrders={purchaseOrders}
+            onSavePurchaseOrder={handleSavePurchaseOrder}
             jobMasters={jobMasters}
             cylinders={cylinders}
             currentUser={currentUser}
@@ -4179,6 +4239,23 @@ export default function App() {
             onAddVendor={handleAddVendor} 
             onUpdateVendor={handleAddVendor} 
             onDeleteVendor={handleDeleteVendor} 
+          />
+        )}
+
+        {/* TAB: PURCHASE ORDER MANAGEMENT */}
+        {activeTab === 'purchase_orders' && (
+          <PurchaseOrderManagement 
+            urlParams={urlParams}
+            purchaseOrders={purchaseOrders}
+            onAddPurchaseOrder={handleSavePurchaseOrder}
+            onUpdatePurchaseOrder={handleUpdatePurchaseOrder}
+            onDeletePurchaseOrder={handleDeletePurchaseOrder}
+            inventory={inventory}
+            vendors={vendors}
+            grns={grns}
+            orders={orders}
+            onUpdateOrder={handleUpdateOrder}
+            currentUser={currentUser}
           />
         )}
 

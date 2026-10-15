@@ -17,6 +17,7 @@ export const TAB_SLUG_MAP = {
   sfg_store: '/sfg-fg-store',
   ink_management: '/ink-management',
   material_indents: '/material-indents',
+  purchase_orders: '/purchase-orders',
   dispatch: '/finished-goods-dispatch',
   employees: '/employee-management',
   user_management: '/user-management',
@@ -83,6 +84,15 @@ export const SLUG_TAB_MAP = {
 
   '/material-indents': 'material_indents',
   'material-indents': 'material_indents',
+
+  '/purchase-orders': 'purchase_orders',
+  'purchase-orders': 'purchase_orders',
+  '/purchase-order-management': 'purchase_orders',
+  'purchase-order-management': 'purchase_orders',
+  '/purchase-orders-hub': 'purchase_orders',
+  'purchase-orders-hub': 'purchase_orders',
+  '/issued-pos': 'purchase_orders',
+  'issued-pos': 'purchase_orders',
 
   '/finished-goods-dispatch': 'dispatch',
   'finished-goods-dispatch': 'dispatch',

@@ -35,7 +35,7 @@ import PurchaseOrderPDF from './PurchaseOrderPDF';
 import { generateDocRefNumber, getNextDocRefNumber, getInventoryAgeingSettings } from '../services/settingsService';
 import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo } from '../utils/fifoUtils';
 import { notifyPurchaseOrderIssued } from '../services/emailService';
-import { saveSystemSetting, fetchSystemSetting } from '../services/supabaseDataService';
+import { saveSystemSetting, fetchSystemSetting, savePurchaseOrderToSupabase } from '../services/supabaseDataService';
 
 
 export default function InkManagement({
@@ -747,13 +747,13 @@ export default function InkManagement({
       items: items
     };
 
-    // Save to central samyak_erp_issued_pos store via Supabase
+    // Save to central samyak_erp_issued_pos store & purchase_orders table via Supabase
     (async () => {
       try {
-        const store = (await fetchSystemSetting('samyak_erp_issued_pos')) || {};
-        store[poData.poNumber] = poData;
-        await saveSystemSetting('samyak_erp_issued_pos', store);
-      } catch (err) {}
+        await savePurchaseOrderToSupabase(poData);
+      } catch (err) {
+        console.warn('Ink PO save notice:', err);
+      }
     })();
 
     // Dispatch email notification log

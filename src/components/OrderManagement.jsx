@@ -35,7 +35,7 @@ import {
   getOrderMaterialRequirements as getOrderMaterialRequirementsFromStore,
   calculateOrderStockReservations
 } from '../factoryStore';
-import { saveOrderToSupabase, fetchSystemSetting, saveSystemSetting } from '../services/supabaseDataService';
+import { saveOrderToSupabase, fetchSystemSetting, saveSystemSetting, savePurchaseOrderToSupabase } from '../services/supabaseDataService';
 import { getNextDocRefNumber } from '../services/settingsService';
 
 export default function OrderManagement({ 
@@ -43,6 +43,9 @@ export default function OrderManagement({
   orders = [], 
   vendors = [], 
   inventory = [],
+  grns = [],
+  purchaseOrders = [],
+  onSavePurchaseOrder,
   jobMasters = [],
   cylinders = [],
   currentUser,
@@ -727,19 +730,36 @@ export default function OrderManagement({
     }];
 
     const poData = {
+      id: poNo,
       poNumber: poNo,
       date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+      poDate: new Date().toISOString().split('T')[0],
       vendor: vendorObj,
+      vendorName: vendorObj.companyName || vendorObj.name,
+      category: 'Rotogravure Cylinders',
       items: poItems,
+      totalQtyKg: qtyVal,
+      subtotal: totalVal,
+      totalAmount: totalVal * 1.18,
       deliveryDate: order.targetDeliveryDate || new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
+      promisedDeliveryDate: order.targetDeliveryDate || new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
       terms: '100% Advance along with Purchase Order',
-      remarks: 'Engraved cylinders must strictly conform to electronic proof & job specifications. Dynamic balancing test report & proof print required upon delivery.'
+      remarks: 'Engraved cylinders must strictly conform to electronic proof & job specifications. Dynamic balancing test report & proof print required upon delivery.',
+      source: `Cylinder Order #${order.id} (${order.jobName})`,
+      linkedOrderId: order.id,
+      linkedOrderName: order.jobName
     };
 
     saveIssuedPoStore({
       ...issuedPoStore,
       [poNo]: poData
     });
+
+    if (onSavePurchaseOrder) {
+      onSavePurchaseOrder(poData).catch(console.warn);
+    } else {
+      savePurchaseOrderToSupabase(poData).catch(console.warn);
+    }
 
     // Update order status
     onUpdateOrder({
@@ -917,20 +937,41 @@ export default function OrderManagement({
       };
     });
 
+    const totalQtyKg = poItems.reduce((sum, it) => sum + (it.qtyKg || 0), 0);
+    const subtotal = poItems.reduce((sum, it) => sum + (it.amount || 0), 0);
+
     const poData = {
+      id: poNo,
       poNumber: poNo,
       date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+      poDate: new Date().toISOString().split('T')[0],
       vendor: vendorObj,
+      vendorName: vendorObj.companyName || vendorObj.name,
+      category: 'Film Substrates',
       items: poItems,
+      totalQtyKg: totalQtyKg,
+      subtotal: subtotal,
+      totalAmount: subtotal * 1.18,
       deliveryDate,
+      promisedDeliveryDate: deliveryDate,
+      paymentTerms: paymentTerms,
       terms: paymentTerms,
-      remarks: poRemarks
+      remarks: poRemarks,
+      notes: poRemarks,
+      source: `Consolidated Order Requirements (${selectedRequirements.length} lines)`,
+      linkedRequirements: Object.keys(selectedReqIds)
     };
 
     saveIssuedPoStore({
       ...issuedPoStore,
       [poNo]: poData
     });
+
+    if (onSavePurchaseOrder) {
+      onSavePurchaseOrder(poData).catch(console.warn);
+    } else {
+      savePurchaseOrderToSupabase(poData).catch(console.warn);
+    }
 
     // Update PO status in orders state & database
     orders.forEach(order => {
@@ -1801,8 +1842,9 @@ export default function OrderManagement({
                                         </td>
                                         <td>
                                           {req.poIssued ? (
-                                            <button 
-                                              type="button"
+                                            <div>
+                                              <button 
+                                                type="button"
                                               className="btn-secondary" 
                                               style={{ 
                                                 display: 'inline-flex', 
@@ -1822,7 +1864,21 @@ export default function OrderManagement({
                                             >
                                               <FileText size={13} /> {req.poNumber || order.poNumber || 'PO-2026-101'}
                                             </button>
-                                          ) : stockInfo?.isFullyAvailable ? (
+                                            {(() => {
+                                              const poNo = req.poNumber || order.poNumber;
+                                              const matched = (grns || []).filter(g => String(g.poNumber || '').trim().toLowerCase() === String(poNo || '').trim().toLowerCase());
+                                              const inwQty = matched.reduce((sum, g) => sum + (parseFloat(g.netWeightKg) || parseFloat(g.receivedQtyKg) || 0), 0);
+                                              const reqQty = parseFloat(req.qtyKg) || 0;
+                                              if (inwQty >= reqQty && reqQty > 0) {
+                                                return <div style={{ fontSize: '0.68rem', fontWeight: '700', color: '#047857', marginTop: '2px' }}>✅ GRN Received ({inwQty.toLocaleString()}kg)</div>;
+                                              } else if (inwQty > 0) {
+                                                return <div style={{ fontSize: '0.68rem', fontWeight: '700', color: '#b45309', marginTop: '2px' }}>🟡 Partial ({inwQty.toLocaleString()}/{reqQty.toLocaleString()}kg)</div>;
+                                              } else {
+                                                return <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '2px' }}>⏳ Awaiting Inward</div>;
+                                              }
+                                            })()}
+                                          </div>
+                                        ) : stockInfo?.isFullyAvailable ? (
                                             <span 
                                               className="badge badge-success" 
                                               style={{ 
@@ -2268,26 +2324,41 @@ export default function OrderManagement({
                             {/* PO Status */}
                             <td>
                               {req.poIssued ? (
-                                <button 
-                                  type="button"
-                                  className="btn-secondary" 
-                                  style={{ 
-                                    display: 'inline-flex', 
-                                    alignItems: 'center', 
-                                    gap: '4px', 
-                                    padding: '3px 7px', 
-                                    fontSize: '0.74rem', 
-                                    fontWeight: '700', 
-                                    color: '#047857', 
-                                    borderColor: '#a7f3d0', 
-                                    background: '#ecfdf5', 
-                                    cursor: 'pointer' 
-                                  }}
-                                  onClick={(e) => handleViewPoPdf(req.poNumber || req.order?.poNumber || 'PO-2026-101', e)}
-                                  title="Click to View, Print & Download Purchase Order PDF"
-                                >
-                                  <FileText size={12} /> {req.poNumber || req.order?.poNumber || 'PO-2026-101'}
-                                </button>
+                                <div>
+                                  <button 
+                                    type="button"
+                                    className="btn-secondary" 
+                                    style={{ 
+                                      display: 'inline-flex', 
+                                      alignItems: 'center', 
+                                      gap: '4px', 
+                                      padding: '3px 7px', 
+                                      fontSize: '0.74rem', 
+                                      fontWeight: '700', 
+                                      color: '#047857', 
+                                      borderColor: '#a7f3d0', 
+                                      background: '#ecfdf5', 
+                                      cursor: 'pointer' 
+                                    }}
+                                    onClick={(e) => handleViewPoPdf(req.poNumber || req.order?.poNumber || 'PO-2026-101', e)}
+                                    title="Click to View, Print & Download Purchase Order PDF"
+                                  >
+                                    <FileText size={12} /> {req.poNumber || req.order?.poNumber || 'PO-2026-101'}
+                                  </button>
+                                  {(() => {
+                                    const poNo = req.poNumber || req.order?.poNumber;
+                                    const matched = (grns || []).filter(g => String(g.poNumber || '').trim().toLowerCase() === String(poNo || '').trim().toLowerCase());
+                                    const inwQty = matched.reduce((sum, g) => sum + (parseFloat(g.netWeightKg) || parseFloat(g.receivedQtyKg) || 0), 0);
+                                    const reqQty = parseFloat(req.qtyKg) || 0;
+                                    if (inwQty >= reqQty && reqQty > 0) {
+                                      return <div style={{ fontSize: '0.68rem', fontWeight: '700', color: '#047857', marginTop: '2px' }}>✅ GRN Received ({inwQty.toLocaleString()}kg)</div>;
+                                    } else if (inwQty > 0) {
+                                      return <div style={{ fontSize: '0.68rem', fontWeight: '700', color: '#b45309', marginTop: '2px' }}>🟡 Partial ({inwQty.toLocaleString()}/{reqQty.toLocaleString()}kg)</div>;
+                                    } else {
+                                      return <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '2px' }}>⏳ Awaiting Inward</div>;
+                                    }
+                                  })()}
+                                </div>
                               ) : stockInfo?.isFullyAvailable ? (
                                 <span 
                                   className="badge badge-success" 

@@ -1098,7 +1098,20 @@ export default function InventoryManagement({
     const list = [];
     const seenPoNumbers = new Set();
 
-    // 1. Load from safeLocalStorage / cached POs
+    // 1. Load from purchase orders cache & safeLocalStorage
+    const cachedTableList = safeLocalStorageGet('samyak_cache_purchase_orders', []);
+    if (Array.isArray(cachedTableList)) {
+      cachedTableList.forEach(po => {
+        if (po && po.poNumber && !seenPoNumbers.has(po.poNumber)) {
+          seenPoNumbers.add(po.poNumber);
+          list.push({
+            ...po,
+            source: po.source || 'Purchase Order Module'
+          });
+        }
+      });
+    }
+
     const parsed = safeLocalStorageGet('samyak_erp_issued_pos', {});
     if (parsed && typeof parsed === 'object') {
       Object.values(parsed).forEach(po => {

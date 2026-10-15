@@ -4082,6 +4082,269 @@ export async function deletePelletConsumptionFromSupabase(id) {
 }
 
 // ============================================================================
+// 28. PURCHASE ORDERS (STANDALONE PO MANAGEMENT MODULE)
+// ============================================================================
+
+export function sanitizePurchaseOrder(raw) {
+  if (!raw) return null;
+  const id = String(raw.id || raw.po_number || raw.poNumber || `PO-2026-${Date.now().toString(36).toUpperCase()}`).trim();
+  const poNumber = String(raw.po_number || raw.poNumber || id).trim();
+
+  // Parse items
+  let items = [];
+  if (Array.isArray(raw.items)) {
+    items = raw.items;
+  } else if (typeof raw.items === 'string') {
+    try { items = JSON.parse(raw.items); } catch(e) { items = []; }
+  }
+
+  const sanitizedItems = items.map((it, idx) => {
+    const qty = Number(it.qtyKg ?? it.qty ?? it.quantity ?? 0) || 0;
+    const rate = Number(it.rate ?? it.price ?? it.unitPrice ?? 0) || 0;
+    const gstPct = Number(it.gstPct ?? it.gstRate ?? it.taxPct ?? 18) || 0;
+    const lineAmount = Number(it.amount ?? (qty * rate)) || (qty * rate);
+
+    return {
+      id: it.id || `item-${idx + 1}`,
+      itemId: it.itemId || it.itemCode || it.code || '',
+      itemDesc: it.itemDesc || it.description || it.itemName || it.name || 'Raw Material',
+      category: it.category || it.materialType || 'Film Substrates',
+      filmType: it.filmType || '',
+      micron: it.micron || '',
+      widthMm: it.widthMm ? Number(it.widthMm) : null,
+      make: it.make || it.brand || '',
+      hsnCode: it.hsnCode || it.hsn || '',
+      unit: it.unit || 'Kg',
+      qtyKg: qty,
+      rate: rate,
+      gstPct: gstPct,
+      amount: lineAmount,
+      spec: it.spec || '',
+      orderId: it.orderId || null,
+      notes: it.notes || ''
+    };
+  });
+
+  const totalQtyKg = Number(raw.total_qty_kg ?? raw.totalQtyKg ?? sanitizedItems.reduce((acc, it) => acc + (it.qtyKg || 0), 0)) || 0;
+  const subtotal = Number(raw.subtotal ?? sanitizedItems.reduce((acc, it) => acc + (it.amount || 0), 0)) || 0;
+  const taxAmount = Number(raw.tax_amount ?? raw.taxAmount ?? (subtotal * 0.18)) || 0;
+  const totalAmount = Number(raw.total_amount ?? raw.totalAmount ?? (subtotal + taxAmount)) || 0;
+
+  // Vendor resolution
+  let vendorObj = raw.vendor || raw.vendor_details || {};
+  if (typeof vendorObj === 'string') {
+    try { vendorObj = JSON.parse(vendorObj); } catch(e) { vendorObj = { companyName: vendorObj }; }
+  }
+  const vendorName = raw.vendor_name || raw.vendorName || vendorObj.companyName || vendorObj.name || 'Vendor';
+
+  return {
+    id,
+    poNumber,
+    poDate: raw.po_date || raw.poDate || raw.date || new Date().toISOString().split('T')[0],
+    deliveryDate: raw.delivery_date || raw.deliveryDate || raw.promised_delivery_date || raw.promisedDeliveryDate || '',
+    promisedDeliveryDate: raw.promised_delivery_date || raw.promisedDeliveryDate || raw.delivery_date || raw.deliveryDate || '',
+    vendorId: raw.vendor_id || raw.vendorId || vendorObj.id || null,
+    vendorName,
+    vendor: {
+      id: raw.vendor_id || raw.vendorId || vendorObj.id,
+      companyName: vendorName,
+      name: vendorName,
+      contactPerson: vendorObj.contactPerson || vendorObj.contact_person || '',
+      phone: vendorObj.phone || vendorObj.contactNo || '',
+      email: vendorObj.email || '',
+      gstin: vendorObj.gstin || '',
+      address: vendorObj.address || ''
+    },
+    category: raw.category || 'Film Substrates',
+    items: sanitizedItems,
+    totalQtyKg,
+    subtotal,
+    taxAmount,
+    totalAmount,
+    paymentTerms: raw.payment_terms || raw.paymentTerms || raw.terms || '30 Days Net',
+    logisticDetails: raw.logistic_details || raw.logisticDetails || raw.freight || 'Freight Included within Indore',
+    notes: raw.notes || raw.remarks || '',
+    remarks: raw.remarks || raw.notes || '',
+    status: raw.status || 'Pending Delivery', // 'Pending Delivery', 'Partially Received', 'Received', 'Cancelled'
+    source: raw.source || 'Direct PO Module',
+    linkedOrderId: raw.linked_order_id || raw.linkedOrderId || null,
+    linkedOrderName: raw.linked_order_name || raw.linkedOrderName || null,
+    linkedRequirements: Array.isArray(raw.linked_requirements || raw.linkedRequirements) ? (raw.linked_requirements || raw.linkedRequirements) : [],
+    createdBy: raw.created_by || raw.createdBy || 'Operations Desk',
+    createdAt: raw.created_at || raw.createdAt || new Date().toISOString(),
+    updatedAt: raw.updated_at || raw.updatedAt || new Date().toISOString()
+  };
+}
+
+export async function fetchPurchaseOrders() {
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const resultsMap = new Map();
+
+  // 1. Primary: Load from public.purchase_orders table
+  try {
+    const { data, error } = await supabase
+      .from('purchase_orders')
+      .select('*')
+      .order('po_date', { ascending: false });
+
+    if (!error && Array.isArray(data)) {
+      data.forEach(row => {
+        const clean = sanitizePurchaseOrder(row);
+        if (clean && clean.poNumber) {
+          resultsMap.set(clean.poNumber, clean);
+        }
+      });
+    } else if (error && error.code !== 'PGRST205' && error.code !== '42P01') {
+      console.warn('[Purchase Orders] Table fetch notice:', error.message);
+    }
+  } catch (err) {
+    console.warn('[Purchase Orders] Table query caught:', err.message);
+  }
+
+  // 2. Dual Fallback: Check system_settings 'purchase_orders' and 'samyak_erp_issued_pos'
+  try {
+    const backupList = await fetchSystemSetting('purchase_orders').catch(() => null);
+    if (Array.isArray(backupList)) {
+      backupList.forEach(raw => {
+        const clean = sanitizePurchaseOrder(raw);
+        if (clean && clean.poNumber && !resultsMap.has(clean.poNumber)) {
+          resultsMap.set(clean.poNumber, clean);
+        }
+      });
+    }
+
+    const legacyStore = await fetchSystemSetting('samyak_erp_issued_pos').catch(() => null);
+    if (legacyStore && typeof legacyStore === 'object') {
+      Object.values(legacyStore).forEach(legacyPo => {
+        if (legacyPo && (legacyPo.poNumber || legacyPo.id)) {
+          const clean = sanitizePurchaseOrder(legacyPo);
+          if (clean && clean.poNumber && !resultsMap.has(clean.poNumber)) {
+            resultsMap.set(clean.poNumber, clean);
+          }
+        }
+      });
+    }
+  } catch (e) {
+    console.warn('[Purchase Orders] System settings fallback notice:', e.message);
+  }
+
+  // Convert map to array sorted by date descending
+  const list = Array.from(resultsMap.values());
+  list.sort((a, b) => new Date(b.poDate || b.createdAt || 0) - new Date(a.poDate || a.createdAt || 0));
+  return list;
+}
+
+export async function savePurchaseOrderToSupabase(po) {
+  if (!isSupabaseConfigured() || !po) {
+    throw new Error("Cannot save purchase order: Supabase database connection is not available.");
+  }
+  await ensureValidSession();
+  const clean = sanitizePurchaseOrder(po);
+  if (!clean || !clean.poNumber) {
+    throw new Error("Invalid purchase order data: PO number is required.");
+  }
+
+  const dbPayload = {
+    id: clean.id,
+    po_number: clean.poNumber,
+    po_date: clean.poDate ? (clean.poDate.includes('T') ? clean.poDate.split('T')[0] : clean.poDate) : new Date().toISOString().split('T')[0],
+    delivery_date: clean.deliveryDate ? (clean.deliveryDate.includes('T') ? clean.deliveryDate.split('T')[0] : clean.deliveryDate) : null,
+    promised_delivery_date: clean.promisedDeliveryDate ? (clean.promisedDeliveryDate.includes('T') ? clean.promisedDeliveryDate.split('T')[0] : clean.promisedDeliveryDate) : null,
+    vendor_id: clean.vendorId || null,
+    vendor_name: clean.vendorName,
+    vendor_details: clean.vendor || {},
+    category: clean.category || 'Film Substrates',
+    items: clean.items || [],
+    total_qty_kg: Number(clean.totalQtyKg) || 0,
+    subtotal: Number(clean.subtotal) || 0,
+    tax_amount: Number(clean.taxAmount) || 0,
+    total_amount: Number(clean.totalAmount) || 0,
+    payment_terms: clean.paymentTerms,
+    logistic_details: clean.logisticDetails,
+    notes: clean.notes,
+    remarks: clean.remarks,
+    status: clean.status || 'Pending Delivery',
+    source: clean.source || 'Direct PO Module',
+    linked_order_id: clean.linkedOrderId || null,
+    linked_order_name: clean.linkedOrderName || null,
+    linked_requirements: clean.linkedRequirements || [],
+    created_by: clean.createdBy || 'Operations Desk',
+    updated_at: new Date().toISOString()
+  };
+
+  let tableSuccess = false;
+  try {
+    const { error } = await supabase
+      .from('purchase_orders')
+      .upsert(dbPayload, { onConflict: 'po_number' });
+
+    if (!error) {
+      tableSuccess = true;
+      console.log(`[Purchase Orders] Successfully saved PO ${clean.poNumber} to database.`);
+    } else {
+      console.warn(`[Purchase Orders] Note on table upsert for ${clean.poNumber}:`, error.message);
+    }
+  } catch (err) {
+    console.warn(`[Purchase Orders] Database table write error:`, err.message);
+  }
+
+  // Dual Persistence: Always save into system_settings under key 'purchase_orders' & 'samyak_erp_issued_pos'
+  try {
+    const currentList = await fetchSystemSetting('purchase_orders').catch(() => []);
+    const safeList = Array.isArray(currentList) ? currentList : [];
+    const updatedList = [clean, ...safeList.filter(p => p.poNumber !== clean.poNumber && p.id !== clean.id)];
+    await saveSystemSetting('purchase_orders', updatedList);
+
+    const currentStore = (await fetchSystemSetting('samyak_erp_issued_pos').catch(() => ({}))) || {};
+    currentStore[clean.poNumber] = clean;
+    await saveSystemSetting('samyak_erp_issued_pos', currentStore);
+  } catch (e) {
+    console.warn('[Purchase Orders] Backup to system_settings notice:', e.message);
+    if (!tableSuccess) {
+      throw e;
+    }
+  }
+
+  return clean;
+}
+
+export async function deletePurchaseOrderFromSupabase(poIdOrNumber) {
+  if (!isSupabaseConfigured() || !poIdOrNumber) {
+    throw new Error("Cannot delete purchase order: Supabase database connection is not available.");
+  }
+  await ensureValidSession();
+  const target = String(poIdOrNumber).trim();
+
+  try {
+    await supabase
+      .from('purchase_orders')
+      .delete()
+      .or(`id.eq.${target},po_number.eq.${target}`);
+  } catch (e) {
+    console.warn('[Purchase Orders] Table delete notice:', e.message);
+  }
+
+  try {
+    const currentList = await fetchSystemSetting('purchase_orders').catch(() => []);
+    if (Array.isArray(currentList)) {
+      const updatedList = currentList.filter(p => p.poNumber !== target && p.id !== target);
+      await saveSystemSetting('purchase_orders', updatedList);
+    }
+
+    const currentStore = (await fetchSystemSetting('samyak_erp_issued_pos').catch(() => ({}))) || {};
+    if (currentStore[target]) {
+      delete currentStore[target];
+      await saveSystemSetting('samyak_erp_issued_pos', currentStore);
+    }
+  } catch (e) {
+    console.warn('[Purchase Orders] Delete from system_settings notice:', e.message);
+  }
+}
+
+// ============================================================================
 // SEED MIGRATION: SEED DATA PUSHES HAVE BEEN PERMANENTLY DISABLED
 // ============================================================================
 

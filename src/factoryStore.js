@@ -1116,6 +1116,7 @@ export const ALL_MODULES = [
   { key: "clients", label: "Clients & Directory", category: "Commercial" },
   { key: "job_masters", label: "Job Master Directory", category: "Pre-Press & Master Specs" },
   { key: "vendors", label: "Vendor Onboarding & POs", category: "Purchase & Commercial" },
+  { key: "purchase_orders", label: "Purchase Orders Management", category: "Purchase & Commercial" },
   { key: "inventory", label: "Inventory, GRN & QC", category: "Store & Inventory" },
   { key: "ink_management", label: "Ink Management & Solid Costing", category: "Store & Inventory" },
   { key: "material_indents", label: "Material Indents & Store", category: "Store & Inventory" },
@@ -1138,13 +1139,13 @@ export const generateFullRolePermissions = (allowAll = false) => {
       } else if (r === "Admin" || r === "Plant Manager" || r === "HR & Payroll Manager") {
         perm[r][m.key] = true;
       } else if (r === "Production Manager") {
-        perm[r][m.key] = (m.key === "dashboard" || m.key === "production_records" || m.key === "printing_scheduler" || m.key === "cylinders" || m.key === "orders" || m.key === "job_masters" || m.key === "inventory" || m.key === "scrap_analytics" || m.key === "employees");
+        perm[r][m.key] = (m.key === "dashboard" || m.key === "production_records" || m.key === "printing_scheduler" || m.key === "cylinders" || m.key === "orders" || m.key === "job_masters" || m.key === "inventory" || m.key === "purchase_orders" || m.key === "scrap_analytics" || m.key === "employees");
       } else if (r === "Store Manager") {
-        perm[r][m.key] = (m.key === "dashboard" || m.key === "inventory" || m.key === "material_indents" || m.key === "vendors" || m.key === "ink_management" || m.key === "dispatch");
+        perm[r][m.key] = (m.key === "dashboard" || m.key === "inventory" || m.key === "purchase_orders" || m.key === "material_indents" || m.key === "vendors" || m.key === "ink_management" || m.key === "dispatch");
       } else if (r === "QC Chemist") {
         perm[r][m.key] = (m.key === "dashboard" || m.key === "production_records" || m.key === "inventory" || m.key === "ink_management" || m.key === "dispatch");
       } else if (r === "Purchase Manager") {
-        perm[r][m.key] = (m.key === "dashboard" || m.key === "vendors" || m.key === "inventory" || m.key === "material_indents" || m.key === "ink_management");
+        perm[r][m.key] = (m.key === "dashboard" || m.key === "vendors" || m.key === "purchase_orders" || m.key === "inventory" || m.key === "material_indents" || m.key === "ink_management");
       } else if (r === "Sales Manager") {
         perm[r][m.key] = (m.key === "dashboard" || m.key === "sales" || m.key === "job_punching" || m.key === "orders" || m.key === "clients" || m.key === "dispatch");
       } else if (r === "Shop Floor Operator") {
