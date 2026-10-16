@@ -41,6 +41,7 @@ import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import DispatchPackingListPDF from './DispatchPackingListPDF';
 import TablePagination, { usePagination } from './TablePagination';
+import SearchableSelect from './SearchableSelect';
 import SFGFGEntryModal, { SFG_TYPES, FG_TYPES } from './SFGFGEntryModal';
 import { getNextDocRefNumber, generateDocRefNumber, getInventoryAgeingSettings } from '../services/settingsService';
 import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo, sortBatchesByFifo, getItemInwardDate } from '../utils/fifoUtils';
@@ -5256,8 +5257,10 @@ export default function InventoryManagement({
                         <Plus size={14} /> Onboard New Vendor
                       </button>
                     </div>
-                    <select 
+                    <SearchableSelect 
                       className="form-control" 
+                      placeholder="-- Select Vendor --"
+                      searchPlaceholder="Search vendor name or GSTIN..."
                       value={grnVendor} 
                       onChange={e => {
                         if (e.target.value === '__CREATE_NEW__') {
@@ -5266,16 +5269,22 @@ export default function InventoryManagement({
                           setGrnVendor(e.target.value);
                         }
                       }}
-                      style={{ fontWeight: '500' }}
+                      triggerStyle={{ fontWeight: '500' }}
                     >
                       <option value="" disabled>-- Select Vendor --</option>
                       {(vendors || []).map(v => (
-                        <option key={v.id} value={v.companyName}>{v.companyName} ({v.gstin || 'GSTIN N/A'})</option>
+                        <option 
+                          key={v.id || v.companyName} 
+                          value={v.companyName}
+                          data-subtitle={v.gstin ? `GSTIN: ${v.gstin}` : 'GSTIN N/A'}
+                        >
+                          {v.companyName} ({v.gstin || 'GSTIN N/A'})
+                        </option>
                       ))}
                       <option value="__CREATE_NEW__" style={{ fontWeight: '700', color: '#047857' }}>
                         ➕ + Onboard / Create New Vendor...
                       </option>
-                    </select>
+                    </SearchableSelect>
                   </div>
 
                   {/* Item Category */}
@@ -5283,24 +5292,31 @@ export default function InventoryManagement({
                     <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155', marginBottom: '6px', display: 'block' }}>
                       Inward Item Category <span style={{ color: '#ef4444' }}>*</span>
                     </label>
-                    <select 
+                    <SearchableSelect 
                       className="form-control" 
-                      style={{ fontWeight: '600', color: '#0284c7', background: '#f0f9ff', borderColor: '#bae6fd' }}
+                      placeholder="-- Select Category --"
+                      searchPlaceholder="Search inward categories (e.g. Film, Inks, Cylinders, Solvents)..."
                       value={grnCategory} 
                       onChange={e => setGrnCategory(e.target.value)}
+                      triggerStyle={{ 
+                        fontWeight: '600', 
+                        color: '#0284c7', 
+                        background: '#f0f9ff', 
+                        borderColor: '#bae6fd' 
+                      }}
                     >
-                      <option value="Film Substrates">Film Substrates (PET, METPET, LDPE, BOPP, CPP, Foil)</option>
-                      <option value="Rotogravure Cylinders">Rotogravure Cylinders (Engraved Cylinder Sets)</option>
-                      <option value="Printing Inks">Printing Inks</option>
-                      <option value="Chemicals & Solvents">Chemicals & Solvents (Ethyl Acetate, Anilox Cleaner)</option>
-                      <option value="Adhesives & Hardener">Adhesives & Hardener (Solventless Comp A/B)</option>
-                      <option value="Doctor Blades & Wipers">Doctor Blades & Wipers</option>
-                      <option value="Rollers & Sleeves">Rollers & Sleeves</option>
-                      <option value="Machine Spare Parts">Machine Spare Parts</option>
-                      <option value="Lubricants & Oils">Lubricants & Oils</option>
-                      <option value="Tapes & Consumables">Tapes & Consumables (PTFE, Masking)</option>
-                      <option value="Safety Gear (PPE)">Safety Gear (PPE)</option>
-                    </select>
+                      <option value="Film Substrates" data-subtitle="PET, METPET, LDPE, BOPP, CPP, Foil">Film Substrates (PET, METPET, LDPE, BOPP, CPP, Foil)</option>
+                      <option value="Rotogravure Cylinders" data-subtitle="Engraved Cylinder Sets & Tooling">Rotogravure Cylinders (Engraved Cylinder Sets)</option>
+                      <option value="Printing Inks" data-subtitle="Solvent, Water-based & UV Inks">Printing Inks</option>
+                      <option value="Chemicals & Solvents" data-subtitle="Ethyl Acetate, Anilox Cleaner, Retarder">Chemicals & Solvents (Ethyl Acetate, Anilox Cleaner)</option>
+                      <option value="Adhesives & Hardener" data-subtitle="Solventless / Solvent-base Comp A & B">Adhesives & Hardener (Solventless Comp A/B)</option>
+                      <option value="Doctor Blades & Wipers" data-subtitle="Doctor Blades & End Seals">Doctor Blades & Wipers</option>
+                      <option value="Rollers & Sleeves" data-subtitle="Impression & Nip Rollers, Sleeves">Rollers & Sleeves</option>
+                      <option value="Machine Spare Parts" data-subtitle="Mechanical, Pneumatic & Electrical Spares">Machine Spare Parts</option>
+                      <option value="Lubricants & Oils" data-subtitle="Gearbox Oils, Greases & Sprays">Lubricants & Oils</option>
+                      <option value="Tapes & Consumables" data-subtitle="PTFE, Masking & Packaging Consumables">Tapes & Consumables (PTFE, Masking)</option>
+                      <option value="Safety Gear (PPE)" data-subtitle="Gloves, Masks, Goggles, Helmets">Safety Gear (PPE)</option>
+                    </SearchableSelect>
                   </div>
 
                   {/* Searchable Stock Item Link */}

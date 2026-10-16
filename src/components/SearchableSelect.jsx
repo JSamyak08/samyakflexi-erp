@@ -17,6 +17,7 @@ const SearchableSelect = React.forwardRef(({
   id,
   className = "form-control",
   style,
+  triggerStyle,
   disabled = false,
   required = false,
   isClearable = false,
@@ -286,7 +287,8 @@ const SearchableSelect = React.forwardRef(({
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
           minHeight: '38px',
-          opacity: disabled ? 0.6 : 1
+          opacity: disabled ? 0.6 : 1,
+          ...triggerStyle
         }}
       >
         <span 
@@ -344,14 +346,14 @@ const SearchableSelect = React.forwardRef(({
             left: 0,
             right: 0,
             zIndex: 9999,
-            backgroundColor: 'var(--card-bg, #1e293b)',
-            background: 'var(--card-bg, #1e293b)',
-            border: '1px solid var(--border-color, #334155)',
+            backgroundColor: 'var(--bg-card, #ffffff)',
+            background: 'var(--bg-card, #ffffff)',
+            border: '1px solid var(--border-color, #cbd5e1)',
             borderRadius: '8px',
-            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2)',
+            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.08)',
             overflow: 'hidden',
             minWidth: '220px',
-            maxHeight: '320px',
+            maxHeight: '300px',
             display: 'flex',
             flexDirection: 'column',
             animation: 'fadeInSelect 0.15s ease-out'
@@ -362,8 +364,8 @@ const SearchableSelect = React.forwardRef(({
             className="searchable-select-search-header"
             style={{
               padding: '8px 10px',
-              borderBottom: '1px solid var(--border-color, #334155)',
-              backgroundColor: 'var(--header-bg, #0f172a)',
+              borderBottom: '1px solid var(--border-color, #e2e8f0)',
+              backgroundColor: 'var(--bg-primary, #f8fafc)',
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
@@ -389,7 +391,7 @@ const SearchableSelect = React.forwardRef(({
                 background: 'transparent',
                 border: 'none',
                 outline: 'none',
-                color: 'var(--text-main, #f8fafc)',
+                color: 'var(--text-primary, #0f172a)',
                 fontSize: '13px',
                 padding: '4px 0'
               }}
@@ -420,7 +422,7 @@ const SearchableSelect = React.forwardRef(({
             role="listbox"
             style={{
               overflowY: 'auto',
-              maxHeight: '260px',
+              maxHeight: '240px',
               padding: '4px 0'
             }}
           >
@@ -430,7 +432,7 @@ const SearchableSelect = React.forwardRef(({
                 style={{
                   padding: '12px 16px',
                   fontSize: '13px',
-                  color: '#94a3b8',
+                  color: 'var(--text-muted, #94a3b8)',
                   textAlign: 'center'
                 }}
               >
@@ -457,10 +459,10 @@ const SearchableSelect = React.forwardRef(({
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       backgroundColor: isHighlighted 
-                        ? 'rgba(59, 130, 246, 0.15)' 
+                        ? 'rgba(59, 130, 246, 0.12)' 
                         : (isSelected ? 'rgba(59, 130, 246, 0.08)' : 'transparent'),
-                      color: isSelected ? '#60a5fa' : (opt.disabled ? '#64748b' : 'var(--text-main, #f8fafc)'),
-                      fontWeight: isSelected ? '600' : 'normal',
+                      color: isSelected ? '#2563eb' : (opt.disabled ? '#94a3b8' : (opt.raw?.style?.color || 'var(--text-primary, #0f172a)')),
+                      fontWeight: opt.raw?.style?.fontWeight || (isSelected ? '600' : 'normal'),
                       transition: 'background-color 0.1s ease',
                       borderLeft: isSelected ? '3px solid #3b82f6' : '3px solid transparent'
                     }}
