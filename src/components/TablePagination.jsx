@@ -17,7 +17,7 @@ export default function TablePagination(props) {
   } = props;
 
   const currentPage = pagination?.currentPage ?? propPage ?? 1;
-  const totalItems = pagination?.totalItems ?? propTotal ?? 0;
+  const totalItems = pagination?.totalItems ?? propTotal ?? props.totalRecords ?? props.totalCount ?? 0;
   const pageSize = pagination?.pageSize ?? propSize ?? 25;
 
   const handlePageChange = onPageChange || goToPage || setCurrentPage || pagination?.onPageChange || pagination?.goToPage || pagination?.setCurrentPage;
@@ -194,7 +194,10 @@ export function usePagination(items = [], defaultPageSize = 25) {
     startIndex,
     endIndex,
     paginatedItems,
+    paginatedData: paginatedItems,
     pagedData: paginatedItems,
-    totalItems: itemsLength
+    totalItems: itemsLength,
+    totalRecords: itemsLength,
+    totalCount: itemsLength
   };
 }

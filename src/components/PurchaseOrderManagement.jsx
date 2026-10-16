@@ -563,23 +563,30 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
 
   // Pagination hook
   const {
-    paginatedData: paginatedPOs,
-    currentPage,
-    totalPages,
-    totalRecords,
-    pageSize,
+    paginatedItems: hookPaginatedItems,
+    paginatedData: hookPaginatedData,
+    currentPage = 1,
+    totalPages = 1,
+    totalItems = 0,
+    totalRecords = 0,
+    pageSize = 10,
     setCurrentPage,
     setPageSize
   } = usePagination(filteredPurchaseOrders, 10);
 
+  const paginatedPOs = Array.isArray(hookPaginatedItems) && hookPaginatedItems.length > 0
+    ? hookPaginatedItems
+    : (Array.isArray(hookPaginatedData) ? hookPaginatedData : (filteredPurchaseOrders || []).slice(0, 10));
+
   // KPI Metrics Calculation
   const kpiMetrics = useMemo(() => {
-    const totalCount = enrichedPurchaseOrders.length;
-    const totalSpend = enrichedPurchaseOrders.reduce((sum, po) => sum + (po.status !== 'Cancelled' ? (po.totalAmount || 0) : 0), 0);
-    const awaitingCount = enrichedPurchaseOrders.filter(po => po.deliveryStatus === 'Pending Delivery').length;
-    const partialCount = enrichedPurchaseOrders.filter(po => po.deliveryStatus === 'Partially Received').length;
-    const receivedCount = enrichedPurchaseOrders.filter(po => po.deliveryStatus === 'Fully Received').length;
-    const overdueCount = enrichedPurchaseOrders.filter(po => po.isOverdue).length;
+    const list = Array.isArray(enrichedPurchaseOrders) ? enrichedPurchaseOrders : [];
+    const totalCount = list.length;
+    const totalSpend = list.reduce((sum, po) => sum + (po && po.status !== 'Cancelled' ? (po.totalAmount || 0) : 0), 0);
+    const awaitingCount = list.filter(po => po && po.deliveryStatus === 'Pending Delivery').length;
+    const partialCount = list.filter(po => po && po.deliveryStatus === 'Partially Received').length;
+    const receivedCount = list.filter(po => po && po.deliveryStatus === 'Fully Received').length;
+    const overdueCount = list.filter(po => po && po.isOverdue).length;
 
     return {
       totalCount,
@@ -593,7 +600,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
 
   // Export filtered POs to CSV
   const handleExportCsv = () => {
-    if (filteredPurchaseOrders.length === 0) {
+    if (!filteredPurchaseOrders || filteredPurchaseOrders.length === 0) {
       alert("No purchase order records match the current filters to export.");
       return;
     }
@@ -892,7 +899,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
               className="input-field"
               style={{ height: '38px', fontSize: '0.84rem' }}
             >
-              <option value="ALL">All Vendors ({vendorFilterOptions.length})</option>
+              <option value="ALL">All Vendors ({(vendorFilterOptions || []).length})</option>
               {vendorFilterOptions.map(vName => (
                 <option key={vName} value={vName}>{vName}</option>
               ))}
@@ -1007,7 +1014,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
               </tr>
             </thead>
             <tbody>
-              {paginatedPOs.length === 0 ? (
+              {(!paginatedPOs || paginatedPOs.length === 0) ? (
                 <tr>
                   <td colSpan={7} style={{ textAlign: 'center', padding: '48px 20px', color: '#94a3b8' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
@@ -1018,7 +1025,8 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                   </td>
                 </tr>
               ) : (
-                paginatedPOs.map(po => {
+                (paginatedPOs || []).map(po => {
+                  if (!po) return null;
                   const itemsCount = (po.items || []).length;
                   const firstItem = po.items && po.items[0];
                   const itemSummaryText = firstItem 
@@ -1328,7 +1336,8 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
         <TablePagination
           currentPage={currentPage}
           totalPages={totalPages}
-          totalRecords={totalRecords}
+          totalItems={totalItems || totalRecords || (filteredPurchaseOrders || []).length}
+          totalRecords={totalRecords || totalItems || (filteredPurchaseOrders || []).length}
           pageSize={pageSize}
           onPageChange={setCurrentPage}
           onPageSizeChange={setPageSize}
@@ -2038,7 +2047,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                   </tr>
                 </thead>
                 <tbody>
-                  {pendingShortageRequirements.length === 0 ? (
+                  {(!pendingShortageRequirements || pendingShortageRequirements.length === 0) ? (
                     <tr>
                       <td colSpan={5} style={{ textAlign: 'center', padding: '24px', color: '#94a3b8' }}>
                         No pending order shortages found. All order raw materials either have POs issued or are in stock.
