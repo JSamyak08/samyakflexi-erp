@@ -725,13 +725,14 @@ export default function SalesManagement({
   const handleAddOcnLayer = (itemIdx) => {
     setOcnConvertFormData(prev => prev.map((item, idx) => {
       if (idx === itemIdx) {
+        const currentLayers = Array.isArray(item.layers) ? item.layers : [];
         const newLayer = {
-          id: item.layers.length + 1,
+          id: currentLayers.length + 1,
           filmType: 'Natural GP LD',
           micron: 40,
           ratePerKg: 115
         };
-        const updatedLayers = [...item.layers, newLayer];
+        const updatedLayers = [...currentLayers, newLayer];
         const newStructure = updatedLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
         return { ...item, layers: updatedLayers, structure: newStructure };
       }
@@ -2390,7 +2391,7 @@ export default function SalesManagement({
                                   </div>
                                 </td>
                                 <td>
-                                  {item.layers.length > 1 && (
+                                  {(item.layers || []).length > 1 && (
                                     <button 
                                       type="button" 
                                       className="btn-secondary" 

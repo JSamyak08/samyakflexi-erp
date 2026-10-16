@@ -296,55 +296,56 @@ export default function App() {
 
   // CACHE-FIRST REACT STATE INITIALIZATION:
   // Instantly rehydrates from local safe storage cache so tables and dashboard never show empty data on refresh.
-  const [orders, setOrders] = useState(() => safeLocalStorageGet('samyak_cache_orders', []));
-  const [ordersLoading, setOrdersLoading] = useState(() => safeLocalStorageGet('samyak_cache_orders', []).length === 0);
+  const [orders, setOrders] = useState(() => safeLocalStorageGet('samyak_cache_orders', []) || []);
+  const [ordersLoading, setOrdersLoading] = useState(() => (safeLocalStorageGet('samyak_cache_orders', []) || []).length === 0);
   const [ordersError, setOrdersError] = useState(null);
-  const [isDataLoading, setIsDataLoading] = useState(() => safeLocalStorageGet('samyak_cache_orders', []).length === 0);
-  const [isDataFetched, setIsDataFetched] = useState(() => safeLocalStorageGet('samyak_cache_orders', []).length > 0);
+  const [isDataLoading, setIsDataLoading] = useState(() => (safeLocalStorageGet('samyak_cache_orders', []) || []).length === 0);
+  const [isDataFetched, setIsDataFetched] = useState(() => (safeLocalStorageGet('samyak_cache_orders', []) || []).length > 0);
   const [deletingOrderId, setDeletingOrderId] = useState(null);
   const deletedOrderIdsRef = useRef(new Set());
   const ordersFetchVersion = useRef(0);
 
-  const [vendors, setVendors] = useState(() => safeLocalStorageGet('samyak_cache_vendors', []));
-  const [inventory, setInventory] = useState(() => safeLocalStorageGet('samyak_cache_inventory', []));
-  const [grns, setGrns] = useState(() => safeLocalStorageGet('samyak_cache_grns', []));
-  const [users, setUsers] = useState(() => safeLocalStorageGet('samyak_cache_users', []));
-  const [jobDataSheets, setJobDataSheets] = useState(() => safeLocalStorageGet('samyak_cache_job_datasheets', []));
-  const [cylinders, setCylinders] = useState(() => safeLocalStorageGet('samyak_cache_cylinders', []));
-  const [productionRecords, setProductionRecords] = useState(() => safeLocalStorageGet('samyak_cache_production_records', []));
-  const [inventoryRolls, setInventoryRolls] = useState(() => safeLocalStorageGet('samyak_cache_inventory_rolls', []));
-  const [dispatchShipments, setDispatchShipments] = useState(() => safeLocalStorageGet('samyak_cache_dispatch_shipments', []));
-  const [deliveryChallans, setDeliveryChallans] = useState(() => safeLocalStorageGet('samyak_cache_delivery_challans', []));
-  const [certificateOfAnalyses, setCertificateOfAnalyses] = useState(() => safeLocalStorageGet('samyak_cache_certificate_of_analyses', []));
-  const [machines, setMachines] = useState(() => safeLocalStorageGet('samyak_cache_printing_machines', []));
-  const [schedules, setSchedules] = useState(() => safeLocalStorageGet('samyak_cache_production_schedules', []));
-  const [pressQueueOrder, setPressQueueOrder] = useState(() => safeLocalStorageGet('samyak_cache_press_queue_order', []));
-  const [pressMachineAssignments, setPressMachineAssignments] = useState(() => safeLocalStorageGet('samyak_cache_press_machine_assignments', {}));
+  const [vendors, setVendors] = useState(() => safeLocalStorageGet('samyak_cache_vendors', []) || []);
+  const [inventory, setInventory] = useState(() => safeLocalStorageGet('samyak_cache_inventory', []) || []);
+  const [grns, setGrns] = useState(() => safeLocalStorageGet('samyak_cache_grns', []) || []);
+  const [users, setUsers] = useState(() => safeLocalStorageGet('samyak_cache_users', []) || []);
+  const [jobDataSheets, setJobDataSheets] = useState(() => safeLocalStorageGet('samyak_cache_job_datasheets', []) || []);
+  const [cylinders, setCylinders] = useState(() => safeLocalStorageGet('samyak_cache_cylinders', []) || []);
+  const [productionRecords, setProductionRecords] = useState(() => safeLocalStorageGet('samyak_cache_production_records', []) || []);
+  const [inventoryRolls, setInventoryRolls] = useState(() => safeLocalStorageGet('samyak_cache_inventory_rolls', []) || []);
+  const [dispatchShipments, setDispatchShipments] = useState(() => safeLocalStorageGet('samyak_cache_dispatch_shipments', []) || []);
+  const [deliveryChallans, setDeliveryChallans] = useState(() => safeLocalStorageGet('samyak_cache_delivery_challans', []) || []);
+  const [certificateOfAnalyses, setCertificateOfAnalyses] = useState(() => safeLocalStorageGet('samyak_cache_certificate_of_analyses', []) || []);
+  const [machines, setMachines] = useState(() => safeLocalStorageGet('samyak_cache_printing_machines', []) || []);
+  const [schedules, setSchedules] = useState(() => safeLocalStorageGet('samyak_cache_production_schedules', []) || []);
+  const [pressQueueOrder, setPressQueueOrder] = useState(() => safeLocalStorageGet('samyak_cache_press_queue_order', []) || []);
+  const [pressMachineAssignments, setPressMachineAssignments] = useState(() => safeLocalStorageGet('samyak_cache_press_machine_assignments', {}) || {});
   const [pressActiveRunningJob, setPressActiveRunningJob] = useState(() => safeLocalStorageGet('samyak_cache_press_running_job', null));
-  const [clients, setClients] = useState(() => safeLocalStorageGet('samyak_cache_clients', []));
-  const [jobMasters, setJobMasters] = useState(() => safeLocalStorageGet('samyak_cache_job_masters', []));
-  const [inks, setInks] = useState(() => safeLocalStorageGet('samyak_cache_inks', []));
+  const [clients, setClients] = useState(() => safeLocalStorageGet('samyak_cache_clients', []) || []);
+  const [jobMasters, setJobMasters] = useState(() => safeLocalStorageGet('samyak_cache_job_masters', []) || []);
+  const [inks, setInks] = useState(() => safeLocalStorageGet('samyak_cache_inks', []) || []);
   const [selectedJobMasterForPunch, setSelectedJobMasterForPunch] = useState(null);
-  const [rolePermissions, setRolePermissions] = useState(() => safeLocalStorageGet('samyak_cache_role_permissions', DEFAULT_ROLE_PERMISSIONS));
-  const [indents, setIndents] = useState(() => safeLocalStorageGet('samyak_cache_material_indents', []));
-  const [machineIssues, setMachineIssues] = useState(() => safeLocalStorageGet('samyak_cache_machine_issues', []));
-  const [consumables, setConsumables] = useState(() => safeLocalStorageGet('samyak_cache_consumables', []));
-  const [storeIssueTransactions, setStoreIssueTransactions] = useState(() => safeLocalStorageGet('samyak_cache_store_issue_transactions', []));
-  const [auditLogs, setAuditLogs] = useState(() => safeLocalStorageGet('samyak_cache_audit_logs', []));
-  const [employees, setEmployees] = useState(() => safeLocalStorageGet('samyak_cache_employees', []));
-  const [employeeAttendance, setEmployeeAttendance] = useState(() => safeLocalStorageGet('samyak_cache_employee_attendance', []));
-  const [salaryAdvances, setSalaryAdvances] = useState(() => safeLocalStorageGet('samyak_cache_salary_advances', []));
-  const [salaryPayments, setSalaryPayments] = useState(() => safeLocalStorageGet('samyak_cache_salary_payments', []));
-  const [sfgGoods, setSfgGoods] = useState(() => safeLocalStorageGet('samyak_cache_sfg_goods', []));
-  const [pelletInwards, setPelletInwards] = useState(() => safeLocalStorageGet('samyak_cache_pellet_inwards', []));
-  const [pelletConsumptions, setPelletConsumptions] = useState(() => safeLocalStorageGet('samyak_cache_pellet_consumptions', []));
-  const [purchaseOrders, setPurchaseOrders] = useState(() => safeLocalStorageGet('samyak_cache_purchase_orders', []));
+  const [rolePermissions, setRolePermissions] = useState(() => safeLocalStorageGet('samyak_cache_role_permissions', DEFAULT_ROLE_PERMISSIONS) || DEFAULT_ROLE_PERMISSIONS);
+  const [indents, setIndents] = useState(() => safeLocalStorageGet('samyak_cache_material_indents', []) || []);
+  const [machineIssues, setMachineIssues] = useState(() => safeLocalStorageGet('samyak_cache_machine_issues', []) || []);
+  const [consumables, setConsumables] = useState(() => safeLocalStorageGet('samyak_cache_consumables', []) || []);
+  const [storeIssueTransactions, setStoreIssueTransactions] = useState(() => safeLocalStorageGet('samyak_cache_store_issue_transactions', []) || []);
+  const [auditLogs, setAuditLogs] = useState(() => safeLocalStorageGet('samyak_cache_audit_logs', []) || []);
+  const [employees, setEmployees] = useState(() => safeLocalStorageGet('samyak_cache_employees', []) || []);
+  const [employeeAttendance, setEmployeeAttendance] = useState(() => safeLocalStorageGet('samyak_cache_employee_attendance', []) || []);
+  const [salaryAdvances, setSalaryAdvances] = useState(() => safeLocalStorageGet('samyak_cache_salary_advances', []) || []);
+  const [salaryPayments, setSalaryPayments] = useState(() => safeLocalStorageGet('samyak_cache_salary_payments', []) || []);
+  const [sfgGoods, setSfgGoods] = useState(() => safeLocalStorageGet('samyak_cache_sfg_goods', []) || []);
+  const [pelletInwards, setPelletInwards] = useState(() => safeLocalStorageGet('samyak_cache_pellet_inwards', []) || []);
+  const [pelletConsumptions, setPelletConsumptions] = useState(() => safeLocalStorageGet('samyak_cache_pellet_consumptions', []) || []);
+  const [purchaseOrders, setPurchaseOrders] = useState(() => safeLocalStorageGet('samyak_cache_purchase_orders', []) || []);
 
   const handleSavePurchaseOrder = async (po) => {
     requireDatabaseConnection('save purchase order');
     const saved = await savePurchaseOrderToSupabase(po);
     setPurchaseOrders(prev => {
-      const copy = [saved, ...prev.filter(p => p.poNumber !== saved.poNumber && p.id !== saved.id)];
+      const currentList = Array.isArray(prev) ? prev : [];
+      const copy = [saved, ...currentList.filter(p => p && p.poNumber !== saved.poNumber && p.id !== saved.id)];
       safeLocalStorageSet('samyak_cache_purchase_orders', copy);
       return copy;
     });
@@ -355,7 +356,8 @@ export default function App() {
     requireDatabaseConnection('update purchase order');
     const updated = await savePurchaseOrderToSupabase(po);
     setPurchaseOrders(prev => {
-      const copy = prev.map(p => (p.poNumber === updated.poNumber || p.id === updated.id) ? updated : p);
+      const currentList = Array.isArray(prev) ? prev : [];
+      const copy = currentList.map(p => (p && (p.poNumber === updated.poNumber || p.id === updated.id)) ? updated : p);
       safeLocalStorageSet('samyak_cache_purchase_orders', copy);
       return copy;
     });
@@ -366,7 +368,8 @@ export default function App() {
     requireDatabaseConnection('delete purchase order');
     await deletePurchaseOrderFromSupabase(poId);
     setPurchaseOrders(prev => {
-      const copy = prev.filter(p => p.id !== poId && p.poNumber !== poId);
+      const currentList = Array.isArray(prev) ? prev : [];
+      const copy = currentList.filter(p => p && p.id !== poId && p.poNumber !== poId);
       safeLocalStorageSet('samyak_cache_purchase_orders', copy);
       return copy;
     });
@@ -813,7 +816,7 @@ export default function App() {
         }
 
         if (Array.isArray(supaPOs)) {
-          const cleanPOs = stripDummyRecords(supaPOs).map(sanitizePurchaseOrder);
+          const cleanPOs = stripDummyRecords(supaPOs).map(sanitizePurchaseOrder).filter(Boolean);
           setPurchaseOrders(cleanPOs);
           safeLocalStorageSet('samyak_cache_purchase_orders', cleanPOs);
         }
@@ -1088,7 +1091,7 @@ export default function App() {
           } else if (table === 'purchase_orders') {
             const data = await fetchPurchaseOrders();
             if (Array.isArray(data)) {
-              const clean = stripDummyRecords(data).map(sanitizePurchaseOrder);
+              const clean = stripDummyRecords(data).map(sanitizePurchaseOrder).filter(Boolean);
               setPurchaseOrders(clean);
               safeLocalStorageSet('samyak_cache_purchase_orders', clean);
             }
@@ -3145,9 +3148,9 @@ export default function App() {
                     <ShoppingBag size={18} />
                   </span>
                   <span>Purchase Orders</span>
-                  {purchaseOrders.length > 0 && (
+                  {(purchaseOrders || []).length > 0 && (
                     <span className="nav-badge-pill nav-badge-neutral">
-                      {purchaseOrders.length}
+                      {(purchaseOrders || []).length}
                     </span>
                   )}
                 </div>

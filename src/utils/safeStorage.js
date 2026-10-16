@@ -315,9 +315,10 @@ export function safeLocalStorageGet(key, fallbackDefault = null) {
   if (typeof window === 'undefined' || !window.localStorage) return fallbackDefault;
   try {
     const saved = localStorage.getItem(key);
-    if (!saved) return fallbackDefault;
+    if (!saved || saved === 'undefined' || saved === 'null') return fallbackDefault;
     try {
-      return JSON.parse(saved);
+      const parsed = JSON.parse(saved);
+      return (parsed !== null && parsed !== undefined) ? parsed : fallbackDefault;
     } catch {
       return saved;
     }

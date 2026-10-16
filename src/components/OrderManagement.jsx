@@ -920,7 +920,7 @@ export default function OrderManagement({
   const handleGenerateConsolidatedPO = (e) => {
     e.preventDefault();
     const vendorObj = vendors.find(v => v.id === selectedVendorId) || vendors[0];
-    const poNo = `PO-2026-${100 + orders.length * 10 + selectedRequirements.length}`;
+    const poNo = `PO-2026-${100 + (orders || []).length * 10 + (selectedRequirements || []).length}`;
 
     const poItems = editablePoItems.map(item => {
       const qty = parseFloat(item.qtyKg) || 0;
@@ -1645,14 +1645,14 @@ export default function OrderManagement({
                           </div>
                         ) : (
                           <>
-                            {(order.hasVariants || (Array.isArray(order.variants) && order.variants.length > 0)) && (
+                            {(Array.isArray(order.variants) && order.variants.length > 0) && (
                               <div style={{ marginBottom: '18px', background: '#faf5ff', padding: '14px 18px', borderRadius: '10px', border: '1px solid #e9d5ff' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
                                   <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: '800', color: '#6b21a8', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     🎨 ORDER VARIANTS / FLAVORS BREAKDOWN (Total Order Weight: {(order.orderQtyKg || 0).toLocaleString()} kg)
                                   </h4>
                                   <span style={{ fontSize: '0.78rem', fontWeight: '700', color: '#7e22ce', background: '#f3e8ff', padding: '2px 8px', borderRadius: '4px' }}>
-                                    {order.variants.length} Variants Defined
+                                    {(order.variants || []).length} Variants Defined
                                   </span>
                                 </div>
                                 <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid #e9d5ff', background: '#ffffff' }}>
@@ -1667,7 +1667,7 @@ export default function OrderManagement({
                                       </tr>
                                     </thead>
                                     <tbody>
-                                      {order.variants.map((v, idx) => {
+                                      {(order.variants || []).map((v, idx) => {
                                         const qty = parseFloat(v.allocatedQtyKg || 0);
                                         const total = parseFloat(order.orderQtyKg || 1);
                                         const pct = total > 0 ? ((qty / total) * 100).toFixed(1) : '0.0';

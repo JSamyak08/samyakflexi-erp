@@ -327,7 +327,7 @@ export default function PurchaseOrderManagement({
       alert("Please specify the Promised Date of Delivery!");
       return;
     }
-    if (poForm.items.length === 0) {
+    if ((poForm.items || []).length === 0) {
       alert("Please add at least one line item to this Purchase Order!");
       return;
     }
@@ -450,16 +450,17 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    return purchaseOrders.map(po => {
+    const safeList = (Array.isArray(purchaseOrders) ? purchaseOrders : []).filter(Boolean);
+    return safeList.map(po => {
       // Find matching GRNs
       const matchingGRNs = (grns || []).filter(g => 
-        String(g.poNumber || '').trim().toLowerCase() === String(po.poNumber || '').trim().toLowerCase()
+        g && String(g.poNumber || '').trim().toLowerCase() === String(po.poNumber || '').trim().toLowerCase()
       );
 
       const totalInwardQty = matchingGRNs.reduce((sum, g) => 
         sum + (parseFloat(g.netWeightKg) || parseFloat(g.receivedQtyKg) || 0), 0
       );
-      const totalPoQty = (po.items || []).reduce((sum, it) => sum + (parseFloat(it.qtyKg) || 0), 0);
+      const totalPoQty = ((po && po.items) || []).reduce((sum, it) => sum + (parseFloat(it.qtyKg) || 0), 0);
       const pendingQty = Math.max(0, totalPoQty - totalInwardQty);
 
       // Parse Promised Delivery Date
@@ -709,6 +710,18 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
     });
     return Array.from(names).sort();
   }, [enrichedPurchaseOrders]);
+
+  // Memoized Pending Requirements from Orders with shortage
+  const pendingShortageRequirements = useMemo(() => {
+    return (Array.isArray(orders) ? orders : [])
+      .filter(Boolean)
+      .flatMap(o => {
+        const reqList = (o && (o.materialRequirements || o.rawMaterialRequirements)) || [];
+        return (Array.isArray(reqList) ? reqList : [])
+          .filter(r => r && !r.poIssued)
+          .map(r => ({ order: o, req: r }));
+      });
+  }, [orders]);
 
   return (
     <div className="po-management-wrapper" style={{ padding: '24px', maxWidth: '1440px', margin: '0 auto' }}>
@@ -1545,7 +1558,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
                 <div>
                   <h3 style={{ fontSize: '0.95rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
-                    Ordered Materials & Items ({poForm.items.length})
+                    Ordered Materials & Items ({(poForm.items || []).length})
                   </h3>
                   <span style={{ fontSize: '0.76rem', color: '#64748b' }}>
                     Select from existing inventory catalog or create a custom item on the fly
@@ -1619,14 +1632,14 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                     </tr>
                   </thead>
                   <tbody>
-                    {poForm.items.length === 0 ? (
+                    {(poForm.items || []).length === 0 ? (
                       <tr>
                         <td colSpan={8} style={{ textAlign: 'center', padding: '28px', color: '#94a3b8' }}>
                           No items added yet. Click <strong>+ Add from Inventory</strong> or <strong>Add Custom Item</strong> to specify materials.
                         </td>
                       </tr>
                     ) : (
-                      poForm.items.map((item, idx) => (
+                      (poForm.items || []).map((item, idx) => (
                         <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                           <td style={{ padding: '8px 12px', color: '#64748b' }}>{idx + 1}</td>
                           
@@ -2025,14 +2038,14 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                   </tr>
                 </thead>
                 <tbody>
-                  {orders.flatMap(o => (o.materialRequirements || []).filter(r => !r.poIssued).map(r => ({ order: o, req: r }))).length === 0 ? (
+                  {pendingShortageRequirements.length === 0 ? (
                     <tr>
                       <td colSpan={5} style={{ textAlign: 'center', padding: '24px', color: '#94a3b8' }}>
                         No pending order shortages found. All order raw materials either have POs issued or are in stock.
                       </td>
                     </tr>
                   ) : (
-                    orders.flatMap(o => (o.materialRequirements || []).filter(r => !r.poIssued).map(r => ({ order: o, req: r }))).map(({ order, req }) => (
+                    pendingShortageRequirements.map(({ order, req }) => (
                       <tr key={req.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                         <td style={{ padding: '8px 12px' }}>
                           <strong style={{ color: '#0f172a' }}>#{order.id}</strong>

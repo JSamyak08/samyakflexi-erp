@@ -53,7 +53,7 @@ export async function fetchOrders() {
   try {
     const { data, error } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
     if (error) throw error;
-    if (!data) return [];
+    if (!data || !Array.isArray(data)) return [];
 
     console.log(`[ORDERS][FETCH] Received ${data.length} records from Supabase`);
 
@@ -72,7 +72,7 @@ export async function fetchOrders() {
 
       const jd = meta.jobDetails || o.job_details || {};
       const matReqs = meta.raw_material_requirements || o.raw_material_requirements || [];
-      const layerList = jd.layers || jd.calculationDetails?.layerResults || o.layers || [];
+      const layerList = Array.isArray(jd.layers) ? jd.layers : (Array.isArray(jd.calculationDetails?.layerResults) ? jd.calculationDetails.layerResults : (Array.isArray(o.layers) ? o.layers : []));
       const commentsVal = jd.orderComments || jd.comments || jd.notes || o.notes || o.comments || o.job_details?.orderComments || o.job_details?.comments || '';
 
       const parseGsm = (val, defaultVal = 1.5) => {
@@ -115,7 +115,7 @@ export async function fetchOrders() {
         isPrintingCompleted,
         wastagePct: Number(o.wastage_percentage) || Number(jd.wastagePct) || Number(jd.calculationDetails?.wastagePct) || 5,
         wastageKg: Number(jd.wastageKg) || Number(jd.calculationDetails?.wastageKg) || 0,
-        structure: jd.structure || (layerList.length > 0 ? layerList.map(l => `${l.filmType} ${l.micron}µ`).join(' / ') : '—'),
+        structure: jd.structure || ((Array.isArray(layerList) && layerList.length > 0) ? layerList.filter(Boolean).map(l => `${l.filmType || ''} ${l.micron || ''}µ`).join(' / ') : '—'),
         printWidthMm: jd.printWidthMm || null,
         repeatLengthMm: jd.repeatLengthMm || null,
         colorsCount: jd.colorsCount || o.colors_count || 6,

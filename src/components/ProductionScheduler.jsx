@@ -1670,9 +1670,9 @@ export default function ProductionScheduler({
                               READY
                             </span>
                           )}
-                          {(order.hasVariants || (Array.isArray(order.variants) && order.variants.length > 0)) && (
+                          {(Array.isArray(order.variants) && order.variants.length > 0) && (
                             <span className="badge" style={{ background: '#f3e8ff', color: '#7e22ce', border: '1px solid #d8b4fe', fontSize: '0.7rem', fontWeight: '900', letterSpacing: '0.5px' }}>
-                              🎨 {order.variants.length} VARIANTS
+                              🎨 {(order.variants || []).length} VARIANTS
                             </span>
                           )}
                         </div>
@@ -2122,9 +2122,9 @@ export default function ProductionScheduler({
                       ⚡ ACTIVE PRINTING RUN
                     </span>
                   )}
-                  {(activeRunningJob.hasVariants || (Array.isArray(activeRunningJob.variants) && activeRunningJob.variants.length > 0)) && (
+                  {(Array.isArray(activeRunningJob.variants) && activeRunningJob.variants.length > 0) && (
                     <span className="badge" style={{ background: '#f3e8ff', color: '#7e22ce', border: '1px solid #d8b4fe', fontWeight: '900', fontSize: '0.8rem', padding: '4px 10px' }}>
-                      🎨 HAS {activeRunningJob.variants.length} VARIANTS
+                      🎨 HAS {(activeRunningJob.variants || []).length} VARIANTS
                     </span>
                   )}
                   <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: '700' }}>

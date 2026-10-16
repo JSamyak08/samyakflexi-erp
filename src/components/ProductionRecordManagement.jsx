@@ -1206,9 +1206,9 @@ export default function ProductionRecordManagement({
                         <td>
                           <div style={{ fontWeight: '700', color: '#0f172a' }}>{ord.jobName}</div>
                           <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{ord.clientName}</div>
-                          {(ord.hasVariants || (Array.isArray(ord.variants) && ord.variants.length > 0)) && (
+                          {(Array.isArray(ord.variants) && ord.variants.length > 0) && (
                             <span className="badge" style={{ background: '#f3e8ff', color: '#7e22ce', border: '1px solid #d8b4fe', fontSize: '0.7rem', fontWeight: '800', marginTop: '4px', display: 'inline-block' }}>
-                              🎨 {ord.variants.length} Variants ({ord.variants.map(v => v.variantName).join(', ')})
+                              🎨 {(ord.variants || []).length} Variants ({((ord.variants || []).map(v => v.variantName).join(', '))})
                             </span>
                           )}
                         </td>
