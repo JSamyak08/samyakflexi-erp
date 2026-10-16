@@ -1062,7 +1062,7 @@ export default function SalesManagement({
         <div className="glass-panel" style={{ padding: '20px' }}>
           <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: '700' }}>TOTAL QUOTATION PIPELINE VALUE</div>
           <div style={{ fontSize: '1.6rem', fontWeight: '900', color: '#7c3aed', marginTop: '4px' }}>
-            ₹ {Math.round(totalPipelineValueRs).toLocaleString('en-IN')}
+            ₹ {(Math.round(totalPipelineValueRs || 0)).toLocaleString('en-IN')}
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>Inclusive of 18% GST</div>
         </div>
@@ -1194,7 +1194,7 @@ export default function SalesManagement({
                         </td>
                         <td>
                           <div style={{ fontWeight: '800', color: 'var(--primary-brand)', fontSize: '0.95rem' }}>
-                            ₹ {Math.round(totalVal).toLocaleString('en-IN')}
+                            ₹ {(Math.round(totalVal || 0)).toLocaleString('en-IN')}
                           </div>
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                             {(mainItem.quantity || 0).toLocaleString()} {mainItem.uom} @ ₹{mainItem.ratePerUom}/UOM
@@ -1969,7 +1969,7 @@ export default function SalesManagement({
                           />
                         </td>
                         <td style={{ verticalAlign: 'top', padding: '12px 8px', fontWeight: '800', color: 'var(--primary-brand)', fontSize: '0.85rem' }}>
-                          ₹ {Math.round(total).toLocaleString('en-IN')}
+                          ₹ {(Math.round(total || 0)).toLocaleString('en-IN')}
                         </td>
                         <td style={{ verticalAlign: 'top', padding: '8px', textAlign: 'center' }}>
                           {items.length > 1 && (

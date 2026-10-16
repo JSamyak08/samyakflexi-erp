@@ -1155,7 +1155,7 @@ export default function SFGFGEntryModal({
 
                         {/* Length */}
                         <td style={{ textAlign: 'right', color: roll.lengthMeters > 0 ? (isLocked ? '#475569' : '#1e3a8a') : '#94a3b8', fontWeight: '700', fontSize: '0.8rem' }}>
-                          {roll.lengthMeters > 0 ? `${roll.lengthMeters.toLocaleString()} m` : '—'}
+                          {roll.lengthMeters > 0 ? `${(roll.lengthMeters || 0).toLocaleString()} m` : '—'}
                         </td>
 
                         {/* Splice / Joints */}
@@ -1244,7 +1244,7 @@ export default function SFGFGEntryModal({
               <div>
                 <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>This Batch Est. Length</span>
                 <div style={{ fontSize: '1.15rem', fontWeight: '900', color: newMeters > 0 ? '#0284c7' : '#94a3b8' }}>
-                  {newMeters > 0 ? `+${newMeters.toLocaleString()} m` : '0 m'}
+                  {newMeters > 0 ? `+${(newMeters || 0).toLocaleString()} m` : '0 m'}
                 </div>
               </div>
             </div>

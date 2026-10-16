@@ -113,7 +113,7 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
   const formatINR = (val) => {
     const num = parseFloat(val);
     if (isNaN(num)) return val || '—';
-    return '₹' + num.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+    return '₹' + (num || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
   };
 
   // Derived Data for Selected Client
@@ -373,7 +373,7 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
                               {c.costBorneBy || 'Client'}
                             </span>
                             <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                              Limit: {c.utilisationLimit ? `${Number(c.utilisationLimit).toLocaleString()}m` : '10k'}
+                              Limit: {c.utilisationLimit ? `${(Number(c.utilisationLimit) || 0).toLocaleString()}m` : '10k'}
                             </div>
                           </td>
                         </tr>

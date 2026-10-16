@@ -58,7 +58,7 @@ export function numberToWords(num) {
 export function formatINR(amount) {
   const num = parseFloat(amount) || 0;
   const isNegative = num < 0;
-  const formatted = Math.abs(num).toLocaleString('en-IN', {
+  const formatted = (Math.abs(num) || 0).toLocaleString('en-IN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   });

@@ -1216,9 +1216,9 @@ export default function ProductionRecordManagement({
                           <code>{getSubstrateStructure(ord)}</code>
                         </td>
                         <td style={{ fontWeight: '700' }}>
-                          {ord.orderQtyKg ? ord.orderQtyKg.toLocaleString() : '1,500'} kg
+                          {(ord?.orderQtyKg || 0).toLocaleString()} kg
                         </td>
-                        <td style={{ fontSize: '0.8rem' }}>{ord.targetDeliveryDate || '2026-07-28'}</td>
+                        <td style={{ fontSize: '0.8rem' }}>{ord?.targetDeliveryDate || '—'}</td>
                         <td>
                           {existingRecord ? (
                             existingRecord.status === 'Approved by Admin' ? (
@@ -1370,7 +1370,7 @@ export default function ProductionRecordManagement({
                           )}
                         </td>
                         <td>{rec.dateFilled}</td>
-                        <td style={{ fontWeight: '600' }}>{actualQty > 0 ? actualQty.toLocaleString() : 0} kg</td>
+                        <td style={{ fontWeight: '600' }}>{actualQty > 0 ? (actualQty || 0).toLocaleString() : 0} kg</td>
                         <td>₹ {(rec.totalMaterialCostRs ?? 0).toLocaleString()}</td>
                         <td style={{ fontWeight: '700', color: '#047857' }}>₹ {(rec.finalProductionCostRs ?? 0).toLocaleString()}</td>
                         
@@ -1379,8 +1379,8 @@ export default function ProductionRecordManagement({
                           <td>
                             {revenue > 0 ? (
                               <>
-                                <div style={{ fontWeight: '800', color: profitRs >= 0 ? '#047857' : '#dc2626', fontSize: '0.85rem' }}>
-                                  ₹ {profitRs.toLocaleString('en-IN')} ({marginPct}%)
+                                <div style={{ fontWeight: '800', color: (profitRs || 0) >= 0 ? '#047857' : '#dc2626', fontSize: '0.85rem' }}>
+                                  ₹ {(profitRs || 0).toLocaleString('en-IN')} ({marginPct}%)
                                 </div>
                                 <span className={`badge ${Number(marginPct) >= 20 ? 'badge-success' : Number(marginPct) >= 10 ? 'badge-info' : Number(marginPct) >= 0 ? 'badge-warning' : 'badge-danger'}`} style={{ fontSize: '0.7rem', padding: '1px 6px' }}>
                                   {Number(marginPct) >= 20 ? 'HIGH MARGIN' : Number(marginPct) >= 10 ? 'GOOD MARGIN' : Number(marginPct) >= 0 ? 'THIN MARGIN' : 'COST OVERRUN'}
@@ -1562,7 +1562,7 @@ export default function ProductionRecordManagement({
                           <div key={v.id || idx} style={{ background: '#ffffff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #f3e8ff' }}>
                             <div style={{ fontWeight: '800', color: '#1e293b', fontSize: '0.9rem' }}>{v.variantName}</div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
-                              <span style={{ fontWeight: '900', color: '#7e22ce', fontSize: '1rem' }}>{qty.toLocaleString()} kg</span>
+                              <span style={{ fontWeight: '900', color: '#7e22ce', fontSize: '1rem' }}>{(qty || 0).toLocaleString()} kg</span>
                               <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#6b21a8', background: '#f3e8ff', padding: '2px 6px', borderRadius: '4px' }}>{pct}% share</span>
                             </div>
                             {v.notes && <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px' }}>Note: {v.notes}</div>}
@@ -1737,7 +1737,7 @@ export default function ProductionRecordManagement({
                               </td>
                               <td>{r.filmType || selectedRecord.printFilmType || 'PET'} {r.micron || selectedRecord.micron || 12}µ ({r.widthMm || selectedRecord.printWidthMm || 460}mm)</td>
                               <td style={{ fontWeight: '800', color: '#059669' }}>{netW.toFixed(1)} kg</td>
-                              <td style={{ fontWeight: '700', color: '#0284c7' }}>{lengthM > 0 ? `${lengthM.toLocaleString()} m` : '-'}</td>
+                              <td style={{ fontWeight: '700', color: '#0284c7' }}>{lengthM > 0 ? `${(lengthM || 0).toLocaleString()} m` : '-'}</td>
                               <td>
                                 <span style={{ fontSize: '0.74rem', background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '2px 6px', borderRadius: '4px', color: '#334155', fontWeight: '600' }}>
                                   {r.locationBay || r.nextProcess || 'SFG Store (Pre-Lamination)'}
@@ -1821,7 +1821,7 @@ export default function ProductionRecordManagement({
                   <td style={{ fontWeight: '700' }}>{m.netConsumedQtyKg} kg</td>
                   <td>₹ {m.unitPricePerKg}</td>
                   <td style={{ fontWeight: '700', color: 'var(--text-primary)' }}>
-                    ₹ {m.totalMaterialCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    ₹ {(m?.totalMaterialCost || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </td>
                 </tr>
               ))}
@@ -2028,7 +2028,7 @@ export default function ProductionRecordManagement({
                               </td>
 
                               <td style={{ textAlign: 'right', color: '#1e3a8a', fontWeight: '700' }}>
-                                {r.lengthMeters ? `${parseInt(r.lengthMeters).toLocaleString()} m` : '—'}
+                                {r.lengthMeters ? `${(parseInt(r.lengthMeters) || 0).toLocaleString()} m` : '—'}
                               </td>
 
                               <td style={{ textAlign: 'center' }}>
@@ -2238,7 +2238,7 @@ export default function ProductionRecordManagement({
                       <div className="glass-card" style={{ padding: '16px', background: '#ffffff' }}>
                         <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: '700' }}>CONTRACT REVENUE</div>
                         <div style={{ fontSize: '1.3rem', fontWeight: '900', color: '#0284c7', marginTop: '4px' }}>
-                          {totalGrossRevenue > 0 ? `₹ ${totalGrossRevenue.toLocaleString('en-IN')}` : '— (No Selling Price)'}
+                          {totalGrossRevenue > 0 ? `₹ ${(totalGrossRevenue || 0).toLocaleString('en-IN')}` : '— (No Selling Price)'}
                         </div>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
                           Selling Rate: {sellingPricePerKg > 0 ? `₹ ${sellingPricePerKg}/kg` : 'Not Set'} {actualQtyKg > 0 ? `• ${actualQtyKg.toFixed(1)} kg` : ''}
@@ -2248,7 +2248,7 @@ export default function ProductionRecordManagement({
                       <div className="glass-card" style={{ padding: '16px', background: '#ffffff' }}>
                         <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: '700' }}>QUOTED TARGET COST</div>
                         <div style={{ fontSize: '1.3rem', fontWeight: '800', color: 'var(--text-primary)', marginTop: '4px' }}>
-                          {hasPreCosting && estTotalCost > 0 ? `₹ ${Math.round(estTotalCost).toLocaleString('en-IN')}` : '— (No Pre-Costing Target)'}
+                          {hasPreCosting && estTotalCost > 0 ? `₹ ${(Math.round(estTotalCost) || 0).toLocaleString('en-IN')}` : '— (No Pre-Costing Target)'}
                         </div>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
                           {hasPreCosting && targetOrderQtyKg > 0 ? `Pre-Cost Rate: ₹ ${(estTotalCost / targetOrderQtyKg).toFixed(2)}/kg` : 'No pre-costing target attached'}
@@ -2258,11 +2258,11 @@ export default function ProductionRecordManagement({
                       <div className="glass-card" style={{ padding: '16px', background: '#ffffff' }}>
                         <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: '700' }}>ACTUAL PRODUCTION COST</div>
                         <div style={{ fontSize: '1.3rem', fontWeight: '900', color: hasPreCosting && costVarianceRs > 0 ? '#b91c1c' : '#047857', marginTop: '4px' }}>
-                          ₹ {Math.round(actualProductionCost).toLocaleString('en-IN')}
+                          ₹ {(Math.round(actualProductionCost) || 0).toLocaleString('en-IN')}
                         </div>
                         <div style={{ fontSize: '0.75rem', color: hasPreCosting ? (costVarianceRs > 0 ? '#dc2626' : '#059669') : 'var(--text-muted)', marginTop: '2px', fontWeight: '700' }}>
                           {hasPreCosting && estTotalCost > 0 ? (
-                            costVarianceRs > 0 ? `Variance: +₹ ${Math.round(costVarianceRs).toLocaleString()} (+${costVariancePct}%)` : `Variance: -₹ ${Math.abs(Math.round(costVarianceRs)).toLocaleString()} (${costVariancePct}%)`
+                            costVarianceRs > 0 ? `Variance: +₹ ${(Math.round(costVarianceRs) || 0).toLocaleString()} (+${costVariancePct}%)` : `Variance: -₹ ${(Math.abs(Math.round(costVarianceRs)) || 0).toLocaleString()} (${costVariancePct}%)`
                           ) : (
                             `Actual Cost Rate: ₹ ${actualQtyKg > 0 ? (actualProductionCost / actualQtyKg).toFixed(2) : '0'}/kg`
                           )}
@@ -2272,7 +2272,7 @@ export default function ProductionRecordManagement({
                       <div className="glass-card" style={{ padding: '16px', background: isHighProfit ? '#ecfdf5' : isModerateProfit ? '#f0f9ff' : isLowProfit ? '#fffbeb' : isLoss ? '#fef2f2' : '#f8fafc', border: `1px solid ${isHighProfit ? '#a7f3d0' : isModerateProfit ? '#bae6fd' : isLowProfit ? '#fde68a' : isLoss ? '#fca5a5' : '#cbd5e1'}` }}>
                         <div style={{ fontSize: '0.78rem', color: isHighProfit ? '#065f46' : isModerateProfit ? '#0369a1' : isLowProfit ? '#92400e' : isLoss ? '#991b1b' : '#475569', fontWeight: '800' }}>NET PROFIT / MARGIN</div>
                         <div style={{ fontSize: '1.3rem', fontWeight: '900', color: isHighProfit ? '#047857' : isModerateProfit ? '#0284c7' : isLowProfit ? '#b45309' : isLoss ? '#dc2626' : '#1e293b', marginTop: '4px' }}>
-                          {totalGrossRevenue > 0 ? `₹ ${Math.round(netProfitRs).toLocaleString('en-IN')} (${profitMarginPct}%)` : '—'}
+                          {totalGrossRevenue > 0 ? `₹ ${(Math.round(netProfitRs) || 0).toLocaleString('en-IN')} (${profitMarginPct}%)` : '—'}
                         </div>
                         <div style={{ marginTop: '4px' }}>
                           {totalGrossRevenue > 0 ? (
@@ -2325,10 +2325,10 @@ export default function ProductionRecordManagement({
                             return (
                               <tr key={idx}>
                                 <td style={{ fontWeight: '700' }}>{r.label}</td>
-                                <td>{hasEst ? `₹ ${r.est.toLocaleString()}` : '— (No Target)'}</td>
-                                <td style={{ fontWeight: '700' }}>₹ {r.act.toLocaleString()}</td>
+                                <td>{hasEst ? `₹ ${(r.est || 0).toLocaleString()}` : '— (No Target)'}</td>
+                                <td style={{ fontWeight: '700' }}>₹ {(r.act || 0).toLocaleString()}</td>
                                 <td style={{ fontWeight: '800', color: hasEst ? (isOver ? '#dc2626' : '#059669') : 'var(--text-muted)' }}>
-                                  {hasEst ? (isOver ? `+₹ ${delta.toLocaleString()} (+${deltaPct}%)` : `${delta.toLocaleString()} (${deltaPct}%)`) : '—'}
+                                  {hasEst ? (isOver ? `+₹ ${(delta || 0).toLocaleString()} (+${deltaPct}%)` : `${(delta || 0).toLocaleString()} (${deltaPct}%)`) : '—'}
                                 </td>
                                 <td>
                                   {hasEst ? (
@@ -2744,7 +2744,7 @@ export default function ProductionRecordManagement({
                     </td>
 
                     <td style={{ fontWeight: '700', color: 'var(--text-primary)' }}>
-                      ₹ {m.totalMaterialCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      ₹ {(m?.totalMaterialCost || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </td>
 
                     <td>
@@ -3001,7 +3001,7 @@ export default function ProductionRecordManagement({
                         <div style={{ fontSize: '0.78rem', color: '#047857', fontWeight: '600' }}>
                           {(selectedRecord?.actualMetersPrinted || selectedOrder?.actualMetersPrinted) && (
                             <span style={{ marginRight: '12px' }}>
-                              📏 Actual Meters: <strong>{Number(selectedRecord?.actualMetersPrinted || selectedOrder?.actualMetersPrinted).toLocaleString()} m</strong>
+                              📏 Actual Meters: <strong>{(Number(selectedRecord?.actualMetersPrinted || selectedOrder?.actualMetersPrinted) || 0).toLocaleString()} m</strong>
                             </span>
                           )}
                           {(selectedRecord?.inkGsmInSpeed || selectedOrder?.inkGsmInSpeed) && (
@@ -3553,7 +3553,7 @@ export default function ProductionRecordManagement({
               <div>
                 <span className="stats-title">Total Ingredients Cost</span>
                 <div style={{ fontSize: '1.3rem', fontWeight: '800', marginTop: '4px' }}>
-                  ₹ {totalMaterialCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  ₹ {(totalMaterialCostRs || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </div>
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>
                   (Sum of ingredients used in table above)
@@ -3572,14 +3572,14 @@ export default function ProductionRecordManagement({
                   onChange={e => setProcessingCostPerKg(e.target.value)}
                 />
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  Processing Cost: ₹ {totalProcessingCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  Processing Cost: ₹ {(totalProcessingCostRs || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </div>
               </div>
 
               <div style={{ borderLeft: '2px solid #cbd5e1', paddingLeft: '20px' }}>
                 <span className="stats-title" style={{ color: '#047857' }}>TOTAL COST OF PRODUCTION</span>
                 <div style={{ fontSize: '1.6rem', fontWeight: '900', color: '#047857', marginTop: '4px' }}>
-                  ₹ {finalProductionCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  ₹ {(finalProductionCostRs || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </div>
               </div>
             </div>
@@ -3863,16 +3863,16 @@ export default function ProductionRecordManagement({
             <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '16px 20px', borderRadius: '10px', marginBottom: '24px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', fontSize: '0.85rem', marginBottom: '12px' }}>
                 <div>Dispatch Ready Produced Qty: <strong>{(totalNetQtyKg ?? 0).toLocaleString()} kg</strong></div>
-                <div>Total Ingredients Cost: <strong>₹ {totalMaterialCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
+                <div>Total Ingredients Cost: <strong>₹ {(totalMaterialCostRs || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
                 <div>Processing Rate: <strong>₹ {processingCostPerKg}/kg</strong></div>
-                <div>Total Processing Cost: <strong>₹ {totalProcessingCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
+                <div>Total Processing Cost: <strong>₹ {(totalProcessingCostRs || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
                 <div>Total Scrap Generated: <strong style={{ color: '#b45309' }}>{totalScrapQtyKg.toFixed(1)} kg ({overallScrapPctOfDispatch}% of dispatch)</strong></div>
               </div>
 
               <div style={{ borderTop: '1px solid #6ee7b7', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontWeight: '800', color: '#065f46', fontSize: '0.95rem' }}>TOTAL COST OF PRODUCTION:</span>
                 <span style={{ fontSize: '1.6rem', fontWeight: '900', color: '#047857' }}>
-                  ₹ {finalProductionCostRs.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  ₹ {(finalProductionCostRs || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </span>
               </div>
             </div>

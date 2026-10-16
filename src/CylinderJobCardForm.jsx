@@ -175,7 +175,7 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, 
                 <td className="label-cell">Cost Borne By</td><td className="value-cell">{data.costBorneBy || '—'}</td>
               </tr>
               <tr>
-                <td className="label-cell">Utilisation Limit</td><td colSpan="3" className="value-cell">{data.utilisationLimit ? `${Number(data.utilisationLimit).toLocaleString()} Kg` : '10,000 Kg'}</td>
+                <td className="label-cell">Utilisation Limit</td><td colSpan="3" className="value-cell">{data.utilisationLimit ? `${(Number(data.utilisationLimit) || 0).toLocaleString()} Kg` : '10,000 Kg'}</td>
               </tr>
             </tbody>
           </table>

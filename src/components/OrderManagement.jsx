@@ -1675,7 +1675,7 @@ export default function OrderManagement({
                                           <tr key={v.id || idx} style={{ borderBottom: '1px solid #f3e8ff' }}>
                                             <td style={{ padding: '8px 12px', fontWeight: '700', color: '#7e22ce' }}>{idx + 1}</td>
                                             <td style={{ padding: '8px 12px', fontWeight: '800', color: '#0f172a' }}>{v.variantName || '—'}</td>
-                                            <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '800', color: '#6b21a8' }}>{qty.toLocaleString()} kg</td>
+                                            <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '800', color: '#6b21a8' }}>{(qty || 0).toLocaleString()} kg</td>
                                             <td style={{ padding: '8px 12px', textAlign: 'right', color: '#4c1d95', fontWeight: '700' }}>{pct}%</td>
                                             <td style={{ padding: '8px 12px', color: '#64748b' }}>{v.notes || '—'}</td>
                                           </tr>
@@ -1870,9 +1870,9 @@ export default function OrderManagement({
                                               const inwQty = matched.reduce((sum, g) => sum + (parseFloat(g.netWeightKg) || parseFloat(g.receivedQtyKg) || 0), 0);
                                               const reqQty = parseFloat(req.qtyKg) || 0;
                                               if (inwQty >= reqQty && reqQty > 0) {
-                                                return <div style={{ fontSize: '0.68rem', fontWeight: '700', color: '#047857', marginTop: '2px' }}>✅ GRN Received ({inwQty.toLocaleString()}kg)</div>;
+                                                return <div style={{ fontSize: '0.68rem', fontWeight: '700', color: '#047857', marginTop: '2px' }}>✅ GRN Received ({(inwQty || 0).toLocaleString()}kg)</div>;
                                               } else if (inwQty > 0) {
-                                                return <div style={{ fontSize: '0.68rem', fontWeight: '700', color: '#b45309', marginTop: '2px' }}>🟡 Partial ({inwQty.toLocaleString()}/{reqQty.toLocaleString()}kg)</div>;
+                                                return <div style={{ fontSize: '0.68rem', fontWeight: '700', color: '#b45309', marginTop: '2px' }}>🟡 Partial ({(inwQty || 0).toLocaleString()}/{(reqQty || 0).toLocaleString()}kg)</div>;
                                               } else {
                                                 return <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '2px' }}>⏳ Awaiting Inward</div>;
                                               }
@@ -2351,9 +2351,9 @@ export default function OrderManagement({
                                     const inwQty = matched.reduce((sum, g) => sum + (parseFloat(g.netWeightKg) || parseFloat(g.receivedQtyKg) || 0), 0);
                                     const reqQty = parseFloat(req.qtyKg) || 0;
                                     if (inwQty >= reqQty && reqQty > 0) {
-                                      return <div style={{ fontSize: '0.68rem', fontWeight: '700', color: '#047857', marginTop: '2px' }}>✅ GRN Received ({inwQty.toLocaleString()}kg)</div>;
+                                      return <div style={{ fontSize: '0.68rem', fontWeight: '700', color: '#047857', marginTop: '2px' }}>✅ GRN Received ({(inwQty || 0).toLocaleString()}kg)</div>;
                                     } else if (inwQty > 0) {
-                                      return <div style={{ fontSize: '0.68rem', fontWeight: '700', color: '#b45309', marginTop: '2px' }}>🟡 Partial ({inwQty.toLocaleString()}/{reqQty.toLocaleString()}kg)</div>;
+                                      return <div style={{ fontSize: '0.68rem', fontWeight: '700', color: '#b45309', marginTop: '2px' }}>🟡 Partial ({(inwQty || 0).toLocaleString()}/{(reqQty || 0).toLocaleString()}kg)</div>;
                                     } else {
                                       return <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '2px' }}>⏳ Awaiting Inward</div>;
                                     }
@@ -2429,7 +2429,7 @@ export default function OrderManagement({
                       {selectedRequirements.length} Lines Selected
                     </span>
                     <span style={{ fontSize: '0.85rem', color: '#cbd5e1' }}>
-                      Total Net Qty: <strong>{selectedRequirements.reduce((sum, r) => sum + (parseFloat(r.qtyKg) || 0), 0).toLocaleString()} kg</strong>
+                      Total Net Qty: <strong>{((selectedRequirements || []).reduce((sum, r) => sum + (parseFloat(r.qtyKg) || 0), 0) || 0).toLocaleString()} kg</strong>
                     </span>
                   </div>
                   <span style={{ color: '#64748b' }}>•</span>

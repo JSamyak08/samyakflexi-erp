@@ -323,7 +323,7 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
         <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '18px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', borderLeft: '4px solid #3b82f6' }}>
           <div style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: '600' }}>Period Output / Material</div>
           <div style={{ fontSize: '1.75rem', fontWeight: '900', color: '#0f172a', marginTop: '6px' }}>
-            {stats.totalGross.toLocaleString()} <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: '600' }}>kg</span>
+            {(stats?.totalGross || 0).toLocaleString()} <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: '600' }}>kg</span>
           </div>
           <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '4px' }}>Gross production + hold material</div>
         </div>
@@ -332,7 +332,7 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
         <div style={{ background: '#fff5f5', border: '1px solid #fca5a5', borderRadius: '14px', padding: '18px', borderLeft: '4px solid #ef4444' }}>
           <div style={{ fontSize: '0.82rem', color: '#991b1b', fontWeight: '700' }}>Total Scrap Weight</div>
           <div style={{ fontSize: '1.75rem', fontWeight: '900', color: '#dc2626', marginTop: '6px' }}>
-            {stats.totalScrap.toLocaleString()} <span style={{ fontSize: '0.85rem', color: '#991b1b' }}>kg</span>
+            {(stats?.totalScrap || 0).toLocaleString()} <span style={{ fontSize: '0.85rem', color: '#991b1b' }}>kg</span>
           </div>
           <div style={{ fontSize: '0.78rem', color: '#b91c1c', fontWeight: '600' }}>Process waste + physical scrap store</div>
         </div>
@@ -620,12 +620,12 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
 
                       {/* Gross Output / Qty */}
                       <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600', color: '#334155', whiteSpace: 'nowrap' }}>
-                        {r.grossKg.toLocaleString()} kg
+                        {(r?.grossKg || 0).toLocaleString()} kg
                       </td>
 
                       {/* Scrap Weight */}
                       <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '900', color: isHigh ? '#dc2626' : '#991b1b', whiteSpace: 'nowrap' }}>
-                        {r.scrapKg.toLocaleString()} kg
+                        {(r?.scrapKg || 0).toLocaleString()} kg
                       </td>
 
                       {/* Wastage % Badge (Highlighted when high scrap) */}

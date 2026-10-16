@@ -930,7 +930,7 @@ export default function ProductionScheduler({
 
     const targetNum = endJobTargetOrder?.targetMeters || 0;
     if (targetNum > 0 && actualNum < targetNum && !printLessApproved) {
-      alert(`⚠️ Shortfall Warning: Actual Meters Printed (${actualNum.toLocaleString()} m) is LESS than Target Meters (${targetNum.toLocaleString()} m).\n\nPlease click 'Approval to Print Less Received' to proceed, or click 'Continue Job' to print more meters on press.`);
+      alert(`⚠️ Shortfall Warning: Actual Meters Printed (${(actualNum || 0).toLocaleString()} m) is LESS than Target Meters (${(targetNum || 0).toLocaleString()} m).\n\nPlease click 'Approval to Print Less Received' to proceed, or click 'Continue Job' to print more meters on press.`);
       return;
     }
 
@@ -1206,7 +1206,7 @@ export default function ProductionScheduler({
       if (allRollsToPrint.length > 0) {
         setSelectedRollsForAutoPrint(allRollsToPrint);
       } else {
-        alert(`🎉 Printing Run for "${completedOrder.jobName}" Completed & Saved!\n\n• Actual Meters: ${actualMetersNum.toLocaleString()} m\n• Ink GSM: ${inkGsmNum} g/m²\n• Printed Output: ${outputKgNum} kg (${outputRollsList.length} SFG Rolls)\n• Next Process: ${nextProcessName}\n\nSFG rolls & remaining RM balance barcodes saved to database.`);
+        alert(`🎉 Printing Run for "${completedOrder.jobName}" Completed & Saved!\n\n• Actual Meters: ${(actualMetersNum || 0).toLocaleString()} m\n• Ink GSM: ${inkGsmNum} g/m²\n• Printed Output: ${outputKgNum} kg (${outputRollsList.length} SFG Rolls)\n• Next Process: ${nextProcessName}\n\nSFG rolls & remaining RM balance barcodes saved to database.`);
       }
     } catch (err) {
       console.error("Error ending printing job:", err);
@@ -1713,7 +1713,7 @@ export default function ProductionScheduler({
 
                       <div>
                         <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase', display: 'block' }}>Target Print Length</span>
-                        <strong style={{ fontSize: '0.92rem', color: '#0284c7' }}>{order.targetMeters.toLocaleString()} m</strong>
+                        <strong style={{ fontSize: '0.92rem', color: '#0284c7' }}>{(order.targetMeters || 0).toLocaleString()} m</strong>
                         <span style={{ fontSize: '0.68rem', color: '#0369a1', fontWeight: '700', display: 'block' }}>
                           {order.printLayerGsm} GSM ({order.printFilmType} {order.micron}µ)
                         </span>
@@ -1817,7 +1817,7 @@ export default function ProductionScheduler({
               </div>
               <div>
                 <span style={{ fontSize: '0.75rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Total Meters Printed</span>
-                <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#2563eb' }}>{completedMetrics.totalMeters.toLocaleString()} m</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#2563eb' }}>{(completedMetrics?.totalMeters || 0).toLocaleString()} m</div>
               </div>
             </div>
 
@@ -1827,7 +1827,7 @@ export default function ProductionScheduler({
               </div>
               <div>
                 <span style={{ fontSize: '0.75rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Total Weight Output</span>
-                <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#9333ea' }}>{completedMetrics.totalKg.toLocaleString()} kg</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#9333ea' }}>{(completedMetrics?.totalKg || 0).toLocaleString()} kg</div>
               </div>
             </div>
 
@@ -1968,7 +1968,7 @@ export default function ProductionScheduler({
                       <div>
                         <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase', display: 'block' }}>Actual Meters</span>
                         <strong style={{ fontSize: '0.95rem', color: '#059669' }}>{(parseFloat(order.actualMetersPrinted) || order.targetMeters || 0).toLocaleString()} m</strong>
-                        <span style={{ fontSize: '0.68rem', color: '#64748b', display: 'block' }}>Target: {order.targetMeters.toLocaleString()}m</span>
+                        <span style={{ fontSize: '0.68rem', color: '#64748b', display: 'block' }}>Target: {(order.targetMeters || 0).toLocaleString()}m</span>
                       </div>
 
                       <div>
@@ -2218,7 +2218,7 @@ export default function ProductionScheduler({
                   <div style={{ background: '#ffffff', padding: '12px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                     <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Target Print Meters</span>
                     <div style={{ fontSize: '1.3rem', fontWeight: '900', color: '#059669', marginTop: '2px' }}>
-                      {activeRunningJob.targetMeters.toLocaleString()} m
+                      {(activeRunningJob?.targetMeters || 0).toLocaleString()} m
                     </div>
                     <span style={{ fontSize: '0.72rem', color: '#0369a1', fontWeight: '700', display: 'block', marginTop: '2px' }}>
                       {activeRunningJob.printLayerGsm} GSM ({activeRunningJob.printFilmType} {activeRunningJob.micron}µ)
@@ -2261,7 +2261,7 @@ export default function ProductionScheduler({
                               {v.notes && <span style={{ fontSize: '0.74rem', color: '#64748b', marginLeft: '6px' }}>({v.notes})</span>}
                             </div>
                             <div style={{ textAlign: 'right' }}>
-                              <span style={{ fontWeight: '800', color: '#7e22ce' }}>{qty.toLocaleString()} kg</span>
+                              <span style={{ fontWeight: '800', color: '#7e22ce' }}>{(qty || 0).toLocaleString()} kg</span>
                               <span style={{ fontSize: '0.74rem', color: '#6b21a8', marginLeft: '6px', background: '#f3e8ff', padding: '1px 6px', borderRadius: '4px' }}>{pct}%</span>
                             </div>
                           </div>
@@ -2677,7 +2677,7 @@ export default function ProductionScheduler({
                         📏 Actual Meters Printed (m) *
                       </label>
                       <span style={{ fontSize: '0.75rem', color: '#0284c7', fontWeight: '700' }}>
-                        Target: {endJobTargetOrder.targetMeters.toLocaleString()} m
+                        Target: {(endJobTargetOrder?.targetMeters || 0).toLocaleString()} m
                       </span>
                     </div>
                     <input 
@@ -2720,7 +2720,7 @@ export default function ProductionScheduler({
                             border: endJobIsMetersShortfall ? '1px solid #fde68a' : (parseFloat(endJobMeterPercentage) >= 100 ? '1px solid #a7f3d0' : '1px solid #bae6fd')
                           }}
                         >
-                          📊 {endJobMeterPercentage}% of Target {endJobIsMetersShortfall ? `(${(endJobTargetMetersNum - endJobActualMetersNum).toLocaleString()} m Shortfall)` : (endJobActualMetersNum > endJobTargetMetersNum ? `(+${(endJobActualMetersNum - endJobTargetMetersNum).toLocaleString()} m Extra)` : '(Target Met)')}
+                          📊 {endJobMeterPercentage}% of Target {endJobIsMetersShortfall ? `(${Math.max(0, (endJobTargetMetersNum || 0) - (endJobActualMetersNum || 0)).toLocaleString()} m Shortfall)` : ((endJobActualMetersNum || 0) > (endJobTargetMetersNum || 0) ? `(+${((endJobActualMetersNum || 0) - (endJobTargetMetersNum || 0)).toLocaleString()} m Extra)` : '(Target Met)')}
                         </span>
                       )}
                     </div>
@@ -2732,7 +2732,7 @@ export default function ProductionScheduler({
                           <AlertTriangle size={20} style={{ color: '#d97706', flexShrink: 0, marginTop: '2px' }} />
                           <div style={{ flex: 1 }}>
                             <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#92400e', marginBottom: '2px' }}>
-                              ⚠️ Shortfall Warning: Actual ({endJobActualMetersNum.toLocaleString()} m) &lt; Target ({endJobTargetMetersNum.toLocaleString()} m)
+                              ⚠️ Shortfall Warning: Actual ({(endJobActualMetersNum || 0).toLocaleString()} m) &lt; Target ({(endJobTargetMetersNum || 0).toLocaleString()} m)
                             </div>
                             <p style={{ margin: 0, fontSize: '0.78rem', color: '#b45309', lineHeight: '1.4' }}>
                               Printed meters are less than the target requirement ({endJobMeterPercentage}% of target achieved). Please print more meters to fulfill the run, or grant approval to receive less.
@@ -2995,16 +2995,16 @@ export default function ProductionScheduler({
                         </span>
                       )}
                     </div>
-                    <div style={{ fontSize: '1.3rem', fontWeight: '900', color: parseFloat(inputActualMeters) < endJobTargetOrder.targetMeters ? '#b45309' : '#0284c7', marginTop: '2px' }}>
-                      {parseFloat(inputActualMeters).toLocaleString()} m
+                    <div style={{ fontSize: '1.3rem', fontWeight: '900', color: parseFloat(inputActualMeters) < (endJobTargetOrder?.targetMeters || 0) ? '#b45309' : '#0284c7', marginTop: '2px' }}>
+                      {(parseFloat(inputActualMeters) || 0).toLocaleString()} m
                     </div>
-                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Target: {endJobTargetOrder.targetMeters.toLocaleString()} m</span>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Target: {(endJobTargetOrder?.targetMeters || 0).toLocaleString()} m</span>
                   </div>
 
                   <div style={{ background: '#ffffff', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                     <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Printed Output (Net Weight)</span>
                     <div style={{ fontSize: '1.3rem', fontWeight: '900', color: '#059669', marginTop: '2px' }}>
-                      {parseFloat(inputPrintedOutputKg).toLocaleString()} kg
+                      {(parseFloat(inputPrintedOutputKg) || 0).toLocaleString()} kg
                     </div>
                     <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Order Qty: {endJobTargetOrder.printQtyKg} kg</span>
                   </div>

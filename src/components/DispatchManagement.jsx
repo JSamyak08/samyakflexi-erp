@@ -1591,7 +1591,7 @@ export default function DispatchManagement({
 
           <div className="glass-card" style={{ padding: '18px', borderLeft: '4px solid #059669' }}>
             <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Total Net Dispatched Weight</div>
-            <div style={{ fontSize: '1.5rem', fontWeight: '800', color: '#059669', marginTop: '4px' }}>{totalDispatchedQtyKg.toLocaleString()} Kg</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: '800', color: '#059669', marginTop: '4px' }}>{(totalDispatchedQtyKg || 0).toLocaleString()} Kg</div>
             <div style={{ fontSize: '0.74rem', color: '#047857', marginTop: '2px' }}>Flexible packaging film & pouches</div>
           </div>
 
@@ -1930,10 +1930,10 @@ export default function DispatchManagement({
                           {ds.totalRolls || (ds.items?.length || 1)} rolls
                         </td>
                         <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'right', fontWeight: '800', color: '#047857' }}>
-                          {Number(ds.totalNetWeightKg).toLocaleString()} kg
+                          {(Number(ds.totalNetWeightKg) || 0).toLocaleString()} kg
                         </td>
                         <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'right', fontWeight: '800', color: '#4338ca' }}>
-                          {Number(ds.totalGrossWeightKg || (ds.totalNetWeightKg + 4.5)).toLocaleString()} kg
+                          {(Number(ds.totalGrossWeightKg || (ds.totalNetWeightKg + 4.5)) || 0).toLocaleString()} kg
                         </td>
                         <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'center' }}>
                           <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', whiteSpace: 'nowrap' }}>

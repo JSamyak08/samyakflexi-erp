@@ -185,30 +185,30 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
             <div style={{ width: '42%', fontSize: '0.85rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
                 <span>Subtotal (Taxable Value):</span>
-                <b>₹ {totalTaxable.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
+                <b>₹ {(totalTaxable || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
               </div>
 
-              {gstBreakdown.isIntraState ? (
+              {gstBreakdown?.isIntraState ? (
                 <>
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', color: '#334155' }}>
-                    <span>CGST ({gstBreakdown.cgstRatePct}% Central Tax):</span>
-                    <b>₹ {gstBreakdown.cgstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
+                    <span>CGST ({gstBreakdown?.cgstRatePct || 0}% Central Tax):</span>
+                    <b>₹ {(gstBreakdown?.cgstAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', color: '#334155' }}>
-                    <span>SGST ({gstBreakdown.sgstRatePct}% State Tax - MP):</span>
-                    <b>₹ {gstBreakdown.sgstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
+                    <span>SGST ({gstBreakdown?.sgstRatePct || 0}% State Tax - MP):</span>
+                    <b>₹ {(gstBreakdown?.sgstAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
                   </div>
                 </>
               ) : (
                 <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', color: '#334155' }}>
-                  <span>IGST ({gstBreakdown.igstRatePct}% Integrated Tax):</span>
-                  <b>₹ {gstBreakdown.igstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
+                  <span>IGST ({gstBreakdown?.igstRatePct || 0}% Integrated Tax):</span>
+                  <b>₹ {(gstBreakdown?.igstAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
                 </div>
               )}
 
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '2px solid #1e293b', fontSize: '1.05rem', fontWeight: '900', color: '#1e293b', marginTop: '4px' }}>
                 <span>Total Quotation Amount:</span>
-                <span>₹ {totalGrand.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span>₹ {(totalGrand || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
               <div style={{ fontSize: '0.72rem', color: '#64748b', fontStyle: 'italic', marginTop: '2px', textAlign: 'right' }}>
                 ({gstBreakdown.label})

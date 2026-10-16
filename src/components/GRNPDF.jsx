@@ -277,7 +277,7 @@ export default function GRNPDF({ grnData, onClose }) {
                         <td style={{ textAlign: 'right' }}>{item.grossWeightKg ? `${item.grossWeightKg} kg` : '—'}</td>
                         <td style={{ textAlign: 'right' }}>{item.tareWeightKg ? `${item.tareWeightKg} kg` : '0 kg'}</td>
                         <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#047857' }}>{(parseFloat(item.netWeightKg) || 0).toLocaleString()} kg</td>
-                        <td style={{ textAlign: 'right' }}>{item.lengthMeters ? `${item.lengthMeters.toLocaleString()} m` : '—'}</td>
+                        <td style={{ textAlign: 'right' }}>{item.lengthMeters ? `${(item.lengthMeters || 0).toLocaleString()} m` : '—'}</td>
                       </tr>
                     ))}
                   </tbody>

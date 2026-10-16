@@ -386,7 +386,7 @@ export default function PurchaseOrderManagement({
       }
 
       setIsCreateModalOpen(false);
-      alert(`✅ Purchase Order ${payload.poNumber} created and saved to database successfully!\nTotal Value: ₹${payload.totalAmount.toLocaleString('en-IN')}`);
+      alert(`✅ Purchase Order ${payload.poNumber} created and saved to database successfully!\nTotal Value: ₹${(payload.totalAmount || 0).toLocaleString('en-IN')}`);
     } catch (err) {
       console.error("Error creating Purchase Order:", err);
       alert(`Failed to save Purchase Order: ${err.message}`);
@@ -1793,28 +1793,28 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '8px', color: '#475569' }}>
                       <span>Total Ordered Quantity:</span>
-                      <strong>{formCalculations.totalQty.toLocaleString()} kg</strong>
+                      <strong>{(formCalculations?.totalQty || 0).toLocaleString()} kg</strong>
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '8px', color: '#475569' }}>
                       <span>Subtotal (Taxable):</span>
-                      <span>₹{formCalculations.subtotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                      <span>₹{(formCalculations?.subtotal || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                     </div>
 
-                    {formCalculations.isInterState ? (
+                    {formCalculations?.isInterState ? (
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '8px', color: '#475569' }}>
                         <span>IGST (18%):</span>
-                        <span>₹{formCalculations.igst.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                        <span>₹{(formCalculations?.igst || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                       </div>
                     ) : (
                       <>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '8px', color: '#475569' }}>
                           <span>CGST (9%):</span>
-                          <span>₹{formCalculations.cgst.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                          <span>₹{(formCalculations?.cgst || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '8px', color: '#475569' }}>
                           <span>SGST (9%):</span>
-                          <span>₹{formCalculations.sgst.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                          <span>₹{(formCalculations?.sgst || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                         </div>
                       </>
                     )}
@@ -1824,7 +1824,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontSize: '0.95rem', fontWeight: '800', color: '#0f172a' }}>Grand Total (₹):</span>
                       <span style={{ fontSize: '1.25rem', fontWeight: '800', color: '#4f46e5' }}>
-                        ₹{formCalculations.totalAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                        ₹{(formCalculations?.totalAmount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                       </span>
                     </div>
                   </div>
@@ -1941,7 +1941,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                 <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '6px', borderTop: '1px dashed #cbd5e1' }}>
                   <span style={{ color: '#64748b' }}>Ordered / Pending Qty:</span>
                   <strong style={{ color: '#dc2626' }}>
-                    {activeCollisionWarning.collision.totalPoQty.toLocaleString()} kg ordered • {activeCollisionWarning.collision.pendingQty.toLocaleString()} kg pending GRN
+                    {(activeCollisionWarning?.collision?.totalPoQty || 0).toLocaleString()} kg ordered • {(activeCollisionWarning?.collision?.pendingQty || 0).toLocaleString()} kg pending GRN
                   </strong>
                 </div>
               </div>

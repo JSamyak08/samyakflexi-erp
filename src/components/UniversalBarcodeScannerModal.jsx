@@ -853,8 +853,8 @@ export default function UniversalBarcodeScannerModal({
           { label: 'Target / Delivery Date', value: matchedPoData.deliveryDate || 'N/A' },
           { label: 'Payment Terms', value: matchedPoData.terms || '30 Days Net' },
           { label: 'Total Material Items', value: `${itemsList.length} Items` },
-          { label: 'Total Ordered Quantity', value: `${totalPoQty.toLocaleString()} kg`, isHighlight: true },
-          ...(totalPoAmt > 0 ? [{ label: 'Total Order Value (Taxable)', value: `₹ ${totalPoAmt.toLocaleString()}` }] : []),
+          { label: 'Total Ordered Quantity', value: `${(totalPoQty || 0).toLocaleString()} kg`, isHighlight: true },
+          ...(totalPoAmt > 0 ? [{ label: 'Total Order Value (Taxable)', value: `₹ ${(totalPoAmt || 0).toLocaleString()}` }] : []),
           { label: 'Delivery / Special Terms', value: matchedPoData.remarks || 'Standard flexible packaging raw material terms apply.' }
         ]
       };

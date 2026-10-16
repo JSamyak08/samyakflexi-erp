@@ -59,7 +59,7 @@ export default function ClientPendingOrdersPDF({ client = {}, pendingOrders = []
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: '600' }}>
-            {totalOrders} Pending Order(s) | {totalPendingQtyKg.toLocaleString('en-IN')} kg Total
+            {totalOrders} Pending Order(s) | {(totalPendingQtyKg || 0).toLocaleString('en-IN')} kg Total
           </span>
           <button
             type="button"
@@ -205,7 +205,7 @@ export default function ClientPendingOrdersPDF({ client = {}, pendingOrders = []
               PENDING MATERIAL SUMMARY:
             </span>
             <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#047857', marginTop: '4px' }}>
-              {totalPendingQtyKg.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span style={{ fontSize: '0.9rem', color: '#475569' }}>kg</span>
+              {(totalPendingQtyKg || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span style={{ fontSize: '0.9rem', color: '#475569' }}>kg</span>
             </div>
             <div style={{ fontSize: '0.78rem', color: '#475569', marginTop: '4px', fontWeight: '600' }}>
               Total Orders in Pipeline: <strong>{totalOrders} Active Orders</strong>
@@ -254,7 +254,7 @@ export default function ClientPendingOrdersPDF({ client = {}, pendingOrders = []
                     <td style={{ padding: '8px 10px', color: '#334155', fontSize: '0.76rem' }}>{structure}</td>
                     <td style={{ padding: '8px 10px', fontWeight: '600', color: '#475569' }}>{form}</td>
                     <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: '800', color: '#0f172a' }}>
-                      {qtyKg.toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                      {(qtyKg || 0).toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
                     </td>
                     <td style={{ padding: '8px 10px', textAlign: 'center', fontWeight: '700', color: '#475569' }}>
                       {ord.targetDeliveryDate || ord.date || 'Standard'}
@@ -284,7 +284,7 @@ export default function ClientPendingOrdersPDF({ client = {}, pendingOrders = []
                   Total Pending Order Quantity:
                 </td>
                 <td style={{ padding: '10px', textAlign: 'right', fontSize: '0.92rem', color: '#047857' }}>
-                  {totalPendingQtyKg.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg
+                  {(totalPendingQtyKg || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg
                 </td>
                 <td colSpan={2} style={{ padding: '10px', textAlign: 'center', fontSize: '0.78rem', color: '#475569' }}>
                   ({totalOrders} Orders Total)

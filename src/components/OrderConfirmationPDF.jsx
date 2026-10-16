@@ -231,13 +231,13 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
                   <td className="label-col">Print Size (Width x Repeat)</td>
                   <td className="value-col">{printWidthMm ? `${printWidthMm} mm` : '—'} × {repeatLengthMm ? `${repeatLengthMm} mm` : '—'}</td>
                   <td className="label-col">Order Quantity</td>
-                  <td className="value-col">{resolvedOrderQtyKg ? `${resolvedOrderQtyKg.toLocaleString()} Kg` : '0 Kg'}</td>
+                  <td className="value-col">{resolvedOrderQtyKg ? `${(resolvedOrderQtyKg || 0).toLocaleString()} Kg` : '0 Kg'}</td>
                 </tr>
                 <tr>
                   <td className="label-col">Total Laminate GSM</td>
                   <td className="value-col">{resolvedLaminateGsm ? `${Number(resolvedLaminateGsm).toFixed(1)} g/m²` : '—'}</td>
                   <td className="label-col">Surface Area</td>
-                  <td className="value-col">{resolvedAreaSqm ? `${resolvedAreaSqm.toLocaleString()} m²` : '—'}</td>
+                  <td className="value-col">{resolvedAreaSqm ? `${(resolvedAreaSqm || 0).toLocaleString()} m²` : '—'}</td>
                 </tr>
                 <tr>
                   <td className="label-col">Wastage Allowed</td>

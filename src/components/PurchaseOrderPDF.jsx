@@ -311,7 +311,7 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
             <tfoot>
               <tr style={{ background: '#e2e8f0', fontWeight: 'bold' }}>
                 <td colSpan="3" className="right" style={{ textAlign: 'right', border: '1px solid #94a3b8', padding: '6px 8px', fontWeight: '800' }}>Total Quantity Order:</td>
-                <td className="right" style={{ textAlign: 'right', border: '1px solid #94a3b8', padding: '6px 8px', fontWeight: '900', color: '#0f172a' }}>{totalQtyKg.toLocaleString('en-IN', { minimumFractionDigits: 2 })} Kg</td>
+                <td className="right" style={{ textAlign: 'right', border: '1px solid #94a3b8', padding: '6px 8px', fontWeight: '900', color: '#0f172a' }}>{(totalQtyKg || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })} Kg</td>
                 <td colSpan="5" style={{ border: '1px solid #94a3b8' }}></td>
               </tr>
             </tfoot>

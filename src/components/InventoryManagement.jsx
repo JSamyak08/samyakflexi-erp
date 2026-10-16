@@ -4378,10 +4378,10 @@ export default function InventoryManagement({
                         )}
                       </td>
                       <td style={{ fontWeight: '700', color: '#1e293b' }}>
-                        ₹{rate > 0 ? rate.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '-'} / {unitStr}
+                        ₹{rate > 0 ? (rate || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '-'} / {unitStr}
                       </td>
                       <td style={{ fontWeight: '800', color: '#047857' }}>
-                        ₹{itemValuation > 0 ? itemValuation.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '0.00'}
+                        ₹{itemValuation > 0 ? (itemValuation || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '0.00'}
                       </td>
                       <td style={{ color: 'var(--text-secondary)' }}>
                         {(effectiveAllocated ?? 0).toLocaleString()} {unitStr}

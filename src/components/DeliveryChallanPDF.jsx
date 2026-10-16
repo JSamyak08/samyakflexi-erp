@@ -105,7 +105,7 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
     const entries = Object.entries(qtyByUnit);
     if (entries.length === 0) return '0.00 Kg';
 
-    return entries.map(([uom, qty]) => `${qty.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${uom}`).join(', ');
+    return entries.map(([uom, qty]) => `${(qty || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${uom}`).join(', ');
   })();
 
   const selectedNature = challanData.challanNature || challanData.movementType || challanData.natureOfMovement || "Sale of Goods";
@@ -276,7 +276,7 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
                     </td>
                     <td style={{ textAlign: 'center', fontFamily: 'monospace', padding: '3px 5px' }}>{item.hsnSac || '3923'}</td>
                     <td style={{ textAlign: 'right', fontWeight: 'bold', padding: '3px 5px' }}>
-                      {qty.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.unit || 'Kg'}
+                      {(qty || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.unit || 'Kg'}
                     </td>
                     <td style={{ textAlign: 'right', padding: '3px 5px' }}>
                       {rate > 0 ? formatINR(rate) : '—'}

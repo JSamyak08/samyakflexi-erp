@@ -1267,7 +1267,7 @@ export default function CylinderManagement({
 
                       <td>
                         <div style={{ fontSize: '0.85rem', fontWeight: '600' }}>{cFace}L × {cCirc}C mm</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{cUnits.toLocaleString()} sq. cm</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{(cUnits || 0).toLocaleString()} sq. cm</div>
                       </td>
 
                       <td>
@@ -1760,7 +1760,7 @@ export default function CylinderManagement({
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
                       <div>
                         <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '600' }}>Surface Area</div>
-                        <div style={{ fontWeight: '800', fontSize: '0.95rem', color: '#0f172a', marginTop: '4px' }}>{billingAreaUnits.toLocaleString()} sq. cm</div>
+                        <div style={{ fontWeight: '800', fontSize: '0.95rem', color: '#0f172a', marginTop: '4px' }}>{(billingAreaUnits || 0).toLocaleString()} sq. cm</div>
                         <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>({faceLengthMm} × {circumferenceMm} ÷ 100)</div>
                       </div>
 

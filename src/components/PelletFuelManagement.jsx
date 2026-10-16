@@ -436,7 +436,7 @@ export default function PelletFuelManagement({
             </div>
           </div>
           <div style={{ fontSize: '1.7rem', fontWeight: '900', color: '#78350f', marginTop: '8px', letterSpacing: '-0.02em' }}>
-            {stockSummary.currentStockKg.toLocaleString()} <span style={{ fontSize: '0.9rem', fontWeight: '700', color: '#b45309' }}>Kg</span>
+            {(stockSummary?.currentStockKg || 0).toLocaleString()} <span style={{ fontSize: '0.9rem', fontWeight: '700', color: '#b45309' }}>Kg</span>
           </div>
           <div style={{ fontSize: '0.76rem', color: '#b45309', marginTop: '6px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>
             Avg Inward Rate: <strong style={{ color: '#78350f' }}>₹ {stockSummary.weightedAvgCostPerKg ? stockSummary.weightedAvgCostPerKg.toFixed(2) : '0.00'} / kg</strong>
@@ -454,10 +454,10 @@ export default function PelletFuelManagement({
             </div>
           </div>
           <div style={{ fontSize: '1.7rem', fontWeight: '900', color: '#0f172a', marginTop: '8px', letterSpacing: '-0.02em' }}>
-            {stockSummary.mtdConsumedKg.toLocaleString()} <span style={{ fontSize: '0.9rem', fontWeight: '700', color: '#64748b' }}>Kg</span>
+            {(stockSummary?.mtdConsumedKg || 0).toLocaleString()} <span style={{ fontSize: '0.9rem', fontWeight: '700', color: '#64748b' }}>Kg</span>
           </div>
           <div style={{ fontSize: '0.76rem', color: '#64748b', marginTop: '6px' }}>
-            MTD Expense: <strong style={{ color: '#0284c7' }}>₹ {Math.round(stockSummary.mtdExpenditure).toLocaleString()}</strong>
+            MTD Expense: <strong style={{ color: '#0284c7' }}>₹ {(Math.round(stockSummary?.mtdExpenditure || 0)).toLocaleString()}</strong>
           </div>
         </div>
 
@@ -472,7 +472,7 @@ export default function PelletFuelManagement({
             </div>
           </div>
           <div style={{ fontSize: '1.7rem', fontWeight: '900', color: '#059669', marginTop: '8px', letterSpacing: '-0.02em' }}>
-            {Math.round(stockSummary.avgDailyConsumptionKg).toLocaleString()} <span style={{ fontSize: '0.9rem', fontWeight: '700', color: '#047857' }}>Kg/day</span>
+            {(Math.round(stockSummary?.avgDailyConsumptionKg || 0)).toLocaleString()} <span style={{ fontSize: '0.9rem', fontWeight: '700', color: '#047857' }}>Kg/day</span>
           </div>
           <div style={{ fontSize: '0.76rem', color: '#64748b', marginTop: '6px' }}>
             Across {stockSummary.activeLoggingDaysCount} active logged shift days
@@ -715,7 +715,7 @@ export default function PelletFuelManagement({
                       </td>
                       <td style={{ padding: '14px 16px' }}>
                         <div style={{ fontWeight: '900', color: '#b45309', fontSize: '0.98rem' }}>
-                          {consumed.toLocaleString()} <span style={{ fontSize: '0.78rem' }}>Kg</span>
+                          {(consumed || 0).toLocaleString()} <span style={{ fontSize: '0.78rem' }}>Kg</span>
                         </div>
                         <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '2px' }}>@ ₹{costPerKg.toFixed(2)}/kg</div>
                       </td>
@@ -724,7 +724,7 @@ export default function PelletFuelManagement({
                       </td>
                       <td style={{ padding: '14px 16px' }}>
                         <div style={{ fontWeight: '800', color: '#0284c7', fontSize: '0.92rem' }}>
-                          {printed.toLocaleString()} <span style={{ fontSize: '0.75rem' }}>Kg</span>
+                          {(printed || 0).toLocaleString()} <span style={{ fontSize: '0.75rem' }}>Kg</span>
                         </div>
                       </td>
                       <td style={{ padding: '14px 16px' }}>
@@ -833,7 +833,7 @@ export default function PelletFuelManagement({
                     </td>
                     <td style={{ padding: '14px 16px' }}>
                       <div style={{ fontWeight: '900', color: '#0284c7', fontSize: '0.96rem' }}>
-                        ₹ {(Number(item.totalAmount) || (Number(item.inwardQtyKg) * Number(item.unitCostPerKg))).toLocaleString()}
+                        ₹ {((Number(item.totalAmount) || (Number(item.inwardQtyKg) * Number(item.unitCostPerKg))) || 0).toLocaleString()}
                       </div>
                     </td>
                     <td style={{ padding: '14px 16px' }}>
@@ -1282,7 +1282,7 @@ export default function PelletFuelManagement({
                     readOnly
                     disabled
                     style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.88rem', background: '#f8fafc', fontWeight: '800', color: '#0284c7' }}
-                    value={iQtyKg && iRatePerKg ? `₹ ${(Number(iQtyKg) * Number(iRatePerKg)).toLocaleString()}` : '₹ 0'}
+                    value={iQtyKg && iRatePerKg ? `₹ ${((Number(iQtyKg) * Number(iRatePerKg)) || 0).toLocaleString()}` : '₹ 0'}
                   />
                 </div>
               </div>

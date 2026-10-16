@@ -1001,7 +1001,7 @@ export default function EmployeeManagement({
 
     const actionText = isApproved ? 'Approve' : 'Reject';
     const confirmMsg = isApproved
-      ? `Confirm Overtime Approval for ${empName}?\n• Date: ${attRecord.date}\n• Hours: ${attRecord.overtimeHours} hrs\n• Salary Payout Addition: ₹ ${payout.toLocaleString()}\n\nClick OK to approve and credit into monthly salary.`
+      ? `Confirm Overtime Approval for ${empName}?\n• Date: ${attRecord.date}\n• Hours: ${attRecord.overtimeHours} hrs\n• Salary Payout Addition: ₹ ${(payout || 0).toLocaleString()}\n\nClick OK to approve and credit into monthly salary.`
       : `Confirm Overtime Rejection for ${empName}?\n• Date: ${attRecord.date}\n• Hours: ${attRecord.overtimeHours} hrs\n\nClick OK to reject this overtime request.`;
 
     if (!window.confirm(confirmMsg)) return;
@@ -1015,7 +1015,7 @@ export default function EmployeeManagement({
     };
     if (onSaveAttendance) onSaveAttendance(updated);
     saveEmployeeAttendanceToSupabase(updated);
-    alert(`Overtime request for ${empName} on ${attRecord.date} has been ${updated.overtimeStatus} (₹${payout.toLocaleString()})!`);
+    alert(`Overtime request for ${empName} on ${attRecord.date} has been ${updated.overtimeStatus} (₹${(payout || 0).toLocaleString()})!`);
   };
 
   // Revert Overtime Approval or Rejection
@@ -1030,7 +1030,7 @@ export default function EmployeeManagement({
     const { payout } = getRecordOtPayout(attRecord, employees);
 
     const confirmMsg = currentStatus === 'Approved'
-      ? `⚠️ REVERT OVERTIME APPROVAL?\n\nEmployee: ${empName} (${emp?.empCode || emp?.id})\nDate: ${attRecord.date} | Hours: ${attRecord.overtimeHours} hrs\nApproved Payout: ₹ ${payout.toLocaleString()}\n\nReverting will reset the status back to 'Pending Approval' and IMMEDIATELY DEDUCT ₹ ${payout.toLocaleString()} from ${empName}'s calculated monthly salary.\n\nDo you want to proceed?`
+      ? `⚠️ REVERT OVERTIME APPROVAL?\n\nEmployee: ${empName} (${emp?.empCode || emp?.id})\nDate: ${attRecord.date} | Hours: ${attRecord.overtimeHours} hrs\nApproved Payout: ₹ ${(payout || 0).toLocaleString()}\n\nReverting will reset the status back to 'Pending Approval' and IMMEDIATELY DEDUCT ₹ ${(payout || 0).toLocaleString()} from ${empName}'s calculated monthly salary.\n\nDo you want to proceed?`
       : `Revert overtime rejection for ${empName} on ${attRecord.date}?\nStatus will be reset to 'Pending Approval' for reconsideration.`;
 
     if (!window.confirm(confirmMsg)) return;
@@ -1047,7 +1047,7 @@ export default function EmployeeManagement({
     saveEmployeeAttendanceToSupabase(updated);
 
     if (currentStatus === 'Approved') {
-      alert(`✅ Approval reverted for ${empName}!\n₹ ${payout.toLocaleString()} has been deducted from their salary calculation.`);
+      alert(`✅ Approval reverted for ${empName}!\n₹ ${(payout || 0).toLocaleString()} has been deducted from their salary calculation.`);
     } else {
       alert(`✅ Rejection reverted for ${empName}. Request is now Pending Approval.`);
     }
@@ -1148,7 +1148,7 @@ export default function EmployeeManagement({
       );
 
       if (activeExistingAdvance) {
-        alert(`⚠️ Advance Blocked: ${selectedEmp.fullName} already has an active outstanding advance (${activeExistingAdvance.id}) with ₹${Number(activeExistingAdvance.remainingBalance || activeExistingAdvance.advanceAmount).toLocaleString()} remaining dues! New advances cannot be requested until previous dues are 100% completed.`);
+        alert(`⚠️ Advance Blocked: ${selectedEmp.fullName} already has an active outstanding advance (${activeExistingAdvance.id}) with ₹${(Number(activeExistingAdvance.remainingBalance || activeExistingAdvance.advanceAmount) || 0).toLocaleString()} remaining dues! New advances cannot be requested until previous dues are 100% completed.`);
         return;
       }
     }
@@ -1200,7 +1200,7 @@ export default function EmployeeManagement({
     setAdvEmpId('');
     setAdvAmount('');
     setAdvReason('');
-    alert(`Salary Advance ${editingAdvance ? 'Updated' : 'Request recorded'} for ${selectedEmp.fullName} (₹${amt.toLocaleString()})!`);
+    alert(`Salary Advance ${editingAdvance ? 'Updated' : 'Request recorded'} for ${selectedEmp.fullName} (₹${(amt || 0).toLocaleString()})!`);
   };
 
   // Approve Salary Advance
@@ -1218,7 +1218,7 @@ export default function EmployeeManagement({
     };
     if (onUpdateSalaryAdvance) onUpdateSalaryAdvance(updated);
     saveSalaryAdvanceToSupabase(updated);
-    alert(`Salary Advance of ₹${adv.advanceAmount.toLocaleString()} for ${adv.employeeName} approved & disbursed! Monthly EMI: ₹${adv.monthlyEmiAmount}`);
+    alert(`Salary Advance of ₹${(adv.advanceAmount || 0).toLocaleString()} for ${adv.employeeName} approved & disbursed! Monthly EMI: ₹${adv.monthlyEmiAmount}`);
   };
 
   // Open Payment Disbursal Modal
@@ -1296,7 +1296,7 @@ export default function EmployeeManagement({
     }
 
     setShowPaymentModal(false);
-    alert(`✅ Salary Payment Recorded Successfully!\n• Employee: ${paymentRowData.fullName} (${paymentRowData.empCode})\n• Net Paid: ₹${paymentRecord.netAmountPaid.toLocaleString()}\n• Date & Time: ${paymentDate} at ${paymentTime}\n• Mode: ${paymentMode}\n• Ref: ${paymentTxnRef || 'N/A'}`);
+    alert(`✅ Salary Payment Recorded Successfully!\n• Employee: ${paymentRowData.fullName} (${paymentRowData.empCode})\n• Net Paid: ₹${(paymentRecord.netAmountPaid || 0).toLocaleString()}\n• Date & Time: ${paymentDate} at ${paymentTime}\n• Mode: ${paymentMode}\n• Ref: ${paymentTxnRef || 'N/A'}`);
   };
 
   // Filtered Employee List
@@ -1649,7 +1649,7 @@ export default function EmployeeManagement({
                           </div>
                         </td>
                         <td>
-                          <div style={{ fontWeight: '800', color: '#0f172a' }}>₹ {gross.toLocaleString()}</div>
+                          <div style={{ fontWeight: '800', color: '#0f172a' }}>₹ {(gross || 0).toLocaleString()}</div>
                           <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
                             Basic: ₹{(struct.basicSalary || 0).toLocaleString()} | HRA: ₹{(struct.hra || 0).toLocaleString()}
                           </div>
@@ -1959,7 +1959,7 @@ export default function EmployeeManagement({
                 Employee Breakdown • {periodTitle} ({records.length} {records.length === 1 ? 'Record' : 'Records'})
               </div>
               <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                Total Payout: <strong style={{ color: '#0f172a' }}>₹ {records.reduce((sum, r) => sum + r.payout, 0).toLocaleString()}</strong>
+                Total Payout: <strong style={{ color: '#0f172a' }}>₹ {(records.reduce((sum, r) => sum + (r.payout || 0), 0) || 0).toLocaleString()}</strong>
               </div>
             </div>
             <div style={{ overflowX: 'auto', background: '#ffffff', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
@@ -2005,7 +2005,7 @@ export default function EmployeeManagement({
                           {att.overtimeReason || 'Production job extended.'}
                         </td>
                         <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
-                          <div style={{ fontWeight: '800', color: '#0f172a' }}>₹ {payout.toLocaleString()}</div>
+                          <div style={{ fontWeight: '800', color: '#0f172a' }}>₹ {(payout || 0).toLocaleString()}</div>
                           <div style={{ fontSize: '0.68rem', color: '#64748b' }}>@ ₹{hourlyRate}/hr</div>
                         </td>
                         <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
@@ -2060,9 +2060,9 @@ export default function EmployeeManagement({
                                   gap: '4px'
                                 }}
                                 onClick={() => handleRevertOvertime(att)}
-                                title={`Revert approval and automatically deduct ₹${payout.toLocaleString()} from employee's monthly salary`}
+                                title={`Revert approval and automatically deduct ₹${(payout || 0).toLocaleString()} from employee's monthly salary`}
                               >
-                                <RotateCcw size={12} /> Revert (Deduct ₹{payout.toLocaleString()})
+                                <RotateCcw size={12} /> Revert (Deduct ₹{(payout || 0).toLocaleString()})
                               </button>
                               <span style={{ fontSize: '0.65rem', color: '#64748b' }}>
                                 by {att.overtimeApprovedBy || 'Admin'}
@@ -2236,7 +2236,7 @@ export default function EmployeeManagement({
                       Total Overtime Amount
                     </div>
                     <div style={{ fontSize: '1.45rem', fontWeight: '900', color: '#0f172a', marginTop: '4px' }}>
-                      ₹ {otGrandTotals.totalAmount.toLocaleString()}
+                      ₹ {(otGrandTotals?.totalAmount || 0).toLocaleString()}
                     </div>
                   </div>
                   <div style={{ background: '#ecfdf5', padding: '8px', borderRadius: '8px', color: '#059669' }}>
@@ -2244,9 +2244,9 @@ export default function EmployeeManagement({
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '10px', marginTop: '8px', fontSize: '0.72rem', color: '#64748b' }}>
-                  <span>Approved: <strong style={{ color: '#059669' }}>₹ {otGrandTotals.approvedAmount.toLocaleString()}</strong></span>
+                  <span>Approved: <strong style={{ color: '#059669' }}>₹ {(otGrandTotals?.approvedAmount || 0).toLocaleString()}</strong></span>
                   <span>•</span>
-                  <span>Pending: <strong style={{ color: '#d97706' }}>₹ {otGrandTotals.pendingAmount.toLocaleString()}</strong></span>
+                  <span>Pending: <strong style={{ color: '#d97706' }}>₹ {(otGrandTotals?.pendingAmount || 0).toLocaleString()}</strong></span>
                 </div>
               </div>
 
@@ -2308,7 +2308,7 @@ export default function EmployeeManagement({
                   </div>
                 </div>
                 <div style={{ marginTop: '8px', fontSize: '0.72rem', color: '#64748b' }}>
-                  Pending Wage Value: <strong style={{ color: '#d97706' }}>₹ {otGrandTotals.pendingAmount.toLocaleString()}</strong>
+                  Pending Wage Value: <strong style={{ color: '#d97706' }}>₹ {(otGrandTotals?.pendingAmount || 0).toLocaleString()}</strong>
                 </div>
               </div>
             </div>
@@ -2489,7 +2489,7 @@ export default function EmployeeManagement({
                               {att.overtimeReason || 'Production job run extended.'}
                             </td>
                             <td style={{ whiteSpace: 'nowrap' }}>
-                              <div style={{ fontWeight: '800', color: '#0f172a' }}>₹ {payoutInfo.payout.toLocaleString()}</div>
+                              <div style={{ fontWeight: '800', color: '#0f172a' }}>₹ {(payoutInfo?.payout || 0).toLocaleString()}</div>
                               <div style={{ fontSize: '0.68rem', color: '#64748b' }}>@ ₹{payoutInfo.hourlyRate}/hr</div>
                             </td>
                             <td style={{ whiteSpace: 'nowrap' }}>
@@ -2541,9 +2541,9 @@ export default function EmployeeManagement({
                                       gap: '4px'
                                     }}
                                     onClick={() => handleRevertOvertime(att)}
-                                    title={`Revert approval and immediately deduct ₹${payoutInfo.payout.toLocaleString()} from employee's monthly salary`}
+                                    title={`Revert approval and immediately deduct ₹${(payoutInfo?.payout || 0).toLocaleString()} from employee's monthly salary`}
                                   >
-                                    <RotateCcw size={13} /> Revert (Deduct ₹{payoutInfo.payout.toLocaleString()})
+                                    <RotateCcw size={13} /> Revert (Deduct ₹{(payoutInfo?.payout || 0).toLocaleString()})
                                   </button>
                                   <div style={{ fontSize: '0.68rem', color: '#64748b' }}>
                                     Approved by {att.overtimeApprovedBy || 'Admin'}
@@ -2636,10 +2636,10 @@ export default function EmployeeManagement({
                               </td>
                               <td>
                                 <div style={{ fontWeight: '900', color: '#0f172a', fontSize: '0.95rem' }}>
-                                  ₹ {dayGroup.totalAmount.toLocaleString()}
+                                  ₹ {(dayGroup?.totalAmount || 0).toLocaleString()}
                                 </div>
                                 <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
-                                  Appr: <span style={{ color: '#059669', fontWeight: '700' }}>₹{dayGroup.approvedAmount.toLocaleString()}</span> • Pend: <span style={{ color: '#d97706', fontWeight: '700' }}>₹{dayGroup.pendingAmount.toLocaleString()}</span>
+                                  Appr: <span style={{ color: '#059669', fontWeight: '700' }}>₹{(dayGroup?.approvedAmount || 0).toLocaleString()}</span> • Pend: <span style={{ color: '#d97706', fontWeight: '700' }}>₹{(dayGroup?.pendingAmount || 0).toLocaleString()}</span>
                                 </div>
                               </td>
                               <td>
@@ -2758,10 +2758,10 @@ export default function EmployeeManagement({
                               </td>
                               <td>
                                 <div style={{ fontWeight: '900', color: '#0f172a', fontSize: '0.95rem' }}>
-                                  ₹ {weekGroup.totalAmount.toLocaleString()}
+                                  ₹ {(weekGroup?.totalAmount || 0).toLocaleString()}
                                 </div>
                                 <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
-                                  Appr: <span style={{ color: '#059669', fontWeight: '700' }}>₹{weekGroup.approvedAmount.toLocaleString()}</span> • Pend: <span style={{ color: '#d97706', fontWeight: '700' }}>₹{weekGroup.pendingAmount.toLocaleString()}</span>
+                                  Appr: <span style={{ color: '#059669', fontWeight: '700' }}>₹{(weekGroup?.approvedAmount || 0).toLocaleString()}</span> • Pend: <span style={{ color: '#d97706', fontWeight: '700' }}>₹{(weekGroup?.pendingAmount || 0).toLocaleString()}</span>
                                 </div>
                               </td>
                               <td style={{ textAlign: 'center' }}>
@@ -2859,10 +2859,10 @@ export default function EmployeeManagement({
                               </td>
                               <td>
                                 <div style={{ fontWeight: '900', color: '#0f172a', fontSize: '0.95rem' }}>
-                                  ₹ {monthGroup.totalAmount.toLocaleString()}
+                                  ₹ {(monthGroup?.totalAmount || 0).toLocaleString()}
                                 </div>
                                 <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
-                                  Appr: <span style={{ color: '#059669', fontWeight: '700' }}>₹{monthGroup.approvedAmount.toLocaleString()}</span> • Pend: <span style={{ color: '#d97706', fontWeight: '700' }}>₹{monthGroup.pendingAmount.toLocaleString()}</span>
+                                  Appr: <span style={{ color: '#059669', fontWeight: '700' }}>₹{(monthGroup?.approvedAmount || 0).toLocaleString()}</span> • Pend: <span style={{ color: '#d97706', fontWeight: '700' }}>₹{(monthGroup?.pendingAmount || 0).toLocaleString()}</span>
                                 </div>
                               </td>
                               <td style={{ textAlign: 'center' }}>
@@ -3034,13 +3034,13 @@ export default function EmployeeManagement({
                 Total Records: <strong style={{ color: '#0f172a' }}>{advancesMetrics.count}</strong>
               </div>
               <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
-                Total Disbursed: <strong style={{ color: '#0284c7' }}>₹ {advancesMetrics.totalDisbursed.toLocaleString()}</strong>
+                Total Disbursed: <strong style={{ color: '#0284c7' }}>₹ {(advancesMetrics?.totalDisbursed || 0).toLocaleString()}</strong>
               </div>
               <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
-                Total Recovered: <strong style={{ color: '#059669' }}>₹ {advancesMetrics.totalRecovered.toLocaleString()}</strong>
+                Total Recovered: <strong style={{ color: '#059669' }}>₹ {(advancesMetrics?.totalRecovered || 0).toLocaleString()}</strong>
               </div>
               <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
-                Outstanding Balance: <strong style={{ color: '#d97706' }}>₹ {advancesMetrics.totalBalance.toLocaleString()}</strong>
+                Outstanding Balance: <strong style={{ color: '#d97706' }}>₹ {(advancesMetrics?.totalBalance || 0).toLocaleString()}</strong>
               </div>
             </div>
           </div>
@@ -3193,7 +3193,7 @@ export default function EmployeeManagement({
             <div className="stat-card">
               <div className="stat-card-title">Net Salary Payout</div>
               <div className="stat-card-val" style={{ color: '#0284c7' }}>
-                ₹ {payrollTotals.totalNet.toLocaleString()}
+                ₹ {(payrollTotals?.totalNet || 0).toLocaleString()}
               </div>
               <div className="stat-card-sub">For {monthlyPayrollSummary.length} employees</div>
             </div>
@@ -3211,23 +3211,23 @@ export default function EmployeeManagement({
             <div className="stat-card">
               <div className="stat-card-title">Approved OT Payout</div>
               <div className="stat-card-val" style={{ color: '#059669' }}>
-                ₹ {payrollTotals.totalOtPay.toLocaleString()}
+                ₹ {(payrollTotals?.totalOtPay || 0).toLocaleString()}
               </div>
-              <div className="stat-card-sub">{payrollTotals.totalOtHours} Approved OT hrs</div>
+              <div className="stat-card-sub">{payrollTotals?.totalOtHours || 0} Approved OT hrs</div>
             </div>
 
             <div className="stat-card">
               <div className="stat-card-title">Total PF & ESIC</div>
               <div className="stat-card-val" style={{ color: '#7c3aed' }}>
-                ₹ {(payrollTotals.totalPf + payrollTotals.totalEsic).toLocaleString()}
+                ₹ {((payrollTotals?.totalPf || 0) + (payrollTotals?.totalEsic || 0)).toLocaleString()}
               </div>
-              <div className="stat-card-sub">PF: ₹{payrollTotals.totalPf.toLocaleString()} | ESIC: ₹{payrollTotals.totalEsic.toLocaleString()}</div>
+              <div className="stat-card-sub">PF: ₹{(payrollTotals?.totalPf || 0).toLocaleString()} | ESIC: ₹{(payrollTotals?.totalEsic || 0).toLocaleString()}</div>
             </div>
 
             <div className="stat-card">
               <div className="stat-card-title">Advance Recovered</div>
               <div className="stat-card-val" style={{ color: '#dc2626' }}>
-                ₹ {payrollTotals.totalAdvanceRecovered.toLocaleString()}
+                ₹ {(payrollTotals?.totalAdvanceRecovered || 0).toLocaleString()}
               </div>
               <div className="stat-card-sub">Monthly EMI deductions</div>
             </div>
@@ -3939,7 +3939,7 @@ export default function EmployeeManagement({
                         );
                         return (
                           <option key={e.id} value={e.id}>
-                            {e.fullName} ({e.empCode || e.id}) - {e.department} {hasActive ? `[⚠️ Advance Due: ₹${Number(hasActive.remainingBalance || hasActive.advanceAmount).toLocaleString()}]` : ''}
+                            {e.fullName} ({e.empCode || e.id}) - {e.department} {hasActive ? `[⚠️ Advance Due: ₹${(Number(hasActive.remainingBalance || hasActive.advanceAmount) || 0).toLocaleString()}]` : ''}
                           </option>
                         );
                       })}
@@ -3952,7 +3952,7 @@ export default function EmployeeManagement({
                         <AlertTriangle size={18} style={{ color: '#dc2626' }} /> Advance Request Blocked — Outstanding Advance Pending
                       </div>
                       <div>
-                        This employee already has an active advance (<b>{selectedEmpActiveAdvance.id}</b>) with an outstanding balance of <b style={{ color: '#b91c1c' }}>₹{Number(selectedEmpActiveAdvance.remainingBalance || selectedEmpActiveAdvance.advanceAmount).toLocaleString()}</b> ({selectedEmpActiveAdvance.status}). As per factory policy, a new advance cannot be requested before completion of old dues.
+                        This employee already has an active advance (<b>{selectedEmpActiveAdvance.id}</b>) with an outstanding balance of <b style={{ color: '#b91c1c' }}>₹{(Number(selectedEmpActiveAdvance.remainingBalance || selectedEmpActiveAdvance.advanceAmount) || 0).toLocaleString()}</b> ({selectedEmpActiveAdvance.status}). As per factory policy, a new advance cannot be requested before completion of old dues.
                       </div>
                     </div>
                   )}

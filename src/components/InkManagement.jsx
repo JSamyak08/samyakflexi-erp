@@ -1041,7 +1041,7 @@ export default function InkManagement({
           <div style={{ background: '#f8fafc', padding: '12px 16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', fontWeight: '600' }}>TOTAL INK STOCK</span>
             <span style={{ fontSize: '1.25rem', fontWeight: '800', color: 'var(--text-primary)' }}>
-              {totalStockKg.toLocaleString()} <span style={{ fontSize: '0.85rem' }}>kg</span>
+              {(totalStockKg || 0).toLocaleString()} <span style={{ fontSize: '0.85rem' }}>kg</span>
             </span>
           </div>
 
@@ -1641,14 +1641,14 @@ export default function InkManagement({
                 <div style={{ background: '#f0f9ff', padding: '12px', borderRadius: '8px', border: '1px solid #bae6fd' }}>
                   <span style={{ fontSize: '0.72rem', color: '#0369a1', fontWeight: '600' }}>TOTAL SURFACE STOCK</span>
                   <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#0284c7' }}>
-                    {surfaceStockKg.toLocaleString()} kg
+                    {(surfaceStockKg || 0).toLocaleString()} kg
                   </div>
                 </div>
 
                 <div style={{ background: '#f0f9ff', padding: '12px', borderRadius: '8px', border: '1px solid #bae6fd' }}>
                   <span style={{ fontSize: '0.72rem', color: '#0369a1', fontWeight: '600' }}>SURFACE STOCK VALUATION</span>
                   <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#0284c7' }}>
-                    ₹ {surfaceValuation.toLocaleString()}
+                    ₹ {(surfaceValuation || 0).toLocaleString()}
                   </div>
                 </div>
               </div>
@@ -1709,14 +1709,14 @@ export default function InkManagement({
                 <div style={{ background: '#f5f3ff', padding: '12px', borderRadius: '8px', border: '1px solid #ddd6fe' }}>
                   <span style={{ fontSize: '0.72rem', color: '#6d28d9', fontWeight: '600' }}>TOTAL REVERSE STOCK</span>
                   <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#7c3aed' }}>
-                    {reverseStockKg.toLocaleString()} kg
+                    {(reverseStockKg || 0).toLocaleString()} kg
                   </div>
                 </div>
 
                 <div style={{ background: '#f5f3ff', padding: '12px', borderRadius: '8px', border: '1px solid #ddd6fe' }}>
                   <span style={{ fontSize: '0.72rem', color: '#6d28d9', fontWeight: '600' }}>REVERSE STOCK VALUATION</span>
                   <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#7c3aed' }}>
-                    ₹ {reverseValuation.toLocaleString()}
+                    ₹ {(reverseValuation || 0).toLocaleString()}
                   </div>
                 </div>
               </div>
@@ -2664,7 +2664,7 @@ export default function InkManagement({
                               />
                             </td>
                             <td style={{ textAlign: 'right', fontWeight: '800', color: '#0f172a' }}>
-                              ₹ {lineTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              ₹ {(lineTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </td>
                             <td style={{ textAlign: 'center' }}>
                               <button 
@@ -2692,13 +2692,13 @@ export default function InkManagement({
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#ecfdf5', padding: '12px 16px', borderRadius: '8px', border: '1px solid #a7f3d0' }}>
                       <div>
                         <span style={{ fontSize: '0.82rem', color: '#065f46', fontWeight: '600' }}>Subtotal (Taxable): </span>
-                        <strong style={{ fontSize: '0.98rem', color: '#047857' }}>₹ {subtotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
+                        <strong style={{ fontSize: '0.98rem', color: '#047857' }}>₹ {(subtotal || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
                         <span style={{ fontSize: '0.82rem', color: '#065f46', marginLeft: '16px', fontWeight: '600' }}>GST (18%): </span>
-                        <strong style={{ fontSize: '0.98rem', color: '#047857' }}>₹ {gstVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
+                        <strong style={{ fontSize: '0.98rem', color: '#047857' }}>₹ {(gstVal || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
                       </div>
                       <div>
                         <span style={{ fontSize: '0.82rem', color: '#065f46', fontWeight: '600' }}>Grand Total: </span>
-                        <strong style={{ fontSize: '1.15rem', color: '#047857', fontWeight: '900' }}>₹ {grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
+                        <strong style={{ fontSize: '1.15rem', color: '#047857', fontWeight: '900' }}>₹ {(grandTotal || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
                       </div>
                     </div>
                   );
