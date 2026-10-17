@@ -369,8 +369,90 @@ const RATES_STORAGE_KEY = 'samyak_processing_rates';
 
 export const DEFAULT_RATES = {
   liquidInkPrice: 1500,
-  adhesivePrice: 270
+  adhesivePrice: 270,
+  paperCorePrice: 45
 };
+
+export const MATERIAL_COST_SETTINGS_STORAGE_KEY = 'samyak_material_cost_settings';
+
+export const DEFAULT_MATERIAL_COST_SETTINGS = {
+  adhesiveCostPerKg: 270,    // ₹ / kg for Lamination Adhesive
+  paperCoreCostPerKg: 45,    // ₹ / kg for Slitting Paper Cores
+  liquidInkPrice: 1500,      // ₹ / kg for Inks
+  updatedAt: ''
+};
+
+/**
+ * Fetch Material Cost Settings from Supabase Database with local fallback
+ */
+export async function fetchMaterialCostSettingsFromSupabase() {
+  try {
+    const remote = await fetchSystemSetting('material_cost_settings');
+    if (remote && typeof remote === 'object') {
+      const merged = {
+        ...DEFAULT_MATERIAL_COST_SETTINGS,
+        ...remote,
+        adhesiveCostPerKg: Number(remote.adhesiveCostPerKg ?? remote.adhesivePrice) || DEFAULT_MATERIAL_COST_SETTINGS.adhesiveCostPerKg,
+        paperCoreCostPerKg: Number(remote.paperCoreCostPerKg ?? remote.paperCorePrice) || DEFAULT_MATERIAL_COST_SETTINGS.paperCoreCostPerKg,
+        liquidInkPrice: Number(remote.liquidInkPrice) || DEFAULT_MATERIAL_COST_SETTINGS.liquidInkPrice,
+        updatedAt: remote.updatedAt || ''
+      };
+      safeLocalStorageSet(MATERIAL_COST_SETTINGS_STORAGE_KEY, JSON.stringify(merged));
+      return merged;
+    }
+  } catch (err) {
+    console.warn("Failed to fetch material cost settings from Supabase:", err);
+  }
+  return getMaterialCostSettings();
+}
+
+/**
+ * Get synchronous Material Cost Settings (cached or defaults)
+ */
+export function getMaterialCostSettings() {
+  try {
+    const saved = localStorage.getItem(MATERIAL_COST_SETTINGS_STORAGE_KEY);
+    if (!saved) return { ...DEFAULT_MATERIAL_COST_SETTINGS };
+    const parsed = JSON.parse(saved);
+    return {
+      ...DEFAULT_MATERIAL_COST_SETTINGS,
+      ...parsed,
+      adhesiveCostPerKg: Number(parsed.adhesiveCostPerKg ?? parsed.adhesivePrice) || DEFAULT_MATERIAL_COST_SETTINGS.adhesiveCostPerKg,
+      paperCoreCostPerKg: Number(parsed.paperCoreCostPerKg ?? parsed.paperCorePrice) || DEFAULT_MATERIAL_COST_SETTINGS.paperCoreCostPerKg,
+      liquidInkPrice: Number(parsed.liquidInkPrice) || DEFAULT_MATERIAL_COST_SETTINGS.liquidInkPrice
+    };
+  } catch (e) {
+    return { ...DEFAULT_MATERIAL_COST_SETTINGS };
+  }
+}
+
+/**
+ * Save Material Cost Settings to Supabase DB and local cache
+ */
+export async function saveMaterialCostSettings(settings) {
+  const payload = {
+    ...DEFAULT_MATERIAL_COST_SETTINGS,
+    ...settings,
+    adhesiveCostPerKg: Number(settings.adhesiveCostPerKg ?? settings.adhesivePrice) || DEFAULT_MATERIAL_COST_SETTINGS.adhesiveCostPerKg,
+    paperCoreCostPerKg: Number(settings.paperCoreCostPerKg ?? settings.paperCorePrice) || DEFAULT_MATERIAL_COST_SETTINGS.paperCoreCostPerKg,
+    liquidInkPrice: Number(settings.liquidInkPrice) || DEFAULT_MATERIAL_COST_SETTINGS.liquidInkPrice,
+    updatedAt: new Date().toISOString()
+  };
+  try {
+    safeLocalStorageSet(MATERIAL_COST_SETTINGS_STORAGE_KEY, JSON.stringify(payload));
+    await saveSystemSetting('material_cost_settings', payload);
+    // Keep processing_rates in sync as well
+    saveProcessingRates({
+      liquidInkPrice: payload.liquidInkPrice,
+      adhesivePrice: payload.adhesiveCostPerKg,
+      paperCorePrice: payload.paperCoreCostPerKg
+    });
+  } catch (e) {
+    console.error("Failed to save material cost settings", e);
+    throw e;
+  }
+  return payload;
+}
 
 /**
  * Get processing rates (Liquid Ink default price & Adhesive price)
@@ -382,7 +464,8 @@ export function getProcessingRates() {
     const parsed = JSON.parse(saved);
     return {
       liquidInkPrice: Number(parsed.liquidInkPrice) || DEFAULT_RATES.liquidInkPrice,
-      adhesivePrice: Number(parsed.adhesivePrice) || DEFAULT_RATES.adhesivePrice
+      adhesivePrice: Number(parsed.adhesivePrice) || DEFAULT_RATES.adhesivePrice,
+      paperCorePrice: Number(parsed.paperCorePrice) || DEFAULT_RATES.paperCorePrice
     };
   } catch (e) {
     return { ...DEFAULT_RATES };

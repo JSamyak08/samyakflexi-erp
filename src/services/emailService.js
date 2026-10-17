@@ -669,3 +669,119 @@ export const notifyGRNQCEscalation12h = async ({ grn, hoursPending = 12, users =
   });
 };
 
+/**
+ * 11. ACTION NOTIFICATION: GRN Inward Details Modified During QC Verification (Notifies Admin, Store Manager, Plant Manager)
+ */
+export const notifyGRNQCVarianceModified = async ({
+  grn,
+  originalDetails = {},
+  updatedDetails = {},
+  variances = [],
+  editedBy = 'Quality QC Chemist',
+  actionStatus = 'Approved',
+  reason = '',
+  users = [],
+  customTo
+}) => {
+  const recipientEmails = getEmailsForRoles(
+    users,
+    ['Admin', 'Store Manager', 'Store', 'Plant Manager', 'Production Manager', 'Quality Manager'],
+    'admin@samyakinternational.in, store@samyakinternational.in, plant.manager@plant.com'
+  );
+
+  const targetEmail = customTo || recipientEmails;
+  const grnNo = grn?.grnNo || grn?.id || 'GRN';
+  const vendorName = grn?.vendorName || updatedDetails?.vendorName || 'Supplier';
+  const itemName = updatedDetails?.itemName || grn?.itemName || 'Raw Material';
+  const timestampStr = new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+
+  const varianceRowsHtml = (variances && variances.length > 0)
+    ? variances.map(v => `
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+          <td style="padding: 8px 10px; font-weight: 600; color: #1e293b;">${v.label || v.field}</td>
+          <td style="padding: 8px 10px; color: #64748b; background: #f8fafc; font-family: monospace;">${v.oldVal ?? '—'}</td>
+          <td style="padding: 8px 10px; color: #0f172a; font-weight: 700; background: #ecfdf5; font-family: monospace;">${v.newVal ?? '—'}</td>
+          <td style="padding: 8px 10px; color: #b45309; font-weight: 600; font-size: 12px;">${v.diff || 'Modified'}</td>
+        </tr>
+      `).join('')
+    : `
+        <tr>
+          <td colspan="4" style="padding: 10px; text-align: center; color: #64748b;">
+            Physical verification specifications revised by QC Chemist.
+          </td>
+        </tr>
+      `;
+
+  const contentHtml = `
+    <div style="background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #f59e0b; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+      <h3 style="color: #92400e; font-size: 15px; margin: 0 0 6px 0;">
+        ⚠️ Inward Specifications Corrected in QC Lab
+      </h3>
+      <p style="color: #78350f; font-size: 13px; margin: 0; line-height: 1.5;">
+        Physical quality testing and measurement on Goods Receipt Note <strong>#${grnNo}</strong> revealed a variance between store inward entries and verified shop-floor measurements. 
+        Specifications have been adjusted and ${actionStatus === 'Approved' ? 'approved into active inventory' : 'marked as ' + actionStatus}.
+      </p>
+    </div>
+
+    <div class="info-card" style="margin-bottom: 16px;">
+      <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
+        <tr><td style="padding: 4px 0; width: 40%;"><strong>GRN Document No:</strong></td><td style="padding: 4px 0;"><strong>${grnNo}</strong></td></tr>
+        <tr><td style="padding: 4px 0;"><strong>Supplier / Vendor:</strong></td><td style="padding: 4px 0;">${vendorName}</td></tr>
+        <tr><td style="padding: 4px 0;"><strong>Invoice / Challan No:</strong></td><td style="padding: 4px 0;">${grn?.invoiceNo || 'N/A'}</td></tr>
+        <tr><td style="padding: 4px 0;"><strong>Material Item:</strong></td><td style="padding: 4px 0;">${itemName}</td></tr>
+        <tr><td style="padding: 4px 0;"><strong>Verified & Approved By:</strong></td><td style="padding: 4px 0;"><strong style="color: #047857;">${editedBy}</strong> (${timestampStr})</td></tr>
+        <tr><td style="padding: 4px 0;"><strong>QC Decision Status:</strong></td><td style="padding: 4px 0;"><span style="background: ${actionStatus === 'Approved' ? '#dcfce7' : '#fee2e2'}; color: ${actionStatus === 'Approved' ? '#15803d' : '#b91c1c'}; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 12px;">${actionStatus}</span></td></tr>
+      </table>
+    </div>
+
+    <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; margin-bottom: 16px;">
+      <div style="background: #f1f5f9; padding: 10px 14px; font-size: 12px; font-weight: 800; color: #334155; text-transform: uppercase; letter-spacing: 0.04em;">
+        📋 Specification Variance Breakdown (Original vs Verified)
+      </div>
+      <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+        <thead>
+          <tr style="background: #f8fafc; border-bottom: 1px solid #e2e8f0; text-align: left; font-size: 12px; color: #64748b;">
+            <th style="padding: 8px 10px;">Parameter</th>
+            <th style="padding: 8px 10px;">Store Inward (Original)</th>
+            <th style="padding: 8px 10px;">QC Verified (Final)</th>
+            <th style="padding: 8px 10px;">Variance / Variance Diff</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${varianceRowsHtml}
+        </tbody>
+      </table>
+    </div>
+
+    ${reason ? `
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
+        <strong style="font-size: 12px; color: #475569; text-transform: uppercase;">QC Lab Inspector Remarks & Justification:</strong>
+        <p style="margin: 6px 0 0 0; font-size: 13px; color: #1e293b; font-style: italic;">"${reason}"</p>
+      </div>
+    ` : ''}
+
+    <div style="background: #ecfdf5; border-left: 4px solid #10b981; padding: 12px 16px;">
+      <p style="font-size: 12px; color: #065f46; margin: 0; font-weight: 600;">
+        ✓ Central Inventory stock quantity, unit valuations, and physical roll barcodes have been automatically synchronized with these verified measurements.
+      </p>
+    </div>
+  `;
+
+  const html = buildEmailTemplate({
+    title: `⚠️ QC Verification Variance: GRN #${grnNo} (${vendorName})`,
+    badgeText: 'QC Lab Specification Adjustment',
+    badgeBg: '#f59e0b',
+    contentHtml,
+    footerNote: 'Automated Samyak ERP Inward Quality Audit Notification'
+  });
+
+  return await sendERPEmailNotification({
+    to: targetEmail,
+    cc: 'admin@samyakinternational.in',
+    subject: `⚠️ QC Inward Specification Variance Adjusted: GRN #${grnNo} — ${vendorName}`,
+    html,
+    text: `QC Inward Adjustment: GRN #${grnNo} (${itemName}) had specifications modified by ${editedBy}. Changes reflected in GRN & active stock.`
+  });
+};
+
+

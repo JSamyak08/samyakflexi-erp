@@ -35,6 +35,8 @@ import { pushSlugState } from '../utils/slugRouter';
 import TablePagination, { usePagination } from './TablePagination';
 import { saveSystemSetting } from '../services/supabaseDataService';
 import { safeLocalStorageSet, safeLocalStorageGet } from '../utils/safeStorage';
+import { getMaterialCostSettings, fetchMaterialCostSettingsFromSupabase, DEFAULT_MATERIAL_COST_SETTINGS } from '../services/settingsService';
+import { roundToTwo, formatUpToTwoDecimals, formatCurrency, formatQty } from '../utils/numberHelpers';
 
 export default function ProductionRecordManagement({
   urlParams = {},
@@ -105,6 +107,27 @@ export default function ProductionRecordManagement({
   const [targetInkGsm, setTargetInkGsm] = useState('1.5');
   const [targetAdhesiveGsm, setTargetAdhesiveGsm] = useState('1.5');
 
+  // Material Cost Rates (Adhesive & Paper Core per kg)
+  const [adhesiveCostPerKg, setAdhesiveCostPerKg] = useState(270);
+  const [paperCoreCostPerKg, setPaperCoreCostPerKg] = useState(45);
+  const [activeMaterialRates, setActiveMaterialRates] = useState({ adhesiveCostPerKg: 270, paperCoreCostPerKg: 45 });
+
+  React.useEffect(() => {
+    let isMounted = true;
+    fetchMaterialCostSettingsFromSupabase().then(res => {
+      if (isMounted && res) {
+        const rates = {
+          adhesiveCostPerKg: Number(res.adhesiveCostPerKg) || 270,
+          paperCoreCostPerKg: Number(res.paperCoreCostPerKg) || 45
+        };
+        setActiveMaterialRates(rates);
+        setAdhesiveCostPerKg(prev => (prev === 270 ? rates.adhesiveCostPerKg : prev));
+        setPaperCoreCostPerKg(prev => (prev === 45 ? rates.paperCoreCostPerKg : prev));
+      }
+    }).catch(err => console.warn("Could not load material cost settings from Supabase:", err));
+    return () => { isMounted = false; };
+  }, []);
+
   // Helper to open 'Start Production' for a specific punched job/order — pulls actual store issues & Job Master
   const handleStartProductionForOrder = (ord) => {
     setSelectedOrder(ord);
@@ -173,6 +196,17 @@ export default function ProductionRecordManagement({
       setPouchingScrapKg(existingRec.pouchingScrapKg || 0);
       setQtyDispatch(existingRec.qtyDispatch || 0);
       setProcessingCostPerKg(existingRec.processingCostPerKg || 25);
+
+      // Preserve historical snapshot rates for existing record:
+      const snapAdhesive = existingRec.adhesiveCostPerKg !== undefined && existingRec.adhesiveCostPerKg !== null
+        ? Number(existingRec.adhesiveCostPerKg)
+        : activeMaterialRates.adhesiveCostPerKg;
+      const snapPaperCore = existingRec.paperCoreCostPerKg !== undefined && existingRec.paperCoreCostPerKg !== null
+        ? Number(existingRec.paperCoreCostPerKg)
+        : activeMaterialRates.paperCoreCostPerKg;
+      setAdhesiveCostPerKg(snapAdhesive);
+      setPaperCoreCostPerKg(snapPaperCore);
+
       setPrintingPlainSettingWastageKg(existingRec.printingPlainSettingWastageKg || 0);
       setPrintingWastageKg(existingRec.printingWastageKg || 0);
       setLaminationPlainSubstrateWastageKg(existingRec.laminationPlainSubstrateWastageKg || 0);
@@ -277,6 +311,9 @@ export default function ProductionRecordManagement({
     setAdhesiveConsumedL2Kg(0);
     setQtySlitting(0);
     setPaperCoreConsumedKg(0);
+    // Newly created record inherits latest active settings from DB:
+    setAdhesiveCostPerKg(activeMaterialRates.adhesiveCostPerKg);
+    setPaperCoreCostPerKg(activeMaterialRates.paperCoreCostPerKg);
     setQtyPouching(0);
     setZipperConsumedKg(0);
     setPouchingScrapKg(0);
@@ -541,30 +578,42 @@ export default function ProductionRecordManagement({
   });
 
   // Net Produced Quantity = Dispatch Ready Quantity (or Pouching / Slitting / Lamination / Inspection / Printing if unpopulated)
-  const totalNetQtyKg = parseFloat(qtyDispatch) || parseFloat(qtyPouching) || parseFloat(qtySlitting) || parseFloat(qtySecondPassL2) || parseFloat(qtyLaminationL1) || parseFloat(qtyInspection) || parseFloat(qtyFirstPassL1) || 0;
-  const totalMaterialCostRs = calculatedMaterials.reduce((sum, m) => sum + m.totalMaterialCost, 0);
+  const totalNetQtyKg = roundToTwo(parseFloat(qtyDispatch) || parseFloat(qtyPouching) || parseFloat(qtySlitting) || parseFloat(qtySecondPassL2) || parseFloat(qtyLaminationL1) || parseFloat(qtyInspection) || parseFloat(qtyFirstPassL1) || 0);
+  
+  // Raw materials cost from film substrates table
+  const rawMaterialsTableCostRs = roundToTwo(calculatedMaterials.reduce((sum, m) => sum + (parseFloat(m.totalMaterialCost) || 0), 0));
+
+  // Consumable material costs: Adhesive (Pass 1 + Pass 2) and Paper Core (both in kg)
+  const totalAdhesiveConsumedKg = roundToTwo((parseFloat(adhesiveConsumedL1Kg) || 0) + (parseFloat(adhesiveConsumedL2Kg) || 0));
+  const adhesiveCostRs = roundToTwo(totalAdhesiveConsumedKg * (parseFloat(adhesiveCostPerKg) || 0));
+  const paperCoreCostRs = roundToTwo((parseFloat(paperCoreConsumedKg) || 0) * (parseFloat(paperCoreCostPerKg) || 0));
+
+  // Total Ingredients Cost includes Substrates + Adhesive + Paper Core
+  const totalMaterialCostRs = roundToTwo(rawMaterialsTableCostRs + adhesiveCostRs + paperCoreCostRs);
   
   // Total Processing Cost = Total Qty Produced x Processing Cost Per Kg
-  const totalProcessingCostRs = totalNetQtyKg * (parseFloat(processingCostPerKg) || 0);
+  const totalProcessingCostRs = roundToTwo(totalNetQtyKg * (parseFloat(processingCostPerKg) || 0));
 
   // Total Scrap Weight across all stage process wastage categories
-  const totalScrapQtyKg = (parseFloat(printingPlainSettingWastageKg) || 0) +
-                         (parseFloat(printingWastageKg) || 0) +
-                         (parseFloat(printedWastageKg) || 0) +
-                         (parseFloat(laminationPlainSubstrateWastageKg) || 0) +
-                         (parseFloat(laminationPlainSubstrateWastageL2Kg) || 0) +
-                         (parseFloat(laminateWastageKg) || 0) +
-                         (parseFloat(trimWastageKg) || 0) +
-                         (parseFloat(pouchingScrapKg) || 0);
+  const totalScrapQtyKg = roundToTwo(
+    (parseFloat(printingPlainSettingWastageKg) || 0) +
+    (parseFloat(printingWastageKg) || 0) +
+    (parseFloat(printedWastageKg) || 0) +
+    (parseFloat(laminationPlainSubstrateWastageKg) || 0) +
+    (parseFloat(laminationPlainSubstrateWastageL2Kg) || 0) +
+    (parseFloat(laminateWastageKg) || 0) +
+    (parseFloat(trimWastageKg) || 0) +
+    (parseFloat(pouchingScrapKg) || 0)
+  );
 
   // Cost Formula: (Total Qty Produced x Processing Cost Rate) + (Ingredients Cost)
   // Scrap Rate removed as per directive
-  const finalProductionCostRs = totalProcessingCostRs + totalMaterialCostRs;
+  const finalProductionCostRs = roundToTwo(totalProcessingCostRs + totalMaterialCostRs);
 
   // Scrap Metrics & Percentages
-  const totalJobMaterialOutputKg = totalNetQtyKg + totalScrapQtyKg;
-  const overallScrapPctOfOutput = totalJobMaterialOutputKg > 0 ? Number(((totalScrapQtyKg / totalJobMaterialOutputKg) * 100).toFixed(1)) : 0;
-  const overallScrapPctOfDispatch = totalNetQtyKg > 0 ? Number(((totalScrapQtyKg / totalNetQtyKg) * 100).toFixed(1)) : 0;
+  const totalJobMaterialOutputKg = roundToTwo(totalNetQtyKg + totalScrapQtyKg);
+  const overallScrapPctOfOutput = totalJobMaterialOutputKg > 0 ? Number(((totalScrapQtyKg / totalJobMaterialOutputKg) * 100).toFixed(2)) : 0;
+  const overallScrapPctOfDispatch = totalNetQtyKg > 0 ? Number(((totalScrapQtyKg / totalNetQtyKg) * 100).toFixed(2)) : 0;
 
   // Audit unfilled / 0 value metrics across stages & materials for confirmation screen warning
   const unfilledWarnings = useMemo(() => {
@@ -775,11 +824,17 @@ export default function ProductionRecordManagement({
       zipperConsumedKg: parseFloat(zipperConsumedKg) || 0,
       pouchingScrapKg: parseFloat(pouchingScrapKg) || 0,
       qtyDispatch: parseFloat(qtyDispatch) || 0,
-      totalProductionQtyKg: totalNetQtyKg,
+      totalProductionQtyKg: roundToTwo(totalNetQtyKg),
 
-      totalMaterialCostRs: totalMaterialCostRs,
-      processingCostPerKg: parseFloat(processingCostPerKg) || 25,
-      totalProcessingCostRs: totalProcessingCostRs,
+      // Snapshot consumable material cost rates and totals
+      adhesiveCostPerKg: parseFloat(adhesiveCostPerKg) || 270,
+      paperCoreCostPerKg: parseFloat(paperCoreCostPerKg) || 45,
+      adhesiveCostRs: roundToTwo(adhesiveCostRs),
+      paperCoreCostRs: roundToTwo(paperCoreCostRs),
+      rawMaterialsTableCostRs: roundToTwo(rawMaterialsTableCostRs),
+      totalMaterialCostRs: roundToTwo(totalMaterialCostRs),
+      processingCostPerKg: roundToTwo(parseFloat(processingCostPerKg) || 25),
+      totalProcessingCostRs: roundToTwo(totalProcessingCostRs),
 
       // Stage-wise Scrap Breakdown (in kg)
       printingPlainSettingWastageKg: parseFloat(printingPlainSettingWastageKg) || 0,
@@ -788,15 +843,15 @@ export default function ProductionRecordManagement({
       printedWastageKg: parseFloat(printedWastageKg) || 0,
       laminateWastageKg: parseFloat(laminateWastageKg) || 0,
       trimWastageKg: parseFloat(trimWastageKg) || 0,
-      totalScrapQtyKg: totalScrapQtyKg,
-      totalWastageKg: totalScrapQtyKg,
-      grossProductionKg: totalJobMaterialOutputKg,
-      netUsableKg: totalNetQtyKg,
-      overallScrapPctOfOutput: overallScrapPctOfOutput,
-      overallScrapPctOfDispatch: overallScrapPctOfDispatch,
-      wastagePercentage: overallScrapPctOfOutput,
-      scrapWastagePct: overallScrapPctOfOutput,
-      finalProductionCostRs: finalProductionCostRs,
+      totalScrapQtyKg: roundToTwo(totalScrapQtyKg),
+      totalWastageKg: roundToTwo(totalScrapQtyKg),
+      grossProductionKg: roundToTwo(totalJobMaterialOutputKg),
+      netUsableKg: roundToTwo(totalNetQtyKg),
+      overallScrapPctOfOutput: roundToTwo(overallScrapPctOfOutput),
+      overallScrapPctOfDispatch: roundToTwo(overallScrapPctOfDispatch),
+      wastagePercentage: roundToTwo(overallScrapPctOfOutput),
+      scrapWastagePct: roundToTwo(overallScrapPctOfOutput),
+      finalProductionCostRs: roundToTwo(finalProductionCostRs),
 
       // Target & Actual Ink & Adhesive GSMs
       actualInkGsm: actualInkGsm !== '' && !isNaN(parseFloat(actualInkGsm)) ? parseFloat(actualInkGsm) : null,
@@ -2190,16 +2245,23 @@ export default function ProductionRecordManagement({
                   (m.filmType || '').match(/adh|hard|polyurethane/i)
                 ).reduce((a, b) => a + (parseFloat(b.totalMaterialCost) || 0), 0);
 
-                const totalAdhesiveConsumedKg = (parseFloat(selectedRecord.adhesiveConsumedL1Kg) || 0) + (parseFloat(selectedRecord.adhesiveConsumedL2Kg) || 0);
-                const adhesiveCost = adhesiveLoggedCost > 0 ? adhesiveLoggedCost : (totalAdhesiveConsumedKg * 270);
+                const totalAdhesiveConsumedKg = roundToTwo((parseFloat(selectedRecord.adhesiveConsumedL1Kg) || 0) + (parseFloat(selectedRecord.adhesiveConsumedL2Kg) || 0));
+                const adhesiveCostPerKgSnap = Number(selectedRecord.adhesiveCostPerKg !== undefined && selectedRecord.adhesiveCostPerKg !== null ? selectedRecord.adhesiveCostPerKg : 270);
+                const adhesiveCost = roundToTwo(Number(selectedRecord.adhesiveCostRs !== undefined && selectedRecord.adhesiveCostRs !== null ? selectedRecord.adhesiveCostRs : (adhesiveLoggedCost > 0 ? adhesiveLoggedCost : (totalAdhesiveConsumedKg * adhesiveCostPerKgSnap))));
 
-                const actualProcCost = parseFloat(selectedRecord.totalProcessingCostRs) || parseFloat(selectedRecord.processingCostRs) || (actualQtyKg * (parseFloat(selectedRecord.processingCostPerKg) || 25));
-                const actualMaterialCost = filmsCost + inksSolventsCost + adhesiveCost;
-                const actualProductionCost = Number(selectedRecord.finalProductionCostRs || selectedRecord.totalProductionCostRs || 0) || (actualMaterialCost + actualProcCost);
+                const paperCoreConsumedKg = roundToTwo(parseFloat(selectedRecord.paperCoreConsumedKg) || 0);
+                const paperCoreCostPerKgSnap = Number(selectedRecord.paperCoreCostPerKg !== undefined && selectedRecord.paperCoreCostPerKg !== null ? selectedRecord.paperCoreCostPerKg : 45);
+                const paperCoreCost = roundToTwo(Number(selectedRecord.paperCoreCostRs !== undefined && selectedRecord.paperCoreCostRs !== null ? selectedRecord.paperCoreCostRs : (paperCoreConsumedKg * paperCoreCostPerKgSnap)));
+
+                const actualProcCost = roundToTwo(parseFloat(selectedRecord.totalProcessingCostRs) || parseFloat(selectedRecord.processingCostRs) || (actualQtyKg * (parseFloat(selectedRecord.processingCostPerKg) || 25)));
+                const actualMaterialCost = selectedRecord.totalMaterialCostRs !== undefined && Number(selectedRecord.totalMaterialCostRs) > 0
+                  ? roundToTwo(Number(selectedRecord.totalMaterialCostRs))
+                  : roundToTwo(filmsCost + inksSolventsCost + adhesiveCost + paperCoreCost);
+                const actualProductionCost = roundToTwo(Number(selectedRecord.finalProductionCostRs || selectedRecord.totalProductionCostRs || 0) || (actualMaterialCost + actualProcCost));
 
                 const totalGrossRevenue = actualQtyKg > 0 && sellingPricePerKg > 0 ? Math.round(actualQtyKg * sellingPricePerKg) : 0;
                 const netProfitRs = totalGrossRevenue > 0 ? totalGrossRevenue - actualProductionCost : 0;
-                const profitMarginPct = totalGrossRevenue > 0 ? ((netProfitRs / totalGrossRevenue) * 100).toFixed(1) : null;
+                const profitMarginPct = totalGrossRevenue > 0 ? ((netProfitRs / totalGrossRevenue) * 100).toFixed(2) : null;
 
                 // Dynamic Pre-Costing Target from Orders / Job Masters
                 let preCosting = linkedOrder?.calculationDetails || linkedOrder?.preCosting || linkedJobMaster?.calculationDetails || linkedJobMaster?.preCosting || null;
@@ -2312,7 +2374,8 @@ export default function ProductionRecordManagement({
                           const rows = [
                             { label: "Film Substrates (PET / LDPE / BOPP)", est: Math.round(estFilmCost), act: Math.round(filmsCost) },
                             { label: "Printing Inks & Solvents", est: Math.round(estInkCost), act: Math.round(inksSolventsCost) },
-                            { label: "Lamination Adhesives & Hardeners", est: Math.round(estAdhesiveCost), act: Math.round(adhesiveCost) },
+                            { label: `Lamination Adhesives & Hardeners (@ ₹${adhesiveCostPerKgSnap}/kg)`, est: Math.round(estAdhesiveCost), act: Math.round(adhesiveCost) },
+                            { label: `Slitting Paper Cores (@ ₹${paperCoreCostPerKgSnap}/kg)`, est: 0, act: Math.round(paperCoreCost) },
                             { label: "Machine Processing & Conversion Overhead", est: Math.round(estProcCost), act: Math.round(actualProcCost) }
                           ];
 
@@ -3236,17 +3299,27 @@ export default function ProductionRecordManagement({
                         />
                       </div>
                       <div>
-                        <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#4338ca', display: 'block', marginBottom: '4px' }}>
-                          🧪 Adhesive Consumed (kg)
-                        </label>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                          <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#4338ca', margin: 0 }}>
+                            🧪 Adhesive Consumed (kg)
+                          </label>
+                          <span style={{ fontSize: '0.7rem', color: '#4338ca', fontWeight: '700', background: '#e0e7ff', padding: '1px 6px', borderRadius: '4px' }}>
+                            @ ₹{adhesiveCostPerKg}/kg
+                          </span>
+                        </div>
                         <input 
                           type="number" 
-                          step="0.1" 
+                          step="0.01" 
                           className="form-control" 
                           style={{ background: '#ffffff', fontWeight: '700', border: '1.5px solid #a5b4fc' }} 
                           value={adhesiveConsumedL1Kg} 
                           onChange={e => setAdhesiveConsumedL1Kg(e.target.value)} 
                         />
+                        {(parseFloat(adhesiveConsumedL1Kg) || 0) > 0 && (
+                          <div style={{ fontSize: '0.7rem', color: '#4338ca', fontWeight: '700', marginTop: '3px' }}>
+                            = ₹ {formatUpToTwoDecimals((parseFloat(adhesiveConsumedL1Kg) || 0) * (parseFloat(adhesiveCostPerKg) || 0))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -3305,17 +3378,27 @@ export default function ProductionRecordManagement({
                         />
                       </div>
                       <div>
-                        <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#86198f', display: 'block', marginBottom: '4px' }}>
-                          🧪 Adhesive Consumed (kg)
-                        </label>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                          <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#86198f', margin: 0 }}>
+                            🧪 Adhesive Consumed (kg)
+                          </label>
+                          <span style={{ fontSize: '0.7rem', color: '#86198f', fontWeight: '700', background: '#fae8ff', padding: '1px 6px', borderRadius: '4px' }}>
+                            @ ₹{adhesiveCostPerKg}/kg
+                          </span>
+                        </div>
                         <input 
                           type="number" 
-                          step="0.1" 
+                          step="0.01" 
                           className="form-control" 
                           style={{ background: '#ffffff', fontWeight: '700', border: '1.5px solid #f0abfc' }} 
                           value={adhesiveConsumedL2Kg} 
                           onChange={e => setAdhesiveConsumedL2Kg(e.target.value)} 
                         />
+                        {(parseFloat(adhesiveConsumedL2Kg) || 0) > 0 && (
+                          <div style={{ fontSize: '0.7rem', color: '#86198f', fontWeight: '700', marginTop: '3px' }}>
+                            = ₹ {formatUpToTwoDecimals((parseFloat(adhesiveConsumedL2Kg) || 0) * (parseFloat(adhesiveCostPerKg) || 0))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -3387,17 +3470,27 @@ export default function ProductionRecordManagement({
                         />
                       </div>
                       <div>
-                        <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#047857', display: 'block', marginBottom: '4px' }}>
-                          📦 Paper Core Consumed (kg / Pcs)
-                        </label>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                          <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#047857', margin: 0 }}>
+                            📦 Paper Core Consumed (kg)
+                          </label>
+                          <span style={{ fontSize: '0.7rem', color: '#047857', fontWeight: '700', background: '#d1fae5', padding: '1px 6px', borderRadius: '4px' }}>
+                            @ ₹{paperCoreCostPerKg}/kg
+                          </span>
+                        </div>
                         <input 
                           type="number" 
-                          step="0.1" 
+                          step="0.01" 
                           className="form-control" 
                           style={{ background: '#ffffff', fontWeight: '700', border: '1.5px solid #6ee7b7' }} 
                           value={paperCoreConsumedKg} 
                           onChange={e => setPaperCoreConsumedKg(e.target.value)} 
                         />
+                        {(parseFloat(paperCoreConsumedKg) || 0) > 0 && (
+                          <div style={{ fontSize: '0.7rem', color: '#047857', fontWeight: '700', marginTop: '3px' }}>
+                            = ₹ {formatUpToTwoDecimals((parseFloat(paperCoreConsumedKg) || 0) * (parseFloat(paperCoreCostPerKg) || 0))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -3552,11 +3645,13 @@ export default function ProductionRecordManagement({
 
               <div>
                 <span className="stats-title">Total Ingredients Cost</span>
-                <div style={{ fontSize: '1.3rem', fontWeight: '800', marginTop: '4px' }}>
-                  ₹ {(totalMaterialCostRs || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                <div style={{ fontSize: '1.3rem', fontWeight: '800', marginTop: '4px', color: '#1e40af' }}>
+                  ₹ {formatUpToTwoDecimals(totalMaterialCostRs)}
                 </div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  (Sum of ingredients used in table above)
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px', lineHeight: '1.4' }}>
+                  Films: ₹ {formatUpToTwoDecimals(rawMaterialsTableCostRs)}<br/>
+                  + Adhesive ({formatUpToTwoDecimals(totalAdhesiveConsumedKg)} kg @ ₹{adhesiveCostPerKg}/kg): ₹ {formatUpToTwoDecimals(adhesiveCostRs)}<br/>
+                  + Paper Core ({formatUpToTwoDecimals(paperCoreConsumedKg)} kg @ ₹{paperCoreCostPerKg}/kg): ₹ {formatUpToTwoDecimals(paperCoreCostRs)}
                 </div>
               </div>
 
@@ -3717,11 +3812,11 @@ export default function ProductionRecordManagement({
                     <tr>
                       <td style={{ fontWeight: '700' }}>Stage 3: Lamination L1</td>
                       <td style={{ fontWeight: '700', color: (parseFloat(qtyLaminationL1) || 0) > 0 ? '#0f172a' : '#c2410c' }}>
-                        {qtyLaminationL1 || 0} kg
+                        {formatUpToTwoDecimals(qtyLaminationL1)} kg
                       </td>
-                      <td>Adhesive: <strong>{adhesiveConsumedL1Kg || 0} kg</strong></td>
+                      <td>Adhesive: <strong>{formatUpToTwoDecimals(adhesiveConsumedL1Kg)} kg</strong> (₹{formatUpToTwoDecimals((parseFloat(adhesiveConsumedL1Kg) || 0) * (parseFloat(adhesiveCostPerKg) || 0))})</td>
                       <td>
-                        {((parseFloat(laminationPlainSubstrateWastageKg) || 0) + (parseFloat(printedWastageKg) || 0)).toFixed(1)} kg
+                        {formatUpToTwoDecimals((parseFloat(laminationPlainSubstrateWastageKg) || 0) + (parseFloat(printedWastageKg) || 0))} kg
                       </td>
                       <td>
                         {(parseFloat(qtyLaminationL1) || 0) > 0 ? (
@@ -3735,9 +3830,9 @@ export default function ProductionRecordManagement({
                     {/* Stage 4: Lamination Pass 2 */}
                     <tr>
                       <td style={{ fontWeight: '700' }}>Stage 4: Lamination L2</td>
-                      <td style={{ fontWeight: '700' }}>{qtySecondPassL2 || 0} kg</td>
-                      <td>Adhesive L2: <strong>{adhesiveConsumedL2Kg || 0} kg</strong></td>
-                      <td>{(parseFloat(laminationPlainSubstrateWastageL2Kg) || 0).toFixed(1)} kg</td>
+                      <td style={{ fontWeight: '700' }}>{formatUpToTwoDecimals(qtySecondPassL2)} kg</td>
+                      <td>Adhesive L2: <strong>{formatUpToTwoDecimals(adhesiveConsumedL2Kg)} kg</strong> (₹{formatUpToTwoDecimals((parseFloat(adhesiveConsumedL2Kg) || 0) * (parseFloat(adhesiveCostPerKg) || 0))})</td>
+                      <td>{formatUpToTwoDecimals(laminationPlainSubstrateWastageL2Kg)} kg</td>
                       <td>
                         {(parseFloat(qtySecondPassL2) || 0) > 0 ? (
                           <span className="badge badge-us" style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontSize: '0.68rem' }}>✓ Filled</span>
@@ -3751,11 +3846,11 @@ export default function ProductionRecordManagement({
                     <tr>
                       <td style={{ fontWeight: '700' }}>Stage 5: Slitting</td>
                       <td style={{ fontWeight: '700', color: (parseFloat(qtySlitting) || 0) > 0 ? '#0f172a' : '#c2410c' }}>
-                        {qtySlitting || 0} kg
+                        {formatUpToTwoDecimals(qtySlitting)} kg
                       </td>
-                      <td>Paper Core: <strong>{paperCoreConsumedKg || 0} kg</strong></td>
+                      <td>Paper Core: <strong>{formatUpToTwoDecimals(paperCoreConsumedKg)} kg</strong> (₹{formatUpToTwoDecimals((parseFloat(paperCoreConsumedKg) || 0) * (parseFloat(paperCoreCostPerKg) || 0))})</td>
                       <td>
-                        {((parseFloat(laminateWastageKg) || 0) + (parseFloat(trimWastageKg) || 0)).toFixed(1)} kg
+                        {formatUpToTwoDecimals((parseFloat(laminateWastageKg) || 0) + (parseFloat(trimWastageKg) || 0))} kg
                       </td>
                       <td>
                         {(parseFloat(qtySlitting) || 0) > 0 ? (
@@ -3854,6 +3949,42 @@ export default function ProductionRecordManagement({
                         <td style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>₹ {(m.totalMaterialCost ?? 0).toLocaleString()}</td>
                       </tr>
                     ))}
+
+                    {/* Adhesive Consumed Row */}
+                    <tr style={{ background: '#f5f3ff' }}>
+                      <td style={{ fontWeight: '700', color: '#4338ca' }}>
+                        🧪 Lamination Adhesive (Consumable)
+                      </td>
+                      <td>-</td>
+                      <td>-</td>
+                      <td>{formatUpToTwoDecimals(totalAdhesiveConsumedKg)} kg</td>
+                      <td>-</td>
+                      <td style={{ fontWeight: '700', color: '#4338ca' }}>
+                        {formatUpToTwoDecimals(totalAdhesiveConsumedKg)} kg
+                      </td>
+                      <td>₹ {formatUpToTwoDecimals(adhesiveCostPerKg)}/kg</td>
+                      <td style={{ fontWeight: '700', color: '#4338ca' }}>
+                        ₹ {formatUpToTwoDecimals(adhesiveCostRs)}
+                      </td>
+                    </tr>
+
+                    {/* Paper Core Consumed Row */}
+                    <tr style={{ background: '#ecfdf5' }}>
+                      <td style={{ fontWeight: '700', color: '#047857' }}>
+                        📦 Slitting Paper Cores (Consumable)
+                      </td>
+                      <td>-</td>
+                      <td>-</td>
+                      <td>{formatUpToTwoDecimals(paperCoreConsumedKg)} kg</td>
+                      <td>-</td>
+                      <td style={{ fontWeight: '700', color: '#047857' }}>
+                        {formatUpToTwoDecimals(paperCoreConsumedKg)} kg
+                      </td>
+                      <td>₹ {formatUpToTwoDecimals(paperCoreCostPerKg)}/kg</td>
+                      <td style={{ fontWeight: '700', color: '#047857' }}>
+                        ₹ {formatUpToTwoDecimals(paperCoreCostRs)}
+                      </td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
@@ -3862,17 +3993,22 @@ export default function ProductionRecordManagement({
             {/* Costing & Financial Summary Box */}
             <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '16px 20px', borderRadius: '10px', marginBottom: '24px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', fontSize: '0.85rem', marginBottom: '12px' }}>
-                <div>Dispatch Ready Produced Qty: <strong>{(totalNetQtyKg ?? 0).toLocaleString()} kg</strong></div>
-                <div>Total Ingredients Cost: <strong>₹ {(totalMaterialCostRs || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
-                <div>Processing Rate: <strong>₹ {processingCostPerKg}/kg</strong></div>
-                <div>Total Processing Cost: <strong>₹ {(totalProcessingCostRs || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></div>
-                <div>Total Scrap Generated: <strong style={{ color: '#b45309' }}>{totalScrapQtyKg.toFixed(1)} kg ({overallScrapPctOfDispatch}% of dispatch)</strong></div>
+                <div>Dispatch Ready Produced Qty: <strong>{formatUpToTwoDecimals(totalNetQtyKg)} kg</strong></div>
+                <div>
+                  Total Ingredients Cost: <strong>₹ {formatUpToTwoDecimals(totalMaterialCostRs)}</strong>
+                  <div style={{ fontSize: '0.72rem', color: '#047857', marginTop: '2px' }}>
+                    Substrates: ₹{formatUpToTwoDecimals(rawMaterialsTableCostRs)} | Adhesive: ₹{formatUpToTwoDecimals(adhesiveCostRs)} (@₹{adhesiveCostPerKg}/kg) | Paper Core: ₹{formatUpToTwoDecimals(paperCoreCostRs)} (@₹{paperCoreCostPerKg}/kg)
+                  </div>
+                </div>
+                <div>Processing Rate: <strong>₹ {formatUpToTwoDecimals(processingCostPerKg)}/kg</strong></div>
+                <div>Total Processing Cost: <strong>₹ {formatUpToTwoDecimals(totalProcessingCostRs)}</strong></div>
+                <div>Total Scrap Generated: <strong style={{ color: '#b45309' }}>{formatUpToTwoDecimals(totalScrapQtyKg)} kg ({formatUpToTwoDecimals(overallScrapPctOfDispatch)}% of dispatch)</strong></div>
               </div>
 
               <div style={{ borderTop: '1px solid #6ee7b7', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontWeight: '800', color: '#065f46', fontSize: '0.95rem' }}>TOTAL COST OF PRODUCTION:</span>
                 <span style={{ fontSize: '1.6rem', fontWeight: '900', color: '#047857' }}>
-                  ₹ {(finalProductionCostRs || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  ₹ {formatUpToTwoDecimals(finalProductionCostRs)}
                 </span>
               </div>
             </div>

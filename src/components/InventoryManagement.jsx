@@ -31,6 +31,9 @@ import {
   Layers,
   QrCode,
   Sparkles,
+  ShieldCheck,
+  RotateCcw,
+  Info,
   X
 } from 'lucide-react';
 import QRCode2D from './QRCode2D';
@@ -44,8 +47,8 @@ import TablePagination, { usePagination } from './TablePagination';
 import SearchableSelect from './SearchableSelect';
 import SFGFGEntryModal, { SFG_TYPES, FG_TYPES } from './SFGFGEntryModal';
 import { getNextDocRefNumber, generateDocRefNumber, getInventoryAgeingSettings } from '../services/settingsService';
-import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo, sortBatchesByFifo, getItemInwardDate } from '../utils/fifoUtils';
-import { notifyGRNPendingQC, notifyGRNQCEscalation12h } from '../services/emailService';
+import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo, sortBatchesByFifo, getItemInwardDate, parseDateFlexible } from '../utils/fifoUtils';
+import { notifyGRNPendingQC, notifyGRNQCEscalation12h, notifyGRNQCVarianceModified } from '../services/emailService';
 
 import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, saveSystemSetting } from '../services/supabaseDataService';
 import { safeLocalStorageSet, safeLocalStorageGet } from '../utils/safeStorage';
@@ -93,6 +96,41 @@ export const INVENTORY_UOMS = [
   { value: "Drums", label: "Drums" },
   { value: "Sheets", label: "Sheets" }
 ];
+
+export function formatInwardTimestamp(grn) {
+  if (!grn) return 'Date N/A';
+  const raw = grn.inwardTimestamp || grn.createdAt || grn.created_at || grn.receivedAt || grn.receivedDate || grn.date;
+  const d = parseDateFlexible(raw);
+  if (!d) return grn.receivedDate || 'Date N/A';
+
+  const dateStr = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  if (grn.receivedTime) {
+    return `${dateStr}, ${grn.receivedTime}`;
+  }
+  const hasTime = typeof raw === 'string' && (raw.includes('T') || raw.includes(':'));
+  if (hasTime && (d.getHours() !== 0 || d.getMinutes() !== 0)) {
+    const timeStr = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+    return `${dateStr}, ${timeStr}`;
+  }
+  return dateStr;
+}
+
+export function getInwardTimeAgo(grn) {
+  if (!grn) return '';
+  const raw = grn.inwardTimestamp || grn.createdAt || grn.created_at || grn.receivedAt || grn.receivedDate || grn.date;
+  const d = parseDateFlexible(raw);
+  if (!d) return '';
+  const diffMs = Date.now() - d.getTime();
+  if (diffMs < 0) return 'Just now';
+  const diffMinutes = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMinutes < 60) return `${Math.max(1, diffMinutes)}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays === 1) return `1 day ago`;
+  return `${diffDays} days ago`;
+}
 
 function MaterialItemsCell({ items = [] }) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -445,6 +483,156 @@ export default function InventoryManagement({
   const [qcInspectingGRN, setQcInspectingGRN] = useState(null);
   const [qcNotesInput, setQcNotesInput] = useState('');
   const [selectedItemForPurchaseHistory, setSelectedItemForPurchaseHistory] = useState(null);
+
+  // QC Inward Inspection Editable Parameters state
+  const [qcEditFilmType, setQcEditFilmType] = useState('');
+  const [qcEditCategory, setQcEditCategory] = useState('');
+  const [qcEditItemName, setQcEditItemName] = useState('');
+  const [qcEditWidthMm, setQcEditWidthMm] = useState('');
+  const [qcEditMicron, setQcEditMicron] = useState('');
+  const [qcEditLengthMeters, setQcEditLengthMeters] = useState('');
+  const [qcEditNetWeightKg, setQcEditNetWeightKg] = useState('');
+  const [qcEditGrossWeightKg, setQcEditGrossWeightKg] = useState('');
+  const [qcEditTareWeightKg, setQcEditTareWeightKg] = useState('');
+  const [qcEditRollsReceived, setQcEditRollsReceived] = useState(1);
+  const [qcEditBatchNo, setQcEditBatchNo] = useState('');
+  const [qcEditPackagingType, setQcEditPackagingType] = useState('Roll');
+  const [qcEditItemsBreakdown, setQcEditItemsBreakdown] = useState([]);
+  const [qcEditDyneLevel, setQcEditDyneLevel] = useState('38-42');
+  const [qcEditGaugeVariance, setQcEditGaugeVariance] = useState('±1.0');
+  const [qcIsEditingDetails, setQcIsEditingDetails] = useState(false);
+  const [qcVisualChecks, setQcVisualChecks] = useState({
+    noPinholes: true,
+    noScratches: true,
+    coreIntact: true,
+    uniformWinding: true,
+    noOdor: true
+  });
+
+  useEffect(() => {
+    if (qcInspectingGRN) {
+      setQcEditFilmType(qcInspectingGRN.filmType || 'PET');
+      setQcEditCategory(qcInspectingGRN.category || 'Film Substrates');
+      setQcEditItemName(qcInspectingGRN.itemName || '');
+      setQcEditWidthMm(qcInspectingGRN.widthMm !== '-' && qcInspectingGRN.widthMm !== undefined ? qcInspectingGRN.widthMm : '');
+      setQcEditMicron(qcInspectingGRN.micron !== '-' && qcInspectingGRN.micron !== undefined ? qcInspectingGRN.micron : '');
+      setQcEditNetWeightKg(qcInspectingGRN.netWeightKg !== undefined ? qcInspectingGRN.netWeightKg : '');
+      setQcEditGrossWeightKg(qcInspectingGRN.grossWeightKg !== undefined ? qcInspectingGRN.grossWeightKg : '');
+      setQcEditTareWeightKg(qcInspectingGRN.tareWeightKg !== undefined ? qcInspectingGRN.tareWeightKg : '');
+      setQcEditRollsReceived(qcInspectingGRN.rollsReceived || (Array.isArray(qcInspectingGRN.itemsBreakdown) ? qcInspectingGRN.itemsBreakdown.length : 1));
+      setQcEditBatchNo(qcInspectingGRN.batchNo || '');
+      setQcEditPackagingType(qcInspectingGRN.packagingType || 'Roll');
+      setQcNotesInput(qcInspectingGRN.qcNotes || '');
+      setQcEditDyneLevel(qcInspectingGRN.dyneLevel || '38-42');
+      setQcEditGaugeVariance(qcInspectingGRN.gaugeVariance || '±1.0');
+      setQcIsEditingDetails(false);
+
+      const breakdown = Array.isArray(qcInspectingGRN.itemsBreakdown) && qcInspectingGRN.itemsBreakdown.length > 0
+        ? qcInspectingGRN.itemsBreakdown.map((item, idx) => ({ ...item, unitNo: item.unitNo || idx + 1 }))
+        : [];
+      setQcEditItemsBreakdown(breakdown);
+
+      const initialLength = qcInspectingGRN.itemsBreakdown?.[0]?.lengthMeters || '';
+      setQcEditLengthMeters(initialLength);
+
+      setQcVisualChecks(qcInspectingGRN.qcVisualChecks || {
+        noPinholes: true,
+        noScratches: true,
+        coreIntact: true,
+        uniformWinding: true,
+        noOdor: true
+      });
+    }
+  }, [qcInspectingGRN]);
+
+  const qcVariances = useMemo(() => {
+    if (!qcInspectingGRN) return [];
+    const diffs = [];
+    const orig = qcInspectingGRN;
+    
+    // 1. Net Weight
+    const origNet = parseFloat(orig.netWeightKg) || 0;
+    const newNet = parseFloat(qcEditNetWeightKg) || 0;
+    if (Math.abs(origNet - newNet) > 0.05) {
+      const diffVal = Number((newNet - origNet).toFixed(2));
+      diffs.push({
+        field: 'netWeightKg',
+        label: 'Inward Net Weight',
+        oldVal: `${origNet} kg`,
+        newVal: `${newNet} kg`,
+        diff: `${diffVal > 0 ? '+' : ''}${diffVal} kg (${((diffVal / (origNet || 1)) * 100).toFixed(1)}%)`
+      });
+    }
+
+    // 2. Width (mm)
+    const origWidth = parseFloat(orig.widthMm) || 0;
+    const newWidth = parseFloat(qcEditWidthMm) || 0;
+    if (origWidth > 0 && newWidth > 0 && Math.abs(origWidth - newWidth) > 0.1) {
+      const diffVal = Number((newWidth - origWidth).toFixed(1));
+      diffs.push({
+        field: 'widthMm',
+        label: 'Width (mm)',
+        oldVal: `${origWidth} mm`,
+        newVal: `${newWidth} mm`,
+        diff: `${diffVal > 0 ? '+' : ''}${diffVal} mm`
+      });
+    }
+
+    // 3. Micron (µ)
+    const origMicron = parseFloat(orig.micron) || 0;
+    const newMicron = parseFloat(qcEditMicron) || 0;
+    if (origMicron > 0 && newMicron > 0 && Math.abs(origMicron - newMicron) > 0.1) {
+      const diffVal = Number((newMicron - origMicron).toFixed(1));
+      diffs.push({
+        field: 'micron',
+        label: 'Thickness / Micron',
+        oldVal: `${origMicron} µ`,
+        newVal: `${newMicron} µ`,
+        diff: `${diffVal > 0 ? '+' : ''}${diffVal} µ`
+      });
+    }
+
+    // 4. Batch Number
+    const origBatch = String(orig.batchNo || '').trim();
+    const newBatch = String(qcEditBatchNo || '').trim();
+    if (origBatch && newBatch && origBatch !== newBatch) {
+      diffs.push({
+        field: 'batchNo',
+        label: 'Manufacturer Batch #',
+        oldVal: origBatch,
+        newVal: newBatch,
+        diff: 'Modified'
+      });
+    }
+
+    // 5. Film Substrate
+    const origFilm = String(orig.filmType || '').trim();
+    const newFilm = String(qcEditFilmType || '').trim();
+    if (origFilm && newFilm && origFilm !== newFilm) {
+      diffs.push({
+        field: 'filmType',
+        label: 'Film Substrate',
+        oldVal: origFilm,
+        newVal: newFilm,
+        diff: 'Changed'
+      });
+    }
+
+    // 6. Rolls Received
+    const origRolls = parseInt(orig.rollsReceived, 10) || 1;
+    const newRollsCount = parseInt(qcEditRollsReceived, 10) || 1;
+    if (origRolls !== newRollsCount) {
+      diffs.push({
+        field: 'rollsReceived',
+        label: 'Packages / Rolls Count',
+        oldVal: `${origRolls}`,
+        newVal: `${newRollsCount}`,
+        diff: `${newRollsCount - origRolls > 0 ? '+' : ''}${newRollsCount - origRolls}`
+      });
+    }
+
+    return diffs;
+  }, [qcInspectingGRN, qcEditNetWeightKg, qcEditWidthMm, qcEditMicron, qcEditBatchNo, qcEditFilmType, qcEditRollsReceived]);
 
   // Updatable Barcodes & Stock Ledger Adjustments state
   const [customBarcodesMap, setCustomBarcodesMap] = useState(() => {
@@ -1867,7 +2055,10 @@ export default function InventoryManagement({
       lastBatch: grnBatchNo
     };
 
-    const todayIsoDate = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const todayIsoDate = nowIso.split('T')[0];
+    const receivedTimeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
     const matchedVendor = (vendors || []).find(v => v.companyName === grnVendor || v.name === grnVendor || v.id === grnVendor);
     const selectedVendorId = matchedVendor?.id || null;
 
@@ -1878,6 +2069,9 @@ export default function InventoryManagement({
       vendorId: selectedVendorId,
       invoiceNo: grnInvoiceNo,
       receivedDate: todayIsoDate,
+      receivedTime: receivedTimeStr,
+      inwardTimestamp: nowIso,
+      createdAt: nowIso,
       category: grnCategory,
       itemName: itemName,
       stockItemId: targetStockItemId,
@@ -1930,7 +2124,9 @@ export default function InventoryManagement({
         widthMm: isFilm ? (parseFloat(grnWidthMm) || 0) : 0,
         unit: isFilm ? 'Kg' : grnUnit,
         packagingType: grnPackagingType,
-        inwardDatetime: todayIsoDate,
+        inwardDatetime: nowIso,
+        inwardTimestamp: nowIso,
+        createdAt: nowIso,
         vendorName: grnVendor,
         invoiceNo: grnInvoiceNo,
         batchNo: grnBatchNo,
@@ -2082,12 +2278,52 @@ export default function InventoryManagement({
   };
 
   // QC Approval / Rejection (Updates Stock for Films, Inks, Solvents, Adhesives, Spares, PPE)
-  const handleQCAction = (status) => {
+  const handleQCAction = async (status) => {
     if (!qcInspectingGRN) return;
 
     const isApproved = status === 'Approved';
     const finalStatus = isApproved ? 'Approved' : 'QC Hold';
     const finalQcStatus = isApproved ? 'Approved' : 'Rejected';
+
+    const isFilm = (qcInspectingGRN.category || 'Film Substrates') === 'Film Substrates';
+    const verifiedNetWeight = parseFloat(qcEditNetWeightKg) || parseFloat(qcInspectingGRN.netWeightKg) || 0;
+    const verifiedGrossWeight = parseFloat(qcEditGrossWeightKg) || parseFloat(qcInspectingGRN.grossWeightKg) || verifiedNetWeight;
+    const verifiedTareWeight = parseFloat(qcEditTareWeightKg) || parseFloat(qcInspectingGRN.tareWeightKg) || 0;
+    const verifiedWidth = isFilm ? (parseFloat(qcEditWidthMm) || qcInspectingGRN.widthMm || '-') : (qcInspectingGRN.widthMm || '-');
+    const verifiedMicron = isFilm ? (parseFloat(qcEditMicron) || qcInspectingGRN.micron || '-') : (qcInspectingGRN.micron || '-');
+    const verifiedFilmType = isFilm ? (qcEditFilmType || qcInspectingGRN.filmType || 'PET') : (qcInspectingGRN.filmType || qcInspectingGRN.category);
+    const verifiedBatchNo = (qcEditBatchNo || qcInspectingGRN.batchNo || '').trim();
+    const verifiedRollsCount = parseInt(qcEditRollsReceived, 10) || qcInspectingGRN.rollsReceived || 1;
+    const inspectorName = currentUser?.name || 'Quality QC Chemist';
+    const inspectionNowIso = new Date().toISOString();
+    const inspectionDateStr = new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+
+    // Compute verified item name for films or keep item name
+    const mPct = (isFilm && isMetalloceneEligibleFilm(verifiedFilmType)) ? (qcInspectingGRN.metallocenePct || '') : '';
+    const verifiedItemName = isFilm 
+      ? formatFilmItemName(verifiedFilmType, verifiedWidth, verifiedMicron, '', mPct) 
+      : (qcEditItemName || qcInspectingGRN.itemName || `${qcInspectingGRN.category} Material`);
+
+    // Prepare updated itemsBreakdown
+    let updatedBreakdown = (qcEditItemsBreakdown && qcEditItemsBreakdown.length > 0)
+      ? qcEditItemsBreakdown.map((item, idx) => ({
+          ...item,
+          unitNo: item.unitNo || idx + 1,
+          netWeightKg: parseFloat(item.netWeightKg) || Number((verifiedNetWeight / verifiedRollsCount).toFixed(2)),
+          grossWeightKg: parseFloat(item.grossWeightKg) || Number((verifiedGrossWeight / verifiedRollsCount).toFixed(2)),
+          tareWeightKg: parseFloat(item.tareWeightKg) || Number((verifiedTareWeight / verifiedRollsCount).toFixed(2)),
+          lengthMeters: isFilm ? calculateFilmRollLength(parseFloat(item.netWeightKg) || (verifiedNetWeight / verifiedRollsCount), verifiedWidth, verifiedMicron, verifiedFilmType) : item.lengthMeters
+        }))
+      : (qcInspectingGRN.itemsBreakdown || []).map((item, idx) => ({
+          ...item,
+          unitNo: item.unitNo || idx + 1,
+          netWeightKg: Number((verifiedNetWeight / verifiedRollsCount).toFixed(2)),
+          grossWeightKg: Number((verifiedGrossWeight / verifiedRollsCount).toFixed(2)),
+          tareWeightKg: Number((verifiedTareWeight / verifiedRollsCount).toFixed(2)),
+          lengthMeters: isFilm ? calculateFilmRollLength(verifiedNetWeight / verifiedRollsCount, verifiedWidth, verifiedMicron, verifiedFilmType) : item.lengthMeters
+        }));
+
+    const hasVariances = qcVariances && qcVariances.length > 0;
 
     const updatedGRN = {
       ...qcInspectingGRN,
@@ -2096,31 +2332,66 @@ export default function InventoryManagement({
       location: isApproved ? (qcInspectingGRN.category === 'Film Substrates' ? 'Bay A' : 'Consumables Store') : 'QC Hold Store',
       storeLocation: isApproved ? (qcInspectingGRN.category === 'Film Substrates' ? 'Bay A' : 'Consumables Store') : 'QC Hold Store',
       qcNotes: qcNotesInput || (isApproved ? 'Inspected and passed all laboratory parameters.' : 'Rejected in QC Approval Lab due to spec variation. Transferred to QC Hold Store.'),
-      inspectedBy: currentUser?.name || 'Quality Manager',
-      inspectedDate: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })
+      inspectedBy: inspectorName,
+      inspectedDate: inspectionDateStr,
+      qcVerifiedAt: inspectionNowIso,
+      // Verified Specs:
+      netWeightKg: verifiedNetWeight,
+      grossWeightKg: verifiedGrossWeight,
+      tareWeightKg: verifiedTareWeight,
+      widthMm: verifiedWidth,
+      micron: verifiedMicron,
+      filmType: verifiedFilmType,
+      itemName: verifiedItemName,
+      batchNo: verifiedBatchNo,
+      rollsReceived: verifiedRollsCount,
+      itemsBreakdown: updatedBreakdown,
+      dyneLevel: qcEditDyneLevel,
+      gaugeVariance: qcEditGaugeVariance,
+      qcVisualChecks: qcVisualChecks,
+      qcVarianceDetected: hasVariances,
+      qcVarianceLog: hasVariances ? qcVariances : (qcInspectingGRN.qcVarianceLog || null)
     };
 
     if (onUpdateGRN) {
-      onUpdateGRN(updatedGRN);
+      await onUpdateGRN(updatedGRN);
     }
 
-    // Update associated child rolls/barcodes in inventoryRolls
+    // Update associated child rolls/barcodes in inventoryRolls with verified dimensions and weight
     const matchingRolls = (inventoryRolls || []).filter(r => 
       (r.grnNo && (r.grnNo === qcInspectingGRN.grnNo || r.grnNo === qcInspectingGRN.id)) ||
       (r.grn_no && (r.grn_no === qcInspectingGRN.grnNo || r.grn_no === qcInspectingGRN.id))
     );
 
     if (matchingRolls.length > 0) {
-      const updatedRollsList = matchingRolls.map(r => ({
-        ...r,
-        status: isApproved ? 'In Stock' : 'QC Hold',
-        qcStatus: finalQcStatus,
-        locationBay: isApproved ? (updatedGRN.category === 'Film Substrates' ? 'Bay A' : 'Consumables Store') : 'QC Hold Store',
-        notes: `${r.notes || ''} | QC ${finalStatus} by ${updatedGRN.inspectedBy}`.trim()
-      }));
+      const updatedRollsList = matchingRolls.map((r, idx) => {
+        const correspondingItem = updatedBreakdown[idx] || updatedBreakdown[0] || {};
+        const rollNet = parseFloat(correspondingItem.netWeightKg) || Number((verifiedNetWeight / matchingRolls.length).toFixed(2));
+        const rollGross = parseFloat(correspondingItem.grossWeightKg) || Number((verifiedGrossWeight / matchingRolls.length).toFixed(2));
+        const rollTare = parseFloat(correspondingItem.tareWeightKg) || Number((verifiedTareWeight / matchingRolls.length).toFixed(2));
+        const rollLength = correspondingItem.lengthMeters || (isFilm ? calculateFilmRollLength(rollNet, verifiedWidth, verifiedMicron, verifiedFilmType) : r.lengthMeters);
+
+        return {
+          ...r,
+          status: isApproved ? 'In Stock' : 'QC Hold',
+          qcStatus: finalQcStatus,
+          locationBay: isApproved ? (updatedGRN.category === 'Film Substrates' ? 'Bay A' : 'Consumables Store') : 'QC Hold Store',
+          filmType: verifiedFilmType,
+          micron: verifiedMicron,
+          widthMm: verifiedWidth,
+          itemName: verifiedItemName,
+          batchNo: verifiedBatchNo,
+          netWeightKg: rollNet,
+          availableWeightKg: rollNet,
+          grossWeightKg: rollGross,
+          tareWeightKg: rollTare,
+          lengthMeters: rollLength,
+          notes: `${r.notes || ''} | QC ${finalStatus} by ${inspectorName}${hasVariances ? ' (Specs Revised)' : ''}`.trim()
+        };
+      });
 
       if (onUpdateInventoryRolls) {
-        onUpdateInventoryRolls(updatedRollsList);
+        await onUpdateInventoryRolls(updatedRollsList);
       } else if (onUpdateRoll) {
         updatedRollsList.forEach(r => onUpdateRoll(r));
       } else if (onAddRoll) {
@@ -2157,23 +2428,22 @@ export default function InventoryManagement({
       }
     }
 
-    // If Approved, automatically add stock to central Inventory!
+    // If Approved, automatically add verified stock to central Inventory!
     if (isApproved && (onSaveInventoryItem || onUpdateInventory)) {
-      const isFilm = (updatedGRN.category || 'Film Substrates') === 'Film Substrates';
       const grnRate = parseFloat(updatedGRN.purchaseRatePerKg || updatedGRN.purchaseRate || updatedGRN.unitPrice) || 0;
 
       const existingInvIndex = inventory.findIndex(i => {
         if (updatedGRN.stockItemId && String(i.id) === String(updatedGRN.stockItemId)) return true;
         if (updatedGRN.itemId && String(i.id) === String(updatedGRN.itemId)) return true;
         if (isFilm) {
-          return i.filmType === updatedGRN.filmType && Number(i.micron) === Number(updatedGRN.micron) && Number(i.widthMm) === Number(updatedGRN.widthMm);
+          return i.filmType === verifiedFilmType && Number(i.micron) === Number(verifiedMicron) && Number(i.widthMm) === Number(verifiedWidth);
         }
-        return (i.itemName || '').toLowerCase() === (updatedGRN.itemName || '').toLowerCase();
+        return (i.itemName || '').toLowerCase() === verifiedItemName.toLowerCase();
       });
 
       if (existingInvIndex >= 0) {
         const itemToUpdate = inventory[existingInvIndex];
-        const newAvailable = Number(((itemToUpdate.availableQtyKg || 0) + (updatedGRN.netWeightKg || 0)).toFixed(2));
+        const newAvailable = Number(((itemToUpdate.availableQtyKg || 0) + verifiedNetWeight).toFixed(2));
         const finalPrice = grnRate > 0 ? grnRate : (itemToUpdate.unitPrice || 0);
 
         const updatedInvItem = {
@@ -2183,29 +2453,33 @@ export default function InventoryManagement({
           purchaseRatePerKg: finalPrice,
           purchaseValuation: Number((newAvailable * finalPrice).toFixed(2)),
           lastVendor: updatedGRN.vendorName || itemToUpdate.lastVendor,
-          lastBatch: updatedGRN.batchNo || itemToUpdate.lastBatch
+          lastBatch: verifiedBatchNo || itemToUpdate.lastBatch,
+          filmType: verifiedFilmType,
+          micron: verifiedMicron,
+          widthMm: verifiedWidth,
+          itemName: verifiedItemName
         };
 
         if (onSaveInventoryItem) {
-          onSaveInventoryItem(updatedInvItem);
+          await onSaveInventoryItem(updatedInvItem);
         } else if (onUpdateInventory) {
           const updatedInv = [...inventory];
           updatedInv[existingInvIndex] = updatedInvItem;
           onUpdateInventory(updatedInv);
         }
       } else {
-        const newAvailable = updatedGRN.netWeightKg || 0;
+        const newAvailable = verifiedNetWeight;
         const newInvId = generateInventoryId(inventory);
         const newInvItem = {
           id: newInvId,
           itemCode: newInvId,
-          itemName: updatedGRN.itemName || `${updatedGRN.filmType} Inward Stock`,
+          itemName: verifiedItemName,
           category: updatedGRN.category || 'Film Substrates',
-          filmType: updatedGRN.filmType || 'Generic',
-          micron: updatedGRN.micron || '-',
-          widthMm: updatedGRN.widthMm || '-',
+          filmType: verifiedFilmType,
+          micron: verifiedMicron,
+          widthMm: verifiedWidth,
           unit: updatedGRN.unit || 'Kg',
-          density: FILM_DENSITIES[updatedGRN.filmType] || 1.0,
+          density: FILM_DENSITIES[verifiedFilmType] || 1.0,
           availableQtyKg: newAvailable,
           allocatedQtyKg: 0,
           unitPrice: grnRate,
@@ -2214,22 +2488,69 @@ export default function InventoryManagement({
           location: isFilm ? "Bay A - Inward Dock" : "Consumables Store",
           reorderLevelKg: 100,
           lastVendor: updatedGRN.vendorName,
-          lastBatch: updatedGRN.batchNo
+          lastBatch: verifiedBatchNo
         };
 
         if (onSaveInventoryItem) {
-          onSaveInventoryItem(newInvItem);
+          await onSaveInventoryItem(newInvItem);
         } else if (onUpdateInventory) {
           onUpdateInventory([...inventory, newInvItem]);
         }
       }
     }
 
+    // IF EDITS WERE MADE: Notify Admin and other concerned roles!
+    if (hasVariances) {
+      notifyGRNQCVarianceModified({
+        grn: updatedGRN,
+        originalDetails: {
+          netWeightKg: qcInspectingGRN.netWeightKg,
+          grossWeightKg: qcInspectingGRN.grossWeightKg,
+          tareWeightKg: qcInspectingGRN.tareWeightKg,
+          widthMm: qcInspectingGRN.widthMm,
+          micron: qcInspectingGRN.micron,
+          filmType: qcInspectingGRN.filmType,
+          batchNo: qcInspectingGRN.batchNo,
+          rollsReceived: qcInspectingGRN.rollsReceived
+        },
+        updatedDetails: {
+          netWeightKg: verifiedNetWeight,
+          grossWeightKg: verifiedGrossWeight,
+          tareWeightKg: verifiedTareWeight,
+          widthMm: verifiedWidth,
+          micron: verifiedMicron,
+          filmType: verifiedFilmType,
+          batchNo: verifiedBatchNo,
+          rollsReceived: verifiedRollsCount,
+          itemName: verifiedItemName
+        },
+        variances: qcVariances,
+        editedBy: inspectorName,
+        actionStatus: status,
+        reason: qcNotesInput || 'Quality physical verification & laboratory measurement',
+        users
+      }).catch(err => console.warn('[QC Variance Notification] Failed:', err));
+
+      // Also record in in-app notification alerts
+      const existingAlerts = safeLocalStorageGet('samyak_erp_notifications', []);
+      const newAlert = {
+        id: `notif-${Date.now()}`,
+        type: 'QC_VARIANCE_MODIFIED',
+        title: `GRN #${updatedGRN.grnNo} Inward Specs Corrected in QC Lab`,
+        message: `${inspectorName} adjusted inward parameters (${qcVariances.map(v => `${v.label}: ${v.oldVal} ➔ ${v.newVal}`).join(', ')}) upon physical lab inspection and marked as ${status}.`,
+        grnNo: updatedGRN.grnNo,
+        timestamp: inspectionNowIso,
+        read: false
+      };
+      safeLocalStorageSet('samyak_erp_notifications', [newAlert, ...existingAlerts.slice(0, 49)]);
+    }
+
     setQcInspectingGRN(null);
     setQcNotesInput('');
+
     alert(isApproved 
-      ? `✅ GRN ${updatedGRN.grnNo} APPROVED!\nStock of ${updatedGRN.netWeightKg} ${updatedGRN.unit || 'Kg'} added to central Inventory & Item Ledger.`
-      : `🚫 GRN ${updatedGRN.grnNo} REJECTED!\nMaterial transferred to 'QC Hold Store'. Barcodes updated to QC Hold.`
+      ? `✅ GRN ${updatedGRN.grnNo} APPROVED!${hasVariances ? '\n⚠️ Inward details were corrected & Admin / Store notified.' : ''}\nStock of ${verifiedNetWeight} ${updatedGRN.unit || 'Kg'} added to central Inventory & Item Ledger.`
+      : `🚫 GRN ${updatedGRN.grnNo} REJECTED!${hasVariances ? '\n⚠️ Spec variances were logged & Admin / Store notified.' : ''}\nMaterial transferred to 'QC Hold Store'. Barcodes updated to QC Hold.`
     );
   };
 
@@ -3352,24 +3673,26 @@ export default function InventoryManagement({
       widthStr.includes(term);
   });
 
-  const filteredPOs = (unifiedIssuedPOs || []).filter(po => {
-    // 1. Status Filter
-    if (poStatusFilter === 'PENDING' && po.deliveryStatus !== 'Pending Delivery') return false;
-    if (poStatusFilter === 'PARTIAL' && po.deliveryStatus !== 'Partial Delivery') return false;
-    if (poStatusFilter === 'COMPLETED' && po.deliveryStatus !== 'Completed') return false;
-    if (poStatusFilter === 'OVERDUE' && !po.isOverdue) return false;
-    if (poStatusFilter === 'ALERT' && !po.priceDiscrepancy) return false;
+  const filteredPOs = useMemo(() => {
+    return (unifiedIssuedPOs || []).filter(po => {
+      // 1. Status Filter
+      if (poStatusFilter === 'PENDING' && po.deliveryStatus !== 'Pending Delivery') return false;
+      if (poStatusFilter === 'PARTIAL' && po.deliveryStatus !== 'Partial Delivery') return false;
+      if (poStatusFilter === 'COMPLETED' && po.deliveryStatus !== 'Completed') return false;
+      if (poStatusFilter === 'OVERDUE' && !po.isOverdue) return false;
+      if (poStatusFilter === 'ALERT' && !po.priceDiscrepancy) return false;
 
-    // 2. Search Term Filter
-    if (!poSearchTerm || !poSearchTerm.trim()) return true;
-    const term = poSearchTerm.toLowerCase().trim();
-    const poNo = (po.poNumber || '').toLowerCase();
-    const vendorName = (po.vendor?.companyName || po.vendor?.name || po.vendorName || '').toLowerCase();
-    const source = (po.source || '').toLowerCase();
-    const itemDescs = (po.items || []).map(it => (it.itemDesc || it.description || '').toLowerCase()).join(' ');
+      // 2. Search Term Filter
+      if (!poSearchTerm || !poSearchTerm.trim()) return true;
+      const term = poSearchTerm.toLowerCase().trim();
+      const poNo = (po.poNumber || '').toLowerCase();
+      const vendorName = (po.vendor?.companyName || po.vendor?.name || po.vendorName || '').toLowerCase();
+      const source = (po.source || '').toLowerCase();
+      const itemDescs = (po.items || []).map(it => (it.itemDesc || it.description || '').toLowerCase()).join(' ');
 
-    return poNo.includes(term) || vendorName.includes(term) || source.includes(term) || itemDescs.includes(term);
-  });
+      return poNo.includes(term) || vendorName.includes(term) || source.includes(term) || itemDescs.includes(term);
+    });
+  }, [unifiedIssuedPOs, poStatusFilter, poSearchTerm]);
 
   const filteredRecItems = useMemo(() => {
     return (safeInventory || []).filter(item => {
@@ -4028,7 +4351,7 @@ export default function InventoryManagement({
                               📦 Partial Delivery
                             </span>
                             <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#d97706', marginTop: '3px' }}>
-                              Pending Inward: {po.pendingInwardQty.toFixed(1)} kg
+                              Pending Inward: {(po.pendingInwardQty || 0).toFixed(1)} kg
                             </div>
                           </div>
                         )}
@@ -4115,6 +4438,7 @@ export default function InventoryManagement({
           </div>
 
           <TablePagination
+            pagination={poPagination}
             currentPage={poPagination.currentPage}
             totalItems={poPagination.totalItems}
             pageSize={poPagination.pageSize}
@@ -4794,43 +5118,79 @@ export default function InventoryManagement({
             </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '20px' }}>
-              {pendingQCGRNs.map(g => (
-                <div key={g.grnNo} className="glass-card" style={{ border: '1px solid rgba(245, 158, 11, 0.4)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                    <div>
-                      <span className="badge badge-warning">AWAITING QC CLEARANCE</span>
-                      <h4 style={{ fontSize: '1.2rem', fontWeight: '700', marginTop: '6px' }}>{g.grnNo}</h4>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>PO: {g.poNumber}</div>
-                      <div style={{ fontSize: '0.85rem', fontWeight: '600' }}>{g.vendorName}</div>
-                    </div>
-                  </div>
+              {pendingQCGRNs.map(g => {
+                const timestampDisplay = formatInwardTimestamp(g);
+                const timeAgoDisplay = getInwardTimeAgo(g);
+                const rawDate = g.inwardTimestamp || g.createdAt || g.created_at || g.receivedAt || g.receivedDate || g.date;
+                const dObj = parseDateFlexible(rawDate);
+                const isOverdue12h = dObj ? (Date.now() - dObj.getTime()) >= 12 * 3600000 : false;
 
-                  <div className="calc-summary-box" style={{ marginBottom: '16px' }}>
-                    <div className="calc-summary-row">
-                      <span>{g.category === 'Film Substrates' ? 'Material Substrate:' : 'Material Item / Category:'}</span>
-                      <span className="bold-val">
-                        {g.category === 'Film Substrates' || (g.micron && g.micron !== '-' && parseFloat(g.micron) > 0)
-                          ? `${g.filmType} (${g.micron}µ / ${g.widthMm}mm)`
-                          : (g.itemName || g.category || g.filmType || 'Chemicals & Solvents')}
-                      </span>
+                return (
+                  <div key={g.grnNo} className="glass-card" style={{ border: '1px solid rgba(245, 158, 11, 0.4)', position: 'relative' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <span className="badge badge-warning">AWAITING QC CLEARANCE</span>
+                          {isOverdue12h ? (
+                            <span className="badge badge-danger" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem' }}>
+                              <Clock size={11} /> Overdue (&gt;12h SLA)
+                            </span>
+                          ) : timeAgoDisplay ? (
+                            <span style={{ fontSize: '0.74rem', color: '#b45309', fontWeight: '600', background: '#fef3c7', padding: '2px 8px', borderRadius: '12px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                              <Clock size={11} /> {timeAgoDisplay}
+                            </span>
+                          ) : null}
+                        </div>
+                        <h4 style={{ fontSize: '1.25rem', fontWeight: '800', marginTop: '6px', color: '#0f172a' }}>{g.grnNo}</h4>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>PO: {g.poNumber || 'N/A'}</div>
+                        <div style={{ fontSize: '0.85rem', fontWeight: '700', color: '#0f172a' }}>{g.vendorName}</div>
+                      </div>
                     </div>
-                    <div className="calc-summary-row">
-                      <span>Inward Net Weight:</span>
-                      <span className="bold-val" style={{ color: '#60a5fa' }}>{g.netWeightKg} {g.unit || 'kg'} ({g.rollsReceived || 1} {g.packagingType || 'units'})</span>
-                    </div>
-                    <div className="calc-summary-row">
-                      <span>Manufacturer Batch #:</span>
-                      <code>{g.batchNo}</code>
-                    </div>
-                  </div>
 
-                  <button className="btn-primary" style={{ width: '100%' }} onClick={() => setQcInspectingGRN(g)}>
-                    Inspect Material & Approve / Reject
-                  </button>
-                </div>
-              ))}
+                    <div className="calc-summary-box" style={{ marginBottom: '16px' }}>
+                      <div className="calc-summary-row" style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '6px', marginBottom: '6px' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: '#475569', fontSize: '0.8rem' }}>
+                          <Clock size={13} style={{ color: '#64748b' }} /> Inward Received At:
+                        </span>
+                        <span className="bold-val" style={{ color: '#0f172a', fontSize: '0.83rem' }}>
+                          {timestampDisplay}
+                        </span>
+                      </div>
+                      <div className="calc-summary-row">
+                        <span>{g.category === 'Film Substrates' ? 'Material Substrate:' : 'Material Item / Category:'}</span>
+                        <span className="bold-val">
+                          {g.category === 'Film Substrates' || (g.micron && g.micron !== '-' && parseFloat(g.micron) > 0)
+                            ? `${g.filmType} (${g.micron}µ / ${g.widthMm}mm)`
+                            : (g.itemName || g.category || g.filmType || 'Chemicals & Solvents')}
+                        </span>
+                      </div>
+                      <div className="calc-summary-row">
+                        <span>Inward Net Weight:</span>
+                        <span className="bold-val" style={{ color: '#2563eb' }}>{g.netWeightKg} {g.unit || 'kg'} ({g.rollsReceived || 1} {g.packagingType || 'Roll'})</span>
+                      </div>
+                      <div className="calc-summary-row">
+                        <span>Manufacturer Batch #:</span>
+                        <code style={{ fontFamily: 'monospace' }}>{g.batchNo}</code>
+                      </div>
+                      {g.qcVarianceDetected && (
+                        <div style={{ marginTop: '6px', padding: '4px 8px', background: '#fef3c7', borderRadius: '4px', fontSize: '0.75rem', color: '#92400e', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <AlertTriangle size={12} /> Previously inspected with specification variance
+                        </div>
+                      )}
+                    </div>
+
+                    <button 
+                      className="btn-primary" 
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px 16px', fontWeight: '700' }} 
+                      onClick={() => setQcInspectingGRN(g)}
+                    >
+                      <FileCheck size={16} /> Inspect Material & Approve / Reject
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -6216,21 +6576,40 @@ export default function InventoryManagement({
         );
       })()}
 
-      {/* Modal: QC Inspection & Approval */}
+      {/* Modal: QC Inspection & Approval with Verified Inward Parameter Editor */}
       {qcInspectingGRN && (
         <div className="modal-overlay" onClick={() => setQcInspectingGRN(null)}>
-          <div className="glass-card modal-content modal-content-clean" style={{ width: '580px', maxWidth: '94vw' }} onClick={e => e.stopPropagation()}>
+          <div 
+            className="glass-card modal-content modal-content-clean" 
+            style={{ width: '840px', maxWidth: '96vw', maxHeight: '92vh' }} 
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Executive Dark Header */}
             <div className="modal-header-bar">
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{ background: 'rgba(16, 185, 129, 0.2)', padding: '10px', borderRadius: '10px', color: '#34d399', border: '1px solid rgba(52, 211, 153, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <FileCheck size={22} />
+                <div style={{ 
+                  background: 'rgba(16, 185, 129, 0.2)', 
+                  padding: '10px', 
+                  borderRadius: '10px', 
+                  color: '#34d399', 
+                  border: '1px solid rgba(52, 211, 153, 0.3)', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center' 
+                }}>
+                  <ShieldCheck size={24} />
                 </div>
                 <div>
-                  <h3 style={{ fontSize: '1.18rem', fontWeight: '800', margin: 0, color: '#ffffff' }}>
-                    QC Inspection Report: {qcInspectingGRN.grnNo}
-                  </h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <h3 style={{ fontSize: '1.2rem', fontWeight: '800', margin: 0, color: '#ffffff' }}>
+                      QC Approval Lab & Physical Verification
+                    </h3>
+                    <span className="badge badge-warning" style={{ fontSize: '0.72rem' }}>
+                      {qcInspectingGRN.grnNo}
+                    </span>
+                  </div>
                   <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0 0' }}>
-                    Inspect physical roll parameters (Micron gauge accuracy, Corona dyne, tensile strength, visual defects)
+                    Verify physical roll parameters (size, net weight, gauge, dyne). Correct any store inward discrepancies before inventory posting.
                   </p>
                 </div>
               </div>
@@ -6239,27 +6618,530 @@ export default function InventoryManagement({
               </button>
             </div>
 
-            <div style={{ padding: '20px 24px' }}>
+            {/* Scrollable Body */}
+            <div className="modal-body-scroll" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              
+              {/* SECTION 1: INWARD TIMESTAMP & RECEIPT METADATA STRIP */}
+              <div style={{ 
+                background: '#f8fafc', 
+                border: '1px solid #e2e8f0', 
+                borderRadius: '10px', 
+                padding: '12px 16px',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                gap: '12px',
+                fontSize: '0.82rem'
+              }}>
+                <div>
+                  <span style={{ color: '#64748b', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Clock size={12} style={{ color: '#4f46e5' }} /> Inward Received At
+                  </span>
+                  <div style={{ fontWeight: '800', color: '#0f172a', marginTop: '2px' }}>
+                    {formatInwardTimestamp(qcInspectingGRN)}
+                  </div>
+                  {getInwardTimeAgo(qcInspectingGRN) && (
+                    <span style={{ fontSize: '0.7rem', color: '#b45309', fontWeight: '600', background: '#fef3c7', padding: '1px 6px', borderRadius: '4px', display: 'inline-block', marginTop: '2px' }}>
+                      ⏱️ {getInwardTimeAgo(qcInspectingGRN)} in queue
+                    </span>
+                  )}
+                </div>
+
+                <div>
+                  <span style={{ color: '#64748b', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase' }}>
+                    Supplier / Vendor
+                  </span>
+                  <div style={{ fontWeight: '800', color: '#0f172a', marginTop: '2px' }}>
+                    {qcInspectingGRN.vendorName || 'Supplier'}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                    Inv: <strong>{qcInspectingGRN.invoiceNo || 'N/A'}</strong>
+                  </div>
+                </div>
+
+                <div>
+                  <span style={{ color: '#64748b', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase' }}>
+                    PO Reference
+                  </span>
+                  <div style={{ fontWeight: '800', color: '#4f46e5', marginTop: '2px', fontFamily: 'monospace' }}>
+                    {qcInspectingGRN.poNumber || 'Direct Inward'}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                    Category: <strong>{qcInspectingGRN.category || 'Raw Material'}</strong>
+                  </div>
+                </div>
+
+                <div>
+                  <span style={{ color: '#64748b', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase' }}>
+                    Store Inward Officer
+                  </span>
+                  <div style={{ fontWeight: '700', color: '#0f172a', marginTop: '2px' }}>
+                    {qcInspectingGRN.storeManager || 'Store Inward Desk'}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: '#059669', fontWeight: '600' }}>
+                    Dock Location: {qcInspectingGRN.location || 'Bay A'}
+                  </div>
+                </div>
+              </div>
+
+              {/* LIVE VARIANCE ALERT BANNER (If Any Edits Made) */}
+              {qcVariances.length > 0 && (
+                <div style={{
+                  background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+                  border: '1px solid #fde68a',
+                  borderLeft: '5px solid #f59e0b',
+                  borderRadius: '10px',
+                  padding: '14px 18px',
+                  boxShadow: '0 2px 6px -2px rgba(245, 158, 11, 0.15)'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <AlertTriangle size={18} style={{ color: '#d97706', flexShrink: 0 }} />
+                      <div>
+                        <strong style={{ color: '#92400e', fontSize: '0.9rem' }}>
+                          Physical Measurement Variance Detected ({qcVariances.length} parameter{qcVariances.length > 1 ? 's' : ''} modified)
+                        </strong>
+                        <p style={{ margin: '2px 0 0 0', fontSize: '0.76rem', color: '#78350f' }}>
+                          The verified lab values differ from original store inward entries. On approval, stock will reflect verified values and Admin & Store will be notified automatically.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQcEditNetWeightKg(qcInspectingGRN.netWeightKg !== undefined ? qcInspectingGRN.netWeightKg : '');
+                        setQcEditGrossWeightKg(qcInspectingGRN.grossWeightKg !== undefined ? qcInspectingGRN.grossWeightKg : '');
+                        setQcEditTareWeightKg(qcInspectingGRN.tareWeightKg !== undefined ? qcInspectingGRN.tareWeightKg : '');
+                        setQcEditWidthMm(qcInspectingGRN.widthMm !== '-' && qcInspectingGRN.widthMm !== undefined ? qcInspectingGRN.widthMm : '');
+                        setQcEditMicron(qcInspectingGRN.micron !== '-' && qcInspectingGRN.micron !== undefined ? qcInspectingGRN.micron : '');
+                        setQcEditBatchNo(qcInspectingGRN.batchNo || '');
+                        setQcEditFilmType(qcInspectingGRN.filmType || 'PET');
+                        setQcEditRollsReceived(qcInspectingGRN.rollsReceived || 1);
+                      }}
+                      style={{
+                        background: '#ffffff',
+                        border: '1px solid #d97706',
+                        color: '#b45309',
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        fontSize: '0.72rem',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      <RotateCcw size={12} /> Reset to Inward Values
+                    </button>
+                  </div>
+
+                  <div style={{ overflowX: 'auto', background: '#ffffff', borderRadius: '8px', border: '1px solid #fde68a' }}>
+                    <table style={{ width: '100%', fontSize: '0.78rem', borderCollapse: 'collapse', textAlign: 'left' }}>
+                      <thead>
+                        <tr style={{ background: '#fef3c7', borderBottom: '1px solid #fde68a', color: '#92400e' }}>
+                          <th style={{ padding: '6px 10px', fontWeight: '700' }}>Parameter</th>
+                          <th style={{ padding: '6px 10px', fontWeight: '700' }}>Store Inward (Original)</th>
+                          <th style={{ padding: '6px 10px', fontWeight: '700' }}>QC Verified (New)</th>
+                          <th style={{ padding: '6px 10px', fontWeight: '700' }}>Variance / Difference</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {qcVariances.map((v, i) => (
+                          <tr key={i} style={{ borderBottom: '1px solid #fef3c7' }}>
+                            <td style={{ padding: '6px 10px', fontWeight: '700', color: '#1e293b' }}>{v.label}</td>
+                            <td style={{ padding: '6px 10px', color: '#64748b', fontFamily: 'monospace' }}>{v.oldVal}</td>
+                            <td style={{ padding: '6px 10px', color: '#059669', fontWeight: '800', fontFamily: 'monospace' }}>{v.newVal}</td>
+                            <td style={{ padding: '6px 10px', color: '#b45309', fontWeight: '700' }}>{v.diff}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* SECTION 2: EDITABLE VERIFIED INWARD SPECIFICATIONS & WEIGHTS */}
+              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #f1f5f9', paddingBottom: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Scale size={18} style={{ color: '#059669' }} />
+                    <span style={{ fontSize: '0.92rem', fontWeight: '800', color: '#0f172a' }}>
+                      Verified Physical Inward Specifications (Editable)
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: '#64748b', background: '#f1f5f9', padding: '2px 8px', borderRadius: '4px' }}>
+                    ✏️ Edits will update GRN & Inventory on Approval
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '12px' }}>
+                  
+                  {/* Film Substrate / Material Type */}
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', marginBottom: '4px', display: 'block' }}>
+                      Material Substrate
+                    </label>
+                    <select
+                      className="form-control"
+                      value={qcEditFilmType}
+                      onChange={e => setQcEditFilmType(e.target.value)}
+                      style={{ fontSize: '0.85rem', fontWeight: '600' }}
+                    >
+                      <option value="BOPP">BOPP (Plain)</option>
+                      <option value="PET">PET (Polyester)</option>
+                      <option value="METPET">METPET (Metalized PET)</option>
+                      <option value="METBOPP">METBOPP (Metalized BOPP)</option>
+                      <option value="CPP">CPP (Cast Polypropylene)</option>
+                      <option value="METCPP">METCPP (Metalized CPP)</option>
+                      <option value="NYLON">NYLON / BOPA</option>
+                      <option value="LDPE">LDPE Natural / Milky</option>
+                      <option value="ALU FOIL">Aluminium Foil</option>
+                      <option value="PAPER">Kraft / Chromo Paper</option>
+                      <option value={qcInspectingGRN.filmType || 'Generic'}>{qcInspectingGRN.filmType || 'Other Category'}</option>
+                    </select>
+                  </div>
+
+                  {/* Width (mm) */}
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', marginBottom: '4px', display: 'block' }}>
+                      Roll Width (mm)
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      className="form-control"
+                      placeholder="e.g. 500"
+                      value={qcEditWidthMm}
+                      onChange={e => setQcEditWidthMm(e.target.value)}
+                      style={{ fontSize: '0.85rem', fontWeight: '700' }}
+                    />
+                  </div>
+
+                  {/* Thickness / Micron */}
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', marginBottom: '4px', display: 'block' }}>
+                      Thickness (Micron µ)
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      className="form-control"
+                      placeholder="e.g. 12"
+                      value={qcEditMicron}
+                      onChange={e => setQcEditMicron(e.target.value)}
+                      style={{ fontSize: '0.85rem', fontWeight: '700' }}
+                    />
+                  </div>
+
+                  {/* Rolls / Unit Count */}
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', marginBottom: '4px', display: 'block' }}>
+                      Rolls / Units Received
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      className="form-control"
+                      placeholder="1"
+                      value={qcEditRollsReceived}
+                      onChange={e => {
+                        const val = parseInt(e.target.value, 10) || 1;
+                        setQcEditRollsReceived(val);
+                      }}
+                      style={{ fontSize: '0.85rem', fontWeight: '700' }}
+                    />
+                  </div>
+
+                  {/* Net Weight (Kg) - Core Inventory Weight */}
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#047857', marginBottom: '4px', display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Verified Net Wt (Kg) *</span>
+                      <span style={{ fontSize: '0.7rem', color: '#059669', fontWeight: '600' }}>Active Stock</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      className="form-control"
+                      placeholder="e.g. 1250.5"
+                      value={qcEditNetWeightKg}
+                      onChange={e => setQcEditNetWeightKg(e.target.value)}
+                      style={{ 
+                        fontSize: '0.92rem', 
+                        fontWeight: '800', 
+                        color: '#065f46', 
+                        background: '#f0fdf4', 
+                        borderColor: '#86efac' 
+                      }}
+                    />
+                  </div>
+
+                  {/* Gross Weight (Kg) */}
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', marginBottom: '4px', display: 'block' }}>
+                      Gross Weight (Kg)
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      className="form-control"
+                      placeholder="e.g. 1270.0"
+                      value={qcEditGrossWeightKg}
+                      onChange={e => {
+                        const gross = parseFloat(e.target.value) || 0;
+                        const tare = parseFloat(qcEditTareWeightKg) || 0;
+                        setQcEditGrossWeightKg(e.target.value);
+                        if (gross > 0 && tare >= 0) {
+                          setQcEditNetWeightKg(Number(Math.max(0, gross - tare).toFixed(2)));
+                        }
+                      }}
+                      style={{ fontSize: '0.85rem', fontWeight: '600' }}
+                    />
+                  </div>
+
+                  {/* Tare Weight (Kg) */}
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', marginBottom: '4px', display: 'block' }}>
+                      Tare / Core Weight (Kg)
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      className="form-control"
+                      placeholder="e.g. 19.5"
+                      value={qcEditTareWeightKg}
+                      onChange={e => {
+                        const tare = parseFloat(e.target.value) || 0;
+                        const gross = parseFloat(qcEditGrossWeightKg) || 0;
+                        setQcEditTareWeightKg(e.target.value);
+                        if (gross > 0 && tare >= 0) {
+                          setQcEditNetWeightKg(Number(Math.max(0, gross - tare).toFixed(2)));
+                        }
+                      }}
+                      style={{ fontSize: '0.85rem', fontWeight: '600' }}
+                    />
+                  </div>
+
+                  {/* Manufacturer Batch # */}
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', marginBottom: '4px', display: 'block' }}>
+                      Manufacturer Batch #
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Batch / Lot ID"
+                      value={qcEditBatchNo}
+                      onChange={e => setQcEditBatchNo(e.target.value)}
+                      style={{ fontSize: '0.85rem', fontWeight: '700', fontFamily: 'monospace' }}
+                    />
+                  </div>
+
+                </div>
+              </div>
+
+              {/* SECTION 3: MULTI-ROLL BREAKDOWN (If more than 1 roll) */}
+              {(parseInt(qcEditRollsReceived, 10) > 1 || qcEditItemsBreakdown.length > 1) && (
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <span style={{ fontSize: '0.82rem', fontWeight: '800', color: '#1e293b' }}>
+                      Individual Roll Breakdown ({qcEditItemsBreakdown.length || qcEditRollsReceived} Rolls)
+                    </span>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                      Verify or edit individual roll net weights
+                    </span>
+                  </div>
+
+                  <div style={{ maxHeight: '160px', overflowY: 'auto' }}>
+                    <table style={{ width: '100%', fontSize: '0.75rem', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ background: '#e2e8f0', color: '#334155' }}>
+                          <th style={{ padding: '4px 8px' }}>Roll #</th>
+                          <th style={{ padding: '4px 8px' }}>Barcode ID</th>
+                          <th style={{ padding: '4px 8px' }}>Vendor Roll No</th>
+                          <th style={{ padding: '4px 8px' }}>Net Weight (Kg)</th>
+                          <th style={{ padding: '4px 8px' }}>Gross Weight (Kg)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {qcEditItemsBreakdown.map((item, idx) => (
+                          <tr key={item.id || idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                            <td style={{ padding: '4px 8px', fontWeight: '700' }}>Roll {item.unitNo || idx + 1}</td>
+                            <td style={{ padding: '4px 8px', fontFamily: 'monospace', color: '#4f46e5' }}>{item.barcodeId}</td>
+                            <td style={{ padding: '4px 8px' }}>
+                              <input 
+                                type="text"
+                                className="form-control"
+                                style={{ padding: '2px 6px', fontSize: '0.75rem' }}
+                                value={item.vendorRollNo || ''}
+                                onChange={e => {
+                                  const updated = [...qcEditItemsBreakdown];
+                                  updated[idx] = { ...updated[idx], vendorRollNo: e.target.value };
+                                  setQcEditItemsBreakdown(updated);
+                                }}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 8px' }}>
+                              <input 
+                                type="number"
+                                step="any"
+                                className="form-control"
+                                style={{ padding: '2px 6px', fontSize: '0.75rem', fontWeight: '700', width: '90px' }}
+                                value={item.netWeightKg || ''}
+                                onChange={e => {
+                                  const updated = [...qcEditItemsBreakdown];
+                                  updated[idx] = { ...updated[idx], netWeightKg: parseFloat(e.target.value) || 0 };
+                                  setQcEditItemsBreakdown(updated);
+                                  const totalNet = updated.reduce((s, it) => s + (parseFloat(it.netWeightKg) || 0), 0);
+                                  setQcEditNetWeightKg(Number(totalNet.toFixed(2)));
+                                }}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 8px' }}>
+                              <input 
+                                type="number"
+                                step="any"
+                                className="form-control"
+                                style={{ padding: '2px 6px', fontSize: '0.75rem', width: '90px' }}
+                                value={item.grossWeightKg || ''}
+                                onChange={e => {
+                                  const updated = [...qcEditItemsBreakdown];
+                                  updated[idx] = { ...updated[idx], grossWeightKg: parseFloat(e.target.value) || 0 };
+                                  setQcEditItemsBreakdown(updated);
+                                }}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* SECTION 4: LABORATORY QUALITY TESTING PARAMETERS */}
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+                <span style={{ fontSize: '0.88rem', fontWeight: '800', color: '#0f172a', marginBottom: '10px', display: 'block' }}>
+                  Laboratory Quality Parameters & Surface Treatment
+                </span>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '12px' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', marginBottom: '4px', display: 'block' }}>
+                      Corona Dyne Level (dynes/cm)
+                    </label>
+                    <select
+                      className="form-control"
+                      value={qcEditDyneLevel}
+                      onChange={e => setQcEditDyneLevel(e.target.value)}
+                      style={{ fontSize: '0.82rem' }}
+                    >
+                      <option value="38-42">38 - 42 Dynes (Standard Printing Grade)</option>
+                      <option value="42-44">42 - 44 Dynes (High-Ink Wetting)</option>
+                      <option value=">44">&gt; 44 Dynes (Special Surface Treated)</option>
+                      <option value="<38">&lt; 38 Dynes (Low / Non-Treated)</option>
+                      <option value="N/A">N/A (Non-film / Solvents / Inks)</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', marginBottom: '4px', display: 'block' }}>
+                      Micron Gauge Tolerance
+                    </label>
+                    <select
+                      className="form-control"
+                      value={qcEditGaugeVariance}
+                      onChange={e => setQcEditGaugeVariance(e.target.value)}
+                      style={{ fontSize: '0.82rem' }}
+                    >
+                      <option value="±0.5">±0.5 µ (Excellent Gauge Uniformity)</option>
+                      <option value="±1.0">±1.0 µ (Standard Commercial Tolerance)</option>
+                      <option value="±1.5">±1.5 µ (Marginal Variation)</option>
+                      <option value=">±2.0">&gt; ±2.0 µ (High Variation / Non-Uniform)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Visual Defects Checklist */}
+                <div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase', marginBottom: '6px', display: 'block' }}>
+                    Physical Quality & Core Inspection Checklist
+                  </span>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px' }}>
+                    {[
+                      { key: 'noPinholes', label: 'No Pinholes / Eyelets' },
+                      { key: 'noScratches', label: 'No Scratches / Lines' },
+                      { key: 'coreIntact', label: '76mm Core Intact' },
+                      { key: 'uniformWinding', label: 'Uniform Winding & Edge' },
+                      { key: 'noOdor', label: 'Odorless / Pure Substrate' }
+                    ].map(chk => (
+                      <label key={chk.key} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: '#334155', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={qcVisualChecks[chk.key]}
+                          onChange={e => setQcVisualChecks({ ...qcVisualChecks, [chk.key]: e.target.checked })}
+                          style={{ accentColor: '#059669', width: '15px', height: '15px' }}
+                        />
+                        <span>{chk.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 5: QC NOTES & TEST OBSERVATIONS */}
               <div className="form-group" style={{ margin: 0 }}>
-                <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155', marginBottom: '8px', display: 'block' }}>QC Lab Inspector Notes & Test Results</label>
+                <label style={{ fontWeight: '700', fontSize: '0.82rem', color: '#334155', marginBottom: '6px', display: 'block' }}>
+                  QC Chemist Lab Observations & Test Notes
+                </label>
                 <textarea 
                   className="form-control"
-                  style={{ minHeight: '110px' }}
-                  placeholder="Enter gauge tolerance test, dyne level, or visual observations..."
+                  style={{ minHeight: '80px', fontSize: '0.83rem' }}
+                  placeholder="Enter tensile observations, gauge micrometer reading across width, dyne pen test result, or notes on spec modifications..."
                   value={qcNotesInput}
                   onChange={e => setQcNotesInput(e.target.value)}
                 />
               </div>
+
             </div>
 
+            {/* Sticky Executive Footer */}
             <div className="modal-footer-bar">
-              <button className="btn-secondary" style={{ border: '1px solid #fca5a5', color: '#dc2626', background: '#fef2f2', fontWeight: '600' }} onClick={() => handleQCAction('Rejected')}>
-                <XCircle size={16} /> Reject Material
+              <button 
+                type="button"
+                className="btn-secondary" 
+                style={{ border: '1px solid #fca5a5', color: '#dc2626', background: '#fef2f2', fontWeight: '700', display: 'inline-flex', alignItems: 'center', gap: '6px' }} 
+                onClick={() => handleQCAction('Rejected')}
+              >
+                <XCircle size={16} /> Reject Material (Transfer to QC Hold)
               </button>
-              <button className="btn-primary" style={{ background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', fontWeight: '700', padding: '10px 20px' }} onClick={() => handleQCAction('Approved')}>
-                <CheckCircle2 size={16} /> Approve & Add Stock to Inventory
-              </button>
+              
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <button 
+                  type="button" 
+                  className="btn-secondary" 
+                  onClick={() => setQcInspectingGRN(null)}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="button"
+                  className="btn-primary" 
+                  style={{ 
+                    background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', 
+                    fontWeight: '800', 
+                    padding: '10px 22px', 
+                    display: 'inline-flex', 
+                    alignItems: 'center', 
+                    gap: '8px',
+                    boxShadow: '0 4px 12px rgba(5, 150, 105, 0.25)'
+                  }} 
+                  onClick={() => handleQCAction('Approved')}
+                >
+                  <CheckCircle2 size={18} /> Approve & Add Verified Stock to Inventory
+                </button>
+              </div>
             </div>
+
           </div>
         </div>
       )}

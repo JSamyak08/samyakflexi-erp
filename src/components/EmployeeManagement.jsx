@@ -57,6 +57,7 @@ import {
   saveSalaryPaymentToSupabase 
 } from '../services/supabaseDataService';
 import { pushSlugState } from '../utils/slugRouter';
+import { roundToTwo, formatUpToTwoDecimals } from '../utils/numberHelpers';
 
 export function calculateOvertimeTimeWindow(att) {
   if (!att) return { otStartTime: '', otEndTime: '', displayStr: '' };
@@ -371,14 +372,14 @@ export default function EmployeeManagement({
     });
 
     return {
-      totalHours,
-      approvedHours,
-      pendingHours,
-      rejectedHours,
-      totalAmount,
-      approvedAmount,
-      pendingAmount,
-      rejectedAmount,
+      totalHours: roundToTwo(totalHours),
+      approvedHours: roundToTwo(approvedHours),
+      pendingHours: roundToTwo(pendingHours),
+      rejectedHours: roundToTwo(rejectedHours),
+      totalAmount: Math.round(totalAmount),
+      approvedAmount: Math.round(approvedAmount),
+      pendingAmount: Math.round(pendingAmount),
+      rejectedAmount: Math.round(rejectedAmount),
       uniqueEmployeesCount: uniqueEmpIds.size,
       recordsCount: filteredOtRecords.length,
       pendingCount: pendingRecords.length
@@ -433,7 +434,18 @@ export default function EmployeeManagement({
     });
 
     return Object.values(map)
-      .map(g => ({ ...g, employeeCount: g.uniqueEmpIds.size }))
+      .map(g => ({
+        ...g,
+        employeeCount: g.uniqueEmpIds.size,
+        totalHours: roundToTwo(g.totalHours),
+        approvedHours: roundToTwo(g.approvedHours),
+        pendingHours: roundToTwo(g.pendingHours),
+        rejectedHours: roundToTwo(g.rejectedHours),
+        totalAmount: Math.round(g.totalAmount),
+        approvedAmount: Math.round(g.approvedAmount),
+        pendingAmount: Math.round(g.pendingAmount),
+        rejectedAmount: Math.round(g.rejectedAmount)
+      }))
       .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   }, [filteredOtRecords, employees]);
 
@@ -489,7 +501,15 @@ export default function EmployeeManagement({
       .map(g => ({
         ...g,
         employeeCount: g.uniqueEmpIds.size,
-        daysCount: g.datesWorked.size
+        daysCount: g.datesWorked.size,
+        totalHours: roundToTwo(g.totalHours),
+        approvedHours: roundToTwo(g.approvedHours),
+        pendingHours: roundToTwo(g.pendingHours),
+        rejectedHours: roundToTwo(g.rejectedHours),
+        totalAmount: Math.round(g.totalAmount),
+        approvedAmount: Math.round(g.approvedAmount),
+        pendingAmount: Math.round(g.pendingAmount),
+        rejectedAmount: Math.round(g.rejectedAmount)
       }))
       .sort((a, b) => (b.sortKey || '').localeCompare(a.sortKey || ''));
   }, [filteredOtRecords, employees]);
@@ -543,7 +563,15 @@ export default function EmployeeManagement({
       .map(g => ({
         ...g,
         employeeCount: g.uniqueEmpIds.size,
-        daysCount: g.datesWorked.size
+        daysCount: g.datesWorked.size,
+        totalHours: roundToTwo(g.totalHours),
+        approvedHours: roundToTwo(g.approvedHours),
+        pendingHours: roundToTwo(g.pendingHours),
+        rejectedHours: roundToTwo(g.rejectedHours),
+        totalAmount: Math.round(g.totalAmount),
+        approvedAmount: Math.round(g.approvedAmount),
+        pendingAmount: Math.round(g.pendingAmount),
+        rejectedAmount: Math.round(g.rejectedAmount)
       }))
       .sort((a, b) => (b.sortKey || '').localeCompare(a.sortKey || ''));
   }, [filteredOtRecords, employees]);
@@ -640,6 +668,28 @@ export default function EmployeeManagement({
   const [paymentMode, setPaymentMode] = useState('Bank Transfer (NEFT)');
   const [paymentTxnRef, setPaymentTxnRef] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
+
+  // Advance Recovery in Salary Disbursal State
+  const [paymentConfirmAdvanceRecovery, setPaymentConfirmAdvanceRecovery] = useState(true);
+  const [paymentAdvanceRecoveryAmount, setPaymentAdvanceRecoveryAmount] = useState('');
+  const [paymentActiveAdvance, setPaymentActiveAdvance] = useState(null);
+
+  // Standalone Advance Recovery Modal (Advances Tab)
+  const [showAdvanceRecoveryModal, setShowAdvanceRecoveryModal] = useState(false);
+  const [recoveryTargetAdvance, setRecoveryTargetAdvance] = useState(null);
+  const [recoveryAmountInput, setRecoveryAmountInput] = useState('');
+  const [recoveryModeInput, setRecoveryModeInput] = useState('SALARY_DEDUCTION');
+  const [recoveryDateInput, setRecoveryDateInput] = useState(() => new Date().toISOString().split('T')[0]);
+  const [recoveryTimeInput, setRecoveryTimeInput] = useState(() => new Date().toTimeString().slice(0, 8));
+  const [recoveryNotesInput, setRecoveryNotesInput] = useState('');
+  const [recoveryMonthInput, setRecoveryMonthInput] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+
+  // Advance Recovery History Modal
+  const [showAdvanceHistoryModal, setShowAdvanceHistoryModal] = useState(false);
+  const [historyTargetAdvance, setHistoryTargetAdvance] = useState(null);
 
   // Open Onboard Modal
   const handleOpenOnboardModal = () => {
@@ -1221,7 +1271,7 @@ export default function EmployeeManagement({
     alert(`Salary Advance of ₹${(adv.advanceAmount || 0).toLocaleString()} for ${adv.employeeName} approved & disbursed! Monthly EMI: ₹${adv.monthlyEmiAmount}`);
   };
 
-  // Open Payment Disbursal Modal
+  // Open Payment Disbursal Modal with Advance Recovery Option
   const handleOpenPaymentModal = (row, emp) => {
     setPaymentRowData(row);
     setPaymentEmpData(emp);
@@ -1231,13 +1281,58 @@ export default function EmployeeManagement({
     setPaymentMode(emp?.bankDetails?.paymentMode || 'Bank Transfer (NEFT)');
     setPaymentTxnRef(`UTR-${Date.now().toString().slice(-6)}`);
     setPaymentNotes(`${payrollMonth} monthly salary disbursed`);
+
+    // Look for active approved advance for this employee
+    const activeAdv = salaryAdvances.find(a => 
+      String(a.employeeId) === String(row.employeeId) && 
+      (a.status === 'Approved & Disbursed') && 
+      Number(a.remainingBalance ?? (a.advanceAmount - (a.totalRecoveredAmount || 0))) > 0
+    );
+
+    if (activeAdv) {
+      setPaymentActiveAdvance(activeAdv);
+      const remBal = Number(activeAdv.remainingBalance ?? (activeAdv.advanceAmount - (activeAdv.totalRecoveredAmount || 0)));
+      const scheduledEmi = Number(activeAdv.monthlyEmiAmount) || 0;
+      const initialDeduction = Math.min(scheduledEmi > 0 ? scheduledEmi : remBal, remBal);
+      setPaymentConfirmAdvanceRecovery(true);
+      setPaymentAdvanceRecoveryAmount(initialDeduction > 0 ? String(initialDeduction) : '');
+    } else {
+      setPaymentActiveAdvance(null);
+      setPaymentConfirmAdvanceRecovery(false);
+      setPaymentAdvanceRecoveryAmount('');
+    }
+
     setShowPaymentModal(true);
   };
 
-  // Save Salary Payment Record
+  // Save Salary Payment Record with Confirmed Advance Recovery
   const handleSaveSalaryPaymentSubmit = (e) => {
     e.preventDefault();
     if (!paymentRowData || !paymentEmpData) return;
+
+    const baseDeductions = (Number(paymentRowData.pfDeduction) || 0) + 
+                           (Number(paymentRowData.esicDeduction) || 0) + 
+                           (Number(paymentRowData.ptDeduction) || 0);
+    const grossEarned = Number(paymentRowData.totalGrossEarned) || 0;
+
+    let actualAdvanceDeduction = 0;
+    const targetAdvance = paymentActiveAdvance;
+
+    if (paymentConfirmAdvanceRecovery && targetAdvance) {
+      const remBal = Number(targetAdvance.remainingBalance ?? (targetAdvance.advanceAmount - (targetAdvance.totalRecoveredAmount || 0)));
+      const enteredAmt = parseFloat(paymentAdvanceRecoveryAmount) || 0;
+      if (enteredAmt < 0) {
+        alert("Advance recovery deduction amount cannot be negative.");
+        return;
+      }
+      if (enteredAmt > remBal) {
+        alert(`Advance recovery amount (₹${enteredAmt.toLocaleString()}) cannot exceed remaining balance (₹${remBal.toLocaleString()}).`);
+        return;
+      }
+      actualAdvanceDeduction = Math.min(enteredAmt, remBal);
+    }
+
+    const calculatedNetPayable = Math.max(0, grossEarned - baseDeductions - actualAdvanceDeduction);
 
     const paymentRecord = {
       id: `PAY-${payrollMonth.replace(/-/g, '')}-${paymentRowData.employeeId}`,
@@ -1246,7 +1341,10 @@ export default function EmployeeManagement({
       employeeName: paymentRowData.fullName,
       empCode: paymentRowData.empCode,
       department: paymentRowData.department,
-      netAmountPaid: Number(paymentRowData.netPayable) || 0,
+      netAmountPaid: calculatedNetPayable,
+      advanceDeductionAmount: actualAdvanceDeduction,
+      advanceRecoveryConfirmed: actualAdvanceDeduction > 0,
+      advanceId: targetAdvance?.id || null,
       paymentDate: paymentDate,
       paymentTime: paymentTime,
       paymentTimestamp: `${paymentDate}T${paymentTime}`,
@@ -1256,47 +1354,123 @@ export default function EmployeeManagement({
       accountNumber: paymentEmpData?.bankDetails?.accountNumber || '',
       status: 'Paid',
       disbursedBy: currentUser?.name || 'Samyak Jain (Admin)',
-      notes: paymentNotes.trim(),
+      notes: paymentNotes.trim() + (actualAdvanceDeduction > 0 ? ` (₹${actualAdvanceDeduction.toLocaleString()} advance recovered)` : (targetAdvance ? ' (Advance recovery skipped this month)' : '')),
       createdAt: new Date().toISOString()
     };
 
     if (onSaveSalaryPayment) onSaveSalaryPayment(paymentRecord);
     saveSalaryPaymentToSupabase(paymentRecord);
 
-    // Auto-update active salary advance recovery if EMI was deducted
-    if (Number(paymentRowData.totalAdvanceDeduction) > 0) {
-      const activeAdv = salaryAdvances.find(a => 
-        a.employeeId === paymentRowData.employeeId && 
-        (a.status === 'Approved & Disbursed' || a.status === 'Pending Approval') && 
-        Number(a.remainingBalance) > 0
-      );
-      if (activeAdv) {
-        const emiAmt = Number(paymentRowData.totalAdvanceDeduction);
-        const newRecovered = (activeAdv.totalRecoveredAmount || 0) + emiAmt;
-        const newBal = Math.max(0, (activeAdv.remainingBalance || activeAdv.advanceAmount) - emiAmt);
-        const updatedAdv = {
-          ...activeAdv,
-          totalRecoveredAmount: newRecovered,
-          remainingBalance: newBal,
-          status: newBal === 0 ? 'Fully Recovered' : activeAdv.status,
-          deductionHistory: [
-            ...(activeAdv.deductionHistory || []),
-            {
-              monthKey: payrollMonth,
-              amount: emiAmt,
-              recoveredDate: paymentDate,
-              recoveredTime: paymentTime,
-              paymentId: paymentRecord.id
-            }
-          ]
-        };
-        if (onUpdateSalaryAdvance) onUpdateSalaryAdvance(updatedAdv);
-        saveSalaryAdvanceToSupabase(updatedAdv);
-      }
+    // Update active salary advance recovery if deduction was confirmed
+    if (actualAdvanceDeduction > 0 && targetAdvance) {
+      const prevRecovered = Number(targetAdvance.totalRecoveredAmount) || 0;
+      const prevBal = Number(targetAdvance.remainingBalance ?? (targetAdvance.advanceAmount - prevRecovered));
+      const newRecovered = prevRecovered + actualAdvanceDeduction;
+      const newBal = Math.max(0, prevBal - actualAdvanceDeduction);
+      const isFullyRecovered = newBal === 0;
+
+      const deductionEntry = {
+        id: `REC-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
+        monthKey: payrollMonth,
+        type: 'SALARY_DEDUCTION',
+        amount: actualAdvanceDeduction,
+        recoveredDate: paymentDate,
+        recoveredTime: paymentTime,
+        paymentId: paymentRecord.id,
+        paymentRef: paymentTxnRef.trim(),
+        paymentMode: paymentMode,
+        remainingBalanceAfter: newBal,
+        confirmedBy: currentUser?.name || 'Admin',
+        notes: `Confirmed & recovered via ${payrollMonth} monthly salary disbursal`
+      };
+
+      const updatedAdv = {
+        ...targetAdvance,
+        totalRecoveredAmount: newRecovered,
+        remainingBalance: newBal,
+        status: isFullyRecovered ? 'Fully Recovered' : targetAdvance.status,
+        deductionHistory: [
+          ...(targetAdvance.deductionHistory || []),
+          deductionEntry
+        ]
+      };
+
+      if (onUpdateSalaryAdvance) onUpdateSalaryAdvance(updatedAdv);
+      saveSalaryAdvanceToSupabase(updatedAdv);
     }
 
     setShowPaymentModal(false);
-    alert(`✅ Salary Payment Recorded Successfully!\n• Employee: ${paymentRowData.fullName} (${paymentRowData.empCode})\n• Net Paid: ₹${(paymentRecord.netAmountPaid || 0).toLocaleString()}\n• Date & Time: ${paymentDate} at ${paymentTime}\n• Mode: ${paymentMode}\n• Ref: ${paymentTxnRef || 'N/A'}`);
+    alert(`✅ Salary Payment Recorded Successfully!\n• Employee: ${paymentRowData.fullName} (${paymentRowData.empCode})\n• Net Disbursed: ₹${calculatedNetPayable.toLocaleString()}\n• Advance Recovered in Salary: ₹${actualAdvanceDeduction.toLocaleString()}${actualAdvanceDeduction > 0 ? ' (Confirmed ✓)' : ' (Skipped)'}\n• Date: ${paymentDate} at ${paymentTime}\n• Mode: ${paymentMode}\n• Ref: ${paymentTxnRef || 'N/A'}`);
+  };
+
+  // Open Direct / Standalone Advance Recovery Modal (Advances Tab)
+  const handleOpenAdvanceRecoveryModal = (adv) => {
+    setRecoveryTargetAdvance(adv);
+    const remBal = Number(adv.remainingBalance ?? (adv.advanceAmount - (adv.totalRecoveredAmount || 0)));
+    const emi = Number(adv.monthlyEmiAmount) || 0;
+    setRecoveryAmountInput(String(Math.min(emi > 0 ? emi : remBal, remBal)));
+    setRecoveryModeInput('SALARY_DEDUCTION');
+    const now = new Date();
+    setRecoveryDateInput(now.toISOString().split('T')[0]);
+    setRecoveryTimeInput(now.toTimeString().slice(0, 8));
+    setRecoveryMonthInput(payrollMonth || now.toISOString().slice(0, 7));
+    setRecoveryNotesInput(`Advance recovery confirmed for ${adv.employeeName}`);
+    setShowAdvanceRecoveryModal(true);
+  };
+
+  // Submit Direct / Standalone Advance Recovery
+  const handleDirectAdvanceRecoverySubmit = (e) => {
+    e.preventDefault();
+    if (!recoveryTargetAdvance) return;
+
+    const remBal = Number(recoveryTargetAdvance.remainingBalance ?? (recoveryTargetAdvance.advanceAmount - (recoveryTargetAdvance.totalRecoveredAmount || 0)));
+    const amt = parseFloat(recoveryAmountInput) || 0;
+
+    if (amt <= 0) {
+      alert("Please enter a valid recovery amount greater than 0.");
+      return;
+    }
+    if (amt > remBal) {
+      alert(`Recovery amount (₹${amt.toLocaleString()}) cannot exceed remaining balance (₹${remBal.toLocaleString()}).`);
+      return;
+    }
+
+    const prevRecovered = Number(recoveryTargetAdvance.totalRecoveredAmount) || 0;
+    const newRecovered = prevRecovered + amt;
+    const newBal = Math.max(0, remBal - amt);
+    const isFullyRecovered = newBal === 0;
+
+    const recoveryEntry = {
+      id: `REC-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
+      monthKey: recoveryModeInput === 'SALARY_DEDUCTION' ? recoveryMonthInput : '',
+      type: recoveryModeInput,
+      amount: amt,
+      recoveredDate: recoveryDateInput,
+      recoveredTime: recoveryTimeInput,
+      paymentId: '',
+      paymentRef: '',
+      paymentMode: recoveryModeInput === 'SALARY_DEDUCTION' ? 'Salary Deduction Adjustment' : 'Direct Repayment',
+      remainingBalanceAfter: newBal,
+      confirmedBy: currentUser?.name || 'Admin',
+      notes: recoveryNotesInput.trim() || `Confirmed recovery of ₹${amt.toLocaleString()}`
+    };
+
+    const updatedAdv = {
+      ...recoveryTargetAdvance,
+      totalRecoveredAmount: newRecovered,
+      remainingBalance: newBal,
+      status: isFullyRecovered ? 'Fully Recovered' : recoveryTargetAdvance.status,
+      deductionHistory: [
+        ...(recoveryTargetAdvance.deductionHistory || []),
+        recoveryEntry
+      ]
+    };
+
+    if (onUpdateSalaryAdvance) onUpdateSalaryAdvance(updatedAdv);
+    saveSalaryAdvanceToSupabase(updatedAdv);
+
+    setShowAdvanceRecoveryModal(false);
+    alert(`✅ Advance Recovery Confirmed!\n• Employee: ${recoveryTargetAdvance.employeeName}\n• Recovered Amount: ₹${amt.toLocaleString()}\n• Remaining Balance: ₹${newBal.toLocaleString()}\n• Status: ${isFullyRecovered ? 'Fully Recovered 🎉' : 'Active (In Progress)'}`);
   };
 
   // Filtered Employee List
@@ -2258,7 +2432,7 @@ export default function EmployeeManagement({
                       Total Hours Worked
                     </div>
                     <div style={{ fontSize: '1.45rem', fontWeight: '900', color: '#0f172a', marginTop: '4px' }}>
-                      {otGrandTotals.totalHours} hrs
+                      {formatUpToTwoDecimals(otGrandTotals.totalHours)} hrs
                     </div>
                   </div>
                   <div style={{ background: '#eff6ff', padding: '8px', borderRadius: '8px', color: '#2563eb' }}>
@@ -2266,9 +2440,9 @@ export default function EmployeeManagement({
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '10px', marginTop: '8px', fontSize: '0.72rem', color: '#64748b' }}>
-                  <span>Approved: <strong style={{ color: '#059669' }}>{otGrandTotals.approvedHours}h</strong></span>
+                  <span>Approved: <strong style={{ color: '#059669' }}>{formatUpToTwoDecimals(otGrandTotals.approvedHours)}h</strong></span>
                   <span>•</span>
-                  <span>Pending: <strong style={{ color: '#d97706' }}>{otGrandTotals.pendingHours}h</strong></span>
+                  <span>Pending: <strong style={{ color: '#d97706' }}>{formatUpToTwoDecimals(otGrandTotals.pendingHours)}h</strong></span>
                 </div>
               </div>
 
@@ -2477,7 +2651,7 @@ export default function EmployeeManagement({
                             </td>
                             <td style={{ whiteSpace: 'nowrap' }}>
                               <div style={{ fontWeight: '900', color: '#059669', fontSize: '0.9rem' }}>
-                                +{att.overtimeHours} Hrs
+                                +{formatUpToTwoDecimals(att.overtimeHours)} Hrs
                               </div>
                               {otWin.displayStr ? (
                                 <div style={{ fontSize: '0.74rem', color: '#15803d', fontWeight: '800', marginTop: '2px' }}>
@@ -2628,10 +2802,10 @@ export default function EmployeeManagement({
                               </td>
                               <td>
                                 <div style={{ fontWeight: '900', color: '#2563eb', fontSize: '0.95rem' }}>
-                                  {dayGroup.totalHours} hrs
+                                  {formatUpToTwoDecimals(dayGroup.totalHours)} hrs
                                 </div>
                                 <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
-                                  Appr: <span style={{ color: '#059669', fontWeight: '700' }}>{dayGroup.approvedHours}h</span> • Pend: <span style={{ color: '#d97706', fontWeight: '700' }}>{dayGroup.pendingHours}h</span>
+                                  Appr: <span style={{ color: '#059669', fontWeight: '700' }}>{formatUpToTwoDecimals(dayGroup.approvedHours)}h</span> • Pend: <span style={{ color: '#d97706', fontWeight: '700' }}>{formatUpToTwoDecimals(dayGroup.pendingHours)}h</span>
                                 </div>
                               </td>
                               <td>
@@ -2750,10 +2924,10 @@ export default function EmployeeManagement({
                               </td>
                               <td>
                                 <div style={{ fontWeight: '900', color: '#2563eb', fontSize: '0.95rem' }}>
-                                  {weekGroup.totalHours} hrs
+                                  {formatUpToTwoDecimals(weekGroup.totalHours)} hrs
                                 </div>
                                 <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
-                                  Appr: <span style={{ color: '#059669', fontWeight: '700' }}>{weekGroup.approvedHours}h</span> • Pend: <span style={{ color: '#d97706', fontWeight: '700' }}>{weekGroup.pendingHours}h</span>
+                                  Appr: <span style={{ color: '#059669', fontWeight: '700' }}>{formatUpToTwoDecimals(weekGroup.approvedHours)}h</span> • Pend: <span style={{ color: '#d97706', fontWeight: '700' }}>{formatUpToTwoDecimals(weekGroup.pendingHours)}h</span>
                                 </div>
                               </td>
                               <td>
@@ -2851,10 +3025,10 @@ export default function EmployeeManagement({
                               </td>
                               <td>
                                 <div style={{ fontWeight: '900', color: '#2563eb', fontSize: '0.95rem' }}>
-                                  {monthGroup.totalHours} hrs
+                                  {formatUpToTwoDecimals(monthGroup.totalHours)} hrs
                                 </div>
                                 <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
-                                  Appr: <span style={{ color: '#059669', fontWeight: '700' }}>{monthGroup.approvedHours}h</span> • Pend: <span style={{ color: '#d97706', fontWeight: '700' }}>{monthGroup.pendingHours}h</span>
+                                  Appr: <span style={{ color: '#059669', fontWeight: '700' }}>{formatUpToTwoDecimals(monthGroup.approvedHours)}h</span> • Pend: <span style={{ color: '#d97706', fontWeight: '700' }}>{formatUpToTwoDecimals(monthGroup.pendingHours)}h</span>
                                 </div>
                               </td>
                               <td>
@@ -3090,9 +3264,14 @@ export default function EmployeeManagement({
                         </div>
                       </td>
                       <td>
-                        <div style={{ fontSize: '0.8rem', fontWeight: '700' }}>
-                          <span style={{ color: '#059669' }}>₹{(adv.totalRecoveredAmount || 0).toLocaleString()}</span> / <span style={{ color: '#d97706' }}>₹{(adv.remainingBalance || 0).toLocaleString()} Bal</span>
-                        </div>
+                        {(() => {
+                          const remBal = Number(adv.remainingBalance ?? (adv.advanceAmount - (adv.totalRecoveredAmount || 0)));
+                          return (
+                            <div style={{ fontSize: '0.8rem', fontWeight: '700' }}>
+                              <span style={{ color: '#059669' }}>₹{(adv.totalRecoveredAmount || 0).toLocaleString()}</span> / <span style={{ color: remBal > 0 ? '#d97706' : '#64748b' }}>₹{remBal.toLocaleString()} Bal</span>
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td>
                         <span style={{ 
@@ -3104,7 +3283,7 @@ export default function EmployeeManagement({
                         </span>
                       </td>
                       <td style={{ textAlign: 'center' }}>
-                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
                           {isAdmin && (
                             <button 
                               type="button" 
@@ -3126,9 +3305,31 @@ export default function EmployeeManagement({
                               <Check size={13} /> Approve & Disburse
                             </button>
                           ) : (
-                            <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                              Auto-deducts in payroll
-                            </span>
+                            <>
+                              {Number(adv.remainingBalance ?? (adv.advanceAmount - (adv.totalRecoveredAmount || 0))) > 0 && (
+                                <button
+                                  type="button"
+                                  className="btn-primary"
+                                  style={{ padding: '3px 8px', fontSize: '0.73rem', background: '#16a34a', borderColor: '#16a34a', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: '700' }}
+                                  onClick={() => handleOpenAdvanceRecoveryModal(adv)}
+                                  title="Confirm recovery of advance in salary or direct payment"
+                                >
+                                  <Coins size={13} /> Confirm Recovery
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className="btn-secondary"
+                                style={{ padding: '3px 8px', fontSize: '0.73rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                onClick={() => {
+                                  setHistoryTargetAdvance(adv);
+                                  setShowAdvanceHistoryModal(true);
+                                }}
+                                title="View advance deduction and recovery audit history"
+                              >
+                                <RotateCcw size={13} /> History {adv.deductionHistory?.length ? `(${adv.deductionHistory.length})` : ''}
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>
@@ -3313,13 +3514,39 @@ export default function EmployeeManagement({
                         </div>
                       </td>
                       <td>
-                        <div style={{ fontWeight: '800', color: row.totalAdvanceDeduction > 0 ? '#dc2626' : '#94a3b8' }}>
-                          ₹ {(row.totalAdvanceDeduction || 0).toLocaleString()}
-                        </div>
+                        {matchingPayment ? (
+                          <div>
+                            <div style={{ fontWeight: '800', color: (matchingPayment.advanceDeductionAmount || 0) > 0 ? '#16a34a' : '#64748b' }}>
+                              ₹ {Number(matchingPayment.advanceDeductionAmount || 0).toLocaleString()}
+                            </div>
+                            {(matchingPayment.advanceDeductionAmount || 0) > 0 ? (
+                              <span style={{ background: '#dcfce7', color: '#166534', padding: '1px 6px', borderRadius: '3px', fontSize: '0.68rem', fontWeight: '800', display: 'inline-block', marginTop: '2px' }}>
+                                ✓ Recovered in Salary
+                              </span>
+                            ) : row.totalAdvanceDeduction > 0 ? (
+                              <span style={{ background: '#fef3c7', color: '#92400e', padding: '1px 6px', borderRadius: '3px', fontSize: '0.68rem', fontWeight: '700', display: 'inline-block', marginTop: '2px' }}>
+                                Skipped
+                              </span>
+                            ) : (
+                              <span style={{ color: '#94a3b8', fontSize: '0.68rem' }}>None</span>
+                            )}
+                          </div>
+                        ) : (
+                          <div>
+                            <div style={{ fontWeight: '800', color: row.totalAdvanceDeduction > 0 ? '#dc2626' : '#94a3b8' }}>
+                              ₹ {(row.totalAdvanceDeduction || 0).toLocaleString()}
+                            </div>
+                            {row.totalAdvanceDeduction > 0 && (
+                              <span style={{ background: '#eff6ff', color: '#1d4ed8', padding: '1px 6px', borderRadius: '3px', fontSize: '0.68rem', fontWeight: '700', display: 'inline-block', marginTop: '2px' }}>
+                                Scheduled EMI
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </td>
                       <td>
                         <div style={{ fontSize: '0.95rem', fontWeight: '900', color: '#0284c7' }}>
-                          ₹ {(row.netPayable || 0).toLocaleString()}
+                          ₹ {(matchingPayment ? (matchingPayment.netAmountPaid !== undefined ? matchingPayment.netAmountPaid : row.netPayable) : (row.netPayable || 0)).toLocaleString()}
                         </div>
                       </td>
                       <td>
@@ -3351,7 +3578,15 @@ export default function EmployeeManagement({
                           type="button" 
                           className="btn-secondary" 
                           style={{ padding: '4px 10px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: '700' }}
-                          onClick={() => setActivePayslipData({ employee: emp, salaryData: row, payment: matchingPayment })}
+                          onClick={() => {
+                            const slipSalaryData = matchingPayment ? {
+                              ...row,
+                              totalAdvanceDeduction: matchingPayment.advanceDeductionAmount !== undefined ? matchingPayment.advanceDeductionAmount : row.totalAdvanceDeduction,
+                              totalDeductions: (row.pfDeduction || 0) + (row.esicDeduction || 0) + (row.ptDeduction || 0) + (matchingPayment.advanceDeductionAmount !== undefined ? matchingPayment.advanceDeductionAmount : row.totalAdvanceDeduction),
+                              netPayable: matchingPayment.netAmountPaid !== undefined ? matchingPayment.netAmountPaid : row.netPayable
+                            } : row;
+                            setActivePayslipData({ employee: emp, salaryData: slipSalaryData, payment: matchingPayment });
+                          }}
                         >
                           <Printer size={13} /> View Slip
                         </button>
@@ -4046,26 +4281,170 @@ export default function EmployeeManagement({
             </div>
 
             <form onSubmit={handleSaveSalaryPaymentSubmit}>
-              {/* Employee Summary Card */}
-              <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontWeight: '900', fontSize: '1rem', color: '#0f172a' }}>{paymentRowData.fullName}</div>
-                  <div style={{ fontSize: '0.74rem', color: '#64748b' }}>
-                    {paymentRowData.department} • {paymentRowData.empCode}
-                  </div>
-                  <div style={{ fontSize: '0.74rem', color: '#475569', marginTop: '3px' }}>
-                    Bank: <b>{paymentEmpData?.bankDetails?.bankName || '—'}</b> | A/C: <b>{paymentEmpData?.bankDetails?.accountNumber || '—'}</b>
-                  </div>
-                </div>
+              {/* Employee Summary Card with Dynamic Live Net Payable */}
+              {(() => {
+                const baseDed = (Number(paymentRowData.pfDeduction) || 0) + (Number(paymentRowData.esicDeduction) || 0) + (Number(paymentRowData.ptDeduction) || 0);
+                const gross = Number(paymentRowData.totalGrossEarned) || 0;
+                const advDed = (paymentConfirmAdvanceRecovery && paymentActiveAdvance) ? (parseFloat(paymentAdvanceRecoveryAmount) || 0) : 0;
+                const liveNetPay = Math.max(0, gross - baseDed - advDed);
 
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: '800' }}>Net Disbursal Amount</div>
-                  <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#0284c7' }}>
-                    ₹ {(paymentRowData.netPayable || 0).toLocaleString()}
+                return (
+                  <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontWeight: '900', fontSize: '1rem', color: '#0f172a' }}>{paymentRowData.fullName}</div>
+                      <div style={{ fontSize: '0.74rem', color: '#64748b' }}>
+                        {paymentRowData.department} • {paymentRowData.empCode}
+                      </div>
+                      <div style={{ fontSize: '0.74rem', color: '#475569', marginTop: '3px' }}>
+                        Bank: <b>{paymentEmpData?.bankDetails?.bankName || '—'}</b> | A/C: <b>{paymentEmpData?.bankDetails?.accountNumber || '—'}</b>
+                      </div>
+                    </div>
+
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: '800' }}>Net Disbursal Amount</div>
+                      <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#0284c7' }}>
+                        ₹ {liveNetPay.toLocaleString()}
+                      </div>
+                      <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                        Gross: ₹{gross.toLocaleString()} {advDed > 0 ? `| Adv Rec: -₹${advDed.toLocaleString()}` : ''}
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ fontSize: '0.7rem', color: '#059669', fontWeight: '700' }}>Month: {payrollMonth}</div>
+                );
+              })()}
+
+              {/* ADVANCE RECOVERY CONFIRMATION OPTION CARD */}
+              {paymentActiveAdvance ? (
+                <div style={{ 
+                  background: paymentConfirmAdvanceRecovery ? '#f0fdf4' : '#fffbeb', 
+                  border: `1.5px solid ${paymentConfirmAdvanceRecovery ? '#86efac' : '#fde68a'}`, 
+                  borderRadius: '8px', 
+                  padding: '14px 16px', 
+                  marginBottom: '16px' 
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Coins size={18} style={{ color: paymentConfirmAdvanceRecovery ? '#16a34a' : '#d97706' }} />
+                      <span style={{ fontWeight: '900', fontSize: '0.88rem', color: paymentConfirmAdvanceRecovery ? '#166534' : '#92400e' }}>
+                        Advance Recovery Confirmation in Salary
+                      </span>
+                    </div>
+                    <span style={{ 
+                      background: paymentConfirmAdvanceRecovery ? '#dcfce7' : '#fef3c7', 
+                      color: paymentConfirmAdvanceRecovery ? '#166534' : '#b45309', 
+                      fontSize: '0.72rem', 
+                      fontWeight: '800', 
+                      padding: '2px 8px', 
+                      borderRadius: '4px' 
+                    }}>
+                      {paymentConfirmAdvanceRecovery ? 'RECOVERY ACTIVE' : 'RECOVERY POSTPONED'}
+                    </span>
+                  </div>
+
+                  {/* Active Advance Loan Metrics */}
+                  {(() => {
+                    const remBal = Number(paymentActiveAdvance.remainingBalance ?? (paymentActiveAdvance.advanceAmount - (paymentActiveAdvance.totalRecoveredAmount || 0)));
+                    const enteredDed = parseFloat(paymentAdvanceRecoveryAmount) || 0;
+                    const balAfterThisPay = Math.max(0, remBal - (paymentConfirmAdvanceRecovery ? enteredDed : 0));
+
+                    return (
+                      <>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', background: '#ffffff', padding: '8px 12px', borderRadius: '6px', border: '1px solid #e2e8f0', marginBottom: '10px', fontSize: '0.75rem' }}>
+                          <div>
+                            <span style={{ color: '#64748b', display: 'block', fontSize: '0.7rem' }}>Total Advance</span>
+                            <b style={{ color: '#0f172a' }}>₹ {(paymentActiveAdvance.advanceAmount || 0).toLocaleString()}</b>
+                          </div>
+                          <div>
+                            <span style={{ color: '#64748b', display: 'block', fontSize: '0.7rem' }}>Already Recovered</span>
+                            <b style={{ color: '#16a34a' }}>₹ {(paymentActiveAdvance.totalRecoveredAmount || 0).toLocaleString()}</b>
+                          </div>
+                          <div>
+                            <span style={{ color: '#64748b', display: 'block', fontSize: '0.7rem' }}>Outstanding Balance</span>
+                            <b style={{ color: '#dc2626' }}>₹ {remBal.toLocaleString()}</b>
+                          </div>
+                        </div>
+
+                        {/* Confirmation Toggle / Checkbox */}
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '800', color: '#1e293b', marginBottom: paymentConfirmAdvanceRecovery ? '10px' : '4px' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={paymentConfirmAdvanceRecovery} 
+                            onChange={e => {
+                              const checked = e.target.checked;
+                              setPaymentConfirmAdvanceRecovery(checked);
+                              if (checked && !paymentAdvanceRecoveryAmount) {
+                                const emi = Number(paymentActiveAdvance.monthlyEmiAmount) || 0;
+                                setPaymentAdvanceRecoveryAmount(String(Math.min(emi > 0 ? emi : remBal, remBal)));
+                              }
+                            }}
+                            style={{ width: '16px', height: '16px', accentColor: '#16a34a' }}
+                          />
+                          <span>Confirm recovery and deduct advance amount from this month's salary</span>
+                        </label>
+
+                        {paymentConfirmAdvanceRecovery ? (
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
+                              <div style={{ flex: 1 }}>
+                                <label style={{ fontSize: '0.73rem', fontWeight: '700', color: '#475569', display: 'block', marginBottom: '3px' }}>
+                                  Recovery Amount to Deduct (₹) *
+                                </label>
+                                <input 
+                                  type="number" 
+                                  className="form-control" 
+                                  style={{ fontWeight: '800', color: '#dc2626', fontSize: '0.95rem' }}
+                                  value={paymentAdvanceRecoveryAmount} 
+                                  onChange={e => setPaymentAdvanceRecoveryAmount(e.target.value)} 
+                                  min="0"
+                                  max={remBal}
+                                  required={paymentConfirmAdvanceRecovery}
+                                />
+                              </div>
+
+                              {/* Quick Fill Buttons */}
+                              <div style={{ display: 'flex', gap: '4px', alignSelf: 'flex-end' }}>
+                                <button 
+                                  type="button" 
+                                  className="btn-secondary" 
+                                  style={{ padding: '6px 8px', fontSize: '0.72rem', whiteSpace: 'nowrap' }}
+                                  onClick={() => {
+                                    const emi = Number(paymentActiveAdvance.monthlyEmiAmount) || 0;
+                                    setPaymentAdvanceRecoveryAmount(String(Math.min(emi > 0 ? emi : remBal, remBal)));
+                                  }}
+                                  title="Set to standard monthly EMI"
+                                >
+                                  Std EMI (₹{(paymentActiveAdvance.monthlyEmiAmount || 0).toLocaleString()})
+                                </button>
+                                <button 
+                                  type="button" 
+                                  className="btn-secondary" 
+                                  style={{ padding: '6px 8px', fontSize: '0.72rem', whiteSpace: 'nowrap' }}
+                                  onClick={() => setPaymentAdvanceRecoveryAmount(String(remBal))}
+                                  title="Clear full remaining balance in this salary"
+                                >
+                                  Full Balance (₹{remBal.toLocaleString()})
+                                </button>
+                              </div>
+                            </div>
+                            <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '5px' }}>
+                              💡 Balance remaining after this salary payment: <strong style={{ color: balAfterThisPay === 0 ? '#16a34a' : '#d97706' }}>₹{balAfterThisPay.toLocaleString()}</strong> {balAfterThisPay === 0 && '🎉 (Will be Fully Recovered)'}
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: '0.72rem', color: '#b45309', marginTop: '4px', fontStyle: 'italic' }}>
+                            ⚠️ Advance recovery is postponed for this month. The outstanding loan balance (₹{remBal.toLocaleString()}) will remain intact.
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
-              </div>
+              ) : (
+                <div style={{ background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '6px', padding: '8px 12px', marginBottom: '14px', fontSize: '0.74rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <CheckCircle2 size={14} style={{ color: '#059669' }} />
+                  <span>No active advance balance pending for recovery for this employee.</span>
+                </div>
+              )}
 
               {/* Payment Date and Time Capture */}
               <div className="form-grid-2" style={{ marginBottom: '14px' }}>
@@ -4153,6 +4532,331 @@ export default function EmployeeManagement({
           payment={activePayslipData.payment}
           onClose={() => setActivePayslipData(null)} 
         />
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 7: STANDALONE CONFIRM ADVANCE RECOVERY                             */}
+      {/* ========================================================================= */}
+      {showAdvanceRecoveryModal && recoveryTargetAdvance && (
+        <div className="modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.75)', zIndex: 1060 }}>
+          <div className="modal-content glass-panel" style={{ width: '560px', padding: '24px', background: '#ffffff', borderRadius: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
+              <h3 style={{ margin: 0, fontWeight: '900', color: '#166534', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Coins size={20} /> Confirm Advance Recovery
+              </h3>
+              <button type="button" className="btn-secondary" onClick={() => setShowAdvanceRecoveryModal(false)}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleDirectAdvanceRecoverySubmit}>
+              {/* Target Advance Summary Card */}
+              {(() => {
+                const remBal = Number(recoveryTargetAdvance.remainingBalance ?? (recoveryTargetAdvance.advanceAmount - (recoveryTargetAdvance.totalRecoveredAmount || 0)));
+                const emi = Number(recoveryTargetAdvance.monthlyEmiAmount) || 0;
+                const enteredAmt = parseFloat(recoveryAmountInput) || 0;
+                const projectedBal = Math.max(0, remBal - enteredAmt);
+
+                return (
+                  <>
+                    <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div>
+                          <div style={{ fontWeight: '900', fontSize: '1rem', color: '#0f172a' }}>{recoveryTargetAdvance.employeeName}</div>
+                          <div style={{ fontSize: '0.74rem', color: '#64748b' }}>
+                            {recoveryTargetAdvance.department} • Loan Req: {recoveryTargetAdvance.requestDate}
+                          </div>
+                        </div>
+                        <span style={{ 
+                          background: recoveryTargetAdvance.status === 'Approved & Disbursed' ? '#dcfce7' : '#fef9c3', 
+                          color: recoveryTargetAdvance.status === 'Approved & Disbursed' ? '#166534' : '#854d0e',
+                          fontSize: '0.72rem', fontWeight: '800', padding: '2px 8px', borderRadius: '4px' 
+                        }}>
+                          {recoveryTargetAdvance.status}
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginTop: '12px', borderTop: '1px dashed #cbd5e1', paddingTop: '10px' }}>
+                        <div>
+                          <span style={{ fontSize: '0.7rem', color: '#64748b', display: 'block' }}>Total Advance</span>
+                          <span style={{ fontSize: '0.92rem', fontWeight: '800', color: '#0f172a' }}>
+                            ₹ {(recoveryTargetAdvance.advanceAmount || 0).toLocaleString()}
+                          </span>
+                        </div>
+                        <div>
+                          <span style={{ fontSize: '0.7rem', color: '#64748b', display: 'block' }}>Already Recovered</span>
+                          <span style={{ fontSize: '0.92rem', fontWeight: '800', color: '#059669' }}>
+                            ₹ {(recoveryTargetAdvance.totalRecoveredAmount || 0).toLocaleString()}
+                          </span>
+                        </div>
+                        <div>
+                          <span style={{ fontSize: '0.7rem', color: '#64748b', display: 'block' }}>Current Balance</span>
+                          <span style={{ fontSize: '0.92rem', fontWeight: '900', color: '#d97706' }}>
+                            ₹ {remBal.toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Recovery Mechanism / Channel */}
+                    <div style={{ marginBottom: '14px' }}>
+                      <label className="form-label">Recovery Channel / Mode *</label>
+                      <select 
+                        className="form-control" 
+                        value={recoveryModeInput} 
+                        onChange={e => setRecoveryModeInput(e.target.value)}
+                        required
+                      >
+                        <option value="SALARY_DEDUCTION">Salary Deduction Adjustment (Linked to Payroll)</option>
+                        <option value="DIRECT_RECOVERY">Direct Settlement / Cash / UPI Return from Employee</option>
+                      </select>
+                    </div>
+
+                    {recoveryModeInput === 'SALARY_DEDUCTION' && (
+                      <div style={{ marginBottom: '14px' }}>
+                        <label className="form-label">Adjust Against Salary Month *</label>
+                        <input 
+                          type="month" 
+                          className="form-control" 
+                          value={recoveryMonthInput} 
+                          onChange={e => setRecoveryMonthInput(e.target.value)} 
+                          required 
+                        />
+                      </div>
+                    )}
+
+                    {/* Recovery Amount */}
+                    <div style={{ marginBottom: '14px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <label className="form-label" style={{ margin: 0 }}>Confirmed Recovery Amount (₹) *</label>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button 
+                            type="button" 
+                            className="btn-secondary" 
+                            style={{ padding: '2px 8px', fontSize: '0.7rem' }}
+                            onClick={() => setRecoveryAmountInput(String(Math.min(emi > 0 ? emi : remBal, remBal)))}
+                          >
+                            1 EMI (₹{(emi || 0).toLocaleString()})
+                          </button>
+                          <button 
+                            type="button" 
+                            className="btn-secondary" 
+                            style={{ padding: '2px 8px', fontSize: '0.7rem' }}
+                            onClick={() => setRecoveryAmountInput(String(remBal))}
+                          >
+                            Full Balance (₹{remBal.toLocaleString()})
+                          </button>
+                        </div>
+                      </div>
+                      <input 
+                        type="number" 
+                        className="form-control" 
+                        style={{ fontSize: '1.05rem', fontWeight: '800', color: '#166534' }}
+                        value={recoveryAmountInput} 
+                        onChange={e => setRecoveryAmountInput(e.target.value)} 
+                        min="1"
+                        max={remBal}
+                        required 
+                      />
+                      <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '4px' }}>
+                        Balance remaining after recovery: <strong style={{ color: projectedBal === 0 ? '#166534' : '#d97706' }}>₹{projectedBal.toLocaleString()}</strong> {projectedBal === 0 && '🎉 (Loan will be Marked Fully Recovered)'}
+                      </div>
+                    </div>
+
+                    {/* Date and Time */}
+                    <div className="form-grid-2" style={{ marginBottom: '14px' }}>
+                      <div>
+                        <label className="form-label">Recovery Date *</label>
+                        <input 
+                          type="date" 
+                          className="form-control" 
+                          value={recoveryDateInput} 
+                          onChange={e => setRecoveryDateInput(e.target.value)} 
+                          required 
+                        />
+                      </div>
+                      <div>
+                        <label className="form-label">Recovery Time *</label>
+                        <input 
+                          type="time" 
+                          step="1"
+                          className="form-control" 
+                          value={recoveryTimeInput} 
+                          onChange={e => setRecoveryTimeInput(e.target.value)} 
+                          required 
+                        />
+                      </div>
+                    </div>
+
+                    {/* Notes / Reference */}
+                    <div style={{ marginBottom: '20px' }}>
+                      <label className="form-label">Recovery Notes / Receipt Ref</label>
+                      <input 
+                        type="text" 
+                        className="form-control" 
+                        value={recoveryNotesInput} 
+                        onChange={e => setRecoveryNotesInput(e.target.value)} 
+                        placeholder="e.g. Deducted in salary / cash deposited / UPI ref" 
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                      <button type="button" className="btn-secondary" onClick={() => setShowAdvanceRecoveryModal(false)}>
+                        Cancel
+                      </button>
+                      <button type="submit" className="btn-primary" style={{ background: '#16a34a', borderColor: '#16a34a' }}>
+                        <CheckCircle2 size={16} /> Confirm & Save Recovery
+                      </button>
+                    </div>
+                  </>
+                );
+              })()}
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 8: ADVANCE RECOVERY AUDIT HISTORY                                   */}
+      {/* ========================================================================= */}
+      {showAdvanceHistoryModal && historyTargetAdvance && (
+        <div className="modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.75)', zIndex: 1060 }}>
+          <div className="modal-content glass-panel" style={{ width: '680px', maxHeight: '85vh', overflowY: 'auto', padding: '24px', background: '#ffffff', borderRadius: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
+              <h3 style={{ margin: 0, fontWeight: '900', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <RotateCcw size={20} style={{ color: '#0284c7' }} /> Advance Recovery & Deduction History
+              </h3>
+              <button type="button" className="btn-secondary" onClick={() => setShowAdvanceHistoryModal(false)}>
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Advance Header Summary */}
+            {(() => {
+              const totalAdv = Number(historyTargetAdvance.advanceAmount) || 0;
+              const totalRec = Number(historyTargetAdvance.totalRecoveredAmount) || 0;
+              const remBal = Number(historyTargetAdvance.remainingBalance ?? (totalAdv - totalRec));
+              const pct = totalAdv > 0 ? Math.min(100, Math.round((totalRec / totalAdv) * 100)) : 0;
+              const history = historyTargetAdvance.deductionHistory || [];
+
+              return (
+                <div>
+                  <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <div>
+                        <div style={{ fontWeight: '900', fontSize: '1.05rem', color: '#0f172a' }}>{historyTargetAdvance.employeeName}</div>
+                        <div style={{ fontSize: '0.74rem', color: '#64748b' }}>
+                          {historyTargetAdvance.department} • Loan Reason: {historyTargetAdvance.reason}
+                        </div>
+                      </div>
+                      <span style={{ 
+                        background: historyTargetAdvance.status === 'Fully Recovered' ? '#f1f5f9' : '#dcfce7',
+                        color: historyTargetAdvance.status === 'Fully Recovered' ? '#475569' : '#166534',
+                        padding: '3px 10px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: '800'
+                      }}>
+                        {historyTargetAdvance.status}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginTop: '10px', fontSize: '0.78rem' }}>
+                      <div>
+                        <span style={{ color: '#64748b', display: 'block', fontSize: '0.7rem' }}>Total Advance</span>
+                        <b style={{ color: '#0f172a' }}>₹ {totalAdv.toLocaleString()}</b>
+                      </div>
+                      <div>
+                        <span style={{ color: '#64748b', display: 'block', fontSize: '0.7rem' }}>Monthly EMI</span>
+                        <b style={{ color: '#0284c7' }}>₹ {(historyTargetAdvance.monthlyEmiAmount || 0).toLocaleString()}</b>
+                      </div>
+                      <div>
+                        <span style={{ color: '#64748b', display: 'block', fontSize: '0.7rem' }}>Total Recovered</span>
+                        <b style={{ color: '#059669' }}>₹ {totalRec.toLocaleString()} ({pct}%)</b>
+                      </div>
+                      <div>
+                        <span style={{ color: '#64748b', display: 'block', fontSize: '0.7rem' }}>Outstanding</span>
+                        <b style={{ color: remBal > 0 ? '#d97706' : '#64748b' }}>₹ {remBal.toLocaleString()}</b>
+                      </div>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div style={{ marginTop: '12px' }}>
+                      <div style={{ width: '100%', height: '8px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{ width: `${pct}%`, height: '100%', background: pct === 100 ? '#10b981' : '#0284c7', transition: 'width 0.3s ease' }} />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* History Log Table */}
+                  <div style={{ marginBottom: '16px' }}>
+                    <h4 style={{ margin: '0 0 10px 0', fontSize: '0.85rem', fontWeight: '800', color: '#334155' }}>
+                      Recovery Audit Log ({history.length} {history.length === 1 ? 'record' : 'records'})
+                    </h4>
+
+                    {history.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '24px', background: '#f8fafc', borderRadius: '6px', border: '1px dashed #cbd5e1', color: '#64748b', fontSize: '0.82rem' }}>
+                        No advance deductions or recoveries recorded yet for this loan.
+                      </div>
+                    ) : (
+                      <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
+                        <table className="data-table" style={{ width: '100%', margin: 0, fontSize: '0.78rem' }}>
+                          <thead style={{ background: '#f1f5f9' }}>
+                            <tr>
+                              <th>Date & Time</th>
+                              <th>Month / Channel</th>
+                              <th style={{ textAlign: 'right' }}>Amount</th>
+                              <th style={{ textAlign: 'right' }}>Balance After</th>
+                              <th>Confirmed By / Notes</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {history.map((h, idx) => (
+                              <tr key={h.id || idx}>
+                                <td style={{ fontWeight: '700' }}>
+                                  {h.recoveredDate || h.date || '—'}
+                                  {h.recoveredTime && <span style={{ color: '#64748b', fontWeight: 'normal', marginLeft: '4px' }}>{h.recoveredTime}</span>}
+                                </td>
+                                <td>
+                                  <span style={{ 
+                                    background: h.type === 'DIRECT_RECOVERY' ? '#fef3c7' : '#e0f2fe', 
+                                    color: h.type === 'DIRECT_RECOVERY' ? '#92400e' : '#0369a1',
+                                    padding: '1px 6px', borderRadius: '3px', fontSize: '0.7rem', fontWeight: '700'
+                                  }}>
+                                    {h.monthKey ? `Salary (${h.monthKey})` : (h.paymentMode || 'Direct')}
+                                  </span>
+                                </td>
+                                <td style={{ textAlign: 'right', fontWeight: '800', color: '#16a34a' }}>
+                                  ₹ {Number(h.amount || 0).toLocaleString()}
+                                </td>
+                                <td style={{ textAlign: 'right', fontWeight: '700', color: '#d97706' }}>
+                                  ₹ {Number(h.remainingBalanceAfter !== undefined ? h.remainingBalanceAfter : (h.remainingBalance || 0)).toLocaleString()}
+                                </td>
+                                <td>
+                                  <div style={{ fontSize: '0.72rem', color: '#334155' }}>
+                                    {h.notes || 'Recovery confirmed'}
+                                  </div>
+                                  {h.confirmedBy && (
+                                    <div style={{ fontSize: '0.68rem', color: '#64748b' }}>
+                                      By: {h.confirmedBy}
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button type="button" className="btn-secondary" onClick={() => setShowAdvanceHistoryModal(false)}>
+                      Close
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
       )}
 
     </div>

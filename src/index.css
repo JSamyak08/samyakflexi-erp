@@ -735,7 +735,8 @@ input[type="number"],
   font-weight: 500;
   color: var(--text-secondary);
 }
-.form-control {
+.form-control,
+.input-field {
   background: #ffffff;
   border: 1px solid var(--border-color);
   border-radius: 6px;
@@ -743,8 +744,12 @@ input[type="number"],
   color: var(--text-primary);
   font-family: inherit;
   font-size: 0.875rem;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-.form-control:focus {
+.form-control:focus,
+.input-field:focus {
   outline: none;
   border-color: var(--primary-brand);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);

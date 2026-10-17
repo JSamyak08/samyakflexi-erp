@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
 import TablePagination, { usePagination } from './TablePagination';
+import SearchableSelect from './SearchableSelect';
 import { COMPANY_DETAILS } from '../factoryStore';
 import { generateDocRefNumber, getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import { calculateGSTBreakdown, formatINR } from '../utils/pdfHelpers';
@@ -1349,166 +1350,157 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
       {/* 5. CREATE NEW PURCHASE ORDER MODAL */}
       {/* ========================================================================= */}
       {isCreateModalOpen && (
-        <div 
-          className="modal-overlay" 
-          style={{ 
-            position: 'fixed', 
-            top: 0, 
-            left: 0, 
-            right: 0, 
-            bottom: 0, 
-            background: 'rgba(15, 23, 42, 0.65)', 
-            backdropFilter: 'blur(4px)', 
-            zIndex: 1100, 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center', 
-            padding: '20px' 
-          }}
-        >
+        <div className="modal-overlay" onClick={() => setIsCreateModalOpen(false)}>
           <div 
-            className="modal-content" 
-            style={{ 
-              background: '#ffffff', 
-              borderRadius: '14px', 
-              width: '100%', 
-              maxWidth: '960px', 
-              maxHeight: '90vh', 
-              overflowY: 'auto', 
-              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
-              border: '1px solid #e2e8f0'
-            }}
+            className="glass-card modal-content modal-content-clean" 
+            style={{ width: '980px', maxWidth: '96vw' }}
+            onClick={e => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 24px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: '#4f46e5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
-                  <ShoppingBag size={18} />
+            <div className="modal-header-bar">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ 
+                  background: 'rgba(99, 102, 241, 0.25)', 
+                  padding: '10px', 
+                  borderRadius: '10px', 
+                  color: '#a5b4fc', 
+                  border: '1px solid rgba(165, 180, 252, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <ShoppingBag size={22} />
                 </div>
                 <div>
-                  <h2 style={{ fontSize: '1.25rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: '800', margin: 0, color: '#ffffff', letterSpacing: '-0.01em' }}>
                     Create Purchase Order
-                  </h2>
-                  <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0 }}>
+                  </h3>
+                  <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0 0' }}>
                     Issue official vendor order with live stock check & automated GRN tracking
                   </p>
                 </div>
               </div>
               <button 
                 type="button" 
-                onClick={() => setIsCreateModalOpen(false)} 
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}
+                className="modal-close-btn" 
+                onClick={() => setIsCreateModalOpen(false)}
+                title="Close Modal"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
             {/* Modal Form */}
-            <form onSubmit={handleSavePurchaseOrder} style={{ padding: '24px' }}>
+            <form onSubmit={handleSavePurchaseOrder}>
               
-              {/* Basic Details Grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '20px' }}>
+              {/* Section 1: Purchase Order Basics */}
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <FileText size={14} style={{ color: '#4f46e5' }} /> 1. Purchase Order Basics
+                </div>
                 
-                {/* PO Number */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
-                    Purchase Order # *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={poForm.poNumber}
-                    onChange={(e) => setPoForm({ ...poForm, poNumber: e.target.value })}
-                    className="input-field"
-                    style={{ fontWeight: '700', color: '#1e293b' }}
-                  />
-                </div>
+                <div className="form-grid">
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                      Purchase Order # <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={poForm.poNumber}
+                      onChange={(e) => setPoForm({ ...poForm, poNumber: e.target.value })}
+                      className="form-control"
+                      style={{ fontWeight: '700', color: '#1e293b' }}
+                    />
+                  </div>
 
-                {/* PO Date */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
-                    PO Date *
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={poForm.poDate}
-                    onChange={(e) => setPoForm({ ...poForm, poDate: e.target.value })}
-                    className="input-field"
-                  />
-                </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                      PO Date <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={poForm.poDate}
+                      onChange={(e) => setPoForm({ ...poForm, poDate: e.target.value })}
+                      className="form-control"
+                    />
+                  </div>
 
-                {/* Promised Date of Delivery */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
-                    Promised Date of Delivery *
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={poForm.promisedDeliveryDate}
-                    onChange={(e) => setPoForm({ ...poForm, promisedDeliveryDate: e.target.value })}
-                    className="input-field"
-                    style={{ border: '1px solid #4f46e5' }}
-                  />
-                </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                      Promised Date of Delivery <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={poForm.promisedDeliveryDate}
+                      onChange={(e) => setPoForm({ ...poForm, promisedDeliveryDate: e.target.value })}
+                      className="form-control"
+                      style={{ borderColor: '#818cf8' }}
+                    />
+                  </div>
 
-                {/* Material Category */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
-                    Material Category
-                  </label>
-                  <select
-                    value={poForm.category}
-                    onChange={(e) => setPoForm({ ...poForm, category: e.target.value })}
-                    className="input-field"
-                  >
-                    <option value="Film Substrates">Film Substrates (BOPP/PET/METPET/CPP/LD)</option>
-                    <option value="Printing Inks">Printing Inks</option>
-                    <option value="Adhesives & Hardener">Adhesives & Hardener</option>
-                    <option value="Solvents & Chemicals">Solvents & Chemicals</option>
-                    <option value="Rotogravure Cylinders">Rotogravure Cylinders</option>
-                    <option value="Consumables & Spares">Consumables & Spares</option>
-                  </select>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                      Material Category
+                    </label>
+                    <SearchableSelect
+                      className="form-control"
+                      value={poForm.category}
+                      onChange={(e) => setPoForm({ ...poForm, category: e.target.value })}
+                      searchPlaceholder="Search category..."
+                    >
+                      <option value="Film Substrates">Film Substrates (BOPP/PET/METPET/CPP/LD)</option>
+                      <option value="Printing Inks">Printing Inks</option>
+                      <option value="Adhesives & Hardener">Adhesives & Hardener</option>
+                      <option value="Solvents & Chemicals">Solvents & Chemicals</option>
+                      <option value="Rotogravure Cylinders">Rotogravure Cylinders</option>
+                      <option value="Consumables & Spares">Consumables & Spares</option>
+                    </SearchableSelect>
+                  </div>
                 </div>
               </div>
 
-              {/* Vendor Selector & Vendor Details */}
-              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <span style={{ fontSize: '0.84rem', fontWeight: '700', color: '#1e293b' }}>
-                    🏢 Vendor & Delivery Supplier Details
-                  </span>
+              {/* Section 2: Vendor & Delivery Supplier Details */}
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '6px' }}>
+                  <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Building2 size={14} style={{ color: '#4f46e5' }} /> 2. Vendor & Delivery Supplier Details
+                  </div>
                   <span style={{ fontSize: '0.74rem', color: '#64748b' }}>
                     Auto-populates GSTIN & terms for automated tax computation
                   </span>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
-                  {/* Select from existing vendors */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                      Choose Vendor *
+                <div className="form-grid">
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                      Choose Vendor from Directory <span style={{ color: '#ef4444' }}>*</span>
                     </label>
-                    <select
+                    <SearchableSelect
                       value={poForm.vendorId}
                       onChange={(e) => handleSelectVendor(e.target.value)}
-                      className="input-field"
-                      style={{ fontSize: '0.82rem' }}
+                      placeholder="-- Select Vendor from Directory --"
+                      searchPlaceholder="Search vendor by name or GSTIN..."
+                      className="form-control"
                     >
                       <option value="">-- Select Vendor from Directory --</option>
                       {vendors.map(v => (
-                        <option key={v.id} value={v.id}>
+                        <option 
+                          key={v.id} 
+                          value={v.id}
+                          data-subtitle={v.gstin ? `GSTIN: ${v.gstin}` : 'No GSTIN'}
+                        >
                           {v.companyName || v.name} {v.gstin ? `(${v.gstin})` : ''}
                         </option>
                       ))}
-                    </select>
+                    </SearchableSelect>
                   </div>
 
-                  {/* Vendor Name (editable for one-off vendors) */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                      Vendor Legal Company Name *
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                      Vendor Legal Company Name <span style={{ color: '#ef4444' }}>*</span>
                     </label>
                     <input
                       type="text"
@@ -1520,14 +1512,12 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                         vendorName: e.target.value,
                         vendorDetails: { ...poForm.vendorDetails, companyName: e.target.value }
                       })}
-                      className="input-field"
-                      style={{ fontSize: '0.82rem' }}
+                      className="form-control"
                     />
                   </div>
 
-                  {/* Vendor Phone (For direct WhatsApp dispatch) */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
                       Vendor Phone / WhatsApp Number
                     </label>
                     <input
@@ -1538,14 +1528,12 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                         ...poForm,
                         vendorDetails: { ...poForm.vendorDetails, phone: e.target.value }
                       })}
-                      className="input-field"
-                      style={{ fontSize: '0.82rem' }}
+                      className="form-control"
                     />
                   </div>
 
-                  {/* Vendor GSTIN */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
                       Vendor GSTIN
                     </label>
                     <input
@@ -1556,298 +1544,305 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                         ...poForm,
                         vendorDetails: { ...poForm.vendorDetails, gstin: e.target.value }
                       })}
-                      className="input-field"
-                      style={{ fontSize: '0.82rem' }}
+                      className="form-control"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Items Section Header & Add Buttons */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
-                <div>
-                  <h3 style={{ fontSize: '0.95rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
-                    Ordered Materials & Items ({(poForm.items || []).length})
-                  </h3>
-                  <span style={{ fontSize: '0.76rem', color: '#64748b' }}>
-                    Select from existing inventory catalog or create a custom item on the fly
-                  </span>
+              {/* Section 3: Ordered Materials & Items */}
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+                  <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Box size={14} style={{ color: '#4f46e5' }} /> 3. Ordered Materials & Items ({(poForm.items || []).length})
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    {/* Add from Inventory with SearchableSelect */}
+                    <div style={{ width: '220px' }}>
+                      <SearchableSelect
+                        placeholder="+ Add from Inventory..."
+                        searchPlaceholder="Search stock inventory..."
+                        value=""
+                        onChange={(e) => {
+                          if (!e.target.value) return;
+                          const invItem = inventory.find(i => String(i.id) === String(e.target.value));
+                          if (invItem) {
+                            handleAddItemToForm(invItem);
+                          }
+                          e.target.value = '';
+                        }}
+                        className="form-control"
+                        triggerStyle={{ height: '34px', fontSize: '0.8rem', padding: '4px 10px' }}
+                      >
+                        <option value="">+ Add from Inventory...</option>
+                        {inventory.map(inv => (
+                          <option 
+                            key={inv.id} 
+                            value={inv.id}
+                            data-subtitle={`${inv.category} • Avail: ${inv.availableQtyKg || 0} kg`}
+                          >
+                            {inv.itemName || inv.itemCode} ({inv.category})
+                          </option>
+                        ))}
+                      </SearchableSelect>
+                    </div>
+
+                    {/* Add New Custom Item Button */}
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => handleAddItemToForm({
+                        itemDesc: 'New Raw Material Item',
+                        category: poForm.category,
+                        qtyKg: 500,
+                        rate: 165,
+                        unit: 'Kg',
+                        gstPct: 18
+                      })}
+                      style={{ fontSize: '0.78rem', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    >
+                      <Plus size={14} /> Add Custom Item
+                    </button>
+
+                    {/* Import from Order Shortage Requisitions */}
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => setIsOrderShortageModalOpen(true)}
+                      style={{ fontSize: '0.78rem', padding: '6px 12px', color: '#4f46e5', borderColor: '#c7d2fe', background: '#eff6ff', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    >
+                      <Layers size={14} /> Import Order Shortage
+                    </button>
+                  </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {/* Quick Select from Inventory Dropdown */}
-                  <select
-                    onChange={(e) => {
-                      if (!e.target.value) return;
-                      const invItem = inventory.find(i => String(i.id) === String(e.target.value));
-                      if (invItem) {
-                        handleAddItemToForm(invItem);
-                      }
-                      e.target.value = '';
-                    }}
-                    className="input-field"
-                    style={{ width: '220px', fontSize: '0.78rem', height: '34px' }}
-                  >
-                    <option value="">+ Add from Inventory...</option>
-                    {inventory.map(inv => (
-                      <option key={inv.id} value={inv.id}>
-                        {inv.itemName || inv.itemCode} ({inv.category})
-                      </option>
-                    ))}
-                  </select>
-
-                  {/* Add New Custom Item Button */}
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => handleAddItemToForm({
-                      itemDesc: 'New Raw Material Item',
-                      category: poForm.category,
-                      qtyKg: 500,
-                      rate: 165,
-                      unit: 'Kg',
-                      gstPct: 18
-                    })}
-                    style={{ fontSize: '0.78rem', padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '4px' }}
-                  >
-                    <Plus size={14} /> Add Custom Item
-                  </button>
-
-                  {/* Import from Order Shortage Requisitions */}
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => setIsOrderShortageModalOpen(true)}
-                    style={{ fontSize: '0.78rem', padding: '6px 10px', color: '#4f46e5', borderColor: '#c7d2fe', background: '#eff6ff', display: 'flex', alignItems: 'center', gap: '4px' }}
-                  >
-                    <Layers size={14} /> Import Order Shortage
-                  </button>
-                </div>
-              </div>
-
-              {/* Items Table */}
-              <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden', marginBottom: '20px' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
-                  <thead>
-                    <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'left', color: '#475569' }}>
-                      <th style={{ padding: '8px 12px' }}>#</th>
-                      <th style={{ padding: '8px 12px' }}>Item Description *</th>
-                      <th style={{ padding: '8px 12px', width: '90px' }}>Micron</th>
-                      <th style={{ padding: '8px 12px', width: '100px' }}>Width (mm)</th>
-                      <th style={{ padding: '8px 12px', width: '110px' }}>Quantity *</th>
-                      <th style={{ padding: '8px 12px', width: '110px' }}>Rate (₹) *</th>
-                      <th style={{ padding: '8px 12px', width: '120px' }}>Line Total (₹)</th>
-                      <th style={{ padding: '8px 12px', width: '40px', textAlign: 'center' }}></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(poForm.items || []).length === 0 ? (
-                      <tr>
-                        <td colSpan={8} style={{ textAlign: 'center', padding: '28px', color: '#94a3b8' }}>
-                          No items added yet. Click <strong>+ Add from Inventory</strong> or <strong>Add Custom Item</strong> to specify materials.
-                        </td>
+                {/* Items Table */}
+                <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden', background: '#ffffff' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                    <thead>
+                      <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0', textAlign: 'left', color: '#475569' }}>
+                        <th style={{ padding: '8px 12px' }}>#</th>
+                        <th style={{ padding: '8px 12px' }}>Item Description *</th>
+                        <th style={{ padding: '8px 12px', width: '90px' }}>Micron</th>
+                        <th style={{ padding: '8px 12px', width: '100px' }}>Width (mm)</th>
+                        <th style={{ padding: '8px 12px', width: '120px' }}>Quantity *</th>
+                        <th style={{ padding: '8px 12px', width: '120px' }}>Rate (₹) *</th>
+                        <th style={{ padding: '8px 12px', width: '120px' }}>Line Total (₹)</th>
+                        <th style={{ padding: '8px 12px', width: '40px', textAlign: 'center' }}></th>
                       </tr>
-                    ) : (
-                      (poForm.items || []).map((item, idx) => (
-                        <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px 12px', color: '#64748b' }}>{idx + 1}</td>
-                          
-                          {/* Item Description */}
-                          <td style={{ padding: '8px 12px' }}>
-                            <input
-                              type="text"
-                              value={item.itemDesc}
-                              onChange={(e) => handleUpdateItemField(item.id, 'itemDesc', e.target.value)}
-                              className="input-field"
-                              style={{ fontSize: '0.82rem', padding: '4px 8px', height: '30px' }}
-                            />
-                            {item.jobName && (
-                              <div style={{ fontSize: '0.7rem', color: '#4f46e5', marginTop: '2px' }}>
-                                Ref: Order {item.orderId} ({item.jobName})
-                              </div>
-                            )}
-                          </td>
-
-                          {/* Micron */}
-                          <td style={{ padding: '8px 12px' }}>
-                            <input
-                              type="text"
-                              placeholder="12/20/30"
-                              value={item.micron || ''}
-                              onChange={(e) => handleUpdateItemField(item.id, 'micron', e.target.value)}
-                              className="input-field"
-                              style={{ fontSize: '0.82rem', padding: '4px 8px', height: '30px' }}
-                            />
-                          </td>
-
-                          {/* Width mm */}
-                          <td style={{ padding: '8px 12px' }}>
-                            <input
-                              type="number"
-                              placeholder="Width"
-                              value={item.widthMm || ''}
-                              onChange={(e) => handleUpdateItemField(item.id, 'widthMm', e.target.value)}
-                              className="input-field"
-                              style={{ fontSize: '0.82rem', padding: '4px 8px', height: '30px' }}
-                            />
-                          </td>
-
-                          {/* Quantity */}
-                          <td style={{ padding: '8px 12px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <input
-                                type="number"
-                                required
-                                min="0.01"
-                                step="any"
-                                value={item.qtyKg}
-                                onChange={(e) => handleUpdateItemField(item.id, 'qtyKg', e.target.value)}
-                                className="input-field"
-                                style={{ fontSize: '0.82rem', padding: '4px 8px', height: '30px', fontWeight: '700' }}
-                              />
-                              <span style={{ fontSize: '0.72rem', color: '#64748b' }}>{item.unit || 'Kg'}</span>
-                            </div>
-                          </td>
-
-                          {/* Rate */}
-                          <td style={{ padding: '8px 12px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                              <span style={{ fontSize: '0.75rem', color: '#64748b' }}>₹</span>
-                              <input
-                                type="number"
-                                required
-                                min="0.01"
-                                step="any"
-                                value={item.rate}
-                                onChange={(e) => handleUpdateItemField(item.id, 'rate', e.target.value)}
-                                className="input-field"
-                                style={{ fontSize: '0.82rem', padding: '4px 8px', height: '30px', fontWeight: '700' }}
-                              />
-                            </div>
-                          </td>
-
-                          {/* Line Total */}
-                          <td style={{ padding: '8px 12px', fontWeight: '700', color: '#0f172a' }}>
-                            ₹{(item.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                          </td>
-
-                          {/* Remove */}
-                          <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveItemFromForm(item.id)}
-                              style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                    </thead>
+                    <tbody>
+                      {(poForm.items || []).length === 0 ? (
+                        <tr>
+                          <td colSpan={8} style={{ textAlign: 'center', padding: '28px', color: '#94a3b8' }}>
+                            No items added yet. Click <strong>+ Add from Inventory</strong> or <strong>Add Custom Item</strong> to specify materials.
                           </td>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                      ) : (
+                        (poForm.items || []).map((item, idx) => (
+                          <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '8px 12px', color: '#64748b' }}>{idx + 1}</td>
+                            
+                            {/* Item Description */}
+                            <td style={{ padding: '8px 12px' }}>
+                              <input
+                                type="text"
+                                value={item.itemDesc}
+                                onChange={(e) => handleUpdateItemField(item.id, 'itemDesc', e.target.value)}
+                                className="form-control"
+                                style={{ fontSize: '0.82rem', padding: '4px 8px', height: '32px' }}
+                              />
+                              {item.jobName && (
+                                <div style={{ fontSize: '0.7rem', color: '#4f46e5', marginTop: '2px' }}>
+                                  Ref: Order {item.orderId} ({item.jobName})
+                                </div>
+                              )}
+                            </td>
+
+                            {/* Micron */}
+                            <td style={{ padding: '8px 12px' }}>
+                              <input
+                                type="text"
+                                placeholder="12/20/30"
+                                value={item.micron || ''}
+                                onChange={(e) => handleUpdateItemField(item.id, 'micron', e.target.value)}
+                                className="form-control"
+                                style={{ fontSize: '0.82rem', padding: '4px 8px', height: '32px' }}
+                              />
+                            </td>
+
+                            {/* Width mm */}
+                            <td style={{ padding: '8px 12px' }}>
+                              <input
+                                type="number"
+                                placeholder="Width"
+                                value={item.widthMm || ''}
+                                onChange={(e) => handleUpdateItemField(item.id, 'widthMm', e.target.value)}
+                                className="form-control"
+                                style={{ fontSize: '0.82rem', padding: '4px 8px', height: '32px' }}
+                              />
+                            </td>
+
+                            {/* Quantity */}
+                            <td style={{ padding: '8px 12px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <input
+                                  type="number"
+                                  required
+                                  min="0.01"
+                                  step="any"
+                                  value={item.qtyKg}
+                                  onChange={(e) => handleUpdateItemField(item.id, 'qtyKg', e.target.value)}
+                                  className="form-control"
+                                  style={{ fontSize: '0.82rem', padding: '4px 8px', height: '32px', fontWeight: '700' }}
+                                />
+                                <span style={{ fontSize: '0.72rem', color: '#64748b' }}>{item.unit || 'Kg'}</span>
+                              </div>
+                            </td>
+
+                            {/* Rate */}
+                            <td style={{ padding: '8px 12px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>₹</span>
+                                <input
+                                  type="number"
+                                  required
+                                  min="0.01"
+                                  step="any"
+                                  value={item.rate}
+                                  onChange={(e) => handleUpdateItemField(item.id, 'rate', e.target.value)}
+                                  className="form-control"
+                                  style={{ fontSize: '0.82rem', padding: '4px 8px', height: '32px', fontWeight: '700' }}
+                                />
+                              </div>
+                            </td>
+
+                            {/* Line Total */}
+                            <td style={{ padding: '8px 12px', fontWeight: '700', color: '#0f172a' }}>
+                              ₹{(item.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                            </td>
+
+                            {/* Remove */}
+                            <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveItemFromForm(item.id)}
+                                style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}
+                                title="Remove Item"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
-              {/* Commercials, Taxes & Terms Grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginBottom: '24px' }}>
-                
-                {/* Terms & Notes */}
-                <div>
-                  <div style={{ marginBottom: '12px' }}>
-                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                      Payment Terms
-                    </label>
-                    <input
-                      type="text"
-                      value={poForm.paymentTerms}
-                      onChange={(e) => setPoForm({ ...poForm, paymentTerms: e.target.value })}
-                      className="input-field"
-                      style={{ fontSize: '0.82rem' }}
-                    />
-                  </div>
-
-                  <div style={{ marginBottom: '12px' }}>
-                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                      Delivery / Freight Logistics
-                    </label>
-                    <input
-                      type="text"
-                      value={poForm.logisticDetails}
-                      onChange={(e) => setPoForm({ ...poForm, logisticDetails: e.target.value })}
-                      className="input-field"
-                      style={{ fontSize: '0.82rem' }}
-                    />
-                  </div>
-
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                      Special Instructions / Inspection Notes
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={poForm.notes}
-                      onChange={(e) => setPoForm({ ...poForm, notes: e.target.value })}
-                      className="input-field"
-                      style={{ fontSize: '0.82rem' }}
-                    />
-                  </div>
+              {/* Section 4: Commercials, Taxes & Terms Grid */}
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <DollarSign size={14} style={{ color: '#4f46e5' }} /> 4. Commercial Terms & Calculation Summary
                 </div>
 
-                {/* Subtotal & Tax Calculation Box */}
-                <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+                  {/* Terms & Notes */}
                   <div>
-                    <div style={{ fontSize: '0.85rem', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>
-                      Commercial Calculation Summary
+                    <div className="form-group" style={{ marginBottom: '12px' }}>
+                      <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                        Payment Terms
+                      </label>
+                      <input
+                        type="text"
+                        value={poForm.paymentTerms}
+                        onChange={(e) => setPoForm({ ...poForm, paymentTerms: e.target.value })}
+                        className="form-control"
+                      />
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '8px', color: '#475569' }}>
-                      <span>Total Ordered Quantity:</span>
-                      <strong>{(formCalculations?.totalQty || 0).toLocaleString()} kg</strong>
+                    <div className="form-group" style={{ marginBottom: '12px' }}>
+                      <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                        Delivery / Freight Logistics
+                      </label>
+                      <input
+                        type="text"
+                        value={poForm.logisticDetails}
+                        onChange={(e) => setPoForm({ ...poForm, logisticDetails: e.target.value })}
+                        className="form-control"
+                      />
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '8px', color: '#475569' }}>
-                      <span>Subtotal (Taxable):</span>
-                      <span>₹{(formCalculations?.subtotal || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                        Special Instructions / Inspection Notes
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={poForm.notes}
+                        onChange={(e) => setPoForm({ ...poForm, notes: e.target.value })}
+                        className="form-control"
+                      />
                     </div>
+                  </div>
 
-                    {formCalculations?.isInterState ? (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '8px', color: '#475569' }}>
-                        <span>IGST (18%):</span>
-                        <span>₹{(formCalculations?.igst || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                  {/* Subtotal & Tax Calculation Box */}
+                  <div style={{ background: '#ffffff', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                    <div>
+                      <div style={{ fontSize: '0.88rem', fontWeight: '800', color: '#1e293b', marginBottom: '12px' }}>
+                        Commercial Calculation Summary
                       </div>
-                    ) : (
-                      <>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '8px', color: '#475569' }}>
-                          <span>CGST (9%):</span>
-                          <span>₹{(formCalculations?.cgst || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '8px', color: '#475569' }}>
-                          <span>SGST (9%):</span>
-                          <span>₹{(formCalculations?.sgst || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-                        </div>
-                      </>
-                    )}
-                  </div>
 
-                  <div style={{ borderTop: '2px dashed #cbd5e1', paddingTop: '10px', marginTop: '10px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '0.95rem', fontWeight: '800', color: '#0f172a' }}>Grand Total (₹):</span>
-                      <span style={{ fontSize: '1.25rem', fontWeight: '800', color: '#4f46e5' }}>
-                        ₹{(formCalculations?.totalAmount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                      </span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '8px', color: '#475569' }}>
+                        <span>Total Ordered Quantity:</span>
+                        <strong style={{ color: '#0f172a' }}>{(formCalculations?.totalQty || 0).toLocaleString()} kg</strong>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '8px', color: '#475569' }}>
+                        <span>Subtotal (Taxable):</span>
+                        <span>₹{(formCalculations?.subtotal || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                      </div>
+
+                      {formCalculations?.isInterState ? (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '8px', color: '#475569' }}>
+                          <span>IGST (18%):</span>
+                          <span>₹{(formCalculations?.igst || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                        </div>
+                      ) : (
+                        <>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '8px', color: '#475569' }}>
+                            <span>CGST (9%):</span>
+                            <span>₹{(formCalculations?.cgst || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '8px', color: '#475569' }}>
+                            <span>SGST (9%):</span>
+                            <span>₹{(formCalculations?.sgst || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    <div style={{ borderTop: '2px dashed #cbd5e1', paddingTop: '10px', marginTop: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.95rem', fontWeight: '800', color: '#0f172a' }}>Grand Total (₹):</span>
+                        <span style={{ fontSize: '1.25rem', fontWeight: '800', color: '#4f46e5' }}>
+                          ₹{(formCalculations?.totalAmount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
 
+                </div>
               </div>
 
-              {/* Form Action Buttons */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
+              {/* Sticky Form Action Footer */}
+              <div className="modal-footer-bar">
                 <button
                   type="button"
                   className="btn-secondary"
                   onClick={() => setIsCreateModalOpen(false)}
-                  style={{ padding: '9px 18px' }}
                 >
                   Cancel
                 </button>
@@ -1856,13 +1851,16 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                   type="submit"
                   className="btn-primary"
                   style={{ 
-                    padding: '9px 24px', 
+                    padding: '10px 24px', 
                     fontWeight: '700', 
-                    background: '#4f46e5',
-                    boxShadow: '0 4px 12px rgba(79, 70, 229, 0.25)' 
+                    background: 'linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)',
+                    boxShadow: '0 4px 12px rgba(79, 70, 229, 0.25)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px'
                   }}
                 >
-                  Issue & Save Purchase Order
+                  <PackageCheck size={18} /> Issue & Save Purchase Order
                 </button>
               </div>
 

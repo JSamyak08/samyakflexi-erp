@@ -34,7 +34,9 @@ import {
   Layers,
   Search,
   Filter,
-  Building2
+  Building2,
+  Package,
+  Database
 } from 'lucide-react';
 import { 
   getCompanyLogo,
@@ -74,13 +76,17 @@ import {
   getStorageBays,
   saveStorageBays,
   loadStorageBaysFromSupabase,
-  DEFAULT_STORAGE_BAYS
+  DEFAULT_STORAGE_BAYS,
+  getMaterialCostSettings,
+  saveMaterialCostSettings,
+  fetchMaterialCostSettingsFromSupabase,
+  DEFAULT_MATERIAL_COST_SETTINGS
 } from '../services/settingsService';
 import { sendERPEmailNotification, buildEmailTemplate } from '../services/emailService';
 
 export default function DocumentSettings({ machines = [], onSaveMachine, onUpdateMachine, onDeleteMachine }) {
   // Navigation Sub-tab State
-  const [activeTab, setActiveTab] = useState('general'); // 'general', 'inventory_ageing', 'email_config', 'email_templates'
+  const [activeTab, setActiveTab] = useState('general'); // 'general', 'material_costs', 'film_substrates', 'storage_bays', 'inventory_ageing', 'email_config', 'email_templates'
 
   // General Settings State
   const [logoImage, setLogoImage] = useState(() => getCompanyLogo());
@@ -89,6 +95,20 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
   const [termsState, setTermsState] = useState(() => getDocumentTerms());
   const [ratesState, setRatesState] = useState(() => getProcessingRates());
   const [coaSignatoriesState, setCoaSignatoriesState] = useState(() => getCoaSignatories());
+
+  // Consumable Material Cost Settings State (Adhesive & Paper Core)
+  const [materialCostState, setMaterialCostState] = useState(() => getMaterialCostSettings());
+  const [isSavingMaterialCosts, setIsSavingMaterialCosts] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    fetchMaterialCostSettingsFromSupabase().then(remote => {
+      if (isMounted && remote) {
+        setMaterialCostState(remote);
+      }
+    }).catch(err => console.warn("Failed loading material costs in DocumentSettings:", err));
+    return () => { isMounted = false; };
+  }, []);
 
   // Inventory Ageing Settings State
   const [ageingSettings, setAgeingSettings] = useState(() => getInventoryAgeingSettings());
@@ -470,6 +490,43 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     triggerSaveNotification();
   };
 
+  // Consumable Material Cost Handlers (Adhesive & Paper Core)
+  const handleMaterialCostChange = (field, value) => {
+    setMaterialCostState(prev => ({
+      ...prev,
+      [field]: value === '' ? '' : Number(value)
+    }));
+  };
+
+  const handleSaveMaterialCosts = async (e) => {
+    if (e) e.preventDefault();
+    setIsSavingMaterialCosts(true);
+    try {
+      const saved = await saveMaterialCostSettings(materialCostState);
+      setMaterialCostState(saved);
+      triggerSaveNotification();
+    } catch (err) {
+      alert("Failed to save consumable material rates to Supabase Database: " + (err.message || err));
+    } finally {
+      setIsSavingMaterialCosts(false);
+    }
+  };
+
+  const handleResetMaterialCosts = async () => {
+    if (window.confirm("Reset consumable material rates to ERP standard defaults (Adhesive: ₹270/kg, Paper Core: ₹45/kg)?")) {
+      setIsSavingMaterialCosts(true);
+      try {
+        const reset = await saveMaterialCostSettings({ ...DEFAULT_MATERIAL_COST_SETTINGS });
+        setMaterialCostState(reset);
+        triggerSaveNotification();
+      } catch (err) {
+        alert("Failed to reset material costs: " + (err.message || err));
+      } finally {
+        setIsSavingMaterialCosts(false);
+      }
+    }
+  };
+
   // Inventory Ageing Handlers
   const handleAgeingCategoryChange = (category, value) => {
     const num = Math.max(1, parseInt(value, 10) || 0);
@@ -749,7 +806,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
             )}
 
             {/* Navigation Tabs */}
-            <div style={{ display: 'flex', background: '#f1f5f9', padding: '4px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', background: '#f1f5f9', padding: '4px', borderRadius: '8px', border: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '4px' }}>
               <button
                 type="button"
                 className={`tab-button ${activeTab === 'general' ? 'active' : ''}`}
@@ -757,6 +814,14 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                 onClick={() => setActiveTab('general')}
               >
                 📄 Document Specs
+              </button>
+              <button
+                type="button"
+                className={`tab-button ${activeTab === 'material_costs' ? 'active' : ''}`}
+                style={{ padding: '6px 14px', fontSize: '0.82rem', fontWeight: '700', borderRadius: '6px', cursor: 'pointer', border: 'none', background: activeTab === 'material_costs' ? '#ffffff' : 'transparent', color: activeTab === 'material_costs' ? '#0f172a' : '#64748b', boxShadow: activeTab === 'material_costs' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}
+                onClick={() => setActiveTab('material_costs')}
+              >
+                📦 Consumable Material Rates
               </button>
               <button
                 type="button"
@@ -1146,6 +1211,235 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
             </table>
           </div>
         </>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB: CONSUMABLE MATERIAL COSTS (ADHESIVE & PAPER CORE - IN KGS) */}
+      {/* ========================================================================= */}
+      {activeTab === 'material_costs' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <form onSubmit={handleSaveMaterialCosts} className="glass-panel" style={{ padding: '28px' }}>
+            <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '16px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: '900', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Package size={24} style={{ color: '#4f46e5' }} /> Consumable Material Rates & Production Cost Allocation
+                </h3>
+                <p style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '4px' }}>
+                  Configure cost rates (in ₹/kg) for consumables like <strong>Adhesive</strong> and <strong>Paper Core</strong>. These rates are stored in the database and automatically added to the <strong>Total Ingredients Cost</strong> in Production Records.
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button 
+                  type="button" 
+                  className="btn-secondary" 
+                  onClick={handleResetMaterialCosts} 
+                  disabled={isSavingMaterialCosts}
+                  style={{ fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <RefreshCw size={14} /> Reset Defaults
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn-primary" 
+                  disabled={isSavingMaterialCosts}
+                  style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', background: '#4f46e5' }}
+                >
+                  {isSavingMaterialCosts ? <RefreshCw size={16} className="animate-spin" /> : <Check size={16} />} 
+                  {isSavingMaterialCosts ? 'Saving to Database...' : 'Save to Cloud Database'}
+                </button>
+              </div>
+            </div>
+
+            {/* Cloud Database Persistence Banner & Rule Explanation */}
+            <div style={{ background: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: '12px', padding: '16px 20px', marginBottom: '24px', display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+              <div style={{ background: '#e0e7ff', color: '#4338ca', padding: '10px', borderRadius: '10px', marginTop: '2px' }}>
+                <Database size={22} />
+              </div>
+              <div style={{ flex: 1, fontSize: '0.85rem', lineHeight: '1.5' }}>
+                <div style={{ fontWeight: '800', color: '#1e1b4b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>Permanent Database Persistence & Historical Pricing Integrity</span>
+                  <span className="badge" style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontSize: '0.7rem' }}>
+                    Synced to Supabase
+                  </span>
+                  {materialCostState.updatedAt && (
+                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '500' }}>
+                      (Last Updated: {new Date(materialCostState.updatedAt).toLocaleString()})
+                    </span>
+                  )}
+                </div>
+                <div style={{ color: '#475569', marginTop: '6px' }}>
+                  <strong>How it works:</strong> All rates entered here are persisted to the cloud database table (<code>system_settings.material_cost_settings</code>).
+                  Whenever rates are updated, <strong>previously submitted Production Records remain completely locked</strong> with their original snapshot rates. 
+                  Any <strong>new Production Record created or filled after the update</strong> will instantly inherit these new rates.
+                </div>
+              </div>
+            </div>
+
+            {/* Inputs Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+              
+              {/* Card 1: Lamination Adhesive */}
+              <div style={{ background: '#ffffff', border: '1.5px solid #e0e7ff', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(79, 70, 229, 0.05)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontSize: '1.4rem' }}>🧪</span>
+                    <div>
+                      <div style={{ fontWeight: '800', color: '#312e81', fontSize: '1rem' }}>Lamination Adhesive Rate</div>
+                      <div style={{ fontSize: '0.72rem', color: '#6366f1', fontWeight: '600' }}>For L1 & L2 Solventless / Solvent-based passes</div>
+                    </div>
+                  </div>
+                  <span className="badge" style={{ background: '#e0e7ff', color: '#4338ca', fontWeight: '700' }}>
+                    Default: ₹ 270/kg
+                  </span>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: '10px' }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: '700', color: '#1e293b', display: 'block', marginBottom: '6px' }}>
+                    Adhesive Cost per Kg (₹ / kg) <span style={{ color: '#dc2626' }}>*</span>
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontWeight: '800', color: '#4338ca', fontSize: '1.1rem' }}>
+                      ₹
+                    </span>
+                    <input 
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      className="form-control"
+                      style={{ paddingLeft: '32px', fontSize: '1.15rem', fontWeight: '800', color: '#1e1b4b', border: '2px solid #c7d2fe' }}
+                      value={materialCostState.adhesiveCostPerKg !== undefined ? materialCostState.adhesiveCostPerKg : ''}
+                      onChange={e => handleMaterialCostChange('adhesiveCostPerKg', e.target.value)}
+                      placeholder="e.g. 270"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <p style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4', margin: 0 }}>
+                  This rate is multiplied by <code>Adhesive Consumed (L1 + L2)</code> (kg) in Production Records and added into <strong>Total Ingredients Cost</strong>.
+                </p>
+              </div>
+
+              {/* Card 2: Paper Core */}
+              <div style={{ background: '#ffffff', border: '1.5px solid #d1fae5', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(5, 150, 105, 0.05)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontSize: '1.4rem' }}>📦</span>
+                    <div>
+                      <div style={{ fontWeight: '800', color: '#064e3b', fontSize: '1rem' }}>Slitting Paper Core Rate</div>
+                      <div style={{ fontSize: '0.72rem', color: '#059669', fontWeight: '600' }}>For Slitting & Rewinding finished reels</div>
+                    </div>
+                  </div>
+                  <span className="badge" style={{ background: '#d1fae5', color: '#047857', fontWeight: '700' }}>
+                    Default: ₹ 45/kg
+                  </span>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: '10px' }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: '700', color: '#1e293b', display: 'block', marginBottom: '6px' }}>
+                    Paper Core Cost per Kg (₹ / kg) <span style={{ color: '#dc2626' }}>*</span>
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontWeight: '800', color: '#047857', fontSize: '1.1rem' }}>
+                      ₹
+                    </span>
+                    <input 
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      className="form-control"
+                      style={{ paddingLeft: '32px', fontSize: '1.15rem', fontWeight: '800', color: '#064e3b', border: '2px solid #a7f3d0' }}
+                      value={materialCostState.paperCoreCostPerKg !== undefined ? materialCostState.paperCoreCostPerKg : ''}
+                      onChange={e => handleMaterialCostChange('paperCoreCostPerKg', e.target.value)}
+                      placeholder="e.g. 45"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <p style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4', margin: 0 }}>
+                  This rate is multiplied by <code>Paper Core Consumed</code> (kg) in Stage 5 Slitting and added into <strong>Total Ingredients Cost</strong>.
+                </p>
+              </div>
+
+              {/* Card 3: Printing Ink Benchmark */}
+              <div style={{ background: '#ffffff', border: '1.5px solid #fef3c7', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(217, 119, 6, 0.05)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontSize: '1.4rem' }}>🎨</span>
+                    <div>
+                      <div style={{ fontWeight: '800', color: '#78350f', fontSize: '1rem' }}>Liquid Ink Benchmark Rate</div>
+                      <div style={{ fontSize: '0.72rem', color: '#d97706', fontWeight: '600' }}>For Gravure Inks & Pre-costing</div>
+                    </div>
+                  </div>
+                  <span className="badge" style={{ background: '#fef3c7', color: '#b45309', fontWeight: '700' }}>
+                    Default: ₹ 1,500/kg
+                  </span>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: '10px' }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: '700', color: '#1e293b', display: 'block', marginBottom: '6px' }}>
+                    Ink Cost per Kg (₹ / kg)
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontWeight: '800', color: '#b45309', fontSize: '1.1rem' }}>
+                      ₹
+                    </span>
+                    <input 
+                      type="number"
+                      step="10"
+                      min="0"
+                      className="form-control"
+                      style={{ paddingLeft: '32px', fontSize: '1.15rem', fontWeight: '800', color: '#78350f', border: '2px solid #fde68a' }}
+                      value={materialCostState.liquidInkPrice !== undefined ? materialCostState.liquidInkPrice : ''}
+                      onChange={e => handleMaterialCostChange('liquidInkPrice', e.target.value)}
+                      placeholder="e.g. 1500"
+                    />
+                  </div>
+                </div>
+
+                <p style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4', margin: 0 }}>
+                  Standard reference rate used across Job Punching pre-costing estimates and cylinder ink cost checks.
+                </p>
+              </div>
+
+            </div>
+
+            {/* Live Impact Preview Card */}
+            {(() => {
+              const testAdhKg = 90;
+              const testCoreKg = 10;
+              const testAdhRate = Number(materialCostState.adhesiveCostPerKg) || 0;
+              const testCoreRate = Number(materialCostState.paperCoreCostPerKg) || 0;
+              const adhCost = testAdhKg * testAdhRate;
+              const coreCost = testCoreKg * testCoreRate;
+              const totalAdded = adhCost + coreCost;
+
+              return (
+                <div style={{ background: '#f0fdf4', border: '1.5px solid #86efac', borderRadius: '12px', padding: '18px 24px' }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: '800', color: '#166534', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px' }}>
+                    🧮 Live Calculation Example (Batch of {testAdhKg} kg Adhesive + {testCoreKg} kg Paper Core)
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', fontSize: '0.88rem' }}>
+                    <div>
+                      <span style={{ color: '#166534' }}>Adhesive Cost:</span>{' '}
+                      <strong>{testAdhKg} kg × ₹ {testAdhRate}/kg = ₹ {adhCost.toLocaleString()}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: '#166534' }}>Paper Core Cost:</span>{' '}
+                      <strong>{testCoreKg} kg × ₹ {testCoreRate}/kg = ₹ {coreCost.toLocaleString()}</strong>
+                    </div>
+                    <div style={{ borderLeft: '2px solid #86efac', paddingLeft: '16px' }}>
+                      <span style={{ color: '#166534', fontWeight: '700' }}>Added to Ingredients Cost:</span>{' '}
+                      <strong style={{ fontSize: '1.1rem', color: '#15803d' }}>+ ₹ {totalAdded.toLocaleString()}</strong>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+          </form>
+        </div>
       )}
 
       {/* ========================================================================= */}
