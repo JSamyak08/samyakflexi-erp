@@ -65,7 +65,7 @@ export default function PurchaseOrderManagement({
 
   // New PO Form State
   const defaultTerms = getDocumentTerms();
-  const [poForm, setPoForm] = useState({
+  const [poForm, setPoForm] = useState(() => ({
     poNumber: '',
     poDate: new Date().toISOString().split('T')[0],
     promisedDeliveryDate: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
@@ -88,7 +88,7 @@ export default function PurchaseOrderManagement({
     linkedOrderId: null,
     linkedOrderName: null,
     linkedRequirements: []
-  });
+  }));
 
   // Helper: Open Create PO Modal with fresh sequential PO Number
   const handleOpenCreateModal = () => {
@@ -678,7 +678,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
       setStartDate(firstDay);
       setEndDate(lastDay);
     } else if (preset === 'LAST_30') {
-      const past30 = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+      const past30 = new Date(now.getTime() - 30 * 86400000).toISOString().split('T')[0];
       setStartDate(past30);
       setEndDate(now.toISOString().split('T')[0]);
     }

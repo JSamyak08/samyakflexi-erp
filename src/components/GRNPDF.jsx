@@ -6,14 +6,15 @@ import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocume
 import QRCode2D from './QRCode2D';
 
 export default function GRNPDF({ grnData, onClose }) {
-  if (!grnData) return null;
-
-  const defaultGrnNo = grnData.grnNo || generateDocRefNumber('grn');
+  const defaultGrnNo = grnData?.grnNo || generateDocRefNumber('grn');
   const savedTerms = getDocumentTerms();
 
   const [currentGrnNo, setCurrentGrnNo] = useState(defaultGrnNo);
   const [isEditingRef, setIsEditingRef] = useState(false);
   const [currentGrnTerms, setCurrentGrnTerms] = useState(savedTerms.grnTerms || []);
+
+  if (!grnData) return null;
+
   const signatureImage = getAuthorisedSignature();
   const logoImage = getCompanyLogo();
 

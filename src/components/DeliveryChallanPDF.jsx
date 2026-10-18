@@ -5,18 +5,18 @@ import { numberToWords, formatINR, calculateGSTBreakdown, toTitleCase } from '..
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 
 export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa }) {
-  if (!challanData) return null;
-
-  const defaultChallanNo = challanData.challanNo || generateDocRefNumber('dc');
+  const defaultChallanNo = challanData?.challanNo || generateDocRefNumber('dc');
   const savedTerms = getDocumentTerms();
 
   const [currentChallanNo, setCurrentChallanNo] = useState(defaultChallanNo);
   const [isEditingRef, setIsEditingRef] = useState(false);
   const [currentDcTerms, setCurrentDcTerms] = useState(
-    Array.isArray(challanData.termsAndConditions) && challanData.termsAndConditions.length > 0 
+    Array.isArray(challanData?.termsAndConditions) && challanData.termsAndConditions.length > 0 
       ? challanData.termsAndConditions 
       : (savedTerms.dcTerms || [])
   );
+
+  if (!challanData) return null;
   
   const signatureImage = getAuthorisedSignature();
   const logoImage = getCompanyLogo();

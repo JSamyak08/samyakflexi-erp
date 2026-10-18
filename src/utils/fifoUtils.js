@@ -13,7 +13,7 @@ export function parseDateFlexible(rawDate) {
   
   // Attempt string parsing for DD/MM/YYYY or DD-MM-YYYY formats (Indian date format)
   if (typeof rawDate === 'string') {
-    const parts = rawDate.split(/[\/\-\s,:]+/);
+    const parts = rawDate.split(/[/\-\s,:]+/);
     if (parts.length >= 3) {
       const day = parseInt(parts[0], 10);
       const month = parseInt(parts[1], 10) - 1;

@@ -1407,7 +1407,7 @@ export async function fetchProductionRecords() {
         actualAdhesiveGsm: Number(r.actual_adhesive_gsm ?? extra.actualAdhesiveGsm ?? 0),
         targetInkGsm: Number(r.target_ink_gsm ?? extra.targetInkGsm ?? 1.5),
         targetAdhesiveGsm: Number(r.target_adhesive_gsm ?? extra.targetAdhesiveGsm ?? 1.5),
-        qtyDispatch: Number(r.qtyDispatch) || Number(r.net_usable_kg) || 0,
+        qtyDispatch: Number(extra.qtyDispatch) || Number(r.net_usable_kg) || 0,
         totalProductionQtyKg: Number(r.gross_production_kg) || Number(extra.totalProductionQtyKg) || 0,
         grossProductionKg: Number(r.gross_production_kg) || Number(extra.totalProductionQtyKg) || 0,
         netUsableKg: Number(r.net_usable_kg) || Number(extra.qtyDispatch) || 0,

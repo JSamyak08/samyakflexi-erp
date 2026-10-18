@@ -24,21 +24,21 @@ export const DEFAULT_COA_PARAMETERS = [
 ];
 
 export default function CertificateOfAnalysisPDF({ coaData, onClose }) {
+  const defaultCoaNo = coaData?.coaNo || generateDocRefNumber('coa');
+  const [currentCoaNo, setCurrentCoaNo] = useState(defaultCoaNo);
+  const [isEditingRef, setIsEditingRef] = useState(false);
+
+  const [testRows, setTestRows] = useState(
+    Array.isArray(coaData?.parameters) && coaData.parameters.length > 0 
+      ? coaData.parameters 
+      : DEFAULT_COA_PARAMETERS
+  );
+
   if (!coaData) return null;
 
   const coaSignatories = getCoaSignatories();
   const preparedByHeader = coaSignatories.preparedByLabel || 'PREPARED BY / QUALITY CONTROL CHEMIST';
   const approvedByHeader = coaSignatories.approvedByLabel || 'APPROVED BY / QUALITY ASSURANCE HEAD';
-
-  const defaultCoaNo = coaData.coaNo || generateDocRefNumber('coa');
-  const [currentCoaNo, setCurrentCoaNo] = useState(defaultCoaNo);
-  const [isEditingRef, setIsEditingRef] = useState(false);
-
-  const [testRows, setTestRows] = useState(
-    Array.isArray(coaData.parameters) && coaData.parameters.length > 0 
-      ? coaData.parameters 
-      : DEFAULT_COA_PARAMETERS
-  );
 
   const signatureImage = getAuthorisedSignature();
   const logoImage = getCompanyLogo();

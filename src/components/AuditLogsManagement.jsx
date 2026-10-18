@@ -32,21 +32,6 @@ export default function AuditLogsManagement({
   const [selectedDateRange, setSelectedDateRange] = useState('All');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Admin access guard
-  if (currentUser?.role !== 'Admin') {
-    return (
-      <div className="glass-panel" style={{ padding: '60px 24px', textAlign: 'center', maxWidth: '600px', margin: '40px auto' }}>
-        <ShieldAlert size={56} style={{ color: 'var(--danger)', margin: '0 auto 16px' }} />
-        <h2 style={{ fontSize: '1.5rem', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '8px' }}>
-          Access Restricted to Admin Role Only
-        </h2>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: '1.5' }}>
-          The System Audit Logs ledger contains sensitive security and operational records. Access is restricted strictly to users with <strong>Admin Role</strong> privileges.
-        </p>
-      </div>
-    );
-  }
-
   // Filter logs by search term, module, action type, and date range
   const filteredLogs = useMemo(() => {
     return (auditLogs || []).filter(log => {
@@ -154,6 +139,21 @@ export default function AuditLogsManagement({
     if (act === 'SYSTEM') return { background: '#f3e8ff', color: '#6b21a8', border: '1px solid #e9d5ff' };
     return { background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' };
   };
+
+  // Admin access guard
+  if (currentUser?.role !== 'Admin') {
+    return (
+      <div className="glass-panel" style={{ padding: '60px 24px', textAlign: 'center', maxWidth: '600px', margin: '40px auto' }}>
+        <ShieldAlert size={56} style={{ color: 'var(--danger)', margin: '0 auto 16px' }} />
+        <h2 style={{ fontSize: '1.5rem', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '8px' }}>
+          Access Restricted to Admin Role Only
+        </h2>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: '1.5' }}>
+          The System Audit Logs ledger contains sensitive security and operational records. Access is restricted strictly to users with <strong>Admin Role</strong> privileges.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>

@@ -6,15 +6,15 @@ import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocume
 import QRCode2D from './QRCode2D';
 
 export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
-  if (!poData) return null;
-
-  const defaultPoNum = poData.poNumber || generateDocRefNumber('po');
+  const defaultPoNum = poData?.poNumber || generateDocRefNumber('po');
   const savedTerms = getDocumentTerms();
   
   const [currentPoNumber, setCurrentPoNumber] = useState(defaultPoNum);
   const [isEditingRef, setIsEditingRef] = useState(false);
-  const [currentPaymentTerms, setCurrentPaymentTerms] = useState(poData.paymentTerms || savedTerms.paymentTerms || "60 Days");
+  const [currentPaymentTerms, setCurrentPaymentTerms] = useState(poData?.paymentTerms || savedTerms.paymentTerms || "60 Days");
   const [currentTerms, setCurrentTerms] = useState(savedTerms.poTerms || []);
+
+  if (!poData) return null;
   
   const signatureImage = getAuthorisedSignature();
   const logoImage = getCompanyLogo();

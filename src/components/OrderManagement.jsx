@@ -2533,7 +2533,7 @@ export default function OrderManagement({
                                 />
                               </td>
                               <td style={{ textAlign: 'right', fontWeight: '800', color: 'var(--primary-brand)' }}>
-                                ₹{((qty * rate) ?? 0).toLocaleString()}
+                                ₹{((qty * rate) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </td>
                             </tr>
                           );

@@ -52,6 +52,7 @@ import { notifyGRNPendingQC, notifyGRNQCEscalation12h, notifyGRNQCVarianceModifi
 
 import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, saveSystemSetting } from '../services/supabaseDataService';
 import { safeLocalStorageSet, safeLocalStorageGet } from '../utils/safeStorage';
+import { pushSlugState } from '../utils/slugRouter';
 import { 
   isReconciliationDue, 
   FILM_DENSITIES, 
@@ -713,6 +714,7 @@ export default function InventoryManagement({
   const [newVendorEmail, setNewVendorEmail] = useState('');
   const [newVendorBankDetails, setNewVendorBankDetails] = useState('');
   const [newVendorMaterials, setNewVendorMaterials] = useState(['PET', 'METPET']);
+  const [newVendorPaymentTerms, setNewVendorPaymentTerms] = useState('30 Days Net');
 
   // Universal Bulk Stock Upload State
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
@@ -832,6 +834,7 @@ export default function InventoryManagement({
     setNewVendorPhone('');
     setNewVendorEmail('');
     setNewVendorBankDetails('');
+    setNewVendorPaymentTerms('30 Days Net');
     setIsVendorModalOpen(false);
 
     alert(`Vendor "${createdVendor.companyName}" onboarded successfully and selected for this GRN!`);
@@ -8759,7 +8762,7 @@ export default function InventoryManagement({
                                     );
                                     if (matchedRoll) return matchedRoll;
 
-                                    const batchVal = tx.batchNo || (tx.notes?.includes('Batch:') ? tx.notes.split('Batch:')[1].split('|')[0].replace(/[\[\]]/g, '').trim() : (code || item.lastBatch || '-'));
+                                    const batchVal = tx.batchNo || (tx.notes?.includes('Batch:') ? tx.notes.split('Batch:')[1].split('|')[0].replace(/[\][]/g, '').trim() : (code || item.lastBatch || '-'));
 
                                     return {
                                       id: code,

@@ -100,6 +100,7 @@ export default function ProductionRecordManagement({
   const [printedWastageKg, setPrintedWastageKg] = useState(0);
   const [laminateWastageKg, setLaminateWastageKg] = useState(0);
   const [trimWastageKg, setTrimWastageKg] = useState(0);
+  const [recordNotes, setRecordNotes] = useState('');
 
   // Target & Actual Ink / Adhesive GSM fields
   const [actualInkGsm, setActualInkGsm] = useState('');
@@ -501,7 +502,6 @@ export default function ProductionRecordManagement({
   const [disposeVendor, setDisposeVendor] = useState('');
   const [disposeRefNo, setDisposeRefNo] = useState('');
   const [disposeNotes, setDisposeNotes] = useState('');
-  const [recordNotes, setRecordNotes] = useState('');
 
   // Helper to open order details for dropdown selection
   const handleSelectOrderForRecord = (orderId) => {

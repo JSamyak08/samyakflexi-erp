@@ -1043,6 +1043,30 @@ export default function DispatchManagement({
     setIsCoaModalOpen(true);
   };
 
+  const handleEditCoa = (coa) => {
+    if (!coa) return;
+    setEditingCoaId(coa.id);
+    setCoaNo(coa.coaNo || '');
+    setCoaTestDate(coa.testDate || new Date().toLocaleDateString('en-GB'));
+    setCoaCustomerName(coa.customerName || '');
+    setCoaJobName(coa.jobName || '');
+    setCoaJobCode(coa.jobCode || '');
+    setCoaInvoiceNo(coa.invoiceNo || '');
+    setCoaBatchLotNo(coa.batchLotNo || '');
+    setCoaFilmType(coa.filmType || '');
+    setCoaNetWeight(coa.netWeight || '');
+    setCoaSpecification(coa.specification || '');
+    setCoaSizeMm(coa.sizeMm || '');
+    setCoaThicknessMicron(coa.thicknessMicron || '');
+    setCoaParameters(Array.isArray(coa.parameters) ? coa.parameters : DEFAULT_COA_PARAMETERS);
+    setCoaOverallStatus(coa.overallStatus || 'PASSED & APPROVED');
+    setCoaQcInspector(coa.qcInspector || (currentUser ? `${currentUser.name || currentUser.fullName} (QC Inspector)` : 'Quality Store Executive'));
+    setCoaApprovedByHead(coa.approvedByHead || 'Plant Quality Head');
+    setCoaRemarks(coa.remarks || '');
+    setActiveTab('coas');
+    setIsCoaModalOpen(true);
+  };
+
   const handleJobSelectChange = (jobNameStr) => {
     setCoaJobName(jobNameStr);
     const matched = (jobMasters || []).find(j => j.jobName === jobNameStr);

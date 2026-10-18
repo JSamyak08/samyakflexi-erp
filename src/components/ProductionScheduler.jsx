@@ -71,7 +71,7 @@ const getFilmDensity = (filmType = '') => {
 // Helper: Parse substrate structure string into individual film layers with GSM
 const parseStructureLayers = (structureStr = '') => {
   if (!structureStr || typeof structureStr !== 'string') return [];
-  const parts = structureStr.split(/[\/\+]/).map(p => p.trim()).filter(Boolean);
+  const parts = structureStr.split(/[/+]/).map(p => p.trim()).filter(Boolean);
   return parts.map(part => {
     const micronMatch = part.match(/(\d+(\.\d+)?)\s*(µ|mic|micron)?/i);
     const micron = micronMatch ? parseFloat(micronMatch[1]) : 12;

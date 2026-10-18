@@ -41,6 +41,7 @@ import { calculateUtilisation } from '../dataStore';
 import { FILM_DENSITIES, isLDFilm, getFilmSlitWidth, isMetalloceneEligibleFilm, METALLOCENE_OPTIONS } from '../factoryStore';
 import CylinderJobCardForm from '../CylinderJobCardForm';
 import { saveJobMasterToSupabase, saveCylinderToSupabase } from '../services/supabaseDataService';
+import { pushSlugState } from '../utils/slugRouter';
 
 /**
  * Helper: Auto-detect CSV Header Mapping for Job Masters Bulk Upload

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
   ScanBarcode, 
   QrCode, 
@@ -75,6 +75,14 @@ export default function UniversalBarcodeScannerModal({
   const videoRef = useRef(null);
   const streamRef = useRef(null);
 
+  const stopCamera = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    setCameraActive(false);
+  }, []);
+
   // Auto focus input whenever modal opens
   useEffect(() => {
     if (isOpen) {
@@ -86,14 +94,14 @@ export default function UniversalBarcodeScannerModal({
       setBarcodeInput('');
       setActiveBarcode('');
     }
-  }, [isOpen]);
+  }, [isOpen, stopCamera]);
 
   // Clean up camera stream on unmount
   useEffect(() => {
     return () => {
       stopCamera();
     };
-  }, []);
+  }, [stopCamera]);
 
   const startCamera = async () => {
     setCameraError('');
@@ -116,14 +124,6 @@ export default function UniversalBarcodeScannerModal({
       setCameraError(err.message || 'Unable to access camera. Ensure permissions are granted.');
       setCameraActive(false);
     }
-  };
-
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    setCameraActive(false);
   };
 
   const handleSearchSubmit = (e) => {

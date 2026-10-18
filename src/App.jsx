@@ -68,6 +68,7 @@ import WeighingScaleWidget from './components/WeighingScaleWidget';
 import UniversalBarcodeScannerModal from './components/UniversalBarcodeScannerModal';
 import Preloader from './components/Preloader';
 import { fetchAuditLogsFromSupabase, saveAuditLogToSupabase, createAuditEntry, pruneOldAuditLogs } from './services/auditLogger';
+import { getNextDocRefNumber } from './services/settingsService';
 import { getRouteFromUrl, getTabFromUrl, pushSlugState } from './utils/slugRouter';
 import { isSupabaseConfigured, checkSupabaseConnection } from './services/supabaseClient';
 import { 
@@ -906,6 +907,18 @@ export default function App() {
           if (allSettings.doc_terms) safeLocalStorageSet('samyak_doc_terms', allSettings.doc_terms);
           if (allSettings.company_logo) safeLocalStorageSet('samyak_company_logo', allSettings.company_logo);
           if (allSettings.auth_signature) safeLocalStorageSet('samyak_authorised_signature', allSettings.auth_signature);
+          if (allSettings.material_cost_settings) {
+            safeLocalStorageSet('samyak_material_cost_settings', typeof allSettings.material_cost_settings === 'string' ? allSettings.material_cost_settings : JSON.stringify(allSettings.material_cost_settings));
+          }
+          if (allSettings.processing_rates) {
+            safeLocalStorageSet('samyak_processing_rates', typeof allSettings.processing_rates === 'string' ? allSettings.processing_rates : JSON.stringify(allSettings.processing_rates));
+          }
+          if (allSettings.inventory_ageing_settings) {
+            safeLocalStorageSet('samyak_inventory_ageing_settings', typeof allSettings.inventory_ageing_settings === 'string' ? allSettings.inventory_ageing_settings : JSON.stringify(allSettings.inventory_ageing_settings));
+          }
+          if (allSettings.storage_bays_master && Array.isArray(allSettings.storage_bays_master)) {
+            safeLocalStorageSet('samyak_storage_bays_master', JSON.stringify(allSettings.storage_bays_master));
+          }
           if (allSettings.film_substrates_master && Array.isArray(allSettings.film_substrates_master)) {
             safeLocalStorageSet('samyak_film_substrates_master', JSON.stringify(allSettings.film_substrates_master));
           }
@@ -1102,6 +1115,20 @@ export default function App() {
               if (settings.machine_issues) setMachineIssues(settings.machine_issues);
               if (settings.consumables) setConsumables(settings.consumables);
               if (settings.store_issue_transactions) setStoreIssueTransactions(settings.store_issue_transactions);
+              if (settings.doc_prefixes) safeLocalStorageSet('samyak_doc_prefixes', settings.doc_prefixes);
+              if (settings.doc_terms) safeLocalStorageSet('samyak_doc_terms', settings.doc_terms);
+              if (settings.material_cost_settings) {
+                safeLocalStorageSet('samyak_material_cost_settings', typeof settings.material_cost_settings === 'string' ? settings.material_cost_settings : JSON.stringify(settings.material_cost_settings));
+              }
+              if (settings.processing_rates) {
+                safeLocalStorageSet('samyak_processing_rates', typeof settings.processing_rates === 'string' ? settings.processing_rates : JSON.stringify(settings.processing_rates));
+              }
+              if (settings.inventory_ageing_settings) {
+                safeLocalStorageSet('samyak_inventory_ageing_settings', typeof settings.inventory_ageing_settings === 'string' ? settings.inventory_ageing_settings : JSON.stringify(settings.inventory_ageing_settings));
+              }
+              if (settings.storage_bays_master && Array.isArray(settings.storage_bays_master)) {
+                safeLocalStorageSet('samyak_storage_bays_master', JSON.stringify(settings.storage_bays_master));
+              }
             }
           }
         } catch (err) {
@@ -1113,18 +1140,65 @@ export default function App() {
     // Unified Supabase Realtime channel across core operational tables
     const channel = supabase
       .channel('public:erp_unified_sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => refreshEntity('orders'))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => refreshEntity('inventory'))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cylinders' }, () => refreshEntity('cylinders'))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_records' }, () => refreshEntity('production_records'))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'grns' }, () => refreshEntity('grns'))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'purchase_orders' }, () => refreshEntity('purchase_orders'))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'job_masters' }, () => refreshEntity('job_masters'))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_attendance' }, () => refreshEntity('employee_attendance'))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, () => refreshEntity('employees'))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'salary_advances' }, () => refreshEntity('salary_advances'))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'system_settings' }, () => refreshEntity('system_settings'))
-      .subscribe();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
+        console.log(`⚡ [Realtime] Live update on orders (${payload?.eventType || 'SYNC'})`);
+        refreshEntity('orders');
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, (payload) => {
+        console.log(`⚡ [Realtime] Live update on inventory (${payload?.eventType || 'SYNC'})`);
+        refreshEntity('inventory');
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cylinders' }, (payload) => {
+        console.log(`⚡ [Realtime] Live update on cylinders (${payload?.eventType || 'SYNC'})`);
+        refreshEntity('cylinders');
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_records' }, (payload) => {
+        console.log(`⚡ [Realtime] Live update on production_records (${payload?.eventType || 'SYNC'})`);
+        refreshEntity('production_records');
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'grns' }, (payload) => {
+        console.log(`⚡ [Realtime] Live update on grns (${payload?.eventType || 'SYNC'})`);
+        refreshEntity('grns');
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'purchase_orders' }, (payload) => {
+        console.log(`⚡ [Realtime] Live update on purchase_orders (${payload?.eventType || 'SYNC'})`);
+        refreshEntity('purchase_orders');
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'job_masters' }, (payload) => {
+        console.log(`⚡ [Realtime] Live update on job_masters (${payload?.eventType || 'SYNC'})`);
+        refreshEntity('job_masters');
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_attendance' }, (payload) => {
+        console.log(`⚡ [Realtime] Live update on employee_attendance (${payload?.eventType || 'SYNC'})`);
+        refreshEntity('employee_attendance');
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, (payload) => {
+        console.log(`⚡ [Realtime] Live update on employees (${payload?.eventType || 'SYNC'})`);
+        refreshEntity('employees');
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'salary_advances' }, (payload) => {
+        console.log(`⚡ [Realtime] Live update on salary_advances (${payload?.eventType || 'SYNC'})`);
+        refreshEntity('salary_advances');
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'delivery_challans' }, (payload) => {
+        console.log(`⚡ [Realtime] Live update on delivery_challans (${payload?.eventType || 'SYNC'})`);
+        refreshEntity('delivery_challans');
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'system_settings' }, (payload) => {
+        console.log(`⚡ [Realtime] Live update on system_settings (${payload?.eventType || 'SYNC'})`);
+        refreshEntity('system_settings');
+      })
+      .subscribe((status, err) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('🟢 [Supabase Realtime] Connected to live replication channel (public:erp_unified_sync)');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('🔴 [Supabase Realtime] Channel subscription error:', err);
+        } else if (status === 'TIMED_OUT') {
+          console.warn('🟡 [Supabase Realtime] Subscription timed out, attempting reconnection...');
+        } else if (status === 'CLOSED') {
+          console.log('⚪ [Supabase Realtime] Channel closed.');
+        }
+      });
 
     return () => {
       if (channel) supabase.removeChannel(channel);
