@@ -1936,13 +1936,26 @@ export default function App() {
       actualMetersPrinted,
       inkGsmInSpeed,
       printedOutputKg,
-      printingNotes: endData.notes || ''
+      printingNotes: endData.notes || '',
+      inputRollsList: endData.inputRollsList || order.inputRollsList || [],
+      outputRolls: endData.rollsBreakdown || order.outputRolls || [],
+      rollsBreakdown: endData.rollsBreakdown || order.rollsBreakdown || []
     };
     await handleUpdateOrder(updatedOrder);
     await handleActiveRunningJobChange(null);
 
     // Update corresponding Production Record (or create if missing)
-    const existingRec = productionRecords.find(r => r.orderId === order.id || r.id === order.id || (r.jobCode && r.jobCode === order.jobCode));
+    const cleanTargetOrderId = String(order.id || '').replace(/^PR-/, '').replace(/^REC-/, '').trim().toLowerCase();
+    const existingRec = productionRecords.find(r => {
+      const cleanRId = String(r.id || '').replace(/^PR-/, '').replace(/^REC-/, '').trim().toLowerCase();
+      const cleanROrderId = String(r.orderId || '').replace(/^PR-/, '').replace(/^REC-/, '').trim().toLowerCase();
+      return cleanROrderId === cleanTargetOrderId || 
+             cleanRId === cleanTargetOrderId || 
+             r.orderId === order.id || 
+             r.id === order.id || 
+             (r.jobCode && r.jobCode === order.jobCode) ||
+             (r.jobName && order.jobName && r.jobName.trim().toLowerCase() === order.jobName.trim().toLowerCase());
+    });
     const baseRecord = existingRec || {
       id: `REC-${order.id}`,
       orderId: order.id,
@@ -4264,6 +4277,7 @@ export default function App() {
             orders={orders}
             inventory={inventory}
             inventoryRolls={inventoryRolls}
+            sfgGoods={sfgGoods}
             jobMasters={jobMasters}
             cylinders={cylinders}
             machines={machines}
