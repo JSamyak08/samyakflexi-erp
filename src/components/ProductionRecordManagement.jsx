@@ -1816,73 +1816,75 @@ export default function ProductionRecordManagement({
           <h4 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '12px', color: 'var(--text-primary)' }}>
             📦 Ingredient Materials Issue & Return Record
           </h4>
-          <table className="data-table" style={{ marginBottom: '24px' }}>
-            <thead>
-              <tr>
-                <th>Raw Material / Ingredient</th>
-                <th>Micron</th>
-                <th>Width (mm)</th>
-                <th>Issued (kg)</th>
-                <th>Returned (kg)</th>
-                <th>Net Consumed (kg)</th>
-                <th>Unit Price (₹/kg)</th>
-                <th>Total Material Cost (₹)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(selectedRecord.materialsList || []).map((m, idx) => (
-                <tr key={idx}>
-                  <td style={{ fontWeight: '600' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span>{m.filmType}</span>
-                        {m.barcode && (
-                          <button
-                            type="button"
-                            className="btn-secondary"
-                            style={{ padding: '2px 6px', fontSize: '0.7rem', display: 'inline-flex', alignItems: 'center', gap: '2px', color: '#059669', borderColor: '#a7f3d0' }}
-                            onClick={() => setSelectedRollForBarcodeModal({
-                              barcodeId: m.barcode,
-                              rollType: 'RAW_MATERIAL',
-                              itemName: m.filmType,
-                              category: m.filmType?.includes('Film') ? 'Film Substrates' : 'General Store',
-                              unit: m.unit || 'Kg',
-                              micron: parseFloat(m.micron) || 0,
-                              widthMm: parseFloat(m.widthMm) || 0,
-                              netWeightKg: parseFloat(m.netConsumedQtyKg || m.issueQtyKg) || 0,
-                              itemRemarks: m.itemRemarks || m.remarks || m.notes || '',
-                              remarks: m.itemRemarks || m.remarks || m.notes || '',
-                              notes: m.itemRemarks || m.remarks || m.notes || '',
-                              jobName: selectedRecord.jobName,
-                              clientName: selectedRecord.clientName,
-                              stationId: 'SCALE_2_PRINTING'
-                            })}
-                            title="Print Input Barcode Tag"
-                          >
-                            <Printer size={12} /> {m.barcode}
-                          </button>
+          <div className="table-responsive" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', marginBottom: '24px' }}>
+            <table className="data-table" style={{ width: '100%', minWidth: '950px', margin: 0 }}>
+              <thead>
+                <tr>
+                  <th>Raw Material / Ingredient</th>
+                  <th>Micron</th>
+                  <th>Width (mm)</th>
+                  <th>Issued (kg)</th>
+                  <th>Returned (kg)</th>
+                  <th>Net Consumed (kg)</th>
+                  <th>Unit Price (₹/kg)</th>
+                  <th>Total Material Cost (₹)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(selectedRecord.materialsList || []).map((m, idx) => (
+                  <tr key={idx}>
+                    <td style={{ fontWeight: '600' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span>{m.filmType}</span>
+                          {m.barcode && (
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              style={{ padding: '2px 6px', fontSize: '0.7rem', display: 'inline-flex', alignItems: 'center', gap: '2px', color: '#059669', borderColor: '#a7f3d0' }}
+                              onClick={() => setSelectedRollForBarcodeModal({
+                                barcodeId: m.barcode,
+                                rollType: 'RAW_MATERIAL',
+                                itemName: m.filmType,
+                                category: m.filmType?.includes('Film') ? 'Film Substrates' : 'General Store',
+                                unit: m.unit || 'Kg',
+                                micron: parseFloat(m.micron) || 0,
+                                widthMm: parseFloat(m.widthMm) || 0,
+                                netWeightKg: parseFloat(m.netConsumedQtyKg || m.issueQtyKg) || 0,
+                                itemRemarks: m.itemRemarks || m.remarks || m.notes || '',
+                                remarks: m.itemRemarks || m.remarks || m.notes || '',
+                                notes: m.itemRemarks || m.remarks || m.notes || '',
+                                jobName: selectedRecord.jobName,
+                                clientName: selectedRecord.clientName,
+                                stationId: 'SCALE_2_PRINTING'
+                              })}
+                              title="Print Input Barcode Tag"
+                            >
+                              <Printer size={12} /> {m.barcode}
+                            </button>
+                          )}
+                        </div>
+                        {(m.itemRemarks || m.remarks || m.notes) && (
+                          <div style={{ fontSize: '0.72rem', color: '#0369a1', fontWeight: '500' }}>
+                            💬 {m.itemRemarks || m.remarks || m.notes}
+                          </div>
                         )}
                       </div>
-                      {(m.itemRemarks || m.remarks || m.notes) && (
-                        <div style={{ fontSize: '0.72rem', color: '#0369a1', fontWeight: '500' }}>
-                          💬 {m.itemRemarks || m.remarks || m.notes}
-                        </div>
-                      )}
-                    </div>
-                  </td>
-                  <td>{m.micron}</td>
-                  <td>{m.widthMm}</td>
-                  <td>{m.issueQtyKg} kg</td>
-                  <td style={{ color: '#dc2626' }}>{m.returnQtyKg} kg</td>
-                  <td style={{ fontWeight: '700' }}>{m.netConsumedQtyKg} kg</td>
-                  <td>₹ {m.unitPricePerKg}</td>
-                  <td style={{ fontWeight: '700', color: 'var(--text-primary)' }}>
-                    ₹ {(m?.totalMaterialCost || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    </td>
+                    <td>{m.micron}</td>
+                    <td>{m.widthMm}</td>
+                    <td>{m.issueQtyKg} kg</td>
+                    <td style={{ color: '#dc2626' }}>{m.returnQtyKg} kg</td>
+                    <td style={{ fontWeight: '700' }}>{m.netConsumedQtyKg} kg</td>
+                    <td>₹ {m.unitPricePerKg}</td>
+                    <td style={{ fontWeight: '700', color: 'var(--text-primary)' }}>
+                      ₹ {(m?.totalMaterialCost || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
           {/* SFG / FG Output Production Barcode Tags & Traceability */}
           {(() => {
@@ -2574,254 +2576,267 @@ export default function ProductionRecordManagement({
             </button>
           </div>
 
-          <table className="data-table" style={{ marginBottom: '24px' }}>
-            <thead>
-              <tr style={{ background: '#f8fafc' }}>
-                <th style={{ minWidth: '220px' }}>Raw Material / Ingredient</th>
-                <th style={{ minWidth: '170px' }}>Barcode / Roll ID (Scan 📷)</th>
-                <th style={{ width: '85px' }}>Micron</th>
-                <th style={{ width: '95px' }}>Width (mm)</th>
-                <th style={{ width: '110px' }}>Issued Qty (kg)</th>
-                <th style={{ width: '110px' }}>Unused Return (kg)</th>
-                <th style={{ color: '#047857' }}>Net Consumed (kg)</th>
-                <th style={{ width: '110px' }}>Unit Rate (₹/kg)</th>
-                <th>Total Cost (₹)</th>
-                <th style={{ width: '50px' }}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {calculatedMaterials.map((m) => {
-                const isPartialReturn = (parseFloat(m.returnQtyKg) || 0) > 0;
-                const rawMaterialOptions = [
-                  ...new Set([
-                    'PET Film',
-                    'METPET Film',
-                    'Natural LD Film',
-                    'Ethyl Acetate (Solvent)',
-                    'Toluene (Solvent)',
-                    'MIBK (Solvent)',
-                    'Liquid Inks & Solvents',
-                    'Solvent-less Adhesive',
-                    'Solvent-based Adhesive',
-                    'Milky LD Film',
-                    'BOPP Natural',
-                    'Matte Finish BOPP',
-                    'Metalised BOPP',
-                    'Pearlised BOPP',
-                    'CPP Natural',
-                    'Metalised CPP',
-                    ...inventory.map(i => i.filmType).filter(Boolean)
-                  ])
-                ];
+          <div className="table-responsive" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', marginBottom: '24px', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '8px', background: '#ffffff', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+            <table className="data-table" style={{ width: '100%', minWidth: '1360px', margin: 0, borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                  <th style={{ minWidth: '220px', padding: '10px 12px' }}>Raw Material / Ingredient</th>
+                  <th style={{ minWidth: '210px', padding: '10px 12px' }}>Barcode / Roll ID (Scan 📷)</th>
+                  <th style={{ minWidth: '100px', width: '100px', textAlign: 'center', padding: '10px 8px' }}>Micron</th>
+                  <th style={{ minWidth: '125px', width: '125px', textAlign: 'center', padding: '10px 8px' }}>Width (mm)</th>
+                  <th style={{ minWidth: '145px', width: '145px', textAlign: 'right', padding: '10px 8px' }}>Issued Qty (kg)</th>
+                  <th style={{ minWidth: '145px', width: '145px', textAlign: 'right', padding: '10px 8px' }}>Unused Return (kg)</th>
+                  <th style={{ minWidth: '140px', width: '140px', color: '#047857', padding: '10px 8px' }}>Net Consumed (kg)</th>
+                  <th style={{ minWidth: '135px', width: '135px', textAlign: 'right', padding: '10px 8px' }}>Unit Rate (₹/kg)</th>
+                  <th style={{ minWidth: '145px', width: '145px', padding: '10px 12px' }}>Total Cost (₹)</th>
+                  <th style={{ width: '55px', minWidth: '55px', textAlign: 'center', padding: '10px 6px' }}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {calculatedMaterials.map((m) => {
+                  const isPartialReturn = (parseFloat(m.returnQtyKg) || 0) > 0;
+                  const rawMaterialOptions = [
+                    ...new Set([
+                      'PET Film',
+                      'METPET Film',
+                      'Natural LD Film',
+                      'Ethyl Acetate (Solvent)',
+                      'Toluene (Solvent)',
+                      'MIBK (Solvent)',
+                      'Liquid Inks & Solvents',
+                      'Solvent-less Adhesive',
+                      'Solvent-based Adhesive',
+                      'Milky LD Film',
+                      'BOPP Natural',
+                      'Matte Finish BOPP',
+                      'Metalised BOPP',
+                      'Pearlised BOPP',
+                      'CPP Natural',
+                      'Metalised CPP',
+                      ...inventory.map(i => i.filmType).filter(Boolean)
+                    ])
+                  ];
 
-                return (
-                  <tr key={m.id}>
-                    <td>
-                      <SearchableSelect 
-                        className="form-control"
-                        style={{ fontWeight: '600', minWidth: '180px' }}
-                        value={m.filmType}
-                        onChange={e => {
-                          const val = e.target.value;
-                          updateMaterialRow(m.id, 'filmType', val);
-                          if (DEFAULT_DAILY_RATES[val]) {
-                            updateMaterialRow(m.id, 'unitPricePerKg', DEFAULT_DAILY_RATES[val]);
-                          }
-                        }}
-                      >
-                        {rawMaterialOptions.map(opt => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </SearchableSelect>
-                      {m.hasFilmTypeVar && (
-                        <span className="badge badge-warning" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontSize: '0.68rem', marginTop: '3px', display: 'block' }}>
-                          ⚠️ Substrate Mismatch vs JM ({m.jobMasterFilmType})
-                        </span>
-                      )}
-                    </td>
-
-                    <td>
-                      <div style={{ position: 'relative' }}>
-                        <input 
-                          type="text" 
+                  return (
+                    <tr key={m.id}>
+                      <td style={{ verticalAlign: 'top', padding: '8px 10px' }}>
+                        <SearchableSelect 
                           className="form-control"
-                          style={{ paddingLeft: '28px', fontSize: '0.8rem', fontFamily: 'monospace', fontWeight: '700', background: m.barcode ? '#f0f9ff' : '#ffffff' }}
-                          placeholder="Scan or type Barcode..."
-                          value={m.barcode || ''}
+                          style={{ fontWeight: '600', minWidth: '200px' }}
+                          triggerStyle={{ fontSize: '0.85rem', padding: '7px 10px' }}
+                          value={m.filmType}
                           onChange={e => {
                             const val = e.target.value;
-                            updateMaterialRow(m.id, 'barcode', val);
-                            if (val.trim()) {
-                              // 1. Primary lookup in individual barcode rolls
-                              const rollMatch = (inventoryRolls || []).find(r => 
-                                (r.barcodeId || '').toLowerCase() === val.trim().toLowerCase() ||
-                                (r.batchNo || '').toLowerCase() === val.trim().toLowerCase()
-                              );
-
-                              if (rollMatch) {
-                                updateMaterialRow(m.id, 'issueQtyKg', rollMatch.availableWeightKg || rollMatch.netWeightKg || 400);
-                                updateMaterialRow(m.id, 'returnQtyKg', 0);
-                                if (rollMatch.filmType && rollMatch.filmType !== '-') updateMaterialRow(m.id, 'filmType', rollMatch.filmType);
-                                if (rollMatch.micron) updateMaterialRow(m.id, 'micron', rollMatch.micron);
-                                if (rollMatch.widthMm) updateMaterialRow(m.id, 'widthMm', rollMatch.widthMm);
-                                const rate = rollMatch.purchaseRatePerKg || rollMatch.unitPrice || rollMatch.purchaseRate || 0;
-                                if (rate > 0) updateMaterialRow(m.id, 'unitPricePerKg', rate);
-                                if (rollMatch.unit) updateMaterialRow(m.id, 'unit', rollMatch.unit);
-                                const remark = rollMatch.itemRemarks || rollMatch.remarks || rollMatch.notes;
-                                if (remark) {
-                                  updateMaterialRow(m.id, 'itemRemarks', remark);
-                                  updateMaterialRow(m.id, 'notes', remark);
-                                }
-                              } else {
-                                // 2. Fallback lookup in central inventory
-                                const match = (inventory || []).find(inv => 
-                                  (inv.itemCode || '').toLowerCase() === val.trim().toLowerCase() ||
-                                  (inv.lastBatch || '').toLowerCase() === val.trim().toLowerCase() || 
-                                  (inv.id || '').toLowerCase() === val.trim().toLowerCase() ||
-                                  (inv.filmType || '').toLowerCase() === val.trim().toLowerCase()
-                                );
-                                if (match) {
-                                  updateMaterialRow(m.id, 'issueQtyKg', match.availableQtyKg || 400);
-                                  updateMaterialRow(m.id, 'returnQtyKg', 0);
-                                  if (match.filmType) updateMaterialRow(m.id, 'filmType', match.filmType);
-                                  if (match.micron) updateMaterialRow(m.id, 'micron', match.micron);
-                                  if (match.widthMm) updateMaterialRow(m.id, 'widthMm', match.widthMm);
-                                  const rate = match.unitPrice || match.purchaseRatePerKg || DEFAULT_DAILY_RATES[match.filmType] || 120;
-                                  updateMaterialRow(m.id, 'unitPricePerKg', rate);
-                                  if (match.unit) updateMaterialRow(m.id, 'unit', match.unit);
-                                }
-                              }
+                            updateMaterialRow(m.id, 'filmType', val);
+                            if (DEFAULT_DAILY_RATES[val]) {
+                              updateMaterialRow(m.id, 'unitPricePerKg', DEFAULT_DAILY_RATES[val]);
                             }
                           }}
-                        />
-                        <Scan size={14} style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', color: m.barcode ? '#0284c7' : '#94a3b8' }} />
-                        {m.barcode && (
-                          <button
-                            type="button"
-                            style={{
-                              position: 'absolute',
-                              right: '8px',
-                              top: '50%',
-                              transform: 'translateY(-50%)',
-                              background: 'none',
-                              border: 'none',
-                              color: '#059669',
-                              cursor: 'pointer',
-                              padding: '2px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              zIndex: 10
-                            }}
-                            onClick={() => {
-                              setSelectedRollForBarcodeModal({
-                                barcodeId: m.barcode,
-                                rollType: 'RAW_MATERIAL',
-                                itemName: m.filmType || 'Film Substrate',
-                                micron: parseFloat(m.micron) || 0,
-                                widthMm: parseFloat(m.widthMm) || 0,
-                                netWeightKg: parseFloat(m.issueQtyKg) || 0,
-                                stationId: 'SCALE_2_PRINTING'
-                              });
-                            }}
-                            title="Print Barcode Tag"
-                          >
-                            <Printer size={14} />
-                          </button>
+                        >
+                          {rawMaterialOptions.map(opt => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </SearchableSelect>
+                        {m.hasFilmTypeVar && (
+                          <span className="badge badge-warning" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontSize: '0.68rem', marginTop: '3px', display: 'block' }}>
+                            ⚠️ Substrate Mismatch vs JM ({m.jobMasterFilmType})
+                          </span>
                         )}
-                      </div>
-                    </td>
+                      </td>
 
-                    <td>
-                      <input 
-                        type="text" 
-                        className="form-control"
-                        value={m.micron}
-                        onChange={e => updateMaterialRow(m.id, 'micron', e.target.value)}
-                      />
-                      {m.micronVarPct !== null && (
-                        <span className="badge badge-warning" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontSize: '0.68rem', marginTop: '2px', display: 'block' }}>
-                          ⚠️ {m.micronVarPct > 0 ? `+${m.micronVarPct}%` : `${m.micronVarPct}%`}
-                        </span>
-                      )}
-                    </td>
+                      <td style={{ verticalAlign: 'top', padding: '8px 10px' }}>
+                        <div style={{ position: 'relative' }}>
+                          <input 
+                            type="text" 
+                            className="form-control"
+                            style={{ paddingLeft: '28px', paddingRight: m.barcode ? '28px' : '10px', paddingTop: '7px', paddingBottom: '7px', fontSize: '0.82rem', fontFamily: 'monospace', fontWeight: '700', background: m.barcode ? '#f0f9ff' : '#ffffff', minWidth: '190px' }}
+                            placeholder="Scan or type Barcode..."
+                            value={m.barcode || ''}
+                            onChange={e => {
+                              const val = e.target.value;
+                              updateMaterialRow(m.id, 'barcode', val);
+                              if (val.trim()) {
+                                // 1. Primary lookup in individual barcode rolls
+                                const rollMatch = (inventoryRolls || []).find(r => 
+                                  (r.barcodeId || '').toLowerCase() === val.trim().toLowerCase() ||
+                                  (r.batchNo || '').toLowerCase() === val.trim().toLowerCase()
+                                );
 
-                    <td>
-                      <input 
-                        type="text" 
-                        className="form-control"
-                        value={m.widthMm}
-                        onChange={e => updateMaterialRow(m.id, 'widthMm', e.target.value)}
-                      />
-                      {m.widthVarPct !== null && (
-                        <span className="badge badge-warning" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontSize: '0.68rem', marginTop: '2px', display: 'block' }}>
-                          ⚠️ {m.widthVarPct > 0 ? `+${m.widthVarPct}%` : `${m.widthVarPct}%`}
-                        </span>
-                      )}
-                    </td>
+                                if (rollMatch) {
+                                  updateMaterialRow(m.id, 'issueQtyKg', rollMatch.availableWeightKg || rollMatch.netWeightKg || 400);
+                                  updateMaterialRow(m.id, 'returnQtyKg', 0);
+                                  if (rollMatch.filmType && rollMatch.filmType !== '-') updateMaterialRow(m.id, 'filmType', rollMatch.filmType);
+                                  if (rollMatch.micron) updateMaterialRow(m.id, 'micron', rollMatch.micron);
+                                  if (rollMatch.widthMm) updateMaterialRow(m.id, 'widthMm', rollMatch.widthMm);
+                                  const rate = rollMatch.purchaseRatePerKg || rollMatch.unitPrice || rollMatch.purchaseRate || 0;
+                                  if (rate > 0) updateMaterialRow(m.id, 'unitPricePerKg', rate);
+                                  if (rollMatch.unit) updateMaterialRow(m.id, 'unit', rollMatch.unit);
+                                  const remark = rollMatch.itemRemarks || rollMatch.remarks || rollMatch.notes;
+                                  if (remark) {
+                                    updateMaterialRow(m.id, 'itemRemarks', remark);
+                                    updateMaterialRow(m.id, 'notes', remark);
+                                  }
+                                } else {
+                                  // 2. Fallback lookup in central inventory
+                                  const match = (inventory || []).find(inv => 
+                                    (inv.itemCode || '').toLowerCase() === val.trim().toLowerCase() ||
+                                    (inv.lastBatch || '').toLowerCase() === val.trim().toLowerCase() || 
+                                    (inv.id || '').toLowerCase() === val.trim().toLowerCase() ||
+                                    (inv.filmType || '').toLowerCase() === val.trim().toLowerCase()
+                                  );
+                                  if (match) {
+                                    updateMaterialRow(m.id, 'issueQtyKg', match.availableQtyKg || 400);
+                                    updateMaterialRow(m.id, 'returnQtyKg', 0);
+                                    if (match.filmType) updateMaterialRow(m.id, 'filmType', match.filmType);
+                                    if (match.micron) updateMaterialRow(m.id, 'micron', match.micron);
+                                    if (match.widthMm) updateMaterialRow(m.id, 'widthMm', match.widthMm);
+                                    const rate = match.unitPrice || match.purchaseRatePerKg || DEFAULT_DAILY_RATES[match.filmType] || 120;
+                                    updateMaterialRow(m.id, 'unitPricePerKg', rate);
+                                    if (match.unit) updateMaterialRow(m.id, 'unit', match.unit);
+                                  }
+                                }
+                              }
+                            }}
+                          />
+                          <Scan size={14} style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', color: m.barcode ? '#0284c7' : '#94a3b8' }} />
+                          {m.barcode && (
+                            <button
+                              type="button"
+                              style={{
+                                position: 'absolute',
+                                right: '8px',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                background: 'none',
+                                border: 'none',
+                                color: '#059669',
+                                cursor: 'pointer',
+                                padding: '2px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                zIndex: 10
+                              }}
+                              onClick={() => {
+                                setSelectedRollForBarcodeModal({
+                                  barcodeId: m.barcode,
+                                  rollType: 'RAW_MATERIAL',
+                                  itemName: m.filmType || 'Film Substrate',
+                                  micron: parseFloat(m.micron) || 0,
+                                  widthMm: parseFloat(m.widthMm) || 0,
+                                  netWeightKg: parseFloat(m.issueQtyKg) || 0,
+                                  stationId: 'SCALE_2_PRINTING'
+                                });
+                              }}
+                              title="Print Barcode Tag"
+                            >
+                              <Printer size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
 
-                    <td>
-                      <input 
-                        type="number" 
-                        step="0.1"
-                        className="form-control"
-                        style={{ fontWeight: '600' }}
-                        value={m.issueQtyKg}
-                        onChange={e => updateMaterialRow(m.id, 'issueQtyKg', e.target.value)}
-                        required
-                      />
-                    </td>
+                      <td style={{ verticalAlign: 'top', padding: '8px 8px' }}>
+                        <input 
+                          type="number"
+                          step="any"
+                          className="form-control"
+                          style={{ minWidth: '85px', padding: '7px 8px', fontSize: '0.88rem', fontWeight: '600', textAlign: 'center' }}
+                          placeholder="e.g. 12"
+                          value={m.micron}
+                          onChange={e => updateMaterialRow(m.id, 'micron', e.target.value)}
+                        />
+                        {m.micronVarPct !== null && (
+                          <span className="badge badge-warning" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontSize: '0.68rem', marginTop: '2px', display: 'block', textAlign: 'center' }}>
+                            ⚠️ {m.micronVarPct > 0 ? `+${m.micronVarPct}%` : `${m.micronVarPct}%`}
+                          </span>
+                        )}
+                      </td>
 
-                    <td>
-                      <input 
-                        type="number" 
-                        step="0.1"
-                        className="form-control"
-                        style={{ fontWeight: '600', color: isPartialReturn ? '#dc2626' : 'var(--text-muted)' }}
-                        value={m.returnQtyKg}
-                        onChange={e => updateMaterialRow(m.id, 'returnQtyKg', e.target.value)}
-                      />
-                    </td>
+                      <td style={{ verticalAlign: 'top', padding: '8px 8px' }}>
+                        <input 
+                          type="number"
+                          step="any"
+                          className="form-control"
+                          style={{ minWidth: '105px', padding: '7px 10px', fontSize: '0.88rem', fontWeight: '600', textAlign: 'center' }}
+                          placeholder="e.g. 800"
+                          value={m.widthMm}
+                          onChange={e => updateMaterialRow(m.id, 'widthMm', e.target.value)}
+                        />
+                        {m.widthVarPct !== null && (
+                          <span className="badge badge-warning" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontSize: '0.68rem', marginTop: '2px', display: 'block', textAlign: 'center' }}>
+                            ⚠️ {m.widthVarPct > 0 ? `+${m.widthVarPct}%` : `${m.widthVarPct}%`}
+                          </span>
+                        )}
+                      </td>
 
-                    <td>
-                      <div style={{ fontWeight: '800', color: '#047857', fontSize: '0.9rem' }}>
-                        {m.netConsumedQtyKg} kg
-                      </div>
-                      {isPartialReturn ? (
-                        <span className="badge badge-warning" style={{ fontSize: '0.68rem', padding: '1px 5px', marginTop: '3px', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' }}>
-                          📦 {m.returnQtyKg} kg returned
-                        </span>
-                      ) : (
-                        <span className="badge badge-us" style={{ fontSize: '0.68rem', padding: '1px 5px', marginTop: '3px' }}>
-                          Return: 0 kg
-                        </span>
-                      )}
-                    </td>
+                      <td style={{ verticalAlign: 'top', padding: '8px 8px' }}>
+                        <input 
+                          type="number" 
+                          step="0.01"
+                          className="form-control"
+                          style={{ minWidth: '125px', padding: '7px 10px', fontSize: '0.88rem', fontWeight: '700', textAlign: 'right' }}
+                          placeholder="0.00"
+                          value={m.issueQtyKg}
+                          onChange={e => updateMaterialRow(m.id, 'issueQtyKg', e.target.value)}
+                          required
+                        />
+                      </td>
 
-                    <td>
-                      <input 
-                        type="number" 
-                        step="0.1"
-                        className="form-control"
-                        value={m.unitPricePerKg}
-                        onChange={e => updateMaterialRow(m.id, 'unitPricePerKg', e.target.value)}
-                        required
-                      />
-                    </td>
+                      <td style={{ verticalAlign: 'top', padding: '8px 8px' }}>
+                        <input 
+                          type="number" 
+                          step="0.01"
+                          className="form-control"
+                          style={{ minWidth: '125px', padding: '7px 10px', fontSize: '0.88rem', fontWeight: '700', textAlign: 'right', color: isPartialReturn ? '#dc2626' : 'var(--text-main, #334155)' }}
+                          placeholder="0.00"
+                          value={m.returnQtyKg}
+                          onChange={e => updateMaterialRow(m.id, 'returnQtyKg', e.target.value)}
+                        />
+                      </td>
 
-                    <td style={{ fontWeight: '700', color: 'var(--text-primary)' }}>
-                      ₹ {(m?.totalMaterialCost || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </td>
+                      <td style={{ verticalAlign: 'top', padding: '8px 8px' }}>
+                        <div style={{ fontWeight: '800', color: '#047857', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>
+                          {m.netConsumedQtyKg} kg
+                        </div>
+                        {isPartialReturn ? (
+                          <span className="badge badge-warning" style={{ fontSize: '0.68rem', padding: '2px 6px', marginTop: '3px', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', display: 'inline-block', whiteSpace: 'nowrap' }}>
+                            📦 {m.returnQtyKg} kg returned
+                          </span>
+                        ) : (
+                          <span className="badge badge-us" style={{ fontSize: '0.68rem', padding: '2px 6px', marginTop: '3px', display: 'inline-block', whiteSpace: 'nowrap' }}>
+                            Return: 0 kg
+                          </span>
+                        )}
+                      </td>
 
-                    <td>
-                      <button type="button" className="icon-btn-danger" onClick={() => removeMaterialRow(m.id)}>
-                        ✕
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      <td style={{ verticalAlign: 'top', padding: '8px 8px' }}>
+                        <input 
+                          type="number" 
+                          step="0.01"
+                          className="form-control"
+                          style={{ minWidth: '115px', padding: '7px 10px', fontSize: '0.88rem', fontWeight: '600', textAlign: 'right' }}
+                          placeholder="Rate ₹"
+                          value={m.unitPricePerKg}
+                          onChange={e => updateMaterialRow(m.id, 'unitPricePerKg', e.target.value)}
+                          required
+                        />
+                      </td>
+
+                      <td style={{ verticalAlign: 'top', padding: '8px 10px', fontWeight: '800', color: 'var(--text-primary)', whiteSpace: 'nowrap', minWidth: '135px', fontSize: '0.92rem' }}>
+                        ₹ {(m?.totalMaterialCost || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </td>
+
+                      <td style={{ verticalAlign: 'top', textAlign: 'center', padding: '8px 6px' }}>
+                        <button type="button" className="icon-btn-danger" style={{ padding: '6px 8px', marginTop: '2px' }} onClick={() => removeMaterialRow(m.id)} title="Remove Row">
+                          ✕
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
 
           {/* SFG & FG Master Rolls Output Banner for Selected Order */}
           {(() => {
