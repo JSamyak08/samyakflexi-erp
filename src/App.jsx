@@ -2007,7 +2007,7 @@ export default function App() {
           id: barcodeId,
           sfgBatchCode: barcodeId,
           orderId: order.id,
-          jobName: `${order.jobName} - Roll #${r.rollNo || 1}`,
+          jobName: r.itemName || `${order.jobName} - Roll #${r.rollNo || 1}`,
           jobCode: order.jobCode || order.id,
           clientName: order.clientName || order.customerName || 'Client',
           sfgType: 'Printed Rolls',
@@ -2019,10 +2019,16 @@ export default function App() {
           consumedKg: 0,
           status: 'In Stock',
           location: r.locationBay || 'SFG Store (Pre-Lamination)',
+          storageBay: r.locationBay || 'SFG Store (Pre-Lamination)',
+          productionDate: new Date().toISOString().split('T')[0],
           createdDate: new Date().toISOString().split('T')[0]
         };
-        saveSFGGoodToSupabase(sfgItemRecord).catch(console.warn);
-        setSfgGoods(prev => [sfgItemRecord, ...prev.filter(s => s.sfgBatchCode !== sfgItemRecord.sfgBatchCode)]);
+        try {
+          await saveSFGGoodToSupabase(sfgItemRecord);
+        } catch (sfgErr) {
+          console.warn('[handleEndPrintingJob] SFG Good save error:', sfgErr);
+        }
+        setSfgGoods(prev => [sfgItemRecord, ...prev.filter(s => (s.sfgBatchCode || s.id) !== barcodeId)]);
       }
     }
 
@@ -2886,6 +2892,7 @@ export default function App() {
     requireDatabaseConnection('consume SFG item');
     await saveSFGGoodToSupabase(updatedSfgItem);
 
+    // 1. Update SFG Goods State
     setSfgGoods(prev => {
       const idx = prev.findIndex(s => s.id === updatedSfgItem.id || s.sfgBatchCode === updatedSfgItem.sfgBatchCode);
       if (idx >= 0) {
@@ -2896,7 +2903,43 @@ export default function App() {
       return [updatedSfgItem, ...prev];
     });
 
-    // 2. Sync to Job's Production Record
+    // 2. Also synchronize deduction to inventory_rolls if this item is a roll
+    const rollBarcode = updatedSfgItem.sfgBatchCode || updatedSfgItem.id;
+    const rollMatch = (inventoryRolls || []).find(r => (r.barcodeId || r.id) === rollBarcode);
+    if (rollMatch) {
+      const newAvail = Math.max(0, Number(updatedSfgItem.availableKg ?? (Number(rollMatch.availableWeightKg || rollMatch.netWeightKg || 0) - Number(logEntry.consumedKg || 0))));
+      const updatedRoll = {
+        ...rollMatch,
+        availableWeightKg: newAvail,
+        status: newAvail <= 0 ? 'Consumed' : (rollMatch.status || 'In Stock (SFG)')
+      };
+      try {
+        await saveInventoryRollToSupabase(updatedRoll);
+      } catch (e) {
+        console.warn('[handleConsumeSFG] Roll update notice:', e);
+      }
+      setInventoryRolls(prev => prev.map(r => ((r.barcodeId || r.id) === rollBarcode) ? updatedRoll : r));
+    }
+
+    // 3. Also synchronize deduction to central inventory if present
+    const invMatch = (inventory || []).find(i => i.id === rollBarcode || i.itemCode === rollBarcode);
+    if (invMatch) {
+      const newAvail = Math.max(0, Number(updatedSfgItem.availableKg ?? (Number(invMatch.availableQtyKg || invMatch.stockQtyKg || 0) - Number(logEntry.consumedKg || 0))));
+      const updatedInv = {
+        ...invMatch,
+        availableQtyKg: newAvail,
+        stockQtyKg: newAvail,
+        allocatedQtyKg: Number(updatedSfgItem.consumedKg ?? ((invMatch.allocatedQtyKg || 0) + Number(logEntry.consumedKg || 0)))
+      };
+      try {
+        await saveInventoryItemToSupabase(updatedInv);
+      } catch (e) {
+        console.warn('[handleConsumeSFG] Central inventory update notice:', e);
+      }
+      setInventory(prev => prev.map(i => (i.id === invMatch.id) ? updatedInv : i));
+    }
+
+    // 4. Sync to Job's Production Record
     const targetOrderId = updatedSfgItem.orderId || logEntry.orderId;
     const targetJobName = (updatedSfgItem.jobName || logEntry.jobName || '').trim().toLowerCase();
 

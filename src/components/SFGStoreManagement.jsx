@@ -103,6 +103,7 @@ export default function SFGStoreManagement({
   const [shift, setShift] = useState('Day Shift');
   const [notes, setNotes] = useState('');
   const [formError, setFormError] = useState('');
+  const [isSubmittingConsume, setIsSubmittingConsume] = useState(false);
 
   // QC Hold Form Fields inside Consume Modal
   const [holdReason, setHoldReason] = useState('');
@@ -214,6 +215,17 @@ export default function SFGStoreManagement({
         rollType === 'FINISHED_GOODS';
 
       if (isSFGorFG) {
+        // If this item is a synthetic aggregate (starts with sfg-item-), check if we already have individual rolls or sfgGoods for this order
+        const extractedOrd = item.orderId || (item.id.includes('ORD-') ? item.id.replace('SFG-ITEM-', '') : null);
+        if (code.startsWith('sfg-item-')) {
+          const hasIndividualRolls = (list.some(s => s.orderId && extractedOrd && s.orderId === extractedOrd)) ||
+            ((inventoryRolls || []).some(r => r.orderId && extractedOrd && r.orderId === extractedOrd));
+          if (hasIndividualRolls) {
+            // Omit synthetic duplicate since real individual rolls exist for this order
+            return;
+          }
+        }
+
         const exists = list.some(s => s.id === item.id || s.sfgBatchCode === item.id || s.sfgBatchCode === item.itemCode);
         if (!exists) {
           const isFgCategory = (cat.includes('finished goods') && !cat.includes('semi-finished')) || code.startsWith('fg-');
@@ -485,9 +497,9 @@ export default function SFGStoreManagement({
   };
 
   // Submit Consume / QC Hold SFG
-  const handleConfirmConsumeSFG = (e) => {
+  const handleConfirmConsumeSFG = async (e) => {
     e.preventDefault();
-    if (!selectedItemForConsume) return;
+    if (!selectedItemForConsume || isSubmittingConsume) return;
 
     const qtyVal = parseFloat(consumedWeightKg);
     if (isNaN(qtyVal) || qtyVal <= 0) {
@@ -513,94 +525,104 @@ export default function SFGStoreManagement({
       }
     }
 
-    const newConsumedKg = (currentConsumed + qtyVal).toFixed(2);
-    const newAvailableKg = Math.max(0, currentNet - newConsumedKg).toFixed(2);
-    
-    let newStatus = 'In Stock (WIP)';
-    if (parseFloat(newConsumedKg) > 0) {
-      newStatus = parseFloat(newAvailableKg) <= 0 ? 'Fully Consumed' : 'Partially Consumed';
-    }
+    setIsSubmittingConsume(true);
+    setFormError('');
 
-    const logEntry = {
-      id: `SFG-LOG-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      date: new Date().toISOString().split('T')[0],
-      sfgBatchCode: selectedItemForConsume.sfgBatchCode,
-      jobName: selectedItemForConsume.jobName,
-      jobCode: selectedItemForConsume.jobCode,
-      orderId: selectedItemForConsume.orderId,
-      consumedKg: parseFloat(qtyVal.toFixed(2)),
-      remainingBalanceKg: parseFloat(newAvailableKg),
-      targetProcess,
-      targetMachine,
-      operatorName,
-      shift,
-      notes: targetProcess === 'QC Hold Store' ? `QC Hold: ${holdReason}` : notes
-    };
+    try {
+      const newConsumedKg = (currentConsumed + qtyVal).toFixed(2);
+      const newAvailableKg = Math.max(0, currentNet - newConsumedKg).toFixed(2);
+      
+      let newStatus = 'In Stock (WIP)';
+      if (parseFloat(newConsumedKg) > 0) {
+        newStatus = parseFloat(newAvailableKg) <= 0 ? 'Fully Consumed' : 'Partially Consumed';
+      }
 
-    const updatedConsumptionHistory = [
-      logEntry,
-      ...(selectedItemForConsume.consumptionHistory || [])
-    ];
-
-    const updatedItem = {
-      ...selectedItemForConsume,
-      consumedKg: parseFloat(newConsumedKg),
-      availableKg: parseFloat(newAvailableKg),
-      status: newStatus,
-      consumptionHistory: updatedConsumptionHistory
-    };
-
-    if (onConsumeSFG) {
-      onConsumeSFG(updatedItem, logEntry);
-    } else if (onSaveSFGGood) {
-      onSaveSFGGood(updatedItem);
-    }
-
-    // Special logic when targetProcess is 'QC Hold Store'
-    if (targetProcess === 'QC Hold Store') {
-      const holdTagId = `QCHOLD-${Date.now().toString().slice(-6)}`;
-      const parsedRollWeights = rollWeights.map(w => parseFloat(w) || 0).filter(w => w > 0);
-      const finalRollCount = Math.max(1, parseInt(holdRollCount) || 1);
-
-      const newQcHoldEntry = {
-        id: holdTagId,
-        barcodeId: holdTagId,
-        sfgBatchCode: holdTagId,
-        parentSfgBatchCode: selectedItemForConsume.sfgBatchCode,
-        parentSfgId: selectedItemForConsume.id,
-        orderId: selectedItemForConsume.orderId || 'N/A',
+      const logEntry = {
+        id: `SFG-LOG-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        date: new Date().toISOString().split('T')[0],
+        sfgBatchCode: selectedItemForConsume.sfgBatchCode,
         jobName: selectedItemForConsume.jobName,
         jobCode: selectedItemForConsume.jobCode,
-        clientName: selectedItemForConsume.clientName,
-        filmType: selectedItemForConsume.filmType,
-        micron: selectedItemForConsume.micron,
-        widthMm: selectedItemForConsume.widthMm,
-        totalHoldKg: parseFloat(qtyVal.toFixed(2)),
-        remainingHoldKg: parseFloat(qtyVal.toFixed(2)),
-        approvedKg: 0,
-        scrappedKg: 0,
-        numberOfRolls: finalRollCount,
-        rollWeights: parsedRollWeights.length > 0 ? parsedRollWeights : [parseFloat(qtyVal.toFixed(2))],
-        holdReason: holdReason.trim(),
-        targetProcess: 'QC Hold Store',
-        operatorName: operatorName || currentUser?.fullName || currentUser?.username || 'QC Inspector',
+        orderId: selectedItemForConsume.orderId,
+        consumedKg: parseFloat(qtyVal.toFixed(2)),
+        remainingBalanceKg: parseFloat(newAvailableKg),
+        targetProcess,
+        targetMachine,
+        operatorName,
         shift,
-        date: new Date().toISOString().split('T')[0],
-        timestamp: new Date().toISOString(),
-        status: 'QC_HOLD',
-        isQCHold: true,
-        approvalLogs: [],
-        scrapLogs: []
+        notes: targetProcess === 'QC Hold Store' ? `QC Hold: ${holdReason}` : notes
       };
 
-      setQcHoldItems(prev => [newQcHoldEntry, ...prev]);
+      const updatedConsumptionHistory = [
+        logEntry,
+        ...(selectedItemForConsume.consumptionHistory || [])
+      ];
 
-      // Open Barcode sticker modal immediately for the new QC Hold tag
-      setSelectedRollForBarcodeModal(newQcHoldEntry);
+      const updatedItem = {
+        ...selectedItemForConsume,
+        consumedKg: parseFloat(newConsumedKg),
+        availableKg: parseFloat(newAvailableKg),
+        status: newStatus,
+        consumptionHistory: updatedConsumptionHistory
+      };
+
+      if (onConsumeSFG) {
+        await onConsumeSFG(updatedItem, logEntry);
+      } else if (onSaveSFGGood) {
+        await onSaveSFGGood(updatedItem);
+      }
+
+      // Special logic when targetProcess is 'QC Hold Store'
+      if (targetProcess === 'QC Hold Store') {
+        const holdTagId = `QCHOLD-${Date.now().toString().slice(-6)}`;
+        const parsedRollWeights = rollWeights.map(w => parseFloat(w) || 0).filter(w => w > 0);
+        const finalRollCount = Math.max(1, parseInt(holdRollCount) || 1);
+
+        const newQcHoldEntry = {
+          id: holdTagId,
+          barcodeId: holdTagId,
+          sfgBatchCode: holdTagId,
+          parentSfgBatchCode: selectedItemForConsume.sfgBatchCode,
+          parentSfgId: selectedItemForConsume.id,
+          orderId: selectedItemForConsume.orderId || 'N/A',
+          jobName: selectedItemForConsume.jobName,
+          jobCode: selectedItemForConsume.jobCode,
+          clientName: selectedItemForConsume.clientName,
+          filmType: selectedItemForConsume.filmType,
+          micron: selectedItemForConsume.micron,
+          widthMm: selectedItemForConsume.widthMm,
+          totalHoldKg: parseFloat(qtyVal.toFixed(2)),
+          remainingHoldKg: parseFloat(qtyVal.toFixed(2)),
+          approvedKg: 0,
+          scrappedKg: 0,
+          numberOfRolls: finalRollCount,
+          rollWeights: parsedRollWeights.length > 0 ? parsedRollWeights : [parseFloat(qtyVal.toFixed(2))],
+          holdReason: holdReason.trim(),
+          targetProcess: 'QC Hold Store',
+          operatorName: operatorName || currentUser?.fullName || currentUser?.username || 'QC Inspector',
+          shift,
+          date: new Date().toISOString().split('T')[0],
+          timestamp: new Date().toISOString(),
+          status: 'QC_HOLD',
+          isQCHold: true,
+          approvalLogs: [],
+          scrapLogs: []
+        };
+
+        setQcHoldItems(prev => [newQcHoldEntry, ...prev]);
+
+        // Open Barcode sticker modal immediately for the new QC Hold tag
+        setSelectedRollForBarcodeModal(newQcHoldEntry);
+      }
+
+      setSelectedItemForConsume(null);
+    } catch (err) {
+      console.error("Error confirming SFG consumption:", err);
+      setFormError(err.message || 'Failed to record consumption');
+    } finally {
+      setIsSubmittingConsume(false);
     }
-
-    setSelectedItemForConsume(null);
   };
 
   // Submit Option 1: Approve & Move to Store
@@ -2678,22 +2700,33 @@ export default function SFGStoreManagement({
                 </button>
                 <button
                   type="submit"
+                  disabled={isSubmittingConsume}
                   style={{
                     padding: '10px 22px',
                     borderRadius: '8px',
                     border: 'none',
-                    background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                    background: isSubmittingConsume 
+                      ? '#94a3b8' 
+                      : 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
                     color: '#ffffff',
                     fontSize: '0.88rem',
                     fontWeight: '700',
-                    cursor: 'pointer',
-                    boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
+                    cursor: isSubmittingConsume ? 'not-allowed' : 'pointer',
+                    boxShadow: isSubmittingConsume ? 'none' : '0 4px 12px rgba(37, 99, 235, 0.3)',
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '6px'
                   }}
                 >
-                  <Check size={18} /> Confirm & Record Consumption
+                  {isSubmittingConsume ? (
+                    <>
+                      <RefreshCw size={18} className="animate-spin" /> Recording Consumption...
+                    </>
+                  ) : (
+                    <>
+                      <Check size={18} /> Confirm & Record Consumption
+                    </>
+                  )}
                 </button>
               </div>
 

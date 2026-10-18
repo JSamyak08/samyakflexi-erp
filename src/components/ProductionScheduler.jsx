@@ -51,7 +51,7 @@ import {
 } from '../factoryStore';
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
-import { saveInventoryRollToSupabase } from '../services/supabaseDataService';
+import { saveInventoryRollToSupabase, saveSFGGoodToSupabase } from '../services/supabaseDataService';
 
 // Helper: Resolve Film Density for flexible packaging substrates
 const getFilmDensity = (filmType = '') => {
@@ -986,14 +986,17 @@ export default function ProductionScheduler({
         const sfgRollObj = {
           id: barcodeId,
           barcodeId: barcodeId,
+          sfgBatchCode: barcodeId,
           grnNo: `PRINT-RUN-${grnCode}`,
           rollType: 'SEMI_FINISHED_GOODS',
           category: 'Semi-Finished Goods (SFG)',
+          sfgType: 'Printed Rolls',
           itemName: `${endJobTargetOrder.jobName} - Printed SFG Roll ${rollSeqNo}`,
           jobName: endJobTargetOrder.jobName,
           jobCode: endJobTargetOrder.jobCode || endJobTargetOrder.id,
           orderId: endJobTargetOrder.id,
           customerName: endJobTargetOrder.clientName || endJobTargetOrder.customerName || 'Client',
+          clientName: endJobTargetOrder.clientName || endJobTargetOrder.customerName || 'Client',
           filmType: endJobTargetOrder.printFilmType || 'PET',
           micron: Number(endJobTargetOrder.micron) || 12,
           widthMm: Number(endJobTargetOrder.widthMm) || 460,
@@ -1005,7 +1008,10 @@ export default function ProductionScheduler({
           netWeightKg: rollWeight,
           grossWeightKg: Number((rollWeight + 0.5).toFixed(2)),
           tareWeightKg: 0.5,
+          totalNetKg: rollWeight,
           availableWeightKg: rollWeight,
+          availableKg: rollWeight,
+          consumedKg: 0,
           lengthMeters: Math.round(rollWeight > 0 ? (rollWeight / (outputKgNum || 1)) * actualMetersNum : actualMetersNum),
           purchaseRatePerKg: Number(endJobTargetOrder.rate || endJobTargetOrder.unitPrice || 0),
           unitPrice: Number(endJobTargetOrder.rate || endJobTargetOrder.unitPrice || 0),
@@ -1016,8 +1022,10 @@ export default function ProductionScheduler({
           processStage: 'PRINTED_SFG',
           status: 'In Stock (SFG)',
           qcStatus: 'Approved',
-          inwardDatetime: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
+          inwardDatetime: new Date().toISOString(),
+          productionDate: new Date().toISOString().split('T')[0],
           locationBay: isReverseJob ? 'SFG Store (Bay B - Pre-Lamination)' : 'SFG Store (Bay C - Pre-Slitting)',
+          storageBay: isReverseJob ? 'SFG Store (Bay B - Pre-Lamination)' : 'SFG Store (Bay C - Pre-Slitting)',
           inputSubstrateBarcodes: inputRollsList.map(r => r.barcodeId).filter(Boolean),
           inputRollsTraceability: inputRollsList
         };
@@ -1029,40 +1037,21 @@ export default function ProductionScheduler({
           await onAddRoll(sfgRollObj);
         }
 
-        // Direct Persistence into Supabase Database
+        // Direct Persistence into Supabase Database (both inventory_rolls and sfg_goods)
         try {
           await saveInventoryRollToSupabase(sfgRollObj);
+          await saveSFGGoodToSupabase({
+            ...sfgRollObj,
+            sfgBatchCode: barcodeId,
+            jobName: `${endJobTargetOrder.jobName} - Roll #${rollSeqNo}`,
+            totalNetKg: rollWeight,
+            availableKg: rollWeight,
+            consumedKg: 0,
+            storageBay: sfgRollObj.locationBay
+          });
         } catch (dbErr) {
           console.warn("[SFG Database Notice] Roll barcode saved locally. Supabase sync notice:", dbErr);
         }
-      }
-
-      // Also create/update an SFG Inventory Item in central stock for this Job so SFG Stock Register reflects it!
-      const sfgItemId = `SFG-ITEM-${endJobTargetOrder.id}`;
-      const sfgInventoryItem = {
-        id: sfgItemId,
-        itemCode: sfgItemId,
-        itemName: `${endJobTargetOrder.jobName} (Printed SFG Web)`,
-        category: 'Semi-Finished Goods (SFG)',
-        sfgType: 'Printed Rolls',
-        orderId: endJobTargetOrder.id,
-        jobCode: endJobTargetOrder.jobCode || endJobTargetOrder.id,
-        clientName: endJobTargetOrder.clientName || endJobTargetOrder.customerName || 'In-House Printing Press',
-        filmType: endJobTargetOrder.printFilmType || endJobTargetOrder.filmType || 'PET',
-        micron: Number(endJobTargetOrder.micron || endJobTargetOrder.printFilmMicron || 12),
-        widthMm: Number(endJobTargetOrder.widthMm || endJobTargetOrder.printWidthMm || 460),
-        unit: 'Kg',
-        availableQtyKg: outputKgNum,
-        allocatedQtyKg: 0,
-        unitPrice: Number(endJobTargetOrder.rate || 0),
-        location: isReverseJob ? 'SFG Store (Pre-Lamination)' : 'SFG Store (Pre-Slitting)',
-        reorderLevelKg: 50,
-        lastVendor: 'In-House Printing Press',
-        lastBatch: `PRINT-RUN-${grnCode}`
-      };
-
-      if (onSaveInventoryItem) {
-        await onSaveInventoryItem(sfgInventoryItem);
       }
 
       // Process Input Film Rolls & Save Remaining Balance Barcode Rolls to Database

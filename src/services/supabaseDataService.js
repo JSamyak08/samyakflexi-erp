@@ -1907,9 +1907,11 @@ export async function saveInventoryRollToSupabase(roll) {
     throw new Error("Cannot save inventory roll: Supabase database connection is not available.");
   }
   await ensureValidSession();
+  const netWeight = Number(roll.netWeightKg) || 0;
+  const availableWeight = Number(roll.availableWeightKg ?? roll.availableKg ?? netWeight) || 0;
+
   const fullPayload = {
     barcode_id: roll.barcodeId || roll.id,
-    grn_no: roll.grnNo || roll.grn_no || '',
     roll_type: roll.rollType || 'RAW_MATERIAL',
     item_id: roll.itemId || '',
     item_name: roll.itemName || '',
@@ -1919,31 +1921,38 @@ export async function saveInventoryRollToSupabase(roll) {
     micron: Number(roll.micron) || 0,
     width_mm: Number(roll.widthMm) || 0,
     metallocene_pct: roll.metallocenePct || roll.metallocene_pct || null,
-    packaging_type: roll.packagingType || '',
     inward_datetime: roll.inwardDatetime || new Date().toISOString(),
     production_date: roll.productionDate || (roll.inwardDatetime ? roll.inwardDatetime.split('T')[0] : new Date().toISOString().split('T')[0]),
     vendor_name: roll.vendorName || roll.vendor || '',
     invoice_no: roll.invoiceNo || roll.invoice_no || '',
-    batch_no: roll.batchNo || roll.lotNo || roll.batch_no || '',
-    gross_weight_kg: Number(roll.grossWeightKg ?? roll.netWeightKg ?? 0) || 0,
-    tare_weight_kg: Number(roll.tareWeightKg ?? 0) || 0,
-    net_weight_kg: Number(roll.netWeightKg) || 0,
-    available_weight_kg: Number(roll.availableWeightKg ?? roll.netWeightKg ?? 0) || 0,
+    batch_no: roll.batchNo || roll.lotNo || roll.grnNo || roll.grn_no || '',
+    gross_weight_kg: Number(roll.grossWeightKg ?? (netWeight > 0 ? netWeight + 0.5 : 0)) || 0,
+    tare_weight_kg: Number(roll.tareWeightKg ?? 0.5) || 0,
+    net_weight_kg: netWeight,
+    available_weight_kg: availableWeight,
     length_meters: Number(roll.lengthMeters ?? 0) || 0,
     joint_count: Number(roll.jointCount ?? 0) || 0,
-    qc_status: roll.qcStatus || 'Pending QC',
+    qc_status: roll.qcStatus || 'Approved',
     machine_name: roll.machineName || roll.machine || roll.stationId || '',
     operator_name: roll.operatorName || roll.operator || '',
     shift: roll.shift || '',
     remarks: roll.itemRemarks || roll.remarks || roll.notes || '',
     core_dia: roll.coreDia || '',
-    purchase_rate_per_kg: Number(roll.purchaseRatePerKg ?? roll.unitPrice ?? roll.purchaseRate ?? 0) || 0,
-    unit_price: Number(roll.purchaseRatePerKg ?? roll.unitPrice ?? roll.purchaseRate ?? 0) || 0,
-    unit: roll.unit || 'Kg',
     input_barcode_ids: roll.inputBarcodeIds || [],
     station_id: roll.stationId || '',
     location_bay: roll.locationBay || '',
-    status: roll.status || 'In Stock'
+    status: roll.status || (availableWeight <= 0 ? 'Consumed' : 'In Stock'),
+    sfg_type: roll.sfgType || (roll.rollType === 'SEMI_FINISHED_GOODS' ? 'Printed Rolls' : null),
+    job_code: roll.jobCode || '',
+    client_name: roll.customerName || roll.clientName || '',
+    structure: roll.structure || '',
+    metadata: {
+      grnNo: roll.grnNo || roll.grn_no || '',
+      packagingType: roll.packagingType || 'Roll',
+      purchaseRatePerKg: Number(roll.purchaseRatePerKg ?? roll.unitPrice ?? roll.purchaseRate ?? 0) || 0,
+      unitPrice: Number(roll.purchaseRatePerKg ?? roll.unitPrice ?? roll.purchaseRate ?? 0) || 0,
+      unit: roll.unit || 'Kg'
+    }
   };
   console.log('[inventory_rolls] Saving barcode:', roll.barcodeId || roll.id);
   const { error: fullErr } = await supabase.from('inventory_rolls').upsert(fullPayload, { onConflict: 'barcode_id' });
@@ -1953,8 +1962,11 @@ export async function saveInventoryRollToSupabase(roll) {
       barcode_id: roll.barcodeId || roll.id, 
       item_name: roll.itemName || 'Roll', 
       roll_type: roll.rollType || 'RAW_MATERIAL', 
-      net_weight_kg: Number(roll.netWeightKg) || 0, 
-      status: roll.status || 'In Stock' 
+      net_weight_kg: netWeight, 
+      available_weight_kg: availableWeight,
+      order_id: roll.orderId || null,
+      job_name: roll.jobName || null,
+      status: roll.status || (availableWeight <= 0 ? 'Consumed' : 'In Stock')
     }, { onConflict: 'barcode_id' });
     if (minErr) { 
       console.error('[inventory_rolls] Minimal payload failed:', minErr.message); 
@@ -3678,7 +3690,8 @@ export async function saveSFGGoodToSupabase(item) {
     updated_at: new Date().toISOString()
   };
 
-  if (item.id && item.id.length > 20) {
+  const isValidUUID = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(str));
+  if (item.id && isValidUUID(item.id)) {
     payload.id = item.id;
   }
 
