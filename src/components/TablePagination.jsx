@@ -1,5 +1,6 @@
 import React from 'react';
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import SearchableSelect from './SearchableSelect';
 
 export default function TablePagination(props) {
   const {
@@ -62,13 +63,13 @@ export default function TablePagination(props) {
         {/* Page Size Selector */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <span>Rows per page:</span>
-          <select
+          <SearchableSelect
             className="form-control"
-            style={{
+            style={{ width: 'auto', minWidth: '140px' }}
+            triggerStyle={{
               padding: '4px 8px',
               fontSize: '0.8rem',
               fontWeight: '600',
-              width: 'auto',
               borderRadius: '6px',
               borderColor: 'var(--border-color, #cbd5e1)',
               cursor: 'pointer'
@@ -85,7 +86,7 @@ export default function TablePagination(props) {
                 {size} per page {size === 25 ? '(Default)' : size === 500 ? '(Max)' : ''}
               </option>
             ))}
-          </select>
+          </SearchableSelect>
         </div>
 
         {/* Page Navigation Controls */}

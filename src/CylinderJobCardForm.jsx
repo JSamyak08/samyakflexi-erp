@@ -7,6 +7,7 @@ import { safeLocalStorageSet, safeLocalStorageGet } from './utils/safeStorage';
 import { COMPANY_DETAILS, FILM_DENSITIES } from './factoryStore';
 import { saveJobMasterToSupabase, saveCylinderToSupabase, saveSystemSetting } from './services/supabaseDataService';
 import ArtworkModal from './components/ArtworkModal';
+import SearchableSelect from './components/SearchableSelect';
 
 function parseStructureToLayers(structStr) {
   if (!structStr || structStr === '—') return [];
@@ -934,11 +935,12 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
           <label style={{ fontWeight: '800', fontSize: '0.9rem', color: '#166534', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
             <FileCode size={18} /> Select Existing Job Master to Auto-Fill Details:
           </label>
-          <select 
+          <SearchableSelect 
             className="form-control" 
-            style={{ fontWeight: '700', background: '#ffffff' }}
+            triggerStyle={{ fontWeight: '700', background: '#ffffff' }}
             value={formData.jobMasterId || ''}
             onChange={handleJobMasterSelect}
+            placeholder="-- Create New Job Master / Manual Specs Entry --"
           >
             <option value="">-- Create New Job Master / Manual Specs Entry --</option>
             {(jobMasters || []).map(j => (
@@ -946,7 +948,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
                 {j.jobName} ({j.skuCode || j.id}) — {j.clientName} [{j.structure || '—'}]
               </option>
             ))}
-          </select>
+          </SearchableSelect>
           <p style={{ margin: '4px 0 0 0', fontSize: '0.75rem', color: '#15803d' }}>
             Selecting an existing Job Master automatically fetches and populates SKU Code, Job Name, Client, Pouch Size, and Substrate Layers.
           </p>
@@ -995,9 +997,9 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
                         {layerDesig}
                       </td>
                       <td style={{ padding: '8px 12px' }}>
-                        <select 
+                        <SearchableSelect 
                           className="form-control" 
-                          style={{ padding: '4px 8px', fontSize: '0.82rem', fontWeight: '600' }}
+                          triggerStyle={{ padding: '4px 8px', fontSize: '0.82rem', fontWeight: '600', minHeight: '32px' }}
                           value={layer.filmType}
                           onChange={e => {
                             const val = e.target.value;
@@ -1007,7 +1009,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
                           {availableFilmTypes.map(ft => (
                             <option key={ft} value={ft}>{ft}</option>
                           ))}
-                        </select>
+                        </SearchableSelect>
                       </td>
                       <td style={{ padding: '8px 12px' }}>
                         <input 
@@ -1083,34 +1085,34 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
 
             <div className="form-group">
               <label>ARC Mark (Auto Register Control)</label>
-              <select className="form-control" name="arcMark" value={formData.arcMark} onChange={handleChange}>
+              <SearchableSelect className="form-control" name="arcMark" value={formData.arcMark} onChange={handleChange}>
                 <option value="Yes">Yes (Standard)</option>
                 <option value="Yes (Both Edges)">Yes (Both Edges)</option>
                 <option value="Yes (Operator Side)">Yes (Operator Side)</option>
                 <option value="Yes (Gear Side)">Yes (Gear Side)</option>
                 <option value="No">No</option>
-              </select>
+              </SearchableSelect>
             </div>
 
             <div className="form-group">
               <label>Slitting Mark</label>
-              <select className="form-control" name="slittingMark" value={formData.slittingMark} onChange={handleChange}>
+              <SearchableSelect className="form-control" name="slittingMark" value={formData.slittingMark} onChange={handleChange}>
                 <option value="Yes">Yes (Standard)</option>
                 <option value="1.5mm Dashed">1.5mm Dashed</option>
                 <option value="Continuous Solid Line">Continuous Solid Line</option>
                 <option value="2mm Center Slit">2mm Center Slit</option>
                 <option value="No">No</option>
-              </select>
+              </SearchableSelect>
             </div>
 
             <div className="form-group">
               <label>Tracker Line</label>
-              <select className="form-control" name="trackerLine" value={formData.trackerLine} onChange={handleChange}>
+              <SearchableSelect className="form-control" name="trackerLine" value={formData.trackerLine} onChange={handleChange}>
                 <option value="Yes">Yes (Standard)</option>
                 <option value="Continuous 1mm">Continuous 1mm</option>
                 <option value="1mm Edge Guide">1mm Edge Guide</option>
                 <option value="No">No</option>
-              </select>
+              </SearchableSelect>
             </div>
 
             <div className="form-group" style={{ gridColumn: '1 / -1' }}>
@@ -1157,12 +1159,12 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
           </div>
           <div className="form-group">
             <label style={{ fontWeight: '700', color: '#0f172a' }}>Printing Type (Reverse / Surface)*</label>
-            <select 
+            <SearchableSelect 
               className="form-control" 
               name="printing" 
               value={formData.printing || 'Reverse'} 
               onChange={handleChange}
-              style={{ fontWeight: '700', background: '#ffffff' }}
+              triggerStyle={{ fontWeight: '700', background: '#ffffff' }}
             >
               <option value="Reverse">Reverse (Standard Flexible Packaging)</option>
               <option value="Surface">Surface</option>
@@ -1170,7 +1172,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
               <option value="Surface Matt">Surface Matt</option>
               <option value="Reverse Printing">Reverse Printing</option>
               <option value="Surface Printing">Surface Printing</option>
-            </select>
+            </SearchableSelect>
           </div>
           <div className="form-group">
             <label>Individual Pouch Size (Width)</label>

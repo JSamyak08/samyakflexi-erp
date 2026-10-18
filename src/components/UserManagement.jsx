@@ -17,6 +17,7 @@ import {
   Save
 } from 'lucide-react';
 import TablePagination, { usePagination } from './TablePagination';
+import SearchableSelect from './SearchableSelect';
 import { SYSTEM_ROLES, ALL_MODULES, generateFullRolePermissions, DEFAULT_ROLE_PERMISSIONS } from '../factoryStore';
 import { saveRolePermissionsToSupabase } from '../services/supabaseDataService';
 import { notifyUserCreated } from '../services/emailService';
@@ -471,11 +472,11 @@ export default function UserManagement({
 
               <div className="form-group">
                 <label>Assigned Plant Role *</label>
-                <select className="form-control" value={role} onChange={e => handleRoleSelect(e.target.value)}>
+                <SearchableSelect className="form-control" value={role} onChange={e => handleRoleSelect(e.target.value)}>
                   {roleOptions.map(r => (
                     <option key={r.role} value={r.role}>{r.role} ({r.dept})</option>
                   ))}
-                </select>
+                </SearchableSelect>
               </div>
 
               <div className="form-group">
@@ -485,10 +486,10 @@ export default function UserManagement({
 
               <div className="form-group">
                 <label>Account Status</label>
-                <select className="form-control" value={status} onChange={e => setStatus(e.target.value)}>
+                <SearchableSelect className="form-control" value={status} onChange={e => setStatus(e.target.value)}>
                   <option value="Active">Active</option>
                   <option value="Inactive">Inactive</option>
-                </select>
+                </SearchableSelect>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>

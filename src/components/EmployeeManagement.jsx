@@ -1743,22 +1743,22 @@ export default function EmployeeManagement({
 
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <Filter size={15} style={{ color: '#64748b' }} />
-              <select className="form-control" value={departmentFilter} onChange={e => setDepartmentFilter(e.target.value)}>
+              <SearchableSelect className="form-control" style={{ minWidth: '160px' }} value={departmentFilter} onChange={e => setDepartmentFilter(e.target.value)}>
                 <option value="ALL">All Departments</option>
                 {EMPLOYEE_DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
-              </select>
+              </SearchableSelect>
 
-              <select className="form-control" value={shiftFilter} onChange={e => setShiftFilter(e.target.value)}>
+              <SearchableSelect className="form-control" style={{ minWidth: '160px' }} value={shiftFilter} onChange={e => setShiftFilter(e.target.value)}>
                 <option value="ALL">All Shift Durations</option>
                 <option value="12">12 Hours Shift</option>
                 <option value="10">10 Hours Shift</option>
                 <option value="8">8 Hours Shift</option>
-              </select>
+              </SearchableSelect>
 
-              <select className="form-control" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+              <SearchableSelect className="form-control" style={{ minWidth: '140px' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                 <option value="ALL">All Statuses</option>
                 {EMPLOYEE_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
+              </SearchableSelect>
             </div>
           </div>
 
@@ -2495,7 +2495,7 @@ export default function EmployeeManagement({
                   <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '800', color: '#475569', marginBottom: '4px' }}>
                     🗓️ FILTER BY MONTH
                   </label>
-                  <select
+                  <SearchableSelect
                     className="form-control"
                     value={otMonthFilter}
                     onChange={e => setOtMonthFilter(e.target.value)}
@@ -2509,7 +2509,7 @@ export default function EmployeeManagement({
                         </option>
                       );
                     })}
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 {/* Employee Filter */}
@@ -2540,7 +2540,7 @@ export default function EmployeeManagement({
                   <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '800', color: '#475569', marginBottom: '4px' }}>
                     APPROVAL STATUS
                   </label>
-                  <select 
+                  <SearchableSelect 
                     className="form-control" 
                     value={otStatusFilter} 
                     onChange={e => setOtStatusFilter(e.target.value)}
@@ -2549,7 +2549,7 @@ export default function EmployeeManagement({
                     <option value="Pending Approval">Pending Approval</option>
                     <option value="Approved">Approved</option>
                     <option value="Rejected">Rejected</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 {/* Search query */}
@@ -3141,7 +3141,7 @@ export default function EmployeeManagement({
                 <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>
                   Status Filter
                 </label>
-                <select 
+                <SearchableSelect 
                   className="input-field" 
                   value={advancesStatusFilter} 
                   onChange={(e) => setAdvancesStatusFilter(e.target.value)}
@@ -3150,14 +3150,14 @@ export default function EmployeeManagement({
                   <option value="Pending Approval">Pending Approval</option>
                   <option value="Approved & Disbursed">Approved & Disbursed</option>
                   <option value="Fully Recovered">Fully Recovered</option>
-                </select>
+                </SearchableSelect>
               </div>
 
               <div>
                 <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>
                   Department Filter
                 </label>
-                <select 
+                <SearchableSelect 
                   className="input-field" 
                   value={advancesDepartmentFilter} 
                   onChange={(e) => setAdvancesDepartmentFilter(e.target.value)}
@@ -3166,7 +3166,7 @@ export default function EmployeeManagement({
                   {departmentListOptions.map(dept => (
                     <option key={dept} value={dept}>{dept}</option>
                   ))}
-                </select>
+                </SearchableSelect>
               </div>
 
               <div>
@@ -3646,23 +3646,23 @@ export default function EmployeeManagement({
                 </div>
                 <div>
                   <label className="form-label">Gender</label>
-                  <select className="form-control" value={formGender} onChange={e => setFormGender(e.target.value)}>
+                  <SearchableSelect className="form-control" value={formGender} onChange={e => setFormGender(e.target.value)}>
                     <option value="Male">Male</option>
                     <option value="Female">Female</option>
                     <option value="Other">Other</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
                 <div>
                   <label className="form-label">Department *</label>
-                  <select className="form-control" value={formDepartment} onChange={e => setFormDepartment(e.target.value)}>
+                  <SearchableSelect className="form-control" value={formDepartment} onChange={e => setFormDepartment(e.target.value)}>
                     {EMPLOYEE_DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
+                  </SearchableSelect>
                 </div>
                 <div>
                   <label className="form-label">Designation *</label>
-                  <select className="form-control" value={formDesignation} onChange={e => setFormDesignation(e.target.value)}>
+                  <SearchableSelect className="form-control" value={formDesignation} onChange={e => setFormDesignation(e.target.value)}>
                     {EMPLOYEE_DESIGNATIONS.map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
+                  </SearchableSelect>
                 </div>
                 <div>
                   <label className="form-label">Joining Date</label>
@@ -3714,13 +3714,13 @@ export default function EmployeeManagement({
                   </div>
                   <div>
                     <label className="form-label">Default Assigned Shift</label>
-                    <select className="form-control" value={formDefaultShift} onChange={e => setFormDefaultShift(e.target.value)}>
+                    <SearchableSelect className="form-control" value={formDefaultShift} onChange={e => setFormDefaultShift(e.target.value)}>
                       <option value="Shift A: Day (08:00 - 20:00)">Shift A: Day Shift (08:00 - 20:00, 12h)</option>
                       <option value="Shift B: Night (20:00 - 08:00)">Shift B: Night Shift (20:00 - 08:00, 12h)</option>
                       <option value="Shift A: Day (08:00 - 18:00)">Shift A: Day Shift (08:00 - 18:00, 10h)</option>
                       <option value="Shift B: Night (20:00 - 06:00)">Shift B: Night Shift (20:00 - 06:00, 10h)</option>
                       <option value="General Shift (09:00 - 17:00)">General Shift (09:00 - 17:00, 8h)</option>
-                    </select>
+                    </SearchableSelect>
                   </div>
                 </div>
               </div>
@@ -3861,12 +3861,12 @@ export default function EmployeeManagement({
                 </div>
                 <div>
                   <label className="form-label">Payment Mode</label>
-                  <select className="form-control" value={formPaymentMode} onChange={e => setFormPaymentMode(e.target.value)}>
+                  <SearchableSelect className="form-control" value={formPaymentMode} onChange={e => setFormPaymentMode(e.target.value)}>
                     <option value="Bank Transfer (NEFT)">Bank Transfer (NEFT/RTGS)</option>
                     <option value="UPI / IMPS">UPI / IMPS</option>
                     <option value="Cheque">Cheque</option>
                     <option value="Cash">Cash</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
               </div>
 
@@ -3914,11 +3914,11 @@ export default function EmployeeManagement({
               </div>
               <div>
                 <label className="form-label">Settlement Status</label>
-                <select className="form-control" value={offSettlementStatus} onChange={e => setOffSettlementStatus(e.target.value)}>
+                <SearchableSelect className="form-control" value={offSettlementStatus} onChange={e => setOffSettlementStatus(e.target.value)}>
                   <option value="In Process">In Process</option>
                   <option value="Settled">Full & Final Settled</option>
                   <option value="Terminated">Terminated</option>
-                </select>
+                </SearchableSelect>
               </div>
             </div>
 
@@ -3974,25 +3974,25 @@ export default function EmployeeManagement({
             <div className="form-grid-2" style={{ marginBottom: '14px' }}>
               <div>
                 <label className="form-label">Attendance Status *</label>
-                <select className="form-control" value={attStatus} onChange={e => setAttStatus(e.target.value)}>
+                <SearchableSelect className="form-control" value={attStatus} onChange={e => setAttStatus(e.target.value)}>
                   <option value="Present">Present (Full Shift)</option>
                   <option value="Half Day">Half Day (50% Pay)</option>
                   <option value="Paid Leave">Paid Leave (PL)</option>
                   <option value="Absent">Absent (LOP - Loss of Pay)</option>
                   <option value="Comp Off">Comp Off</option>
                   <option value="Weekly Off">Weekly Off</option>
-                </select>
+                </SearchableSelect>
               </div>
 
               <div>
                 <label className="form-label">Shift Type Assigned</label>
-                <select className="form-control" value={attShiftType} onChange={e => setAttShiftType(e.target.value)}>
+                <SearchableSelect className="form-control" value={attShiftType} onChange={e => setAttShiftType(e.target.value)}>
                   <option value="Shift A: Day (08:00 - 20:00)">Shift A: Day (08:00 - 20:00, 12h)</option>
                   <option value="Shift B: Night (20:00 - 08:00)">Shift B: Night (20:00 - 08:00, 12h)</option>
                   <option value="Shift A: Day (08:00 - 18:00)">Shift A: Day (08:00 - 18:00, 10h)</option>
                   <option value="Shift B: Night (20:00 - 06:00)">Shift B: Night (20:00 - 06:00, 10h)</option>
                   <option value="General Shift (09:00 - 17:00)">General Shift (09:00 - 17:00, 8h)</option>
-                </select>
+                </SearchableSelect>
               </div>
 
               <div>
@@ -4157,12 +4157,13 @@ export default function EmployeeManagement({
                 <form onSubmit={handleSaveSalaryAdvance}>
                   <div style={{ marginBottom: '12px' }}>
                     <label className="form-label">Select Employee *</label>
-                    <select 
+                    <SearchableSelect 
                       className="form-control" 
                       value={advEmpId} 
                       onChange={e => setAdvEmpId(e.target.value)} 
                       disabled={Boolean(editingAdvance || selectedEmpActiveAdvance)}
                       required
+                      placeholder="-- Choose Employee --"
                     >
                       <option value="">-- Choose Employee --</option>
                       {employees.filter(e => e.status === 'Active' || e.status === 'On Probation').map(e => {
@@ -4178,7 +4179,7 @@ export default function EmployeeManagement({
                           </option>
                         );
                       })}
-                    </select>
+                    </SearchableSelect>
                   </div>
 
                   {selectedEmpActiveAdvance && (
@@ -4208,7 +4209,7 @@ export default function EmployeeManagement({
 
                     <div>
                       <label className="form-label">Repayment Tenure (Months)</label>
-                      <select 
+                      <SearchableSelect 
                         className="form-control" 
                         value={advTenureMonths} 
                         onChange={e => setAdvTenureMonths(Number(e.target.value) || 1)}
@@ -4219,7 +4220,7 @@ export default function EmployeeManagement({
                         <option value={3}>3 Months (33.3% EMI)</option>
                         <option value={4}>4 Months (25% EMI)</option>
                         <option value={6}>6 Months (16.6% EMI)</option>
-                      </select>
+                      </SearchableSelect>
                     </div>
                   </div>
 
@@ -4475,14 +4476,14 @@ export default function EmployeeManagement({
               <div className="form-grid-2" style={{ marginBottom: '14px' }}>
                 <div>
                   <label className="form-label">Payment Mode</label>
-                  <select className="form-control" value={paymentMode} onChange={e => setPaymentMode(e.target.value)}>
+                  <SearchableSelect className="form-control" value={paymentMode} onChange={e => setPaymentMode(e.target.value)}>
                     <option value="Bank Transfer (NEFT)">Bank Transfer (NEFT)</option>
                     <option value="RTGS">RTGS</option>
                     <option value="IMPS">IMPS</option>
                     <option value="UPI">UPI</option>
                     <option value="Cheque">Cheque</option>
                     <option value="Cash">Cash</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div>
@@ -4601,7 +4602,7 @@ export default function EmployeeManagement({
                     {/* Recovery Mechanism / Channel */}
                     <div style={{ marginBottom: '14px' }}>
                       <label className="form-label">Recovery Channel / Mode *</label>
-                      <select 
+                      <SearchableSelect 
                         className="form-control" 
                         value={recoveryModeInput} 
                         onChange={e => setRecoveryModeInput(e.target.value)}
@@ -4609,7 +4610,7 @@ export default function EmployeeManagement({
                       >
                         <option value="SALARY_DEDUCTION">Salary Deduction Adjustment (Linked to Payroll)</option>
                         <option value="DIRECT_RECOVERY">Direct Settlement / Cash / UPI Return from Employee</option>
-                      </select>
+                      </SearchableSelect>
                     </div>
 
                     {recoveryModeInput === 'SALARY_DEDUCTION' && (

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import SearchableSelect from './SearchableSelect';
 import { 
   Layers, 
   Plus, 
@@ -1454,17 +1455,18 @@ export default function CylinderManagement({
                     <label style={{ fontSize: '0.78rem', fontWeight: '700', color: field.required ? '#b91c1c' : '#334155', display: 'block', marginBottom: '4px' }}>
                       {field.label} {field.required && '*'}
                     </label>
-                    <select 
+                    <SearchableSelect 
                       className="form-control" 
                       style={{ fontSize: '0.8rem', padding: '4px 8px' }}
                       value={bulkHeaderMapping[field.key] || ''}
                       onChange={e => setBulkHeaderMapping(prev => ({ ...prev, [field.key]: e.target.value }))}
+                      placeholder="-- Do Not Map --"
                     >
                       <option value="">-- Do Not Map --</option>
                       {bulkParsedHeaders.map(h => (
                         <option key={h} value={h}>{h}</option>
                       ))}
-                    </select>
+                    </SearchableSelect>
                   </div>
                 ))}
               </div>
@@ -1671,17 +1673,18 @@ export default function CylinderManagement({
                         <Plus size={12} /> Add New Client
                       </button>
                     </div>
-                    <select 
+                    <SearchableSelect 
                       className="form-control" 
                       required 
                       value={clientGroup} 
                       onChange={e => setClientGroup(e.target.value)}
+                      placeholder="-- Select Client from Directory --"
                     >
                       <option value="">-- Select Client from Directory --</option>
                       {allClientOptions.map(c => (
                         <option key={c.name} value={c.name}>{c.name} {c.gstin ? `(GST: ${c.gstin})` : ''}</option>
                       ))}
-                    </select>
+                    </SearchableSelect>
                   </div>
 
                   <div className="form-group">
@@ -1727,7 +1730,7 @@ export default function CylinderManagement({
                   {isAdmin && (
                     <div className="form-group">
                       <label>Cost Borne By</label>
-                      <select className="form-control" value={costBorneBy} onChange={e => {
+                      <SearchableSelect className="form-control" value={costBorneBy} onChange={e => {
                         setCostBorneBy(e.target.value);
                         if (e.target.value.includes('Client')) setCostBorneType('client');
                         else if (e.target.value.includes('Us')) setCostBorneType('us');
@@ -1736,7 +1739,7 @@ export default function CylinderManagement({
                         <option value="Client (100%)">Client (100%)</option>
                         <option value="Us (100%)">Us / Samyak (100%)</option>
                         <option value="Both (50/50)">Both (50/50)</option>
-                      </select>
+                      </SearchableSelect>
                     </div>
                   )}
                 </div>
@@ -1828,9 +1831,9 @@ export default function CylinderManagement({
                   {layers.map((l, idx) => (
                     <div key={l.id} style={{ display: 'grid', gridTemplateColumns: '90px 1fr 120px 36px', gap: '10px', alignItems: 'center' }}>
                       <span style={{ fontSize: '0.8rem', fontWeight: '700', color: '#475569' }}>Layer {idx + 1}</span>
-                      <select className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={l.filmType} onChange={e => setLayers(prev => prev.map(item => item.id === l.id ? { ...item, filmType: e.target.value } : item))}>
+                      <SearchableSelect className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={l.filmType} onChange={e => setLayers(prev => prev.map(item => item.id === l.id ? { ...item, filmType: e.target.value } : item))}>
                         {availableFilmTypes.map(filmKey => <option key={filmKey} value={filmKey}>{filmKey} ({FILM_DENSITIES[filmKey]} g/cc)</option>)}
-                      </select>
+                      </SearchableSelect>
                       <input type="number" className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={l.micron} onChange={e => setLayers(prev => prev.map(item => item.id === l.id ? { ...item, micron: parseFloat(e.target.value) || 0 } : item))} placeholder="Microns (µ)" />
                       {layers.length > 1 && <button type="button" className="btn-secondary text-danger" style={{ padding: '6px' }} onClick={() => removeLayer(l.id)} title="Remove Layer"><X size={14} /></button>}
                     </div>
@@ -1887,28 +1890,28 @@ export default function CylinderManagement({
                   </div>
                   <div className="form-group">
                     <label style={{ fontSize: '0.75rem', color: '#64748b' }}>ARC Mark</label>
-                    <select className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={arcMark} onChange={e => setArcMark(e.target.value)}>
+                    <SearchableSelect className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={arcMark} onChange={e => setArcMark(e.target.value)}>
                       <option value="Yes">Yes (Standard)</option>
                       <option value="Yes (Both Edges)">Yes (Both Edges)</option>
                       <option value="No">No</option>
-                    </select>
+                    </SearchableSelect>
                   </div>
                   <div className="form-group">
                     <label style={{ fontSize: '0.75rem', color: '#64748b' }}>Slitting Mark</label>
-                    <select className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={slittingMark} onChange={e => setSlittingMark(e.target.value)}>
+                    <SearchableSelect className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={slittingMark} onChange={e => setSlittingMark(e.target.value)}>
                       <option value="Yes">Yes (Standard)</option>
                       <option value="1.5mm Dashed">1.5mm Dashed</option>
                       <option value="Continuous Solid Line">Continuous Solid Line</option>
                       <option value="No">No</option>
-                    </select>
+                    </SearchableSelect>
                   </div>
                   <div className="form-group">
                     <label style={{ fontSize: '0.75rem', color: '#64748b' }}>Tracker Line</label>
-                    <select className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={trackerLine} onChange={e => setTrackerLine(e.target.value)}>
+                    <SearchableSelect className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={trackerLine} onChange={e => setTrackerLine(e.target.value)}>
                       <option value="Yes">Yes (Standard)</option>
                       <option value="Continuous 1mm">Continuous 1mm</option>
                       <option value="No">No</option>
-                    </select>
+                    </SearchableSelect>
                   </div>
                   <div className="form-group" style={{ gridColumn: 'span 2' }}>
                     <label style={{ fontSize: '0.75rem', color: '#64748b' }}>Special Quality Guidelines / Operator Instructions</label>
@@ -1986,21 +1989,21 @@ export default function CylinderManagement({
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                   <div className="form-group">
                     <label>Assigned Printing Press</label>
-                    <select className="form-control" value={assignedPress} onChange={e => setAssignedPress(e.target.value)}>
+                    <SearchableSelect className="form-control" value={assignedPress} onChange={e => setAssignedPress(e.target.value)}>
                       <option value="">— Not Assigned —</option>
                       {printingPresses.map(p => (
                         <option key={p} value={p}>{p}</option>
                       ))}
-                    </select>
+                    </SearchableSelect>
                   </div>
 
                   <div className="form-group">
                     <label>Cylinder Operational Status</label>
-                    <select className="form-control" value={status} onChange={e => setStatus(e.target.value)}>
+                    <SearchableSelect className="form-control" value={status} onChange={e => setStatus(e.target.value)}>
                       <option value="Active In-Use">Active In-Use</option>
                       <option value="Under Engraving">Under Engraving / Chroming</option>
                       <option value="Worn Out / Retouch Needed">Worn Out / Retouch Needed</option>
-                    </select>
+                    </SearchableSelect>
                   </div>
 
                   <div className="form-group">
@@ -2215,11 +2218,12 @@ export default function CylinderManagement({
                 <label style={{ fontWeight: '700', fontSize: '0.88rem', display: 'block', marginBottom: '6px' }}>
                   Select Existing Job Master Record:
                 </label>
-                <select
+                <SearchableSelect
                   className="form-control"
                   value={selectedExistingJmId}
                   onChange={e => setSelectedExistingJmId(e.target.value)}
                   style={{ width: '100%', padding: '10px' }}
+                  placeholder="— Search or Select Job Master —"
                 >
                   <option value="">— Select Job Master —</option>
                   {(jobMasters || []).map(j => (
@@ -2227,7 +2231,7 @@ export default function CylinderManagement({
                       {j.skuCode || j.id} — {j.jobName} ({j.clientName})
                     </option>
                   ))}
-                </select>
+                </SearchableSelect>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
                   <button type="button" className="btn-secondary" onClick={() => setLinkingCylinder(null)}>Cancel</button>
                   <button type="button" className="btn-primary" onClick={handleConfirmLinkToExistingJm} disabled={!selectedExistingJmId}>

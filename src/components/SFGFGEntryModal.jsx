@@ -23,6 +23,7 @@ import {
   ShieldAlert
 } from 'lucide-react';
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
+import SearchableSelect from './SearchableSelect';
 import { FILM_DENSITIES, getFilmSubstrateDensity, calculateFilmRollLength, COMPANY_DETAILS } from '../factoryStore';
 import { getStorageBays } from '../services/settingsService';
 
@@ -726,7 +727,7 @@ export default function SFGFGEntryModal({
                 <label className="form-label" style={{ fontWeight: '700', fontSize: '0.82rem', marginBottom: '4px', display: 'block' }}>
                   Select Active Production Job / Order <span style={{ color: '#dc2626' }}>*</span>
                 </label>
-                <select 
+                <SearchableSelect 
                   className="form-control" 
                   style={{ fontWeight: selectedJobId ? '700' : '400', fontSize: '0.88rem', color: selectedJobId ? '#0f172a' : '#94a3b8', width: '100%', borderColor: formErrors.selectedJobId ? '#ef4444' : undefined }}
                   value={selectedJobId} 
@@ -739,7 +740,7 @@ export default function SFGFGEntryModal({
                       {j.jobName} {j.clientName ? `(${j.clientName})` : ''} {j.structure ? `• ${j.structure}` : ''} • Code: {j.jobCode}
                     </option>
                   ))}
-                </select>
+                </SearchableSelect>
 
                 {currentJob && (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 12px', fontSize: '0.75rem', color: '#475569', marginTop: '6px', background: '#ffffff', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
@@ -764,7 +765,7 @@ export default function SFGFGEntryModal({
                 <label className="form-label" style={{ fontWeight: '700', fontSize: '0.82rem', marginBottom: '4px', display: 'block' }}>
                   {isSFG ? 'SFG Process Type' : 'FG Process Type'} <span style={{ color: '#dc2626' }}>*</span>
                 </label>
-                <select 
+                <SearchableSelect 
                   className="form-control" 
                   style={{ fontWeight: selectedType ? '700' : '400', fontSize: '0.88rem', color: selectedType ? (isSFG ? '#6d28d9' : '#b45309') : '#94a3b8', width: '100%', borderColor: formErrors.selectedType ? '#ef4444' : undefined }}
                   value={selectedType} 
@@ -778,7 +779,7 @@ export default function SFGFGEntryModal({
                   {(isSFG ? SFG_TYPES : FG_TYPES).map(t => (
                     <option key={t} value={t}>{t}</option>
                   ))}
-                </select>
+                </SearchableSelect>
                 {formErrors.selectedType && (
                   <div style={{ fontSize: '0.72rem', color: '#dc2626', marginTop: '2px', fontWeight: '600' }}>
                     {formErrors.selectedType}
@@ -845,7 +846,7 @@ export default function SFGFGEntryModal({
                   <label className="form-label" style={{ fontWeight: '700', fontSize: '0.76rem', marginBottom: '3px', display: 'block' }}>
                     Film Substrate Density
                   </label>
-                  <select 
+                  <SearchableSelect 
                     className="form-control" 
                     style={{ fontSize: '0.82rem', width: '100%' }}
                     value={jobFilmType} 
@@ -855,7 +856,7 @@ export default function SFGFGEntryModal({
                     {Object.keys(FILM_DENSITIES).map(f => (
                       <option key={f} value={f}>{f} (Density: {FILM_DENSITIES[f]})</option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                 </div>
               </div>
             </div>
@@ -866,7 +867,7 @@ export default function SFGFGEntryModal({
                 <label className="form-label" style={{ fontWeight: '600', fontSize: '0.78rem', marginBottom: '4px', display: 'block' }}>
                   Production Machine / Press <span style={{ color: '#dc2626' }}>*</span>
                 </label>
-                <select 
+                <SearchableSelect 
                   className="form-control" 
                   style={{ fontSize: '0.8rem', width: '100%', borderColor: formErrors.machineName ? '#ef4444' : undefined }}
                   value={machineName} 
@@ -886,7 +887,7 @@ export default function SFGFGEntryModal({
                       </option>
                     );
                   })}
-                </select>
+                </SearchableSelect>
                 {availableMachines.length === 0 && (
                   <div style={{ fontSize: '0.72rem', color: '#d97706', marginTop: '3px', fontWeight: '600' }}>
                     ⚠️ No active machines found in Settings. Please add machines in Printing Presses / Settings.
@@ -926,7 +927,7 @@ export default function SFGFGEntryModal({
                 <label className="form-label" style={{ fontWeight: '600', fontSize: '0.78rem', marginBottom: '4px', display: 'block' }}>
                   Shift <span style={{ color: '#dc2626' }}>*</span>
                 </label>
-                <select 
+                <SearchableSelect 
                   className="form-control" 
                   style={{ fontSize: '0.8rem', width: '100%', borderColor: formErrors.shift ? '#ef4444' : undefined }}
                   value={shift} 
@@ -939,7 +940,7 @@ export default function SFGFGEntryModal({
                   <option value="">-- Select Shift * --</option>
                   <option value="Day Shift (8 AM - 8 PM)">☀️ Day Shift (8 AM - 8 PM)</option>
                   <option value="Night Shift (8 PM - 8 AM)">🌙 Night Shift (8 PM - 8 AM)</option>
-                </select>
+                </SearchableSelect>
                 {formErrors.shift && (
                   <div style={{ fontSize: '0.72rem', color: '#dc2626', marginTop: '2px', fontWeight: '600' }}>
                     {formErrors.shift}
@@ -1160,10 +1161,10 @@ export default function SFGFGEntryModal({
 
                         {/* Splice / Joints */}
                         <td style={{ textAlign: 'center' }}>
-                          <select 
+                          <SearchableSelect 
                             className="form-control" 
                             disabled={isLocked}
-                            style={{ width: '50px', padding: '2px 4px', fontSize: '0.75rem', background: isLocked ? '#e2e8f0' : '#ffffff' }}
+                            style={{ width: '65px', padding: '2px 4px', fontSize: '0.75rem', background: isLocked ? '#e2e8f0' : '#ffffff' }}
                             value={roll.jointCount}
                             onChange={e => handleUpdateRoll(idx, 'jointCount', parseInt(e.target.value) || 0)}
                           >
@@ -1171,7 +1172,7 @@ export default function SFGFGEntryModal({
                             <option value="1">1</option>
                             <option value="2">2</option>
                             <option value="3">3</option>
-                          </select>
+                          </SearchableSelect>
                         </td>
 
                         {/* Status / Delete */}

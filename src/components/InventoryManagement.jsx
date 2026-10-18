@@ -4255,14 +4255,14 @@ export default function InventoryManagement({
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-secondary)' }}>Status Filter:</span>
-              <select className="form-control" style={{ width: '220px', fontWeight: '600' }} value={poStatusFilter} onChange={e => setPoStatusFilter(e.target.value)}>
+              <SearchableSelect className="form-control" style={{ width: '220px' }} triggerStyle={{ fontWeight: '600' }} value={poStatusFilter} onChange={e => setPoStatusFilter(e.target.value)}>
                 <option value="ALL">🌐 All Issued POs ({unifiedIssuedPOs.length})</option>
                 <option value="PENDING">⏳ Pending Inward (0 Received)</option>
                 <option value="PARTIAL">📦 Partial Delivery</option>
                 <option value="COMPLETED">✅ Completed Deliveries</option>
                 <option value="OVERDUE">⚠️ Overdue Delivery SLA</option>
                 <option value="ALERT">🚨 Price Discrepancy Alerts</option>
-              </select>
+              </SearchableSelect>
             </div>
           </div>
 
@@ -4512,9 +4512,10 @@ export default function InventoryManagement({
               {/* Category Filter Dropdown */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Filter size={16} style={{ color: 'var(--text-secondary)' }} />
-                <select
+                <SearchableSelect
                   className="form-control"
-                  style={{ width: '240px', fontWeight: '700' }}
+                  style={{ width: '260px' }}
+                  triggerStyle={{ fontWeight: '700' }}
                   value={stockCategoryFilter}
                   onChange={e => setStockCategoryFilter(e.target.value)}
                 >
@@ -4534,7 +4535,7 @@ export default function InventoryManagement({
                   <option value="Lubricants & Oils">Lubricants & Oils</option>
                   <option value="Tapes & Consumables">Tapes & Consumables</option>
                   <option value="Safety Gear (PPE)">Safety Gear (PPE)</option>
-                </select>
+                </SearchableSelect>
               </div>
             </div>
 
@@ -4915,9 +4916,9 @@ export default function InventoryManagement({
               {/* Vendor Filter */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: '1 1 180px', minWidth: '160px' }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)' }}>Vendor / Supplier:</label>
-                <select
+                <SearchableSelect
                   className="form-control"
-                  style={{ fontSize: '0.85rem' }}
+                  triggerStyle={{ fontSize: '0.85rem' }}
                   value={grnVendorFilter}
                   onChange={e => setGrnVendorFilter(e.target.value)}
                 >
@@ -4925,15 +4926,15 @@ export default function InventoryManagement({
                   {uniqueGrnVendors.map(v => (
                     <option key={v} value={v}>{v}</option>
                   ))}
-                </select>
+                </SearchableSelect>
               </div>
 
               {/* QC Status Filter */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: '1 1 160px', minWidth: '150px' }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)' }}>QC Clearance Status:</label>
-                <select
+                <SearchableSelect
                   className="form-control"
-                  style={{ fontSize: '0.85rem' }}
+                  triggerStyle={{ fontSize: '0.85rem' }}
                   value={grnStatusFilter}
                   onChange={e => setGrnStatusFilter(e.target.value)}
                 >
@@ -4941,7 +4942,7 @@ export default function InventoryManagement({
                   <option value="APPROVED">✅ Approved by QC</option>
                   <option value="PENDING">⏳ Pending QC Clearance</option>
                   <option value="REJECTED">❌ Rejected by QC</option>
-                </select>
+                </SearchableSelect>
               </div>
 
               {/* From Date */}
@@ -4971,9 +4972,9 @@ export default function InventoryManagement({
               {/* Sort By Filter */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: '1 1 180px', minWidth: '170px' }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)' }}>Sort By:</label>
-                <select
+                <SearchableSelect
                   className="form-control"
-                  style={{ fontSize: '0.85rem', fontWeight: '600' }}
+                  triggerStyle={{ fontSize: '0.85rem', fontWeight: '600' }}
                   value={grnSortBy}
                   onChange={e => setGrnSortBy(e.target.value)}
                 >
@@ -4984,7 +4985,7 @@ export default function InventoryManagement({
                   <option value="QTY_DESC">⚖️ Quantity: High to Low</option>
                   <option value="QTY_ASC">⚖️ Quantity: Low to High</option>
                   <option value="VENDOR_ASC">🏢 Vendor: A to Z</option>
-                </select>
+                </SearchableSelect>
               </div>
             </div>
           </div>
@@ -5414,9 +5415,10 @@ export default function InventoryManagement({
                 {/* Substrate Dropdown Filter */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <Filter size={14} style={{ color: 'var(--text-muted)' }} />
-                  <select
+                  <SearchableSelect
                     className="form-control"
-                    style={{ padding: '5px 10px', fontSize: '0.8rem', width: '160px' }}
+                    style={{ width: '160px' }}
+                    triggerStyle={{ padding: '5px 10px', fontSize: '0.8rem' }}
                     value={recSubstrateFilter}
                     onChange={e => setRecSubstrateFilter(e.target.value)}
                   >
@@ -5424,7 +5426,7 @@ export default function InventoryManagement({
                     {uniqueFilmSubstrates.map(film => (
                       <option key={film} value={film}>{film} Film</option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 {/* Reset Filters button if any filter is active */}
@@ -5840,16 +5842,16 @@ export default function InventoryManagement({
                     <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
                       Material / Container Packaging Type <span style={{ color: '#ef4444' }}>*</span>
                     </label>
-                    <select 
+                    <SearchableSelect 
                       className="form-control" 
-                      style={{ fontWeight: '600', color: '#1e40af', background: '#eff6ff', borderColor: '#bfdbfe' }}
+                      triggerStyle={{ fontWeight: '600', color: '#1e40af', background: '#eff6ff', borderColor: '#bfdbfe' }}
                       value={grnPackagingType} 
                       onChange={e => setGrnPackagingType(e.target.value)}
                     >
                       {PACKAGING_MATERIAL_TYPES.map(type => (
                         <option key={type} value={type}>{type} ({type}s)</option>
                       ))}
-                    </select>
+                    </SearchableSelect>
                   </div>
 
                   <div className="form-group" style={{ gridColumn: 'span 2' }}>
@@ -5886,13 +5888,13 @@ export default function InventoryManagement({
                     <>
                       <div className="form-group">
                         <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>Film Substrate</label>
-                        <select className="form-control" value={grnFilmType} onChange={e => handleFilmTypeChange(e.target.value)}>
+                        <SearchableSelect className="form-control" value={grnFilmType} onChange={e => handleFilmTypeChange(e.target.value)}>
                           {Object.keys(FILM_DENSITIES).map(type => (
                             <option key={type} value={type}>
                               {type} ({getFilmSubstrateDensity(type)} g/cc)
                             </option>
                           ))}
-                        </select>
+                        </SearchableSelect>
                       </div>
 
                       {isMetalloceneEligibleFilm(grnFilmType) && (
@@ -5900,7 +5902,7 @@ export default function InventoryManagement({
                           <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
                             Metallocene Percentage (%)
                           </label>
-                          <select 
+                          <SearchableSelect 
                             className="form-control"
                             value={grnMetallocenePct}
                             onChange={e => handleMetallocenePctChange(e.target.value)}
@@ -5909,7 +5911,7 @@ export default function InventoryManagement({
                             {METALLOCENE_OPTIONS.map(opt => (
                               <option key={opt} value={opt}>{opt}</option>
                             ))}
-                          </select>
+                          </SearchableSelect>
                         </div>
                       )}
 
@@ -5958,7 +5960,7 @@ export default function InventoryManagement({
                         <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
                           Unit of Measure (UOM) <span style={{ color: '#ef4444' }}>*</span>
                         </label>
-                        <select className="form-control" value={grnUnit} onChange={e => setGrnUnit(e.target.value)}>
+                        <SearchableSelect className="form-control" value={grnUnit} onChange={e => setGrnUnit(e.target.value)}>
                           <option value="Kg">Kg</option>
                           <option value="Litres">Litres</option>
                           <option value="Meters">Meters</option>
@@ -5968,7 +5970,7 @@ export default function InventoryManagement({
                           <option value="Drums">Drums</option>
                           <option value="Bags">Bags</option>
                           <option value="Cans">Cans</option>
-                        </select>
+                        </SearchableSelect>
                       </div>
 
                       <div className="form-group">
@@ -6784,11 +6786,11 @@ export default function InventoryManagement({
                     <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', marginBottom: '4px', display: 'block' }}>
                       Material Substrate
                     </label>
-                    <select
+                    <SearchableSelect
                       className="form-control"
                       value={qcEditFilmType}
                       onChange={e => setQcEditFilmType(e.target.value)}
-                      style={{ fontSize: '0.85rem', fontWeight: '600' }}
+                      triggerStyle={{ fontSize: '0.85rem', fontWeight: '600' }}
                     >
                       <option value="BOPP">BOPP (Plain)</option>
                       <option value="PET">PET (Polyester)</option>
@@ -6801,7 +6803,7 @@ export default function InventoryManagement({
                       <option value="ALU FOIL">Aluminium Foil</option>
                       <option value="PAPER">Kraft / Chromo Paper</option>
                       <option value={qcInspectingGRN.filmType || 'Generic'}>{qcInspectingGRN.filmType || 'Other Category'}</option>
-                    </select>
+                    </SearchableSelect>
                   </div>
 
                   {/* Width (mm) */}
@@ -7032,35 +7034,35 @@ export default function InventoryManagement({
                     <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', marginBottom: '4px', display: 'block' }}>
                       Corona Dyne Level (dynes/cm)
                     </label>
-                    <select
+                    <SearchableSelect
                       className="form-control"
                       value={qcEditDyneLevel}
                       onChange={e => setQcEditDyneLevel(e.target.value)}
-                      style={{ fontSize: '0.82rem' }}
+                      triggerStyle={{ fontSize: '0.82rem' }}
                     >
                       <option value="38-42">38 - 42 Dynes (Standard Printing Grade)</option>
                       <option value="42-44">42 - 44 Dynes (High-Ink Wetting)</option>
                       <option value=">44">&gt; 44 Dynes (Special Surface Treated)</option>
                       <option value="<38">&lt; 38 Dynes (Low / Non-Treated)</option>
                       <option value="N/A">N/A (Non-film / Solvents / Inks)</option>
-                    </select>
+                    </SearchableSelect>
                   </div>
 
                   <div className="form-group" style={{ margin: 0 }}>
                     <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', marginBottom: '4px', display: 'block' }}>
                       Micron Gauge Tolerance
                     </label>
-                    <select
+                    <SearchableSelect
                       className="form-control"
                       value={qcEditGaugeVariance}
                       onChange={e => setQcEditGaugeVariance(e.target.value)}
-                      style={{ fontSize: '0.82rem' }}
+                      triggerStyle={{ fontSize: '0.82rem' }}
                     >
                       <option value="±0.5">±0.5 µ (Excellent Gauge Uniformity)</option>
                       <option value="±1.0">±1.0 µ (Standard Commercial Tolerance)</option>
                       <option value="±1.5">±1.5 µ (Marginal Variation)</option>
                       <option value=">±2.0">&gt; ±2.0 µ (High Variation / Non-Uniform)</option>
-                    </select>
+                    </SearchableSelect>
                   </div>
                 </div>
 
@@ -7280,10 +7282,11 @@ export default function InventoryManagement({
                   value={stockSearchTerm} 
                   onChange={e => setStockSearchTerm(e.target.value)} 
                 />
-                <select 
+                <SearchableSelect 
                   className="form-control" 
                   value={scannedItemDetails?.item?.id || ''} 
-                  style={{ fontSize: '0.82rem' }}
+                  triggerStyle={{ fontSize: '0.82rem' }}
+                  placeholder="-- Choose Item from Inventory Directory --"
                   onChange={e => {
                     const found = (inventory || []).find(i => i.id === e.target.value);
                     if (found) {
@@ -7305,7 +7308,7 @@ export default function InventoryManagement({
                       {i.id} - {i.itemName || `${i.filmType} ${i.micron}µ`} | Avail: {i.availableQtyKg} {i.unit || 'Kg'} | Rate: ₹{i.unitPrice || 0}
                     </option>
                   ))}
-                </select>
+                </SearchableSelect>
               </div>
             )}
 
@@ -7503,11 +7506,12 @@ export default function InventoryManagement({
                   ⚠️ No active unapproved production jobs available. Only active jobs in production appear here.
                 </div>
               ) : (
-                <select 
+                <SearchableSelect 
                   className="form-control" 
                   value={issueJobName || activeProductionOrders[0]?.jobName || ''} 
                   onChange={e => setIssueJobName(e.target.value)}
-                  style={{ fontWeight: '600' }}
+                  triggerStyle={{ fontWeight: '600' }}
+                  placeholder="-- Select Active Production Job --"
                 >
                   <option value="">-- Select Active Production Job --</option>
                   {activeProductionOrders.map(o => (
@@ -7515,7 +7519,7 @@ export default function InventoryManagement({
                       {o.jobName} ({o.id}) {o.clientName ? `- ${o.clientName}` : ''}
                     </option>
                   ))}
-                </select>
+                </SearchableSelect>
               )}
             </div>
 
@@ -7647,7 +7651,7 @@ export default function InventoryManagement({
 
                   <div className="form-group">
                     <label style={{ fontWeight: '700' }}>Material Category (Category) *</label>
-                    <select 
+                    <SearchableSelect 
                       className="form-control"
                       value={editCategory}
                       onChange={e => handleCategoryChangeInEdit(e.target.value)}
@@ -7655,14 +7659,14 @@ export default function InventoryManagement({
                       {INVENTORY_CATEGORIES.map(cat => (
                         <option key={cat} value={cat}>{cat}</option>
                       ))}
-                    </select>
+                    </SearchableSelect>
                     <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Select target stock category</span>
                   </div>
 
                   <div className="form-group">
                     <label style={{ fontWeight: '700' }}>Substrate or Grade (SubstrateOrGrade) *</label>
                     {editCategory === 'Film Substrates' ? (
-                      <select 
+                      <SearchableSelect 
                         className="form-control"
                         value={editSubstrateOrGrade || editFilmType}
                         onChange={e => {
@@ -7673,7 +7677,7 @@ export default function InventoryManagement({
                         {Object.keys(FILM_DENSITIES).map(type => (
                           <option key={type} value={type}>{type} ({FILM_DENSITIES[type]} g/cc)</option>
                         ))}
-                      </select>
+                      </SearchableSelect>
                     ) : (
                       <>
                         <input 
@@ -7727,7 +7731,7 @@ export default function InventoryManagement({
 
                   <div className="form-group">
                     <label>Unit of Measure (UOM) *</label>
-                    <select 
+                    <SearchableSelect 
                       className="form-control"
                       value={editUnit}
                       onChange={e => setEditUnit(e.target.value)}
@@ -7735,7 +7739,7 @@ export default function InventoryManagement({
                       {INVENTORY_UOMS.map(u => (
                         <option key={u.value} value={u.value}>{u.label}</option>
                       ))}
-                    </select>
+                    </SearchableSelect>
                   </div>
                 </div>
               </div>
@@ -7775,7 +7779,7 @@ export default function InventoryManagement({
                     {isMetalloceneEligibleFilm(editSubstrateOrGrade || editFilmType) && (
                       <div className="form-group">
                         <label style={{ fontWeight: '600', fontSize: '0.83rem' }}>Metallocene Percentage (%)</label>
-                        <select 
+                        <SearchableSelect 
                           className="form-control"
                           value={editMetallocenePct}
                           onChange={e => {
@@ -7788,7 +7792,7 @@ export default function InventoryManagement({
                           {METALLOCENE_OPTIONS.map(opt => (
                             <option key={opt} value={opt}>{opt}</option>
                           ))}
-                        </select>
+                        </SearchableSelect>
                       </div>
                     )}
 
@@ -8406,10 +8410,10 @@ export default function InventoryManagement({
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
                       <div className="form-group">
                         <label style={{ fontSize: '0.8rem' }}>Adjustment Type *</label>
-                        <select className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={adjType} onChange={e => setAdjType(e.target.value)}>
+                        <SearchableSelect className="form-control" triggerStyle={{ padding: '6px 10px', fontSize: '0.85rem' }} value={adjType} onChange={e => setAdjType(e.target.value)}>
                           <option value="Physical Audit (+)">Physical Audit (+) Surplus Addition</option>
                           <option value="Physical Audit (-)">Physical Audit (-) Deficit Deduction</option>
-                        </select>
+                        </SearchableSelect>
                       </div>
 
                       <div className="form-group">
@@ -8991,7 +8995,7 @@ export default function InventoryManagement({
 
                 <div className="form-group">
                   <label>Payment Terms</label>
-                  <select
+                  <SearchableSelect
                     className="form-control"
                     value={newVendorPaymentTerms}
                     onChange={e => setNewVendorPaymentTerms(e.target.value)}
@@ -9001,7 +9005,7 @@ export default function InventoryManagement({
                     <option value="45 Days Net">45 Days Net</option>
                     <option value="60 Days Net">60 Days Net</option>
                     <option value="Advance Payment">Advance Payment</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div className="form-group">
@@ -9122,9 +9126,9 @@ export default function InventoryManagement({
                   <label className="form-label" style={{ fontWeight: '700' }}>
                     1. Select Target Inventory Category *
                   </label>
-                  <select 
+                  <SearchableSelect 
                     className="form-control" 
-                    style={{ fontWeight: '700', color: '#0f172a', background: '#ffffff' }}
+                    triggerStyle={{ fontWeight: '700', color: '#0f172a', background: '#ffffff' }}
                     value={bulkCategory}
                     onChange={e => setBulkCategory(e.target.value)}
                   >
@@ -9132,7 +9136,7 @@ export default function InventoryManagement({
                     {INVENTORY_CATEGORIES.map(cat => (
                       <option key={cat} value={cat}>{cat}</option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div style={{ textAlign: 'right' }}>
@@ -9237,12 +9241,13 @@ export default function InventoryManagement({
                             <td>₹ {row.unitPrice}</td>
                             <td>
                               {row.matchedItem ? (
-                                <select 
+                                <SearchableSelect 
                                   className="form-control"
-                                  style={{ 
+                                  style={{ minWidth: '220px' }}
+                                  triggerStyle={{ 
                                     fontSize: '0.75rem', 
                                     padding: '2px 4px', 
-                                    height: '28px',
+                                    minHeight: '28px',
                                     fontWeight: '700',
                                     borderColor: row.importAction === 'UPDATE_EXISTING' ? '#059669' : (row.importAction === 'ADD_TO_EXISTING' ? '#f59e0b' : '#3b82f6'),
                                     background: row.importAction === 'UPDATE_EXISTING' ? '#ecfdf5' : (row.importAction === 'ADD_TO_EXISTING' ? '#fffbe6' : '#eff6ff'),
@@ -9254,7 +9259,7 @@ export default function InventoryManagement({
                                   <option value="UPDATE_EXISTING">🔄 Update Quantity & Item Details</option>
                                   <option value="ADD_TO_EXISTING">➕ Add Qty to Existing Stock</option>
                                   <option value="CREATE_NEW">✨ Create New Separate Item</option>
-                                </select>
+                                </SearchableSelect>
                               ) : (
                                 <span style={{ fontSize: '0.74rem', color: '#166534', background: '#dcfce7', border: '1px solid #86efac', padding: '2px 6px', borderRadius: '4px', fontWeight: '700' }}>
                                   ✨ New Item

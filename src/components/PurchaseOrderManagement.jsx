@@ -28,9 +28,9 @@ import {
   Download,
   Info
 } from 'lucide-react';
+import SearchableSelect from './SearchableSelect';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
 import TablePagination, { usePagination } from './TablePagination';
-import SearchableSelect from './SearchableSelect';
 import { COMPANY_DETAILS } from '../factoryStore';
 import { generateDocRefNumber, getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import { calculateGSTBreakdown, formatINR } from '../utils/pdfHelpers';
@@ -876,7 +876,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
 
           {/* Category Filter */}
           <div>
-            <select
+            <SearchableSelect
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
               className="input-field"
@@ -889,12 +889,12 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
               <option value="Solvents & Chemicals">Solvents & Chemicals</option>
               <option value="Rotogravure Cylinders">Rotogravure Cylinders</option>
               <option value="Consumables & Spares">Consumables & Spares</option>
-            </select>
+            </SearchableSelect>
           </div>
 
           {/* Vendor Filter */}
           <div>
-            <select
+            <SearchableSelect
               value={selectedVendorFilter}
               onChange={(e) => setSelectedVendorFilter(e.target.value)}
               className="input-field"
@@ -904,12 +904,12 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
               {vendorFilterOptions.map(vName => (
                 <option key={vName} value={vName}>{vName}</option>
               ))}
-            </select>
+            </SearchableSelect>
           </div>
 
           {/* Status Filter */}
           <div>
-            <select
+            <SearchableSelect
               value={selectedStatusFilter}
               onChange={(e) => setSelectedStatusFilter(e.target.value)}
               className="input-field"
@@ -921,7 +921,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
               <option value="RECEIVED">✅ Fully Received</option>
               <option value="OVERDUE">🚨 Overdue Deliveries</option>
               <option value="CANCELLED">❌ Cancelled POs</option>
-            </select>
+            </SearchableSelect>
           </div>
 
         </div>

@@ -1474,11 +1474,11 @@ export default function ConsumablesAndIndents({
               <div className="form-grid">
                 <div>
                   <label className="form-label">Target Machine / Plant Unit *</label>
-                  <select className="form-control" value={issueMachine} onChange={e => setIssueMachine(e.target.value)}>
+                  <SearchableSelect className="form-control" value={issueMachine} onChange={e => setIssueMachine(e.target.value)}>
                     {dynamicMachineList.map(m => (
                       <option key={m} value={m}>{m}</option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div>
@@ -1508,11 +1508,11 @@ export default function ConsumablesAndIndents({
 
                 <div>
                   <label className="form-label">Work Shift</label>
-                  <select className="form-control" value={issueShift} onChange={e => setIssueShift(e.target.value)}>
+                  <SearchableSelect className="form-control" value={issueShift} onChange={e => setIssueShift(e.target.value)}>
                     <option value="Morning Shift (A)">Morning Shift (A)</option>
                     <option value="Evening Shift (B)">Evening Shift (B)</option>
                     <option value="Night Shift (C)">Night Shift (C)</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
               </div>
 
@@ -1578,22 +1578,22 @@ export default function ConsumablesAndIndents({
               <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
                 <div>
                   <label className="form-label">Priority Level *</label>
-                  <select className="form-control" value={indentPriority} onChange={e => setIndentPriority(e.target.value)}>
+                  <SearchableSelect className="form-control" value={indentPriority} onChange={e => setIndentPriority(e.target.value)}>
                     <option value="Normal">Normal Priority</option>
                     <option value="High">High Priority</option>
                     <option value="Urgent">🚨 Urgent (Machine Down Warning)</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div>
                   <label className="form-label">Requisition Department *</label>
-                  <select className="form-control" value={indentDept} onChange={e => setIndentDept(e.target.value)}>
+                  <SearchableSelect className="form-control" value={indentDept} onChange={e => setIndentDept(e.target.value)}>
                     <option value="Production & Printing">Production & Printing</option>
                     <option value="Lamination & Store">Lamination & Store</option>
                     <option value="Slitting & Pouching">Slitting & Pouching</option>
                     <option value="Maintenance Workshop">Maintenance Workshop</option>
                     <option value="Store & Inventory">Store & Inventory</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
               </div>
 
@@ -1622,16 +1622,16 @@ export default function ConsumablesAndIndents({
                       {indentLineItems.map((item) => (
                         <tr key={item.id}>
                           <td>
-                            <select 
+                            <SearchableSelect 
                               className="form-control" 
-                              style={{ fontSize: '0.85rem' }}
+                              triggerStyle={{ fontSize: '0.85rem' }}
                               value={item.itemName} 
                               onChange={e => updateIndentLineItem(item.id, 'itemName', e.target.value)}
                             >
                               {consumables.map(c => (
                                 <option key={c.id} value={c.name}>{c.name} (Stock: {c.currentStock} {c.unit})</option>
                               ))}
-                            </select>
+                            </SearchableSelect>
                           </td>
                           <td>
                             <input type="text" className="form-control" value={item.category} disabled style={{ fontSize: '0.8rem', background: '#f1f5f9' }} />
@@ -1651,16 +1651,16 @@ export default function ConsumablesAndIndents({
                             />
                           </td>
                           <td>
-                            <select 
+                            <SearchableSelect 
                               className="form-control" 
-                              style={{ fontSize: '0.8rem' }}
+                              triggerStyle={{ fontSize: '0.8rem' }}
                               value={item.targetMachine} 
                               onChange={e => updateIndentLineItem(item.id, 'targetMachine', e.target.value)}
                             >
                               {dynamicMachineList.map(m => (
                                 <option key={m} value={m}>{m}</option>
                               ))}
-                            </select>
+                            </SearchableSelect>
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             <button 
@@ -1808,7 +1808,7 @@ export default function ConsumablesAndIndents({
 
                 <div>
                   <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Category *</label>
-                  <select className="form-control" value={newItemCategory} onChange={e => setNewItemCategory(e.target.value)}>
+                  <SearchableSelect className="form-control" value={newItemCategory} onChange={e => setNewItemCategory(e.target.value)}>
                     <option value="Chemicals & Solvents">Chemicals & Solvents</option>
                     <option value="Printing Inks">Printing Inks</option>
                     <option value="Adhesives & Hardener">Adhesives & Hardener</option>
@@ -1818,12 +1818,12 @@ export default function ConsumablesAndIndents({
                     <option value="Lubricants & Oils">Lubricants & Oils</option>
                     <option value="Tapes & Consumables">Tapes & Consumables</option>
                     <option value="Safety Gear (PPE)">Safety Gear (PPE)</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div>
                   <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Unit of Measure *</label>
-                  <select className="form-control" value={newItemUnit} onChange={e => setNewItemUnit(e.target.value)}>
+                  <SearchableSelect className="form-control" value={newItemUnit} onChange={e => setNewItemUnit(e.target.value)}>
                     <option value="Kg">Kg</option>
                     <option value="Litres">Litres</option>
                     <option value="Meters">Meters</option>
@@ -1831,7 +1831,7 @@ export default function ConsumablesAndIndents({
                     <option value="Rolls">Rolls</option>
                     <option value="Boxes">Boxes</option>
                     <option value="Pack">Pack</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div>
@@ -1868,12 +1868,12 @@ export default function ConsumablesAndIndents({
 
                 <div>
                   <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Assigned Machine / Usage</label>
-                  <select className="form-control" value={newItemMachine} onChange={e => setNewItemMachine(e.target.value)}>
+                  <SearchableSelect className="form-control" value={newItemMachine} onChange={e => setNewItemMachine(e.target.value)}>
                     <option value="">— Select Machine / Usage Area —</option>
                     {dynamicMachineList.map(m => (
                       <option key={m} value={m}>{m}</option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                   <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <Settings size={11} />
                     To add a machine, go to <strong>Letterhead &amp; Settings → Plant Machine Directory</strong> or <strong>Printing Machine Scheduler → Machine Settings</strong>
@@ -2059,9 +2059,9 @@ export default function ConsumablesAndIndents({
 
                 <div>
                   <label className="form-label">Select Vendor (Linked Master Directory) *</label>
-                  <select 
+                  <SearchableSelect 
                     className="form-control" 
-                    style={{ fontWeight: '700' }}
+                    triggerStyle={{ fontWeight: '700' }}
                     value={selectedVendorName} 
                     onChange={e => setSelectedVendorName(e.target.value)}
                     required
@@ -2071,7 +2071,7 @@ export default function ConsumablesAndIndents({
                         {v.companyName} (Materials: {(v.materials || []).join(', ') || 'Supplies'})
                       </option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                   <small style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>GSTIN & Address auto-linked from Vendor Directory</small>
                 </div>
 
@@ -2103,12 +2103,12 @@ export default function ConsumablesAndIndents({
 
                 <div>
                   <label className="form-label">GST Tax Rate (%) *</label>
-                  <select className="form-control" value={poGstPct} onChange={e => setPoGstPct(e.target.value)}>
+                  <SearchableSelect className="form-control" value={poGstPct} onChange={e => setPoGstPct(e.target.value)}>
                     <option value="18">18% GST (Standard Consumables)</option>
                     <option value="12">12% GST</option>
                     <option value="5">5% GST</option>
                     <option value="0">0% Exempted</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div>
@@ -2224,7 +2224,7 @@ export default function ConsumablesAndIndents({
 
                 <div>
                   <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Category *</label>
-                  <select className="form-control" value={editItemCategory} onChange={e => setEditItemCategory(e.target.value)}>
+                  <SearchableSelect className="form-control" value={editItemCategory} onChange={e => setEditItemCategory(e.target.value)}>
                     <option value="Chemicals & Solvents">Chemicals & Solvents</option>
                     <option value="Inks & Additives">Inks & Additives</option>
                     <option value="Lamination Adhesives">Lamination Adhesives</option>
@@ -2233,7 +2233,7 @@ export default function ConsumablesAndIndents({
                     <option value="Spare Parts">Spare Parts & Mechanical</option>
                     <option value="Electrical & Utility">Electrical & Utility</option>
                     <option value="General Factory Store">General Factory Store</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div style={{ gridColumn: 'span 2' }}>
@@ -2250,7 +2250,7 @@ export default function ConsumablesAndIndents({
 
                 <div>
                   <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Unit of Measure (UOM) *</label>
-                  <select className="form-control" value={editItemUnit} onChange={e => setEditItemUnit(e.target.value)}>
+                  <SearchableSelect className="form-control" value={editItemUnit} onChange={e => setEditItemUnit(e.target.value)}>
                     <option value="Kg">Kg (Kilograms)</option>
                     <option value="Litres">Litres</option>
                     <option value="Meters">Meters</option>
@@ -2258,7 +2258,7 @@ export default function ConsumablesAndIndents({
                     <option value="Rolls">Rolls</option>
                     <option value="Boxes">Boxes</option>
                     <option value="Pack">Pack</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div>
@@ -2300,12 +2300,12 @@ export default function ConsumablesAndIndents({
 
                 <div>
                   <label className="form-label" style={{ fontWeight: '700', fontSize: '0.78rem', color: '#475569', marginBottom: '4px', display: 'block' }}>Assigned Machine / Usage Area</label>
-                  <select className="form-control" value={editItemMachine} onChange={e => setEditItemMachine(e.target.value)}>
+                  <SearchableSelect className="form-control" value={editItemMachine} onChange={e => setEditItemMachine(e.target.value)}>
                     <option value="">— Select Machine / Usage Area —</option>
                     {dynamicMachineList.map(m => (
                       <option key={m} value={m}>{m}</option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div>
@@ -2360,23 +2360,23 @@ export default function ConsumablesAndIndents({
               <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px' }}>
                 <div>
                   <label className="form-label">Priority Level *</label>
-                  <select className="form-control" value={editIndentPriority} onChange={e => setEditIndentPriority(e.target.value)}>
+                  <SearchableSelect className="form-control" value={editIndentPriority} onChange={e => setEditIndentPriority(e.target.value)}>
                     <option value="Normal">Normal</option>
                     <option value="High">High</option>
                     <option value="Urgent">Urgent (Breakdown / Urgent Order)</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div>
                   <label className="form-label">Department *</label>
-                  <select className="form-control" value={editIndentDepartment} onChange={e => setEditIndentDepartment(e.target.value)}>
+                  <SearchableSelect className="form-control" value={editIndentDepartment} onChange={e => setEditIndentDepartment(e.target.value)}>
                     <option value="Production & Printing">Production & Printing</option>
                     <option value="Lamination Dept">Lamination Dept</option>
                     <option value="Slitting & Pouching">Slitting & Pouching</option>
                     <option value="Maintenance & Utility">Maintenance & Utility</option>
                     <option value="Quality Assurance (QC)">Quality Assurance (QC)</option>
                     <option value="General Store">General Store</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div>
@@ -2392,12 +2392,12 @@ export default function ConsumablesAndIndents({
 
                 <div>
                   <label className="form-label">Indent Status *</label>
-                  <select className="form-control" value={editIndentStatus} onChange={e => setEditIndentStatus(e.target.value)}>
+                  <SearchableSelect className="form-control" value={editIndentStatus} onChange={e => setEditIndentStatus(e.target.value)}>
                     <option value="Pending Approval">Pending Approval</option>
                     <option value="Approved">Approved</option>
                     <option value="Issued to Machine">Issued to Machine</option>
                     <option value="Rejected">Rejected</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
               </div>
 
@@ -2426,16 +2426,16 @@ export default function ConsumablesAndIndents({
                       {editIndentLineItems.map((item, index) => (
                         <tr key={index}>
                           <td>
-                            <select 
+                            <SearchableSelect 
                               className="form-control" 
-                              style={{ fontSize: '0.85rem' }}
+                              triggerStyle={{ fontSize: '0.85rem' }}
                               value={item.itemName} 
                               onChange={e => updateEditIndentLineItem(index, 'itemName', e.target.value)}
                             >
                               {consumables.map(c => (
                                 <option key={c.id} value={c.name}>{c.name} (Stock: {c.currentStock} {c.unit})</option>
                               ))}
-                            </select>
+                            </SearchableSelect>
                           </td>
                           <td>
                             <input type="text" className="form-control" value={item.category} disabled style={{ fontSize: '0.8rem', background: '#f1f5f9' }} />
@@ -2455,16 +2455,16 @@ export default function ConsumablesAndIndents({
                             />
                           </td>
                           <td>
-                            <select 
+                            <SearchableSelect 
                               className="form-control" 
-                              style={{ fontSize: '0.8rem' }}
+                              triggerStyle={{ fontSize: '0.8rem' }}
                               value={item.targetMachine} 
                               onChange={e => updateEditIndentLineItem(index, 'targetMachine', e.target.value)}
                             >
                               {dynamicMachineList.map(m => (
                                 <option key={m} value={m}>{m}</option>
                               ))}
-                            </select>
+                            </SearchableSelect>
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             <button 

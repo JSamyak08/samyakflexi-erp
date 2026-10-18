@@ -67,6 +67,9 @@ import PurchaseOrderManagement from './components/PurchaseOrderManagement';
 import WeighingScaleWidget from './components/WeighingScaleWidget';
 import UniversalBarcodeScannerModal from './components/UniversalBarcodeScannerModal';
 import Preloader from './components/Preloader';
+import SearchableSelect from './components/SearchableSelect';
+import SuccessScreenModal from './components/SuccessScreenModal';
+import { showSuccessScreen } from './context/SuccessModalContext';
 import { fetchAuditLogsFromSupabase, saveAuditLogToSupabase, createAuditEntry, pruneOldAuditLogs } from './services/auditLogger';
 import { getNextDocRefNumber } from './services/settingsService';
 import { getRouteFromUrl, getTabFromUrl, pushSlugState } from './utils/slugRouter';
@@ -3500,18 +3503,15 @@ export default function App() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#ffffff', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem' }}>
               <UserCheck size={16} style={{ color: 'var(--primary-brand)' }} />
               <span style={{ color: 'var(--text-muted)', fontWeight: '500' }}>Active User:</span>
-              <select 
-                style={{ 
+              <SearchableSelect 
+                style={{ minWidth: '180px', display: 'inline-block' }}
+                triggerStyle={{ 
                   border: 'none', 
                   background: 'transparent', 
                   fontWeight: '700', 
                   color: 'var(--text-primary)', 
-                  cursor: (sessionProfile ? sessionProfile.role === 'Admin' : currentUser?.role === 'Admin') ? 'pointer' : 'default', 
-                  outline: 'none',
-                  opacity: (sessionProfile ? sessionProfile.role === 'Admin' : currentUser?.role === 'Admin') ? 1 : 0.9,
-                  WebkitAppearance: (sessionProfile ? sessionProfile.role === 'Admin' : currentUser?.role === 'Admin') ? 'menulist' : 'none',
-                  MozAppearance: (sessionProfile ? sessionProfile.role === 'Admin' : currentUser?.role === 'Admin') ? 'menulist' : 'none',
-                  appearance: (sessionProfile ? sessionProfile.role === 'Admin' : currentUser?.role === 'Admin') ? 'menulist' : 'none'
+                  padding: '2px 8px',
+                  minHeight: '28px'
                 }}
                 disabled={!(sessionProfile ? sessionProfile.role === 'Admin' : currentUser?.role === 'Admin')}
                 value={currentUser?.id || ''}
@@ -3529,7 +3529,7 @@ export default function App() {
                     {u.name} ({u.role})
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             </div>
 
             <button className="btn-signout" onClick={handleLogout} title="Sign Out of Session">
@@ -4619,6 +4619,9 @@ export default function App() {
           handleTabChange('production_records', { jobName, ...params });
         }}
       />
+
+      {/* Global Success Screen Modal across all forms and submissions */}
+      <SuccessScreenModal />
     </div>
   );
 

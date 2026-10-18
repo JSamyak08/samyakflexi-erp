@@ -20,6 +20,7 @@ import {
   Sliders
 } from 'lucide-react';
 import TablePagination, { usePagination } from './TablePagination';
+import SearchableSelect from './SearchableSelect';
 
 const MONTHS = [
   'All Months',
@@ -293,24 +294,25 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fef2f2', border: '1.5px solid #fca5a5', padding: '4px 10px', borderRadius: '8px' }}>
               <AlertTriangle size={16} color="#dc2626" />
-              <select
+              <SearchableSelect
                 value={wastageThresholdLimit}
                 onChange={(e) => setWastageThresholdLimit(parseFloat(e.target.value))}
-                style={{
+                style={{ width: '170px' }}
+                triggerStyle={{
                   background: 'transparent',
                   border: 'none',
                   color: '#991b1b',
                   fontWeight: '900',
-                  fontSize: '0.9rem',
-                  cursor: 'pointer',
-                  outline: 'none'
+                  fontSize: '0.85rem',
+                  padding: '2px 6px',
+                  minHeight: '28px'
                 }}
               >
                 <option value={3.0}>&gt;= 3.0% Limit</option>
                 <option value={5.0}>&gt;= 5.0% Limit (Default)</option>
                 <option value={7.5}>&gt;= 7.5% Limit</option>
                 <option value={10.0}>&gt;= 10.0% Limit</option>
-              </select>
+              </SearchableSelect>
             </div>
           </div>
         </div>
@@ -383,29 +385,31 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
           {/* Financial Year Selector */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#475569' }}>Financial Year</label>
-            <select 
+            <SearchableSelect 
               value={selectedFY} 
               onChange={e => handleFYChange(e.target.value)}
-              style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: '700', width: '150px' }}
+              style={{ width: '150px' }}
+              triggerStyle={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: '700' }}
             >
               {FINANCIAL_YEARS.map(fy => (
                 <option key={fy} value={fy}>{fy}</option>
               ))}
-            </select>
+            </SearchableSelect>
           </div>
 
           {/* Month Selector */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#475569' }}>Period / Month Wise</label>
-            <select 
+            <SearchableSelect 
               value={selectedMonth} 
               onChange={e => handleMonthChange(e.target.value)}
-              style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: '700', width: '180px' }}
+              style={{ width: '180px' }}
+              triggerStyle={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: '700' }}
             >
               {MONTHS.map(m => (
                 <option key={m} value={m}>{m}</option>
               ))}
-            </select>
+            </SearchableSelect>
           </div>
 
           {/* Custom Date Pickers */}

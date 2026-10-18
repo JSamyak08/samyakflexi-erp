@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import SearchableSelect from './SearchableSelect';
 import { 
   Truck, 
   Plus, 
@@ -2197,7 +2198,7 @@ export default function DispatchManagement({
                       Auto-populates Client Name, Invoice #, Lorry Receipt #, and sums Total Net Weight of each packing list into item rows.
                     </div>
                   </div>
-                  <select
+                  <SearchableSelect
                     className="form-control"
                     style={{ width: 'auto', minWidth: '300px', background: '#ffffff', fontWeight: '700', borderColor: '#a7f3d0', fontSize: '0.84rem' }}
                     value=""
@@ -2209,6 +2210,7 @@ export default function DispatchManagement({
                         handleImportMultiplePackingLists(next);
                       }
                     }}
+                    placeholder="+ Add Packing List to Link..."
                   >
                     <option value="">+ Add Packing List to Link...</option>
                     {(dispatchShipments || []).map(ds => {
@@ -2220,7 +2222,7 @@ export default function DispatchManagement({
                         </option>
                       );
                     })}
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 {/* Active Linked Packing List Chips */}
@@ -2329,7 +2331,7 @@ export default function DispatchManagement({
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', marginBottom: '14px', background: '#ffffff', padding: '12px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                   <div style={{ flex: '1 1 240px' }}>
                     <label className="form-label">Destination Party Category *</label>
-                    <select 
+                    <SearchableSelect 
                       className="form-control" 
                       style={{ fontWeight: '700', color: dcPartyType === 'Vendor' ? '#d97706' : '#0284c7', background: dcPartyType === 'Vendor' ? '#fffbeb' : '#f0f9ff' }}
                       value={dcPartyType} 
@@ -2346,18 +2348,19 @@ export default function DispatchManagement({
                     >
                       <option value="Client">Client / Customer (Sales & Dispatch)</option>
                       <option value="Vendor">Vendor / Supplier (Goods Return & Job Work)</option>
-                    </select>
+                    </SearchableSelect>
                   </div>
 
                   <div style={{ flex: '2 1 320px' }}>
                     <label className="form-label">
                       {dcPartyType === 'Vendor' ? 'Vendor Name (Select from Directory) *' : 'Client Name (Select from Directory) *'}
                     </label>
-                    <select 
+                    <SearchableSelect 
                       className="form-control" 
                       style={{ fontWeight: '700' }}
                       value={dcSelectedClientName} 
                       onChange={e => handlePartySelectChange(dcPartyType, e.target.value)}
+                      placeholder={`-- Search or Select ${dcPartyType} --`}
                       required
                     >
                       <option value="" disabled>-- Select {dcPartyType} --</option>
@@ -2376,7 +2379,7 @@ export default function DispatchManagement({
                           );
                         })
                       )}
-                    </select>
+                    </SearchableSelect>
                   </div>
                 </div>
 
@@ -2604,9 +2607,9 @@ export default function DispatchManagement({
                           {itemPresetOptions.length > 0 && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1 1 200px', minWidth: 0, maxWidth: '100%' }}>
                               <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#0369a1', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>⚡ Preset:</span>
-                              <select 
+                              <SearchableSelect 
                                 className="form-control" 
-                                style={{ padding: '4px 8px', fontSize: '0.78rem', color: '#0284c7', background: '#f0f9ff', borderColor: '#bae6fd', borderRadius: '6px', height: '30px', fontWeight: '600', flex: 1, minWidth: 0 }}
+                                style={{ padding: '4px 8px', fontSize: '0.78rem', color: '#0284c7', background: '#f0f9ff', borderColor: '#bae6fd', borderRadius: '6px', fontWeight: '600', flex: 1, minWidth: 0 }}
                                 onChange={e => {
                                   const selectedPreset = itemPresetOptions.find(p => p.id === e.target.value);
                                   if (selectedPreset) {
@@ -2614,12 +2617,13 @@ export default function DispatchManagement({
                                   }
                                 }}
                                 value=""
+                                placeholder="-- Search Specs from Job Master / Cylinder Directory --"
                               >
                                 <option value="">-- Load Specs from Job Master / Cylinder Directory --</option>
                                 {itemPresetOptions.map(p => (
                                   <option key={p.id} value={p.id}>[{p.category}] {p.label}</option>
                                 ))}
-                              </select>
+                              </SearchableSelect>
                             </div>
                           )}
                         </div>
@@ -2692,7 +2696,7 @@ export default function DispatchManagement({
                             <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>
                               UOM Type *
                             </label>
-                            <select 
+                            <SearchableSelect 
                               className="form-control" 
                               style={{ padding: '8px 10px', fontSize: '0.82rem', fontWeight: '800', background: '#ffffff', borderColor: '#cbd5e1', color: '#0f172a' }}
                               value={item.unit || 'Kg'}
@@ -2709,7 +2713,7 @@ export default function DispatchManagement({
                               <option value="Ltrs">Ltrs</option>
                               <option value="Sq.Mtrs">Sq.Mtrs</option>
                               <option value="Tons">Tons</option>
-                            </select>
+                            </SearchableSelect>
                           </div>
 
                           <div>
@@ -2790,9 +2794,9 @@ export default function DispatchManagement({
                       {/* Tax Settings & Total Breakdown */}
                       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
                         <div style={{ fontSize: '0.8rem', color: '#475569', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                          <div>
-                            <span style={{ marginRight: '4px' }}>Tax Type:</span>
-                            <select 
+                          <div style={{ minWidth: '170px' }}>
+                            <span style={{ marginRight: '4px', fontSize: '0.78rem', fontWeight: '700' }}>Tax Type:</span>
+                            <SearchableSelect 
                               value={dcTaxType} 
                               onChange={e => setDcTaxType(e.target.value)}
                               style={{ padding: '3px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontWeight: '700', fontSize: '0.8rem', background: '#ffffff' }}
@@ -2800,11 +2804,11 @@ export default function DispatchManagement({
                               <option value="auto">Auto (Detect GSTIN)</option>
                               <option value="cgst_sgst">CGST + SGST (Intra-State)</option>
                               <option value="igst">IGST (Inter-State)</option>
-                            </select>
+                            </SearchableSelect>
                           </div>
-                          <div>
-                            <span style={{ marginRight: '4px' }}>Tax Rate:</span>
-                            <select 
+                          <div style={{ minWidth: '130px' }}>
+                            <span style={{ marginRight: '4px', fontSize: '0.78rem', fontWeight: '700' }}>Tax Rate:</span>
+                            <SearchableSelect 
                               value={dcGstRatePct} 
                               onChange={e => setDcGstRatePct(e.target.value)}
                               style={{ padding: '3px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontWeight: '700', fontSize: '0.8rem', background: '#ffffff' }}
@@ -2813,7 +2817,7 @@ export default function DispatchManagement({
                               <option value={12}>12% GST</option>
                               <option value={5}>5% GST</option>
                               <option value={0}>0% (Exempt)</option>
-                            </select>
+                            </SearchableSelect>
                           </div>
                           <span style={{ fontWeight: '700', color: gstInfo.isIntraState ? '#047857' : '#0284c7', fontSize: '0.78rem' }}>
                             ({gstInfo.isIntraState ? `CGST ${(numGstPct / 2).toFixed(1)}% + SGST ${(numGstPct / 2).toFixed(1)}% [Intra-State]` : `IGST ${numGstPct}% [Inter-State]`})
@@ -2918,17 +2922,18 @@ export default function DispatchManagement({
 
                 <div>
                   <label className="form-label">Finished Goods (FG) Production Job *</label>
-                  <select 
+                  <SearchableSelect 
                     className="form-control" 
                     value={coaJobName} 
                     onChange={e => handleJobSelectChange(e.target.value)}
+                    placeholder="-- Search or Select Finished Goods (FG) Job --"
                     required
                   >
                     <option value="" disabled>-- Select Finished Goods (FG) Job --</option>
                     {(jobMasters || []).map(j => (
                       <option key={j.id} value={j.jobName}>{j.jobName} ({j.clientName})</option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div>
@@ -2972,9 +2977,9 @@ export default function DispatchManagement({
                   <div style={{ fontSize: '0.74rem', color: '#475569', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     Product Structure & Physical Parameters
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ fontSize: '0.74rem', fontWeight: '700', color: '#047857' }}>⚡ Structure Template Preset:</span>
-                    <select 
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: '220px' }}>
+                    <span style={{ fontSize: '0.74rem', fontWeight: '700', color: '#047857' }}>⚡ Structure Template:</span>
+                    <SearchableSelect 
                       className="form-control" 
                       style={{ fontSize: '0.78rem', fontWeight: '700', padding: '3px 8px', color: '#047857', background: '#ecfdf5', borderColor: '#a7f3d0', width: 'auto', borderRadius: '6px' }}
                       value={selectedCoaTemplateId}
@@ -2985,7 +2990,7 @@ export default function DispatchManagement({
                           {t.name} {t.isBuiltIn ? '(System Default)' : '(Custom)'}
                         </option>
                       ))}
-                    </select>
+                    </SearchableSelect>
                   </div>
                 </div>
                 <div className="form-grid">
@@ -3014,11 +3019,11 @@ export default function DispatchManagement({
                   </div>
                   <div>
                     <label className="form-label">Overall Status</label>
-                    <select className="form-control" style={{ fontWeight: '700', color: '#047857' }} value={coaOverallStatus} onChange={e => setCoaOverallStatus(e.target.value)}>
+                    <SearchableSelect className="form-control" style={{ fontWeight: '700', color: '#047857' }} value={coaOverallStatus} onChange={e => setCoaOverallStatus(e.target.value)}>
                       <option value="PASSED & APPROVED">PASSED & APPROVED</option>
                       <option value="CONFORMS TO SPECIFICATIONS">CONFORMS TO SPECIFICATIONS</option>
                       <option value="CONDITIONALLY APPROVED">CONDITIONALLY APPROVED</option>
-                    </select>
+                    </SearchableSelect>
                   </div>
                 </div>
               </div>
@@ -3191,9 +3196,9 @@ export default function DispatchManagement({
                       onChange={e => setReturnedQty(e.target.value)}
                       required
                     />
-                    <select
+                    <SearchableSelect
                       className="form-control"
-                      style={{ padding: '6px 8px', fontSize: '0.82rem', fontWeight: '700', width: '90px' }}
+                      style={{ padding: '6px 8px', fontSize: '0.82rem', fontWeight: '700', width: '100px' }}
                       value={returnUnit}
                       onChange={e => setReturnUnit(e.target.value)}
                     >
@@ -3208,7 +3213,7 @@ export default function DispatchManagement({
                       <option value="Ltrs">Ltrs</option>
                       <option value="Sq.Mtrs">Sq.Mtrs</option>
                       <option value="Tons">Tons</option>
-                    </select>
+                    </SearchableSelect>
                   </div>
                 </div>
 
@@ -3258,7 +3263,7 @@ export default function DispatchManagement({
 
                 <div style={{ gridColumn: 'span 2' }}>
                   <label className="form-label">Material Inspection & Quality Condition *</label>
-                  <select
+                  <SearchableSelect
                     className="form-control"
                     style={{ fontWeight: '700' }}
                     value={returnCondition}
@@ -3269,7 +3274,7 @@ export default function DispatchManagement({
                     <option value="Re-engraved / Completed Job Work">✓ Re-engraved / Completed Job Work (Ready for Use)</option>
                     <option value="Partially Processed / Pending Work">⚠ Partially Processed / Pending Further Work</option>
                     <option value="Damaged / Defective / Rejected">✗ Damaged / Defective / Rejected</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div>
@@ -3728,7 +3733,7 @@ export default function DispatchManagement({
 
                 <div className="form-group" style={{ gridColumn: 'span 2' }}>
                   <label>Select Production Job *</label>
-                  <select 
+                  <SearchableSelect 
                     className="form-control"
                     value={pktJobName}
                     onChange={e => {
@@ -3740,13 +3745,14 @@ export default function DispatchManagement({
                         if (matchedOrder.poNo) setPktPoNo(matchedOrder.poNo);
                       }
                     }}
+                    placeholder="-- Search or Select Production Job --"
                     required
                   >
                     <option value="" disabled>-- Select Production Job --</option>
                     {(orders || []).map(o => (
                       <option key={o.id} value={o.jobName}>{o.jobName} ({o.clientName})</option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div className="form-group">
@@ -3771,7 +3777,7 @@ export default function DispatchManagement({
 
                 <div className="form-group">
                   <label>Select Unit of Measurement (UoM) *</label>
-                  <select 
+                  <SearchableSelect 
                     className="form-control"
                     value={pktUom}
                     onChange={e => setPktUom(e.target.value)}
@@ -3783,7 +3789,7 @@ export default function DispatchManagement({
                     <option value="Rolls">Rolls (Reels)</option>
                     <option value="Bundles">Bundles</option>
                     <option value="Meters">Meters</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div className="form-group">

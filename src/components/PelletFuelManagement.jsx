@@ -24,6 +24,7 @@ import {
   Zap,
   Info
 } from 'lucide-react';
+import SearchableSelect from './SearchableSelect';
 
 export default function PelletFuelManagement({
   urlParams = {},
@@ -596,7 +597,7 @@ export default function PelletFuelManagement({
                 <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', color: '#475569', marginBottom: '6px' }}>
                   Machine / Boiler Unit
                 </label>
-                <select 
+                <SearchableSelect 
                   className="input-field" 
                   style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
                   value={machineFilter} 
@@ -606,14 +607,14 @@ export default function PelletFuelManagement({
                   {availableMachines.map(m => (
                     <option key={m} value={m}>{m}</option>
                   ))}
-                </select>
+                </SearchableSelect>
               </div>
 
               <div>
                 <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', color: '#475569', marginBottom: '6px' }}>
                   Shift Filter
                 </label>
-                <select 
+                <SearchableSelect 
                   className="input-field" 
                   style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
                   value={shiftFilter} 
@@ -623,7 +624,7 @@ export default function PelletFuelManagement({
                   <option value="Shift A: Day (08:00 - 20:00)">Shift A (Day)</option>
                   <option value="Shift B: Night (20:00 - 08:00)">Shift B (Night)</option>
                   <option value="Full Day 24h">Full Day 24h</option>
-                </select>
+                </SearchableSelect>
               </div>
             </>
           )}
@@ -931,7 +932,7 @@ export default function PelletFuelManagement({
                   <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '800', color: '#334155', marginBottom: '6px' }}>
                     Operating Shift <span style={{ color: '#dc2626' }}>*</span>
                   </label>
-                  <select 
+                  <SearchableSelect 
                     className="input-field" 
                     style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.88rem' }}
                     value={cShift}
@@ -940,7 +941,7 @@ export default function PelletFuelManagement({
                     <option value="Shift A: Day (08:00 - 20:00)">Shift A: Day (08:00 - 20:00)</option>
                     <option value="Shift B: Night (20:00 - 08:00)">Shift B: Night (20:00 - 08:00)</option>
                     <option value="Full Day 24h">Full Day 24h</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
               </div>
 
@@ -948,7 +949,7 @@ export default function PelletFuelManagement({
                 <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '800', color: '#334155', marginBottom: '6px' }}>
                   Boiler / Printing Machine Unit <span style={{ color: '#dc2626' }}>*</span>
                 </label>
-                <select 
+                <SearchableSelect 
                   className="input-field"
                   style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.88rem' }}
                   required
@@ -959,7 +960,7 @@ export default function PelletFuelManagement({
                   {availableMachines.map(m => (
                     <option key={m} value={m}>{m}</option>
                   ))}
-                </select>
+                </SearchableSelect>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '18px' }}>
@@ -1020,7 +1021,7 @@ export default function PelletFuelManagement({
                   <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '800', color: '#334155', marginBottom: '6px' }}>
                     Inward GRN Stock Batch Source <span style={{ color: '#dc2626' }}>*</span>
                   </label>
-                  <select 
+                  <SearchableSelect 
                     className="input-field" 
                     style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.88rem' }}
                     value={cGrnSource}
@@ -1034,7 +1035,7 @@ export default function PelletFuelManagement({
                         {g.grnNo} - {g.vendorName || 'Inward Stock'} (₹ {Number(g.unitCostPerKg || 0).toFixed(2)}/kg - {g.inwardDate})
                       </option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                   <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '4px' }}>
                     Select specific GRN shipment or use auto-weighted inward average
                   </div>

@@ -1823,7 +1823,7 @@ export default function OrderManagement({
                                         <td style={{ color: 'var(--text-secondary)' }}>
                                           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                             <Building2 size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-                                            <select
+                                            <SearchableSelect
                                               className="form-control"
                                               style={{ fontSize: '0.78rem', padding: '2px 4px', width: '140px', height: '28px' }}
                                               value={req.preferredVendor || ''}
@@ -1837,7 +1837,7 @@ export default function OrderManagement({
                                                   </option>
                                                 )
                                               ))}
-                                            </select>
+                                            </SearchableSelect>
                                           </div>
                                         </td>
                                         <td>
@@ -2037,7 +2037,7 @@ export default function OrderManagement({
               {/* Category Filter */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: '600' }}>Category:</span>
-                <select 
+                <SearchableSelect 
                   className="form-control" 
                   style={{ width: '140px' }} 
                   value={reqCategoryFilter} 
@@ -2047,7 +2047,7 @@ export default function OrderManagement({
                   <option value="Film">Film / Substrates</option>
                   <option value="Ink">Printing Inks</option>
                   <option value="Adhesive">Adhesives</option>
-                </select>
+                </SearchableSelect>
               </div>
 
               {/* Bulk Selection Action Buttons */}
@@ -2285,7 +2285,7 @@ export default function OrderManagement({
                             <td style={{ color: 'var(--text-secondary)' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.78rem' }}>
                                 <Building2 size={13} style={{ flexShrink: 0, color: 'var(--text-muted)' }} /> 
-                                <select
+                                <SearchableSelect
                                   className="form-control"
                                   style={{ fontSize: '0.76rem', padding: '2px 4px', width: '130px', height: '26px' }}
                                   value={req.preferredVendor || ''}
@@ -2299,7 +2299,7 @@ export default function OrderManagement({
                                       </option>
                                     )
                                   ))}
-                                </select>
+                                </SearchableSelect>
                               </div>
                             </td>
 
@@ -2475,7 +2475,7 @@ export default function OrderManagement({
               <form onSubmit={handleGenerateConsolidatedPO}>
                 <div className="form-group">
                   <label>Select Vendor for Purchase Order *</label>
-                  <select 
+                  <SearchableSelect 
                     className="form-control"
                     value={selectedVendorId}
                     onChange={e => setSelectedVendorId(e.target.value)}
@@ -2485,7 +2485,7 @@ export default function OrderManagement({
                         {v.companyName} (GSTIN: {v.gstin}) | Supplies: {v.materials.join(', ')}
                       </option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 {/* Selected Material Line Items Table Preview */}
@@ -2640,7 +2640,7 @@ export default function OrderManagement({
 
                   <div className="form-group">
                     <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>Supply Form / Order Type</label>
-                    <select 
+                    <SearchableSelect 
                       className="form-control" 
                       value={editOrderType} 
                       onChange={e => setEditOrderType(e.target.value)}
@@ -2648,7 +2648,7 @@ export default function OrderManagement({
                       <option value="Reel Form">Reel Form (Rolls)</option>
                       <option value="Pouching Form">Pouching Form (Pre-made Pouches)</option>
                       <option value="Rotogravure Cylinder">Rotogravure Cylinder Set</option>
-                    </select>
+                    </SearchableSelect>
                   </div>
 
                   <div className="form-group">
@@ -2674,7 +2674,7 @@ export default function OrderManagement({
 
                   <div className="form-group">
                     <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>Order Status</label>
-                    <select 
+                    <SearchableSelect 
                       className="form-control" 
                       value={editStatus} 
                       onChange={e => setEditStatus(e.target.value)}
@@ -2683,7 +2683,7 @@ export default function OrderManagement({
                       <option value="In Production">In Production</option>
                       <option value="On Hold">On Hold</option>
                       <option value="Completed">Completed</option>
-                    </select>
+                    </SearchableSelect>
                   </div>
 
                   <div className="form-group">
@@ -2721,7 +2721,7 @@ export default function OrderManagement({
 
                   <div className="form-group">
                     <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>Preferred Material Vendor</label>
-                    <select 
+                    <SearchableSelect 
                       className="form-control" 
                       value={editVendorName} 
                       onChange={e => setEditVendorName(e.target.value)}
@@ -2730,7 +2730,7 @@ export default function OrderManagement({
                       {(vendors || []).map(v => (
                         <option key={v.id} value={v.companyName}>{v.companyName}</option>
                       ))}
-                    </select>
+                    </SearchableSelect>
                   </div>
                 </div>
 

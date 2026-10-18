@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import SearchableSelect from './SearchableSelect';
 import { 
   Layers, 
   Package, 
@@ -1089,54 +1090,41 @@ export default function SFGStoreManagement({
 
         {/* Filters */}
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: '180px' }}>
             <Filter size={16} color="#64748b" />
-            <select
+            <SearchableSelect
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              style={{
-                padding: '9px 12px',
-                borderRadius: '8px',
-                border: '1px solid #cbd5e1',
-                fontSize: '0.85rem',
-                color: '#334155',
-                background: '#f8fafc',
-                cursor: 'pointer'
-              }}
+              style={{ minWidth: '160px' }}
             >
               <option value="all">All Statuses</option>
               <option value="In Stock (WIP)">In Stock (WIP)</option>
               <option value="Partially Consumed">Partially Consumed</option>
               <option value="Fully Consumed">Fully Consumed</option>
-            </select>
+            </SearchableSelect>
           </div>
 
-          <select
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-            style={{
-              padding: '9px 12px',
-              borderRadius: '8px',
-              border: '1px solid #cbd5e1',
-              fontSize: '0.85rem',
-              color: '#334155',
-              background: '#f8fafc',
-              cursor: 'pointer'
-            }}
-          >
-            <option value="all">All Stock Types (SFG & FG)</option>
-            <optgroup label="Semi-Finished Goods (SFG)">
-              <option value="Printed Rolls">Printed Rolls (SFG)</option>
-              <option value="Laminated Rolls (First Pass) for Roll Form">Laminated Rolls (First Pass) - Roll</option>
-              <option value="Laminated Rolls (First Pass) for Pouch Form">Laminated Rolls (First Pass) - Pouch</option>
-              <option value="Laminated Rolls (Second Pass) for Pouch Form">Laminated Rolls (Second Pass) - Pouch</option>
-            </optgroup>
-            <optgroup label="Finished Goods (FG)">
-              <option value="Slit Finished Reels">Slit Finished Reels (FG)</option>
-              <option value="Finished Pouches">Finished Pouches (FG)</option>
-              <option value="Finished Goods">Finished Goods (FG)</option>
-            </optgroup>
-          </select>
+          <div style={{ minWidth: '220px' }}>
+            <SearchableSelect
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              placeholder="All Stock Types..."
+              style={{ minWidth: '220px' }}
+            >
+              <option value="all">All Stock Types (SFG & FG)</option>
+              <optgroup label="Semi-Finished Goods (SFG)">
+                <option value="Printed Rolls">Printed Rolls (SFG)</option>
+                <option value="Laminated Rolls (First Pass) for Roll Form">Laminated Rolls (First Pass) - Roll</option>
+                <option value="Laminated Rolls (First Pass) for Pouch Form">Laminated Rolls (First Pass) - Pouch</option>
+                <option value="Laminated Rolls (Second Pass) for Pouch Form">Laminated Rolls (Second Pass) - Pouch</option>
+              </optgroup>
+              <optgroup label="Finished Goods (FG)">
+                <option value="Slit Finished Reels">Slit Finished Reels (FG)</option>
+                <option value="Finished Pouches">Finished Pouches (FG)</option>
+                <option value="Finished Goods">Finished Goods (FG)</option>
+              </optgroup>
+            </SearchableSelect>
+          </div>
         </div>
       </div>
 
@@ -2198,17 +2186,10 @@ export default function SFGStoreManagement({
                 <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#0f172a', marginBottom: '6px' }}>
                   Defect Category <span style={{ color: '#ef4444' }}>*</span>
                 </label>
-                <select
+                <SearchableSelect
                   value={defectCategory}
                   onChange={(e) => setDefectCategory(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    borderRadius: '8px',
-                    border: '1px solid #cbd5e1',
-                    fontSize: '0.88rem',
-                    color: '#0f172a'
-                  }}
+                  style={{ width: '100%' }}
                 >
                   <option value="Delamination / Bonding Failure">Delamination / Bonding Failure</option>
                   <option value="Shade / Color Variation">Shade / Color Variation</option>
@@ -2218,7 +2199,7 @@ export default function SFGStoreManagement({
                   <option value="Pinholes / Contamination / Spots">Pinholes / Contamination / Spots</option>
                   <option value="Substrate Defects / Gauge Variation">Substrate Defects / Gauge Variation</option>
                   <option value="Other Rejection Defect">Other Rejection Defect</option>
-                </select>
+                </SearchableSelect>
               </div>
 
               <div style={{ marginBottom: '20px' }}>
@@ -2433,19 +2414,10 @@ export default function SFGStoreManagement({
                   <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
                     Target Process / Stage <span style={{ color: '#ef4444' }}>*</span>
                   </label>
-                  <select
+                  <SearchableSelect
                     value={targetProcess}
                     onChange={(e) => setTargetProcess(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: '8px',
-                      border: targetProcess === 'QC Hold Store' ? '2px solid #dc2626' : '1px solid #cbd5e1',
-                      fontSize: '0.88rem',
-                      fontWeight: targetProcess === 'QC Hold Store' ? '800' : 'normal',
-                      color: targetProcess === 'QC Hold Store' ? '#991b1b' : '#0f172a',
-                      background: targetProcess === 'QC Hold Store' ? '#fff5f5' : '#ffffff'
-                    }}
+                    style={{ width: '100%' }}
                   >
                     <option value="Lamination (Pass 1)">Lamination (Pass 1)</option>
                     <option value="Lamination (Pass 2)">Lamination (Pass 2)</option>
@@ -2456,7 +2428,7 @@ export default function SFGStoreManagement({
                     <option value="QC Inspection & Rewinding">QC Inspection & Rewinding</option>
                     <option value="QC Hold Store">🚨 QC Hold Store (Quarantine)</option>
                     <option value="Custom Stage">Other Process Stage</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 {/* Conditional QC Hold Quarantine Controls */}
@@ -2571,24 +2543,17 @@ export default function SFGStoreManagement({
                   <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
                     Target Machine / Line
                   </label>
-                  <select
+                  <SearchableSelect
                     value={targetMachine}
                     onChange={(e) => setTargetMachine(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: '8px',
-                      border: '1px solid #cbd5e1',
-                      fontSize: '0.88rem',
-                      color: '#0f172a',
-                      background: '#ffffff'
-                    }}
+                    placeholder="Search or Select Machine..."
+                    style={{ width: '100%' }}
                   >
                     <option value="">Select Machine...</option>
                     {machines.map(m => (
                       <option key={m.id || m.name} value={m.name}>{m.name}</option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 {/* Operator Name */}
@@ -2616,20 +2581,14 @@ export default function SFGStoreManagement({
                   <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
                     Shift
                   </label>
-                  <select
+                  <SearchableSelect
                     value={shift}
                     onChange={(e) => setShift(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: '8px',
-                      border: '1px solid #cbd5e1',
-                      fontSize: '0.88rem'
-                    }}
+                    style={{ width: '100%' }}
                   >
                     <option value="Day Shift">Day Shift</option>
                     <option value="Night Shift">Night Shift</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 {/* Notes */}

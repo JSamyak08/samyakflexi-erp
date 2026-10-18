@@ -263,6 +263,14 @@ const SearchableSelect = React.forwardRef(({
         ...style
       }}
     >
+      {/* Hidden input for form submission and native validity */}
+      <input
+        type="hidden"
+        name={name}
+        id={id ? `${id}-hidden` : undefined}
+        value={stringVal}
+        required={required}
+      />
       {/* Trigger Button replacing standard select */}
       <div
         ref={ref}

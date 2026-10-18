@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import SalesQuotationPDF from './SalesQuotationPDF';
 import TablePagination, { usePagination } from './TablePagination';
+import SearchableSelect from './SearchableSelect';
 import { 
   calculateJobRawMaterials,
   isLDFilm,
@@ -1122,9 +1123,10 @@ export default function SalesManagement({
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Filter size={16} style={{ color: 'var(--text-secondary)' }} />
-                <select 
+                <SearchableSelect 
                   className="form-control" 
-                  style={{ width: '220px', fontWeight: '700' }}
+                  style={{ width: '220px' }}
+                  triggerStyle={{ fontWeight: '700' }}
                   value={statusFilter} 
                   onChange={e => setStatusFilter(e.target.value)}
                 >
@@ -1132,7 +1134,7 @@ export default function SalesManagement({
                   <option value="Sent to Client">Sent to Client</option>
                   <option value="Confirmed (Converted to OCN)">Confirmed (Converted to OCN)</option>
                   <option value="Draft">Draft</option>
-                </select>
+                </SearchableSelect>
               </div>
             </div>
 
@@ -1816,9 +1818,10 @@ export default function SalesManagement({
                                     L{lIdx + 1}:
                                   </span>
                                   {/* Film Type Dropdown */}
-                                  <select 
+                                  <SearchableSelect 
                                     className="form-control" 
-                                    style={{ padding: '2px 4px', fontSize: '0.78rem', flex: 2, fontWeight: '700', minWidth: 0 }}
+                                    style={{ flex: 2, minWidth: 0 }}
+                                    triggerStyle={{ padding: '2px 4px', fontSize: '0.78rem', fontWeight: '700', minHeight: '30px' }}
                                     value={layer.filmType || 'PET'}
                                     onChange={e => {
                                       const updated = [...items];
@@ -1831,7 +1834,7 @@ export default function SalesManagement({
                                     {STANDARD_FILM_TYPES.map(f => (
                                       <option key={f} value={f}>{f}</option>
                                     ))}
-                                  </select>
+                                  </SearchableSelect>
 
                                   {/* Micron Field */}
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flex: 1, minWidth: 0 }}>
@@ -1896,9 +1899,9 @@ export default function SalesManagement({
                           )}
                         </td>
                         <td style={{ verticalAlign: 'top', padding: '8px' }}>
-                          <select 
+                          <SearchableSelect 
                             className="form-control" 
-                            style={{ padding: '4px 6px', fontSize: '0.8rem', fontWeight: '700' }}
+                            triggerStyle={{ padding: '4px 6px', fontSize: '0.8rem', fontWeight: '700', minHeight: '32px' }}
                             value={it.materialFormat || 'Roll Form'} 
                             onChange={e => {
                               const updated = [...items];
@@ -1918,7 +1921,7 @@ export default function SalesManagement({
                             {MATERIAL_FORMATS.map(fmt => (
                               <option key={fmt} value={fmt}>{fmt}</option>
                             ))}
-                          </select>
+                          </SearchableSelect>
                         </td>
                         <td style={{ verticalAlign: 'top', padding: '8px' }}>
                           <input 
@@ -1936,9 +1939,9 @@ export default function SalesManagement({
                           />
                         </td>
                         <td style={{ verticalAlign: 'top', padding: '8px' }}>
-                          <select 
+                          <SearchableSelect 
                             className="form-control" 
-                            style={{ padding: '4px 6px', fontSize: '0.8rem' }}
+                            triggerStyle={{ padding: '4px 6px', fontSize: '0.8rem', minHeight: '32px' }}
                             value={it.uom} 
                             onChange={e => {
                               const updated = [...items];
@@ -1951,7 +1954,7 @@ export default function SalesManagement({
                             <option value="Thousand Pouches">Thousand Pouches</option>
                             <option value="Sets">Sets</option>
                             <option value="Rolls">Rolls</option>
-                          </select>
+                          </SearchableSelect>
                         </td>
                         <td style={{ verticalAlign: 'top', padding: '8px' }}>
                           <input 
@@ -2009,9 +2012,9 @@ export default function SalesManagement({
 
             <div className="form-group" style={{ marginBottom: '14px' }}>
               <label className="form-label" style={{ fontWeight: '700' }}>Choose Terms Template *</label>
-              <select 
+              <SearchableSelect 
                 className="form-control" 
-                style={{ fontWeight: '700', color: '#1e293b', background: '#ffffff', border: '1px solid #94a3b8' }}
+                triggerStyle={{ fontWeight: '700', color: '#1e293b', background: '#ffffff', border: '1px solid #94a3b8' }}
                 value={selectedTermsTemplateKey}
                 onChange={e => handleApplyTermsTemplate(e.target.value)}
                 required
@@ -2020,7 +2023,7 @@ export default function SalesManagement({
                   <option key={tmpl.key} value={tmpl.key}>{tmpl.name}</option>
                 ))}
                 <option value="CUSTOM">Custom Selected Terms & Conditions</option>
-              </select>
+              </SearchableSelect>
             </div>
 
             {/* Selected Terms Bullet List Preview & Management */}
@@ -2266,7 +2269,7 @@ export default function SalesManagement({
 
                     <div>
                       <label className="form-label">Packaging Form *</label>
-                      <select 
+                      <SearchableSelect 
                         className="form-control" 
                         value={item.materialFormat} 
                         onChange={e => handleUpdateOcnItemField(itemIdx, 'materialFormat', e.target.value)}
@@ -2277,7 +2280,7 @@ export default function SalesManagement({
                         <option value="Side Seal Pouch Form">Side Seal Pouch Form</option>
                         <option value="Quad Seal Pouch Form">Quad Seal Pouch Form</option>
                         <option value="Rotogravure Cylinder">Rotogravure Cylinder</option>
-                      </select>
+                      </SearchableSelect>
                     </div>
 
                     <div>
@@ -2354,16 +2357,16 @@ export default function SalesManagement({
                               <tr key={lIdx}>
                                 <td style={{ fontWeight: '700', textAlign: 'center' }}>L{lIdx + 1}</td>
                                 <td>
-                                  <select 
+                                  <SearchableSelect 
                                     className="form-control" 
-                                    style={{ padding: '2px 6px', fontSize: '0.78rem' }}
+                                    triggerStyle={{ padding: '2px 6px', fontSize: '0.78rem', minHeight: '30px' }}
                                     value={l.filmType} 
                                     onChange={e => handleUpdateOcnLayerField(itemIdx, lIdx, 'filmType', e.target.value)}
                                   >
                                     {Object.keys(DEFAULT_DAILY_RATES).map(ft => (
                                       <option key={ft} value={ft}>{ft}</option>
                                     ))}
-                                  </select>
+                                  </SearchableSelect>
                                 </td>
                                 <td>
                                   <input 

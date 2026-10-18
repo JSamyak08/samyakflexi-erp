@@ -23,6 +23,7 @@ import {
 import { calculatePreVsPostCosting } from '../factoryStore';
 import { formatINR } from '../utils/pdfHelpers';
 import JobDataSheetPDF from './JobDataSheetPDF';
+import SearchableSelect from './SearchableSelect';
 import { getNextDocRefNumber, generateDocRefNumber } from '../services/settingsService';
 
 export default function JobDataSheet({ 
@@ -456,17 +457,18 @@ export default function JobDataSheet({
             <form onSubmit={handleSaveDataSheet} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div className="form-group">
                 <label className="form-label">Select Job Order</label>
-                <select 
+                <SearchableSelect 
                   className="form-control"
                   value={selectedJobId}
                   onChange={(e) => setSelectedJobId(e.target.value)}
+                  placeholder="Select Job Order..."
                 >
                   {orders.map(o => (
                     <option key={o.id} value={o.id}>
                       {o.id} - {o.jobName} ({o.clientName})
                     </option>
                   ))}
-                </select>
+                </SearchableSelect>
               </div>
 
               <div className="form-group">

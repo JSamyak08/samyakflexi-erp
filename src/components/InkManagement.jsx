@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import TablePagination, { usePagination } from './TablePagination';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
+import SearchableSelect from './SearchableSelect';
 import { generateDocRefNumber, getNextDocRefNumber, getInventoryAgeingSettings } from '../services/settingsService';
 import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo } from '../utils/fifoUtils';
 import { notifyPurchaseOrderIssued } from '../services/emailService';
@@ -1092,7 +1093,7 @@ export default function InkManagement({
               </div>
 
               {/* Ink Type Filter */}
-              <select 
+              <SearchableSelect 
                 className="form-control" 
                 style={{ width: '160px' }}
                 value={filterType}
@@ -1101,10 +1102,10 @@ export default function InkManagement({
                 <option value="All">All Ink Types</option>
                 <option value="Reverse Ink">Reverse Inks Only</option>
                 <option value="Surface Ink">Surface Inks Only</option>
-              </select>
+              </SearchableSelect>
 
               {/* Supplier Filter */}
-              <select 
+              <SearchableSelect 
                 className="form-control" 
                 style={{ width: '180px' }}
                 value={filterSupplier}
@@ -1114,10 +1115,10 @@ export default function InkManagement({
                 {vendors.map(v => (
                   <option key={v.id} value={v.id}>{v.companyName || v.name}</option>
                 ))}
-              </select>
+              </SearchableSelect>
 
               {/* Stock Status Filter */}
-              <select 
+              <SearchableSelect 
                 className="form-control" 
                 style={{ width: '160px' }}
                 value={filterStockStatus}
@@ -1126,7 +1127,7 @@ export default function InkManagement({
                 <option value="All">All Stock Levels</option>
                 <option value="Low Stock">⚠️ Low Stock Alerts</option>
                 <option value="In Stock">✅ Sufficient Stock</option>
-              </select>
+              </SearchableSelect>
 
             </div>
 
@@ -1442,7 +1443,7 @@ export default function InkManagement({
                         </label>
 
                         {/* Ink Dropdown Selector */}
-                        <select 
+                        <SearchableSelect 
                           className="form-control" 
                           style={{ flex: 1, minWidth: '220px', fontWeight: ink ? '600' : 'normal' }}
                           disabled={!st.enabled}
@@ -1455,7 +1456,7 @@ export default function InkManagement({
                               {i.productCode} — {i.shade} ({i.inkType}) • {i.solidContentPct}% Solid @ ₹{i.pricePerKg}/kg
                             </option>
                           ))}
-                        </select>
+                        </SearchableSelect>
 
                         {/* Mix Share % */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', width: '110px' }}>
@@ -2229,10 +2230,10 @@ export default function InkManagement({
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                   <div>
                     <label className="form-label" style={{ fontWeight: '700', color: '#1e293b', marginBottom: '6px', display: 'block' }}>Printing Application Type *</label>
-                    <select className="form-control" value={inkType} onChange={e => setInkType(e.target.value)} style={{ fontWeight: '600', fontSize: '0.9rem' }}>
+                    <SearchableSelect className="form-control" value={inkType} onChange={e => setInkType(e.target.value)} style={{ fontWeight: '600', fontSize: '0.9rem' }}>
                       <option value="Reverse Ink">🔄 Reverse Ink (Only for Reverse jobs)</option>
                       <option value="Surface Ink">🖼️ Surface Ink (Only for Surface jobs)</option>
-                    </select>
+                    </SearchableSelect>
                   </div>
 
                   <div>
@@ -2250,12 +2251,12 @@ export default function InkManagement({
 
                 <div>
                   <label className="form-label" style={{ fontWeight: '700', color: '#1e293b', marginBottom: '6px', display: 'block' }}>Preferred Vendor / Supplier *</label>
-                  <select className="form-control" value={supplierId} onChange={e => setSupplierId(e.target.value)} style={{ fontWeight: '600', fontSize: '0.9rem' }}>
+                  <SearchableSelect className="form-control" value={supplierId} onChange={e => setSupplierId(e.target.value)} style={{ fontWeight: '600', fontSize: '0.9rem' }}>
                     <option value="">-- Select Preferred Supplier --</option>
                     {(vendors || []).map(v => (
                       <option key={v.id} value={v.id}>{v.companyName || v.name} ({v.gstin || 'No GSTIN'})</option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                 </div>
               </div>
 
@@ -2488,10 +2489,10 @@ export default function InkManagement({
               <form onSubmit={handleSaveStockAdjust} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 <div>
                   <label className="form-label" style={{ fontWeight: '700', color: '#1e293b', marginBottom: '6px', display: 'block' }}>Adjustment Type *</label>
-                  <select className="form-control" value={adjustType} onChange={e => setAdjustType(e.target.value)} style={{ fontWeight: '600' }}>
+                  <SearchableSelect className="form-control" value={adjustType} onChange={e => setAdjustType(e.target.value)} style={{ fontWeight: '600' }}>
                     <option value="Inward">➕ Inward / Purchase Receipt</option>
                     <option value="Consumption">➖ Press Issue / Consumption</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div>
@@ -2585,11 +2586,11 @@ export default function InkManagement({
               {/* Section 2: Supplier Vendor Selection */}
               <div>
                 <label className="form-label" style={{ fontWeight: '700', color: '#0f172a', marginBottom: '4px', display: 'block' }}>Select Ink Manufacturer / Vendor Supplier *</label>
-                <select className="form-control" style={{ fontWeight: '700' }} value={poModalVendorId} onChange={e => setPoModalVendorId(e.target.value)}>
+                <SearchableSelect className="form-control" style={{ fontWeight: '700' }} value={poModalVendorId} onChange={e => setPoModalVendorId(e.target.value)}>
                   {(vendors || []).map(v => (
                     <option key={v.id} value={v.id}>{v.companyName || v.name} ({v.gstin || 'GSTIN N/A'})</option>
                   ))}
-                </select>
+                </SearchableSelect>
               </div>
 
               {/* Section 3: Multi-Item Inks Table */}
@@ -2600,7 +2601,7 @@ export default function InkManagement({
                   </h4>
                   
                   {/* Add Ink Dropdown inside modal */}
-                  <select 
+                  <SearchableSelect 
                     className="form-control" 
                     style={{ width: '260px', fontSize: '0.78rem', fontWeight: '600' }}
                     value=""
@@ -2614,7 +2615,7 @@ export default function InkManagement({
                     {(inks || []).filter(i => !poModalItems.some(mi => mi.id === i.id)).map(i => (
                       <option key={i.id} value={i.id}>+ {i.productCode} - {i.shade}</option>
                     ))}
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div style={{ overflowX: 'auto' }}>

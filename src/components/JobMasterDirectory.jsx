@@ -1405,7 +1405,7 @@ export default function JobMasterDirectory({
 
                 <div className="form-group">
                   <label style={{ fontWeight: '700' }}>Material Supply Form *</label>
-                  <select 
+                  <SearchableSelect 
                     className="form-control" 
                     value={materialForm} 
                     onChange={e => setMaterialForm(e.target.value)}
@@ -1413,7 +1413,7 @@ export default function JobMasterDirectory({
                   >
                     <option value="Reel Form">📦 Reel Form (Roll Supply)</option>
                     <option value="Pouching Form">🛍️ Pouching Form (Pouch Line)</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div className="form-group">
@@ -1448,7 +1448,7 @@ export default function JobMasterDirectory({
                     return (
                       <div key={l.id} style={{ display: 'grid', gridTemplateColumns: isEligible ? '70px 1fr 80px 85px 85px 32px' : '70px 1fr 90px 100px 32px', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
                         <span style={{ fontSize: '0.8rem', fontWeight: '600' }}>Layer {idx + 1}</span>
-                        <select 
+                        <SearchableSelect 
                           className="form-control" 
                           style={{ padding: '4px 8px', fontSize: '0.85rem' }} 
                           value={l.filmType} 
@@ -1459,7 +1459,7 @@ export default function JobMasterDirectory({
                           }}
                         >
                           {availableFilmTypes.map(f => <option key={f} value={f}>{f} ({FILM_DENSITIES[f]} g/cc)</option>)}
-                        </select>
+                        </SearchableSelect>
                         <input 
                           type="number" 
                           className="form-control" 
@@ -1478,7 +1478,7 @@ export default function JobMasterDirectory({
                           title="Film Width (mm)" 
                         />
                         {isEligible && (
-                          <select
+                          <SearchableSelect
                             className="form-control"
                             style={{ padding: '4px 6px', fontSize: '0.8rem' }}
                             value={l.metallocenePct || ''}
@@ -1492,7 +1492,7 @@ export default function JobMasterDirectory({
                             {METALLOCENE_OPTIONS.map(opt => (
                               <option key={opt} value={opt}>{opt}</option>
                             ))}
-                          </select>
+                          </SearchableSelect>
                         )}
                         {layers.length > 1 && <button type="button" className="btn-secondary" style={{ padding: '4px' }} onClick={() => removeLayer(l.id)}><X size={14} /></button>}
                       </div>
@@ -1584,7 +1584,7 @@ export default function JobMasterDirectory({
                                 {idx + 1}
                               </td>
                               <td style={{ padding: '4px 6px' }}>
-                                <select 
+                                <SearchableSelect 
                                   className="form-control" 
                                   style={{ padding: '2px 6px', fontSize: '0.78rem', height: '28px', minWidth: '140px' }}
                                   value={step.operation}
@@ -1599,10 +1599,10 @@ export default function JobMasterDirectory({
                                   <option value="Pouch Making & Sealing">Pouch Making & Sealing</option>
                                   <option value="Doctoring Rewinder">Doctoring Rewinder</option>
                                   <option value="Final Inspection & Dispatch">Final Inspection & Dispatch</option>
-                                </select>
+                                </SearchableSelect>
                               </td>
                               <td style={{ padding: '4px 6px' }}>
-                                <select 
+                                <SearchableSelect 
                                   className="form-control" 
                                   style={{ padding: '2px 6px', fontSize: '0.78rem', height: '28px', fontWeight: '600', minWidth: '170px' }}
                                   value={step.machineId}
@@ -1622,10 +1622,10 @@ export default function JobMasterDirectory({
                                     </>
                                   )}
                                   <option value="MANUAL-PACKING">Dispatch & Packing Bay</option>
-                                </select>
+                                </SearchableSelect>
                               </td>
                               <td style={{ padding: '4px 6px' }}>
-                                <select 
+                                <SearchableSelect 
                                   className="form-control" 
                                   style={{ padding: '2px 6px', fontSize: '0.78rem', height: '28px', minWidth: '120px' }}
                                   value={step.pass}
@@ -1637,7 +1637,7 @@ export default function JobMasterDirectory({
                                   <option value="Pass 2 (2-Ply + Layer 3)">Pass 2 (2-Ply + L3)</option>
                                   <option value="Pass 3 (3-Ply + Layer 4)">Pass 3 (3-Ply + L4)</option>
                                   <option value="Final Stage">Final Stage</option>
-                                </select>
+                                </SearchableSelect>
                               </td>
                               <td style={{ textAlign: 'center', padding: '4px 6px' }}>
                                 <span style={{
@@ -1680,11 +1680,11 @@ export default function JobMasterDirectory({
 
                 <div className="form-group"><label>Total Set Cylinder Cost (₹)</label><input type="text" className="form-control" value={cylinderCost} onChange={e => setCylinderCost(e.target.value)} /></div>
                 <div className="form-group"><label>Cost Borne By</label>
-                  <select className="form-control" value={costBorneBy} onChange={e => setCostBorneBy(e.target.value)}>
+                  <SearchableSelect className="form-control" value={costBorneBy} onChange={e => setCostBorneBy(e.target.value)}>
                     <option value="Client (100%)">Client (100%)</option>
                     <option value="Us (100%)">Us / Samyak (100%)</option>
                     <option value="Both (50/50)">Both (50/50)</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div className="form-group"><label>Max Utilisation Limit (Kg)</label><input type="number" className="form-control" value={utilisationLimit} onChange={e => setUtilisationLimit(e.target.value)} /></div>
@@ -1745,28 +1745,28 @@ export default function JobMasterDirectory({
                     </div>
                     <div className="form-group">
                       <label style={{ fontSize: '0.75rem', color: '#64748b' }}>ARC Mark</label>
-                      <select className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={arcMark} onChange={e => setArcMark(e.target.value)}>
+                      <SearchableSelect className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={arcMark} onChange={e => setArcMark(e.target.value)}>
                         <option value="Yes">Yes (Standard)</option>
                         <option value="Yes (Both Edges)">Yes (Both Edges)</option>
                         <option value="No">No</option>
-                      </select>
+                      </SearchableSelect>
                     </div>
                     <div className="form-group">
                       <label style={{ fontSize: '0.75rem', color: '#64748b' }}>Slitting Mark</label>
-                      <select className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={slittingMark} onChange={e => setSlittingMark(e.target.value)}>
+                      <SearchableSelect className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={slittingMark} onChange={e => setSlittingMark(e.target.value)}>
                         <option value="Yes">Yes (Standard)</option>
                         <option value="1.5mm Dashed">1.5mm Dashed</option>
                         <option value="Continuous Solid Line">Continuous Solid Line</option>
                         <option value="No">No</option>
-                      </select>
+                      </SearchableSelect>
                     </div>
                     <div className="form-group">
                       <label style={{ fontSize: '0.75rem', color: '#64748b' }}>Tracker Line</label>
-                      <select className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={trackerLine} onChange={e => setTrackerLine(e.target.value)}>
+                      <SearchableSelect className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} value={trackerLine} onChange={e => setTrackerLine(e.target.value)}>
                         <option value="Yes">Yes (Standard)</option>
                         <option value="Continuous 1mm">Continuous 1mm</option>
                         <option value="No">No</option>
-                      </select>
+                      </SearchableSelect>
                     </div>
                     <div className="form-group" style={{ gridColumn: 'span 2' }}>
                       <label style={{ fontSize: '0.75rem', color: '#64748b' }}>Special Quality Guidelines & Plant Instructions</label>
@@ -1841,13 +1841,13 @@ export default function JobMasterDirectory({
                 </div>
                 <div className="form-group" style={{ gridColumn: 'span 2' }}>
                   <label>Payment Terms</label>
-                  <select className="form-control" value={newPaymentTerms} onChange={e => setNewPaymentTerms(e.target.value)}>
+                  <SearchableSelect className="form-control" value={newPaymentTerms} onChange={e => setNewPaymentTerms(e.target.value)}>
                     <option value="30 Days Net">30 Days Net</option>
                     <option value="15 Days Net">15 Days Net</option>
                     <option value="45 Days Net">45 Days Net</option>
                     <option value="50% Advance, Balance Before Dispatch">50% Advance, Balance Before Dispatch</option>
                     <option value="Immediate / Cash on Delivery">Immediate / Cash on Delivery</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
               </div>
               <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
@@ -1915,7 +1915,7 @@ export default function JobMasterDirectory({
                 ].map(field => (
                   <div key={field.key} style={{ background: '#ffffff', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                     <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>{field.label}</div>
-                    <select
+                    <SearchableSelect
                       className="form-control"
                       style={{ fontSize: '0.8rem', padding: '4px 8px' }}
                       value={Object.keys(bulkHeaderMapping).find(h => bulkHeaderMapping[h] === field.key) || ''}
@@ -1933,7 +1933,7 @@ export default function JobMasterDirectory({
                       {bulkParsedHeaders.map(h => (
                         <option key={h} value={h}>{h}</option>
                       ))}
-                    </select>
+                    </SearchableSelect>
                   </div>
                 ))}
               </div>
@@ -2047,7 +2047,7 @@ export default function JobMasterDirectory({
                 <label style={{ fontWeight: '700', fontSize: '0.88rem', display: 'block', marginBottom: '6px' }}>
                   Select Existing Rotogravure Cylinder Record:
                 </label>
-                <select
+                <SearchableSelect
                   className="form-control"
                   value={selectedExistingCylId}
                   onChange={e => setSelectedExistingCylId(e.target.value)}
@@ -2059,7 +2059,7 @@ export default function JobMasterDirectory({
                       {c.sku || c.id} — {c.jobName} ({c.clientGroup})
                     </option>
                   ))}
-                </select>
+                </SearchableSelect>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
                   <button type="button" className="btn-secondary" onClick={() => setLinkingJobMaster(null)}>Cancel</button>
                   <button type="button" className="btn-primary" onClick={handleConfirmLinkToExistingCyl} disabled={!selectedExistingCylId}>

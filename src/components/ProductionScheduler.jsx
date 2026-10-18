@@ -43,6 +43,7 @@ import {
   CheckCheck,
   Barcode
 } from 'lucide-react';
+import SearchableSelect from './SearchableSelect';
 import { 
   calculatePrintingScheduleMetrics,
   isOrderOverdue,
@@ -1401,7 +1402,7 @@ export default function ProductionScheduler({
               </div>
 
               {/* Machine Filter */}
-              <select 
+              <SearchableSelect 
                 className="form-control" 
                 style={{ width: 'auto', padding: '6px 12px', fontSize: '0.85rem', fontWeight: '600' }}
                 value={selectedMachineFilter}
@@ -1411,7 +1412,7 @@ export default function ProductionScheduler({
                 {rotogravureMachines.map(m => (
                   <option key={m.id} value={m.id}>{m.name}</option>
                 ))}
-              </select>
+              </SearchableSelect>
 
               {/* Status Pills */}
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
@@ -1731,7 +1732,7 @@ export default function ProductionScheduler({
                       {!order.isCurrentlyInProduction && (
                         <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <Printer size={14} style={{ color: '#64748b' }} />
-                          <select
+                          <SearchableSelect
                             className="form-control"
                             style={{ padding: '5px 10px', fontSize: '0.8rem', fontWeight: '700' }}
                             value={assignedMachineId}
@@ -1740,7 +1741,7 @@ export default function ProductionScheduler({
                             {rotogravureMachines.map(m => (
                               <option key={m.id} value={m.id}>{m.name} ({m.colors}C)</option>
                             ))}
-                          </select>
+                          </SearchableSelect>
                         </div>
                       )}
 
@@ -1857,7 +1858,7 @@ export default function ProductionScheduler({
                 />
               </div>
 
-              <select 
+              <SearchableSelect 
                 className="form-control" 
                 style={{ width: 'auto', padding: '6px 12px', fontSize: '0.85rem', fontWeight: '600' }}
                 value={selectedMachineFilter}
@@ -1867,7 +1868,7 @@ export default function ProductionScheduler({
                 {rotogravureMachines.map(m => (
                   <option key={m.id} value={m.id}>{m.name}</option>
                 ))}
-              </select>
+              </SearchableSelect>
             </div>
 
             <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: '700' }}>
@@ -3227,11 +3228,11 @@ export default function ProductionScheduler({
                 </div>
                 <div>
                   <label style={{ fontSize: '0.8rem', fontWeight: '700' }}>Status</label>
-                  <select className="form-control" value={machineStatus} onChange={e => setMachineStatus(e.target.value)}>
+                  <SearchableSelect className="form-control" value={machineStatus} onChange={e => setMachineStatus(e.target.value)}>
                     <option value="Active">Active / Operational</option>
                     <option value="Maintenance">Under Maintenance</option>
                     <option value="Inactive">Inactive</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
               </div>
 

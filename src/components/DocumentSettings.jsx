@@ -83,6 +83,7 @@ import {
   DEFAULT_MATERIAL_COST_SETTINGS
 } from '../services/settingsService';
 import { sendERPEmailNotification, buildEmailTemplate } from '../services/emailService';
+import SearchableSelect from './SearchableSelect';
 
 export default function DocumentSettings({ machines = [], onSaveMachine, onUpdateMachine, onDeleteMachine }) {
   // Navigation Sub-tab State
@@ -1637,14 +1638,14 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
 
               <div>
                 <label className="form-label" style={{ fontWeight: '700' }}>Security Encryption Mode</label>
-                <select
+                <SearchableSelect
                   className="form-control"
                   value={emailSettings.smtpSecure ? 'SSL' : 'TLS'}
                   onChange={e => setEmailSettings({ ...emailSettings, smtpSecure: e.target.value === 'SSL' })}
                 >
                   <option value="SSL">SSL / TLS (Port 465 - Recommended)</option>
                   <option value="TLS">STARTTLS / Plain (Port 587)</option>
-                </select>
+                </SearchableSelect>
               </div>
             </div>
 
@@ -1722,9 +1723,10 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
               <label style={{ fontWeight: '800', fontSize: '0.9rem', color: '#0f172a' }}>
                 Select Email Event Template:
               </label>
-              <select
+              <SearchableSelect
                 className="form-control"
-                style={{ width: '340px', fontWeight: '700', color: '#0f172a', background: '#ffffff', border: '1px solid #0284c7' }}
+                style={{ width: '340px' }}
+                triggerStyle={{ fontWeight: '700', color: '#0f172a', background: '#ffffff', border: '1px solid #0284c7' }}
                 value={selectedTemplateKey}
                 onChange={e => setSelectedTemplateKey(e.target.value)}
               >
@@ -1733,7 +1735,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                     {tmpl.name} ({tmpl.enabled ? 'Enabled' : 'Disabled'})
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             </div>
 
             <div style={{ display: 'flex', gap: '10px' }}>
@@ -1990,14 +1992,14 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div className="form-group">
                   <label>Machine Category / Type</label>
-                  <select className="form-control" value={editMachineType} onChange={e => setEditMachineType(e.target.value)}>
+                  <SearchableSelect className="form-control" value={editMachineType} onChange={e => setEditMachineType(e.target.value)}>
                     <option value="Rotogravure">Rotogravure Printing Press</option>
                     <option value="Flexographic">Flexographic Printing Press</option>
                     <option value="Lamination">Solventless / Solvent Laminator</option>
                     <option value="Slitting">High Speed Doctor Slitter</option>
                     <option value="Pouching">Pouch Making / Center Seal Machine</option>
                     <option value="Extrusion">Blown Film Extruder</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div className="form-group">
@@ -2047,11 +2049,11 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
 
                 <div className="form-group">
                   <label>Operational Status</label>
-                  <select className="form-control" value={editMachineStatus} onChange={e => setEditMachineStatus(e.target.value)}>
+                  <SearchableSelect className="form-control" value={editMachineStatus} onChange={e => setEditMachineStatus(e.target.value)}>
                     <option value="Active">Active</option>
                     <option value="Maintenance">Maintenance</option>
                     <option value="Inactive">Inactive</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
               </div>
 
@@ -2211,7 +2213,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                   <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
                     Material Category
                   </label>
-                  <select
+                  <SearchableSelect
                     className="form-control"
                     value={subCategory}
                     onChange={e => setSubCategory(e.target.value)}
@@ -2224,7 +2226,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                     <option value="Cellulosic Paper">Cellulosic Paper (Kraft/Maplitho)</option>
                     <option value="Vinyl">Vinyl (PVC)</option>
                     <option value="Bio / Specialty">Bio / Specialty Substrate</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 <div>
@@ -2310,10 +2312,11 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
 
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
               <span style={{ fontSize: '0.82rem', fontWeight: '700', color: '#475569' }}>Filter Storage Type:</span>
-              <select
+              <SearchableSelect
                 value={selectedStorageTypeFilter}
                 onChange={e => setSelectedStorageTypeFilter(e.target.value)}
-                style={{
+                style={{ width: '280px' }}
+                triggerStyle={{
                   padding: '8px 12px',
                   borderRadius: '6px',
                   border: '1px solid #cbd5e1',
@@ -2329,7 +2332,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                 <option value="Inks & Chemicals Store">Inks & Chemicals Store</option>
                 <option value="Cylinder Store">Cylinder Store</option>
                 <option value="General Store / Consumables">General Store / Consumables</option>
-              </select>
+              </SearchableSelect>
             </div>
           </div>
 
@@ -2512,7 +2515,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                     <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
                       Material Storage Type <span style={{ color: '#ef4444' }}>*</span>
                     </label>
-                    <select
+                    <SearchableSelect
                       className="form-control"
                       value={bayStorageType}
                       onChange={e => setBayStorageType(e.target.value)}
@@ -2523,7 +2526,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                       <option value="Inks & Chemicals Store">Inks & Chemicals Store</option>
                       <option value="Cylinder Store">Cylinder Store</option>
                       <option value="General Store / Consumables">General Store / Consumables</option>
-                    </select>
+                    </SearchableSelect>
                   </div>
                 </div>
 
@@ -2562,7 +2565,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                   <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
                     Operational Status
                   </label>
-                  <select
+                  <SearchableSelect
                     className="form-control"
                     value={bayStatus}
                     onChange={e => setBayStatus(e.target.value)}
@@ -2571,7 +2574,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                     <option value="Maintenance">Maintenance</option>
                     <option value="Full">Full</option>
                     <option value="Inactive">Inactive</option>
-                  </select>
+                  </SearchableSelect>
                 </div>
 
                 {/* Description */}

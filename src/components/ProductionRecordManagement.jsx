@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import SearchableSelect from './SearchableSelect';
 import { 
   FileSpreadsheet, 
   Plus, 
@@ -1337,9 +1338,9 @@ export default function ProductionRecordManagement({
                 />
               </div>
 
-              <select 
+              <SearchableSelect 
                 className="form-control"
-                style={{ width: '200px' }}
+                style={{ width: '220px' }}
                 value={filterStatus}
                 onChange={e => setFilterStatus(e.target.value)}
               >
@@ -1347,7 +1348,7 @@ export default function ProductionRecordManagement({
                 <option value="Filled by Plant Manager">Pending Admin Approval</option>
                 <option value="Approved by Admin">Approved by Admin</option>
                 <option value="Draft">Draft Records</option>
-              </select>
+              </SearchableSelect>
             </div>
 
             <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
@@ -2514,10 +2515,11 @@ export default function ProductionRecordManagement({
           <div className="form-grid" style={{ marginBottom: '24px' }}>
             <div className="form-group">
               <label>Select Job / Order</label>
-              <select 
+              <SearchableSelect 
                 className="form-control"
                 value={selectedOrder?.id || ''}
                 onChange={e => handleSelectOrderForRecord(e.target.value)}
+                placeholder="Search or Select Job / Order..."
                 required
               >
                 {orders.map(o => (
@@ -2525,7 +2527,7 @@ export default function ProductionRecordManagement({
                     {o.id} — {o.jobName} ({o.clientName})
                   </option>
                 ))}
-              </select>
+              </SearchableSelect>
             </div>
 
             <div className="form-group">
@@ -2615,7 +2617,7 @@ export default function ProductionRecordManagement({
                 return (
                   <tr key={m.id}>
                     <td>
-                      <select 
+                      <SearchableSelect 
                         className="form-control"
                         style={{ fontWeight: '600', minWidth: '180px' }}
                         value={m.filmType}
@@ -2630,7 +2632,7 @@ export default function ProductionRecordManagement({
                         {rawMaterialOptions.map(opt => (
                           <option key={opt} value={opt}>{opt}</option>
                         ))}
-                      </select>
+                      </SearchableSelect>
                       {m.hasFilmTypeVar && (
                         <span className="badge badge-warning" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontSize: '0.68rem', marginTop: '3px', display: 'block' }}>
                           ⚠️ Substrate Mismatch vs JM ({m.jobMasterFilmType})
@@ -4052,14 +4054,14 @@ export default function ProductionRecordManagement({
             <form onSubmit={handleAddScrapDisposal}>
               <div className="form-group">
                 <label>Scrap Category *</label>
-                <select className="form-control" value={disposeCategory} onChange={e => setDisposeCategory(e.target.value)}>
+                <SearchableSelect className="form-control" value={disposeCategory} onChange={e => setDisposeCategory(e.target.value)}>
                   <option value="Printing Plain Setting (kg)">Printing Plain Setting (kg)</option>
                   <option value="Printing Wastage (kg)">Printing Wastage (kg)</option>
                   <option value="Lamination Plain Substrate (kg)">Lamination Plain Substrate (kg)</option>
                   <option value="Printed Wastage (kg)">Printed Wastage (kg)</option>
                   <option value="Laminate Wastage (kg)">Laminate Wastage (kg)</option>
                   <option value="Trim Wastage (kg)">Trim Wastage (kg)</option>
-                </select>
+                </SearchableSelect>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>

@@ -14,6 +14,7 @@ import {
   HelpCircle 
 } from 'lucide-react';
 import weighingScaleService from '../services/weighingScaleService';
+import SearchableSelect from './SearchableSelect';
 
 export default function WeighingScaleWidget({ onCaptureWeight }) {
   const [scaleState, setScaleState] = useState(weighingScaleService.getStatus());
@@ -493,7 +494,7 @@ export default function WeighingScaleWidget({ onCaptureWeight }) {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#475569' }}>Baud Rate (bps)</label>
-                      <select 
+                      <SearchableSelect 
                         className="form-control" 
                         value={baudRate} 
                         onChange={e => setBaudRate(parseInt(e.target.value, 10))}
@@ -504,36 +505,36 @@ export default function WeighingScaleWidget({ onCaptureWeight }) {
                         <option value="19200">19200 baud</option>
                         <option value="38400">38400 baud</option>
                         <option value="115200">115200 baud</option>
-                      </select>
+                      </SearchableSelect>
                     </div>
 
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#475569' }}>Data Bits</label>
-                      <select 
+                      <SearchableSelect 
                         className="form-control" 
                         value={dataBits} 
                         onChange={e => setDataBits(parseInt(e.target.value, 10))}
                       >
                         <option value="8">8 Data Bits (Standard)</option>
                         <option value="7">7 Data Bits</option>
-                      </select>
+                      </SearchableSelect>
                     </div>
 
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#475569' }}>Stop Bits</label>
-                      <select 
+                      <SearchableSelect 
                         className="form-control" 
                         value={stopBits} 
                         onChange={e => setStopBits(parseInt(e.target.value, 10))}
                       >
                         <option value="1">1 Stop Bit (Standard)</option>
                         <option value="2">2 Stop Bits</option>
-                      </select>
+                      </SearchableSelect>
                     </div>
 
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#475569' }}>Parity</label>
-                      <select 
+                      <SearchableSelect 
                         className="form-control" 
                         value={parity} 
                         onChange={e => setParity(e.target.value)}
@@ -541,7 +542,7 @@ export default function WeighingScaleWidget({ onCaptureWeight }) {
                         <option value="none">None (Standard 8-N-1)</option>
                         <option value="even">Even</option>
                         <option value="odd">Odd</option>
-                      </select>
+                      </SearchableSelect>
                     </div>
                   </div>
 

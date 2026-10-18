@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { pruneOldAuditLogs } from '../services/auditLogger';
 import TablePagination, { usePagination } from './TablePagination';
+import SearchableSelect from './SearchableSelect';
 
 export default function AuditLogsManagement({ 
   auditLogs = [], 
@@ -251,25 +252,27 @@ export default function AuditLogsManagement({
           </div>
 
           {/* Module Filter */}
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <select 
+          <div className="form-group" style={{ marginBottom: 0, minWidth: '180px' }}>
+            <SearchableSelect 
               className="form-control"
               value={selectedModule}
               onChange={e => setSelectedModule(e.target.value)}
+              placeholder="Search Module..."
             >
               <option value="All">All Modules ({uniqueModules.length - 1})</option>
               {uniqueModules.filter(m => m !== 'All').map(mod => (
                 <option key={mod} value={mod}>{mod}</option>
               ))}
-            </select>
+            </SearchableSelect>
           </div>
 
           {/* Action Filter */}
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <select 
+          <div className="form-group" style={{ marginBottom: 0, minWidth: '160px' }}>
+            <SearchableSelect 
               className="form-control"
               value={selectedAction}
               onChange={e => setSelectedAction(e.target.value)}
+              placeholder="Search Action..."
             >
               <option value="All">All Action Types</option>
               <option value="CREATE">CREATE (Adds)</option>
@@ -277,22 +280,23 @@ export default function AuditLogsManagement({
               <option value="DELETE">DELETE (Removals)</option>
               <option value="SYSTEM">SYSTEM (Settings)</option>
               <option value="AUTH">AUTH (Sign In)</option>
-            </select>
+            </SearchableSelect>
           </div>
 
           {/* Date Range Filter */}
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <select 
+          <div className="form-group" style={{ marginBottom: 0, minWidth: '180px' }}>
+            <SearchableSelect 
               className="form-control"
               value={selectedDateRange}
               onChange={e => setSelectedDateRange(e.target.value)}
+              placeholder="Select Date Range..."
             >
               <option value="All">All Stored Logs (6 Months)</option>
               <option value="Today">Today Only</option>
               <option value="Yesterday">Yesterday</option>
               <option value="7days">Last 7 Days</option>
               <option value="30days">Last 30 Days</option>
-            </select>
+            </SearchableSelect>
           </div>
         </div>
       </div>
