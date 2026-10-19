@@ -1,3 +1,17 @@
+# FlexiERP
+
+## Database migrations
+
+`supabase/migrations` is what the Supabase GitHub integration applies when `main` changes. Those five files use the same version numbers as production project `eamstsaqkbeiywfaanhi`, so a merge does not run them again.
+
+The lockdown script is **not** in that directory. Apply it by hand from the Supabase SQL editor, only after this frontend is deployed and staff have set passwords:
+
+`supabase/manual/20261019120000_auth_rls_lockdown.sql`
+
+It drops `password_hash` and `smtp_pass`. Do not move it back into `supabase/migrations`.
+
+There is no `supabase/config.toml`, `supabase/seed.sql`, or `supabase/functions`. `supabase/rollback` is comments only. `supabase_schema.sql` at the repo root is historical and must not be run.
+
 # React + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.

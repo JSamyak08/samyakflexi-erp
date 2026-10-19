@@ -1,4 +1,6 @@
 -- This file is a no-op. Every statement is a comment.
+-- The lockdown script it refers to is supabase/manual/20261019120000_auth_rls_lockdown.sql.
+-- This directory is not applied by the GitHub integration.
 --
 -- Preferred recovery when an Admin cannot sign in after lockdown:
 --

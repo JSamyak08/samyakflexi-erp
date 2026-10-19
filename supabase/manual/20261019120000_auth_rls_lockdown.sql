@@ -1,3 +1,8 @@
+-- MANUAL ONLY. This file lives in supabase/manual so the GitHub integration
+-- does not apply it on merge to main. Do not move it into supabase/migrations.
+-- Run it from the SQL editor after this frontend is deployed and after staff
+-- have set passwords. It drops password_hash and smtp_pass.
+--
 -- Lock down FlexiERP. Apply only after scripts/invite-existing-users.mjs has
 -- linked real users and an Admin has signed in with Supabase Auth.
 -- This revokes anonymous access. It does not restore plaintext passwords.

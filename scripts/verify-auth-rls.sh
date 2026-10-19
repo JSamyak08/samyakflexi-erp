@@ -66,11 +66,13 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON storage.objects TO authenticated, anon;
 GRANT SELECT ON storage.buckets TO authenticated, anon;
 SQL
 
-"${PSQL[@]}" -d "$DB_NAME" -f supabase/migrations/20261019100000_baseline_public_schema.sql
-"${PSQL[@]}" -d "$DB_NAME" -f supabase/migrations/20261019110000_auth_identity_prep.sql
-"${PSQL[@]}" -d "$DB_NAME" -f supabase/migrations/20261019115000_role_permissions_sync.sql
-"${PSQL[@]}" -d "$DB_NAME" -f supabase/migrations/20261019116000_role_permissions_preserve_visible.sql
-"${PSQL[@]}" -d "$DB_NAME" -f supabase/migrations/20261019120000_auth_rls_lockdown.sql
-"${PSQL[@]}" -d "$DB_NAME" -f supabase/migrations/20261019121000_email_send_guard.sql
+"${PSQL[@]}" -d "$DB_NAME" -f supabase/migrations/20261019040433_baseline_public_schema.sql
+"${PSQL[@]}" -d "$DB_NAME" -f supabase/migrations/20261019040439_auth_identity_prep.sql
+"${PSQL[@]}" -d "$DB_NAME" -f supabase/migrations/20261019041453_role_permissions_sync.sql
+"${PSQL[@]}" -d "$DB_NAME" -f supabase/migrations/20261019041745_role_permissions_preserve_visible.sql
+"${PSQL[@]}" -d "$DB_NAME" -f supabase/migrations/20261019053324_email_send_guard.sql
+# Lockdown is manual. The local check applies it after the history that
+# production already has, which is the order the SQL editor will use.
+"${PSQL[@]}" -d "$DB_NAME" -f supabase/manual/20261019120000_auth_rls_lockdown.sql
 "${PSQL[@]}" -d "$DB_NAME" -f scripts/verify-auth-rls.sql
 echo "RLS migration checks passed"

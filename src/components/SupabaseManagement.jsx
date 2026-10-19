@@ -808,7 +808,7 @@ ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS job_card_file_name TEXT;
 ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS job_card_file_url TEXT;
 ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS creation_date DATE;
 
--- Storage lockdown is in supabase/migrations/20261019120000_auth_rls_lockdown.sql.
+-- Storage lockdown is in supabase/manual/20261019120000_auth_rls_lockdown.sql.
 -- Buckets erp-files and artwork are private. Do not set public = true.`;
 
   const copySqlToClipboard = () => {
@@ -1283,7 +1283,7 @@ ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS creation_date DATE;
             }}>
 {`Signup does not copy a role from user metadata and does not default to Admin.
 The directory row is created by private.handle_new_auth_user() in
-supabase/migrations/20261019110000_auth_identity_prep.sql.
+supabase/migrations/20261019040439_auth_identity_prep.sql.
 New accounts are Pending until an Admin assigns a role.
 Apply the versioned migrations. Do not run the old open-access script.`}
             </pre>

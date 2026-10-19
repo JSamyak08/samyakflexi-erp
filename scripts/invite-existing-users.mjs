@@ -2,7 +2,7 @@
  * Create Supabase Auth accounts for real FlexiERP users and email each person
  * a link to choose their own password.
  *
- * Run only after 20261019110000_auth_identity_prep.sql. Do not pass passwords
+ * Run only after 20261019040439_auth_identity_prep.sql. Do not pass passwords
  * on the command line and do not read public.users.password_hash.
  *
  * A row that already has auth_user_id is skipped. No reset link is emailed

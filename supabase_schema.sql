@@ -970,7 +970,8 @@ CREATE INDEX IF NOT EXISTS idx_sys_settings_key ON public.system_settings(settin
 CREATE INDEX IF NOT EXISTS idx_pellet_inward_date ON public.pellet_inwards(inward_date DESC);
 CREATE INDEX IF NOT EXISTS idx_pellet_consum_date ON public.pellet_consumptions(consumption_date DESC);
 
--- Table policies are in supabase/migrations/20261019120000_auth_rls_lockdown.sql.
+-- Table policies are in supabase/manual/20261019120000_auth_rls_lockdown.sql.
+-- That file is applied by hand. It is not in supabase/migrations.
 
 -- =========================================================================
 -- 27. REALTIME REPLICATION CONFIGURATION FOR LIVE MULTI-SESSION SYNC
