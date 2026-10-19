@@ -68,6 +68,7 @@ import PurchaseOrderManagement from './components/PurchaseOrderManagement';
 import WeighingScaleWidget from './components/WeighingScaleWidget';
 import UniversalBarcodeScannerModal from './components/UniversalBarcodeScannerModal';
 import Preloader from './components/Preloader';
+import { bootLoaderIsReady, shouldShowBootLoader } from './bootLoader';
 import SearchableSelect from './components/SearchableSelect';
 import SuccessScreenModal from './components/SuccessScreenModal';
 import { showSuccessScreen } from './context/SuccessModalContext';
@@ -3383,11 +3384,18 @@ export default function App() {
 
   const isDataReady = databaseStatus !== 'checking' && (!isAuthenticated || isDataFetched || (!isDataLoading && !ordersLoading));
 
-  // Render Loading Screen with Company Logo & Percentage Status Bar on initial load, DB connection check, data fetch, or sign-in
-  if (!isAuthReady || isSigningIn || (isAuthenticated && !isDataReady)) {
+  // isSigningIn is cleared only by the loader's onComplete. The bar will not
+  // pass 92% until isReady, so isReady must not require !isSigningIn.
+  const showBootLoader = shouldShowBootLoader({
+    isAuthReady,
+    isSigningIn,
+    isAuthenticated,
+    isDataReady,
+  });
+  if (showBootLoader) {
     return (
       <Preloader 
-        isReady={isAuthReady && !isSigningIn && isDataReady}
+        isReady={bootLoaderIsReady({ isAuthReady, isDataReady })}
         statusText={
           databaseStatus === 'checking'
             ? 'Connecting to Supabase Cloud Database...'
