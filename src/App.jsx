@@ -75,6 +75,7 @@ import { fetchAuditLogsPage, saveAuditLogToSupabase, createAuditEntry, pruneOldA
 import { getNextDocRefNumber } from './services/settingsService';
 import { getRouteFromUrl, getTabFromUrl, pushSlugState } from './utils/slugRouter';
 import { isSupabaseConfigured, checkSupabaseConnection, withTimeout } from './services/supabaseClient';
+import { cancelQcOverdueEscalationDigest, runQcOverdueEscalationDigest } from './services/qcEscalationDigest';
 import { 
   fetchOrders, saveOrderToSupabase, deleteOrderFromSupabase,
   fetchVendors, saveVendorToSupabase, deleteVendorFromSupabase,
@@ -780,6 +781,21 @@ export default function App() {
           setGrns(cleanGRNs);
           safeLocalStorageSet('samyak_cache_grns', cleanGRNs);
           supaGRNs.filter(isDummyRecord).forEach(d => deleteGRNFromSupabase(d.id || d.grnNo).catch(console.warn));
+          // One digest for the whole plant day, not one email per Inventory visit.
+          // Do not await: a slow SMTP call must not hold the loader.
+          const digestUsers = Array.isArray(supaUsers) ? supaUsers : [];
+          void runQcOverdueEscalationDigest({
+            grns: cleanGRNs,
+            users: digestUsers,
+            isCancelled: () => !isMounted
+          }).then(result => {
+            if (!isMounted || !result?.claimed?.length) return;
+            const stamped = new Map(result.claimed.map(row => [String(row.id), row.escalated_at]));
+            setGrns(prev => prev.map(grn => {
+              const stamp = stamped.get(String(grn.id));
+              return stamp ? { ...grn, escalated_at: stamp, escalatedAt: stamp } : grn;
+            }));
+          }).catch(err => console.warn('[QC digest] Skipped:', err));
         }
 
         if (Array.isArray(supaProd)) {
@@ -1019,7 +1035,10 @@ export default function App() {
     }
 
     loadSupabaseData();
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+      cancelQcOverdueEscalationDigest();
+    };
   }, [isSupaActive, isAuthReady, isAuthenticated]);
 
 
@@ -1439,6 +1458,7 @@ export default function App() {
 
   // Logout Handler (for UI updates, authService handles Supabase logout)
   const handleLogout = () => {
+    cancelQcOverdueEscalationDigest();
     logAudit('AUTH', 'User Management', `User ${currentUser?.name || currentUser?.email || 'User'} signed out of the system`, currentUser?.id);
     localStorage.removeItem('samyak_erp_current_user');
     setSessionProfile(null);

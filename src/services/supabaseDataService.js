@@ -978,6 +978,8 @@ export function sanitizeGRN(rawGRN) {
     status: statusVal,
     qcStatus: qcStatusVal,
     qcNotes: rawGRN.qc_remarks || rawGRN.qcNotes || meta.qcNotes || '',
+    escalatedAt: rawGRN.escalated_at || rawGRN.escalatedAt || meta.escalatedAt || null,
+    escalated_at: rawGRN.escalated_at || rawGRN.escalatedAt || meta.escalatedAt || null,
     inspectedBy: meta.inspectedBy || rawGRN.inspectedBy || '',
     storeManager: meta.storeManager || rawGRN.storeManager || '',
     receivedQtyKg: Number(rawGRN.received_qty_kg ?? rawGRN.receivedQtyKg ?? rawGRN.netWeightKg ?? 0) || 0,
@@ -1109,8 +1111,18 @@ export async function saveGRNToSupabase(grn) {
     qc_remarks: clean.qcNotes || ''
   };
 
-  // Duplicate check: Verify if invoice_number + vendor match an existing GRN record in database
-  if (clean.invoiceNo && clean.vendorName) {
+  // Duplicate invoice numbers are rejected for a brand-new GRN only.
+  // Updates (QC approval, escalation) must still save when several pending
+  // GRNs share one invoice, which is how the escalated flag used to be lost.
+  let isExistingGrn = false;
+  try {
+    const { data: self, error: selfErr } = await supabase.from('grns').select('id').eq('id', grnId).maybeSingle();
+    if (!selfErr && self) isExistingGrn = true;
+  } catch (lookupErr) {
+    console.warn('[GRNs] Could not tell whether this GRN already exists:', lookupErr.message);
+  }
+
+  if (!isExistingGrn && clean.invoiceNo && clean.vendorName) {
     try {
       const { data: existingGrns } = await supabase
         .from('grns')
@@ -1137,6 +1149,44 @@ export async function saveGRNToSupabase(grn) {
     console.error('[GRNs] Failed to save GRN to Supabase:', error.message);
     throw new Error(`Database save error for GRN ${grnId}: ${error.message}`);
   }
+}
+
+/**
+ * True when any GRN was already claimed for the QC digest on or after isoStart.
+ * Returns null when escalated_at is not in the schema yet, so the caller must not email.
+ */
+export async function hasQcEscalationSince(isoStart) {
+  const { data, error } = await supabase
+    .from('grns')
+    .select('id')
+    .gte('escalated_at', isoStart)
+    .limit(1);
+  if (error) {
+    if (isMissingRelationError(error)) return null;
+    throw error;
+  }
+  return Array.isArray(data) && data.length > 0;
+}
+
+/**
+ * Stamp escalated_at only on rows that are still unclaimed.
+ * The stamp is the once-per-GRN guard and must happen before the email is sent.
+ * Returns null when the column is missing.
+ */
+export async function claimGrnEscalations(ids, claimedAt) {
+  const uniqueIds = [...new Set((ids || []).map(id => String(id)).filter(Boolean))];
+  if (uniqueIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from('grns')
+    .update({ escalated_at: claimedAt })
+    .in('id', uniqueIds)
+    .is('escalated_at', null)
+    .select('id, escalated_at');
+  if (error) {
+    if (isMissingRelationError(error)) return null;
+    throw error;
+  }
+  return data || [];
 }
 
 
