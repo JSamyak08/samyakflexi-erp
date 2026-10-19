@@ -1,16 +1,29 @@
--- B-017: create the pellet fuel tables the client upserts into.
--- Columns match savePelletInwardToSupabase / savePelletConsumptionToSupabase
--- in src/services/supabaseDataService.js. id is TEXT (codes such as PEL-GRN-…),
--- not uuid. The full form object is stored in payload and is what the UI reads
--- back (r.payload || r.details || r).
+-- B-017: pellet fuel tables the client upserts into.
+-- Apply only after 20261019120000_auth_rls_lockdown.sql (PR #1). That migration
+-- creates private.can_any() and then drops private.install_module_access(), so
+-- these policies call private.can_any directly. Merge this PR after PR #1.
 --
--- This migration is NOT applied by the application. Apply it in Supabase when ready.
+-- Columns match savePelletInwardToSupabase / savePelletConsumptionToSupabase.
+-- id is TEXT (codes such as PEL-GRN-…), not uuid. The UI reads payload.
+--
+-- Access matches the lockdown's pellet settings rule and the inventory-style
+-- module policy: FOR ALL TO authenticated, allowed when
+-- private.can_any(ARRAY['pellet_fuel', 'inventory']) is true. Admin is included
+-- inside private.can_any. There is no anon policy and no anon grant.
 --
 -- Rollback:
---   DROP POLICY IF EXISTS "Allow anon and auth full access on pellet_inwards" ON public.pellet_inwards;
---   DROP POLICY IF EXISTS "Allow anon and auth full access on pellet_consumptions" ON public.pellet_consumptions;
+--   DROP POLICY IF EXISTS pellet_inwards_access ON public.pellet_inwards;
+--   DROP POLICY IF EXISTS pellet_consumptions_access ON public.pellet_consumptions;
 --   DROP TABLE IF EXISTS public.pellet_consumptions;
 --   DROP TABLE IF EXISTS public.pellet_inwards;
+
+DO $$
+BEGIN
+  IF to_regprocedure('private.can_any(text[])') IS NULL THEN
+    RAISE EXCEPTION
+      'private.can_any(text[]) is missing. Apply 20261019120000_auth_rls_lockdown.sql (PR #1) before this migration.';
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS public.pellet_inwards (
     id TEXT PRIMARY KEY,
@@ -58,40 +71,27 @@ CREATE INDEX IF NOT EXISTS idx_pellet_consum_date ON public.pellet_consumptions 
 ALTER TABLE public.pellet_inwards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.pellet_consumptions ENABLE ROW LEVEL SECURITY;
 
--- Permissive policy so the page works with the current anon client after this
--- migration is applied. The parallel security PR should replace these with
--- role-based policies and may revoke the anon grants below. This file does not
--- alter policies on any existing table.
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE schemaname = 'public'
-      AND tablename = 'pellet_inwards'
-      AND policyname = 'Allow anon and auth full access on pellet_inwards'
-  ) THEN
-    CREATE POLICY "Allow anon and auth full access on pellet_inwards"
-      ON public.pellet_inwards
-      FOR ALL
-      TO anon, authenticated
-      USING (true)
-      WITH CHECK (true);
-  END IF;
+-- Drop any earlier permissive draft policies if this file replaces one that was applied by hand.
+DROP POLICY IF EXISTS "Allow anon and auth full access on pellet_inwards" ON public.pellet_inwards;
+DROP POLICY IF EXISTS "Allow anon and auth full access on pellet_consumptions" ON public.pellet_consumptions;
+DROP POLICY IF EXISTS pellet_inwards_access ON public.pellet_inwards;
+DROP POLICY IF EXISTS pellet_consumptions_access ON public.pellet_consumptions;
 
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE schemaname = 'public'
-      AND tablename = 'pellet_consumptions'
-      AND policyname = 'Allow anon and auth full access on pellet_consumptions'
-  ) THEN
-    CREATE POLICY "Allow anon and auth full access on pellet_consumptions"
-      ON public.pellet_consumptions
-      FOR ALL
-      TO anon, authenticated
-      USING (true)
-      WITH CHECK (true);
-  END IF;
-END $$;
+CREATE POLICY pellet_inwards_access
+  ON public.pellet_inwards
+  FOR ALL
+  TO authenticated
+  USING (private.can_any(ARRAY['pellet_fuel', 'inventory']))
+  WITH CHECK (private.can_any(ARRAY['pellet_fuel', 'inventory']));
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.pellet_inwards TO anon, authenticated, service_role;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.pellet_consumptions TO anon, authenticated, service_role;
+CREATE POLICY pellet_consumptions_access
+  ON public.pellet_consumptions
+  FOR ALL
+  TO authenticated
+  USING (private.can_any(ARRAY['pellet_fuel', 'inventory']))
+  WITH CHECK (private.can_any(ARRAY['pellet_fuel', 'inventory']));
+
+REVOKE ALL ON TABLE public.pellet_inwards FROM anon, PUBLIC;
+REVOKE ALL ON TABLE public.pellet_consumptions FROM anon, PUBLIC;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.pellet_inwards TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.pellet_consumptions TO authenticated;
