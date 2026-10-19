@@ -237,6 +237,109 @@ BEGIN
 END $$;
 RESET ROLE;
 
+-- B-025. The mail log stays closed after the lockdown table grant, and the
+-- daily caps stop a user at 20 and the plant at 60.
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.email_send_log TO anon, authenticated;
+
+DO $$
+BEGIN
+  IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.email_send_log'::regclass) THEN
+    RAISE EXCEPTION 'email_send_log does not have RLS enabled';
+  END IF;
+  IF has_function_privilege('anon', 'public.claim_email_send(uuid,text,text)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.claim_email_send(uuid,text,text)', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.release_email_send(bigint)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.release_email_send(bigint)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'browser roles can execute the email cap functions';
+  END IF;
+  IF NOT has_function_privilege('service_role', 'public.claim_email_send(uuid,text,text)', 'EXECUTE')
+     OR NOT has_function_privilege('service_role', 'public.release_email_send(bigint)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'service_role cannot execute the email cap functions';
+  END IF;
+END $$;
+
+SET ROLE anon;
+DO $$
+DECLARE n int;
+BEGIN
+  SELECT count(*) INTO n FROM public.email_send_log;
+  IF n <> 0 THEN RAISE EXCEPTION 'anon read the email log'; END IF;
+  BEGIN
+    INSERT INTO public.email_send_log (auth_user_id, recipient, subject)
+    VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'a@samyakinternational.in', 'x');
+    RAISE EXCEPTION 'anon inserted into the email log';
+  EXCEPTION WHEN insufficient_privilege THEN
+    NULL;
+  END;
+END $$;
+RESET ROLE;
+
+SET ROLE authenticated;
+DO $$
+DECLARE n int;
+BEGIN
+  SELECT count(*) INTO n FROM public.email_send_log;
+  IF n <> 0 THEN RAISE EXCEPTION 'authenticated read the email log'; END IF;
+  BEGIN
+    INSERT INTO public.email_send_log (auth_user_id, recipient, subject)
+    VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'a@samyakinternational.in', 'x');
+    RAISE EXCEPTION 'authenticated inserted into the email log';
+  EXCEPTION WHEN insufficient_privilege THEN
+    NULL;
+  END;
+  BEGIN
+    PERFORM public.claim_email_send('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'a@samyakinternational.in', 'x');
+    RAISE EXCEPTION 'authenticated called claim_email_send';
+  EXCEPTION WHEN insufficient_privilege THEN
+    NULL;
+  END;
+END $$;
+RESET ROLE;
+
+DO $$
+DECLARE
+  users uuid[] := ARRAY[
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+    'cccccccc-cccc-cccc-cccc-cccccccccccc'
+  ];
+  u uuid;
+  i int;
+  result jsonb;
+  released bigint;
+BEGIN
+  FOREACH u IN ARRAY users LOOP
+    FOR i IN 1..20 LOOP
+      result := public.claim_email_send(u, 'qc@samyakinternational.in', 'cap');
+      IF result->>'status' IS DISTINCT FROM 'ok' THEN
+        RAISE EXCEPTION 'claim % for % returned %', i, u, result;
+      END IF;
+    END LOOP;
+    result := public.claim_email_send(u, 'qc@samyakinternational.in', 'cap');
+    IF result->>'status' IS DISTINCT FROM 'user' THEN
+      RAISE EXCEPTION '21st claim for % returned %', u, result;
+    END IF;
+  END LOOP;
+
+  result := public.claim_email_send('dddddddd-dddd-dddd-dddd-dddddddddddd', 'qc@samyakinternational.in', 'cap');
+  IF result->>'status' IS DISTINCT FROM 'global' THEN
+    RAISE EXCEPTION '61st plant claim returned %', result;
+  END IF;
+
+  SELECT id INTO released FROM public.email_send_log ORDER BY id LIMIT 1;
+  PERFORM public.release_email_send(released);
+  result := public.claim_email_send('dddddddd-dddd-dddd-dddd-dddddddddddd', 'qc@samyakinternational.in', 'after release');
+  IF result->>'status' IS DISTINCT FROM 'ok' THEN
+    RAISE EXCEPTION 'claim after a failed-send release returned %', result;
+  END IF;
+
+  UPDATE public.email_send_log SET sent_at = pg_catalog.now() - interval '2 days';
+  result := public.claim_email_send('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'qc@samyakinternational.in', 'next day');
+  IF result->>'status' IS DISTINCT FROM 'ok' THEN
+    RAISE EXCEPTION 'yesterday rows still counted toward the cap: %', result;
+  END IF;
+END $$;
+
 -- Sales can read quotations and cannot read payroll.
 SELECT set_config('request.jwt.claim.sub', '66666666-6666-6666-6666-666666666666', false);
 SET ROLE authenticated;
