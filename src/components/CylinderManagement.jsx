@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import StorageImage from './StorageImage';
 import SearchableSelect from './SearchableSelect';
 import { 
   Layers, 
@@ -1173,7 +1174,7 @@ export default function CylinderManagement({
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                           {c.artworkUrl ? (
-                            <img 
+                            <StorageImage 
                               src={c.artworkUrl} 
                               alt="Artwork" 
                               style={{ width: '40px', height: '40px', objectFit: 'contain', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }} 
@@ -1936,7 +1937,7 @@ export default function CylinderManagement({
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
                   {artworkUrl ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <img 
+                      <StorageImage 
                         src={artworkUrl} 
                         alt="Artwork Preview" 
                         style={{ width: '60px', height: '60px', objectFit: 'contain', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }} 

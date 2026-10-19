@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import StorageImage from './StorageImage';
 import { 
   Printer, 
   Play,
@@ -1622,7 +1623,7 @@ export default function ProductionScheduler({
                         title={order.artworkUrl ? "Click to Zoom Artwork" : "No Artwork Attached"}
                       >
                         {order.artworkUrl ? (
-                          <img 
+                          <StorageImage 
                             src={order.artworkUrl} 
                             alt={order.jobName} 
                             style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
@@ -1918,7 +1919,7 @@ export default function ProductionScheduler({
                         title={order.artworkUrl ? "Click to Zoom Artwork" : "No Artwork Attached"}
                       >
                         {order.artworkUrl ? (
-                          <img 
+                          <StorageImage 
                             src={order.artworkUrl} 
                             alt={order.jobName} 
                             style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
@@ -2546,7 +2547,7 @@ export default function ProductionScheduler({
                   }}
                 >
                   {activeRunningJob.artworkUrl ? (
-                    <img 
+                    <StorageImage 
                       src={activeRunningJob.artworkUrl} 
                       alt={activeRunningJob.jobName} 
                       style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} 
@@ -3146,7 +3147,7 @@ export default function ProductionScheduler({
             >
               <X size={20} />
             </button>
-            <img 
+            <StorageImage 
               src={zoomArtworkSrc} 
               alt="Artwork Fullscreen" 
               style={{ maxWidth: '92vw', maxHeight: '92vh', objectFit: 'contain', borderRadius: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', background: '#ffffff' }} 

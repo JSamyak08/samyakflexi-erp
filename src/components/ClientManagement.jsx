@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Plus, Search, Building2, Phone, MapPin, Briefcase, ChevronRight, Package, Layers, X, Edit, Trash2, AlertTriangle, ExternalLink, IndianRupee, Image as ImageIcon, Printer, FileText } from 'lucide-react';
 import { openArtworkViewer } from '../services/supabaseStorageService';
+import StorageImage from './StorageImage';
 import ArtworkModal from './ArtworkModal';
 import TablePagination, { usePagination } from './TablePagination';
 import ClientPendingOrdersPDF from './ClientPendingOrdersPDF';
@@ -335,7 +336,7 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                               {artwork ? (
-                                <img 
+                                <StorageImage 
                                   src={artwork} 
                                   alt="Artwork" 
                                   style={{ width: '32px', height: '32px', objectFit: 'contain', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }} 

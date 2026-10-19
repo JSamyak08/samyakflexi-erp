@@ -43,7 +43,6 @@ export default function UserManagement({
   // User Form State
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('password123');
   const [role, setRole] = useState('Store Manager');
   const [department, setDepartment] = useState('Store & Raw Material');
   const [status, setStatus] = useState('Active');
@@ -51,11 +50,13 @@ export default function UserManagement({
   const roleOptions = [
     { role: "Admin", dept: "Executive Management" },
     { role: "Plant Manager", dept: "Operations & Plant" },
+    { role: "HR & Payroll Manager", dept: "Human Resources & Admin" },
     { role: "Production Manager", dept: "Operations & Plant" },
     { role: "Store Manager", dept: "Store & Raw Material" },
     { role: "QC Chemist", dept: "Quality Control Lab" },
     { role: "Purchase Manager", dept: "Purchase & Commercial" },
     { role: "Sales Manager", dept: "Sales & Commercial" },
+    { role: "Printing Operator", dept: "Rotogravure Printing" },
     { role: "Shop Floor Operator", dept: "Lamination & Printing" }
   ];
 
@@ -69,7 +70,6 @@ export default function UserManagement({
     setEditingUser(null);
     setName('');
     setEmail('');
-    setPassword('password123');
     setRole('Store Manager');
     setDepartment('Store & Raw Material');
     setStatus('Active');
@@ -80,7 +80,6 @@ export default function UserManagement({
     setEditingUser(u);
     setName(u.name || '');
     setEmail(u.email || '');
-    setPassword(u.password || 'password123');
     setRole(u.role || 'Store Manager');
     setDepartment(u.department || 'Store & Raw Material');
     setStatus(u.status || 'Active');
@@ -99,26 +98,21 @@ export default function UserManagement({
         ...editingUser,
         name: name.trim(),
         email: email.trim().toLowerCase(),
-        password: password || 'password123',
         role,
         department,
         status
       };
       if (onUpdateUser) onUpdateUser(updated);
-      alert(`User account "${name}" updated successfully!`);
     } else {
       const newUser = {
-        id: `USR-${Math.floor(1000 + Math.random() * 9000)}`,
         name: name.trim(),
         email: email.trim().toLowerCase(),
-        password: password || 'password123',
         role,
         department,
         status
       };
       if (onAddUser) onAddUser(newUser);
       notifyUserCreated(newUser, newUser.email).catch(err => console.error("User creation email error:", err));
-      alert(`New user "${name}" onboarded with role "${role}" successfully!\n\nCredentials email notification sent to ${newUser.email}.`);
     }
 
     setIsOnboardingModalOpen(false);
@@ -152,7 +146,11 @@ export default function UserManagement({
       alert("Only Admin role can configure role permissions!");
       return;
     }
-    const currentVal = rolePermissions[roleName]?.[moduleKey] ?? true;
+    if (moduleKey === 'employees' && roleName !== 'Admin' && roleName !== 'HR & Payroll Manager') {
+      alert('Employee and payroll records stay limited to Admin and HR & Payroll Manager.');
+      return;
+    }
+    const currentVal = rolePermissions[roleName]?.[moduleKey] === true;
     const updated = {
       ...rolePermissions,
       [roleName]: {
@@ -460,14 +458,12 @@ export default function UserManagement({
               </div>
 
               <div className="form-group">
-                <label>Login Password</label>
-                <input 
-                  type="text" 
-                  className="form-control" 
-                  placeholder="password123"
-                  value={password} 
-                  onChange={e => setPassword(e.target.value)} 
-                />
+                <label>Password</label>
+                <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                  {editingUser
+                    ? 'Passwords are managed by Supabase Auth. Use Send reset from the directory when this person needs a new password.'
+                    : 'No password is stored here. After onboarding, the person receives an email link to choose their own password.'}
+                </p>
               </div>
 
               <div className="form-group">

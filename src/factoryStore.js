@@ -1411,9 +1411,9 @@ export const generateFullRolePermissions = (allowAll = false) => {
       if (r === "Printing Operator") {
         perm[r][m.key] = (m.key === "printing_scheduler" || m.key === "dashboard");
       } else if (r === "Admin" || r === "Plant Manager" || r === "HR & Payroll Manager") {
-        perm[r][m.key] = true;
+        perm[r][m.key] = m.key === "employees" ? (r === "Admin" || r === "HR & Payroll Manager") : true;
       } else if (r === "Production Manager") {
-        perm[r][m.key] = (m.key === "dashboard" || m.key === "production_records" || m.key === "printing_scheduler" || m.key === "cylinders" || m.key === "orders" || m.key === "job_masters" || m.key === "inventory" || m.key === "purchase_orders" || m.key === "scrap_analytics" || m.key === "employees");
+        perm[r][m.key] = (m.key === "dashboard" || m.key === "production_records" || m.key === "printing_scheduler" || m.key === "cylinders" || m.key === "orders" || m.key === "job_masters" || m.key === "inventory" || m.key === "purchase_orders" || m.key === "scrap_analytics");
       } else if (r === "Store Manager") {
         perm[r][m.key] = (m.key === "dashboard" || m.key === "inventory" || m.key === "purchase_orders" || m.key === "material_indents" || m.key === "vendors" || m.key === "ink_management" || m.key === "dispatch");
       } else if (r === "QC Chemist") {
@@ -1428,6 +1428,12 @@ export const generateFullRolePermissions = (allowAll = false) => {
         perm[r][m.key] = allowAll;
       }
     });
+    perm[r].employees = r === "Admin" || r === "HR & Payroll Manager";
+    perm[r].user_management = r === "Admin";
+    perm[r].audit_logs = r === "Admin";
+    perm[r].dispatch = ["Admin", "Plant Manager", "HR & Payroll Manager", "Store Manager", "QC Chemist", "Sales Manager"].includes(r);
+    perm[r].sfg_store = ["Admin", "Plant Manager", "HR & Payroll Manager", "Production Manager", "Store Manager", "QC Chemist", "Shop Floor Operator", "Printing Operator"].includes(r);
+    perm[r].pellet_fuel = ["Admin", "Plant Manager", "HR & Payroll Manager", "Store Manager", "Purchase Manager", "Production Manager"].includes(r);
   });
   return perm;
 };

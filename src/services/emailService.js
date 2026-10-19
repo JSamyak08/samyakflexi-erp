@@ -34,29 +34,6 @@ export const filterInternalRecipientsOnly = (emailInput, defaultInternal = 'admi
   return internalOnly.length > 0 ? internalOnly.join(', ') : defaultInternal;
 };
 
-export const requestPasswordRecovery = async (email) => {
-  const sanitizedEmail = filterInternalRecipientsOnly(email, 'admin@samyakinternational.in');
-  try {
-    const response = await fetch('/api/recover-password', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email: sanitizedEmail }),
-    });
-
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('Password recovery service error:', error);
-    return {
-      success: false,
-      message: 'Unable to connect to email recovery server. Please ensure backend server is running.',
-      error: error.message
-    };
-  }
-};
-
 export const sendERPEmailNotification = async ({ to, cc, subject, html, text }) => {
   const sanitizedTo = filterInternalRecipientsOnly(to, 'admin@samyakinternational.in');
   const sanitizedCc = cc ? filterInternalRecipientsOnly(cc, '') : '';
@@ -365,8 +342,7 @@ export const notifyUserCreated = async (user, customTo) => {
     userName: user.name || '',
     userEmail: user.email || '',
     userRole: user.role || '',
-    userDepartment: user.department || 'Operations',
-    userPassword: user.password || 'password123'
+    userDepartment: user.department || 'Operations'
   };
 
   const tmpl = getActiveTemplate('user_created', vars);
@@ -387,7 +363,7 @@ export const notifyUserCreated = async (user, customTo) => {
     cc: tmpl.ccEmail,
     subject: tmpl.subject,
     html,
-    text: `Welcome ${user.name}! Your account has been created with role ${user.role}. Login with ${user.email}.`
+    text: `Welcome ${user.name}! Your ${user.role} account is ready. Use the separate setup email to choose a password, then sign in with ${user.email}.`
   });
 };
 
