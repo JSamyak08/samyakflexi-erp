@@ -944,6 +944,10 @@ export default function ProductionRecordManagement({
 
       let sfgQtyL1 = 0;
       let sfgQtyL2 = 0;
+      let sfgQtySlitting = 0;
+      let sfgSlittingTrimScrap = 0;
+      let sfgSlittingSettingScrap = 0;
+      let sfgSlittingScrap = 0;
       let sfgQtyPouching = 0;
       let sfgAdhesiveL1 = 0;
       let sfgAdhesiveL2 = 0;
@@ -972,6 +976,11 @@ export default function ProductionRecordManagement({
         } else if (p === 'Printing (Pass 2)') {
           sfgPrintPlainScrap += parseFloat(sb.printingPlainSettingWastageKg) || 0;
           sfgPrintScrap += parseFloat(sb.printingWastageKg) || 0;
+        } else if (p === 'Slitting & Rewinding') {
+          sfgQtySlitting += outKg;
+          sfgSlittingTrimScrap += parseFloat(sb.slittingTrimScrapKg) || 0;
+          sfgSlittingSettingScrap += parseFloat(sb.slittingSettingWastageKg) || 0;
+          sfgSlittingScrap += parseFloat(sb.slittingScrapKg) || 0;
         } else if (p === 'Pouching / Bag Making') {
           sfgQtyPouching += outKg;
           sfgPouchingScrap += parseFloat(sb.pouchingScrapKg) || 0;
@@ -1060,7 +1069,7 @@ export default function ProductionRecordManagement({
       setQtySecondPassL2(existingRec.qtySecondPassL2 || sfgQtyL2 || 0);
       setLaminationPlainSubstrateWastageL2Kg(existingRec.laminationPlainSubstrateWastageL2Kg || sfgLamPlainScrapL2 || 0);
       setAdhesiveConsumedL2Kg(existingRec.adhesiveConsumedL2Kg || sfgAdhesiveL2 || 0);
-      setQtySlitting(existingRec.qtySlitting || 0);
+      setQtySlitting(existingRec.qtySlitting || sfgQtySlitting || 0);
       setPaperCoreConsumedKg(existingRec.paperCoreConsumedKg || 0);
       setQtyPouching(existingRec.qtyPouching || sfgQtyPouching || 0);
       setZipperConsumedKg(existingRec.zipperConsumedKg || sfgZipperConsumed || 0);
@@ -1083,7 +1092,7 @@ export default function ProductionRecordManagement({
       setLaminationPlainSubstrateWastageKg(existingRec.laminationPlainSubstrateWastageKg || sfgLamPlainScrapL1 || 0);
       setPrintedWastageKg(existingRec.printedWastageKg || 0);
       setLaminateWastageKg(existingRec.laminateWastageKg || sfgLaminateScrap || 0);
-      setTrimWastageKg(existingRec.trimWastageKg || 0);
+      setTrimWastageKg(existingRec.trimWastageKg || sfgSlittingTrimScrap || 0);
       setRecordNotes(existingRec.notes || '');
 
       setActualInkGsm(existingRec.actualInkGsm !== undefined && existingRec.actualInkGsm !== null ? String(existingRec.actualInkGsm) : (existingRec.inkGsmInSpeed ? String(existingRec.inkGsmInSpeed) : ''));
@@ -1102,6 +1111,10 @@ export default function ProductionRecordManagement({
     const ordSfgLogs = Array.isArray(ord.sfgConsumptions) ? ord.sfgConsumptions : [];
     let sfgQtyL1 = 0;
     let sfgQtyL2 = 0;
+    let sfgQtySlitting = 0;
+    let sfgSlittingTrimScrap = 0;
+    let sfgSlittingSettingScrap = 0;
+    let sfgSlittingScrap = 0;
     let sfgQtyPouching = 0;
     let sfgAdhesiveL1 = 0;
     let sfgAdhesiveL2 = 0;
@@ -1130,6 +1143,11 @@ export default function ProductionRecordManagement({
       } else if (p === 'Printing (Pass 2)') {
         sfgPrintPlainScrap += parseFloat(sb.printingPlainSettingWastageKg) || 0;
         sfgPrintScrap += parseFloat(sb.printingWastageKg) || 0;
+      } else if (p === 'Slitting & Rewinding') {
+        sfgQtySlitting += outKg;
+        sfgSlittingTrimScrap += parseFloat(sb.slittingTrimScrapKg) || 0;
+        sfgSlittingSettingScrap += parseFloat(sb.slittingSettingWastageKg) || 0;
+        sfgSlittingScrap += parseFloat(sb.slittingScrapKg) || 0;
       } else if (p === 'Pouching / Bag Making') {
         sfgQtyPouching += outKg;
         sfgPouchingScrap += parseFloat(sb.pouchingScrapKg) || 0;
@@ -1309,7 +1327,7 @@ export default function ProductionRecordManagement({
     setQtySecondPassL2(sfgQtyL2 || 0);
     setLaminationPlainSubstrateWastageL2Kg(sfgLamPlainScrapL2 || 0);
     setAdhesiveConsumedL2Kg(sfgAdhesiveL2 || 0);
-    setQtySlitting(0);
+    setQtySlitting(sfgQtySlitting || 0);
     setPaperCoreConsumedKg(0);
     // Newly created record inherits latest active settings from DB:
     setAdhesiveCostPerKg(activeMaterialRates.adhesiveCostPerKg);
@@ -1323,7 +1341,7 @@ export default function ProductionRecordManagement({
     setLaminationPlainSubstrateWastageKg(sfgLamPlainScrapL1 || 0);
     setPrintedWastageKg(0);
     setLaminateWastageKg(sfgLaminateScrap || 0);
-    setTrimWastageKg(0);
+    setTrimWastageKg(sfgSlittingTrimScrap || 0);
     setActualInkGsm('');
     setActualAdhesiveGsm('');
     setTargetInkGsm(String(defaultTargetInk));
@@ -2429,6 +2447,13 @@ export default function ProductionRecordManagement({
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                             {rec.clientName} {jobMasterDisplay ? `• ${jobMasterDisplay}` : ''}
                           </div>
+                          {Number(rec.qtyDispatch) > 0 && (
+                            <div style={{ marginTop: '3px' }}>
+                              <span className="badge" style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontSize: '0.7rem', fontWeight: '800', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                🚚 Dispatched: {Number(rec.qtyDispatch).toLocaleString()} kg
+                              </span>
+                            </div>
+                          )}
                           {((linkedOrder?.hasVariants || (Array.isArray(linkedOrder?.variants) && linkedOrder.variants.length > 0)) || (rec.hasVariants || (Array.isArray(rec.variants) && rec.variants.length > 0))) && (
                             <span className="badge" style={{ background: '#f3e8ff', color: '#7e22ce', border: '1px solid #d8b4fe', fontSize: '0.7rem', fontWeight: '800', marginTop: '3px', display: 'inline-block' }}>
                               🎨 {(rec.variants || linkedOrder?.variants || []).length} Variants
@@ -2771,21 +2796,23 @@ export default function ProductionRecordManagement({
                   </div>
                 )}
 
-                {/* Printed Output SFG Rolls Breakdown Table */}
+                {/* Printed Output SFG / FG Rolls Breakdown Table */}
                 {outputRolls.length > 0 && (
                   <div style={{ marginTop: '16px' }}>
                     <h5 style={{ fontSize: '0.85rem', fontWeight: '800', color: '#0f172a', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Tag size={16} style={{ color: '#059669' }} /> 🏷️ Printed Output SFG Barcodes & Roll-Wise Production Breakdown ({outputRolls.length} Rolls)
+                      <Tag size={16} style={{ color: '#059669' }} /> 🏷️ Production Output Rolls & FG Breakdown ({outputRolls.length} Rolls)
                     </h5>
                     <table className="data-table" style={{ fontSize: '0.8rem' }}>
                       <thead>
                         <tr>
                           <th>Roll #</th>
-                          <th>SFG Barcode ID</th>
-                          <th>Substrate Specs</th>
+                          <th>Type</th>
+                          <th>Status</th>
+                          <th>Barcode ID</th>
+                          <th>Substrate Specs / Stage</th>
                           <th>Net Weight (kg)</th>
                           <th>Est. Length (Meters)</th>
-                          <th>Destination Bay / Next Stage</th>
+                          <th>Destination Bay / Store</th>
                           <th>Inward Timestamp</th>
                         </tr>
                       </thead>
@@ -2793,23 +2820,53 @@ export default function ProductionRecordManagement({
                         {outputRolls.map((r, idx) => {
                           const netW = parseFloat(r.netWeightKg || r.weightKg) || 0;
                           const lengthM = parseFloat(r.lengthMeters) || 0;
+                          const isFG = r.rollType === 'FG' || (r.stage || '').includes('Slitting') || (r.stage || '').includes('Pouching') || (r.barcodeId || '').startsWith('FG-');
                           return (
                             <tr key={idx}>
                               <td style={{ fontWeight: '700' }}>Roll #{r.rollNo || r.unitNo || (idx + 1)}</td>
                               <td>
-                                <code style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#047857', padding: '2px 8px', borderRadius: '4px', fontWeight: '900' }}>
-                                  {r.barcodeId || r.id || `SFG-BC-${r.orderId || 'ORD'}-${idx+1}`}
+                                {isFG ? (
+                                  <span className="badge badge-success" style={{ fontSize: '0.68rem', padding: '1px 6px', fontWeight: '800' }}>
+                                    🟢 FG
+                                  </span>
+                                ) : (
+                                  <span className="badge badge-warning" style={{ fontSize: '0.68rem', padding: '1px 6px', fontWeight: '700' }}>
+                                    🟡 SFG
+                                  </span>
+                                )}
+                              </td>
+                              <td>
+                                {r.status === 'Dispatched' ? (
+                                  <span className="badge" style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontSize: '0.68rem', fontWeight: '800' }}>
+                                    🚚 Dispatched
+                                  </span>
+                                ) : (r.status === 'Ready for Dispatch' || isFG) ? (
+                                  <span className="badge" style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', fontSize: '0.68rem', fontWeight: '700' }}>
+                                    📦 Ready for Dispatch
+                                  </span>
+                                ) : (
+                                  <span className="badge" style={{ background: '#f8fafc', color: '#475569', border: '1px solid #cbd5e1', fontSize: '0.68rem' }}>
+                                    {r.status || 'In Stock'}
+                                  </span>
+                                )}
+                              </td>
+                              <td>
+                                <code style={{ background: isFG ? '#eff6ff' : '#ecfdf5', border: isFG ? '1px solid #bfdbfe' : '1px solid #a7f3d0', color: isFG ? '#1d4ed8' : '#047857', padding: '2px 8px', borderRadius: '4px', fontWeight: '900' }}>
+                                  {r.barcodeId || r.id || `${isFG ? 'FG' : 'SFG'}-BC-${r.orderId || 'ORD'}-${idx+1}`}
                                 </code>
                               </td>
-                              <td>{r.filmType || selectedRecord.printFilmType || 'PET'} {r.micron || selectedRecord.micron || 12}µ ({r.widthMm || selectedRecord.printWidthMm || 460}mm)</td>
+                              <td>
+                                {r.filmType || selectedRecord.printFilmType || 'PET'} {r.micron || selectedRecord.micron || 12}µ ({r.widthMm || selectedRecord.printWidthMm || 460}mm)
+                                {r.stage ? <span style={{ color: '#64748b', fontSize: '0.72rem', display: 'block' }}>Process: {r.stage}</span> : null}
+                              </td>
                               <td style={{ fontWeight: '800', color: '#059669' }}>{netW.toFixed(1)} kg</td>
                               <td style={{ fontWeight: '700', color: '#0284c7' }}>{lengthM > 0 ? `${(lengthM || 0).toLocaleString()} m` : '-'}</td>
                               <td>
                                 <span style={{ fontSize: '0.74rem', background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '2px 6px', borderRadius: '4px', color: '#334155', fontWeight: '600' }}>
-                                  {r.locationBay || r.nextProcess || 'SFG Store (Pre-Lamination)'}
+                                  {r.locationBay || r.storageBay || r.nextProcess || (isFG ? 'FG Warehouse' : 'SFG Store (Pre-Lamination)')}
                                 </span>
                               </td>
-                              <td style={{ fontSize: '0.74rem', color: '#64748b' }}>{r.inwardDatetime || new Date().toLocaleString('en-IN')}</td>
+                              <td style={{ fontSize: '0.74rem', color: '#64748b' }}>{r.inwardDatetime || r.createdAt || new Date().toLocaleString('en-IN')}</td>
                             </tr>
                           );
                         })}

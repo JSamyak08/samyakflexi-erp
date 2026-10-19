@@ -3581,17 +3581,28 @@ export async function fetchSFGGoodsFromSupabase() {
       }
       const netKg = Number(item.total_net_kg ?? extra.totalNetKg ?? 0) || 0;
       const consumedKg = Number(extra.consumedKg ?? item.consumed_kg ?? 0) || 0;
-      const availableKg = Math.max(0, netKg - consumedKg);
+      const dispatchedKg = Number(extra.dispatchedKg ?? 0) || 0;
+      const availableKg = extra.availableKg !== undefined 
+        ? Number(extra.availableKg) 
+        : Math.max(0, netKg - consumedKg - dispatchedKg);
       
-      let computedStatus = item.status || 'In Stock (WIP)';
-      if (consumedKg > 0) {
+      let computedStatus = item.status || extra.status || 'In Stock (WIP)';
+      if (item.status === 'Dispatched' || item.status === 'Partially Dispatched' || item.status === 'Ready for Dispatch') {
+        computedStatus = item.status;
+      } else if (extra.status === 'Dispatched' || extra.status === 'Partially Dispatched' || extra.status === 'Ready for Dispatch') {
+        computedStatus = extra.status;
+      } else if (consumedKg > 0) {
         computedStatus = availableKg <= 0 ? 'Fully Consumed' : 'Partially Consumed';
       }
+
+      const isFg = item.sfg_type?.includes('Finished') || extra.rollType === 'FG' || extra.category?.includes('Finished') || (item.sfg_batch_code || '').startsWith('FG-');
 
       return {
         id: String(item.id),
         sfgBatchCode: item.sfg_batch_code || extra.sfgBatchCode || item.id,
-        sfgType: item.sfg_type || extra.sfgType || 'Printed Rolls',
+        sfgType: item.sfg_type || extra.sfgType || (isFg ? 'Finished Goods (FG)' : 'Printed Rolls'),
+        category: extra.category || (isFg ? 'Finished Goods (FG)' : 'Semi-Finished Goods (SFG)'),
+        rollType: extra.rollType || (isFg ? 'FG' : 'SFG'),
         jobId: item.job_id || extra.jobId || '',
         orderId: item.order_id || extra.orderId || '',
         jobName: item.job_name || extra.jobName || 'Untitled Job',
@@ -3602,9 +3613,13 @@ export async function fetchSFGGoodsFromSupabase() {
         micron: Number(item.micron ?? extra.micron ?? 0) || 0,
         widthMm: Number(item.width_mm ?? extra.widthMm ?? 0) || 0,
         totalGrossKg: Number(item.total_gross_kg ?? extra.totalGrossKg ?? 0) || 0,
+        grossWeightKg: Number(extra.grossWeightKg ?? item.total_gross_kg ?? netKg) || 0,
+        tareWeightKg: Number(extra.tareWeightKg ?? 0) || 0,
         totalNetKg: netKg,
         consumedKg: consumedKg,
+        dispatchedKg: dispatchedKg,
         availableKg: availableKg,
+        pouchCount: Number(extra.pouchCount || 0) || 0,
         totalMeters: Number(item.total_meters ?? extra.totalMeters ?? 0) || 0,
         rollsCount: Number(item.rolls_count ?? extra.rollsCount ?? 1) || 1,
         machineName: item.machine_name || extra.machineName || '',
@@ -3633,15 +3648,25 @@ export async function saveSFGGoodToSupabase(item) {
   const sfgBatchCode = item.sfgBatchCode || item.id || `SFG-${Date.now()}`;
   const netKg = Number(item.totalNetKg ?? item.netWeightKg ?? 0) || 0;
   const consumedKg = Number(item.consumedKg ?? 0) || 0;
-  const availableKg = Math.max(0, netKg - consumedKg);
+  const dispatchedKg = Number(item.dispatchedKg ?? 0) || 0;
+  const availableKg = item.availableKg !== undefined 
+    ? Number(item.availableKg) 
+    : Math.max(0, netKg - consumedKg - dispatchedKg);
+
   let computedStatus = item.status || 'In Stock (WIP)';
-  if (consumedKg > 0) {
+  if (item.status === 'Dispatched' || item.status === 'Partially Dispatched' || item.status === 'Ready for Dispatch') {
+    computedStatus = item.status;
+  } else if (consumedKg > 0) {
     computedStatus = availableKg <= 0 ? 'Fully Consumed' : 'Partially Consumed';
   }
 
+  const isFg = item.sfgType?.includes('Finished') || item.rollType === 'FG' || item.category?.includes('Finished') || sfgBatchCode.startsWith('FG-');
+
   const notesEnvelope = JSON.stringify({
     sfgBatchCode,
-    sfgType: item.sfgType,
+    sfgType: item.sfgType || (isFg ? 'Finished Goods (FG)' : 'Printed Rolls'),
+    category: item.category || (isFg ? 'Finished Goods (FG)' : 'Semi-Finished Goods (SFG)'),
+    rollType: item.rollType || (isFg ? 'FG' : 'SFG'),
     jobId: item.jobId,
     orderId: item.orderId,
     jobName: item.jobName,
@@ -3651,10 +3676,14 @@ export async function saveSFGGoodToSupabase(item) {
     filmType: item.filmType,
     micron: item.micron,
     widthMm: item.widthMm,
-    totalGrossKg: item.totalGrossKg,
+    totalGrossKg: item.totalGrossKg ?? item.grossWeightKg ?? netKg,
+    grossWeightKg: item.grossWeightKg ?? item.totalGrossKg ?? netKg,
+    tareWeightKg: item.tareWeightKg ?? 0,
     totalNetKg: netKg,
     consumedKg: consumedKg,
+    dispatchedKg: dispatchedKg,
     availableKg: availableKg,
+    pouchCount: Number(item.pouchCount || 0),
     totalMeters: item.totalMeters,
     rollsCount: item.rollsCount,
     machineName: item.machineName,
@@ -3662,13 +3691,14 @@ export async function saveSFGGoodToSupabase(item) {
     shift: item.shift,
     storageBay: item.storageBay,
     productionDate: item.productionDate,
+    status: computedStatus,
     notesText: item.notes || '',
     consumptionHistory: item.consumptionHistory || []
   });
 
   const payload = {
     sfg_batch_code: sfgBatchCode,
-    sfg_type: item.sfgType || 'Printed Rolls',
+    sfg_type: item.sfgType || (isFg ? 'Finished Goods (FG)' : 'Printed Rolls'),
     job_id: item.jobId || null,
     order_id: item.orderId || null,
     job_name: item.jobName || 'Untitled Job',
@@ -3678,14 +3708,14 @@ export async function saveSFGGoodToSupabase(item) {
     film_type: item.filmType || '',
     micron: Number(item.micron) || 0,
     width_mm: Number(item.widthMm) || 0,
-    total_gross_kg: Number(item.totalGrossKg) || 0,
+    total_gross_kg: Number(item.totalGrossKg ?? item.grossWeightKg ?? netKg) || 0,
     total_net_kg: netKg,
     total_meters: Number(item.totalMeters) || 0,
     rolls_count: Number(item.rollsCount) || 1,
     machine_name: item.machineName || '',
     operator_name: item.operatorName || '',
     shift: item.shift || '',
-    storage_bay: item.storageBay || 'Bay A',
+    storage_bay: item.storageBay || (isFg ? 'FG Warehouse' : 'Bay A'),
     production_date: item.productionDate || new Date().toISOString().split('T')[0],
     status: computedStatus,
     notes: notesEnvelope,
@@ -3697,7 +3727,7 @@ export async function saveSFGGoodToSupabase(item) {
     payload.id = item.id;
   }
 
-  console.log('[sfg_goods] Upserting item:', sfgBatchCode);
+  console.log('[sfg_goods] Upserting item:', sfgBatchCode, 'Status:', computedStatus);
   const { error } = await supabase.from('sfg_goods').upsert(payload, { onConflict: 'sfg_batch_code' });
   if (error) {
     handleSupabaseError(error, 'sfg_goods');

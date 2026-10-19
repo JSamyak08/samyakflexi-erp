@@ -126,8 +126,11 @@ export default function SFGStoreManagement({
   const [adhesiveConsumedL2Kg, setAdhesiveConsumedL2Kg] = useState('');
   const [printingPlainSettingWastageKg, setPrintingPlainSettingWastageKg] = useState('');
   const [printingWastageKg, setPrintingWastageKg] = useState('');
+  const [slittingTrimScrapKg, setSlittingTrimScrapKg] = useState('');
+  const [slittingSettingWastageKg, setSlittingSettingWastageKg] = useState('');
   const [pouchingScrapKg, setPouchingScrapKg] = useState('');
   const [zipperConsumedKg, setZipperConsumedKg] = useState('');
+  const [pouchCount, setPouchCount] = useState('');
 
   // Made SFG / FG Output Roll Details
   const [isOutputMade, setIsOutputMade] = useState(true);
@@ -523,8 +526,11 @@ export default function SFGStoreManagement({
     setAdhesiveConsumedL2Kg('');
     setPrintingPlainSettingWastageKg('');
     setPrintingWastageKg('');
+    setSlittingTrimScrapKg('');
+    setSlittingSettingWastageKg('');
     setPouchingScrapKg('');
     setZipperConsumedKg('');
+    setPouchCount('');
 
     // Reset Output Roll fields
     setIsOutputMade(true);
@@ -559,12 +565,14 @@ export default function SFGStoreManagement({
   const handleTargetProcessChange = (proc) => {
     setTargetProcess(proc);
     const cleanOrd = String(selectedItemForConsume?.orderId || 'ORD').replace(/[^a-zA-Z0-9]/g, '');
-    if (proc === 'Pouching / Bag Making') {
+    if (proc === 'Slitting & Rewinding' || proc === 'Pouching / Bag Making') {
       setOutputType('FG');
       setOutputBarcode(`FG-BC-${cleanOrd}-${Date.now().toString().slice(-4)}`);
+      setOutputStorageBay('FG Warehouse');
     } else if (proc === 'Lamination (Pass 1)' || proc === 'Lamination (Pass 2)' || proc === 'Printing (Pass 2)') {
       setOutputType('SFG');
       setOutputBarcode(`SFG-BC-${cleanOrd}-${Date.now().toString().slice(-4)}`);
+      setOutputStorageBay('Bay A');
     }
   };
 
@@ -639,8 +647,9 @@ export default function SFGStoreManagement({
     const isLaminationPass1 = targetProcess === 'Lamination (Pass 1)';
     const isLaminationPass2 = targetProcess === 'Lamination (Pass 2)';
     const isPrintingPass2 = targetProcess === 'Printing (Pass 2)';
+    const isSlitting = targetProcess === 'Slitting & Rewinding';
     const isPouching = targetProcess === 'Pouching / Bag Making';
-    const isSpecialProcess = isLaminationPass1 || isLaminationPass2 || isPrintingPass2 || isPouching;
+    const isSpecialProcess = isLaminationPass1 || isLaminationPass2 || isPrintingPass2 || isSlitting || isPouching;
 
     // Validation for Substrate consumption
     if (isLaminationPass1 && subBarcode && (parseFloat(subConsumedKg) > parseFloat(subInitialKg || 0))) {
@@ -695,18 +704,23 @@ export default function SFGStoreManagement({
         adhesiveConsumedL2Kg: parseFloat(adhesiveConsumedL2Kg) || 0,
         printingPlainSettingWastageKg: parseFloat(printingPlainSettingWastageKg) || 0,
         printingWastageKg: parseFloat(printingWastageKg) || 0,
+        slittingTrimScrapKg: parseFloat(slittingTrimScrapKg) || 0,
+        slittingSettingWastageKg: parseFloat(slittingSettingWastageKg) || 0,
+        slittingScrapKg: (parseFloat(slittingTrimScrapKg) || 0) + (parseFloat(slittingSettingWastageKg) || 0),
         pouchingScrapKg: parseFloat(pouchingScrapKg) || 0,
         zipperConsumedKg: parseFloat(zipperConsumedKg) || 0
       };
 
+      const finalOutputType = (isSlitting || isPouching) ? 'FG' : outputType;
       const outputRollInfo = (isSpecialProcess && isOutputMade && outNetNum > 0) ? {
-        barcode: outputBarcode || `${outputType}-BC-${selectedItemForConsume.orderId || 'ORD'}-${Date.now().toString().slice(-4)}`,
-        outputType,
+        barcode: outputBarcode || `${finalOutputType}-BC-${selectedItemForConsume.orderId || 'ORD'}-${Date.now().toString().slice(-4)}`,
+        outputType: finalOutputType,
         grossWeightKg: outGrossNum,
         tareWeightKg: outTareNum,
         netWeightKg: parseFloat(outNetNum.toFixed(2)),
-        storageBay: outputStorageBay || 'Bay A',
+        storageBay: outputStorageBay || (finalOutputType === 'FG' ? 'FG Warehouse' : 'Bay A'),
         stage: targetProcess,
+        pouchCount: isPouching ? (parseInt(pouchCount) || 0) : 0,
         timestamp: new Date().toISOString()
       } : null;
 
@@ -1298,7 +1312,10 @@ export default function SFGStoreManagement({
             >
               <option value="all">All Statuses</option>
               <option value="In Stock (WIP)">In Stock (WIP)</option>
+              <option value="Ready for Dispatch">Ready for Dispatch (FG)</option>
               <option value="Partially Consumed">Partially Consumed</option>
+              <option value="Partially Dispatched">Partially Dispatched (FG)</option>
+              <option value="Dispatched">Dispatched (FG)</option>
               <option value="Fully Consumed">Fully Consumed</option>
             </SearchableSelect>
           </div>
@@ -1579,7 +1596,19 @@ export default function SFGStoreManagement({
                           let statusColor = '#1d4ed8';
                           let statusBorder = '#bfdbfe';
 
-                          if (item.status === 'Partially Consumed') {
+                          if (item.status === 'Dispatched') {
+                            statusBg = '#ecfdf5';
+                            statusColor = '#047857';
+                            statusBorder = '#a7f3d0';
+                          } else if (item.status === 'Partially Dispatched') {
+                            statusBg = '#f0fdf4';
+                            statusColor = '#15803d';
+                            statusBorder = '#86efac';
+                          } else if (item.status === 'Ready for Dispatch') {
+                            statusBg = '#f0fdf4';
+                            statusColor = '#059669';
+                            statusBorder = '#6ee7b7';
+                          } else if (item.status === 'Partially Consumed') {
                             statusBg = '#fff7ed';
                             statusColor = '#c2410c';
                             statusBorder = '#fed7aa';
@@ -1676,9 +1705,16 @@ export default function SFGStoreManagement({
                                 {net.toFixed(2)} kg
                               </td>
 
-                              {/* Consumed Weight */}
-                              <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '700', color: consumed > 0 ? '#c2410c' : '#94a3b8', whiteSpace: 'nowrap' }}>
-                                {consumed.toFixed(2)} kg
+                              {/* Consumed / Dispatched Weight */}
+                              <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '700', whiteSpace: 'nowrap' }}>
+                                <div style={{ color: consumed > 0 ? '#c2410c' : '#94a3b8' }}>
+                                  {consumed.toFixed(2)} kg
+                                </div>
+                                {Number(item.dispatchedKg || 0) > 0 && (
+                                  <div style={{ fontSize: '0.72rem', color: '#047857', fontWeight: '800', marginTop: '2px' }}>
+                                    🚚 {Number(item.dispatchedKg).toFixed(2)} kg disp.
+                                  </div>
+                                )}
                               </td>
 
                               {/* Available Balance */}
@@ -1686,14 +1722,14 @@ export default function SFGStoreManagement({
                                 <span style={{
                                   fontSize: '0.9rem',
                                   fontWeight: '800',
-                                  color: available > 0 ? '#15803d' : '#94a3b8',
-                                  background: available > 0 ? '#f0fdf4' : '#f8fafc',
+                                  color: item.status === 'Dispatched' ? '#047857' : (available > 0 ? '#15803d' : '#94a3b8'),
+                                  background: item.status === 'Dispatched' ? '#ecfdf5' : (available > 0 ? '#f0fdf4' : '#f8fafc'),
                                   padding: '3px 8px',
                                   borderRadius: '6px',
-                                  border: available > 0 ? '1px solid #bbf7d0' : '1px solid #e2e8f0',
+                                  border: item.status === 'Dispatched' ? '1px solid #a7f3d0' : (available > 0 ? '1px solid #bbf7d0' : '1px solid #e2e8f0'),
                                   display: 'inline-block'
                                 }}>
-                                  {available.toFixed(2)} kg
+                                  {item.status === 'Dispatched' ? '0.00 kg (Dispatched)' : `${available.toFixed(2)} kg`}
                                 </span>
                               </td>
 
@@ -2791,13 +2827,14 @@ export default function SFGStoreManagement({
                   </SearchableSelect>
                 </div>
 
-                {/* Special Process Sections for Lamination Pass 1, Lamination Pass 2, Printing Pass 2, Pouching */}
+                {/* Special Process Sections for Lamination Pass 1, Lamination Pass 2, Printing Pass 2, Slitting, Pouching */}
                 {(() => {
                   const isLaminationPass1 = targetProcess === 'Lamination (Pass 1)';
                   const isLaminationPass2 = targetProcess === 'Lamination (Pass 2)';
                   const isPrintingPass2 = targetProcess === 'Printing (Pass 2)';
+                  const isSlitting = targetProcess === 'Slitting & Rewinding';
                   const isPouching = targetProcess === 'Pouching / Bag Making';
-                  const isSpecial = isLaminationPass1 || isLaminationPass2 || isPrintingPass2 || isPouching;
+                  const isSpecial = isLaminationPass1 || isLaminationPass2 || isPrintingPass2 || isSlitting || isPouching;
 
                   if (!isSpecial) return null;
 
@@ -2807,6 +2844,30 @@ export default function SFGStoreManagement({
 
                   return (
                     <div style={{ gridColumn: 'span 2', display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '4px' }}>
+                      
+                      {/* Direct FG Conversion Stage Banner */}
+                      {(isSlitting || isPouching) && (
+                        <div style={{
+                          background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
+                          border: '1.5px solid #34d399',
+                          borderRadius: '12px',
+                          padding: '14px 18px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px',
+                          boxShadow: '0 2px 8px rgba(16, 185, 129, 0.08)'
+                        }}>
+                          <div style={{ fontSize: '1.6rem' }}>🟢</div>
+                          <div>
+                            <div style={{ fontWeight: '800', color: '#065f46', fontSize: '0.92rem' }}>
+                              Direct Finished Goods (FG) Production Stage
+                            </div>
+                            <div style={{ fontSize: '0.78rem', color: '#047857', marginTop: '2px' }}>
+                              Material consumed in <strong>{targetProcess}</strong> converts directly into <strong>Finished Goods (FG)</strong> ready for Individual Package/Roll Weighing, Packing List creation, and Delivery Challan dispatch. Any unconsumed balance will remain in this SFG stage.
+                            </div>
+                          </div>
+                        </div>
+                      )}
                       
                       {/* 1. SUBSTRATE CONSUMPTION (Lamination Pass 1 & Pass 2) */}
                       {(isLaminationPass1 || isLaminationPass2) && (
@@ -3150,12 +3211,49 @@ export default function SFGStoreManagement({
                           </div>
                         )}
 
-                        {/* Pouching Scrap Inputs */}
-                        {isPouching && (
+                        {/* Slitting & Rewinding Scrap Inputs */}
+                        {isSlitting && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                             <div>
+                              <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', color: '#78350f', marginBottom: '4px' }}>
+                                ✂️ Slitting Side Trim Scrap (kg)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="0.00"
+                                value={slittingTrimScrapKg}
+                                onChange={(e) => setSlittingTrimScrapKg(e.target.value)}
+                                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #fcd34d', fontSize: '0.85rem', fontWeight: '700', background: '#fff' }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', color: '#78350f', marginBottom: '4px' }}>
+                                ⚙️ Slitting Setting / Core Wastage (kg)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="0.00"
+                                value={slittingSettingWastageKg}
+                                onChange={(e) => setSlittingSettingWastageKg(e.target.value)}
+                                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #fcd34d', fontSize: '0.85rem', fontWeight: '700', background: '#fff' }}
+                              />
+                            </div>
+                            <div style={{ gridColumn: 'span 2', fontSize: '0.78rem', color: '#92400e', fontWeight: '700', textAlign: 'right' }}>
+                              Total Slitting Scrap: {((parseFloat(slittingTrimScrapKg) || 0) + (parseFloat(slittingSettingWastageKg) || 0)).toFixed(2)} kg
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Pouching Scrap Inputs & Pouch Count */}
+                        {isPouching && (
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                            <div>
                               <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', color: '#0f766e', marginBottom: '4px' }}>
-                                Zipper Consumed (kg / m)
+                                🤐 Zipper Consumed (kg / m)
                               </label>
                               <input
                                 type="number"
@@ -3169,7 +3267,7 @@ export default function SFGStoreManagement({
                             </div>
                             <div>
                               <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', color: '#78350f', marginBottom: '4px' }}>
-                                Pouching Scrap (kg)
+                                🛍️ Pouching Scrap (kg)
                               </label>
                               <input
                                 type="number"
@@ -3180,6 +3278,22 @@ export default function SFGStoreManagement({
                                 onChange={(e) => setPouchingScrapKg(e.target.value)}
                                 style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #fcd34d', fontSize: '0.85rem', fontWeight: '700', background: '#fff' }}
                               />
+                            </div>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', color: '#047857', marginBottom: '4px' }}>
+                                🔢 Pouch Count (Pcs)
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                placeholder="e.g. 5000"
+                                value={pouchCount}
+                                onChange={(e) => setPouchCount(e.target.value)}
+                                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1.5px solid #86efac', fontSize: '0.85rem', fontWeight: '700', background: '#fff' }}
+                              />
+                            </div>
+                            <div style={{ gridColumn: 'span 3', fontSize: '0.78rem', color: '#92400e', fontWeight: '700', textAlign: 'right' }}>
+                              Total Pouching Scrap: {(parseFloat(pouchingScrapKg) || 0).toFixed(2)} kg
                             </div>
                           </div>
                         )}
@@ -3197,52 +3311,60 @@ export default function SFGStoreManagement({
                           <div>
                             <div style={{ fontWeight: '800', color: '#166534', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
                               <Scale size={18} color="#16a34a" />
-                              ✨ Output Roll Produced from Process
+                              ✨ Output Produced from Process ({isSlitting || isPouching ? 'Direct Finished Goods' : 'Roll'})
                             </div>
                             <div style={{ fontSize: '0.78rem', color: '#14532d', marginTop: '2px' }}>
-                              Select output type (SFG or FG) and capture roll final quantity with digital weighing scale & tare selector
+                              {isSlitting || isPouching 
+                                ? 'Final usable FG Quantity derived from this process (automatically ready for Packing List & Dispatch)'
+                                : 'Select output type (SFG or FG) and capture roll final quantity with digital weighing scale & tare selector'}
                             </div>
                           </div>
 
                           {/* SFG vs FG Selector */}
-                          <div style={{ display: 'flex', alignItems: 'center', background: '#ffffff', padding: '3px', borderRadius: '8px', border: '1.5px solid #22c55e' }}>
-                            <button
-                              type="button"
-                              onClick={() => handleOutputTypeToggle('SFG')}
-                              style={{
-                                padding: '6px 14px',
-                                borderRadius: '6px',
-                                border: 'none',
-                                fontSize: '0.8rem',
-                                fontWeight: '800',
-                                cursor: 'pointer',
-                                background: outputType === 'SFG' ? '#fef08a' : 'transparent',
-                                color: outputType === 'SFG' ? '#854d0e' : '#64748b',
-                                boxShadow: outputType === 'SFG' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                                transition: 'all 0.15s ease'
-                              }}
-                            >
-                              🟡 SFG (Semi-Finished)
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleOutputTypeToggle('FG')}
-                              style={{
-                                padding: '6px 14px',
-                                borderRadius: '6px',
-                                border: 'none',
-                                fontSize: '0.8rem',
-                                fontWeight: '800',
-                                cursor: 'pointer',
-                                background: outputType === 'FG' ? '#22c55e' : 'transparent',
-                                color: outputType === 'FG' ? '#ffffff' : '#64748b',
-                                boxShadow: outputType === 'FG' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                                transition: 'all 0.15s ease'
-                              }}
-                            >
-                              🟢 FG (Finished Goods)
-                            </button>
-                          </div>
+                          {isSlitting || isPouching ? (
+                            <div style={{ display: 'flex', alignItems: 'center', background: '#15803d', padding: '6px 14px', borderRadius: '8px', color: '#ffffff', fontWeight: '900', fontSize: '0.8rem', gap: '6px', boxShadow: '0 2px 6px rgba(21,128,61,0.25)' }}>
+                              <span>🟢</span> Finished Goods (FG) Directly
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', alignItems: 'center', background: '#ffffff', padding: '3px', borderRadius: '8px', border: '1.5px solid #22c55e' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleOutputTypeToggle('SFG')}
+                                style={{
+                                  padding: '6px 14px',
+                                  borderRadius: '6px',
+                                  border: 'none',
+                                  fontSize: '0.8rem',
+                                  fontWeight: '800',
+                                  cursor: 'pointer',
+                                  background: outputType === 'SFG' ? '#fef08a' : 'transparent',
+                                  color: outputType === 'SFG' ? '#854d0e' : '#64748b',
+                                  boxShadow: outputType === 'SFG' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                                  transition: 'all 0.15s ease'
+                                }}
+                              >
+                                🟡 SFG (Semi-Finished)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleOutputTypeToggle('FG')}
+                                style={{
+                                  padding: '6px 14px',
+                                  borderRadius: '6px',
+                                  border: 'none',
+                                  fontSize: '0.8rem',
+                                  fontWeight: '800',
+                                  cursor: 'pointer',
+                                  background: outputType === 'FG' ? '#22c55e' : 'transparent',
+                                  color: outputType === 'FG' ? '#ffffff' : '#64748b',
+                                  boxShadow: outputType === 'FG' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                                  transition: 'all 0.15s ease'
+                                }}
+                              >
+                                🟢 FG (Finished Goods)
+                              </button>
+                            </div>
+                          )}
                         </div>
 
                         <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.6fr 1fr', gap: '12px', marginBottom: '14px' }}>
@@ -3332,11 +3454,12 @@ export default function SFGStoreManagement({
                               onChange={(e) => setOutputStorageBay(e.target.value)}
                               style={{ width: '100%', fontSize: '0.85rem' }}
                             >
+                              <option value="FG Warehouse">FG Warehouse</option>
+                              <option value="Dispatch Ready Store">Dispatch Ready Store</option>
                               <option value="Bay A">Bay A</option>
                               <option value="Bay B">Bay B</option>
                               <option value="Bay C">Bay C</option>
                               <option value="Quarantine / Aging Bay">Quarantine / Aging Bay</option>
-                              <option value="Dispatch Ready Store">Dispatch Ready Store</option>
                             </SearchableSelect>
                           </div>
                         </div>

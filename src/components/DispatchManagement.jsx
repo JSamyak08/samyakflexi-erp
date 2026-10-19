@@ -139,6 +139,9 @@ export default function DispatchManagement({
   jobMasters = [],
   orders = [],
   cylinders = [],
+  sfgGoods = [],
+  productionRecords = [],
+  inventoryRolls = [],
   currentUser,
   onSaveDeliveryChallan,
   onDeleteDeliveryChallan,
@@ -202,6 +205,27 @@ export default function DispatchManagement({
   const [pktUom, setPktUom] = useState('Kg');
   const [pktHideBranding, setPktHideBranding] = useState(false);
   const [pktRollsList, setPktRollsList] = useState([]);
+  const [selectedFgRollForWeighing, setSelectedFgRollForWeighing] = useState(null);
+
+  // Available Finished Goods (FG) in store for the selected production job
+  const availableFgGoodsForJob = useMemo(() => {
+    if (!pktJobName) return [];
+    const cleanJob = pktJobName.trim().toLowerCase();
+    const matchedOrder = (orders || []).find(o => o.jobName === pktJobName);
+    const orderId = matchedOrder?.id;
+
+    return (sfgGoods || []).filter(item => {
+      const jobMatch = (item.jobName && item.jobName.trim().toLowerCase() === cleanJob) ||
+                       (orderId && String(item.orderId) === String(orderId));
+      const isFG = item.rollType === 'FG' || 
+                   (item.sfgType && item.sfgType.includes('Finished')) ||
+                   (item.category && item.category.includes('Finished')) ||
+                   (item.sfgBatchCode && item.sfgBatchCode.startsWith('FG-')) ||
+                   (item.id && String(item.id).startsWith('FG-'));
+      const hasAvail = Number(item.availableKg) > 0.01;
+      return jobMatch && isFG && hasAvail;
+    });
+  }, [sfgGoods, pktJobName, orders]);
 
   // Search & Filter
   const [searchTerm, setSearchTerm] = useState('');
@@ -1332,20 +1356,55 @@ export default function DispatchManagement({
     setIsDcModalOpen(true);
   };
 
-  const handleAddRollToPackingList = () => {
+  const handleAddRollToPackingList = (directFgItem = null) => {
+    const matchedOrder = (orders || []).find(o => o.jobName === pktJobName);
+    const orderId = matchedOrder?.id || 'N/A';
+    const nextRollNo = pktRollsList.length + 1;
+
+    if (directFgItem) {
+      const netW = Number(directFgItem.availableKg ?? directFgItem.totalNetKg) || 0;
+      const tareW = Number(directFgItem.tareWeightKg) || Number(pktCoreWeight) || 0;
+      const grossW = Number(directFgItem.totalGrossKg) || Number((netW + tareW).toFixed(2));
+
+      const newRollItem = {
+        rollNo: nextRollNo,
+        barcodeId: directFgItem.sfgBatchCode || `FG-DISP-${Date.now().toString().slice(-6)}-${nextRollNo}`,
+        sourceFgId: directFgItem.id,
+        sourceFgBarcode: directFgItem.sfgBatchCode,
+        jobName: pktJobName || directFgItem.jobName || 'Finished Goods Job',
+        orderId: orderId,
+        substrateSpec: matchedOrder?.structure || directFgItem.filmType || 'Flexible Laminate',
+        coreWeightKg: tareW,
+        tareWeightKg: tareW,
+        netWeightKg: netW,
+        grossWeightKg: grossW,
+        unit: pktUom || 'Kg',
+        coreSize: '3 Inch',
+        clientName: pktClientName || directFgItem.clientName,
+        invoiceNo: pktInvoiceNo,
+        poNo: pktPoNo || matchedOrder?.poNo || '',
+        stationId: 'Dispatch Main Dock',
+        hideBranding: pktHideBranding,
+        rollType: 'FG_DISPATCH'
+      };
+      setPktRollsList(prev => [...prev, newRollItem]);
+      setSelectedRollForBarcodeModal(newRollItem);
+      return;
+    }
+
     const netW = Number(currentPktNetWeight) >= 0 ? Number(currentPktNetWeight) : 0;
     const tareW = Number(pktCoreWeight) >= 0 ? Number(pktCoreWeight) : 0;
     const grossW = Number((netW + tareW).toFixed(2));
-    const nextRollNo = pktRollsList.length + 1;
-    const matchedOrder = (orders || []).find(o => o.jobName === pktJobName);
-    const orderId = matchedOrder?.id || 'N/A';
+    const sourceFg = selectedFgRollForWeighing;
 
     const newRollItem = {
       rollNo: nextRollNo,
-      barcodeId: `FG-DISP-${Date.now().toString().slice(-6)}-${nextRollNo}`,
+      barcodeId: sourceFg?.sfgBatchCode || `FG-DISP-${Date.now().toString().slice(-6)}-${nextRollNo}`,
+      sourceFgId: sourceFg?.id,
+      sourceFgBarcode: sourceFg?.sfgBatchCode,
       jobName: pktJobName || 'Finished Goods Job',
       orderId: orderId,
-      substrateSpec: matchedOrder?.structure || 'Flexible Laminate',
+      substrateSpec: matchedOrder?.structure || sourceFg?.filmType || 'Flexible Laminate',
       coreWeightKg: tareW,
       tareWeightKg: tareW,
       netWeightKg: netW,
@@ -1363,6 +1422,25 @@ export default function DispatchManagement({
 
     // IMMEDIATELY OPEN STICKER (2x4) PRINTER MODAL FOR THIS ROLL/BOX FOR INSTANT PRINTING & PASTING
     setSelectedRollForBarcodeModal(newRollItem);
+    setSelectedFgRollForWeighing(null);
+  };
+
+  const handleLoadFgToScale4 = (fg) => {
+    setSelectedFgRollForWeighing(fg);
+    setCurrentPktNetWeight(Number(fg.availableKg ?? fg.totalNetKg) || 0);
+    if (fg.tareWeightKg) setPktCoreWeight(Number(fg.tareWeightKg));
+  };
+
+  const handleAddAllAvailableFgToPackingList = () => {
+    availableFgGoodsForJob.forEach(fg => {
+      const alreadyAdded = pktRollsList.some(r => 
+        (r.sourceFgBarcode && r.sourceFgBarcode === fg.sfgBatchCode) || 
+        r.barcodeId === fg.sfgBatchCode
+      );
+      if (!alreadyAdded) {
+        handleAddRollToPackingList(fg);
+      }
+    });
   };
 
   const handleSavePackingListSubmit = (e) => {
@@ -1902,6 +1980,7 @@ export default function DispatchManagement({
                   setPktHideBranding(false);
                   setCurrentPktNetWeight(0);
                   setPktRollsList([]);
+                  setSelectedFgRollForWeighing(null);
                   setIsPackingModalOpen(true);
                 }}
                 style={{ background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', fontSize: '0.86rem', padding: '8px 16px', fontWeight: '700', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}
@@ -3813,7 +3892,100 @@ export default function DispatchManagement({
                     label={`Scale #4 Live Net Qty / Weight (${pktUom}) *`}
                   />
                 </div>
+
+                {selectedFgRollForWeighing && (
+                  <div style={{ gridColumn: 'span 2', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '8px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                    <div style={{ fontSize: '0.8rem', color: '#1e40af', fontWeight: '700' }}>
+                      ⚖️ Loaded FG Roll for Weighing: <span style={{ fontFamily: 'monospace' }}>{selectedFgRollForWeighing.sfgBatchCode}</span> ({Number(selectedFgRollForWeighing.availableKg).toFixed(1)} kg available in FG Store)
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ fontSize: '0.72rem', padding: '2px 8px' }}
+                      onClick={() => setSelectedFgRollForWeighing(null)}
+                    >
+                      ✕ Clear Loaded FG
+                    </button>
+                  </div>
+                )}
               </div>
+
+              {/* Finished Goods Ready For Dispatch Section */}
+              {availableFgGoodsForJob.length > 0 && (
+                <div style={{ marginTop: '16px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+                    <div>
+                      <div style={{ fontWeight: '800', color: '#166534', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span>🏷️</span> Available Finished Goods (FG) in Store Ready for Dispatch ({availableFgGoodsForJob.length} lots/rolls, {availableFgGoodsForJob.reduce((s, f) => s + (Number(f.availableKg) || 0), 0).toFixed(1)} kg)
+                      </div>
+                      <div style={{ fontSize: '0.74rem', color: '#15803d' }}>
+                        Derived directly from Slitting / Pouching. Weigh individually on Scale #4 or add to Packing List:
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ fontSize: '0.74rem', padding: '4px 10px', background: '#059669', color: '#fff', borderColor: '#047857', fontWeight: '800' }}
+                      onClick={handleAddAllAvailableFgToPackingList}
+                    >
+                      + Add All Available FG ({availableFgGoodsForJob.length})
+                    </button>
+                  </div>
+                  <div style={{ maxHeight: '160px', overflowY: 'auto' }}>
+                    <table className="data-table" style={{ fontSize: '0.75rem', background: '#ffffff', margin: 0 }}>
+                      <thead>
+                        <tr style={{ background: '#f8fafc' }}>
+                          <th>FG Barcode</th>
+                          <th>Type / Stage</th>
+                          <th>Location</th>
+                          <th style={{ textAlign: 'right' }}>Available (kg)</th>
+                          <th style={{ textAlign: 'center' }}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {availableFgGoodsForJob.map((fg, idx) => {
+                          const isAdded = pktRollsList.some(r => (r.sourceFgBarcode && r.sourceFgBarcode === fg.sfgBatchCode) || r.barcodeId === fg.sfgBatchCode);
+                          const isLoaded = selectedFgRollForWeighing && (selectedFgRollForWeighing.id === fg.id || selectedFgRollForWeighing.sfgBatchCode === fg.sfgBatchCode);
+                          return (
+                            <tr key={idx} style={{ background: isLoaded ? '#eff6ff' : 'transparent' }}>
+                              <td style={{ fontFamily: 'monospace', fontWeight: '800', color: '#0369a1' }}>{fg.sfgBatchCode}</td>
+                              <td>{fg.sfgType || 'Finished Goods'} {fg.pouchCount ? `(${fg.pouchCount.toLocaleString()} pcs)` : ''}</td>
+                              <td><span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', background: '#f1f5f9', color: '#475569' }}>{fg.storageBay || 'FG Warehouse'}</span></td>
+                              <td style={{ textAlign: 'right', fontWeight: '800', color: '#15803d' }}>{Number(fg.availableKg).toFixed(1)} kg</td>
+                              <td style={{ textAlign: 'center' }}>
+                                {isAdded ? (
+                                  <span style={{ color: '#059669', fontWeight: '800', fontSize: '0.72rem' }}>✓ Added</span>
+                                ) : (
+                                  <div style={{ display: 'inline-flex', gap: '4px' }}>
+                                    <button
+                                      type="button"
+                                      className="btn-secondary"
+                                      style={{ fontSize: '0.7rem', padding: '2px 6px', background: isLoaded ? '#3b82f6' : '#ffffff', color: isLoaded ? '#fff' : '#1e293b' }}
+                                      onClick={() => handleLoadFgToScale4(fg)}
+                                      title="Load into Scale #4 to verify/capture weight"
+                                    >
+                                      ⚖️ Weigh
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn-secondary"
+                                      style={{ fontSize: '0.7rem', padding: '2px 6px', background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontWeight: '700' }}
+                                      onClick={() => handleAddRollToPackingList(fg)}
+                                      title="Add this FG directly to packing list"
+                                    >
+                                      + Add
+                                    </button>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
 
               {/* Scanned Packing List Rolls Table */}
               <div style={{ marginTop: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>

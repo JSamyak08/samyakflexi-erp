@@ -2583,6 +2583,237 @@ export default function App() {
     await saveDispatchShipmentToSupabase(newShipment);
     setDispatchShipments(prev => [newShipment, ...prev.filter(s => s.id !== newShipment.id)]);
     logAudit('CREATE', 'Dispatch', `Created client dispatch shipment ${newShipment.id} for "${newShipment.clientName}"`, newShipment.id);
+
+    // 1. Reduce dispatched FG quantities from sfgGoods (FG Store)
+    const shipmentItems = Array.isArray(newShipment.items) ? newShipment.items : [];
+    const totalDispatchNetKg = Number(newShipment.totalNetWeightKg) || shipmentItems.reduce((s, it) => s + (Number(it.netWeightKg) || 0), 0);
+    const shipJobName = (newShipment.jobName || '').trim().toLowerCase();
+    const shipOrderId = newShipment.orderId;
+
+    let updatedSfgList = [...sfgGoods];
+    let remainingNetToDeduct = totalDispatchNetKg;
+
+    // First attempt matching by specific barcodeId / sourceFgBarcode / sourceFgId
+    for (const item of shipmentItems) {
+      const targetBarcode = (item.sourceFgBarcode || item.barcodeId || '').trim();
+      const targetId = (item.sourceFgId || '').trim();
+      const itemNetKg = Number(item.netWeightKg) || 0;
+
+      if (itemNetKg <= 0) continue;
+
+      const foundIdx = updatedSfgList.findIndex(s => 
+        (targetId && (s.id === targetId || s.sfgBatchCode === targetId)) ||
+        (targetBarcode && (s.sfgBatchCode === targetBarcode || s.id === targetBarcode))
+      );
+
+      if (foundIdx >= 0) {
+        const currentSfg = updatedSfgList[foundIdx];
+        const prevDispatched = Number(currentSfg.dispatchedKg) || 0;
+        const newDispatched = Math.round((prevDispatched + itemNetKg) * 100) / 100;
+        const totalNet = Number(currentSfg.totalNetKg) || 0;
+        const newAvailable = Math.max(0, Math.round((totalNet - newDispatched) * 100) / 100);
+        const newStatus = newAvailable <= 0.05 ? 'Dispatched' : 'Partially Dispatched';
+
+        const updatedHistory = Array.isArray(currentSfg.consumptionHistory) ? [...currentSfg.consumptionHistory] : [];
+        updatedHistory.push({
+          date: newShipment.dispatchDate || new Date().toISOString(),
+          type: 'DISPATCH',
+          dispatchId: newShipment.dispatchId || newShipment.id,
+          weightKg: itemNetKg,
+          vehicleNo: newShipment.vehicleNo || '',
+          note: `Dispatched ${itemNetKg} kg in Packing List ${newShipment.dispatchId || newShipment.id}`
+        });
+
+        const updatedSfg = {
+          ...currentSfg,
+          availableKg: newAvailable,
+          dispatchedKg: newDispatched,
+          status: newStatus,
+          consumptionHistory: updatedHistory
+        };
+
+        updatedSfgList[foundIdx] = updatedSfg;
+        remainingNetToDeduct = Math.max(0, remainingNetToDeduct - itemNetKg);
+
+        try {
+          await saveSFGGoodToSupabase(updatedSfg);
+        } catch (e) {
+          console.warn('[handleAddDispatchShipment] Failed to save updated SFG to Supabase:', e);
+        }
+      }
+    }
+
+    // If there's remaining weight to deduct (e.g. general weight entered or unmatched barcode)
+    if (remainingNetToDeduct > 0.01) {
+      for (let i = 0; i < updatedSfgList.length && remainingNetToDeduct > 0.01; i++) {
+        const sfg = updatedSfgList[i];
+        const isJobMatch = (shipJobName && (sfg.jobName || '').trim().toLowerCase() === shipJobName) ||
+                           (shipOrderId && String(sfg.orderId) === String(shipOrderId));
+        const isFG = sfg.rollType === 'FG' || (sfg.sfgType || '').includes('Finished') || (sfg.category || '').includes('Finished') || (sfg.sfgBatchCode || '').startsWith('FG-');
+        const avail = Number(sfg.availableKg) || 0;
+
+        if (isJobMatch && isFG && avail > 0) {
+          const deductKg = Math.min(avail, remainingNetToDeduct);
+          const prevDispatched = Number(sfg.dispatchedKg) || 0;
+          const newDispatched = Math.round((prevDispatched + deductKg) * 100) / 100;
+          const totalNet = Number(sfg.totalNetKg) || 0;
+          const newAvailable = Math.max(0, Math.round((totalNet - newDispatched) * 100) / 100);
+          const newStatus = newAvailable <= 0.05 ? 'Dispatched' : 'Partially Dispatched';
+
+          const updatedHistory = Array.isArray(sfg.consumptionHistory) ? [...sfg.consumptionHistory] : [];
+          updatedHistory.push({
+            date: newShipment.dispatchDate || new Date().toISOString(),
+            type: 'DISPATCH',
+            dispatchId: newShipment.dispatchId || newShipment.id,
+            weightKg: deductKg,
+            vehicleNo: newShipment.vehicleNo || '',
+            note: `Dispatched ${deductKg} kg in Packing List ${newShipment.dispatchId || newShipment.id}`
+          });
+
+          const updatedSfg = {
+            ...sfg,
+            availableKg: newAvailable,
+            dispatchedKg: newDispatched,
+            status: newStatus,
+            consumptionHistory: updatedHistory
+          };
+
+          updatedSfgList[i] = updatedSfg;
+          remainingNetToDeduct = Math.max(0, remainingNetToDeduct - deductKg);
+
+          try {
+            await saveSFGGoodToSupabase(updatedSfg);
+          } catch (e) {
+            console.warn('[handleAddDispatchShipment] Failed to save updated SFG to Supabase:', e);
+          }
+        }
+      }
+    }
+    setSfgGoods(updatedSfgList);
+
+    // 2. Synchronize to inventoryRolls (Finished Goods inventory)
+    setInventoryRolls(prevRolls => {
+      let rollsCopy = [...prevRolls];
+      let remainingToDeductInv = totalDispatchNetKg;
+
+      rollsCopy = rollsCopy.map(r => {
+        const itemMatch = shipmentItems.find(it => 
+          (it.barcodeId && (r.barcodeId === it.barcodeId || r.id === it.barcodeId)) ||
+          (it.sourceFgBarcode && (r.barcodeId === it.sourceFgBarcode || r.id === it.sourceFgBarcode))
+        );
+
+        if (itemMatch) {
+          const dKg = Number(itemMatch.netWeightKg) || 0;
+          const prevDisp = Number(r.dispatchedKg) || 0;
+          const newDisp = Math.round((prevDisp + dKg) * 100) / 100;
+          const netW = Number(r.netWeightKg) || 0;
+          const newAvail = Math.max(0, Math.round((netW - newDisp) * 100) / 100);
+          const updated = {
+            ...r,
+            availableWeightKg: newAvail,
+            dispatchedKg: newDisp,
+            status: newAvail <= 0.05 ? 'Dispatched' : 'Partially Dispatched'
+          };
+          saveInventoryRollToSupabase(updated).catch(console.warn);
+          return updated;
+        }
+
+        const isJobMatch = (shipJobName && (r.jobName || '').trim().toLowerCase() === shipJobName) ||
+                           (shipOrderId && String(r.orderId) === String(shipOrderId));
+        const isFG = r.rollType === 'FINISHED_GOODS' || r.rollType === 'FG' || (r.sfgType || '').includes('Finished') || (r.barcodeId || '').startsWith('FG-');
+        const avail = Number(r.availableWeightKg ?? r.netWeightKg) || 0;
+
+        if (isJobMatch && isFG && avail > 0 && remainingToDeductInv > 0.01) {
+          const dKg = Math.min(avail, remainingToDeductInv);
+          remainingToDeductInv -= dKg;
+          const prevDisp = Number(r.dispatchedKg) || 0;
+          const newDisp = Math.round((prevDisp + dKg) * 100) / 100;
+          const netW = Number(r.netWeightKg) || 0;
+          const newAvail = Math.max(0, Math.round((netW - newDisp) * 100) / 100);
+          const updated = {
+            ...r,
+            availableWeightKg: newAvail,
+            dispatchedKg: newDisp,
+            status: newAvail <= 0.05 ? 'Dispatched' : 'Partially Dispatched'
+          };
+          saveInventoryRollToSupabase(updated).catch(console.warn);
+          return updated;
+        }
+
+        return r;
+      });
+
+      return rollsCopy;
+    });
+
+    // 3. Synchronize to respective Job Production Record
+    const matchedRec = (productionRecords || []).find(r => 
+      (shipOrderId && String(r.orderId) === String(shipOrderId)) || 
+      (shipJobName && (r.jobName || '').trim().toLowerCase() === shipJobName)
+    );
+
+    if (matchedRec) {
+      const prevDispatchKg = Number(matchedRec.qtyDispatch) || 0;
+      const newDispatchKg = Math.round((prevDispatchKg + totalDispatchNetKg) * 100) / 100;
+
+      // Update outputRolls status to 'Dispatched'
+      const existingOutputRolls = Array.isArray(matchedRec.outputRolls) ? matchedRec.outputRolls : [];
+      let remDispatchForRolls = totalDispatchNetKg;
+      const updatedOutputRolls = existingOutputRolls.map(or => {
+        const isMatch = shipmentItems.some(it => 
+          (it.barcodeId && (or.barcodeId === it.barcodeId || or.rollId === it.barcodeId)) ||
+          (it.sourceFgBarcode && (or.barcodeId === it.sourceFgBarcode || or.rollId === it.sourceFgBarcode))
+        );
+        if (isMatch) {
+          return {
+            ...or,
+            status: 'Dispatched',
+            dispatchedKg: Number(or.netWeightKg) || 0,
+            availableKg: 0
+          };
+        }
+        if ((or.rollType === 'FG' || (or.stage || '').includes('Slitting') || (or.stage || '').includes('Pouching')) && or.status !== 'Dispatched' && remDispatchForRolls > 0) {
+          const rNet = Number(or.netWeightKg) || 0;
+          if (remDispatchForRolls >= rNet - 0.1) {
+            remDispatchForRolls -= rNet;
+            return {
+              ...or,
+              status: 'Dispatched',
+              dispatchedKg: rNet,
+              availableKg: 0
+            };
+          }
+        }
+        return or;
+      });
+
+      const existingDispatches = Array.isArray(matchedRec.dispatchHistory) ? matchedRec.dispatchHistory : [];
+      const updatedRec = {
+        ...matchedRec,
+        qtyDispatch: newDispatchKg,
+        outputRolls: updatedOutputRolls,
+        rollsBreakdown: updatedOutputRolls,
+        dispatchHistory: [
+          {
+            dispatchId: newShipment.dispatchId || newShipment.id,
+            date: newShipment.dispatchDate || new Date().toISOString(),
+            netWeightKg: totalDispatchNetKg,
+            vehicleNo: newShipment.vehicleNo || '',
+            clientName: newShipment.clientName || '',
+            totalRolls: shipmentItems.length
+          },
+          ...existingDispatches
+        ]
+      };
+
+      try {
+        await saveProductionRecordToSupabase(updatedRec);
+      } catch (e) {
+        console.warn('[handleAddDispatchShipment] Failed to save updated ProductionRecord to Supabase:', e);
+      }
+
+      setProductionRecords(prev => prev.map(r => r.id === updatedRec.id ? updatedRec : r));
+    }
   };
 
   const handleDeleteDispatchShipment = async (id) => {
@@ -2981,8 +3212,10 @@ export default function App() {
     // 5. Create and persist new SFG or FG Output Roll if produced
     const outRoll = logEntry.outputRoll;
     let createdOutputBarcode = null;
+    const isFG = outRoll?.outputType === 'FG' || logEntry.targetProcess === 'Slitting & Rewinding' || logEntry.targetProcess === 'Pouching / Bag Making';
+
     if (outRoll && Number(outRoll.netWeightKg) > 0) {
-      createdOutputBarcode = outRoll.barcode || `${outRoll.outputType || 'SFG'}-BC-${targetOrderId || Date.now()}-${Date.now().toString().slice(-4)}`;
+      createdOutputBarcode = outRoll.barcode || `${isFG ? 'FG' : (outRoll.outputType || 'SFG')}-BC-${targetOrderId || Date.now()}-${Date.now().toString().slice(-4)}`;
       const outputNetKg = Number(outRoll.netWeightKg) || 0;
       const outputGrossKg = Number(outRoll.grossWeightKg) || outputNetKg;
       const outputTareKg = Number(outRoll.tareWeightKg) || 0;
@@ -2990,7 +3223,9 @@ export default function App() {
       const newSfgGoodItem = {
         id: createdOutputBarcode,
         sfgBatchCode: createdOutputBarcode,
-        sfgType: outRoll.outputType === 'FG' ? 'Finished Goods' : 'Laminated / Processed Rolls',
+        sfgType: isFG ? 'Finished Goods (FG)' : 'Laminated / Processed Rolls',
+        category: isFG ? 'Finished Goods (FG)' : 'Semi-Finished Goods (SFG)',
+        rollType: isFG ? 'FG' : 'SFG',
         orderId: targetOrderId,
         jobCode: updatedSfgItem.jobCode || '',
         jobName: updatedSfgItem.jobName || 'Untitled Job',
@@ -3002,21 +3237,24 @@ export default function App() {
         totalNetKg: outputNetKg,
         consumedKg: 0,
         availableKg: outputNetKg,
+        dispatchedKg: 0,
+        pouchCount: Number(logEntry.pouchCount) || Number(outRoll.pouchCount) || 0,
         rollsCount: 1,
         machineName: logEntry.targetMachine || '',
         operatorName: logEntry.operatorName || '',
         shift: logEntry.shift || '',
-        storageBay: outRoll.storageBay || 'Bay A',
+        storageBay: outRoll.storageBay || (isFG ? 'FG Warehouse' : 'Bay A'),
         productionDate: logEntry.date || new Date().toISOString().split('T')[0],
-        status: outRoll.outputType === 'FG' ? 'Ready for Dispatch' : 'In Stock (WIP)',
-        notes: `Produced from ${logEntry.targetProcess} of ${updatedSfgItem.sfgBatchCode}`,
+        status: isFG ? 'Ready for Dispatch' : 'In Stock (WIP)',
+        notes: isFG ? `Finished Goods derived from ${logEntry.targetProcess} of ${updatedSfgItem.sfgBatchCode}` : `Produced from ${logEntry.targetProcess} of ${updatedSfgItem.sfgBatchCode}`,
         consumptionHistory: []
       };
 
       const newInventoryRoll = {
         id: createdOutputBarcode,
         barcodeId: createdOutputBarcode,
-        rollType: outRoll.outputType === 'FG' ? 'FINISHED_GOODS' : 'SEMI_FINISHED_GOODS',
+        rollType: isFG ? 'FINISHED_GOODS' : 'SEMI_FINISHED_GOODS',
+        category: isFG ? 'Finished Goods (FG)' : 'Semi-Finished Goods (SFG)',
         jobName: updatedSfgItem.jobName || 'Untitled Job',
         jobCode: updatedSfgItem.jobCode || '',
         orderId: targetOrderId || '',
@@ -3029,13 +3267,15 @@ export default function App() {
         tareWeightKg: outputTareKg,
         netWeightKg: outputNetKg,
         availableWeightKg: outputNetKg,
+        dispatchedKg: 0,
+        pouchCount: Number(logEntry.pouchCount) || Number(outRoll.pouchCount) || 0,
         machineName: logEntry.targetMachine || '',
         operatorName: logEntry.operatorName || '',
         shift: logEntry.shift || '',
-        locationBay: outRoll.storageBay || 'Bay A',
-        status: outRoll.outputType === 'FG' ? 'Ready for Dispatch' : 'In Stock (SFG)',
-        sfgType: outRoll.outputType === 'FG' ? 'Finished Goods' : 'Laminated Rolls',
-        remarks: `Produced from ${logEntry.targetProcess}`,
+        locationBay: outRoll.storageBay || (isFG ? 'FG Warehouse' : 'Bay A'),
+        status: isFG ? 'Ready for Dispatch' : 'In Stock (SFG)',
+        sfgType: isFG ? 'Finished Goods (FG)' : 'Laminated Rolls',
+        remarks: isFG ? `Finished Goods derived from ${logEntry.targetProcess}` : `Produced from ${logEntry.targetProcess}`,
         inwardDatetime: new Date().toISOString(),
         productionDate: logEntry.date || new Date().toISOString().split('T')[0]
       };
@@ -3091,11 +3331,19 @@ export default function App() {
         printingWastageKg: round2((Number(matchedRec?.printingWastageKg) || 0) + (Number(scrap.printingWastageKg) || 0)),
         ...(outNetKg > 0 ? { qtyFirstPassL1: round2((Number(matchedRec?.qtyFirstPassL1) || 0) + outNetKg) } : {})
       };
+    } else if (stage === 'Slitting & Rewinding') {
+      stageUpdates = {
+        qtySlitting: round2((Number(matchedRec?.qtySlitting) || 0) + outNetKg),
+        trimWastageKg: round2((Number(matchedRec?.trimWastageKg) || 0) + (Number(scrap.slittingTrimScrapKg) || 0)),
+        slittingSettingWastageKg: round2((Number(matchedRec?.slittingSettingWastageKg) || 0) + (Number(scrap.slittingSettingWastageKg) || 0)),
+        slittingScrapKg: round2((Number(matchedRec?.slittingScrapKg) || 0) + (Number(scrap.slittingScrapKg) || 0))
+      };
     } else if (stage === 'Pouching / Bag Making') {
       stageUpdates = {
         qtyPouching: round2((Number(matchedRec?.qtyPouching) || 0) + outNetKg),
         zipperConsumedKg: round2((Number(matchedRec?.zipperConsumedKg) || 0) + (Number(scrap.zipperConsumedKg) || 0)),
-        pouchingScrapKg: round2((Number(matchedRec?.pouchingScrapKg) || 0) + (Number(scrap.pouchingScrapKg) || 0))
+        pouchingScrapKg: round2((Number(matchedRec?.pouchingScrapKg) || 0) + (Number(scrap.pouchingScrapKg) || 0)),
+        pouchCount: Math.round((Number(matchedRec?.pouchCount) || 0) + (Number(logEntry.pouchCount) || Number(outRoll?.pouchCount) || 0))
       };
     }
 
@@ -3109,8 +3357,12 @@ export default function App() {
         grossWeightKg: outGrossKg,
         tareWeightKg: outTareKg,
         netWeightKg: outNetKg,
-        rollType: logEntry.outputRoll?.outputType || 'SFG',
+        availableKg: outNetKg,
+        dispatchedKg: 0,
+        rollType: isFG ? 'FG' : (logEntry.outputRoll?.outputType || 'SFG'),
+        status: isFG ? 'Ready for Dispatch' : 'In Stock (SFG)',
         stage: stage,
+        pouchCount: Number(logEntry.pouchCount) || Number(outRoll?.pouchCount) || 0,
         operator: logEntry.operatorName || '',
         createdAt: new Date().toISOString()
       });
@@ -4439,6 +4691,8 @@ export default function App() {
             inventory={inventory}
             inventoryRolls={inventoryRolls}
             sfgGoods={sfgGoods}
+            dispatchShipments={dispatchShipments}
+            deliveryChallans={deliveryChallans}
             jobMasters={jobMasters}
             cylinders={cylinders}
             machines={machines}
@@ -4681,6 +4935,9 @@ export default function App() {
             jobMasters={jobMasters}
             orders={orders}
             cylinders={cylinders}
+            sfgGoods={sfgGoods}
+            productionRecords={productionRecords}
+            inventoryRolls={inventoryRolls}
             currentUser={currentUser}
             onSaveDeliveryChallan={handleSaveDeliveryChallan}
             onDeleteDeliveryChallan={handleDeleteDeliveryChallan}
