@@ -82,7 +82,7 @@ import {
   fetchGRNs, saveGRNToSupabase, deleteGRNFromSupabase, sanitizeGRN,
   fetchCylinders, saveCylinderToSupabase, saveCylinderBatchToSupabase, deleteCylinderFromSupabase,
   fetchProductionRecords, saveProductionRecordToSupabase, deleteProductionRecordFromSupabase,
-  fetchUsers, saveUserToSupabase, deleteUserFromSupabase, updateUserPasswordInDB,
+  fetchUsers,
   fetchJobDataSheets, saveJobDataSheetToSupabase, deleteJobDataSheetFromSupabase,
   fetchInventoryRolls, saveInventoryRollToSupabase,
   fetchDispatchShipments, saveDispatchShipmentToSupabase, deleteDispatchShipmentFromSupabase,
@@ -105,7 +105,8 @@ import {
   fetchFilmSubstratesFromSupabase,
   fetchSystemSetting, saveSystemSetting, fetchAllSystemSettings
 } from './services/supabaseDataService';
-import { createUserInSupabaseAuth } from './services/authService';
+import { fetchSessionProfile, signOutUser } from './services/authService';
+import { createDirectoryUser, updateDirectoryUser, deleteDirectoryUser } from './services/adminUserService';
 
 import JobMasterDirectory from './components/JobMasterDirectory';
 import { safeLocalStorageSet, safeLocalStorageGet, initSafeStorage, idbGet } from './utils/safeStorage';
@@ -248,6 +249,8 @@ export default function App() {
   // Authentication & Active User Session State
   const [currentUser, setCurrentUser] = useState(null);
   const [sessionProfile, setSessionProfile] = useState(null);
+  const [mustSetPassword, setMustSetPassword] = useState(false);
+  const passwordRecoveryRef = useRef(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(!isSupaConfigured);
   const [isSigningIn, setIsSigningIn] = useState(false);
@@ -292,13 +295,6 @@ export default function App() {
     }
   }, [isAuthenticated, currentUser, isAuthReady, activeTab]);
 
-  const hasSavedSession = () => {
-    try {
-      const user = safeLocalStorageGet('samyak_erp_current_user', null);
-      return Boolean(user && user.email);
-    } catch (e) { return false; }
-  };
-
   // CACHE-FIRST REACT STATE INITIALIZATION:
   // Instantly rehydrates from local safe storage cache so tables and dashboard never show empty data on refresh.
   const [orders, setOrders] = useState(() => safeLocalStorageGet('samyak_cache_orders', []) || []);
@@ -336,10 +332,10 @@ export default function App() {
   const [consumables, setConsumables] = useState(() => safeLocalStorageGet('samyak_cache_consumables', []) || []);
   const [storeIssueTransactions, setStoreIssueTransactions] = useState(() => safeLocalStorageGet('samyak_cache_store_issue_transactions', []) || []);
   const [auditLogs, setAuditLogs] = useState(() => safeLocalStorageGet('samyak_cache_audit_logs', []) || []);
-  const [employees, setEmployees] = useState(() => safeLocalStorageGet('samyak_cache_employees', []) || []);
-  const [employeeAttendance, setEmployeeAttendance] = useState(() => safeLocalStorageGet('samyak_cache_employee_attendance', []) || []);
-  const [salaryAdvances, setSalaryAdvances] = useState(() => safeLocalStorageGet('samyak_cache_salary_advances', []) || []);
-  const [salaryPayments, setSalaryPayments] = useState(() => safeLocalStorageGet('samyak_cache_salary_payments', []) || []);
+  const [employees, setEmployees] = useState([]);
+  const [employeeAttendance, setEmployeeAttendance] = useState([]);
+  const [salaryAdvances, setSalaryAdvances] = useState([]);
+  const [salaryPayments, setSalaryPayments] = useState([]);
   const [sfgGoods, setSfgGoods] = useState(() => safeLocalStorageGet('samyak_cache_sfg_goods', []) || []);
   const [pelletInwards, setPelletInwards] = useState(() => safeLocalStorageGet('samyak_cache_pellet_inwards', []) || []);
   const [pelletConsumptions, setPelletConsumptions] = useState(() => safeLocalStorageGet('samyak_cache_pellet_consumptions', []) || []);
@@ -502,12 +498,12 @@ export default function App() {
   }, [users]);
 
   const isTabAllowed = (tabKey) => {
-    if (!currentUser) return true;
+    if (!currentUser) return false;
     if (currentUser.role === 'Admin') return true;
-    if (tabKey === 'user_management' || tabKey === 'audit_logs') return false; // Strictly restricted to Admin role
+    if (tabKey === 'user_management' || tabKey === 'audit_logs') return false;
     const rolePerm = rolePermissions[currentUser.role];
-    if (!rolePerm) return true;
-    return rolePerm[tabKey] !== false;
+    if (!rolePerm) return false;
+    return rolePerm[tabKey] === true;
   };
 
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
@@ -851,14 +847,17 @@ export default function App() {
 
         if (!isMounted) return;
 
-        if (Array.isArray(supaEmployees)) {
+        const hrAllowed = sessionProfile?.role === 'Admin' || sessionProfile?.role === 'HR & Payroll Manager';
+        if (!hrAllowed) {
+          clearHrCache();
+        } else if (Array.isArray(supaEmployees)) {
           const cleanEmps = stripDummyRecords(supaEmployees);
           setEmployees(cleanEmps);
           safeLocalStorageSet('samyak_cache_employees', cleanEmps);
           supaEmployees.filter(isDummyRecord).forEach(d => deleteEmployeeFromSupabase(d.id).catch(console.warn));
         }
 
-        if (Array.isArray(supaAttendance)) {
+        if (hrAllowed && Array.isArray(supaAttendance)) {
           const cleanAtt = stripDummyRecords(supaAttendance);
           setEmployeeAttendance(prev => {
             const map = new Map();
@@ -870,7 +869,7 @@ export default function App() {
           });
         }
 
-        if (Array.isArray(supaAdvances)) {
+        if (hrAllowed && Array.isArray(supaAdvances)) {
           const cleanAdv = stripDummyRecords(supaAdvances);
           setSalaryAdvances(prev => {
             const map = new Map();
@@ -882,7 +881,7 @@ export default function App() {
           });
         }
 
-        if (Array.isArray(supaPayments)) {
+        if (hrAllowed && Array.isArray(supaPayments)) {
           const cleanPay = stripDummyRecords(supaPayments);
           setSalaryPayments(prev => {
             const map = new Map();
@@ -1274,146 +1273,111 @@ export default function App() {
     await saveSystemSetting('printing_press_active_running_job', newRunningJob);
   };
 
-  const usersRef = useRef(users);
-  useEffect(() => {
-    usersRef.current = users;
-  }, [users]);
-
-  const findUserProfile = (email) => {
-    if (!email) return null;
-    const cleanEmail = email.toLowerCase().trim();
-    let matched = (usersRef.current || []).find(u => u && u.email && u.email.toLowerCase().trim() === cleanEmail);
-    return matched || null;
+  const applyAuthenticatedProfile = (profile) => {
+    setSessionProfile(profile);
+    let nextUser = profile;
+    if (profile?.role === 'Admin') {
+      try {
+        const preview = JSON.parse(sessionStorage.getItem('samyak_erp_ui_role_preview') || 'null');
+        if (preview && preview.role && preview.email) nextUser = preview;
+      } catch (e) {}
+    }
+    setCurrentUser(nextUser);
+    setIsAuthenticated(true);
+    setMustSetPassword(false);
   };
 
-  // Initialize Supabase Auth state
+  // Session comes only from Supabase Auth. A saved browser profile is not a login.
   useEffect(() => {
+    try { localStorage.removeItem('samyak_erp_current_user'); } catch (e) {}
+
     if (!isSupaActive) {
-      const savedUser = safeLocalStorageGet('samyak_erp_current_user', null);
-      if (savedUser && savedUser.email) {
-        setSessionProfile(savedUser);
-        setCurrentUser(savedUser);
-        setIsAuthenticated(true);
-      }
+      setSessionProfile(null);
+      setCurrentUser(null);
+      setIsAuthenticated(false);
       setIsAuthReady(true);
       return;
     }
 
     let mounted = true;
 
-    async function initAuth() {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (mounted) {
-          if (session?.user) {
-            const matched = findUserProfile(session.user.email);
-            const profile = matched || {
-              id: session.user.id,
-              name: session.user.user_metadata?.full_name || session.user.email.split('@')[0],
-              email: session.user.email,
-              role: session.user.user_metadata?.role || 'Admin',
-              department: 'Executive Management',
-              status: 'Active'
-            };
-            setSessionProfile(profile);
-
-            // Admin is allowed to load a switched user from local storage
-            const savedSwitchedUser = safeLocalStorageGet('samyak_erp_current_user', null);
-            if (savedSwitchedUser && profile.role === 'Admin') {
-              setCurrentUser(savedSwitchedUser);
-            } else {
-              setCurrentUser(profile);
-            }
-            setIsAuthenticated(true);
-          } else {
-            // Check if there is an active verified local/DB session in storage
-            const savedLocalUser = safeLocalStorageGet('samyak_erp_current_user', null);
-            if (savedLocalUser && savedLocalUser.email) {
-              setSessionProfile(savedLocalUser);
-              setCurrentUser(savedLocalUser);
-              setIsAuthenticated(true);
-            } else {
-              setSessionProfile(null);
-              setCurrentUser(null);
-              setIsAuthenticated(false);
-            }
-          }
-          setIsAuthReady(true);
-        }
-      } catch (err) {
-        console.warn('Failed to get Supabase session on mount:', err);
-        const savedLocalUser = safeLocalStorageGet('samyak_erp_current_user', null);
-        if (savedLocalUser && savedLocalUser.email) {
-          setSessionProfile(savedLocalUser);
-          setCurrentUser(savedLocalUser);
-          setIsAuthenticated(true);
-        }
-        if (mounted) setIsAuthReady(true);
+    async function adoptSession(event) {
+      if (event === 'PASSWORD_RECOVERY' || (typeof window !== 'undefined' && window.location.hash.includes('type=recovery'))) {
+        passwordRecoveryRef.current = true;
       }
-    }
-
-    initAuth();
-
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (passwordRecoveryRef.current) {
+        setMustSetPassword(true);
+        setIsAuthenticated(false);
+        setIsAuthReady(true);
+        return;
+      }
+      const profile = await fetchSessionProfile();
       if (!mounted) return;
-      if (session?.user) {
-        const matched = findUserProfile(session.user.email);
-        const profile = matched || {
-          id: session.user.id,
-          name: session.user.user_metadata?.full_name || session.user.email.split('@')[0],
-          email: session.user.email,
-          role: session.user.user_metadata?.role || 'Admin',
-          department: 'Executive Management',
-          status: 'Active'
-        };
-        setSessionProfile(profile);
-
-        const savedSwitchedUser = safeLocalStorageGet('samyak_erp_current_user', null);
-        if (savedSwitchedUser && profile.role === 'Admin') {
-          setCurrentUser(savedSwitchedUser);
-        } else {
-          setCurrentUser(profile);
-        }
-        setIsAuthenticated(true);
-      } else if (event === 'SIGNED_OUT') {
-        localStorage.removeItem('samyak_erp_current_user');
+      if (!profile || profile.pending || profile.inactive) {
+        if (profile) await supabase.auth.signOut().catch(() => {});
         setSessionProfile(null);
         setCurrentUser(null);
         setIsAuthenticated(false);
+        setIsAuthReady(true);
+        return;
+      }
+      applyAuthenticatedProfile(profile);
+      setIsAuthReady(true);
+    }
+
+    adoptSession();
+    const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
+      if (!mounted) return;
+      if (event === 'SIGNED_OUT') {
+        try { sessionStorage.removeItem('samyak_erp_ui_role_preview'); } catch (e) {}
+        setSessionProfile(null);
+        setCurrentUser(null);
+        setIsAuthenticated(false);
+        setMustSetPassword(false);
+        return;
+      }
+      if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED' || event === 'INITIAL_SESSION') {
+        adoptSession(event);
       }
     });
 
     return () => {
       mounted = false;
-      if (authListener && authListener.subscription) {
-        authListener.subscription.unsubscribe();
-      }
+      authListener?.subscription?.unsubscribe();
     };
   }, [isSupaActive]);
 
-  // Login Handler (for UI updates, authService handles Supabase login)
   const handleLogin = (user) => {
     setIsSigningIn(true);
     logAudit('AUTH', 'User Management', `User ${user?.name || user?.email || 'User'} signed in to the system`, user?.id);
-    setSessionProfile(user);
-    setCurrentUser(user);
-    setIsAuthenticated(true);
-    safeLocalStorageSet('samyak_erp_current_user', user);
+    applyAuthenticatedProfile(user);
     const targetTab = user?.role === 'Printing Operator'
       ? 'printing_scheduler'
       : (activeTab === 'login' ? 'dashboard' : (activeTab || 'dashboard'));
     handleTabChange(targetTab);
   };
 
-  // Logout Handler (for UI updates, authService handles Supabase logout)
+  const clearHrCache = () => {
+    setEmployees([]);
+    setEmployeeAttendance([]);
+    setSalaryAdvances([]);
+    setSalaryPayments([]);
+    ['samyak_cache_employees', 'samyak_cache_employee_attendance', 'samyak_cache_salary_advances', 'samyak_cache_salary_payments'].forEach((key) => {
+      try { localStorage.removeItem(key); } catch (e) {}
+    });
+  };
+
   const handleLogout = () => {
     logAudit('AUTH', 'User Management', `User ${currentUser?.name || currentUser?.email || 'User'} signed out of the system`, currentUser?.id);
-    localStorage.removeItem('samyak_erp_current_user');
+    try {
+      localStorage.removeItem('samyak_erp_current_user');
+      sessionStorage.removeItem('samyak_erp_ui_role_preview');
+    } catch (e) {}
     setSessionProfile(null);
     setCurrentUser(null);
     setIsAuthenticated(false);
+    setMustSetPassword(false);
 
-    // PURGE IN-MEMORY ERP DATA ON LOGOUT (ZERO LEAKAGE AT REST OR IN MEMORY)
     setOrders([]);
     setVendors([]);
     setInventory([]);
@@ -1435,17 +1399,14 @@ export default function App() {
     setMachineIssues([]);
     setConsumables([]);
     setStoreIssueTransactions([]);
-    setEmployees([]);
-    setEmployeeAttendance([]);
-    setSalaryAdvances([]);
-    setSalaryPayments([]);
+    clearHrCache();
     setSfgGoods([]);
 
     if (typeof window !== 'undefined') {
       window.history.replaceState({ tab: 'login' }, '', '/login');
     }
     if (isSupaActive) {
-      supabase.auth.signOut().catch(console.warn);
+      signOutUser().catch(console.warn);
     }
   };
 
@@ -2145,31 +2106,36 @@ export default function App() {
 
   const handleAddUser = async (newUser) => {
     requireDatabaseConnection('create user');
-    const authResult = await createUserInSupabaseAuth({
-      email: newUser.email,
-      password: newUser.password || 'password123',
-      name: newUser.name,
-      role: newUser.role,
-      department: newUser.department
-    });
-    if (!authResult.success && !authResult.alreadyExists) {
-      console.warn('[UserOnboard] Supabase Auth registration issue:', authResult.message);
+    const authResult = await createDirectoryUser(newUser);
+    if (!authResult.success) {
+      alert(authResult.message || 'Could not create the user.');
+      return;
     }
-    await saveUserToSupabase(newUser);
-    setUsers(prev => [...prev.filter(u => u.id !== newUser.id), newUser]);
-    logAudit('CREATE', 'User Management', `Created user account for ${newUser.name} (${newUser.email}) - Role: ${newUser.role}`, newUser.id);
+    const saved = authResult.user || newUser;
+    setUsers(prev => [...prev.filter(u => u.email !== saved.email), saved]);
+    logAudit('CREATE', 'User Management', `Created user account for ${saved.name} (${saved.email}) - Role: ${saved.role}`, saved.id);
+    alert(authResult.message || 'User created.');
   };
 
   const handleUpdateUser = async (updatedUser) => {
     requireDatabaseConnection('update user');
-    await saveUserToSupabase(updatedUser);
-    setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
-    logAudit('UPDATE', 'User Management', `Updated user account/permissions for ${updatedUser.name} (${updatedUser.email}) - Role: ${updatedUser.role}`, updatedUser.id);
+    const authResult = await updateDirectoryUser(updatedUser);
+    if (!authResult.success) {
+      alert(authResult.message || 'Could not update the user.');
+      return;
+    }
+    const saved = authResult.user || updatedUser;
+    setUsers(prev => prev.map(u => u.id === updatedUser.id ? saved : u));
+    logAudit('UPDATE', 'User Management', `Updated user account for ${saved.name} (${saved.email}) - Role: ${saved.role}`, saved.id);
   };
 
   const handleDeleteUser = async (userId) => {
     requireDatabaseConnection('delete user');
-    await deleteUserFromSupabase(userId);
+    const authResult = await deleteDirectoryUser(userId);
+    if (!authResult.success) {
+      alert(authResult.message || 'Could not delete the user.');
+      return;
+    }
     setUsers(prev => prev.filter(u => u.id !== userId));
     logAudit('DELETE', 'User Management', `Deleted user account ${userId}`, userId);
   };
@@ -3437,16 +3403,21 @@ export default function App() {
   }
 
   // Render Authentication Screen if user is not signed in
-  if (!isAuthenticated || !currentUser) {
-    // Callback: update password in local state after OTP-verified reset
-    const handleUpdatePassword = (email, newPassword) => {
-      setUsers(prev => prev.map(u =>
-        u.email?.toLowerCase().trim() === email?.toLowerCase().trim()
-          ? { ...u, password: newPassword }
-          : u
-      ));
-    };
-    return <AuthScreen onLogin={handleLogin} onUpdatePassword={handleUpdatePassword} />;
+  if (mustSetPassword || !isAuthenticated || !currentUser) {
+    return (
+      <AuthScreen
+        onLogin={handleLogin}
+        recoveryMode={mustSetPassword}
+        onPasswordUpdated={async () => {
+          passwordRecoveryRef.current = false;
+          setMustSetPassword(false);
+          const profile = await fetchSessionProfile();
+          if (profile && !profile.pending && !profile.inactive) {
+            applyAuthenticatedProfile(profile);
+          }
+        }}
+      />
+    );
   }
 
   return (
@@ -3806,7 +3777,7 @@ export default function App() {
           )}
 
           {/* Group: Human Resources & Payroll */}
-          {(isTabAllowed('employees') || currentUser?.role === 'Admin' || currentUser?.role === 'Plant Manager' || currentUser?.role === 'HR & Payroll Manager') && (
+          {(isTabAllowed('employees') || currentUser?.role === 'Admin' || currentUser?.role === 'HR & Payroll Manager') && (
             <>
               <div className="sidebar-section-header">Workforce & HR</div>
 
@@ -3988,9 +3959,9 @@ export default function App() {
                 onChange={e => {
                   const selectedId = e.target.value;
                   const selectedUser = activeUsersList.find(u => String(u.id) === String(selectedId));
-                  if (selectedUser) {
+                  if (selectedUser && sessionProfile?.role === 'Admin') {
                     setCurrentUser(selectedUser);
-                    safeLocalStorageSet('samyak_erp_current_user', selectedUser);
+                    try { sessionStorage.setItem('samyak_erp_ui_role_preview', JSON.stringify(selectedUser)); } catch (e) {}
                   }
                 }}
               >

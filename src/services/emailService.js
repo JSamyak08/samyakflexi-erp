@@ -5,6 +5,14 @@
  */
 
 import { getEmailTemplates, interpolateTemplate } from './settingsService';
+import { supabase } from './supabaseClient';
+
+const recentSends = new Map();
+const DEDUPE_MS = 10 * 60 * 1000;
+
+function dedupeKey(to, subject) {
+  return `${String(to || '').trim().toLowerCase()}\n${String(subject || '').trim()}`;
+}
 
 /**
  * Internal Email Safety Guard
@@ -34,52 +42,67 @@ export const filterInternalRecipientsOnly = (emailInput, defaultInternal = 'admi
   return internalOnly.length > 0 ? internalOnly.join(', ') : defaultInternal;
 };
 
-export const requestPasswordRecovery = async (email) => {
-  const sanitizedEmail = filterInternalRecipientsOnly(email, 'admin@samyakinternational.in');
-  try {
-    const response = await fetch('/api/recover-password', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email: sanitizedEmail }),
-    });
-
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('Password recovery service error:', error);
-    return {
-      success: false,
-      message: 'Unable to connect to email recovery server. Please ensure backend server is running.',
-      error: error.message
-    };
-  }
-};
-
 export const sendERPEmailNotification = async ({ to, cc, subject, html, text }) => {
   const sanitizedTo = filterInternalRecipientsOnly(to, 'admin@samyakinternational.in');
   const sanitizedCc = cc ? filterInternalRecipientsOnly(cc, '') : '';
+  const key = dedupeKey(sanitizedTo, subject);
+  const now = Date.now();
+  const previous = recentSends.get(key);
+  if (previous?.promise) return previous.promise;
+  if (previous && now - previous.at < DEDUPE_MS) return previous.result;
 
-  try {
-    const response = await fetch('/api/send-email', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ to: sanitizedTo, cc: sanitizedCc, subject, html, text }),
+  const sendOnce = async () => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData?.session?.access_token;
+    if (!token) {
+      return { success: false, message: 'Sign in before sending mail.' };
+    }
+
+    let response;
+    try {
+      response = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ to: sanitizedTo, cc: sanitizedCc, subject, html, text }),
+      });
+    } catch (error) {
+      console.error('ERP email notification error:', error);
+      return { success: false, message: 'Failed to dispatch email notification.' };
+    }
+
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    // One attempt only. A 4xx or 5xx is returned to the caller and is not sent again.
+    if (!response.ok) {
+      return {
+        success: false,
+        status: response.status,
+        message: payload?.message || 'Failed to dispatch email notification.',
+      };
+    }
+
+    return payload || { success: true };
+  };
+
+  const promise = sendOnce()
+    .catch((error) => {
+      console.error('ERP email notification error:', error);
+      return { success: false, message: 'Failed to dispatch email notification.' };
+    })
+    .then((result) => {
+      recentSends.set(key, { at: Date.now(), result });
+      return result;
     });
-
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('ERP email notification error:', error);
-    return {
-      success: false,
-      message: 'Failed to dispatch email notification.',
-      error: error.message
-    };
-  }
+  recentSends.set(key, { promise, at: now });
+  return promise;
 };
 
 /**
@@ -365,8 +388,7 @@ export const notifyUserCreated = async (user, customTo) => {
     userName: user.name || '',
     userEmail: user.email || '',
     userRole: user.role || '',
-    userDepartment: user.department || 'Operations',
-    userPassword: user.password || 'password123'
+    userDepartment: user.department || 'Operations'
   };
 
   const tmpl = getActiveTemplate('user_created', vars);
@@ -387,7 +409,7 @@ export const notifyUserCreated = async (user, customTo) => {
     cc: tmpl.ccEmail,
     subject: tmpl.subject,
     html,
-    text: `Welcome ${user.name}! Your account has been created with role ${user.role}. Login with ${user.email}.`
+    text: `Welcome ${user.name}! Your ${user.role} account is ready. Use the separate setup email to choose a password, then sign in with ${user.email}.`
   });
 };
 

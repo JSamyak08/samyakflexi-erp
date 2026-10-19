@@ -12,7 +12,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { isCorruptedArtworkUrl } from '../utils/safeStorage';
-import { openArtworkViewer } from '../services/supabaseStorageService';
+import { openArtworkViewer, resolveReadableUrl } from '../services/supabaseStorageService';
 
 export default function ArtworkModal({ isOpen, onClose, artworkUrl, title = 'Artwork Preview', onReupload }) {
   const [zoom, setZoom] = useState(1);
@@ -21,6 +21,22 @@ export default function ArtworkModal({ isOpen, onClose, artworkUrl, title = 'Art
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [imageError, setImageError] = useState(false);
+  const [readableUrl, setReadableUrl] = useState('');
+
+  useEffect(() => {
+    let cancel = false;
+    setImageError(false);
+    if (!artworkUrl) {
+      setReadableUrl('');
+      return undefined;
+    }
+    resolveReadableUrl(artworkUrl).then((next) => {
+      if (!cancel) setReadableUrl(next || '');
+    });
+    return () => {
+      cancel = true;
+    };
+  }, [artworkUrl]);
 
   useEffect(() => {
     if (isOpen) {
@@ -70,14 +86,14 @@ export default function ArtworkModal({ isOpen, onClose, artworkUrl, title = 'Art
     if (!artworkUrl || isCorrupted) return;
     try {
       const a = document.createElement('a');
-      a.href = artworkUrl;
+      a.href = readableUrl || artworkUrl;
       const cleanName = (title || 'artwork').replace(/[^a-zA-Z0-9_-]/g, '_');
       a.download = isPdf ? `${cleanName}.pdf` : `${cleanName}.png`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
     } catch (e) {
-      window.open(artworkUrl, '_blank');
+      window.open(readableUrl || artworkUrl, '_blank');
     }
   };
 
@@ -268,7 +284,7 @@ export default function ArtworkModal({ isOpen, onClose, artworkUrl, title = 'Art
           </div>
         ) : isPdf ? (
           <iframe 
-            src={artworkUrl} 
+            src={readableUrl} 
             title={title} 
             style={{ 
               width: '85vw', 
@@ -292,7 +308,7 @@ export default function ArtworkModal({ isOpen, onClose, artworkUrl, title = 'Art
             }}
           >
             <img 
-              src={artworkUrl} 
+              src={readableUrl} 
               alt={title} 
               onError={() => setImageError(true)}
               style={{

@@ -689,10 +689,9 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     <tr><td><strong>Login Email:</strong></td><td>{userEmail}</td></tr>
     <tr><td><strong>Assigned Role:</strong></td><td><strong>{userRole}</strong></td></tr>
     <tr><td><strong>Department:</strong></td><td>{userDepartment}</td></tr>
-    <tr><td><strong>Temporary Password:</strong></td><td><code>{userPassword}</code></td></tr>
   </table>
 </div>
-<p style="font-size: 13px; color: #64748b;">Please log in at app.samyakinternational.in and update your password.</p>`,
+<p style="font-size: 13px; color: #64748b;">A separate email contains a link to choose your password. Sign in at erp.samyakinternational.in after you set it. No password is included in this message.</p>`,
     footerNote: 'Samyak International Ltd • Indore Packaging Division\nKheda Industrial Area, Sector 3, Pithampur, MP | GSTIN: 23AABCM3526F1ZY'
   },
   password_recovery: {
@@ -706,14 +705,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     ccEmail: '',
     enabled: true,
     contentHtml: `<p style="color: #475569; font-size: 14px; line-height: 1.5;">
-  We received a password reset request for your ERP account associated with <strong>{userEmail}</strong>.
-</p>
-<div style="background: #f1f5f9; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 16px; text-align: center; margin: 20px 0;">
-  <span style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 6px;">Your 6-Digit Verification Code</span>
-  <span style="font-size: 32px; font-weight: 800; color: #0f172a; letter-spacing: 6px;">{recoveryCode}</span>
-</div>
-<p style="color: #475569; font-size: 13px;">
-  Please enter this verification code on the ERP login screen to set a new password. This code will expire in 15 minutes.
+  Password resets for <strong>{userEmail}</strong> are sent by Supabase Auth. Use Forgot password on the ERP login screen. The message contains a one-time link to choose a new password. There is no verification code.
 </p>`,
     footerNote: 'Samyak International Ltd • Indore Packaging Division\nKheda Industrial Area, Sector 3, Pithampur, MP | GSTIN: 23AABCM3526F1ZY'
   },
@@ -817,10 +809,15 @@ export function interpolateTemplate(str, vars = {}) {
 /**
  * Fetch saved Email Settings (SMTP & Department routing)
  */
+function withoutSmtpSecret(config) {
+  const { smtpPass, ...rest } = config || {};
+  return { ...DEFAULT_EMAIL_SETTINGS, ...rest, smtpPass: '' };
+}
+
 export function getEmailSettings() {
   try {
     const saved = localStorage.getItem(EMAIL_SETTINGS_STORAGE_KEY);
-    return saved ? { ...DEFAULT_EMAIL_SETTINGS, ...JSON.parse(saved) } : { ...DEFAULT_EMAIL_SETTINGS };
+    return withoutSmtpSecret(saved ? JSON.parse(saved) : {});
   } catch (e) {
     return { ...DEFAULT_EMAIL_SETTINGS };
   }
@@ -831,8 +828,9 @@ export function getEmailSettings() {
  */
 export function saveEmailSettings(config) {
   try {
-    localStorage.setItem(EMAIL_SETTINGS_STORAGE_KEY, JSON.stringify(config));
-    saveEmailSettingsToSupabase(config).catch(() => {});
+    const safe = withoutSmtpSecret(config);
+    localStorage.setItem(EMAIL_SETTINGS_STORAGE_KEY, JSON.stringify(safe));
+    saveEmailSettingsToSupabase(safe).catch(() => {});
   } catch (e) {
     console.error("Failed to save email settings", e);
   }
@@ -852,6 +850,18 @@ export function getEmailTemplates() {
         merged[key] = { ...DEFAULT_EMAIL_TEMPLATES[key], ...parsed[key] };
       }
     });
+    if (merged.user_created?.contentHtml?.includes('{userPassword}')) {
+      merged.user_created = {
+        ...merged.user_created,
+        contentHtml: DEFAULT_EMAIL_TEMPLATES.user_created.contentHtml
+      };
+    }
+    if (merged.password_recovery?.contentHtml?.includes('{recoveryCode}')) {
+      merged.password_recovery = {
+        ...merged.password_recovery,
+        contentHtml: DEFAULT_EMAIL_TEMPLATES.password_recovery.contentHtml
+      };
+    }
     return merged;
   } catch (e) {
     return { ...DEFAULT_EMAIL_TEMPLATES };

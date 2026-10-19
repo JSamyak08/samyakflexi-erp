@@ -1413,7 +1413,7 @@ export const generateFullRolePermissions = (allowAll = false) => {
       } else if (r === "Admin" || r === "Plant Manager" || r === "HR & Payroll Manager") {
         perm[r][m.key] = true;
       } else if (r === "Production Manager") {
-        perm[r][m.key] = (m.key === "dashboard" || m.key === "production_records" || m.key === "printing_scheduler" || m.key === "cylinders" || m.key === "orders" || m.key === "job_masters" || m.key === "inventory" || m.key === "purchase_orders" || m.key === "scrap_analytics" || m.key === "employees");
+        perm[r][m.key] = m.key !== "user_management" && m.key !== "supabase" && m.key !== "doc_settings";
       } else if (r === "Store Manager") {
         perm[r][m.key] = (m.key === "dashboard" || m.key === "inventory" || m.key === "purchase_orders" || m.key === "material_indents" || m.key === "vendors" || m.key === "ink_management" || m.key === "dispatch");
       } else if (r === "QC Chemist") {
@@ -1428,6 +1428,13 @@ export const generateFullRolePermissions = (allowAll = false) => {
         perm[r][m.key] = allowAll;
       }
     });
+    if (r === "HR & Payroll Manager") perm[r].purchase_orders = false;
+    perm[r].audit_logs = r === "Admin";
+    // These three keys are absent from the live JSON, so the current app
+    // shows the screens to every role. Keep that visibility.
+    perm[r].dispatch = true;
+    perm[r].sfg_store = true;
+    perm[r].pellet_fuel = true;
   });
   return perm;
 };

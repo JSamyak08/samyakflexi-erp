@@ -682,8 +682,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
       userEmail: testEmailRecipient.trim(),
       userRole: 'Plant Manager',
       userDepartment: 'Production Operations',
-      userPassword: 'Samyak#Pass2026',
-      recoveryCode: '849201'
+      recoveryCode: ''
     };
 
     const interpTitle = interpolateTemplate(activeTmpl.eventTitle || '', sampleVars);
@@ -722,8 +721,8 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     indent_created: ['{indentNo}', '{department}', '{priority}', '{itemCount}', '{remarks}'],
     po_issued: ['{poNumber}', '{supplierName}', '{indentNumber}', '{itemName}', '{qty}', '{unit}', '{totalAmount}'],
     low_stock: ['{itemCode}', '{itemName}', '{stockQty}', '{unit}', '{reorderLevel}', '{location}'],
-    user_created: ['{userName}', '{userEmail}', '{userRole}', '{userDepartment}', '{userPassword}'],
-    password_recovery: ['{userEmail}', '{recoveryCode}'],
+    user_created: ['{userName}', '{userEmail}', '{userRole}', '{userDepartment}'],
+    password_recovery: ['{userEmail}'],
     over_wastage: ['{jobName}', '{orderId}', '{productionDateTime}', '{orderQtyKg}', '{totalProductionQtyKg}', '{allowedWastagePct}', '{actualWastagePct}', '{actualWastageKg}', '{wastageVariancePct}', '{wastageBreakdownHtml}']
   };
 
@@ -763,8 +762,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     userEmail: 'rsharma@samyakinternational.in',
     userRole: 'Plant Manager',
     userDepartment: 'Production Operations',
-    userPassword: 'Samyak#Pass2026',
-    recoveryCode: '849201',
+    recoveryCode: '',
     productionDateTime: '11/08/2026, 09:30:15 PM',
     allowedWastagePct: '5.0',
     actualWastagePct: '8.4',
@@ -1625,15 +1623,10 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
               </div>
 
               <div>
-                <label className="form-label" style={{ fontWeight: '700' }}>SMTP Password / App Secret *</label>
-                <input
-                  type="password"
-                  className="form-control"
-                  placeholder="••••••••••••"
-                  value={emailSettings.smtpPass}
-                  onChange={e => setEmailSettings({ ...emailSettings, smtpPass: e.target.value })}
-                  required
-                />
+                <label className="form-label" style={{ fontWeight: '700' }}>SMTP Password</label>
+                <p style={{ margin: '6px 0 0', fontSize: '0.85rem', color: '#475569', lineHeight: 1.5 }}>
+                  The mailbox password is the server environment variable SMTP_PASS on Vercel. It is not stored in the database or in this browser.
+                </p>
               </div>
 
               <div>

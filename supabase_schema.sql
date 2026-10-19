@@ -1,3 +1,8 @@
+-- HISTORICAL SCHEMA NOTES.
+-- Do not run this file against production. It used to grant anon full access
+-- and default new signups to Admin. Versioned changes are in supabase/migrations.
+-- The statements below that used to open every table have been removed.
+
 -- =========================================================================
 -- 0. SUPABASE MIGRATIONS SCHEMA INITIALIZATION
 -- Prevents "relation supabase_migrations.schema_migrations does not exist"
@@ -626,7 +631,6 @@ CREATE TABLE IF NOT EXISTS public.email_settings (
     smtp_port INT NOT NULL DEFAULT 465,
     smtp_secure BOOLEAN NOT NULL DEFAULT TRUE,
     smtp_user TEXT NOT NULL DEFAULT 'admin@samyakinternational.in',
-    smtp_pass TEXT DEFAULT '',
     sender_name TEXT NOT NULL DEFAULT 'Samyak International ERP',
     admin_email TEXT DEFAULT 'admin@samyakinternational.in',
     plant_manager_email TEXT DEFAULT 'plant.manager@plant.com',
@@ -682,85 +686,9 @@ INSERT INTO public.film_substrates (id, name, density, category, description) VA
 ON CONFLICT (id) DO NOTHING;
 
 
--- Enable Row Level Security (RLS) & Grant Permissive Access to Anon & Authenticated Roles for Internal ERP
-DO $$ 
-DECLARE
-  pol RECORD;
-  tbl text;
-BEGIN
-  -- 1. Drop existing policies on public tables to prevent syntax/duplicate policy conflicts
-  FOR pol IN 
-    SELECT policyname, tablename 
-    FROM pg_policies 
-    WHERE schemaname = 'public'
-  LOOP
-    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I;', pol.policyname, pol.tablename);
-  END LOOP;
-
-  -- 2. Enable RLS and grant full read-write access to anon & authenticated roles for ERP
-  FOR tbl IN 
-    SELECT table_name 
-    FROM information_schema.tables 
-    WHERE table_schema = 'public' 
-      AND table_type = 'BASE TABLE'
-  LOOP
-    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY;', tbl);
-    EXECUTE format('CREATE POLICY %I ON public.%I FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);', 'Allow anon and auth full access', tbl);
-  END LOOP;
-END $$;
-
--- 15. STORAGE BUCKETS FOR PACKAGING ARTWORK & DOCUMENTS
-INSERT INTO storage.buckets (id, name, public) 
-VALUES ('erp-files', 'erp-files', true), ('artwork', 'artwork', true)
-ON CONFLICT (id) DO UPDATE SET public = true;
-
-DO $$
-BEGIN
-  -- Storage policies
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow public uploads to erp-files' AND tablename = 'objects') THEN
-    CREATE POLICY "Allow public uploads to erp-files" ON storage.objects FOR INSERT WITH CHECK (bucket_id IN ('erp-files', 'artwork'));
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow public read from erp-files' AND tablename = 'objects') THEN
-    CREATE POLICY "Allow public read from erp-files" ON storage.objects FOR SELECT USING (bucket_id IN ('erp-files', 'artwork'));
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow public update to erp-files' AND tablename = 'objects') THEN
-    CREATE POLICY "Allow public update to erp-files" ON storage.objects FOR UPDATE USING (bucket_id IN ('erp-files', 'artwork'));
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow public delete from erp-files' AND tablename = 'objects') THEN
-    CREATE POLICY "Allow public delete from erp-files" ON storage.objects FOR DELETE USING (bucket_id IN ('erp-files', 'artwork'));
-  END IF;
-END $$;
-
-
--- 8. SUPABASE AUTH USER SYNC TRIGGER
--- Automatically creates a record in public.users when a new user signs up via Supabase Auth
-CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
-RETURNS TRIGGER AS $$
-BEGIN
-  INSERT INTO public.users (id, username, full_name, email, role, department, active)
-  VALUES (
-    NEW.id::text,
-    LOWER(NEW.email),
-    COALESCE(NEW.raw_user_meta_data->>'full_name', SPLIT_PART(NEW.email, '@', 1)),
-    NEW.email,
-    COALESCE(NEW.raw_user_meta_data->>'role', 'Admin'),
-    COALESCE(NEW.raw_user_meta_data->>'department', 'Executive Management'),
-    TRUE
-  )
-  ON CONFLICT (id) DO UPDATE SET
-    email = EXCLUDED.email,
-    full_name = EXCLUDED.full_name,
-    role = EXCLUDED.role;
-
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Trigger firing on auth.users insert
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION public.handle_new_auth_user();
+-- Row level security, storage, and the signup trigger are defined in
+-- supabase/migrations. This historical file no longer opens anon access
+-- and no longer defaults a signup role to Admin.
 
 -- =========================================================================
 -- 20. DELIVERY CHALLANS TABLE
@@ -818,12 +746,7 @@ ALTER TABLE public.cylinders ADD COLUMN IF NOT EXISTS is_locked BOOLEAN DEFAULT 
 ALTER TABLE public.cylinders ADD COLUMN IF NOT EXISTS locked_by TEXT;
 ALTER TABLE public.cylinders ADD COLUMN IF NOT EXISTS changelogs JSONB DEFAULT '[]'::jsonb;
 
--- Delivery Challan & COA RLS Policy Enablement
-ALTER TABLE public.delivery_challans ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow anon and auth full access on delivery_challans" ON public.delivery_challans FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
-
-ALTER TABLE public.certificate_of_analyses ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow anon and auth full access on certificate_of_analyses" ON public.certificate_of_analyses FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+-- Delivery challan and COA policies are in supabase/migrations.
 
 -- Metallocene Percentage Column Additions for LD Film Types (MATTA, NMET, MMET, MGP, NGP)
 ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS metallocene_pct TEXT;
@@ -1047,36 +970,8 @@ CREATE INDEX IF NOT EXISTS idx_sys_settings_key ON public.system_settings(settin
 CREATE INDEX IF NOT EXISTS idx_pellet_inward_date ON public.pellet_inwards(inward_date DESC);
 CREATE INDEX IF NOT EXISTS idx_pellet_consum_date ON public.pellet_consumptions(consumption_date DESC);
 
--- =========================================================================
--- 27. RLS & PERMISSIONS FOR TABLES
--- =========================================================================
-ALTER TABLE public.employees ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow anon and auth full access on employees" ON public.employees;
-CREATE POLICY "Allow anon and auth full access on employees" ON public.employees FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
-
-ALTER TABLE public.employee_attendance ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow anon and auth full access on employee_attendance" ON public.employee_attendance;
-CREATE POLICY "Allow anon and auth full access on employee_attendance" ON public.employee_attendance FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
-
-ALTER TABLE public.salary_advances ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow anon and auth full access on salary_advances" ON public.salary_advances;
-CREATE POLICY "Allow anon and auth full access on salary_advances" ON public.salary_advances FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
-
-ALTER TABLE public.salary_payments ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow anon and auth full access on salary_payments" ON public.salary_payments;
-CREATE POLICY "Allow anon and auth full access on salary_payments" ON public.salary_payments FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
-
-ALTER TABLE public.pellet_inwards ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow anon and auth full access on pellet_inwards" ON public.pellet_inwards;
-CREATE POLICY "Allow anon and auth full access on pellet_inwards" ON public.pellet_inwards FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
-
-ALTER TABLE public.pellet_consumptions ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow anon and auth full access on pellet_consumptions" ON public.pellet_consumptions;
-CREATE POLICY "Allow anon and auth full access on pellet_consumptions" ON public.pellet_consumptions FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
-
-ALTER TABLE public.purchase_orders ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow anon and auth full access on purchase_orders" ON public.purchase_orders;
-CREATE POLICY "Allow anon and auth full access on purchase_orders" ON public.purchase_orders FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+-- Table policies are in supabase/manual/20261019120000_auth_rls_lockdown.sql.
+-- That file is applied by hand. It is not in supabase/migrations.
 
 -- =========================================================================
 -- 27. REALTIME REPLICATION CONFIGURATION FOR LIVE MULTI-SESSION SYNC

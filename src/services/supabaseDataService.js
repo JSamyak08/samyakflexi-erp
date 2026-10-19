@@ -1652,7 +1652,6 @@ export async function saveUserToSupabase(user) {
       email: user.email || '',
       role: user.role || 'Shop Floor Operator',
       department: user.department || 'Operations',
-      password_hash: user.password || user.password_hash || '',
       active: user.status !== 'Inactive',
       status: user.status || 'Active'
     };
@@ -1691,24 +1690,8 @@ export async function saveUserToSupabase(user) {
 /**
  * Update password for a user in the auth system.
  */
-export async function updateUserPasswordInDB(email, newPassword) {
-  if (!isSupabaseConfigured() || !email || !newPassword) {
-    throw new Error("Cannot update user password: Supabase database connection is not available.");
-  }
-  try {
-    await ensureValidSession();
-    const { error } = await supabase
-      .from('users')
-      .update({ password_hash: newPassword })
-      .eq('email', email.toLowerCase().trim());
-    if (error) {
-      console.warn('[users] Could not update user password:', error.message);
-      handleSupabaseError(error, 'users');
-    }
-    return true;
-  } catch (err) {
-    handleSupabaseError(err, 'updateUserPasswordInDB exception');
-  }
+export async function updateUserPasswordInDB() {
+  throw new Error('Passwords are changed with Supabase Auth. Use the reset link or the signed-in password form.');
 }
 
 export async function deleteUserFromSupabase(id) {
@@ -2836,34 +2819,32 @@ export async function deleteInkFromSupabase(inkId) {
 // SYSTEM SETTINGS & ROLE PERMISSIONS & RBAC MATRIX (SCHEMA-INDEPENDENT)
 // ============================================================================
 
+const CLIENT_BLOCKED_SETTINGS = new Set([
+  'employees',
+  'employee_attendance',
+  'salary_advances',
+  'salary_payments',
+  'email_settings',
+  'role_permissions'
+]);
+
 export async function saveSystemSetting(key, value) {
   if (!isSupabaseConfigured()) return;
+  if (CLIENT_BLOCKED_SETTINGS.has(String(key || '').toLowerCase())) {
+    console.warn(`[System Setting] '${key}' is not stored in system_settings.`);
+    return;
+  }
   try {
     await ensureValidSession();
     const strVal = typeof value === 'object' ? JSON.stringify(value) : String(value);
 
-    // 1. Save to system_settings table
     const { error: sysErr } = await supabase
       .from('system_settings')
       .upsert({ setting_key: key, setting_value: strVal, updated_at: new Date().toISOString() }, { onConflict: 'setting_key' });
 
     if (sysErr) {
       console.warn(`[System Setting] Note on system_settings table write for '${key}':`, sysErr.message);
-    } else {
-      console.log(`[System Setting] Successfully synced setting '${key}' to system_settings table.`);
     }
-
-    // 2. Sync to users table fallback
-    const payload = {
-      id: `USR-SETTING-${key}`,
-      username: `setting_${key}`,
-      full_name: strVal,
-      email: `setting_${key}@samyak.com`,
-      role: 'System',
-      department: 'System',
-      active: true
-    };
-    await supabase.from('users').upsert(payload, { onConflict: 'id' });
   } catch (err) {
     console.warn(`[System Setting] Exception saving setting '${key}':`, err.message);
   }
@@ -2907,21 +2888,6 @@ export async function fetchSystemSetting(key) {
         return JSON.parse(sysData.setting_value);
       } catch (e) {
         return sysData.setting_value;
-      }
-    }
-
-    // 2. Fallback to users table
-    const { data, error } = await supabase
-      .from('users')
-      .select('full_name')
-      .eq('id', `USR-SETTING-${key}`)
-      .maybeSingle();
-
-    if (data && data.full_name) {
-      try {
-        return JSON.parse(data.full_name);
-      } catch (e) {
-        return data.full_name;
       }
     }
   } catch (err) {
@@ -2982,11 +2948,34 @@ export async function saveFilmSubstratesToSupabase(substratesList) {
   }
 }
 
+function enforceRoleBoundaries(role, permissions) {
+  const next = { ...(permissions || {}) };
+  next.audit_logs = role === 'Admin';
+  return next;
+}
+
 export async function saveRolePermissionsToSupabase(rolePermissions) {
-  await saveSystemSetting('role_permissions', rolePermissions);
+  if (!isSupabaseConfigured() || !rolePermissions) return;
+  await ensureValidSession();
+  const rows = Object.entries(rolePermissions).map(([role, permissions]) => ({
+    role,
+    permissions: enforceRoleBoundaries(role, permissions),
+    updated_at: new Date().toISOString()
+  }));
+  const { error } = await supabase.from('role_permissions').upsert(rows, { onConflict: 'role' });
+  if (error) handleSupabaseError(error, 'role_permissions');
 }
 
 export async function fetchRolePermissionsFromSupabase() {
+  if (!isSupabaseConfigured()) return null;
+  const { data, error } = await supabase.from('role_permissions').select('role, permissions');
+  if (!error && Array.isArray(data) && data.length > 0) {
+    const map = {};
+    data.forEach(row => {
+      if (row?.role) map[row.role] = row.permissions || {};
+    });
+    return map;
+  }
   return await fetchSystemSetting('role_permissions');
 }
 
@@ -3000,7 +2989,6 @@ export async function saveEmailSettingsToSupabase(config) {
       smtp_port: parseInt(config.smtpPort || 465, 10),
       smtp_secure: config.smtpSecure !== false,
       smtp_user: config.smtpUser || 'admin@samyakinternational.in',
-      smtp_pass: config.smtpPass || '',
       sender_name: config.senderName || 'Samyak International ERP',
       admin_email: config.adminEmail || 'admin@samyakinternational.in',
       plant_manager_email: config.plantManagerEmail || 'plant.manager@plant.com',
@@ -3011,13 +2999,9 @@ export async function saveEmailSettingsToSupabase(config) {
     const { error } = await supabase.from('email_settings').upsert(payload, { onConflict: 'id' });
     if (error) {
       console.warn('[email_settings] Table upsert note:', error.message);
-      await saveSystemSetting('email_settings', config);
-    } else {
-      console.log('[email_settings] Saved successfully to email_settings table.');
     }
   } catch (err) {
-    console.warn('[email_settings] Exception, falling back to system_settings:', err.message);
-    await saveSystemSetting('email_settings', config);
+    console.warn('[email_settings] Exception saving routing settings:', err.message);
   }
 }
 
@@ -3031,7 +3015,7 @@ export async function fetchEmailSettingsFromSupabase() {
         smtpPort: data.smtp_port,
         smtpSecure: data.smtp_secure,
         smtpUser: data.smtp_user,
-        smtpPass: data.smtp_pass,
+        smtpPass: '',
         senderName: data.sender_name,
         adminEmail: data.admin_email,
         plantManagerEmail: data.plant_manager_email,
@@ -3042,7 +3026,7 @@ export async function fetchEmailSettingsFromSupabase() {
   } catch (e) {
     console.warn('[email_settings] Table fetch note:', e.message);
   }
-  return await fetchSystemSetting('email_settings');
+  return null;
 }
 
 export async function saveEmailTemplatesToSupabase(templates) {
@@ -3144,23 +3128,15 @@ export async function fetchEmployeesFromSupabase() {
           offboarding: r.offboarding || {}
         }));
       } else if (error) {
-        console.warn('[employees] Table fetch notice:', error.message);
+        handleSupabaseError(error, 'employees');
       }
     } catch (err) {
-      console.warn('[employees] Table query exception:', err.message);
+      handleSupabaseError(err, 'employees');
     }
 
-    if (tableRecords.length > 0) {
-      return tableRecords;
-    }
-
-    const settingData = await fetchSystemSetting('employees').catch(() => null);
-    if (Array.isArray(settingData) && settingData.length > 0) return settingData;
-    return [];
+    return tableRecords;
   } catch (e) {
     console.error("Error fetching employees from Supabase:", e);
-    const settingData = await fetchSystemSetting('employees').catch(() => null);
-    if (Array.isArray(settingData)) return settingData;
     throw e;
   }
 }
@@ -3196,26 +3172,8 @@ export async function saveEmployeeToSupabase(employee) {
     updated_at: new Date().toISOString()
   };
 
-  let tableSuccess = false;
-  try {
-    const { error } = await supabase.from('employees').upsert(row, { onConflict: 'id' });
-    if (!error) {
-      tableSuccess = true;
-    } else {
-      console.warn('[employees] Table upsert notice:', error.message);
-    }
-  } catch (err) {
-    console.warn('[employees] Table write exception:', err.message);
-  }
-
-  try {
-    const currentList = await fetchEmployeesFromSupabase().catch(() => []);
-    const updatedList = [employee, ...currentList.filter(e => String(e.id) !== String(employee.id))];
-    await saveSystemSetting('employees', updatedList);
-  } catch (e) {
-    console.warn('[employees] Backup to system_settings notice:', e.message);
-    if (!tableSuccess) throw e;
-  }
+  const { error } = await supabase.from('employees').upsert(row, { onConflict: 'id' });
+  if (error) handleSupabaseError(error, 'employees');
 }
 
 export async function deleteEmployeeFromSupabase(employeeId) {
@@ -3223,22 +3181,11 @@ export async function deleteEmployeeFromSupabase(employeeId) {
     throw new Error("Cannot delete employee: Supabase database connection is not available.");
   }
   await ensureValidSession();
-  try {
-    await supabase.from('employees').delete().eq('id', employeeId);
-    await supabase.from('employee_attendance').delete().eq('employee_id', employeeId);
-    await supabase.from('salary_advances').delete().eq('employee_id', employeeId);
-    await supabase.from('salary_payments').delete().eq('employee_id', employeeId);
-  } catch (err) {
-    console.warn('[employees] Table delete notice:', err.message);
-  }
-
-  try {
-    const currentList = await fetchEmployeesFromSupabase().catch(() => []);
-    const updatedList = currentList.filter(e => String(e.id) !== String(employeeId));
-    await saveSystemSetting('employees', updatedList);
-  } catch (e) {
-    console.warn('[employees] Delete from system_settings notice:', e.message);
-  }
+  const { error } = await supabase.from('employees').delete().eq('id', employeeId);
+  if (error) handleSupabaseError(error, 'employees');
+  await supabase.from('employee_attendance').delete().eq('employee_id', employeeId);
+  await supabase.from('salary_advances').delete().eq('employee_id', employeeId);
+  await supabase.from('salary_payments').delete().eq('employee_id', employeeId);
 }
 
 export async function fetchEmployeeAttendanceFromSupabase() {
@@ -3272,23 +3219,15 @@ export async function fetchEmployeeAttendanceFromSupabase() {
           markedBy: r.marked_by || r.markedBy || ''
         }));
       } else if (error) {
-        console.warn('[employee_attendance] Table fetch notice:', error.message);
+        handleSupabaseError(error, 'employee_attendance');
       }
     } catch (err) {
-      console.warn('[employee_attendance] Table query exception:', err.message);
+      handleSupabaseError(err, 'employee_attendance');
     }
 
-    if (tableRecords.length > 0) {
-      return tableRecords;
-    }
-
-    const settingData = await fetchSystemSetting('employee_attendance').catch(() => null);
-    if (Array.isArray(settingData) && settingData.length > 0) return settingData;
-    return [];
+    return tableRecords;
   } catch (e) {
     console.error("Error fetching employee attendance from Supabase:", e);
-    const settingData = await fetchSystemSetting('employee_attendance').catch(() => null);
-    if (Array.isArray(settingData)) return settingData;
     throw e;
   }
 }
@@ -3321,26 +3260,8 @@ export async function saveEmployeeAttendanceToSupabase(record) {
     updated_at: new Date().toISOString()
   };
 
-  let tableSuccess = false;
-  try {
-    const { error } = await supabase.from('employee_attendance').upsert(row, { onConflict: 'id' });
-    if (!error) {
-      tableSuccess = true;
-    } else {
-      console.warn('[employee_attendance] Upsert notice:', error.message);
-    }
-  } catch (err) {
-    console.warn('[employee_attendance] Table write exception:', err.message);
-  }
-
-  try {
-    const currentList = await fetchEmployeeAttendanceFromSupabase().catch(() => []);
-    const updatedList = [record, ...currentList.filter(r => String(r.id) !== String(record.id))];
-    await saveSystemSetting('employee_attendance', updatedList);
-  } catch (e) {
-    console.warn('[employee_attendance] Backup to system_settings notice:', e.message);
-    if (!tableSuccess) throw e;
-  }
+  const { error } = await supabase.from('employee_attendance').upsert(row, { onConflict: 'id' });
+  if (error) handleSupabaseError(error, 'employee_attendance');
 }
 
 export async function fetchSalaryAdvancesFromSupabase() {
@@ -3371,23 +3292,15 @@ export async function fetchSalaryAdvancesFromSupabase() {
           deductionHistory: r.deduction_history || r.deductionHistory || []
         }));
       } else if (error) {
-        console.warn('[salary_advances] Table fetch notice:', error.message);
+        handleSupabaseError(error, 'salary_advances');
       }
     } catch (err) {
-      console.warn('[salary_advances] Table query exception:', err.message);
+      handleSupabaseError(err, 'salary_advances');
     }
 
-    if (tableRecords.length > 0) {
-      return tableRecords;
-    }
-
-    const settingData = await fetchSystemSetting('salary_advances').catch(() => null);
-    if (Array.isArray(settingData) && settingData.length > 0) return settingData;
-    return [];
+    return tableRecords;
   } catch (e) {
     console.error("Error fetching salary advances from Supabase:", e);
-    const settingData = await fetchSystemSetting('salary_advances').catch(() => null);
-    if (Array.isArray(settingData)) return settingData;
     throw e;
   }
 }
@@ -3417,26 +3330,8 @@ export async function saveSalaryAdvanceToSupabase(adv) {
     updated_at: new Date().toISOString()
   };
 
-  let tableSuccess = false;
-  try {
-    const { error } = await supabase.from('salary_advances').upsert(row, { onConflict: 'id' });
-    if (!error) {
-      tableSuccess = true;
-    } else {
-      console.warn('[salary_advances] Upsert notice:', error.message);
-    }
-  } catch (err) {
-    console.warn('[salary_advances] Table write exception:', err.message);
-  }
-
-  try {
-    const currentList = await fetchSalaryAdvancesFromSupabase().catch(() => []);
-    const updatedList = [adv, ...currentList.filter(a => String(a.id) !== String(adv.id))];
-    await saveSystemSetting('salary_advances', updatedList);
-  } catch (e) {
-    console.warn('[salary_advances] Backup to system_settings notice:', e.message);
-    if (!tableSuccess) throw e;
-  }
+  const { error } = await supabase.from('salary_advances').upsert(row, { onConflict: 'id' });
+  if (error) handleSupabaseError(error, 'salary_advances');
 }
 
 export async function fetchSalaryPaymentsFromSupabase() {
@@ -3469,23 +3364,15 @@ export async function fetchSalaryPaymentsFromSupabase() {
           createdAt: r.created_at || r.createdAt
         }));
       } else if (error) {
-        console.warn('[salary_payments] Table fetch notice:', error.message);
+        handleSupabaseError(error, 'salary_payments');
       }
     } catch (err) {
-      console.warn('[salary_payments] Table query exception:', err.message);
+      handleSupabaseError(err, 'salary_payments');
     }
 
-    if (tableRecords.length > 0) {
-      return tableRecords;
-    }
-
-    const settingData = await fetchSystemSetting('salary_payments').catch(() => null);
-    if (Array.isArray(settingData) && settingData.length > 0) return settingData;
-    return [];
+    return tableRecords;
   } catch (e) {
     console.error("Error fetching salary payments from Supabase:", e);
-    const settingData = await fetchSystemSetting('salary_payments').catch(() => null);
-    if (Array.isArray(settingData)) return settingData;
     throw e;
   }
 }
@@ -3516,26 +3403,8 @@ export async function saveSalaryPaymentToSupabase(payment) {
     updated_at: new Date().toISOString()
   };
 
-  let tableSuccess = false;
-  try {
-    const { error } = await supabase.from('salary_payments').upsert(row, { onConflict: 'id' });
-    if (!error) {
-      tableSuccess = true;
-    } else {
-      console.warn('[salary_payments] Upsert notice:', error.message);
-    }
-  } catch (err) {
-    console.warn('[salary_payments] Table write exception:', err.message);
-  }
-
-  try {
-    const currentList = await fetchSalaryPaymentsFromSupabase().catch(() => []);
-    const updatedList = [payment, ...currentList.filter(p => String(p.id) !== String(payment.id))];
-    await saveSystemSetting('salary_payments', updatedList);
-  } catch (e) {
-    console.warn('[salary_payments] Backup to system_settings notice:', e.message);
-    if (!tableSuccess) throw e;
-  }
+  const { error } = await supabase.from('salary_payments').upsert(row, { onConflict: 'id' });
+  if (error) handleSupabaseError(error, 'salary_payments');
 }
 
 export async function deleteGRNFromSupabase(grnId) {

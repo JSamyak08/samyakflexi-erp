@@ -1,0 +1,26 @@
+-- This file is a no-op. Every statement is a comment.
+-- The lockdown script it refers to is supabase/manual/20261019120000_auth_rls_lockdown.sql.
+-- This directory is not applied by the GitHub integration.
+--
+-- Preferred recovery when an Admin cannot sign in after lockdown:
+--
+-- 1. In the Supabase SQL editor (postgres, which bypasses RLS):
+--
+--    UPDATE public.users
+--       SET auth_user_id = '<auth.users uuid>',
+--           role = 'Admin',
+--           status = 'Active',
+--           active = true
+--     WHERE lower(email) = lower('<admin email>')
+--       AND id NOT LIKE 'USR-SETTING-%';
+--
+-- 2. Authentication → Users → that person → Send password recovery.
+-- 3. If the new frontend is the problem, redeploy the previous Vercel deployment.
+--    Leave the lockdown policies in place.
+--
+-- password_hash was plaintext and is dropped on purpose. Do not restore it.
+--
+-- EMERGENCY ONLY. Recreating "Allow anon and auth full access" reopens employee
+-- Aadhaar, PAN, bank data, and the user directory to the public anon key.
+-- Do not uncomment that SQL. If you must reach the app before accounts exist,
+-- delay the lockdown migration instead of reversing it.
