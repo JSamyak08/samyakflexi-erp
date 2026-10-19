@@ -3381,7 +3381,7 @@ export default function App() {
           )}
 
           {/* Group 3: Plant Operations */}
-          {(isTabAllowed('printing_scheduler') || isTabAllowed('production_records') || isTabAllowed('cylinders')) && (
+          {(isTabAllowed('printing_scheduler') || isTabAllowed('production_records') || isTabAllowed('sfg_store') || isTabAllowed('cylinders')) && (
             <>
               <div className="sidebar-section-header">Plant Operations</div>
 
@@ -3414,6 +3414,21 @@ export default function App() {
                 </div>
               )}
 
+              {isTabAllowed('sfg_store') && (
+                <div 
+                  className={`nav-item ${activeTab === 'sfg_store' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('sfg_store')}
+                >
+                  <span className="nav-icon-box" style={{ color: '#8b5cf6' }}>
+                    <Layers size={18} />
+                  </span>
+                  <span>SFG & FG Store</span>
+                  <span className="nav-badge-pill nav-badge-neutral">
+                    {(sfgGoods || []).length}
+                  </span>
+                </div>
+              )}
+
               {isTabAllowed('cylinders') && (
                 <div 
                   className={`nav-item ${activeTab === 'cylinders' ? 'active' : ''}`}
@@ -3429,7 +3444,7 @@ export default function App() {
           )}
 
           {/* Group 4: Supply Chain & Logistics */}
-          {(isTabAllowed('inventory') || isTabAllowed('purchase_orders') || isTabAllowed('sfg_store') || isTabAllowed('ink_management') || isTabAllowed('material_indents') || isTabAllowed('vendors') || isTabAllowed('dispatch')) && (
+          {(isTabAllowed('inventory') || isTabAllowed('purchase_orders') || isTabAllowed('ink_management') || isTabAllowed('material_indents') || isTabAllowed('vendors') || isTabAllowed('dispatch')) && (
             <>
               <div className="sidebar-section-header">Supply Chain & Store</div>
 
@@ -3464,21 +3479,6 @@ export default function App() {
                       {pendingQCGRNsCount} QC
                     </span>
                   )}
-                </div>
-              )}
-
-              {isTabAllowed('sfg_store') && (
-                <div 
-                  className={`nav-item ${activeTab === 'sfg_store' ? 'active' : ''}`}
-                  onClick={() => handleTabChange('sfg_store')}
-                >
-                  <span className="nav-icon-box" style={{ color: '#8b5cf6' }}>
-                    <Layers size={18} />
-                  </span>
-                  <span>SFG and FG Store</span>
-                  <span className="nav-badge-pill nav-badge-neutral">
-                    {(sfgGoods || []).length}
-                  </span>
                 </div>
               )}
 
