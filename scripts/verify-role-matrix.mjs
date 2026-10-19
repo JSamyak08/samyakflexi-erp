@@ -41,10 +41,14 @@ expect('Shop Floor Operator', 'purchase_orders', false);
 
 expect('Printing Operator', 'printing_scheduler', true);
 expect('Printing Operator', 'dashboard', true);
-expect('Printing Operator', 'dispatch', false);
 expect('Shop Floor Operator', 'production_records', true);
-expect('Admin', 'audit_logs', true);
-expect('Plant Manager', 'audit_logs', false);
+
+for (const role of roles) {
+  expect(role, 'dispatch', true);
+  expect(role, 'sfg_store', true);
+  expect(role, 'pellet_fuel', true);
+  expect(role, 'audit_logs', role === 'Admin');
+}
 
 const auth = fs.readFileSync(new URL('../src/services/authService.js', import.meta.url), 'utf8');
 if (auth.includes('password_hash') || auth.includes('samyak_erp_users')) {

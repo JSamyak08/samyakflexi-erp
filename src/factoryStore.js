@@ -1430,9 +1430,11 @@ export const generateFullRolePermissions = (allowAll = false) => {
     });
     if (r === "HR & Payroll Manager") perm[r].purchase_orders = false;
     perm[r].audit_logs = r === "Admin";
-    perm[r].dispatch = ["Admin", "Plant Manager", "HR & Payroll Manager", "Store Manager", "QC Chemist", "Sales Manager"].includes(r);
-    perm[r].sfg_store = ["Admin", "Plant Manager", "HR & Payroll Manager", "Production Manager", "Store Manager", "QC Chemist", "Shop Floor Operator", "Printing Operator"].includes(r);
-    perm[r].pellet_fuel = ["Admin", "Plant Manager", "HR & Payroll Manager", "Store Manager", "Purchase Manager", "Production Manager"].includes(r);
+    // These three keys are absent from the live JSON, so the current app
+    // shows the screens to every role. Keep that visibility.
+    perm[r].dispatch = true;
+    perm[r].sfg_store = true;
+    perm[r].pellet_fuel = true;
   });
   return perm;
 };

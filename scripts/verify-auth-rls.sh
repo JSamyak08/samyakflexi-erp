@@ -69,6 +69,7 @@ SQL
 "${PSQL[@]}" -d "$DB_NAME" -f supabase/migrations/20261019100000_baseline_public_schema.sql
 "${PSQL[@]}" -d "$DB_NAME" -f supabase/migrations/20261019110000_auth_identity_prep.sql
 "${PSQL[@]}" -d "$DB_NAME" -f supabase/migrations/20261019115000_role_permissions_sync.sql
+"${PSQL[@]}" -d "$DB_NAME" -f supabase/migrations/20261019116000_role_permissions_preserve_visible.sql
 "${PSQL[@]}" -d "$DB_NAME" -f supabase/migrations/20261019120000_auth_rls_lockdown.sql
 "${PSQL[@]}" -d "$DB_NAME" -f scripts/verify-auth-rls.sql
 echo "RLS migration checks passed"

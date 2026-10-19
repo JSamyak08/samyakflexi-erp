@@ -27,6 +27,20 @@ BEGIN
   IF (SELECT permissions->>'purchase_orders' FROM public.role_permissions WHERE role = 'Sales Manager') IS DISTINCT FROM 'false' THEN
     RAISE EXCEPTION 'Sales purchase_orders should stay false';
   END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.role_permissions
+    WHERE permissions->>'dispatch' IS DISTINCT FROM 'true'
+       OR permissions->>'sfg_store' IS DISTINCT FROM 'true'
+       OR permissions->>'pellet_fuel' IS DISTINCT FROM 'true'
+  ) THEN
+    RAISE EXCEPTION 'dispatch, sfg_store, or pellet_fuel is hidden for a role';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.role_permissions
+    WHERE role <> 'Admin' AND permissions->>'audit_logs' IS DISTINCT FROM 'false'
+  ) OR (SELECT permissions->>'audit_logs' FROM public.role_permissions WHERE role = 'Admin') IS DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'audit_logs is not Admin-only';
+  END IF;
 END $$;
 
 INSERT INTO public.employees (
