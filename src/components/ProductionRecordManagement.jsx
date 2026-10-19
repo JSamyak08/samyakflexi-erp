@@ -1917,9 +1917,12 @@ export default function ProductionRecordManagement({
     setActiveTab('list');
   };
   const filteredRecords = productionRecords.filter(r => {
-    const matchesSearch = r.jobName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          r.orderId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          r.clientName.toLowerCase().includes(searchTerm.toLowerCase());
+    if (!r) return false;
+    const q = (searchTerm || '').trim().toLowerCase();
+    const matchesSearch = !q || 
+                          String(r.jobName || '').toLowerCase().includes(q) || 
+                          String(r.orderId || '').toLowerCase().includes(q) ||
+                          String(r.clientName || '').toLowerCase().includes(q);
     const matchesFilter = filterStatus === 'all' || r.status === filterStatus;
     return matchesSearch && matchesFilter;
   });
@@ -1936,9 +1939,12 @@ export default function ProductionRecordManagement({
   } = usePagination(filteredRecords, 25);
 
   const filteredPunchedOrders = orders.filter(o => {
-    return o.jobName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-           o.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-           o.clientName.toLowerCase().includes(searchTerm.toLowerCase());
+    if (!o) return false;
+    const q = (searchTerm || '').trim().toLowerCase();
+    return !q ||
+           String(o.jobName || '').toLowerCase().includes(q) || 
+           String(o.id || '').toLowerCase().includes(q) ||
+           String(o.clientName || '').toLowerCase().includes(q);
   });
 
   const handleSaveSFGFG = (inventoryItem, rolls, prodLink) => {

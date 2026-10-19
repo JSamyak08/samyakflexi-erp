@@ -293,7 +293,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     let updated = [];
     if (editingSubstrate) {
       updated = filmSubstrates.map(s => {
-        if (s.id === editingSubstrate.id || (s.name && s.name.toLowerCase() === editingSubstrate.name.toLowerCase())) {
+        if (s.id === editingSubstrate.id || (s.name && editingSubstrate?.name && String(s.name).toLowerCase() === String(editingSubstrate.name).toLowerCase())) {
           return {
             ...s,
             name: cleanName,
