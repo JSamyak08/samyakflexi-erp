@@ -146,10 +146,6 @@ export default function UserManagement({
       alert("Only Admin role can configure role permissions!");
       return;
     }
-    if (moduleKey === 'employees' && roleName !== 'Admin' && roleName !== 'HR & Payroll Manager') {
-      alert('Employee and payroll records stay limited to Admin and HR & Payroll Manager.');
-      return;
-    }
     const currentVal = rolePermissions[roleName]?.[moduleKey] === true;
     const updated = {
       ...rolePermissions,

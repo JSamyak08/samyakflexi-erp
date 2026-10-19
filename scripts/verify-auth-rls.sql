@@ -1,5 +1,33 @@
--- Assertions for the three FlexiERP migrations. The shell wrapper creates
+-- Assertions for the FlexiERP migrations. The shell wrapper creates
 -- auth/storage stubs and applies the migrations before this file.
+
+DO $$
+BEGIN
+  IF (SELECT permissions->>'employees' FROM public.role_permissions WHERE role = 'Plant Manager') IS DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'Plant Manager employees flag was not restored';
+  END IF;
+  IF (SELECT permissions->>'user_management' FROM public.role_permissions WHERE role = 'Plant Manager') IS DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'Plant Manager user_management flag was not restored';
+  END IF;
+  IF (SELECT permissions->>'employees' FROM public.role_permissions WHERE role = 'Production Manager') IS DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'Production Manager employees flag was not restored';
+  END IF;
+  IF (SELECT permissions->>'user_management' FROM public.role_permissions WHERE role = 'HR & Payroll Manager') IS DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'HR user_management flag was not restored';
+  END IF;
+  IF (SELECT permissions->>'purchase_orders' FROM public.role_permissions WHERE role = 'Admin') IS DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'Admin is missing purchase_orders';
+  END IF;
+  IF (SELECT permissions->>'purchase_orders' FROM public.role_permissions WHERE role = 'Store Manager') IS DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'Store Manager is missing purchase_orders';
+  END IF;
+  IF (SELECT permissions->>'purchase_orders' FROM public.role_permissions WHERE role = 'HR & Payroll Manager') IS DISTINCT FROM 'false' THEN
+    RAISE EXCEPTION 'HR purchase_orders should stay false';
+  END IF;
+  IF (SELECT permissions->>'purchase_orders' FROM public.role_permissions WHERE role = 'Sales Manager') IS DISTINCT FROM 'false' THEN
+    RAISE EXCEPTION 'Sales purchase_orders should stay false';
+  END IF;
+END $$;
 
 INSERT INTO public.employees (
   id, emp_code, full_name, department, designation, aadhar_no, pan_no, bank_details

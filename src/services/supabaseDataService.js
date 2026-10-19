@@ -2950,8 +2950,6 @@ export async function saveFilmSubstratesToSupabase(substratesList) {
 
 function enforceRoleBoundaries(role, permissions) {
   const next = { ...(permissions || {}) };
-  next.employees = role === 'Admin' || role === 'HR & Payroll Manager';
-  next.user_management = role === 'Admin';
   next.audit_logs = role === 'Admin';
   return next;
 }
