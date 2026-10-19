@@ -918,6 +918,280 @@ export const isOrderNearingDeadline = (order) => {
 };
 
 /**
+ * Helper to compute real-time SFG/FG production stage for a given job order:
+ * Matches live sfgGoods and productionRecords.
+ * Returns:
+ * - stage: Current stage string ('Pre-Production', 'Printing (Pass 1)', 'Lamination (Pass 1)', 'Lamination (Pass 2)', 'Slitting & Rewinding', 'Pouching / Bag Making', 'Ready for Dispatch', 'Partially Dispatched', 'Dispatched')
+ * - stageIndex: 0 (Pre-Production) to 5 (Dispatched)
+ * - stageLabel: Human-friendly text with icon
+ * - badgeStyle: { background, color, border }
+ * - activeLots: Matched live SFG/FG lots
+ * - totalAvailableKg: Total live available SFG + FG
+ * - fgAvailableKg: Available Finished Goods kg
+ * - sfgAvailableKg: Available Semi-Finished Goods kg
+ * - totalDispatchedKg: Dispatched kg
+ * - pipeline: Array of { id, label, isCompleted, isCurrent, isUpcoming } for progress track visualization
+ */
+export const getOrderStageInfo = (order, sfgGoods = [], productionRecords = []) => {
+  if (!order) {
+    return {
+      stage: 'Pre-Production',
+      stageIndex: 0,
+      stageLabel: 'Pre-Production',
+      badgeStyle: { background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' },
+      activeLots: [],
+      totalAvailableKg: 0,
+      fgAvailableKg: 0,
+      sfgAvailableKg: 0,
+      totalDispatchedKg: 0,
+      totalSfgLotsCount: 0,
+      pipeline: []
+    };
+  }
+
+  // Handle Cylinder Orders
+  if (order.isCylinderOrder || order.orderType === 'Rotogravure Cylinder' || order.materialFormat === 'Rotogravure Cylinder') {
+    const isCompleted = order.status === 'Completed';
+    const isEngraved = order.status === 'Received In Factory' || isCompleted;
+    const isPoIssued = !!(order.poIssued || order.poNumber || order.engraverPoNo);
+    
+    let stage = 'Pending Engraver PO';
+    let stageIndex = 0;
+    let badgeStyle = { background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a' };
+
+    if (isCompleted) {
+      stage = 'Received in Factory';
+      stageIndex = 5;
+      badgeStyle = { background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' };
+    } else if (isEngraved) {
+      stage = 'Cylinder Inwarded';
+      stageIndex = 4;
+      badgeStyle = { background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' };
+    } else if (isPoIssued) {
+      stage = 'Under Engraving';
+      stageIndex = 2;
+      badgeStyle = { background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' };
+    }
+
+    const pipeline = [
+      { id: 'punching', label: 'Order Punch', stepNum: 0, isCompleted: true, isCurrent: stageIndex === 0, isUpcoming: false },
+      { id: 'po', label: 'Engraver PO', stepNum: 1, isCompleted: isPoIssued || isCompleted, isCurrent: stageIndex === 1, isUpcoming: !isPoIssued },
+      { id: 'engraving', label: 'Engraving', stepNum: 2, isCompleted: isEngraved || isCompleted, isCurrent: stageIndex === 2, isUpcoming: !isPoIssued },
+      { id: 'inward', label: 'Inward GRN', stepNum: 3, isCompleted: isCompleted, isCurrent: stageIndex === 4, isUpcoming: !isEngraved },
+      { id: 'ready', label: 'Plant Ready', stepNum: 4, isCompleted: isCompleted, isCurrent: stageIndex === 5, isUpcoming: !isCompleted }
+    ];
+
+    return {
+      stage,
+      stageIndex,
+      stageLabel: stage,
+      badgeStyle,
+      activeLots: [],
+      totalAvailableKg: 0,
+      fgAvailableKg: 0,
+      sfgAvailableKg: 0,
+      totalDispatchedKg: 0,
+      totalSfgLotsCount: 0,
+      pipeline
+    };
+  }
+
+  const cleanId = (id) => String(id || '').replace(/^PR-/, '').replace(/^REC-/, '').trim().toLowerCase();
+  const cleanStr = (s) => String(s || '').trim().toLowerCase();
+
+  const oId = cleanId(order.id);
+  const oJobCode = cleanStr(order.jobCode);
+  const oJobName = cleanStr(order.jobName);
+
+  const isMatch = (item) => {
+    if (!item) return false;
+    const itemId = cleanId(item.orderId || item.order_id);
+    const itemJobCode = cleanStr(item.jobCode || item.job_code);
+    const itemJobName = cleanStr(item.jobName || item.job_name);
+    const itemBatch = cleanStr(item.sfgBatchCode || item.barcodeId || item.barcode || item.id);
+
+    return (oId && itemId && itemId === oId) ||
+           (oId && itemBatch && itemBatch.includes(oId)) ||
+           (oJobCode && itemJobCode && itemJobCode === oJobCode) ||
+           (oJobName && itemJobName && (itemJobName === oJobName || itemJobName.includes(oJobName) || oJobName.includes(itemJobName)));
+  };
+
+  const matchedSfg = (sfgGoods || []).filter(isMatch);
+  const matchedRecs = (productionRecords || []).filter(isMatch);
+
+  // Analyze active lots and weights
+  let totalAvailableKg = 0;
+  let fgAvailableKg = 0;
+  let sfgAvailableKg = 0;
+  let totalDispatchedKg = 0;
+
+  const activeLots = matchedSfg.map(item => {
+    const isFg = item.rollType === 'FG' || (item.sfgType || '').includes('Finished') || (item.category || '').includes('Finished') || (item.sfgBatchCode || '').startsWith('FG-');
+    const netKg = Number(item.totalNetKg ?? item.netWeightKg ?? 0) || 0;
+    const consumedKg = Number(item.consumedKg ?? 0) || 0;
+    const dispatchedKg = Number(item.dispatchedKg ?? 0) || 0;
+    const availKg = item.availableKg !== undefined 
+      ? Number(item.availableKg) 
+      : Math.max(0, netKg - consumedKg - dispatchedKg);
+
+    totalAvailableKg += availKg;
+    totalDispatchedKg += dispatchedKg;
+    if (isFg) {
+      fgAvailableKg += availKg;
+    } else {
+      sfgAvailableKg += availKg;
+    }
+
+    return {
+      id: item.id || item.sfgBatchCode,
+      sfgBatchCode: item.sfgBatchCode || item.id,
+      stage: item.stage || (isFg ? 'Finished Goods (FG)' : (item.sfgType || 'Printed Rolls')),
+      rollType: isFg ? 'FG' : 'SFG',
+      availableKg: availKg,
+      totalNetKg: netKg,
+      dispatchedKg: dispatchedKg,
+      storageBay: item.storageBay || (isFg ? 'FG Warehouse' : 'SFG Store'),
+      status: item.status || (availKg <= 0 && dispatchedKg > 0 ? 'Dispatched' : (isFg ? 'Ready for Dispatch' : 'In Stock (WIP)'))
+    };
+  });
+
+  // Calculate highest stage reached
+  let currentStage = 'Pre-Production';
+  let stageIndex = 0;
+
+  const orderQtyKg = Number(order.orderQtyKg || 0);
+
+  // Check from highest to lowest:
+  // 1. Fully Dispatched
+  const isOrderCompleted = order.status === 'Completed';
+  const isFullyDispatched = (orderQtyKg > 0 && totalDispatchedKg >= orderQtyKg) || 
+    (matchedSfg.length > 0 && totalDispatchedKg > 0 && totalAvailableKg === 0 && matchedSfg.every(s => s.status === 'Dispatched' || s.status === 'Fully Consumed'));
+
+  if (isOrderCompleted || isFullyDispatched) {
+    currentStage = 'Dispatched';
+    stageIndex = 5;
+  } else if (totalDispatchedKg > 0) {
+    currentStage = 'Partially Dispatched';
+    stageIndex = 5;
+  } else if (fgAvailableKg > 0 || matchedSfg.some(s => s.rollType === 'FG' || s.status === 'Ready for Dispatch' || (s.sfgBatchCode || '').startsWith('FG-'))) {
+    currentStage = 'Ready for Dispatch';
+    stageIndex = 4;
+  } else if (
+    matchedSfg.some(s => (s.stage || '').includes('Pouching') || (s.sfgType || '').includes('Pouch')) ||
+    matchedRecs.some(r => (parseFloat(r.qtyPouching) > 0 || (r.stages?.pouching?.pouchCount > 0)))
+  ) {
+    currentStage = 'Pouching / Bag Making';
+    stageIndex = 4;
+  } else if (
+    matchedSfg.some(s => (s.stage || '').includes('Slitting') || (s.sfgType || '').includes('Slit')) ||
+    matchedRecs.some(r => (parseFloat(r.qtySlitting) > 0 || r.stages?.slitting))
+  ) {
+    currentStage = 'Slitting & Rewinding';
+    stageIndex = 3;
+  } else if (
+    matchedSfg.some(s => (s.stage || '').includes('Lamination (Pass 2)')) ||
+    matchedRecs.some(r => parseFloat(r.qtySecondPassL2) > 0)
+  ) {
+    currentStage = 'Lamination (Pass 2)';
+    stageIndex = 2;
+  } else if (
+    matchedSfg.some(s => (s.stage || '').includes('Lamination')) ||
+    matchedRecs.some(r => parseFloat(r.qtyLaminationL1) > 0 || r.stages?.lamination)
+  ) {
+    currentStage = 'Lamination (Pass 1)';
+    stageIndex = 2;
+  } else if (
+    matchedSfg.some(s => (s.stage || '').includes('Printing') || (s.sfgType || '').includes('Printed')) ||
+    matchedRecs.some(r => parseFloat(r.qtyFirstPassL1) > 0 || r.stages?.printing || (r.outputRolls || []).length > 0)
+  ) {
+    currentStage = 'Printing (Pass 1)';
+    stageIndex = 1;
+  } else {
+    currentStage = 'Pre-Production';
+    stageIndex = 0;
+  }
+
+  // Assign Badge Styles & Icons
+  let stageLabel = currentStage;
+  let badgeStyle = { background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' };
+
+  switch (currentStage) {
+    case 'Dispatched':
+      stageLabel = '🏁 Dispatched';
+      badgeStyle = { background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' };
+      break;
+    case 'Partially Dispatched':
+      stageLabel = `🚚 Partially Dispatched (${totalDispatchedKg.toFixed(0)}kg)`;
+      badgeStyle = { background: '#f0fdfa', color: '#0f766e', border: '1px solid #99f6e4' };
+      break;
+    case 'Ready for Dispatch':
+      stageLabel = `📦 Ready for Dispatch (${fgAvailableKg > 0 ? fgAvailableKg.toFixed(0) + 'kg' : 'FG Stock'})`;
+      badgeStyle = { background: '#f5f3ff', color: '#6d28d9', border: '1px solid #ddd6fe' };
+      break;
+    case 'Pouching / Bag Making':
+      stageLabel = '🛍️ Pouching / Bag Making';
+      badgeStyle = { background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a' };
+      break;
+    case 'Slitting & Rewinding':
+      stageLabel = '✂️ Slitting & Rewinding';
+      badgeStyle = { background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' };
+      break;
+    case 'Lamination (Pass 2)':
+      stageLabel = '🥞 Lamination (Pass 2 - Triplex)';
+      badgeStyle = { background: '#eef2ff', color: '#4338ca', border: '1px solid #c7d2fe' };
+      break;
+    case 'Lamination (Pass 1)':
+      stageLabel = '🥞 Lamination (Pass 1)';
+      badgeStyle = { background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd' };
+      break;
+    case 'Printing (Pass 1)':
+      stageLabel = '🖨️ Printing (Pass 1)';
+      badgeStyle = { background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' };
+      break;
+    default:
+      stageLabel = '📋 Pre-Production';
+      badgeStyle = { background: '#f8fafc', color: '#64748b', border: '1px solid #e2e8f0' };
+      break;
+  }
+
+  // Build standard multi-stage pipeline definition
+  const standardSteps = [
+    { id: 'planning', label: 'Planning', stepNum: 0 },
+    { id: 'printing', label: 'Printing', stepNum: 1 },
+    { id: 'lamination', label: 'Lamination', stepNum: 2 },
+    { id: 'slitting', label: 'Slitting', stepNum: 3 },
+    { id: 'pouching_fg', label: 'Pouching / FG', stepNum: 4 },
+    { id: 'dispatch', label: 'Dispatch', stepNum: 5 }
+  ];
+
+  const pipeline = standardSteps.map(step => {
+    const isCompleted = stageIndex > step.stepNum || (stageIndex === 5 && step.stepNum === 5);
+    const isCurrent = stageIndex === step.stepNum && stageIndex !== 5;
+    const isUpcoming = stageIndex < step.stepNum;
+    return {
+      ...step,
+      isCompleted,
+      isCurrent,
+      isUpcoming
+    };
+  });
+
+  return {
+    stage: currentStage,
+    stageIndex,
+    stageLabel,
+    badgeStyle,
+    activeLots,
+    totalAvailableKg,
+    fgAvailableKg,
+    sfgAvailableKg,
+    totalDispatchedKg,
+    totalSfgLotsCount: matchedSfg.length,
+    pipeline
+  };
+};
+
+/**
  * Plant Weighing Scale Stations Metadata
  */
 export const WEIGHING_STATIONS = [

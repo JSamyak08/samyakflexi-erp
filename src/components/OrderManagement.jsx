@@ -32,6 +32,7 @@ import {
   isOrderOverdue, 
   isOrderNearingDeadline, 
   getOrderStatusInfo,
+  getOrderStageInfo,
   getOrderMaterialRequirements as getOrderMaterialRequirementsFromStore,
   calculateOrderStockReservations
 } from '../factoryStore';
@@ -50,6 +51,7 @@ export default function OrderManagement({
   cylinders = [],
   currentUser,
   productionRecords = [],
+  sfgGoods = [],
   onUpdateOrder, 
   onDeleteOrder,
   onUpdateCylinder,
@@ -1372,6 +1374,7 @@ export default function OrderManagement({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {ordersPagination.paginatedItems.map(order => {
                 const statusInfo = getOrderStatusInfo(order);
+                const stageInfo = getOrderStageInfo(order, sfgGoods, productionRecords);
                 const isOverdue = statusInfo.isOverdue;
                 const isNearing = statusInfo.isNearingDeadline;
                 const isExpanded = expandedOrders[order.id];
@@ -1430,6 +1433,24 @@ export default function OrderManagement({
                                 🎨 {order.variants?.length || 0} Variants
                               </span>
                             )}
+                            {/* SFG/FG Production Stage Badge */}
+                            <span 
+                              className="stage-badge" 
+                              style={{ 
+                                padding: '3px 10px', 
+                                borderRadius: '6px', 
+                                fontSize: '0.75rem', 
+                                fontWeight: '800', 
+                                display: 'inline-flex', 
+                                alignItems: 'center', 
+                                gap: '5px',
+                                boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                                ...stageInfo.badgeStyle 
+                              }}
+                              title={`Current SFG/FG Production Stage: ${stageInfo.stage}`}
+                            >
+                              {stageInfo.stageLabel}
+                            </span>
                           </div>
                           
                           <div style={{ display: 'flex', gap: '14px', fontSize: '0.8rem', color: 'var(--text-secondary)', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1455,6 +1476,86 @@ export default function OrderManagement({
                                 {getMaterialForm(order)}
                               </span>
                             </span>
+                          </div>
+
+                          {/* Visual Bird's-Eye Stage Flow Pipeline Tracker */}
+                          <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '0.68rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', marginRight: '2px' }}>
+                                Stage Track:
+                              </span>
+                              {stageInfo.pipeline.map((step, idx) => (
+                                <React.Fragment key={step.id}>
+                                  <div 
+                                    style={{ 
+                                      display: 'inline-flex', 
+                                      alignItems: 'center', 
+                                      gap: '4px',
+                                      padding: '2px 7px',
+                                      borderRadius: '12px',
+                                      fontSize: '0.71rem',
+                                      fontWeight: step.isCurrent ? '800' : (step.isCompleted ? '700' : '600'),
+                                      background: step.isCurrent 
+                                        ? '#eff6ff' 
+                                        : (step.isCompleted ? '#f0fdf4' : '#f8fafc'),
+                                      color: step.isCurrent 
+                                        ? '#1d4ed8' 
+                                        : (step.isCompleted ? '#166534' : '#94a3b8'),
+                                      border: step.isCurrent 
+                                        ? '1.5px solid #3b82f6' 
+                                        : (step.isCompleted ? '1px solid #bbf7d0' : '1px dashed #cbd5e1')
+                                    }}
+                                    title={`Stage ${idx + 1}: ${step.label} (${step.isCompleted ? 'Completed' : (step.isCurrent ? 'Active Stage' : 'Pending')})`}
+                                  >
+                                    {step.isCompleted ? (
+                                      <CheckCircle2 size={11} color="#16a34a" />
+                                    ) : step.isCurrent ? (
+                                      <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#2563eb', display: 'inline-block', boxShadow: '0 0 0 2px #bfdbfe' }} />
+                                    ) : (
+                                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#cbd5e1', display: 'inline-block' }} />
+                                    )}
+                                    <span>{step.label}</span>
+                                  </div>
+                                  {idx < stageInfo.pipeline.length - 1 && (
+                                    <span style={{ color: step.isCompleted ? '#86efac' : '#cbd5e1', fontSize: '0.7rem', fontWeight: 'bold' }}>➔</span>
+                                  )}
+                                </React.Fragment>
+                              ))}
+                            </div>
+
+                            {/* Active Stock Breakdown Pills */}
+                            {stageInfo.activeLots.length > 0 && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', fontSize: '0.73rem', marginTop: '2px' }}>
+                                <span style={{ color: '#475569', fontWeight: '700' }}>
+                                  📦 Active Stock ({stageInfo.totalAvailableKg.toFixed(1)} kg):
+                                </span>
+                                {stageInfo.activeLots.map(lot => (
+                                  <span 
+                                    key={lot.id}
+                                    style={{
+                                      background: lot.rollType === 'FG' ? '#f5f3ff' : '#f0fdf4',
+                                      color: lot.rollType === 'FG' ? '#6d28d9' : '#15803d',
+                                      border: lot.rollType === 'FG' ? '1px solid #ddd6fe' : '1px solid #bbf7d0',
+                                      padding: '1px 7px',
+                                      borderRadius: '4px',
+                                      fontWeight: '700',
+                                      fontSize: '0.7rem',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px'
+                                    }}
+                                    title={`${lot.sfgBatchCode} | ${lot.stage} | Bay: ${lot.storageBay}`}
+                                  >
+                                    <strong>{lot.sfgBatchCode}</strong>: {lot.availableKg.toFixed(1)} kg ({lot.storageBay})
+                                  </span>
+                                ))}
+                                {stageInfo.totalDispatchedKg > 0 && (
+                                  <span style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', padding: '1px 7px', borderRadius: '4px', fontWeight: '700', fontSize: '0.7rem' }}>
+                                    🚚 Dispatched: {stageInfo.totalDispatchedKg.toFixed(1)} kg
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
 
                           {(order.orderComments || order.comments || order.notes || order.jobDetails?.orderComments || order.jobDetails?.comments) && (
@@ -1686,6 +1787,128 @@ export default function OrderManagement({
                                 </div>
                               </div>
                             )}
+
+                            {/* SFG & FG Production Stage Inventory Breakdown */}
+                            <div style={{ marginBottom: '22px', background: '#f8fafc', padding: '16px 18px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <Box size={18} style={{ color: 'var(--primary-brand)' }} />
+                                  <h4 style={{ fontSize: '0.88rem', fontWeight: '800', color: '#0f172a', margin: 0, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                                    🏭 SFG & FG Production Stage Inventory ({stageInfo.activeLots.length} Rolls / Lots)
+                                  </h4>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <span style={{ 
+                                    padding: '3px 10px', 
+                                    borderRadius: '6px', 
+                                    fontSize: '0.76rem', 
+                                    fontWeight: '800', 
+                                    ...stageInfo.badgeStyle 
+                                  }}>
+                                    {stageInfo.stageLabel}
+                                  </span>
+                                  {onNavigateToProductionRecords && (
+                                    <button
+                                      type="button"
+                                      className="btn-secondary"
+                                      style={{ padding: '4px 10px', fontSize: '0.75rem', fontWeight: '700', color: 'var(--primary-brand)', background: '#ffffff', borderColor: '#cbd5e1' }}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onNavigateToProductionRecords();
+                                      }}
+                                    >
+                                      View Production Records ➔
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Quick Stage Metrics Summary Cards */}
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px', marginBottom: '14px' }}>
+                                <div style={{ background: '#ffffff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                                  <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Current Process Stage</div>
+                                  <div style={{ fontSize: '0.92rem', fontWeight: '800', color: '#0f172a', marginTop: '2px' }}>{stageInfo.stage}</div>
+                                </div>
+                                <div style={{ background: '#ffffff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                                  <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Available SFG Stock</div>
+                                  <div style={{ fontSize: '0.92rem', fontWeight: '800', color: '#0369a1', marginTop: '2px' }}>{stageInfo.sfgAvailableKg.toFixed(1)} kg</div>
+                                </div>
+                                <div style={{ background: '#ffffff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                                  <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Ready FG Stock</div>
+                                  <div style={{ fontSize: '0.92rem', fontWeight: '800', color: '#6d28d9', marginTop: '2px' }}>{stageInfo.fgAvailableKg.toFixed(1)} kg</div>
+                                </div>
+                                <div style={{ background: '#ffffff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                                  <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Dispatched Weight</div>
+                                  <div style={{ fontSize: '0.92rem', fontWeight: '800', color: '#047857', marginTop: '2px' }}>{stageInfo.totalDispatchedKg.toFixed(1)} kg</div>
+                                </div>
+                              </div>
+
+                              {stageInfo.activeLots.length === 0 ? (
+                                <div style={{ textAlign: 'center', padding: '18px', background: '#ffffff', borderRadius: '8px', border: '1px dashed #cbd5e1', color: '#64748b', fontSize: '0.82rem' }}>
+                                  ⏳ No SFG or FG rolls recorded yet for this order. Status is currently <strong>Pre-Production / Material Planning</strong>.
+                                </div>
+                              ) : (
+                                <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#ffffff' }}>
+                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                                    <thead>
+                                      <tr style={{ background: '#f1f5f9', color: '#334155', textAlign: 'left' }}>
+                                        <th style={{ padding: '8px 12px' }}>Batch / Roll Barcode</th>
+                                        <th style={{ padding: '8px 12px' }}>Stage / Process</th>
+                                        <th style={{ padding: '8px 12px' }}>Category</th>
+                                        <th style={{ padding: '8px 12px', textAlign: 'right' }}>Total Net (kg)</th>
+                                        <th style={{ padding: '8px 12px', textAlign: 'right' }}>Available (kg)</th>
+                                        <th style={{ padding: '8px 12px', textAlign: 'right' }}>Dispatched (kg)</th>
+                                        <th style={{ padding: '8px 12px' }}>Storage Bay</th>
+                                        <th style={{ padding: '8px 12px' }}>Status</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {stageInfo.activeLots.map((lot, lIdx) => (
+                                        <tr key={lot.id || lIdx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                          <td style={{ padding: '8px 12px', fontWeight: '800', color: '#0f172a' }}>
+                                            <span className="order-id-badge" style={{ fontSize: '0.74rem' }}>{lot.sfgBatchCode}</span>
+                                          </td>
+                                          <td style={{ padding: '8px 12px', fontWeight: '700', color: '#334155' }}>{lot.stage}</td>
+                                          <td style={{ padding: '8px 12px' }}>
+                                            <span style={{ 
+                                              padding: '2px 6px', 
+                                              borderRadius: '4px', 
+                                              fontSize: '0.72rem', 
+                                              fontWeight: '700',
+                                              background: lot.rollType === 'FG' ? '#f5f3ff' : '#f0fdf4',
+                                              color: lot.rollType === 'FG' ? '#6d28d9' : '#15803d',
+                                              border: lot.rollType === 'FG' ? '1px solid #ddd6fe' : '1px solid #bbf7d0'
+                                            }}>
+                                              {lot.rollType === 'FG' ? 'Finished Goods (FG)' : 'Semi-Finished Goods (SFG)'}
+                                            </span>
+                                          </td>
+                                          <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '700' }}>{lot.totalNetKg.toFixed(2)}</td>
+                                          <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '800', color: lot.availableKg > 0 ? '#047857' : '#64748b' }}>
+                                            {lot.availableKg.toFixed(2)}
+                                          </td>
+                                          <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '700', color: lot.dispatchedKg > 0 ? '#0369a1' : '#64748b' }}>
+                                            {lot.dispatchedKg.toFixed(2)}
+                                          </td>
+                                          <td style={{ padding: '8px 12px', color: '#475569', fontWeight: '600' }}>{lot.storageBay}</td>
+                                          <td style={{ padding: '8px 12px' }}>
+                                            <span style={{ 
+                                              fontSize: '0.72rem', 
+                                              fontWeight: '700', 
+                                              padding: '2px 6px', 
+                                              borderRadius: '4px',
+                                              background: lot.status === 'Dispatched' ? '#ecfdf5' : (lot.status === 'Ready for Dispatch' ? '#f5f3ff' : '#eff6ff'),
+                                              color: lot.status === 'Dispatched' ? '#047857' : (lot.status === 'Ready for Dispatch' ? '#6d28d9' : '#1d4ed8')
+                                            }}>
+                                              {lot.status}
+                                            </span>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
 
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -2107,13 +2330,14 @@ export default function OrderManagement({
                       <th style={{ color: '#2563eb' }}>Balance for PO</th>
                       <th>Preferred Vendor</th>
                       <th>Target Dispatch</th>
+                      <th>SFG / FG Stage</th>
                       <th>PO Status</th>
                     </tr>
                   </thead>
                   <tbody>
                     {requirementsPagination.paginatedItems.length === 0 ? (
                       <tr>
-                        <td colSpan="11" style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
+                        <td colSpan="12" style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
                           <Layers size={32} style={{ margin: '0 auto 8px', opacity: 0.5, display: 'block' }} />
                           <div style={{ fontSize: '0.95rem', fontWeight: '700', color: 'var(--text-primary)' }}>No Raw Material Requirements Found</div>
                           <p style={{ fontSize: '0.82rem', margin: '4px 0 0' }}>Try adjusting your search terms or filter settings above.</p>
@@ -2319,6 +2543,40 @@ export default function OrderManagement({
                                   <span style={{ fontSize: '0.68rem', fontWeight: '800', color: '#b45309' }}>≤4D LEFT</span>
                                 ) : null}
                               </div>
+                            </td>
+
+                            {/* SFG / FG Stage */}
+                            <td>
+                              {(() => {
+                                const parentOrder = (orders || []).find(o => String(o.id) === String(req.orderId));
+                                const rStageInfo = parentOrder ? getOrderStageInfo(parentOrder, sfgGoods, productionRecords) : null;
+                                if (!rStageInfo) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
+                                return (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-start' }}>
+                                    <span 
+                                      style={{ 
+                                        padding: '2px 7px', 
+                                        borderRadius: '4px', 
+                                        fontSize: '0.72rem', 
+                                        fontWeight: '800', 
+                                        whiteSpace: 'nowrap',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        ...rStageInfo.badgeStyle 
+                                      }}
+                                      title={`Process Stage: ${rStageInfo.stage}`}
+                                    >
+                                      {rStageInfo.stageLabel}
+                                    </span>
+                                    {rStageInfo.totalAvailableKg > 0 && (
+                                      <span style={{ fontSize: '0.68rem', color: '#047857', fontWeight: '700' }}>
+                                        {rStageInfo.totalAvailableKg.toFixed(0)} kg in stock
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </td>
 
                             {/* PO Status */}

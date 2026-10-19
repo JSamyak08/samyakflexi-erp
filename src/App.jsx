@@ -6,6 +6,7 @@ import {
   isOrderOverdue,
   isOrderNearingDeadline,
   getOrderStatusInfo,
+  getOrderStageInfo,
   FILM_DENSITIES
 } from './factoryStore';
 import { 
@@ -4449,12 +4450,14 @@ export default function App() {
                         <th>Job Name</th>
                         <th>Substrate Structure</th>
                         <th>Target Date</th>
+                        <th>Production / SFG Stage</th>
                         <th>Status</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(orders || []).map(o => {
                         const statusInfo = getOrderStatusInfo(o);
+                        const stageInfo = getOrderStageInfo(o, sfgGoods, productionRecords);
                         const isOverdue = statusInfo.isOverdue;
                         const isNearing = statusInfo.isNearingDeadline;
                         // Derive substrate structure from the matching Job Master's layers, fallback to order.structure
@@ -4471,6 +4474,31 @@ export default function App() {
                             <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{substrateDisplay}</td>
                             <td style={{ color: isOverdue ? '#dc2626' : (isNearing ? '#b45309' : 'inherit'), fontWeight: (isOverdue || isNearing) ? '700' : 'normal' }}>
                               {o.targetDeliveryDate}
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-start' }}>
+                                <span 
+                                  style={{ 
+                                    padding: '3px 8px', 
+                                    borderRadius: '6px', 
+                                    fontSize: '0.74rem', 
+                                    fontWeight: '800', 
+                                    whiteSpace: 'nowrap',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    ...stageInfo.badgeStyle 
+                                  }}
+                                  title={`Current Stage: ${stageInfo.stage}`}
+                                >
+                                  {stageInfo.stageLabel}
+                                </span>
+                                {stageInfo.totalAvailableKg > 0 && (
+                                  <span style={{ fontSize: '0.7rem', color: '#047857', fontWeight: '700' }}>
+                                    Active: {stageInfo.totalAvailableKg.toFixed(0)} kg ({stageInfo.activeLots.length} lot{stageInfo.activeLots.length !== 1 ? 's' : ''})
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td>
                               {isOverdue ? (
@@ -4770,6 +4798,7 @@ export default function App() {
             cylinders={cylinders}
             currentUser={currentUser}
             productionRecords={productionRecords}
+            sfgGoods={sfgGoods}
             onUpdateOrder={handleUpdateOrder} 
             onDeleteOrder={handleDeleteOrder}
             onUpdateCylinder={handleUpdateCylinder}
