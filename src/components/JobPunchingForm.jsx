@@ -1214,7 +1214,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
                   </div>
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--primary-brand)' }}>{l.grossKg} Kg</div>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>₹{(l.totalCost || 0).toLocaleString()}</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>₹{(l.totalCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                   </div>
                 </div>
               ))}
@@ -1240,7 +1240,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
                     {calculationResults.inkDetails.grossKg} Kg
                   </div>
                   <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                    ₹{(calculationResults.inkDetails?.totalCost || 0).toLocaleString()}
+                    ₹{(calculationResults.inkDetails?.totalCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
                 </div>
               </div>
@@ -1266,7 +1266,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
                     {calculationResults.adhesiveDetails.grossKg} Kg
                   </div>
                   <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                    ₹{(calculationResults.adhesiveDetails?.totalCost || 0).toLocaleString()}
+                    ₹{(calculationResults.adhesiveDetails?.totalCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
                 </div>
               </div>
@@ -1291,7 +1291,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #dbeafe', paddingTop: '8px' }}>
                 <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>Total Raw Material Cost:</span>
                 <span style={{ fontSize: '1.4rem', fontWeight: '800', color: '#1e40af' }}>
-                  ₹{(calculationResults.summary?.totalRawMaterialCost || 0).toLocaleString()}
+                  ₹{(calculationResults.summary?.totalRawMaterialCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
             </div>
@@ -1376,7 +1376,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
               </div>
               <div style={{ borderTop: '1px solid #dbeafe', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '0.95rem', fontWeight: '600', color: '#1e3a8a' }}>Total Estimated Raw Material Cost:</span>
-                <span style={{ fontSize: '1.3rem', fontWeight: '800', color: '#1e40af' }}>₹{(calculationResults.summary?.totalRawMaterialCost || 0).toLocaleString()}</span>
+                <span style={{ fontSize: '1.3rem', fontWeight: '800', color: '#1e40af' }}>₹{(calculationResults.summary?.totalRawMaterialCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
             </div>
 

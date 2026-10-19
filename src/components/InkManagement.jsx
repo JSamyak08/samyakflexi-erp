@@ -1649,7 +1649,7 @@ export default function InkManagement({
                 <div style={{ background: '#f0f9ff', padding: '12px', borderRadius: '8px', border: '1px solid #bae6fd' }}>
                   <span style={{ fontSize: '0.72rem', color: '#0369a1', fontWeight: '600' }}>SURFACE STOCK VALUATION</span>
                   <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#0284c7' }}>
-                    ₹ {(surfaceValuation || 0).toLocaleString()}
+                    ₹ {(surfaceValuation || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
                 </div>
               </div>
@@ -1717,7 +1717,7 @@ export default function InkManagement({
                 <div style={{ background: '#f5f3ff', padding: '12px', borderRadius: '8px', border: '1px solid #ddd6fe' }}>
                   <span style={{ fontSize: '0.72rem', color: '#6d28d9', fontWeight: '600' }}>REVERSE STOCK VALUATION</span>
                   <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#7c3aed' }}>
-                    ₹ {(reverseValuation || 0).toLocaleString()}
+                    ₹ {(reverseValuation || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
                 </div>
               </div>
@@ -1808,7 +1808,7 @@ export default function InkManagement({
                         <td style={{ fontFamily: 'monospace' }}>{g.batchNo || g.lotNo || '-'}</td>
                         <td style={{ fontWeight: '700', color: '#059669' }}>{g.netWeightKg || g.quantityKg || g.inwardQtyKg} kg</td>
                         <td>₹ {g.purchaseRatePerKg || g.unitPrice || 0} / kg</td>
-                        <td style={{ fontWeight: '800' }}>₹ {((Number(g.netWeightKg || g.quantityKg || 0)) * (Number(g.purchaseRatePerKg || g.unitPrice || 0))).toLocaleString()}</td>
+                        <td style={{ fontWeight: '800' }}>₹ {((Number(g.netWeightKg || g.quantityKg || 0)) * (Number(g.purchaseRatePerKg || g.unitPrice || 0))).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                         <td>
                           {((g.status || g.qcStatus || '').toLowerCase().includes('approved')) ? (
                             <span className="badge badge-success" style={{ fontSize: '0.7rem' }}>Approved by QC</span>
@@ -1886,7 +1886,7 @@ export default function InkManagement({
                           {tx.issueType === 'return' ? `+${tx.qtyKg}` : `-${tx.qtyKg}`} kg
                         </td>
                         <td>₹ {tx.purchaseRatePerKg || tx.unitPrice || 0} / kg</td>
-                        <td style={{ fontWeight: '700' }}>₹ {((Number(tx.qtyKg || 0)) * (Number(tx.purchaseRatePerKg || tx.unitPrice || 0))).toLocaleString()}</td>
+                        <td style={{ fontWeight: '700' }}>₹ {((Number(tx.qtyKg || 0)) * (Number(tx.purchaseRatePerKg || tx.unitPrice || 0))).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                         <td>{tx.issuedBy || tx.operatorName || 'Press Operator'}</td>
                       </tr>
                     ))
@@ -2693,13 +2693,13 @@ export default function InkManagement({
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#ecfdf5', padding: '12px 16px', borderRadius: '8px', border: '1px solid #a7f3d0' }}>
                       <div>
                         <span style={{ fontSize: '0.82rem', color: '#065f46', fontWeight: '600' }}>Subtotal (Taxable): </span>
-                        <strong style={{ fontSize: '0.98rem', color: '#047857' }}>₹ {(subtotal || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
+                        <strong style={{ fontSize: '0.98rem', color: '#047857' }}>₹ {(subtotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                         <span style={{ fontSize: '0.82rem', color: '#065f46', marginLeft: '16px', fontWeight: '600' }}>GST (18%): </span>
-                        <strong style={{ fontSize: '0.98rem', color: '#047857' }}>₹ {(gstVal || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
+                        <strong style={{ fontSize: '0.98rem', color: '#047857' }}>₹ {(gstVal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                       </div>
                       <div>
                         <span style={{ fontSize: '0.82rem', color: '#065f46', fontWeight: '600' }}>Grand Total: </span>
-                        <strong style={{ fontSize: '1.15rem', color: '#047857', fontWeight: '900' }}>₹ {(grandTotal || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
+                        <strong style={{ fontSize: '1.15rem', color: '#047857', fontWeight: '900' }}>₹ {(grandTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                       </div>
                     </div>
                   );

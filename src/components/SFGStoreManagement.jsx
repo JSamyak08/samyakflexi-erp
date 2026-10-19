@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { displayPartyName } from '../utils/textHelpers';
 import SearchableSelect from './SearchableSelect';
 import { 
   Layers, 
@@ -300,7 +301,7 @@ export default function SFGStoreManagement({
             orderId: roll.orderId || 'N/A',
             jobName: roll.jobName || roll.itemName || 'SFG Printed Roll',
             jobCode: roll.jobCode || roll.orderId || 'N/A',
-            clientName: roll.customerName || roll.clientName || 'Client',
+            clientName: roll.customerName || roll.clientName || '',
             sfgType: rollType === 'FINISHED_GOODS' ? 'Finished Goods (FG)' : 'Printed Rolls',
             filmType: roll.filmType || 'PET',
             widthMm: roll.widthMm || 460,
@@ -414,7 +415,7 @@ export default function SFGStoreManagement({
           orderId: item.orderId && item.orderId !== 'N/A' && item.orderId !== '#N/A' ? item.orderId : '',
           jobName: item.jobName || 'Untitled Job',
           jobCode: item.jobCode || '',
-          clientName: item.clientName || 'General Client',
+          clientName: item.clientName || '',
           filmType: item.filmType,
           micron: item.micron,
           widthMm: item.widthMm,
@@ -1518,7 +1519,7 @@ export default function SFGStoreManagement({
                       </div>
 
                       <div style={{ fontSize: '0.82rem', color: '#64748b', marginTop: '4px', display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
-                        <span>Client: <strong style={{ color: '#1e293b' }}>{group.clientName}</strong></span>
+                        <span>Client: <strong style={{ color: '#1e293b' }}>{displayPartyName(group.clientName)}</strong></span>
                         <span>Substrate: <strong style={{ color: '#1e293b' }}>{group.filmType} ({group.micron}µm × {group.widthMm}mm)</strong></span>
                         {group.orderQty && (
                           <span>Order Qty: <strong style={{ color: '#047857' }}>{group.orderQty} {group.orderQtyUnit && !String(group.orderQty).toLowerCase().includes(String(group.orderQtyUnit).toLowerCase()) ? group.orderQtyUnit : ''}</strong></span>
@@ -1968,7 +1969,7 @@ export default function SFGStoreManagement({
                         <td style={{ padding: '12px 16px' }}>
                           <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '0.88rem' }}>{item.jobName}</div>
                           <div style={{ fontSize: '0.76rem', color: '#475569', marginTop: '2px' }}>
-                            {item.orderId ? `Order #${item.orderId}` : item.jobCode} | Client: <strong>{item.clientName}</strong>
+                            {item.orderId ? `Order #${item.orderId}` : item.jobCode} | Client: <strong>{displayPartyName(item.clientName)}</strong>
                           </div>
                         </td>
 
@@ -2129,7 +2130,7 @@ export default function SFGStoreManagement({
                       </td>
                       <td style={{ padding: '10px 14px' }}>
                         <div style={{ fontWeight: '700', color: '#0f172a' }}>{item.jobName}</div>
-                        <div style={{ fontSize: '0.74rem', color: '#64748b' }}>{item.orderId} | Client: {item.clientName}</div>
+                        <div style={{ fontSize: '0.74rem', color: '#64748b' }}>{item.orderId || '—'} | Client: {displayPartyName(item.clientName)}</div>
                       </td>
                       <td style={{ padding: '10px 14px', color: '#334155' }}>
                         {item.filmType} ({item.micron}µm × {item.widthMm}mm)

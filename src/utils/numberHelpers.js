@@ -43,10 +43,10 @@ export function formatUpToTwoDecimals(val, maxDecimals = 2) {
  * Formats a currency amount with ₹ symbol and up to 2 decimals.
  * 
  * @param {number|string} val 
- * @param {boolean} [exactTwo=false] - If true, guarantees .00
+ * @param {boolean} [exactTwo=true] - If true, guarantees .00
  * @returns {string}
  */
-export function formatCurrency(val, exactTwo = false) {
+export function formatCurrency(val, exactTwo = true) {
   if (val === null || val === undefined || val === '') return '₹ 0';
   const num = Number(val);
   if (isNaN(num)) return '₹ 0';

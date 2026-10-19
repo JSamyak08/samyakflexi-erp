@@ -52,7 +52,7 @@ h1, h2, h3, h4, h5, h6,
 .sidebar-section-header, .nav-item, .nav-tab-btn, .tab-button,
 .form-label, label, legend,
 .stat-card-title, .stat-card-sub, .stats-title,
-th, .data-table th, .data-table td, table th, table td,
+th, .data-table th, table th,
 button, .btn-primary, .btn-secondary, .btn-danger, .btn-warning,
 .badge, .status-badge, .status-pill, .nav-badge-pill, .badge-status,
 .dropdown-item, select, select option,
@@ -77,6 +77,15 @@ input[type="number"],
 [style*="monospace"],
 [style*="text-transform: none"],
 [style*="text-transform: uppercase"] {
+  text-transform: none;
+}
+
+/* Cell values keep stored casing. Title Case on td was rewriting emails and UUIDs. */
+table td,
+.data-table td,
+td.no-capitalize,
+.data-table td.no-capitalize,
+.no-capitalize {
   text-transform: none;
 }
 

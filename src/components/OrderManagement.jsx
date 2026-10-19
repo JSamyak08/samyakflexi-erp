@@ -1725,7 +1725,7 @@ export default function OrderManagement({
                               <div>
                                 <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Quoted Rate / Cost</span>
                                 <strong style={{ fontSize: '0.9rem', color: '#059669' }}>
-                                  ₹ {(order.cylinderDetails?.totalAmount || (order.sellingPricePerKg * (order.orderQtyKg || 1)) || 35000).toLocaleString()}
+                                  ₹ {(order.cylinderDetails?.totalAmount || (order.sellingPricePerKg * (order.orderQtyKg || 1)) || 35000).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </strong>
                               </div>
 
@@ -2791,7 +2791,7 @@ export default function OrderManagement({
                                 />
                               </td>
                               <td style={{ textAlign: 'right', fontWeight: '800', color: 'var(--primary-brand)' }}>
-                                ₹{((qty * rate) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                ₹{((qty * rate) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </td>
                             </tr>
                           );

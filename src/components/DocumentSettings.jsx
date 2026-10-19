@@ -1424,15 +1424,15 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', fontSize: '0.88rem' }}>
                     <div>
                       <span style={{ color: '#166534' }}>Adhesive Cost:</span>{' '}
-                      <strong>{testAdhKg} kg × ₹ {testAdhRate}/kg = ₹ {adhCost.toLocaleString()}</strong>
+                      <strong>{testAdhKg} kg × ₹ {testAdhRate}/kg = ₹ {adhCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                     </div>
                     <div>
                       <span style={{ color: '#166534' }}>Paper Core Cost:</span>{' '}
-                      <strong>{testCoreKg} kg × ₹ {testCoreRate}/kg = ₹ {coreCost.toLocaleString()}</strong>
+                      <strong>{testCoreKg} kg × ₹ {testCoreRate}/kg = ₹ {coreCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                     </div>
                     <div style={{ borderLeft: '2px solid #86efac', paddingLeft: '16px' }}>
                       <span style={{ color: '#166534', fontWeight: '700' }}>Added to Ingredients Cost:</span>{' '}
-                      <strong style={{ fontSize: '1.1rem', color: '#15803d' }}>+ ₹ {totalAdded.toLocaleString()}</strong>
+                      <strong style={{ fontSize: '1.1rem', color: '#15803d' }}>+ ₹ {totalAdded.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                     </div>
                   </div>
                 </div>

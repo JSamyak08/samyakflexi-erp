@@ -143,20 +143,20 @@ export default function EmployeePayslipPDF({ employee, salaryData, monthKey = "2
                 <tbody>
                   <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '8px 12px' }}>Basic Salary</td>
-                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '700' }}>₹ {(salaryData.earnedBasic || 0).toLocaleString()}</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '700' }}>₹ {(salaryData.earnedBasic || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   </tr>
                   <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '8px 12px' }}>House Rent Allowance (HRA)</td>
-                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '700' }}>₹ {(salaryData.earnedHra || 0).toLocaleString()}</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '700' }}>₹ {(salaryData.earnedHra || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   </tr>
                   <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '8px 12px' }}>Other Allowance</td>
-                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '700' }}>₹ {(salaryData.earnedOther || 0).toLocaleString()}</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '700' }}>₹ {(salaryData.earnedOther || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   </tr>
                   {(salaryData.dinnerAllowance || 0) > 0 && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '8px 12px' }}>Dinner Allowance (Optional) ({salaryData.nightShiftCount || 0} Nights)</td>
-                      <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '700' }}>₹ {(salaryData.dinnerAllowance || 0).toLocaleString()}</td>
+                      <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '700' }}>₹ {(salaryData.dinnerAllowance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     </tr>
                   )}
                   <tr style={{ borderBottom: '1px solid #f1f5f9', background: salaryData.approvedOtHours > 0 ? '#f0fdf4' : 'transparent' }}>
@@ -164,13 +164,13 @@ export default function EmployeePayslipPDF({ employee, salaryData, monthKey = "2
                       Approved Overtime Pay ({salaryData.approvedOtHours || 0} hrs @ ₹{salaryData.otRatePerHr || 0}/hr)
                     </td>
                     <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '800', color: '#059669' }}>
-                      ₹ {(salaryData.earnedOtPay || 0).toLocaleString()}
+                      ₹ {(salaryData.earnedOtPay || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                   </tr>
                   <tr style={{ background: '#f8fafc', fontWeight: '900', borderTop: '2px solid #cbd5e1' }}>
                     <td style={{ padding: '10px 12px', color: '#0f172a' }}>TOTAL GROSS EARNINGS (A)</td>
                     <td style={{ padding: '10px 12px', textAlign: 'right', color: '#0f172a', fontSize: '0.9rem' }}>
-                      ₹ {(salaryData.totalGrossEarned || 0).toLocaleString()}
+                      ₹ {(salaryData.totalGrossEarned || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                   </tr>
                 </tbody>
@@ -186,20 +186,20 @@ export default function EmployeePayslipPDF({ employee, salaryData, monthKey = "2
                 <tbody>
                   <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '8px 12px' }}>Provident Fund (PF - 12%)</td>
-                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '700' }}>₹ {(salaryData.pfDeduction || 0).toLocaleString()}</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '700' }}>₹ {(salaryData.pfDeduction || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   </tr>
                   <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '8px 12px' }}>ESIC (0.75%)</td>
-                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '700' }}>₹ {(salaryData.esicDeduction || 0).toLocaleString()}</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '700' }}>₹ {(salaryData.esicDeduction || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   </tr>
                   <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '8px 12px' }}>Professional Tax (PT)</td>
-                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '700' }}>₹ {(salaryData.ptDeduction || 0).toLocaleString()}</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '700' }}>₹ {(salaryData.ptDeduction || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   </tr>
                   <tr style={{ borderBottom: '1px solid #f1f5f9', background: salaryData.totalAdvanceDeduction > 0 ? '#fff1f2' : 'transparent' }}>
                     <td style={{ padding: '8px 12px' }}>Salary Advance Installment (EMI)</td>
                     <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '800', color: '#e11d48' }}>
-                      ₹ {(salaryData.totalAdvanceDeduction || 0).toLocaleString()}
+                      ₹ {(salaryData.totalAdvanceDeduction || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                   </tr>
                   <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -209,7 +209,7 @@ export default function EmployeePayslipPDF({ employee, salaryData, monthKey = "2
                   <tr style={{ background: '#f8fafc', fontWeight: '900', borderTop: '2px solid #cbd5e1' }}>
                     <td style={{ padding: '10px 12px', color: '#dc2626' }}>TOTAL DEDUCTIONS (B)</td>
                     <td style={{ padding: '10px 12px', textAlign: 'right', color: '#dc2626', fontSize: '0.9rem' }}>
-                      ₹ {(salaryData.totalDeductions || 0).toLocaleString()}
+                      ₹ {(salaryData.totalDeductions || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                   </tr>
                 </tbody>
@@ -227,7 +227,7 @@ export default function EmployeePayslipPDF({ employee, salaryData, monthKey = "2
             </div>
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: '1.6rem', fontWeight: '900', color: '#38bdf8' }}>
-                ₹ {(salaryData.netPayable || 0).toLocaleString()}
+                ₹ {(salaryData.netPayable || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
             </div>
           </div>

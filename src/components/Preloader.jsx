@@ -8,12 +8,13 @@ export default function Preloader({ onComplete, isReady = true, statusText }) {
   const [currentStep, setCurrentStep] = useState(1);
   const logoUrl = getCompanyLogo();
   const completedCalledRef = useRef(false);
+  const forceCompleteRef = useRef(false);
 
-  // Failsafe timer: Ensure preloader NEVER gets stuck indefinitely (max 3.5s timeout)
+  // Hard stop so a hung data fetch cannot leave the bar clamped at 92%.
   useEffect(() => {
     const forceTimer = setTimeout(() => {
-      setProgress(100);
-    }, 3500);
+      forceCompleteRef.current = true;
+    }, 8000);
     return () => clearTimeout(forceTimer);
   }, []);
 
@@ -21,7 +22,8 @@ export default function Preloader({ onComplete, isReady = true, statusText }) {
     const interval = setInterval(() => {
       setProgress(prev => {
         let next;
-        if (!isReady) {
+        const ready = isReady || forceCompleteRef.current;
+        if (!ready) {
           // While DB connection or data fetching is pending, cap smooth progress at 92%
           if (prev < 25) next = prev + 2;
           else if (prev < 55) next = prev + 1.5;

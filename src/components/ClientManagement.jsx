@@ -113,7 +113,7 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
   const formatINR = (val) => {
     const num = parseFloat(val);
     if (isNaN(num)) return val || '—';
-    return '₹' + (num || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+    return '₹' + (num || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
   // Derived Data for Selected Client

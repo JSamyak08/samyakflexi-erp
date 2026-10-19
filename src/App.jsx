@@ -71,10 +71,10 @@ import Preloader from './components/Preloader';
 import SearchableSelect from './components/SearchableSelect';
 import SuccessScreenModal from './components/SuccessScreenModal';
 import { showSuccessScreen } from './context/SuccessModalContext';
-import { fetchAuditLogsFromSupabase, saveAuditLogToSupabase, createAuditEntry, pruneOldAuditLogs } from './services/auditLogger';
+import { fetchAuditLogsPage, saveAuditLogToSupabase, createAuditEntry, pruneOldAuditLogs } from './services/auditLogger';
 import { getNextDocRefNumber } from './services/settingsService';
 import { getRouteFromUrl, getTabFromUrl, pushSlugState } from './utils/slugRouter';
-import { isSupabaseConfigured, checkSupabaseConnection } from './services/supabaseClient';
+import { isSupabaseConfigured, checkSupabaseConnection, withTimeout } from './services/supabaseClient';
 import { 
   fetchOrders, saveOrderToSupabase, deleteOrderFromSupabase,
   fetchVendors, saveVendorToSupabase, deleteVendorFromSupabase,
@@ -216,7 +216,7 @@ export default function App() {
 
   const runDatabaseHealthCheck = async () => {
     try {
-      const res = await checkSupabaseConnection();
+      const res = await withTimeout(checkSupabaseConnection(), 8000, 'database health check');
       if (res && res.connected) {
         setDatabaseStatus('connected');
         setDatabaseErrorMessage(null);
@@ -225,7 +225,8 @@ export default function App() {
         setDatabaseErrorMessage(res?.message || res?.error || 'Supabase PostgreSQL database is unreachable. Read-only mode activated.');
       }
     } catch (err) {
-      setDatabaseStatus('disconnected');
+      console.warn('[Database health check]', err?.message || err);
+      setDatabaseStatus(prev => (prev === 'connected' ? 'connected' : 'disconnected'));
       setDatabaseErrorMessage(err.message || 'Database health check failed.');
     }
   };
@@ -251,6 +252,14 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(!isSupaConfigured);
   const [isSigningIn, setIsSigningIn] = useState(false);
+
+  // Safety valve if the loader never reaches onComplete (it is the only other
+  // place that clears this flag).
+  useEffect(() => {
+    if (!isSigningIn) return undefined;
+    const timer = setTimeout(() => setIsSigningIn(false), 8000);
+    return () => clearTimeout(timer);
+  }, [isSigningIn]);
 
   // Route & Navigation State
   const [routeInfo, setRouteInfo] = useState(() => getRouteFromUrl());
@@ -336,6 +345,8 @@ export default function App() {
   const [consumables, setConsumables] = useState(() => safeLocalStorageGet('samyak_cache_consumables', []) || []);
   const [storeIssueTransactions, setStoreIssueTransactions] = useState(() => safeLocalStorageGet('samyak_cache_store_issue_transactions', []) || []);
   const [auditLogs, setAuditLogs] = useState(() => safeLocalStorageGet('samyak_cache_audit_logs', []) || []);
+  const [auditLogTotal, setAuditLogTotal] = useState(0);
+  const auditFetchedCountRef = useRef(0);
   const [employees, setEmployees] = useState(() => safeLocalStorageGet('samyak_cache_employees', []) || []);
   const [employeeAttendance, setEmployeeAttendance] = useState(() => safeLocalStorageGet('samyak_cache_employee_attendance', []) || []);
   const [salaryAdvances, setSalaryAdvances] = useState(() => safeLocalStorageGet('samyak_cache_salary_advances', []) || []);
@@ -470,8 +481,8 @@ export default function App() {
   };
 
 
-  const logAudit = async (actionType, moduleName, details, targetId = null) => {
-    const entry = createAuditEntry(currentUser, actionType, moduleName, details, targetId);
+  const logAudit = async (actionType, moduleName, details, targetId = null, actor = undefined) => {
+    const entry = createAuditEntry(actor === undefined ? currentUser : actor, actionType, moduleName, details, targetId);
     setAuditLogs(prev => pruneOldAuditLogs([entry, ...prev]));
     try {
       await saveAuditLogToSupabase(entry);
@@ -565,15 +576,15 @@ export default function App() {
       setIsDataLoading(true);
       setIsDataFetched(false);
 
-      // Failsafe timer: Ensure UI unblocks gracefully within 15 seconds even on poor network
+      // Failsafe timer: Ensure UI unblocks even when a secondary fetch hangs.
       const failsafeTimer = setTimeout(() => {
         if (isMounted) {
-          console.warn('[Supabase Load Failsafe] 15s elapsed, unlocking UI.');
+          console.warn('[Supabase Load Failsafe] 8s elapsed, unlocking UI.');
           setIsDataLoading(false);
           setOrdersLoading(false);
           setIsDataFetched(true);
         }
-      }, 15000);
+      }, 8000);
 
       const fetchWithTimeout = (promise, ms = 12000) => {
         return Promise.race([
@@ -591,6 +602,25 @@ export default function App() {
           return null;
         }
       };
+
+      // Pellet tables may 404 until the migration is applied. Load them off the
+      // critical path so a missing relation cannot hold the dashboard loader.
+      const pelletLoad = Promise.all([
+        fetchSafe(fetchPelletInwardsFromSupabase, 'Pellet Inwards', 4000),
+        fetchSafe(fetchPelletConsumptionsFromSupabase, 'Pellet Consumptions', 4000)
+      ]).then(([supaPelletInwards, supaPelletConsumptions]) => {
+        if (!isMounted) return;
+        if (Array.isArray(supaPelletInwards)) {
+          setPelletInwards(supaPelletInwards);
+          safeLocalStorageSet('samyak_cache_pellet_inwards', supaPelletInwards);
+        }
+        if (Array.isArray(supaPelletConsumptions)) {
+          setPelletConsumptions(supaPelletConsumptions);
+          safeLocalStorageSet('samyak_cache_pellet_consumptions', supaPelletConsumptions);
+        }
+      }).catch((err) => {
+        console.warn('[Supabase Load Notice] Pellet fuel:', err?.message || err);
+      });
 
       try {
         const currentOrdersVersion = ++ordersFetchVersion.current;
@@ -728,8 +758,6 @@ export default function App() {
           supaSFG,
           supaDCs,
           supaCoAs,
-          supaPelletInwards,
-          supaPelletConsumptions,
           supaPOs
         ] = await Promise.all([
           fetchSafe(fetchGRNs, 'GRNs'),
@@ -742,8 +770,6 @@ export default function App() {
           fetchSafe(fetchSFGGoodsFromSupabase, 'SFG Goods'),
           fetchSafe(fetchDeliveryChallansFromSupabase, 'Delivery Challans'),
           fetchSafe(fetchCertificatesOfAnalysisFromSupabase, 'Certificates of Analysis'),
-          fetchSafe(fetchPelletInwardsFromSupabase, 'Pellet Inwards'),
-          fetchSafe(fetchPelletConsumptionsFromSupabase, 'Pellet Consumptions'),
           fetchSafe(fetchPurchaseOrders, 'Purchase Orders')
         ]);
 
@@ -810,16 +836,6 @@ export default function App() {
           safeLocalStorageSet('samyak_cache_certificate_of_analyses', cleanCoAs);
         }
 
-        if (Array.isArray(supaPelletInwards)) {
-          setPelletInwards(supaPelletInwards);
-          safeLocalStorageSet('samyak_cache_pellet_inwards', supaPelletInwards);
-        }
-
-        if (Array.isArray(supaPelletConsumptions)) {
-          setPelletConsumptions(supaPelletConsumptions);
-          safeLocalStorageSet('samyak_cache_pellet_consumptions', supaPelletConsumptions);
-        }
-
         if (Array.isArray(supaPOs)) {
           const cleanPOs = stripDummyRecords(supaPOs).map(sanitizePurchaseOrder).filter(Boolean);
           setPurchaseOrders(cleanPOs);
@@ -845,7 +861,7 @@ export default function App() {
           fetchSafe(fetchSalaryAdvancesFromSupabase, 'Salary Advances'),
           fetchSafe(fetchSalaryPaymentsFromSupabase, 'Salary Payments'),
           fetchSafe(fetchRolePermissionsFromSupabase, 'Role Permissions'),
-          fetchSafe(fetchAuditLogsFromSupabase, 'Audit Logs'),
+          fetchSafe(() => fetchAuditLogsPage({ limit: 100, offset: 0 }), 'Audit Logs'),
           fetchSafe(fetchAllSystemSettings, 'All System Settings')
         ]);
 
@@ -899,8 +915,16 @@ export default function App() {
           safeLocalStorageSet('samyak_cache_role_permissions', supaRolePerms);
         }
 
-        if (Array.isArray(supaAuditLogs)) {
+        if (supaAuditLogs && Array.isArray(supaAuditLogs.logs)) {
+          const pruned = pruneOldAuditLogs(supaAuditLogs.logs);
+          auditFetchedCountRef.current = supaAuditLogs.logs.length;
+          setAuditLogTotal(Number(supaAuditLogs.total) || pruned.length);
+          setAuditLogs(pruned);
+          safeLocalStorageSet('samyak_cache_audit_logs', pruned);
+        } else if (Array.isArray(supaAuditLogs)) {
           const pruned = pruneOldAuditLogs(supaAuditLogs);
+          auditFetchedCountRef.current = pruned.length;
+          setAuditLogTotal(pruned.length);
           setAuditLogs(pruned);
           safeLocalStorageSet('samyak_cache_audit_logs', pruned);
         }
@@ -980,6 +1004,7 @@ export default function App() {
             safeLocalStorageSet('samyak_cache_press_running_job', allSettings.printing_press_active_running_job);
           }
         }
+        await pelletLoad;
         console.log('[Supabase Load] All 3 stages completed successfully!');
       } catch (err) {
         console.error('[Supabase Load Error]', err);
@@ -1303,7 +1328,14 @@ export default function App() {
 
     async function initAuth() {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const sessionResult = await Promise.race([
+          supabase.auth.getSession(),
+          new Promise((resolve) => setTimeout(() => resolve({ data: { session: null }, timedOut: true }), 8000))
+        ]);
+        if (sessionResult?.timedOut) {
+          console.warn('[Auth] Session check timed out; continuing with any saved local session.');
+        }
+        const session = sessionResult?.data?.session;
         if (mounted) {
           if (session?.user) {
             const matched = findUserProfile(session.user.email);
@@ -1394,7 +1426,7 @@ export default function App() {
   // Login Handler (for UI updates, authService handles Supabase login)
   const handleLogin = (user) => {
     setIsSigningIn(true);
-    logAudit('AUTH', 'User Management', `User ${user?.name || user?.email || 'User'} signed in to the system`, user?.id);
+    logAudit('AUTH', 'User Management', `User ${user?.name || user?.email || 'User'} signed in to the system`, user?.id, user);
     setSessionProfile(user);
     setCurrentUser(user);
     setIsAuthenticated(true);
@@ -2023,7 +2055,7 @@ export default function App() {
           orderId: order.id,
           jobName: r.itemName || `${order.jobName} - Roll #${r.rollNo || 1}`,
           jobCode: order.jobCode || order.id,
-          clientName: order.clientName || order.customerName || 'Client',
+          clientName: order.clientName || order.customerName || '',
           sfgType: 'Printed Rolls',
           filmType: r.filmType || order.printFilmType || 'PET',
           widthMm: Number(r.widthMm || order.widthMm || 460),
@@ -2227,7 +2259,7 @@ export default function App() {
     requireDatabaseConnection('save salary payment');
     await saveSalaryPaymentToSupabase(newPayment);
     setSalaryPayments(prev => [newPayment, ...prev.filter(p => p.id !== newPayment.id)]);
-    logAudit('PAYMENT', 'Employee Management', `Disbursed ${newPayment.monthKey} salary of ₹${(newPayment.netAmountPaid || 0).toLocaleString()} to ${newPayment.employeeName} (${newPayment.paymentMode}) on ${newPayment.paymentDate} at ${newPayment.paymentTime}`, newPayment.id);
+    logAudit('PAYMENT', 'Employee Management', `Disbursed ${newPayment.monthKey} salary of ₹${(newPayment.netAmountPaid || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} to ${newPayment.employeeName} (${newPayment.paymentMode}) on ${newPayment.paymentDate} at ${newPayment.paymentTime}`, newPayment.id);
   };
 
   const handleAddJobDataSheet = async (newSheet) => {
@@ -3375,7 +3407,7 @@ export default function App() {
         id: `PROD-REC-${Date.now()}`,
         orderId: targetOrderId || `ORD-${Date.now()}`,
         jobName: updatedSfgItem.jobName || 'Untitled Job',
-        clientName: updatedSfgItem.clientName || 'General Client',
+        clientName: updatedSfgItem.clientName || '',
         operatorName: logEntry.operatorName || 'Plant Operator',
         shift: logEntry.shift || 'Day Shift',
         status: 'Pending Plant Approval',
@@ -3417,11 +3449,12 @@ export default function App() {
 
   const isDataReady = databaseStatus !== 'checking' && (!isAuthenticated || isDataFetched || (!isDataLoading && !ordersLoading));
 
-  // Render Loading Screen with Company Logo & Percentage Status Bar on initial load, DB connection check, data fetch, or sign-in
+  // isSigningIn must not be part of isReady. The loader only clears that flag from
+  // onComplete, so requiring !isSigningIn to finish the bar deadlocks at 92%.
   if (!isAuthReady || isSigningIn || (isAuthenticated && !isDataReady)) {
     return (
       <Preloader 
-        isReady={isAuthReady && !isSigningIn && isDataReady}
+        isReady={isAuthReady && isDataReady}
         statusText={
           databaseStatus === 'checking'
             ? 'Connecting to Supabase Cloud Database...'
@@ -4378,10 +4411,10 @@ export default function App() {
               <div className="glass-card stats-card" style={{ cursor: 'pointer', borderLeft: '4px solid #6366f1' }} onClick={() => handleTabChange('ink_management')}>
                 <span className="stats-title" style={{ color: '#4f46e5', fontWeight: '700' }}>Avg Ink Cost (100% Solid Eq.)</span>
                 <span className="stats-value" style={{ color: '#4f46e5', fontSize: '1.5rem', fontWeight: '800' }}>
-                  ₹ {avgSolidEqInkCost.toFixed(2)} <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>/ kg</span>
+                  ₹ {Number(avgSolidEqInkCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>/ kg</span>
                 </span>
                 <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                  Based on solid content % across {(inks || []).length} active inks
+                  Based on solid content % across {(inks || []).length} active ink{(inks || []).length === 1 ? '' : 's'}
                 </span>
               </div>
 
@@ -4390,7 +4423,7 @@ export default function App() {
                 <div className="glass-card stats-card" style={{ cursor: 'pointer', borderLeft: '4px solid #047857' }} onClick={() => handleTabChange('inventory')}>
                   <span className="stats-title" style={{ color: '#047857', fontWeight: '700' }}>Total Stock Purchase Valuation</span>
                   <span className="stats-value" style={{ color: '#047857', fontSize: '1.5rem', fontWeight: '800' }}>
-                    ₹ {(inventory || []).reduce((sum, item) => sum + ((parseFloat(item.availableQtyKg) || 0) * (parseFloat(item.unitPrice || item.purchaseRatePerKg) || 0)), 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    ₹ {(inventory || []).reduce((sum, item) => sum + ((parseFloat(item.availableQtyKg) || 0) * (parseFloat(item.unitPrice || item.purchaseRatePerKg) || 0)), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                   <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                     Valuation across {(inventory || []).length} active inventory items
@@ -5090,8 +5123,26 @@ export default function App() {
         {activeTab === 'audit_logs' && (
           <AuditLogsManagement 
             auditLogs={auditLogs}
+            auditLogTotal={auditLogTotal}
+            users={users}
             currentUser={currentUser}
-            onRefreshLogs={() => fetchAuditLogsFromSupabase().then(logs => setAuditLogs(pruneOldAuditLogs(logs)))}
+            onRefreshLogs={() => fetchAuditLogsPage({ limit: 100, offset: 0 }).then(page => {
+              const pruned = pruneOldAuditLogs(page.logs || []);
+              auditFetchedCountRef.current = (page.logs || []).length;
+              setAuditLogTotal(Number(page.total) || pruned.length);
+              setAuditLogs(pruned);
+              safeLocalStorageSet('samyak_cache_audit_logs', pruned);
+            })}
+            onLoadMoreLogs={() => fetchAuditLogsPage({ limit: 100, offset: auditFetchedCountRef.current }).then(page => {
+              const next = pruneOldAuditLogs(page.logs || []);
+              auditFetchedCountRef.current += (page.logs || []).length;
+              setAuditLogTotal(Number(page.total) || auditFetchedCountRef.current);
+              setAuditLogs(prev => {
+                const map = new Map();
+                [...(prev || []), ...next].forEach(log => { if (log && log.id) map.set(log.id, log); });
+                return Array.from(map.values()).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+              });
+            })}
             onPurgeOldLogs={() => {
               if (window.confirm("Are you sure you want to manually purge audit log entries older than 6 months (180 days)?")) {
                 const pruned = pruneOldAuditLogs(auditLogs);

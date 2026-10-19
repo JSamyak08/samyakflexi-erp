@@ -4,6 +4,39 @@ import { ensureValidSession, handleSupabaseError } from './supabaseDataService';
 
 const AUDIT_LOGS_KEY = 'samyak_erp_audit_logs';
 const RETENTION_DAYS = 180; // Minimum 6 months retention
+const PLANT_TIME_ZONE = 'Asia/Kolkata';
+
+export function formatAuditTimestamp(timestamp) {
+  const dt = timestamp instanceof Date ? timestamp : new Date(timestamp || Date.now());
+  const safe = Number.isNaN(dt.getTime()) ? new Date() : dt;
+  return {
+    dateStr: safe.toLocaleDateString('en-GB', { timeZone: PLANT_TIME_ZONE }),
+    timeStr: `${safe.toLocaleTimeString('en-IN', {
+      timeZone: PLANT_TIME_ZONE,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    })} IST`
+  };
+}
+
+function mapAuditRow(d) {
+  const ts = d.created_at || new Date().toISOString();
+  const formatted = formatAuditTimestamp(ts);
+  return {
+    id: String(d.id),
+    timestamp: ts,
+    dateStr: formatted.dateStr,
+    timeStr: formatted.timeStr,
+    username: d.username || 'Admin',
+    userRole: d.user_role || 'Admin',
+    actionType: d.action_type || 'UPDATE',
+    module: d.module || 'System',
+    details: d.details || '',
+    targetId: d.target_id || null
+  };
+}
 
 /**
  * Filter out logs older than RETENTION_DAYS (180 days / 6 months)
@@ -38,20 +71,21 @@ export function mapAuditLogToDbPayload(entry) {
 /**
  * Fetch Audit Logs from Supabase with fallback to local storage
  */
-export async function fetchAuditLogsFromSupabase(limit = 100) {
+export async function fetchAuditLogsPage({ limit = 100, offset = 0 } = {}) {
+  const pageSize = Math.max(1, Math.min(Number(limit) || 100, 500));
+  const start = Math.max(0, Number(offset) || 0);
   if (!isSupabaseConfigured()) {
-    const local = safeLocalStorageGet(AUDIT_LOGS_KEY, []);
-    return pruneOldAuditLogs(local);
+    const local = pruneOldAuditLogs(safeLocalStorageGet(AUDIT_LOGS_KEY, []));
+    return { logs: local.slice(start, start + pageSize), total: local.length };
   }
   try {
-    const { data, error } = await supabase
+    const { data, error, count } = await supabase
       .from('audit_logs')
-      .select('*')
+      .select('*', { count: 'exact' })
       .order('created_at', { ascending: false })
-      .limit(limit);
+      .range(start, start + pageSize - 1);
 
     if (error) {
-      // If table audit_logs does not exist yet or throws RLS, try system settings envelope
       console.warn('[AuditLogs] Table fetch error, attempting fallback:', error.message);
       const { data: settingData } = await supabase
         .from('system_settings')
@@ -62,41 +96,31 @@ export async function fetchAuditLogsFromSupabase(limit = 100) {
       if (settingData && settingData.setting_value) {
         try {
           const parsed = JSON.parse(settingData.setting_value);
-          if (Array.isArray(parsed)) return pruneOldAuditLogs(parsed);
+          if (Array.isArray(parsed)) {
+            const local = pruneOldAuditLogs(parsed);
+            return { logs: local.slice(start, start + pageSize), total: local.length };
+          }
         } catch (e) { /* ignore */ }
       }
-      const local = safeLocalStorageGet(AUDIT_LOGS_KEY, []);
-      return pruneOldAuditLogs(local);
+      const local = pruneOldAuditLogs(safeLocalStorageGet(AUDIT_LOGS_KEY, []));
+      return { logs: local.slice(start, start + pageSize), total: local.length };
     }
 
-    if (!data || data.length === 0) {
-      const local = safeLocalStorageGet(AUDIT_LOGS_KEY, []);
-      return pruneOldAuditLogs(local);
-    }
-
-    const fetchedLogs = data.map(d => {
-      const ts = d.created_at || new Date().toISOString();
-      const dt = new Date(ts);
-      return {
-        id: String(d.id),
-        timestamp: ts,
-        dateStr: dt.toLocaleDateString('en-GB'),
-        timeStr: dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-        username: d.username || 'Admin',
-        userRole: d.user_role || 'Admin',
-        actionType: d.action_type || 'UPDATE',
-        module: d.module || 'System',
-        details: d.details || '',
-        targetId: d.target_id || null
-      };
-    });
-
-    return pruneOldAuditLogs(fetchedLogs);
+    const fetchedLogs = (data || []).map(mapAuditRow);
+    return {
+      logs: pruneOldAuditLogs(fetchedLogs),
+      total: typeof count === 'number' ? count : fetchedLogs.length
+    };
   } catch (err) {
     console.error("Error fetching audit logs:", err);
-    const local = safeLocalStorageGet(AUDIT_LOGS_KEY, []);
-    return pruneOldAuditLogs(local);
+    const local = pruneOldAuditLogs(safeLocalStorageGet(AUDIT_LOGS_KEY, []));
+    return { logs: local.slice(start, start + pageSize), total: local.length };
   }
+}
+
+export async function fetchAuditLogsFromSupabase(limit = 100) {
+  const page = await fetchAuditLogsPage({ limit, offset: 0 });
+  return page.logs;
 }
 
 /**
@@ -144,14 +168,15 @@ export async function saveAuditLogToSupabase(entry) {
  */
 export function createAuditEntry(user, actionType, module, details, targetId = null) {
   const dt = new Date();
-  const username = typeof user === 'string' ? user : (user?.name || user?.username || 'Admin');
-  const userRole = typeof user === 'object' ? (user?.role || 'Admin') : 'Admin';
+  const formatted = formatAuditTimestamp(dt);
+  const username = typeof user === 'string' ? user : (user?.name || user?.full_name || user?.username || user?.email || 'Admin');
+  const userRole = typeof user === 'object' && user ? (user?.role || 'Admin') : 'Admin';
 
   return {
     id: `LOG-2026-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
     timestamp: dt.toISOString(),
-    dateStr: dt.toLocaleDateString('en-GB'),
-    timeStr: dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    dateStr: formatted.dateStr,
+    timeStr: formatted.timeStr,
     username,
     userRole,
     actionType: actionType ? actionType.toUpperCase() : 'UPDATE',

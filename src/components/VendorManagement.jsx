@@ -309,7 +309,7 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
             {/* Header: Company Name & Rating */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
-                <span className="badge badge-info" style={{ fontSize: '0.75rem', marginBottom: '4px', display: 'inline-block' }}>
+                <span className="badge badge-info no-capitalize" style={{ fontSize: '0.75rem', marginBottom: '4px', display: 'inline-block' }}>
                   {vendor.id}
                 </span>
                 <h3 style={{ fontSize: '1.15rem', fontWeight: '700', color: 'var(--text-primary)' }}>
@@ -330,11 +330,20 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.85rem', color: 'var(--text-secondary)', background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Phone size={14} style={{ color: 'var(--primary-brand)' }} />
-                <span>Contact: <b>{vendor.contactPerson}</b> ({vendor.phone})</span>
+                <span>
+                  Contact:{' '}
+                  {String(vendor.contactPerson || '').trim() || String(vendor.phone || '').trim()
+                    ? <>
+                        {String(vendor.contactPerson || '').trim() ? <b>{vendor.contactPerson}</b> : null}
+                        {String(vendor.contactPerson || '').trim() && String(vendor.phone || '').trim() ? ' ' : ''}
+                        {String(vendor.phone || '').trim() ? `(${vendor.phone})` : ''}
+                      </>
+                    : '—'}
+                </span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Mail size={14} style={{ color: 'var(--primary-brand)' }} />
-                <span>{vendor.email}</span>
+                <span className="no-capitalize">{vendor.email || '—'}</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
                 <MapPin size={14} style={{ color: 'var(--primary-brand)', marginTop: '2px', flexShrink: 0 }} />
@@ -463,7 +472,7 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
                                   <VendorMaterialItemsCell items={po.items || []} />
                                 </td>
                                 <td style={{ fontWeight: '800', color: '#047857' }}>
-                                  ₹{(totalVal ?? 0).toLocaleString()}
+                                  ₹{(totalVal ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </td>
                                 <td>
                                   <button 

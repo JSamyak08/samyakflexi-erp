@@ -25,6 +25,7 @@ export const TAB_SLUG_MAP = {
   printing_scheduler: '/printing-scheduler',
   scrap_wastage: '/scrap-wastage',
   scrap_analytics: '/scrap-wastage',
+  pellet_fuel: '/pellet-fuel',
   supabase: '/supabase-integration',
   doc_settings: '/letterhead-settings',
   audit_logs: '/audit-logs'
@@ -129,6 +130,11 @@ export const SLUG_TAB_MAP = {
   'scrap-wastage': 'scrap_wastage',
   '/scrap-analytics': 'scrap_analytics',
   'scrap-analytics': 'scrap_analytics',
+
+  '/pellet-fuel': 'pellet_fuel',
+  'pellet-fuel': 'pellet_fuel',
+  '/pellet-fuel-stock': 'pellet_fuel',
+  'pellet-fuel-stock': 'pellet_fuel',
 
   '/supabase-integration': 'supabase',
   'supabase-integration': 'supabase',

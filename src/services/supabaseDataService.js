@@ -41,6 +41,44 @@ export function handleSupabaseError(error, contextName) {
   throw error;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuid(value) {
+  return UUID_RE.test(String(value || '').trim());
+}
+
+/**
+ * PostgREST 404 / missing-relation errors. These must not be treated as fatal
+ * during boot — the caller should degrade to an empty list.
+ */
+export function isMissingRelationError(error) {
+  if (!error) return false;
+  const code = String(error.code || '');
+  const msg = String(error.message || error.details || '').toLowerCase();
+  return code === 'PGRST205' || code === '42P01' || code === 'PGRST204'
+    || msg.includes('does not exist')
+    || msg.includes('schema cache')
+    || msg.includes('could not find the table')
+    || msg.includes('not found');
+}
+
+/**
+ * orders.id is the primary key. There is no orders.order_id column.
+ * Return the id only when that order row exists, otherwise null so FK writes succeed.
+ */
+async function orderIdIfExists(orderId) {
+  const id = orderId == null ? '' : String(orderId).trim();
+  if (!id) return null;
+  try {
+    const { data, error } = await supabase.from('orders').select('id').eq('id', id).maybeSingle();
+    if (error || !data?.id) return null;
+    return data.id;
+  } catch (err) {
+    console.warn('[orders] Could not verify order id for foreign key:', err?.message || err);
+    return null;
+  }
+}
+
 // ============================================================================
 // 1. ORDERS / JOB PUNCHING
 // ============================================================================
@@ -250,6 +288,9 @@ export async function saveOrderToSupabase(order) {
     raw_material_requirements: matReqs
   };
 
+  // orders has no order_id column (the primary key is id). Strip it if a caller spread it in.
+  delete fullPayload.order_id;
+  delete fullPayload.available_qty_kg;
   const { error: fullErr } = await supabase.from('orders').upsert(fullPayload, { onConflict: 'id' });
   if (!fullErr) {
     console.log(`[ORDERS][DB WRITE] Successfully saved orderId=${order.id} with full payload.`);
@@ -271,6 +312,7 @@ export async function saveOrderToSupabase(order) {
     raw_material_requirements: matReqs
   };
 
+  delete tier2Payload.order_id;
   const { error: t2Err } = await supabase.from('orders').upsert(tier2Payload, { onConflict: 'id' });
   if (!t2Err) {
     console.log(`[ORDERS][DB WRITE] Successfully saved orderId=${order.id} with Tier 2 payload.`);
@@ -290,6 +332,7 @@ export async function saveOrderToSupabase(order) {
     status: order.status || 'Scheduled'
   };
 
+  delete tier3Payload.order_id;
   const { error: t3Err } = await supabase.from('orders').upsert(tier3Payload, { onConflict: 'id' });
   if (!t3Err) {
     console.log(`[ORDERS][DB WRITE] Successfully saved orderId=${order.id} with Tier 3 baseline payload.`);
@@ -308,6 +351,7 @@ export async function saveOrderToSupabase(order) {
     status: order.status || 'Scheduled'
   };
 
+  delete tier4Payload.order_id;
   const { error: t4Err } = await supabase.from('orders').upsert(tier4Payload, { onConflict: 'id' });
   if (t4Err) {
     console.error(`[ORDERS][DB WRITE Error] orderId=${order.id}:`, t4Err);
@@ -803,12 +847,13 @@ export function mapInventoryItemToDbPayload(item) {
 
   const combinedItemName = `${itemNameStr} ||| ${JSON.stringify(meta)}`;
 
+  // Live inventory has stock_qty_kg, not available_qty_kg. Available quantity is stored there.
   return {
     id: String(clean.id),
     item_code: itemCodeStr,
     item_name: combinedItemName,
     metallocene_pct: clean.metallocenePct || null,
-    stock_qty_kg: Number(clean.availableQtyKg ?? 0) || 0,
+    stock_qty_kg: Number(clean.availableQtyKg ?? clean.stock_qty_kg ?? 0) || 0,
     unit_price: Number(clean.unitPrice ?? 0) || 0
   };
 }
@@ -1466,6 +1511,8 @@ export async function saveProductionRecordToSupabase(record) {
   }
   await ensureValidSession();
   const recId = record.id || `REC-${Date.now()}`;
+  // production_records.order_id references orders(id). A missing or blank id fails the insert.
+  const linkedOrderId = await orderIdIfExists(record.orderId);
   const scrapKg = Number(record.totalScrapQtyKg ?? record.totalWastageKg ?? 0);
   const scrapPct = Number(record.overallScrapPctOfOutput ?? record.wastagePercentage ?? record.scrapWastagePct ?? 0);
   const scrapPctDispatch = Number(record.overallScrapPctOfDispatch ?? 0);
@@ -1540,7 +1587,7 @@ export async function saveProductionRecordToSupabase(record) {
   };
   const fullPayload = {
     id: recId,
-    order_id: record.orderId,
+    order_id: linkedOrderId,
     job_name: record.jobName || 'Production Record',
     client_name: record.clientName || '',
     operator_name: record.operatorName || record.filledBy || '',
@@ -1575,11 +1622,18 @@ export async function saveProductionRecordToSupabase(record) {
   };
   
   const { error: fullErr } = await supabase.from('production_records').upsert(fullPayload, { onConflict: 'id' });
+  const fkFailed = fullErr && (fullErr.code === '23503' || String(fullErr.message || '').toLowerCase().includes('foreign key'));
+  if (fkFailed) {
+    console.warn('[production_records] Order foreign key rejected; saving the full record with order_id cleared.');
+    const { error: unlinkedErr } = await supabase.from('production_records').upsert({ ...fullPayload, order_id: null }, { onConflict: 'id' });
+    if (unlinkedErr) handleSupabaseError(unlinkedErr, 'production_records');
+    return;
+  }
   if (fullErr) {
     // Retry with intermediate payload without optional stage columns
     const fallbackPayload = {
       id: recId,
-      order_id: record.orderId,
+      order_id: linkedOrderId,
       job_name: record.jobName || 'Production Record',
       operator_name: record.operatorName || record.filledBy || '',
       shift: record.shift || 'Day Shift',
@@ -3722,8 +3776,8 @@ export async function saveSFGGoodToSupabase(item) {
     updated_at: new Date().toISOString()
   };
 
-  const isValidUUID = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(str));
-  if (item.id && isValidUUID(item.id)) {
+  // sfg_goods.id is uuid with gen_random_uuid(). Barcode strings such as SFG-BC-... must not be written into it.
+  if (item.id && isUuid(item.id)) {
     payload.id = item.id;
   }
 
@@ -3739,7 +3793,12 @@ export async function deleteSFGGoodFromSupabase(idOrBatchCode) {
     throw new Error("Cannot delete SFG good: Supabase database connection is not available.");
   }
   await ensureValidSession();
-  const { error } = await supabase.from('sfg_goods').delete().or(`id.eq.${idOrBatchCode},sfg_batch_code.eq.${idOrBatchCode}`);
+  const key = String(idOrBatchCode);
+  // Comparing a barcode to the uuid primary key raises "invalid input syntax for type uuid".
+  const query = isUuid(key)
+    ? supabase.from('sfg_goods').delete().eq('id', key)
+    : supabase.from('sfg_goods').delete().eq('sfg_batch_code', key);
+  const { error } = await query;
   if (error) {
     handleSupabaseError(error, 'sfg_goods');
   }
@@ -3942,6 +4001,17 @@ export async function deleteCertificateOfAnalysisFromSupabase(id) {
 // PELLET FUEL STOCK & BOILER CONSUMPTION MANAGEMENT
 // ============================================================================
 
+async function readPelletSetting(key) {
+  try {
+    return await Promise.race([
+      fetchSystemSetting(key).catch(() => null),
+      new Promise((resolve) => setTimeout(() => resolve(null), 3000))
+    ]);
+  } catch (err) {
+    return null;
+  }
+}
+
 export async function fetchPelletInwardsFromSupabase() {
   if (!isSupabaseConfigured()) {
     throw new Error("Supabase is not configured.");
@@ -3953,7 +4023,11 @@ export async function fetchPelletInwardsFromSupabase() {
       if (!error && Array.isArray(data)) {
         tableRecords = data.map(r => r.payload || r.details || r);
       } else if (error) {
-        console.warn('[pellet_inwards] Table fetch notice:', error.message);
+        if (isMissingRelationError(error)) {
+          console.warn('[pellet_inwards] Table is not available yet:', error.message);
+        } else {
+          console.warn('[pellet_inwards] Table fetch notice:', error.message);
+        }
       }
     } catch (err) {
       console.warn('[pellet_inwards] Table query exception:', err.message);
@@ -3968,12 +4042,12 @@ export async function fetchPelletInwardsFromSupabase() {
       return tableRecords;
     }
 
-    const settingData = await fetchSystemSetting('pellet_inwards').catch(() => null);
+    const settingData = await readPelletSetting('pellet_inwards');
     if (Array.isArray(settingData) && settingData.length > 0) return settingData;
     return [];
   } catch (e) {
     console.error("Error fetching pellet inwards from Supabase:", e);
-    const settingData = await fetchSystemSetting('pellet_inwards').catch(() => null);
+    const settingData = await readPelletSetting('pellet_inwards');
     if (Array.isArray(settingData)) return settingData;
     throw e;
   }
@@ -4051,7 +4125,11 @@ export async function fetchPelletConsumptionsFromSupabase() {
       if (!error && Array.isArray(data)) {
         tableRecords = data.map(r => r.payload || r.details || r);
       } else if (error) {
-        console.warn('[pellet_consumptions] Table fetch notice:', error.message);
+        if (isMissingRelationError(error)) {
+          console.warn('[pellet_consumptions] Table is not available yet:', error.message);
+        } else {
+          console.warn('[pellet_consumptions] Table fetch notice:', error.message);
+        }
       }
     } catch (err) {
       console.warn('[pellet_consumptions] Table query exception:', err.message);
@@ -4066,12 +4144,12 @@ export async function fetchPelletConsumptionsFromSupabase() {
       return tableRecords;
     }
 
-    const settingData = await fetchSystemSetting('pellet_consumptions').catch(() => null);
+    const settingData = await readPelletSetting('pellet_consumptions');
     if (Array.isArray(settingData) && settingData.length > 0) return settingData;
     return [];
   } catch (e) {
     console.error("Error fetching pellet consumptions from Supabase:", e);
-    const settingData = await fetchSystemSetting('pellet_consumptions').catch(() => null);
+    const settingData = await readPelletSetting('pellet_consumptions');
     if (Array.isArray(settingData)) return settingData;
     throw e;
   }
