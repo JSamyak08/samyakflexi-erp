@@ -673,7 +673,33 @@ ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS filled_by TEXT;
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS approved_by TEXT;
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS approval_date TEXT;
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS job_code TEXT;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS actual_ink_gsm NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS actual_adhesive_gsm NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS target_ink_gsm NUMERIC DEFAULT 1.5;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS target_adhesive_gsm NUMERIC DEFAULT 1.5;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS lamination_plain_substrate_wastage_l2_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS adhesive_consumed_l1_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS adhesive_consumed_l2_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS pouching_scrap_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS zipper_consumed_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS paper_core_consumed_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS qty_printing NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS qty_inspection NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS qty_lamination_l1 NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS qty_second_pass_l2 NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS qty_slitting NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS qty_pouching NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS qty_dispatch NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS adhesive_cost_per_kg NUMERIC DEFAULT 270;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS paper_core_cost_per_kg NUMERIC DEFAULT 45;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS adhesive_cost_rs NUMERIC DEFAULT 0;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS paper_core_cost_rs NUMERIC DEFAULT 0;
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS materials_list JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS output_rolls JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS rolls_breakdown JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS input_rolls_list JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS sfg_consumptions JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS process_logs JSONB;
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS printing_start_time TIMESTAMPTZ;
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS printing_end_time TIMESTAMPTZ;
@@ -685,7 +711,27 @@ ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS ink_gsm_in_speed 
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS qty_first_pass_l1 NUMERIC;
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS stages JSONB DEFAULT '{}'::jsonb;
 
--- Printing execution parameters on orders
+-- Inventory rolls columns for tare scale capture & process linking
+ALTER TABLE public.inventory_rolls ADD COLUMN IF NOT EXISTS gross_weight_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.inventory_rolls ADD COLUMN IF NOT EXISTS tare_weight_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.inventory_rolls ADD COLUMN IF NOT EXISTS shift TEXT;
+ALTER TABLE public.inventory_rolls ADD COLUMN IF NOT EXISTS remarks TEXT;
+ALTER TABLE public.inventory_rolls ADD COLUMN IF NOT EXISTS core_dia TEXT;
+ALTER TABLE public.inventory_rolls ADD COLUMN IF NOT EXISTS sfg_type TEXT;
+ALTER TABLE public.inventory_rolls ADD COLUMN IF NOT EXISTS job_code TEXT;
+ALTER TABLE public.inventory_rolls ADD COLUMN IF NOT EXISTS client_name TEXT;
+ALTER TABLE public.inventory_rolls ADD COLUMN IF NOT EXISTS structure TEXT;
+ALTER TABLE public.inventory_rolls ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+
+-- SFG goods columns for scale tare & process consumption tracking
+ALTER TABLE public.sfg_goods ADD COLUMN IF NOT EXISTS gross_weight_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.sfg_goods ADD COLUMN IF NOT EXISTS tare_weight_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.sfg_goods ADD COLUMN IF NOT EXISTS consumed_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.sfg_goods ADD COLUMN IF NOT EXISTS available_kg NUMERIC DEFAULT 0;
+ALTER TABLE public.sfg_goods ADD COLUMN IF NOT EXISTS consumption_history JSONB DEFAULT '[]'::jsonb;
+
+-- Orders table SFG consumption log
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS sfg_consumptions JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS printing_start_time TIMESTAMPTZ;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS printing_end_time TIMESTAMPTZ;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS printing_status TEXT DEFAULT 'Pending';
