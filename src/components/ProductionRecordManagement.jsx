@@ -640,6 +640,7 @@ export default function ProductionRecordManagement({
   const [zipperConsumedKg, setZipperConsumedKg] = useState(0); // Stage 6: Zipper Quantity Consumed
   const [pouchingScrapKg, setPouchingScrapKg] = useState(0); // Stage 6: Pouching Scrap (kg)
   const [qtyDispatch, setQtyDispatch] = useState(0); // Stage 7: Final Dispatch Ready Quantity (kg)
+  const [showSfgConsumptionPreview, setShowSfgConsumptionPreview] = useState(false);
 
   // Stage-wise Scrap & Wastage Breakdown fields (in kg) — Clean 0 defaults for data entry
   const [printingPlainSettingWastageKg, setPrintingPlainSettingWastageKg] = useState(0);
@@ -735,22 +736,144 @@ export default function ProductionRecordManagement({
         setMaterialsList(existingMatList);
       }
 
+      // Deduplicate and aggregate SFG consumption events logged from SFG Store
+      const rawSfgLogs = [
+        ...(Array.isArray(existingRec.sfgConsumptions) ? existingRec.sfgConsumptions : []),
+        ...(Array.isArray(ord.sfgConsumptions) ? ord.sfgConsumptions : [])
+      ];
+      const seenLogKeys = new Set();
+      const sfgLogs = [];
+      rawSfgLogs.forEach(l => {
+        const k = l.id || `${l.timestamp || l.date}-${l.sfgBatchCode}-${l.targetProcess}`;
+        if (!seenLogKeys.has(k)) {
+          seenLogKeys.add(k);
+          sfgLogs.push(l);
+        }
+      });
+
+      let sfgQtyL1 = 0;
+      let sfgQtyL2 = 0;
+      let sfgQtyPouching = 0;
+      let sfgAdhesiveL1 = 0;
+      let sfgAdhesiveL2 = 0;
+      let sfgLamPlainScrapL1 = 0;
+      let sfgLamPlainScrapL2 = 0;
+      let sfgLaminateScrap = 0;
+      let sfgPrintPlainScrap = 0;
+      let sfgPrintScrap = 0;
+      let sfgPouchingScrap = 0;
+      let sfgZipperConsumed = 0;
+
+      sfgLogs.forEach(log => {
+        const p = log.targetProcess || '';
+        const sb = log.scrapBreakdown || {};
+        const outKg = log.outputRoll ? (parseFloat(log.outputRoll.netWeightKg) || 0) : 0;
+
+        if (p === 'Lamination (Pass 1)') {
+          sfgQtyL1 += outKg;
+          sfgLamPlainScrapL1 += parseFloat(sb.laminationPlainSubstrateWastageKg) || 0;
+          sfgLaminateScrap += parseFloat(sb.laminateWastageKg) || 0;
+          sfgAdhesiveL1 += parseFloat(sb.adhesiveConsumedL1Kg) || 0;
+        } else if (p === 'Lamination (Pass 2)') {
+          sfgQtyL2 += outKg;
+          sfgLamPlainScrapL2 += parseFloat(sb.laminationPlainSubstrateWastageL2Kg) || 0;
+          sfgAdhesiveL2 += parseFloat(sb.adhesiveConsumedL2Kg) || 0;
+        } else if (p === 'Printing (Pass 2)') {
+          sfgPrintPlainScrap += parseFloat(sb.printingPlainSettingWastageKg) || 0;
+          sfgPrintScrap += parseFloat(sb.printingWastageKg) || 0;
+        } else if (p === 'Pouching / Bag Making') {
+          sfgQtyPouching += outKg;
+          sfgPouchingScrap += parseFloat(sb.pouchingScrapKg) || 0;
+          sfgZipperConsumed += parseFloat(sb.zipperConsumedKg) || 0;
+        }
+      });
+
+      // Integrate Substrate 2 / Substrate 3 rolls from SFG Consumptions into materialsList
+      let updatedMatList = existingMatList.length > 0 ? [...existingMatList] : (pressInputRolls.length > 0 ? [...prefilledPressMaterials] : []);
+      sfgLogs.forEach(log => {
+        if (log.substrate2 && (parseFloat(log.substrate2.consumedKg) > 0 || log.substrate2.barcode)) {
+          const s2 = log.substrate2;
+          const foundIdx = updatedMatList.findIndex(m => (s2.barcode && m.barcode === s2.barcode) || (m.itemName && m.itemName.includes('Substrate 2')));
+          if (foundIdx >= 0) {
+            updatedMatList[foundIdx] = {
+              ...updatedMatList[foundIdx],
+              barcode: s2.barcode || updatedMatList[foundIdx].barcode,
+              issueQtyKg: s2.initialKg || updatedMatList[foundIdx].issueQtyKg || s2.consumedKg,
+              netConsumedQtyKg: s2.consumedKg || updatedMatList[foundIdx].netConsumedQtyKg,
+              totalMaterialCost: (s2.consumedKg || updatedMatList[foundIdx].netConsumedQtyKg) * (updatedMatList[foundIdx].unitPricePerKg || 140)
+            };
+          } else {
+            const defaultRate = DEFAULT_DAILY_RATES[s2.filmType] || 150;
+            updatedMatList.push({
+              id: `mat-sub2-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+              itemId: `RM-SUB2-${s2.barcode || Date.now()}`,
+              itemCode: `RM-SUB2`,
+              itemName: `Substrate 2 (${s2.filmType || 'Lamination Film'}) - Pass 1`,
+              filmType: s2.filmType || 'PET Film',
+              micron: '-',
+              widthMm: '-',
+              unit: 'Kg',
+              barcode: s2.barcode || '',
+              issueQtyKg: s2.initialKg || s2.consumedKg,
+              returnQtyKg: Math.max(0, (s2.initialKg || 0) - (s2.consumedKg || 0)),
+              netConsumedQtyKg: s2.consumedKg,
+              unitPricePerKg: defaultRate,
+              totalMaterialCost: (s2.consumedKg || 0) * defaultRate,
+              wastagePct: 0
+            });
+          }
+        }
+        if (log.substrate3 && (parseFloat(log.substrate3.consumedKg) > 0 || log.substrate3.barcode)) {
+          const s3 = log.substrate3;
+          const foundIdx = updatedMatList.findIndex(m => (s3.barcode && m.barcode === s3.barcode) || (m.itemName && m.itemName.includes('Substrate 3')));
+          if (foundIdx >= 0) {
+            updatedMatList[foundIdx] = {
+              ...updatedMatList[foundIdx],
+              barcode: s3.barcode || updatedMatList[foundIdx].barcode,
+              issueQtyKg: s3.initialKg || updatedMatList[foundIdx].issueQtyKg || s3.consumedKg,
+              netConsumedQtyKg: s3.consumedKg || updatedMatList[foundIdx].netConsumedQtyKg,
+              totalMaterialCost: (s3.consumedKg || updatedMatList[foundIdx].netConsumedQtyKg) * (updatedMatList[foundIdx].unitPricePerKg || 140)
+            };
+          } else {
+            const defaultRate = DEFAULT_DAILY_RATES[s3.filmType] || 150;
+            updatedMatList.push({
+              id: `mat-sub3-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+              itemId: `RM-SUB3-${s3.barcode || Date.now()}`,
+              itemCode: `RM-SUB3`,
+              itemName: `Substrate 3 (${s3.filmType || 'Lamination Film'}) - Pass 2`,
+              filmType: s3.filmType || 'Poly Film',
+              micron: '-',
+              widthMm: '-',
+              unit: 'Kg',
+              barcode: s3.barcode || '',
+              issueQtyKg: s3.initialKg || s3.consumedKg,
+              returnQtyKg: Math.max(0, (s3.initialKg || 0) - (s3.consumedKg || 0)),
+              netConsumedQtyKg: s3.consumedKg,
+              unitPricePerKg: defaultRate,
+              totalMaterialCost: (s3.consumedKg || 0) * defaultRate,
+              wastagePct: 0
+            });
+          }
+        }
+      });
+      setMaterialsList(updatedMatList);
+
       const outRolls = existingRec.outputRolls || existingRec.rollsBreakdown || ord.rollsBreakdown || ord.outputRolls || [];
       const totalOutKg = outRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
       const initialStage1Kg = existingRec.qtyFirstPassL1 || existingRec.qtyPrinting || totalOutKg || existingRec.printedOutputKg || ord.printedOutputKg || 0;
 
       setQtyFirstPassL1(initialStage1Kg);
       setQtyInspection(existingRec.qtyInspection || 0);
-      setQtyLaminationL1(existingRec.qtyLaminationL1 || 0);
-      setAdhesiveConsumedL1Kg(existingRec.adhesiveConsumedL1Kg || 0);
-      setQtySecondPassL2(existingRec.qtySecondPassL2 || 0);
-      setLaminationPlainSubstrateWastageL2Kg(existingRec.laminationPlainSubstrateWastageL2Kg || 0);
-      setAdhesiveConsumedL2Kg(existingRec.adhesiveConsumedL2Kg || 0);
+      setQtyLaminationL1(existingRec.qtyLaminationL1 || sfgQtyL1 || 0);
+      setAdhesiveConsumedL1Kg(existingRec.adhesiveConsumedL1Kg || sfgAdhesiveL1 || 0);
+      setQtySecondPassL2(existingRec.qtySecondPassL2 || sfgQtyL2 || 0);
+      setLaminationPlainSubstrateWastageL2Kg(existingRec.laminationPlainSubstrateWastageL2Kg || sfgLamPlainScrapL2 || 0);
+      setAdhesiveConsumedL2Kg(existingRec.adhesiveConsumedL2Kg || sfgAdhesiveL2 || 0);
       setQtySlitting(existingRec.qtySlitting || 0);
       setPaperCoreConsumedKg(existingRec.paperCoreConsumedKg || 0);
-      setQtyPouching(existingRec.qtyPouching || 0);
-      setZipperConsumedKg(existingRec.zipperConsumedKg || 0);
-      setPouchingScrapKg(existingRec.pouchingScrapKg || 0);
+      setQtyPouching(existingRec.qtyPouching || sfgQtyPouching || 0);
+      setZipperConsumedKg(existingRec.zipperConsumedKg || sfgZipperConsumed || 0);
+      setPouchingScrapKg(existingRec.pouchingScrapKg || sfgPouchingScrap || 0);
       setQtyDispatch(existingRec.qtyDispatch || 0);
       setProcessingCostPerKg(existingRec.processingCostPerKg || 25);
 
@@ -764,11 +887,11 @@ export default function ProductionRecordManagement({
       setAdhesiveCostPerKg(snapAdhesive);
       setPaperCoreCostPerKg(snapPaperCore);
 
-      setPrintingPlainSettingWastageKg(existingRec.printingPlainSettingWastageKg || 0);
-      setPrintingWastageKg(existingRec.printingWastageKg || 0);
-      setLaminationPlainSubstrateWastageKg(existingRec.laminationPlainSubstrateWastageKg || 0);
+      setPrintingPlainSettingWastageKg(existingRec.printingPlainSettingWastageKg || sfgPrintPlainScrap || 0);
+      setPrintingWastageKg(existingRec.printingWastageKg || sfgPrintScrap || 0);
+      setLaminationPlainSubstrateWastageKg(existingRec.laminationPlainSubstrateWastageKg || sfgLamPlainScrapL1 || 0);
       setPrintedWastageKg(existingRec.printedWastageKg || 0);
-      setLaminateWastageKg(existingRec.laminateWastageKg || 0);
+      setLaminateWastageKg(existingRec.laminateWastageKg || sfgLaminateScrap || 0);
       setTrimWastageKg(existingRec.trimWastageKg || 0);
       setRecordNotes(existingRec.notes || '');
 
@@ -783,6 +906,45 @@ export default function ProductionRecordManagement({
     }
 
     setSelectedRecord(null);
+
+    // Check SFG consumption events logged on order
+    const ordSfgLogs = Array.isArray(ord.sfgConsumptions) ? ord.sfgConsumptions : [];
+    let sfgQtyL1 = 0;
+    let sfgQtyL2 = 0;
+    let sfgQtyPouching = 0;
+    let sfgAdhesiveL1 = 0;
+    let sfgAdhesiveL2 = 0;
+    let sfgLamPlainScrapL1 = 0;
+    let sfgLamPlainScrapL2 = 0;
+    let sfgLaminateScrap = 0;
+    let sfgPrintPlainScrap = 0;
+    let sfgPrintScrap = 0;
+    let sfgPouchingScrap = 0;
+    let sfgZipperConsumed = 0;
+
+    ordSfgLogs.forEach(log => {
+      const p = log.targetProcess || '';
+      const sb = log.scrapBreakdown || {};
+      const outKg = log.outputRoll ? (parseFloat(log.outputRoll.netWeightKg) || 0) : 0;
+
+      if (p === 'Lamination (Pass 1)') {
+        sfgQtyL1 += outKg;
+        sfgLamPlainScrapL1 += parseFloat(sb.laminationPlainSubstrateWastageKg) || 0;
+        sfgLaminateScrap += parseFloat(sb.laminateWastageKg) || 0;
+        sfgAdhesiveL1 += parseFloat(sb.adhesiveConsumedL1Kg) || 0;
+      } else if (p === 'Lamination (Pass 2)') {
+        sfgQtyL2 += outKg;
+        sfgLamPlainScrapL2 += parseFloat(sb.laminationPlainSubstrateWastageL2Kg) || 0;
+        sfgAdhesiveL2 += parseFloat(sb.adhesiveConsumedL2Kg) || 0;
+      } else if (p === 'Printing (Pass 2)') {
+        sfgPrintPlainScrap += parseFloat(sb.printingPlainSettingWastageKg) || 0;
+        sfgPrintScrap += parseFloat(sb.printingWastageKg) || 0;
+      } else if (p === 'Pouching / Bag Making') {
+        sfgQtyPouching += outKg;
+        sfgPouchingScrap += parseFloat(sb.pouchingScrapKg) || 0;
+        sfgZipperConsumed += parseFloat(sb.zipperConsumedKg) || 0;
+      }
+    });
 
     // 2. Check if materials have already been issued / returned from Store for this job
     const jobTxList = (storeIssueTransactions || []).filter(tx => 
@@ -826,7 +988,53 @@ export default function ProductionRecordManagement({
           });
         }
       });
-      setMaterialsList(Array.from(matMap.values()));
+      const loadedMats = Array.from(matMap.values());
+      // Merge Substrate 2 / Substrate 3 if any
+      ordSfgLogs.forEach(log => {
+        if (log.substrate2 && (parseFloat(log.substrate2.consumedKg) > 0 || log.substrate2.barcode)) {
+          const s2 = log.substrate2;
+          const defaultRate = DEFAULT_DAILY_RATES[s2.filmType] || 150;
+          loadedMats.push({
+            id: `mat-sub2-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            itemId: `RM-SUB2-${s2.barcode || Date.now()}`,
+            itemCode: `RM-SUB2`,
+            itemName: `Substrate 2 (${s2.filmType || 'Lamination Film'}) - Pass 1`,
+            filmType: s2.filmType || 'PET Film',
+            micron: '-',
+            widthMm: '-',
+            unit: 'Kg',
+            barcode: s2.barcode || '',
+            issueQtyKg: s2.initialKg || s2.consumedKg,
+            returnQtyKg: Math.max(0, (s2.initialKg || 0) - (s2.consumedKg || 0)),
+            netConsumedQtyKg: s2.consumedKg,
+            unitPricePerKg: defaultRate,
+            totalMaterialCost: (s2.consumedKg || 0) * defaultRate,
+            wastagePct: 0
+          });
+        }
+        if (log.substrate3 && (parseFloat(log.substrate3.consumedKg) > 0 || log.substrate3.barcode)) {
+          const s3 = log.substrate3;
+          const defaultRate = DEFAULT_DAILY_RATES[s3.filmType] || 150;
+          loadedMats.push({
+            id: `mat-sub3-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            itemId: `RM-SUB3-${s3.barcode || Date.now()}`,
+            itemCode: `RM-SUB3`,
+            itemName: `Substrate 3 (${s3.filmType || 'Lamination Film'}) - Pass 2`,
+            filmType: s3.filmType || 'Poly Film',
+            micron: '-',
+            widthMm: '-',
+            unit: 'Kg',
+            barcode: s3.barcode || '',
+            issueQtyKg: s3.initialKg || s3.consumedKg,
+            returnQtyKg: Math.max(0, (s3.initialKg || 0) - (s3.consumedKg || 0)),
+            netConsumedQtyKg: s3.consumedKg,
+            unitPricePerKg: defaultRate,
+            totalMaterialCost: (s3.consumedKg || 0) * defaultRate,
+            wastagePct: 0
+          });
+        }
+      });
+      setMaterialsList(loadedMats);
     } else {
       const jm = (jobMasters || []).find(j => 
         (j.jobName || '').toLowerCase().trim() === (ord.jobName || '').toLowerCase().trim()
@@ -853,6 +1061,50 @@ export default function ProductionRecordManagement({
             wastagePct: 0
           };
         });
+        ordSfgLogs.forEach(log => {
+          if (log.substrate2 && (parseFloat(log.substrate2.consumedKg) > 0 || log.substrate2.barcode)) {
+            const s2 = log.substrate2;
+            const defaultRate = DEFAULT_DAILY_RATES[s2.filmType] || 150;
+            generatedList.push({
+              id: `mat-sub2-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+              itemId: `RM-SUB2-${s2.barcode || Date.now()}`,
+              itemCode: `RM-SUB2`,
+              itemName: `Substrate 2 (${s2.filmType || 'Lamination Film'}) - Pass 1`,
+              filmType: s2.filmType || 'PET Film',
+              micron: '-',
+              widthMm: '-',
+              unit: 'Kg',
+              barcode: s2.barcode || '',
+              issueQtyKg: s2.initialKg || s2.consumedKg,
+              returnQtyKg: Math.max(0, (s2.initialKg || 0) - (s2.consumedKg || 0)),
+              netConsumedQtyKg: s2.consumedKg,
+              unitPricePerKg: defaultRate,
+              totalMaterialCost: (s2.consumedKg || 0) * defaultRate,
+              wastagePct: 0
+            });
+          }
+          if (log.substrate3 && (parseFloat(log.substrate3.consumedKg) > 0 || log.substrate3.barcode)) {
+            const s3 = log.substrate3;
+            const defaultRate = DEFAULT_DAILY_RATES[s3.filmType] || 150;
+            generatedList.push({
+              id: `mat-sub3-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+              itemId: `RM-SUB3-${s3.barcode || Date.now()}`,
+              itemCode: `RM-SUB3`,
+              itemName: `Substrate 3 (${s3.filmType || 'Lamination Film'}) - Pass 2`,
+              filmType: s3.filmType || 'Poly Film',
+              micron: '-',
+              widthMm: '-',
+              unit: 'Kg',
+              barcode: s3.barcode || '',
+              issueQtyKg: s3.initialKg || s3.consumedKg,
+              returnQtyKg: Math.max(0, (s3.initialKg || 0) - (s3.consumedKg || 0)),
+              netConsumedQtyKg: s3.consumedKg,
+              unitPricePerKg: defaultRate,
+              totalMaterialCost: (s3.consumedKg || 0) * defaultRate,
+              wastagePct: 0
+            });
+          }
+        });
         setMaterialsList(generatedList);
       } else {
         setMaterialsList([]);
@@ -861,25 +1113,25 @@ export default function ProductionRecordManagement({
 
     setQtyFirstPassL1(0);
     setQtyInspection(0);
-    setQtyLaminationL1(0);
-    setAdhesiveConsumedL1Kg(0);
-    setQtySecondPassL2(0);
-    setLaminationPlainSubstrateWastageL2Kg(0);
-    setAdhesiveConsumedL2Kg(0);
+    setQtyLaminationL1(sfgQtyL1 || 0);
+    setAdhesiveConsumedL1Kg(sfgAdhesiveL1 || 0);
+    setQtySecondPassL2(sfgQtyL2 || 0);
+    setLaminationPlainSubstrateWastageL2Kg(sfgLamPlainScrapL2 || 0);
+    setAdhesiveConsumedL2Kg(sfgAdhesiveL2 || 0);
     setQtySlitting(0);
     setPaperCoreConsumedKg(0);
     // Newly created record inherits latest active settings from DB:
     setAdhesiveCostPerKg(activeMaterialRates.adhesiveCostPerKg);
     setPaperCoreCostPerKg(activeMaterialRates.paperCoreCostPerKg);
-    setQtyPouching(0);
-    setZipperConsumedKg(0);
-    setPouchingScrapKg(0);
+    setQtyPouching(sfgQtyPouching || 0);
+    setZipperConsumedKg(sfgZipperConsumed || 0);
+    setPouchingScrapKg(sfgPouchingScrap || 0);
     setQtyDispatch(0);
-    setPrintingPlainSettingWastageKg(0);
-    setPrintingWastageKg(0);
-    setLaminationPlainSubstrateWastageKg(0);
+    setPrintingPlainSettingWastageKg(sfgPrintPlainScrap || 0);
+    setPrintingWastageKg(sfgPrintScrap || 0);
+    setLaminationPlainSubstrateWastageKg(sfgLamPlainScrapL1 || 0);
     setPrintedWastageKg(0);
-    setLaminateWastageKg(0);
+    setLaminateWastageKg(sfgLaminateScrap || 0);
     setTrimWastageKg(0);
     setActualInkGsm('');
     setActualAdhesiveGsm('');
@@ -1375,6 +1627,7 @@ export default function ProductionRecordManagement({
       printingDurationMinutes: selectedRecord?.printingDurationMinutes || selectedOrder?.printingDurationMinutes || null,
       printingDurationFormatted: selectedRecord?.printingDurationFormatted || selectedOrder?.printingDurationFormatted || '',
       stages: selectedRecord?.stages || selectedOrder?.stages || {},
+      sfgConsumptions: selectedRecord?.sfgConsumptions || selectedOrder?.sfgConsumptions || [],
       
       // Stage-wise Quantities & Consumables (7 Stages)
       qtyFirstPassL1: parseFloat(qtyFirstPassL1) || 0,
@@ -2478,10 +2731,15 @@ export default function ProductionRecordManagement({
             return (
               <div style={{ marginTop: '20px', padding: '18px 20px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '10px', marginBottom: '24px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <h4 style={{ fontSize: '1.05rem', fontWeight: '800', color: '#c2410c', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Zap size={20} style={{ color: '#ea580c' }} /> Consumed SFG Inventory Log (From SFG Store)
-                  </h4>
-                  <span style={{ fontSize: '0.78rem', color: '#9a3412', fontWeight: '700' }}>
+                  <div>
+                    <h4 style={{ fontSize: '1.05rem', fontWeight: '800', color: '#c2410c', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Zap size={20} style={{ color: '#ea580c' }} /> Consumed SFG Inventory Log (From SFG Store)
+                    </h4>
+                    <p style={{ fontSize: '0.78rem', color: '#9a3412', margin: '3px 0 0 0' }}>
+                      Audit log of intermediate SFG rolls consumed, Substrate 2/3 rolls added, stage scrap generated, and output rolls created.
+                    </p>
+                  </div>
+                  <span style={{ fontSize: '0.78rem', color: '#9a3412', fontWeight: '800', background: '#ffedd5', padding: '4px 10px', borderRadius: '12px', border: '1px solid #fdba74' }}>
                     {sfgLogs.length} Consumption Event(s)
                   </span>
                 </div>
@@ -2490,43 +2748,147 @@ export default function ProductionRecordManagement({
                   <table className="data-table" style={{ fontSize: '0.8rem', width: '100%', margin: 0 }}>
                     <thead>
                       <tr style={{ background: '#fff7ed', color: '#9a3412' }}>
-                        <th>Date & Time</th>
-                        <th>SFG Batch Barcode</th>
-                        <th>Stage Consumed For</th>
-                        <th style={{ textAlign: 'right' }}>Consumed Weight (kg)</th>
-                        <th style={{ textAlign: 'right' }}>Remaining SFG Balance (kg)</th>
-                        <th>Operator</th>
-                        <th>Notes</th>
+                        <th>Date & Shift</th>
+                        <th>SFG Roll (Input)</th>
+                        <th>Target Stage & Machine</th>
+                        <th>Substrate 2 / 3 Consumed</th>
+                        <th>Stage Scrap & Consumables</th>
+                        <th>Output Produced (SFG / FG)</th>
+                        <th>Operator & Notes</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {sfgLogs.map((log, idx) => (
-                        <tr key={log.id || idx}>
-                          <td style={{ color: '#64748b', fontSize: '0.78rem' }}>
-                            {new Date(log.timestamp || log.date).toLocaleString()}
-                          </td>
-                          <td>
-                            <code style={{ background: '#fff3ed', border: '1px solid #fdba74', padding: '2px 6px', borderRadius: '4px', fontWeight: '800', color: '#c2410c' }}>
-                              {log.sfgBatchCode || 'SFG-BATCH'}
-                            </code>
-                          </td>
-                          <td style={{ fontWeight: '700', color: '#0f172a' }}>
-                            {log.targetProcess}
-                          </td>
-                          <td style={{ textAlign: 'right', fontWeight: '800', color: '#ea580c' }}>
-                            {log.consumedKg} kg
-                          </td>
-                          <td style={{ textAlign: 'right', fontWeight: '800', color: '#15803d' }}>
-                            {log.remainingBalanceKg} kg
-                          </td>
-                          <td style={{ color: '#334155' }}>
-                            {log.operatorName || '-'}
-                          </td>
-                          <td style={{ color: '#64748b', fontSize: '0.78rem' }}>
-                            {log.notes || '-'}
-                          </td>
-                        </tr>
-                      ))}
+                      {sfgLogs.map((log, idx) => {
+                        const sub2 = log.substrate2;
+                        const sub3 = log.substrate3;
+                        const sb = log.scrapBreakdown || {};
+                        const out = log.outputRoll;
+
+                        return (
+                          <tr key={log.id || idx}>
+                            <td style={{ color: '#475569', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>
+                              <div style={{ fontWeight: '700' }}>{new Date(log.timestamp || log.date).toLocaleDateString()}</div>
+                              <div style={{ color: '#94a3b8', fontSize: '0.72rem' }}>
+                                {new Date(log.timestamp || log.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {log.shift || 'Shift'}
+                              </div>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                <code style={{ background: '#fff3ed', border: '1px solid #fdba74', padding: '2px 6px', borderRadius: '4px', fontWeight: '800', color: '#c2410c', width: 'fit-content' }}>
+                                  {log.sfgBatchCode || 'SFG-BATCH'}
+                                </code>
+                                <div style={{ fontSize: '0.75rem', marginTop: '2px' }}>
+                                  Consumed: <strong style={{ color: '#ea580c' }}>{log.consumedKg} kg</strong>
+                                  {log.initialKg !== undefined && <span style={{ color: '#64748b' }}> / {log.initialKg} kg</span>}
+                                </div>
+                                <div style={{ fontSize: '0.72rem', color: '#15803d', fontWeight: '700' }}>
+                                  Rem: {log.remainingBalanceKg} kg
+                                </div>
+                              </div>
+                            </td>
+                            <td>
+                              <div style={{ fontWeight: '800', color: '#0f172a' }}>{log.targetProcess}</div>
+                              {log.targetMachine && (
+                                <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{log.targetMachine}</div>
+                              )}
+                            </td>
+                            <td>
+                              {sub2 && (parseFloat(sub2.consumedKg) > 0 || sub2.barcode) ? (
+                                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '6px 8px', borderRadius: '6px', fontSize: '0.75rem' }}>
+                                  <div style={{ fontWeight: '800', color: '#166534', marginBottom: '2px' }}>Substrate 2 (Pass 1)</div>
+                                  <div><code style={{ fontWeight: '800', color: '#15803d' }}>{sub2.barcode || 'N/A'}</code> ({sub2.filmType || 'Film'})</div>
+                                  <div style={{ color: '#166534', marginTop: '2px' }}>
+                                    Consumed: <strong>{sub2.consumedKg} kg</strong> {sub2.initialKg ? `/ ${sub2.initialKg} kg` : ''}
+                                  </div>
+                                  {sub2.remainingKg !== undefined && (
+                                    <div style={{ color: '#65a30d', fontSize: '0.7rem' }}>Bal: {sub2.remainingKg} kg</div>
+                                  )}
+                                </div>
+                              ) : sub3 && (parseFloat(sub3.consumedKg) > 0 || sub3.barcode) ? (
+                                <div style={{ background: '#fdf4ff', border: '1px solid #f5d0fe', padding: '6px 8px', borderRadius: '6px', fontSize: '0.75rem' }}>
+                                  <div style={{ fontWeight: '800', color: '#86198f', marginBottom: '2px' }}>Substrate 3 (Pass 2)</div>
+                                  <div><code style={{ fontWeight: '800', color: '#a21caf' }}>{sub3.barcode || 'N/A'}</code> ({sub3.filmType || 'Film'})</div>
+                                  <div style={{ color: '#86198f', marginTop: '2px' }}>
+                                    Consumed: <strong>{sub3.consumedKg} kg</strong> {sub3.initialKg ? `/ ${sub3.initialKg} kg` : ''}
+                                  </div>
+                                  {sub3.remainingKg !== undefined && (
+                                    <div style={{ color: '#c026d3', fontSize: '0.7rem' }}>Bal: {sub3.remainingKg} kg</div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>-</span>
+                              )}
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '0.75rem' }}>
+                                {(parseFloat(sb.laminationPlainSubstrateWastageKg) || 0) > 0 && (
+                                  <span style={{ color: '#b45309' }}>• Substrate Scrap: <strong>{sb.laminationPlainSubstrateWastageKg} kg</strong></span>
+                                )}
+                                {(parseFloat(sb.laminateWastageKg) || 0) > 0 && (
+                                  <span style={{ color: '#b45309' }}>• Laminate Scrap: <strong>{sb.laminateWastageKg} kg</strong></span>
+                                )}
+                                {(parseFloat(sb.adhesiveConsumedL1Kg) || 0) > 0 && (
+                                  <span style={{ color: '#4338ca' }}>• Adhesive (Pass 1): <strong>{sb.adhesiveConsumedL1Kg} kg</strong> (@ ₹270/kg)</span>
+                                )}
+                                {(parseFloat(sb.laminationPlainSubstrateWastageL2Kg) || 0) > 0 && (
+                                  <span style={{ color: '#b45309' }}>• Substrate Scrap L2: <strong>{sb.laminationPlainSubstrateWastageL2Kg} kg</strong></span>
+                                )}
+                                {(parseFloat(sb.adhesiveConsumedL2Kg) || 0) > 0 && (
+                                  <span style={{ color: '#86198f' }}>• Adhesive (Pass 2): <strong>{sb.adhesiveConsumedL2Kg} kg</strong></span>
+                                )}
+                                {(parseFloat(sb.printingPlainSettingWastageKg) || 0) > 0 && (
+                                  <span style={{ color: '#b45309' }}>• Plain Setting: <strong>{sb.printingPlainSettingWastageKg} kg</strong></span>
+                                )}
+                                {(parseFloat(sb.printingWastageKg) || 0) > 0 && (
+                                  <span style={{ color: '#b45309' }}>• Printing Defect: <strong>{sb.printingWastageKg} kg</strong></span>
+                                )}
+                                {(parseFloat(sb.pouchingScrapKg) || 0) > 0 && (
+                                  <span style={{ color: '#0f766e' }}>• Pouching Scrap: <strong>{sb.pouchingScrapKg} kg</strong></span>
+                                )}
+                                {(parseFloat(sb.zipperConsumedKg) || 0) > 0 && (
+                                  <span style={{ color: '#0d9488' }}>• Zipper Consumed: <strong>{sb.zipperConsumedKg} kg</strong></span>
+                                )}
+                                {Object.values(sb).every(v => !(parseFloat(v) > 0)) && (
+                                  <span style={{ color: '#94a3b8' }}>None logged</span>
+                                )}
+                              </div>
+                            </td>
+                            <td>
+                              {out && (parseFloat(out.netWeightKg) > 0 || out.barcode) ? (
+                                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '6px 8px', borderRadius: '6px', fontSize: '0.75rem' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
+                                    <span className={`badge ${out.type === 'FG' ? 'badge-success' : 'badge-info'}`} style={{ fontSize: '0.68rem', padding: '1px 6px' }}>
+                                      {out.type || 'SFG'}
+                                    </span>
+                                    <code style={{ fontWeight: '800', color: '#0f172a' }}>{out.barcode}</code>
+                                  </div>
+                                  <div style={{ fontWeight: '800', color: '#0369a1', marginTop: '2px' }}>
+                                    Net: {out.netWeightKg} kg
+                                  </div>
+                                  <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                                    Gross: {out.grossWeightKg || '-'} kg | Tare: {out.tareWeightKg || 0} kg
+                                  </div>
+                                  {out.storageLocation && (
+                                    <div style={{ fontSize: '0.68rem', color: '#475569' }}>
+                                      📍 {out.storageLocation}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>No output roll</span>
+                              )}
+                            </td>
+                            <td>
+                              <div style={{ color: '#334155', fontWeight: '600' }}>{log.operatorName || '-'}</div>
+                              {log.notes && (
+                                <div style={{ color: '#64748b', fontSize: '0.72rem', marginTop: '2px', fontStyle: 'italic' }}>
+                                  {log.notes}
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -3226,6 +3588,123 @@ export default function ProductionRecordManagement({
               </div>
             </div>
 
+            {/* SFG Process Consumption Linked Banner */}
+            {(() => {
+              const activeSfgLogs = selectedRecord?.sfgConsumptions || selectedOrder?.sfgConsumptions || [];
+              if (activeSfgLogs.length === 0) return null;
+
+              return (
+                <div style={{ marginBottom: '18px', padding: '14px 18px', background: '#fff7ed', border: '1.5px solid #fed7aa', borderRadius: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ background: '#ffedd5', width: '36px', height: '36px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Zap size={20} style={{ color: '#ea580c' }} />
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: '800', color: '#9a3412', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          Linked SFG Store Process Consumptions ({activeSfgLogs.length} events logged)
+                          <span style={{ background: '#ea580c', color: '#ffffff', fontSize: '0.68rem', fontWeight: '800', padding: '1px 8px', borderRadius: '10px' }}>
+                            Pre-filled
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: '#c2410c', marginTop: '2px' }}>
+                          Stage outputs, Substrate 2/3 rolls, adhesive consumed, and stage scrap have been auto-populated from SFG Store.
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ fontSize: '0.75rem', padding: '5px 12px', background: '#ffedd5', border: '1px solid #fdba74', color: '#9a3412', fontWeight: '700' }}
+                      onClick={() => setShowSfgConsumptionPreview(prev => !prev)}
+                    >
+                      {showSfgConsumptionPreview ? 'Hide SFG Log Table' : `View ${activeSfgLogs.length} SFG Event(s)`}
+                    </button>
+                  </div>
+
+                  {showSfgConsumptionPreview && (
+                    <div style={{ marginTop: '14px', overflowX: 'auto', background: '#ffffff', borderRadius: '8px', border: '1px solid #ffedd5' }}>
+                      <table className="data-table" style={{ fontSize: '0.78rem', width: '100%', margin: 0 }}>
+                        <thead>
+                          <tr style={{ background: '#fff7ed', color: '#9a3412' }}>
+                            <th>Date & Shift</th>
+                            <th>Input SFG Barcode</th>
+                            <th>Target Stage</th>
+                            <th>Substrate 2 / 3 Consumed</th>
+                            <th>Stage Scrap Breakdown</th>
+                            <th>Output Roll Created</th>
+                            <th>Operator</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {activeSfgLogs.map((log, idx) => {
+                            const sub2 = log.substrate2;
+                            const sub3 = log.substrate3;
+                            const sb = log.scrapBreakdown || {};
+                            const out = log.outputRoll;
+                            return (
+                              <tr key={log.id || idx}>
+                                <td style={{ color: '#475569', whiteSpace: 'nowrap' }}>
+                                  {new Date(log.timestamp || log.date).toLocaleDateString()} • {log.shift || 'Day'}
+                                </td>
+                                <td>
+                                  <code style={{ background: '#fff3ed', border: '1px solid #fdba74', padding: '2px 6px', borderRadius: '4px', fontWeight: '800', color: '#c2410c' }}>
+                                    {log.sfgBatchCode || 'SFG-BATCH'}
+                                  </code>
+                                  <div style={{ fontSize: '0.72rem', color: '#ea580c', fontWeight: '700', marginTop: '2px' }}>
+                                    {log.consumedKg} kg
+                                  </div>
+                                </td>
+                                <td style={{ fontWeight: '700', color: '#0f172a' }}>
+                                  {log.targetProcess}
+                                </td>
+                                <td>
+                                  {sub2 && (parseFloat(sub2.consumedKg) > 0 || sub2.barcode) ? (
+                                    <div style={{ fontSize: '0.72rem', color: '#166534' }}>
+                                      Sub 2: <strong>{sub2.barcode || 'N/A'}</strong> ({sub2.consumedKg} kg)
+                                    </div>
+                                  ) : sub3 && (parseFloat(sub3.consumedKg) > 0 || sub3.barcode) ? (
+                                    <div style={{ fontSize: '0.72rem', color: '#86198f' }}>
+                                      Sub 3: <strong>{sub3.barcode || 'N/A'}</strong> ({sub3.consumedKg} kg)
+                                    </div>
+                                  ) : '-'}
+                                </td>
+                                <td>
+                                  <div style={{ fontSize: '0.72rem', color: '#78350f' }}>
+                                    {(parseFloat(sb.laminationPlainSubstrateWastageKg) || 0) > 0 && `Sub Scrap: ${sb.laminationPlainSubstrateWastageKg}kg `}
+                                    {(parseFloat(sb.laminateWastageKg) || 0) > 0 && `Lam Scrap: ${sb.laminateWastageKg}kg `}
+                                    {(parseFloat(sb.adhesiveConsumedL1Kg) || 0) > 0 && `Adh L1: ${sb.adhesiveConsumedL1Kg}kg `}
+                                    {(parseFloat(sb.laminationPlainSubstrateWastageL2Kg) || 0) > 0 && `Sub L2: ${sb.laminationPlainSubstrateWastageL2Kg}kg `}
+                                    {(parseFloat(sb.adhesiveConsumedL2Kg) || 0) > 0 && `Adh L2: ${sb.adhesiveConsumedL2Kg}kg `}
+                                    {(parseFloat(sb.printingPlainSettingWastageKg) || 0) > 0 && `Print Plain: ${sb.printingPlainSettingWastageKg}kg `}
+                                    {(parseFloat(sb.printingWastageKg) || 0) > 0 && `Print Scrap: ${sb.printingWastageKg}kg `}
+                                    {(parseFloat(sb.pouchingScrapKg) || 0) > 0 && `Pouch Scrap: ${sb.pouchingScrapKg}kg `}
+                                    {(parseFloat(sb.zipperConsumedKg) || 0) > 0 && `Zipper: ${sb.zipperConsumedKg}kg `}
+                                  </div>
+                                </td>
+                                <td>
+                                  {out && (parseFloat(out.netWeightKg) > 0 || out.barcode) ? (
+                                    <div style={{ fontSize: '0.72rem' }}>
+                                      <span className={`badge ${out.type === 'FG' ? 'badge-success' : 'badge-info'}`} style={{ padding: '1px 5px', fontSize: '0.65rem' }}>
+                                        {out.type}
+                                      </span> <code>{out.barcode}</code> ({out.netWeightKg} kg)
+                                    </div>
+                                  ) : '-'}
+                                </td>
+                                <td style={{ color: '#475569' }}>
+                                  {log.operatorName || '-'}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               
               {/* STAGE 1: PRINTING */}
@@ -3235,9 +3714,16 @@ export default function ProductionRecordManagement({
                     <span style={{ background: '#0284c7', color: '#ffffff', width: '24px', height: '24px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: '900' }}>1</span>
                     Stage 1: Printing
                   </div>
-                  <span className="badge badge-info" style={{ fontSize: '0.72rem', background: '#e0f2fe', color: '#0369a1' }}>
-                    Printing Pass (Surface & Reverse)
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {(selectedRecord?.sfgConsumptions || selectedOrder?.sfgConsumptions || []).some(l => l.targetProcess === 'Printing (Pass 2)') && (
+                      <span style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', fontSize: '0.72rem', fontWeight: '800', padding: '2px 8px', borderRadius: '12px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                        <Zap size={11} /> Auto-filled from SFG Store
+                      </span>
+                    )}
+                    <span className="badge badge-info" style={{ fontSize: '0.72rem', background: '#e0f2fe', color: '#0369a1' }}>
+                      Printing Pass (Surface & Reverse)
+                    </span>
+                  </div>
                 </div>
 
                 {/* Printing Job Run Duration & Timestamps from Scheduler */}
@@ -3420,9 +3906,16 @@ export default function ProductionRecordManagement({
                     <span style={{ background: '#4f46e5', color: '#ffffff', width: '24px', height: '24px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: '900' }}>3</span>
                     Stage 3: First Pass L1 (Lamination Pass 1)
                   </div>
-                  <span className="badge badge-info" style={{ fontSize: '0.72rem', background: '#e0e7ff', color: '#4338ca' }}>
-                    2-Layer & 3-Layer Jobs
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {(selectedRecord?.sfgConsumptions || selectedOrder?.sfgConsumptions || []).some(l => l.targetProcess === 'Lamination (Pass 1)') && (
+                      <span style={{ background: '#e0e7ff', color: '#4338ca', border: '1px solid #c7d2fe', fontSize: '0.72rem', fontWeight: '800', padding: '2px 8px', borderRadius: '12px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                        <Zap size={11} /> Pre-filled from SFG Consumption (Substrate 2 roll linked)
+                      </span>
+                    )}
+                    <span className="badge badge-info" style={{ fontSize: '0.72rem', background: '#e0e7ff', color: '#4338ca' }}>
+                      2-Layer & 3-Layer Jobs
+                    </span>
+                  </div>
                 </div>
 
                 <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1.1fr 1.9fr', gap: '24px' }}>
@@ -3524,9 +4017,16 @@ export default function ProductionRecordManagement({
                     <span style={{ background: '#a21caf', color: '#ffffff', width: '24px', height: '24px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: '900' }}>4</span>
                     Stage 4: Second Pass L2 (Lamination Pass 2 - Optional - For 3 Layer Jobs Only)
                   </div>
-                  <span className="badge badge-warning" style={{ fontSize: '0.72rem', background: '#fae8ff', color: '#86198f', border: '1px solid #f5d0fe' }}>
-                    For 3-Layer Laminate Jobs Only
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {(selectedRecord?.sfgConsumptions || selectedOrder?.sfgConsumptions || []).some(l => l.targetProcess === 'Lamination (Pass 2)') && (
+                      <span style={{ background: '#fae8ff', color: '#86198f', border: '1px solid #f5d0fe', fontSize: '0.72rem', fontWeight: '800', padding: '2px 8px', borderRadius: '12px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                        <Zap size={11} /> Pre-filled from SFG Consumption (Substrate 3 roll linked)
+                      </span>
+                    )}
+                    <span className="badge badge-warning" style={{ fontSize: '0.72rem', background: '#fae8ff', color: '#86198f', border: '1px solid #f5d0fe' }}>
+                      For 3-Layer Laminate Jobs Only
+                    </span>
+                  </div>
                 </div>
 
                 <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1.1fr 1.9fr', gap: '24px' }}>
@@ -3695,9 +4195,16 @@ export default function ProductionRecordManagement({
                     <span style={{ background: '#0d9488', color: '#ffffff', width: '24px', height: '24px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: '900' }}>6</span>
                     Stage 6: Pouching (Optional - For Pouch Form Jobs Only)
                   </div>
-                  <span className="badge badge-info" style={{ fontSize: '0.72rem', background: '#ccfbf1', color: '#0f766e' }}>
-                    Pouch Form Jobs Only
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {(selectedRecord?.sfgConsumptions || selectedOrder?.sfgConsumptions || []).some(l => l.targetProcess === 'Pouching / Bag Making') && (
+                      <span style={{ background: '#ccfbf1', color: '#0f766e', border: '1px solid #99f6e4', fontSize: '0.72rem', fontWeight: '800', padding: '2px 8px', borderRadius: '12px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                        <Zap size={11} /> Pre-filled from SFG Consumption
+                      </span>
+                    )}
+                    <span className="badge badge-info" style={{ fontSize: '0.72rem', background: '#ccfbf1', color: '#0f766e' }}>
+                      Pouch Form Jobs Only
+                    </span>
+                  </div>
                 </div>
 
                 <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1.1fr 1.9fr', gap: '24px' }}>

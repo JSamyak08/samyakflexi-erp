@@ -1450,6 +1450,7 @@ export async function fetchProductionRecords() {
         approvalDate: r.approval_date || extra.approvalDate || '',
         notes: r.notes || extra.notes || '',
         recordedAt: r.recorded_at,
+        sfgConsumptions: Array.isArray(extra.sfgConsumptions) ? extra.sfgConsumptions : (Array.isArray(r.sfg_consumptions) ? r.sfg_consumptions : []),
         processLogs: extra
       };
     });
@@ -1475,6 +1476,7 @@ export async function saveProductionRecordToSupabase(record) {
     orderId: record.orderId,
     jobName: record.jobName,
     clientName: record.clientName,
+    sfgConsumptions: Array.isArray(record.sfgConsumptions) ? record.sfgConsumptions : [],
     materialsList: record.materialsList || [],
     outputRolls: record.outputRolls || record.rollsBreakdown || [],
     rollsBreakdown: record.rollsBreakdown || record.outputRolls || [],

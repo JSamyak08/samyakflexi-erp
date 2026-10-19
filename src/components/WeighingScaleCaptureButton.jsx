@@ -6,7 +6,14 @@ import weighingScaleService from '../services/weighingScaleService';
  * 1-Click Scale Weight Capture Button
  * Usage: <WeighingScaleCaptureButton onCapture={(weight) => setWeightKg(weight)} />
  */
-export default function WeighingScaleCaptureButton({ onCapture, label = 'Scale', title = 'Capture live weight from RS-232 scale', style = {} }) {
+export default function WeighingScaleCaptureButton({ 
+  onCapture, 
+  onWeightCapture, 
+  onWeightCaptured, 
+  label = 'Scale', 
+  title = 'Capture live weight from RS-232 scale', 
+  style = {} 
+}) {
   const [scaleState, setScaleState] = useState(weighingScaleService.getStatus());
   const [justCaptured, setJustCaptured] = useState(false);
 
@@ -29,8 +36,9 @@ export default function WeighingScaleCaptureButton({ onCapture, label = 'Scale',
     const currentStatus = weighingScaleService.getStatus();
     const weightToUse = currentStatus.netWeight || currentStatus.currentWeight;
 
-    if (onCapture) {
-      onCapture(weightToUse);
+    const captureFn = onCapture || onWeightCapture || onWeightCaptured;
+    if (captureFn) {
+      captureFn(weightToUse);
       setJustCaptured(true);
       setTimeout(() => setJustCaptured(false), 1500);
     }

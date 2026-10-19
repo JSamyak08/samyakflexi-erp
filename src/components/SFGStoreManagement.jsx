@@ -110,6 +110,33 @@ export default function SFGStoreManagement({
   const [holdRollCount, setHoldRollCount] = useState(1);
   const [rollWeights, setRollWeights] = useState(['']);
 
+  // Dynamic Process Consumption Fields (Lamination Pass 1 & 2, Printing Pass 2, Pouching)
+  const [subBarcode, setSubBarcode] = useState('');
+  const [subFilmType, setSubFilmType] = useState('');
+  const [subInitialKg, setSubInitialKg] = useState('');
+  const [subConsumedKg, setSubConsumedKg] = useState('');
+  const [selectedSubRollId, setSelectedSubRollId] = useState('');
+
+  // Scrap breakdown fields (in kg)
+  const [laminationPlainSubstrateWastageKg, setLaminationPlainSubstrateWastageKg] = useState('');
+  const [laminationPlainSubstrateWastageL2Kg, setLaminationPlainSubstrateWastageL2Kg] = useState('');
+  const [laminateWastageKg, setLaminateWastageKg] = useState('');
+  const [adhesiveConsumedL1Kg, setAdhesiveConsumedL1Kg] = useState('');
+  const [adhesiveConsumedL2Kg, setAdhesiveConsumedL2Kg] = useState('');
+  const [printingPlainSettingWastageKg, setPrintingPlainSettingWastageKg] = useState('');
+  const [printingWastageKg, setPrintingWastageKg] = useState('');
+  const [pouchingScrapKg, setPouchingScrapKg] = useState('');
+  const [zipperConsumedKg, setZipperConsumedKg] = useState('');
+
+  // Made SFG / FG Output Roll Details
+  const [isOutputMade, setIsOutputMade] = useState(true);
+  const [outputType, setOutputType] = useState('SFG'); // 'SFG' | 'FG'
+  const [outputBarcode, setOutputBarcode] = useState('');
+  const [outputGrossKg, setOutputGrossKg] = useState('');
+  const [outputTareKg, setOutputTareKg] = useState('0.8');
+  const [tarePreset, setTarePreset] = useState('0.8');
+  const [outputStorageBay, setOutputStorageBay] = useState('Bay A');
+
   // Modals for QC Hold Actions
   const [selectedQcItemForApprove, setSelectedQcItemForApprove] = useState(null);
   const [approveQtyKg, setApproveQtyKg] = useState('');
@@ -455,6 +482,17 @@ export default function SFGStoreManagement({
   // Pagination by Order Group
   const { paginatedItems: paginatedGroups, totalPages, currentPage, setCurrentPage } = usePagination(groupedOrders, 10);
 
+  // Available raw material substrate rolls from inventory for Lamination Pass 1 & 2
+  const availableSubstrateRolls = useMemo(() => {
+    if (!Array.isArray(inventoryRolls)) return [];
+    return inventoryRolls.filter(r => {
+      const avail = Number(r.availableWeightKg ?? r.netWeightKg ?? 0);
+      const isNotConsumed = r.status !== 'Consumed';
+      const isNotCurrentRoll = (r.barcodeId || r.id) !== (selectedItemForConsume?.sfgBatchCode || selectedItemForConsume?.id);
+      return avail > 0 && isNotConsumed && isNotCurrentRoll;
+    });
+  }, [inventoryRolls, selectedItemForConsume]);
+
   // Handle Consume Modal Open
   const handleOpenConsumeModal = (item) => {
     setSelectedItemForConsume(item);
@@ -468,6 +506,78 @@ export default function SFGStoreManagement({
     setHoldRollCount(1);
     setRollWeights(['']);
     setFormError('');
+
+    // Reset Substrate 2/3 fields
+    setSubBarcode('');
+    setSubFilmType('');
+    setSubInitialKg('');
+    setSubConsumedKg('');
+    setSelectedSubRollId('');
+
+    // Reset Scrap fields
+    setLaminationPlainSubstrateWastageKg('');
+    setLaminationPlainSubstrateWastageL2Kg('');
+    setLaminateWastageKg('');
+    setAdhesiveConsumedL1Kg('');
+    setAdhesiveConsumedL2Kg('');
+    setPrintingPlainSettingWastageKg('');
+    setPrintingWastageKg('');
+    setPouchingScrapKg('');
+    setZipperConsumedKg('');
+
+    // Reset Output Roll fields
+    setIsOutputMade(true);
+    setOutputType('SFG');
+    const cleanOrd = String(item.orderId || 'ORD').replace(/[^a-zA-Z0-9]/g, '');
+    setOutputBarcode(`SFG-BC-${cleanOrd}-${Date.now().toString().slice(-4)}`);
+    setOutputGrossKg('');
+    setOutputTareKg('0.8');
+    setTarePreset('0.8');
+    setOutputStorageBay(item.storageBay || 'Bay A');
+  };
+
+  const handleSelectSubRoll = (rollId) => {
+    setSelectedSubRollId(rollId);
+    if (!rollId) {
+      setSubBarcode('');
+      setSubFilmType('');
+      setSubInitialKg('');
+      return;
+    }
+    const match = availableSubstrateRolls.find(r => (r.barcodeId || r.id) === rollId);
+    if (match) {
+      setSubBarcode(match.barcodeId || match.id);
+      const filmDesc = `${match.filmType || match.itemName || 'Substrate Film'}${match.micron ? ` (${match.micron}µm` : ''}${match.widthMm ? ` × ${match.widthMm}mm)` : (match.micron ? ')' : '')}`;
+      setSubFilmType(filmDesc);
+      const availKg = Number(match.availableWeightKg ?? match.netWeightKg ?? 0);
+      setSubInitialKg(availKg.toFixed(2));
+      setSubConsumedKg(availKg.toFixed(2));
+    }
+  };
+
+  const handleTargetProcessChange = (proc) => {
+    setTargetProcess(proc);
+    const cleanOrd = String(selectedItemForConsume?.orderId || 'ORD').replace(/[^a-zA-Z0-9]/g, '');
+    if (proc === 'Pouching / Bag Making') {
+      setOutputType('FG');
+      setOutputBarcode(`FG-BC-${cleanOrd}-${Date.now().toString().slice(-4)}`);
+    } else if (proc === 'Lamination (Pass 1)' || proc === 'Lamination (Pass 2)' || proc === 'Printing (Pass 2)') {
+      setOutputType('SFG');
+      setOutputBarcode(`SFG-BC-${cleanOrd}-${Date.now().toString().slice(-4)}`);
+    }
+  };
+
+  const handleOutputTypeToggle = (type) => {
+    setOutputType(type);
+    const cleanOrd = String(selectedItemForConsume?.orderId || 'ORD').replace(/[^a-zA-Z0-9]/g, '');
+    setOutputBarcode(`${type}-BC-${cleanOrd}-${Date.now().toString().slice(-4)}`);
+  };
+
+  const handleTarePresetChange = (preset) => {
+    setTarePreset(preset);
+    if (preset !== 'custom') {
+      setOutputTareKg(preset);
+    }
   };
 
   const handleRollCountChange = (count) => {
@@ -525,6 +635,33 @@ export default function SFGStoreManagement({
       }
     }
 
+    const isLaminationPass1 = targetProcess === 'Lamination (Pass 1)';
+    const isLaminationPass2 = targetProcess === 'Lamination (Pass 2)';
+    const isPrintingPass2 = targetProcess === 'Printing (Pass 2)';
+    const isPouching = targetProcess === 'Pouching / Bag Making';
+    const isSpecialProcess = isLaminationPass1 || isLaminationPass2 || isPrintingPass2 || isPouching;
+
+    // Validation for Substrate consumption
+    if (isLaminationPass1 && subBarcode && (parseFloat(subConsumedKg) > parseFloat(subInitialKg || 0))) {
+      setFormError(`Substrate 2 consumed weight (${subConsumedKg} kg) cannot exceed initial roll balance (${subInitialKg} kg).`);
+      return;
+    }
+    if (isLaminationPass2 && subBarcode && (parseFloat(subConsumedKg) > parseFloat(subInitialKg || 0))) {
+      setFormError(`Substrate 3 consumed weight (${subConsumedKg} kg) cannot exceed initial roll balance (${subInitialKg} kg).`);
+      return;
+    }
+
+    const outGrossNum = parseFloat(outputGrossKg) || 0;
+    const outTareNum = parseFloat(outputTareKg) || 0;
+    const outNetNum = Math.max(0, outGrossNum - outTareNum);
+
+    if (isSpecialProcess && isOutputMade && outputGrossKg !== '') {
+      if (outGrossNum < outTareNum) {
+        setFormError('Produced roll Gross weight cannot be less than Tare weight.');
+        return;
+      }
+    }
+
     setIsSubmittingConsume(true);
     setFormError('');
 
@@ -536,6 +673,41 @@ export default function SFGStoreManagement({
       if (parseFloat(newConsumedKg) > 0) {
         newStatus = parseFloat(newAvailableKg) <= 0 ? 'Fully Consumed' : 'Partially Consumed';
       }
+
+      const subConsumedVal = parseFloat(subConsumedKg) || 0;
+      const subInitialVal = parseFloat(subInitialKg) || 0;
+      const subRemainingVal = Math.max(0, subInitialVal - subConsumedVal);
+
+      const subInfo = (subBarcode || subConsumedVal > 0) ? {
+        barcode: (subBarcode || '').trim(),
+        filmType: (subFilmType || '').trim(),
+        initialKg: subInitialVal,
+        consumedKg: subConsumedVal,
+        remainingKg: subRemainingVal
+      } : null;
+
+      const scrapBreakdown = {
+        laminationPlainSubstrateWastageKg: parseFloat(laminationPlainSubstrateWastageKg) || 0,
+        laminationPlainSubstrateWastageL2Kg: parseFloat(laminationPlainSubstrateWastageL2Kg) || 0,
+        laminateWastageKg: parseFloat(laminateWastageKg) || 0,
+        adhesiveConsumedL1Kg: parseFloat(adhesiveConsumedL1Kg) || 0,
+        adhesiveConsumedL2Kg: parseFloat(adhesiveConsumedL2Kg) || 0,
+        printingPlainSettingWastageKg: parseFloat(printingPlainSettingWastageKg) || 0,
+        printingWastageKg: parseFloat(printingWastageKg) || 0,
+        pouchingScrapKg: parseFloat(pouchingScrapKg) || 0,
+        zipperConsumedKg: parseFloat(zipperConsumedKg) || 0
+      };
+
+      const outputRollInfo = (isSpecialProcess && isOutputMade && outNetNum > 0) ? {
+        barcode: outputBarcode || `${outputType}-BC-${selectedItemForConsume.orderId || 'ORD'}-${Date.now().toString().slice(-4)}`,
+        outputType,
+        grossWeightKg: outGrossNum,
+        tareWeightKg: outTareNum,
+        netWeightKg: parseFloat(outNetNum.toFixed(2)),
+        storageBay: outputStorageBay || 'Bay A',
+        stage: targetProcess,
+        timestamp: new Date().toISOString()
+      } : null;
 
       const logEntry = {
         id: `SFG-LOG-${Date.now()}`,
@@ -551,7 +723,11 @@ export default function SFGStoreManagement({
         targetMachine,
         operatorName,
         shift,
-        notes: targetProcess === 'QC Hold Store' ? `QC Hold: ${holdReason}` : notes
+        notes: targetProcess === 'QC Hold Store' ? `QC Hold: ${holdReason}` : notes,
+        substrate2: isLaminationPass1 ? subInfo : null,
+        substrate3: isLaminationPass2 ? subInfo : null,
+        scrapBreakdown,
+        outputRoll: outputRollInfo
       };
 
       const updatedConsumptionHistory = [
@@ -2293,9 +2469,10 @@ export default function SFGStoreManagement({
             background: '#ffffff',
             borderRadius: '16px',
             width: '100%',
-            maxWidth: '620px',
+            maxWidth: '780px',
+            maxHeight: '92vh',
+            overflowY: 'auto',
             boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-            overflow: 'hidden',
             border: '1px solid #e2e8f0',
             animation: 'fadeIn 0.2s ease-out'
           }}>
@@ -2438,7 +2615,7 @@ export default function SFGStoreManagement({
                   </label>
                   <SearchableSelect
                     value={targetProcess}
-                    onChange={(e) => setTargetProcess(e.target.value)}
+                    onChange={(e) => handleTargetProcessChange(e.target.value)}
                     style={{ width: '100%' }}
                   >
                     <option value="Lamination (Pass 1)">Lamination (Pass 1)</option>
@@ -2612,6 +2789,615 @@ export default function SFGStoreManagement({
                     <option value="Night Shift">Night Shift</option>
                   </SearchableSelect>
                 </div>
+
+                {/* Special Process Sections for Lamination Pass 1, Lamination Pass 2, Printing Pass 2, Pouching */}
+                {(() => {
+                  const isLaminationPass1 = targetProcess === 'Lamination (Pass 1)';
+                  const isLaminationPass2 = targetProcess === 'Lamination (Pass 2)';
+                  const isPrintingPass2 = targetProcess === 'Printing (Pass 2)';
+                  const isPouching = targetProcess === 'Pouching / Bag Making';
+                  const isSpecial = isLaminationPass1 || isLaminationPass2 || isPrintingPass2 || isPouching;
+
+                  if (!isSpecial) return null;
+
+                  const outGrossVal = parseFloat(outputGrossKg) || 0;
+                  const outTareVal = parseFloat(outputTareKg) || 0;
+                  const outNetVal = Math.max(0, outGrossVal - outTareVal);
+
+                  return (
+                    <div style={{ gridColumn: 'span 2', display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '4px' }}>
+                      
+                      {/* 1. SUBSTRATE CONSUMPTION (Lamination Pass 1 & Pass 2) */}
+                      {(isLaminationPass1 || isLaminationPass2) && (
+                        <div style={{
+                          background: '#fdf4ff',
+                          border: '1.5px solid #e879f9',
+                          borderRadius: '12px',
+                          padding: '16px',
+                          boxShadow: '0 2px 8px rgba(217, 70, 239, 0.06)'
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                            <div>
+                              <div style={{ fontWeight: '800', color: '#86198f', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <Layers size={18} color="#a21caf" />
+                                {isLaminationPass1 ? '🎞️ Substrate 2 Consumption (Layer 2 Film)' : '🎞️ Substrate 3 Consumption (Layer 3 Film)'}
+                              </div>
+                              <div style={{ fontSize: '0.78rem', color: '#701a75', marginTop: '2px' }}>
+                                {isLaminationPass1 
+                                  ? 'Select or scan Substrate 2 roll consumed alongside this printed SFG roll for 1st lamination pass'
+                                  : 'Select or scan Substrate 3 roll consumed for 2nd lamination pass (3-Layer structure)'}
+                              </div>
+                            </div>
+                            <span style={{ fontSize: '0.75rem', fontWeight: '800', background: '#fae8ff', color: '#86198f', padding: '3px 10px', borderRadius: '6px', border: '1px solid #f0abfc' }}>
+                              {isLaminationPass1 ? 'Lamination Pass 1' : 'Lamination Pass 2'}
+                            </span>
+                          </div>
+
+                          {/* Quick Selector from Inventory Rolls */}
+                          <div style={{ marginBottom: '12px' }}>
+                            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', color: '#701a75', marginBottom: '4px' }}>
+                              Select Available Substrate Roll from Inventory
+                            </label>
+                            <SearchableSelect
+                              value={selectedSubRollId}
+                              onChange={(e) => handleSelectSubRoll(e.target.value)}
+                              style={{ width: '100%', fontSize: '0.85rem' }}
+                            >
+                              <option value="">-- Choose from available inventory or enter manually below --</option>
+                              {availableSubstrateRolls.map(r => (
+                                <option key={r.barcodeId || r.id} value={r.barcodeId || r.id}>
+                                  {r.barcodeId || r.id} • {r.filmType || r.itemName || 'Film'} ({r.micron || '-'}µ × {r.widthMm || '-'}mm) • Avail: {Number(r.availableWeightKg ?? r.netWeightKg ?? 0).toFixed(1)} kg
+                                </option>
+                              ))}
+                            </SearchableSelect>
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.3fr 1fr 1.1fr', gap: '10px' }}>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', color: '#701a75', marginBottom: '4px' }}>
+                                Roll Barcode <span style={{ color: '#ef4444' }}>*</span>
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="e.g. RM-PET-2026-081"
+                                value={subBarcode}
+                                onChange={(e) => setSubBarcode(e.target.value)}
+                                style={{
+                                  width: '100%',
+                                  padding: '8px 10px',
+                                  borderRadius: '6px',
+                                  border: '1.5px solid #d946ef',
+                                  fontSize: '0.85rem',
+                                  fontFamily: 'monospace',
+                                  fontWeight: '700',
+                                  background: '#ffffff'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', color: '#701a75', marginBottom: '4px' }}>
+                                Substrate Description
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="e.g. MetPET 12µm × 460mm"
+                                value={subFilmType}
+                                onChange={(e) => setSubFilmType(e.target.value)}
+                                style={{
+                                  width: '100%',
+                                  padding: '8px 10px',
+                                  borderRadius: '6px',
+                                  border: '1px solid #cbd5e1',
+                                  fontSize: '0.85rem',
+                                  background: '#ffffff'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', color: '#701a75', marginBottom: '4px' }}>
+                                Initial Qty (kg)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="0.00"
+                                value={subInitialKg}
+                                onChange={(e) => setSubInitialKg(e.target.value)}
+                                style={{
+                                  width: '100%',
+                                  padding: '8px 10px',
+                                  borderRadius: '6px',
+                                  border: '1px solid #cbd5e1',
+                                  fontSize: '0.85rem',
+                                  fontWeight: '700',
+                                  background: '#ffffff'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                <label style={{ fontSize: '0.76rem', fontWeight: '800', color: '#701a75', margin: 0 }}>
+                                  Consumed (kg) *
+                                </label>
+                                <WeighingScaleCaptureButton
+                                  onCapture={(weight) => setSubConsumedKg(weight.toString())}
+                                />
+                              </div>
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  placeholder="0.00"
+                                  value={subConsumedKg}
+                                  onChange={(e) => setSubConsumedKg(e.target.value)}
+                                  style={{
+                                    width: '100%',
+                                    padding: '8px 10px',
+                                    borderRadius: '6px',
+                                    border: '1.5px solid #d946ef',
+                                    fontSize: '0.88rem',
+                                    fontWeight: '800',
+                                    color: '#86198f',
+                                    background: '#ffffff'
+                                  }}
+                                />
+                                {parseFloat(subInitialKg) > 0 && (
+                                  <button
+                                    type="button"
+                                    title="Use full roll weight"
+                                    onClick={() => setSubConsumedKg(subInitialKg)}
+                                    style={{
+                                      padding: '4px 6px',
+                                      borderRadius: '4px',
+                                      border: '1px solid #d946ef',
+                                      background: '#fae8ff',
+                                      color: '#86198f',
+                                      fontSize: '0.7rem',
+                                      fontWeight: '800',
+                                      cursor: 'pointer',
+                                      whiteSpace: 'nowrap'
+                                    }}
+                                  >
+                                    All
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Live Remaining Balance Calculation */}
+                          {parseFloat(subInitialKg) > 0 && (
+                            <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px', fontSize: '0.78rem' }}>
+                              <span style={{ color: '#701a75', fontWeight: '600' }}>Substrate Balance Remaining:</span>
+                              <span style={{
+                                fontWeight: '900',
+                                color: Math.max(0, (parseFloat(subInitialKg) || 0) - (parseFloat(subConsumedKg) || 0)) > 0 ? '#15803d' : '#b45309',
+                                background: '#ffffff',
+                                padding: '2px 8px',
+                                borderRadius: '4px',
+                                border: '1px solid #e2e8f0'
+                              }}>
+                                {Math.max(0, (parseFloat(subInitialKg) || 0) - (parseFloat(subConsumedKg) || 0)).toFixed(2)} kg
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* 2. STAGE SCRAP & CONSUMABLES BREAKDOWN */}
+                      <div style={{
+                        background: '#fffbeb',
+                        border: '1.5px solid #fde68a',
+                        borderRadius: '12px',
+                        padding: '16px',
+                        boxShadow: '0 2px 8px rgba(217, 119, 6, 0.05)'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                          <div>
+                            <div style={{ fontWeight: '800', color: '#b45309', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <Trash2 size={18} color="#d97706" />
+                              Stage Scrap Wastage & Consumables Breakdown
+                            </div>
+                            <div style={{ fontSize: '0.78rem', color: '#92400e', marginTop: '2px' }}>
+                              Record stage-wise process scrap and consumables (pre-filled directly into Job Production Record)
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Lamination Pass 1 Scrap Inputs */}
+                        {isLaminationPass1 && (
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', color: '#78350f', marginBottom: '4px' }}>
+                                Plain Substrate Scrap (kg)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="0.00"
+                                value={laminationPlainSubstrateWastageKg}
+                                onChange={(e) => setLaminationPlainSubstrateWastageKg(e.target.value)}
+                                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #fcd34d', fontSize: '0.85rem', fontWeight: '700', background: '#fff' }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', color: '#78350f', marginBottom: '4px' }}>
+                                Laminate Scrap (kg)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="0.00"
+                                value={laminateWastageKg}
+                                onChange={(e) => setLaminateWastageKg(e.target.value)}
+                                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #fcd34d', fontSize: '0.85rem', fontWeight: '700', background: '#fff' }}
+                              />
+                            </div>
+                            <div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                <label style={{ fontSize: '0.76rem', fontWeight: '800', color: '#4338ca', margin: 0 }}>
+                                  🧪 Adhesive Consumed (kg)
+                                </label>
+                                <span style={{ fontSize: '0.68rem', color: '#4338ca', fontWeight: '700', background: '#e0e7ff', padding: '1px 5px', borderRadius: '3px' }}>
+                                  @ ₹270/kg
+                                </span>
+                              </div>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="0.00"
+                                value={adhesiveConsumedL1Kg}
+                                onChange={(e) => setAdhesiveConsumedL1Kg(e.target.value)}
+                                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1.5px solid #a5b4fc', fontSize: '0.85rem', fontWeight: '700', background: '#fff' }}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Lamination Pass 2 Scrap Inputs */}
+                        {isLaminationPass2 && (
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', color: '#78350f', marginBottom: '4px' }}>
+                                Plain Substrate Scrap Pass 2 (kg)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="0.00"
+                                value={laminationPlainSubstrateWastageL2Kg}
+                                onChange={(e) => setLaminationPlainSubstrateWastageL2Kg(e.target.value)}
+                                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #fcd34d', fontSize: '0.85rem', fontWeight: '700', background: '#fff' }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', color: '#78350f', marginBottom: '4px' }}>
+                                Laminate Scrap Pass 2 (kg)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="0.00"
+                                value={laminateWastageKg}
+                                onChange={(e) => setLaminateWastageKg(e.target.value)}
+                                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #fcd34d', fontSize: '0.85rem', fontWeight: '700', background: '#fff' }}
+                              />
+                            </div>
+                            <div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                <label style={{ fontSize: '0.76rem', fontWeight: '800', color: '#86198f', margin: 0 }}>
+                                  🧪 Adhesive Consumed Pass 2 (kg)
+                                </label>
+                                <span style={{ fontSize: '0.68rem', color: '#86198f', fontWeight: '700', background: '#fae8ff', padding: '1px 5px', borderRadius: '3px' }}>
+                                  @ ₹270/kg
+                                </span>
+                              </div>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="0.00"
+                                value={adhesiveConsumedL2Kg}
+                                onChange={(e) => setAdhesiveConsumedL2Kg(e.target.value)}
+                                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1.5px solid #f0abfc', fontSize: '0.85rem', fontWeight: '700', background: '#fff' }}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Printing Pass 2 Scrap Inputs */}
+                        {isPrintingPass2 && (
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', color: '#78350f', marginBottom: '4px' }}>
+                                Printing Plain Setting Wastage (kg)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="0.00"
+                                value={printingPlainSettingWastageKg}
+                                onChange={(e) => setPrintingPlainSettingWastageKg(e.target.value)}
+                                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #fcd34d', fontSize: '0.85rem', fontWeight: '700', background: '#fff' }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', color: '#78350f', marginBottom: '4px' }}>
+                                Printing Wastage / Defect Scrap (kg)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="0.00"
+                                value={printingWastageKg}
+                                onChange={(e) => setPrintingWastageKg(e.target.value)}
+                                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #fcd34d', fontSize: '0.85rem', fontWeight: '700', background: '#fff' }}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Pouching Scrap Inputs */}
+                        {isPouching && (
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', color: '#0f766e', marginBottom: '4px' }}>
+                                Zipper Consumed (kg / m)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="0.00"
+                                value={zipperConsumedKg}
+                                onChange={(e) => setZipperConsumedKg(e.target.value)}
+                                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1.5px solid #5eead4', fontSize: '0.85rem', fontWeight: '700', background: '#fff' }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', color: '#78350f', marginBottom: '4px' }}>
+                                Pouching Scrap (kg)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="0.00"
+                                value={pouchingScrapKg}
+                                onChange={(e) => setPouchingScrapKg(e.target.value)}
+                                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #fcd34d', fontSize: '0.85rem', fontWeight: '700', background: '#fff' }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 3. OUTPUT ROLL PRODUCED (SFG or FG with Scale & Tare Selector) */}
+                      <div style={{
+                        background: '#f0fdf4',
+                        border: '1.5px solid #86efac',
+                        borderRadius: '12px',
+                        padding: '16px',
+                        boxShadow: '0 2px 8px rgba(22, 163, 74, 0.05)'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+                          <div>
+                            <div style={{ fontWeight: '800', color: '#166534', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <Scale size={18} color="#16a34a" />
+                              ✨ Output Roll Produced from Process
+                            </div>
+                            <div style={{ fontSize: '0.78rem', color: '#14532d', marginTop: '2px' }}>
+                              Select output type (SFG or FG) and capture roll final quantity with digital weighing scale & tare selector
+                            </div>
+                          </div>
+
+                          {/* SFG vs FG Selector */}
+                          <div style={{ display: 'flex', alignItems: 'center', background: '#ffffff', padding: '3px', borderRadius: '8px', border: '1.5px solid #22c55e' }}>
+                            <button
+                              type="button"
+                              onClick={() => handleOutputTypeToggle('SFG')}
+                              style={{
+                                padding: '6px 14px',
+                                borderRadius: '6px',
+                                border: 'none',
+                                fontSize: '0.8rem',
+                                fontWeight: '800',
+                                cursor: 'pointer',
+                                background: outputType === 'SFG' ? '#fef08a' : 'transparent',
+                                color: outputType === 'SFG' ? '#854d0e' : '#64748b',
+                                boxShadow: outputType === 'SFG' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                                transition: 'all 0.15s ease'
+                              }}
+                            >
+                              🟡 SFG (Semi-Finished)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleOutputTypeToggle('FG')}
+                              style={{
+                                padding: '6px 14px',
+                                borderRadius: '6px',
+                                border: 'none',
+                                fontSize: '0.8rem',
+                                fontWeight: '800',
+                                cursor: 'pointer',
+                                background: outputType === 'FG' ? '#22c55e' : 'transparent',
+                                color: outputType === 'FG' ? '#ffffff' : '#64748b',
+                                boxShadow: outputType === 'FG' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                                transition: 'all 0.15s ease'
+                              }}
+                            >
+                              🟢 FG (Finished Goods)
+                            </button>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.6fr 1fr', gap: '12px', marginBottom: '14px' }}>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', color: '#14532d', marginBottom: '4px' }}>
+                              Produced Roll Barcode
+                            </label>
+                            <input
+                              type="text"
+                              value={outputBarcode}
+                              onChange={(e) => setOutputBarcode(e.target.value)}
+                              style={{
+                                width: '100%',
+                                padding: '8px 10px',
+                                borderRadius: '6px',
+                                border: '1.5px solid #86efac',
+                                fontSize: '0.85rem',
+                                fontFamily: 'monospace',
+                                fontWeight: '700',
+                                color: '#15803d',
+                                background: '#ffffff'
+                              }}
+                            />
+                          </div>
+
+                          {/* Tare Weight Selector */}
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                              <label style={{ fontSize: '0.76rem', fontWeight: '700', color: '#14532d', margin: 0 }}>
+                                Tare Weight Selector (Core / Pallet)
+                              </label>
+                              <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#166534' }}>
+                                Tare: {outputTareKg || '0.0'} kg
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
+                              {['0.0', '0.5', '0.8', '1.2', '1.5'].map(val => (
+                                <button
+                                  key={val}
+                                  type="button"
+                                  onClick={() => handleTarePresetChange(val)}
+                                  style={{
+                                    padding: '4px 8px',
+                                    borderRadius: '5px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: '700',
+                                    border: tarePreset === val ? '1.5px solid #16a34a' : '1px solid #cbd5e1',
+                                    background: tarePreset === val ? '#bbf7d0' : '#ffffff',
+                                    color: tarePreset === val ? '#14532d' : '#475569',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  {val}kg
+                                </button>
+                              ))}
+                              <input
+                                type="number"
+                                step="0.05"
+                                min="0"
+                                placeholder="Custom"
+                                value={outputTareKg}
+                                onChange={(e) => {
+                                  setTarePreset('custom');
+                                  setOutputTareKg(e.target.value);
+                                }}
+                                style={{
+                                  width: '65px',
+                                  padding: '4px 6px',
+                                  borderRadius: '5px',
+                                  border: tarePreset === 'custom' ? '1.5px solid #16a34a' : '1px solid #cbd5e1',
+                                  fontSize: '0.78rem',
+                                  fontWeight: '700',
+                                  background: '#ffffff',
+                                  textAlign: 'right'
+                                }}
+                                title="Custom Tare in kg"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', color: '#14532d', marginBottom: '4px' }}>
+                              Storage Bay
+                            </label>
+                            <SearchableSelect
+                              value={outputStorageBay}
+                              onChange={(e) => setOutputStorageBay(e.target.value)}
+                              style={{ width: '100%', fontSize: '0.85rem' }}
+                            >
+                              <option value="Bay A">Bay A</option>
+                              <option value="Bay B">Bay B</option>
+                              <option value="Bay C">Bay C</option>
+                              <option value="Quarantine / Aging Bay">Quarantine / Aging Bay</option>
+                              <option value="Dispatch Ready Store">Dispatch Ready Store</option>
+                            </SearchableSelect>
+                          </div>
+                        </div>
+
+                        {/* Gross Weight Input with Weighing Scale button & Live Net Weight */}
+                        <div style={{
+                          background: '#ffffff',
+                          border: '1.5px solid #4ade80',
+                          borderRadius: '10px',
+                          padding: '12px 16px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          flexWrap: 'wrap',
+                          gap: '12px'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: '220px' }}>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '800', color: '#15803d', marginBottom: '4px' }}>
+                                Gross Weight (kg) <span style={{ color: '#ef4444' }}>*</span>
+                              </label>
+                              <div style={{ display: 'flex', gap: '6px' }}>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  placeholder="e.g. 52.80"
+                                  value={outputGrossKg}
+                                  onChange={(e) => setOutputGrossKg(e.target.value)}
+                                  style={{
+                                    width: '120px',
+                                    padding: '8px 12px',
+                                    fontSize: '1rem',
+                                    fontWeight: '800',
+                                    borderRadius: '6px',
+                                    border: '1.5px solid #22c55e',
+                                    color: '#0f172a'
+                                  }}
+                                />
+                                <WeighingScaleCaptureButton
+                                  onCapture={(weight) => setOutputGrossKg(weight.toString())}
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700' }}>
+                              FINAL NET QUANTITY OF ROLL:
+                            </div>
+                            <div style={{ fontSize: '1.35rem', fontWeight: '900', color: outGrossVal > outTareVal ? '#15803d' : '#94a3b8' }}>
+                              {outNetVal.toFixed(2)} kg
+                            </div>
+                            <div style={{ fontSize: '0.7rem', color: '#16a34a', fontWeight: '600' }}>
+                              Gross: {outGrossVal.toFixed(2)} kg − Tare: {outTareVal.toFixed(2)} kg
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Notes */}
                 <div style={{ gridColumn: 'span 2' }}>

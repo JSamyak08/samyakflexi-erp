@@ -2952,25 +2952,173 @@ export default function App() {
       setInventory(prev => prev.map(i => (i.id === invMatch.id) ? updatedInv : i));
     }
 
-    // 4. Sync to Job's Production Record
+    // 4. Synchronize Substrate 2 / Substrate 3 roll deduction if provided
+    const subInfo = logEntry.substrate2 || logEntry.substrate3;
+    if (subInfo && subInfo.barcode) {
+      const subBarcode = subInfo.barcode.trim();
+      const subConsumed = Number(subInfo.consumedKg) || 0;
+      const subRollMatch = (inventoryRolls || []).find(r => (r.barcodeId || r.id) === subBarcode);
+      if (subRollMatch && subConsumed > 0) {
+        const prevAvail = Number(subRollMatch.availableWeightKg ?? subRollMatch.netWeightKg ?? 0);
+        const newSubAvail = Math.max(0, prevAvail - subConsumed);
+        const updatedSubRoll = {
+          ...subRollMatch,
+          availableWeightKg: newSubAvail,
+          status: newSubAvail <= 0 ? 'Consumed' : (subRollMatch.status || 'In Stock')
+        };
+        try {
+          await saveInventoryRollToSupabase(updatedSubRoll);
+        } catch (e) {
+          console.warn('[handleConsumeSFG] Substrate roll update notice:', e);
+        }
+        setInventoryRolls(prev => prev.map(r => ((r.barcodeId || r.id) === subBarcode) ? updatedSubRoll : r));
+      }
+    }
+
     const targetOrderId = updatedSfgItem.orderId || logEntry.orderId;
     const targetJobName = (updatedSfgItem.jobName || logEntry.jobName || '').trim().toLowerCase();
 
+    // 5. Create and persist new SFG or FG Output Roll if produced
+    const outRoll = logEntry.outputRoll;
+    let createdOutputBarcode = null;
+    if (outRoll && Number(outRoll.netWeightKg) > 0) {
+      createdOutputBarcode = outRoll.barcode || `${outRoll.outputType || 'SFG'}-BC-${targetOrderId || Date.now()}-${Date.now().toString().slice(-4)}`;
+      const outputNetKg = Number(outRoll.netWeightKg) || 0;
+      const outputGrossKg = Number(outRoll.grossWeightKg) || outputNetKg;
+      const outputTareKg = Number(outRoll.tareWeightKg) || 0;
+
+      const newSfgGoodItem = {
+        id: createdOutputBarcode,
+        sfgBatchCode: createdOutputBarcode,
+        sfgType: outRoll.outputType === 'FG' ? 'Finished Goods' : 'Laminated / Processed Rolls',
+        orderId: targetOrderId,
+        jobCode: updatedSfgItem.jobCode || '',
+        jobName: updatedSfgItem.jobName || 'Untitled Job',
+        clientName: updatedSfgItem.clientName || '',
+        filmType: updatedSfgItem.filmType || '',
+        micron: updatedSfgItem.micron || 0,
+        widthMm: updatedSfgItem.widthMm || 0,
+        totalGrossKg: outputGrossKg,
+        totalNetKg: outputNetKg,
+        consumedKg: 0,
+        availableKg: outputNetKg,
+        rollsCount: 1,
+        machineName: logEntry.targetMachine || '',
+        operatorName: logEntry.operatorName || '',
+        shift: logEntry.shift || '',
+        storageBay: outRoll.storageBay || 'Bay A',
+        productionDate: logEntry.date || new Date().toISOString().split('T')[0],
+        status: outRoll.outputType === 'FG' ? 'Ready for Dispatch' : 'In Stock (WIP)',
+        notes: `Produced from ${logEntry.targetProcess} of ${updatedSfgItem.sfgBatchCode}`,
+        consumptionHistory: []
+      };
+
+      const newInventoryRoll = {
+        id: createdOutputBarcode,
+        barcodeId: createdOutputBarcode,
+        rollType: outRoll.outputType === 'FG' ? 'FINISHED_GOODS' : 'SEMI_FINISHED_GOODS',
+        jobName: updatedSfgItem.jobName || 'Untitled Job',
+        jobCode: updatedSfgItem.jobCode || '',
+        orderId: targetOrderId || '',
+        clientName: updatedSfgItem.clientName || '',
+        customerName: updatedSfgItem.clientName || '',
+        filmType: updatedSfgItem.filmType || '',
+        micron: updatedSfgItem.micron || 0,
+        widthMm: updatedSfgItem.widthMm || 0,
+        grossWeightKg: outputGrossKg,
+        tareWeightKg: outputTareKg,
+        netWeightKg: outputNetKg,
+        availableWeightKg: outputNetKg,
+        machineName: logEntry.targetMachine || '',
+        operatorName: logEntry.operatorName || '',
+        shift: logEntry.shift || '',
+        locationBay: outRoll.storageBay || 'Bay A',
+        status: outRoll.outputType === 'FG' ? 'Ready for Dispatch' : 'In Stock (SFG)',
+        sfgType: outRoll.outputType === 'FG' ? 'Finished Goods' : 'Laminated Rolls',
+        remarks: `Produced from ${logEntry.targetProcess}`,
+        inwardDatetime: new Date().toISOString(),
+        productionDate: logEntry.date || new Date().toISOString().split('T')[0]
+      };
+
+      try {
+        await saveSFGGoodToSupabase(newSfgGoodItem);
+        setSfgGoods(prev => [newSfgGoodItem, ...prev]);
+      } catch (e) {
+        console.warn('[handleConsumeSFG] New SFG Good save error:', e);
+      }
+
+      try {
+        await saveInventoryRollToSupabase(newInventoryRoll);
+        setInventoryRolls(prev => [newInventoryRoll, ...prev]);
+      } catch (e) {
+        console.warn('[handleConsumeSFG] New inventory roll save error:', e);
+      }
+    }
+
+    // 6. Sync to Job's Production Record (Pre-fill Stage Quantities & Scrap Wastage)
     let matchedRec = (productionRecords || []).find(r => 
       (targetOrderId && String(r.orderId) === String(targetOrderId)) || 
       (r.jobName && (r.jobName || '').trim().toLowerCase() === targetJobName)
     );
 
-    if (matchedRec) {
-      const existingLogs = Array.isArray(matchedRec.sfgConsumptions) ? matchedRec.sfgConsumptions : [];
-      const updatedRec = {
-        ...matchedRec,
-        sfgConsumptions: [logEntry, ...existingLogs]
+    const scrap = logEntry.scrapBreakdown || {};
+    const stage = logEntry.targetProcess;
+    const outNetKg = Number(logEntry.outputRoll?.netWeightKg) || 0;
+    const outGrossKg = Number(logEntry.outputRoll?.grossWeightKg) || outNetKg;
+    const outTareKg = Number(logEntry.outputRoll?.tareWeightKg) || 0;
+    const finalOutBarcode = createdOutputBarcode || logEntry.outputRoll?.barcode;
+
+    const round2 = (v) => parseFloat((Number(v) || 0).toFixed(2));
+
+    let stageUpdates = {};
+    if (stage === 'Lamination (Pass 1)') {
+      stageUpdates = {
+        qtyLaminationL1: round2((Number(matchedRec?.qtyLaminationL1) || 0) + outNetKg),
+        adhesiveConsumedL1Kg: round2((Number(matchedRec?.adhesiveConsumedL1Kg) || 0) + (Number(scrap.adhesiveConsumedL1Kg) || 0)),
+        laminationPlainSubstrateWastageKg: round2((Number(matchedRec?.laminationPlainSubstrateWastageKg) || 0) + (Number(scrap.laminationPlainSubstrateWastageKg) || 0)),
+        laminateWastageKg: round2((Number(matchedRec?.laminateWastageKg) || 0) + (Number(scrap.laminateWastageKg) || 0))
       };
-      await saveProductionRecordToSupabase(updatedRec);
-      setProductionRecords(prev => prev.map(r => r.id === updatedRec.id ? updatedRec : r));
-    } else {
-      const newRec = {
+    } else if (stage === 'Lamination (Pass 2)') {
+      stageUpdates = {
+        qtySecondPassL2: round2((Number(matchedRec?.qtySecondPassL2) || 0) + outNetKg),
+        adhesiveConsumedL2Kg: round2((Number(matchedRec?.adhesiveConsumedL2Kg) || 0) + (Number(scrap.adhesiveConsumedL2Kg) || 0)),
+        laminationPlainSubstrateWastageL2Kg: round2((Number(matchedRec?.laminationPlainSubstrateWastageL2Kg) || 0) + (Number(scrap.laminationPlainSubstrateWastageL2Kg) || 0)),
+        laminateWastageKg: round2((Number(matchedRec?.laminateWastageKg) || 0) + (Number(scrap.laminateWastageKg) || 0))
+      };
+    } else if (stage === 'Printing (Pass 2)') {
+      stageUpdates = {
+        printingPlainSettingWastageKg: round2((Number(matchedRec?.printingPlainSettingWastageKg) || 0) + (Number(scrap.printingPlainSettingWastageKg) || 0)),
+        printingWastageKg: round2((Number(matchedRec?.printingWastageKg) || 0) + (Number(scrap.printingWastageKg) || 0)),
+        ...(outNetKg > 0 ? { qtyFirstPassL1: round2((Number(matchedRec?.qtyFirstPassL1) || 0) + outNetKg) } : {})
+      };
+    } else if (stage === 'Pouching / Bag Making') {
+      stageUpdates = {
+        qtyPouching: round2((Number(matchedRec?.qtyPouching) || 0) + outNetKg),
+        zipperConsumedKg: round2((Number(matchedRec?.zipperConsumedKg) || 0) + (Number(scrap.zipperConsumedKg) || 0)),
+        pouchingScrapKg: round2((Number(matchedRec?.pouchingScrapKg) || 0) + (Number(scrap.pouchingScrapKg) || 0))
+      };
+    }
+
+    const currentOutputRolls = Array.isArray(matchedRec?.outputRolls) ? matchedRec.outputRolls : [];
+    let newOutputRolls = [...currentOutputRolls];
+    if (outNetKg > 0 && finalOutBarcode) {
+      newOutputRolls.push({
+        rollNo: `Roll #${currentOutputRolls.length + 1}`,
+        rollId: finalOutBarcode,
+        barcodeId: finalOutBarcode,
+        grossWeightKg: outGrossKg,
+        tareWeightKg: outTareKg,
+        netWeightKg: outNetKg,
+        rollType: logEntry.outputRoll?.outputType || 'SFG',
+        stage: stage,
+        operator: logEntry.operatorName || '',
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    const existingLogs = Array.isArray(matchedRec?.sfgConsumptions) ? matchedRec.sfgConsumptions : [];
+    const updatedRec = {
+      ...(matchedRec || {
         id: `PROD-REC-${Date.now()}`,
         orderId: targetOrderId || `ORD-${Date.now()}`,
         jobName: updatedSfgItem.jobName || 'Untitled Job',
@@ -2978,11 +3126,24 @@ export default function App() {
         operatorName: logEntry.operatorName || 'Plant Operator',
         shift: logEntry.shift || 'Day Shift',
         status: 'Pending Plant Approval',
-        dateFilled: logEntry.date || new Date().toISOString().split('T')[0],
-        sfgConsumptions: [logEntry]
-      };
-      await saveProductionRecordToSupabase(newRec);
-      setProductionRecords(prev => [newRec, ...prev]);
+        dateFilled: logEntry.date || new Date().toISOString().split('T')[0]
+      }),
+      ...stageUpdates,
+      outputRolls: newOutputRolls,
+      rollsBreakdown: newOutputRolls,
+      sfgConsumptions: [logEntry, ...existingLogs]
+    };
+
+    try {
+      await saveProductionRecordToSupabase(updatedRec);
+    } catch (e) {
+      console.warn('[handleConsumeSFG] Production record save notice:', e);
+    }
+
+    if (matchedRec) {
+      setProductionRecords(prev => prev.map(r => r.id === updatedRec.id ? updatedRec : r));
+    } else {
+      setProductionRecords(prev => [updatedRec, ...prev]);
     }
 
     logAudit('UPDATE', 'SFG Store', `Consumed ${logEntry.consumedKg} kg SFG from batch "${updatedSfgItem.sfgBatchCode}" for stage "${logEntry.targetProcess}". Remaining Balance: ${updatedSfgItem.availableKg} kg`, updatedSfgItem.sfgBatchCode);
