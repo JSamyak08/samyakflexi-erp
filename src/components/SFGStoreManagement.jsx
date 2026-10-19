@@ -30,7 +30,8 @@ import {
   CheckCircle,
   AlertOctagon,
   ArrowRight,
-  Printer
+  Printer,
+  RefreshCw
 } from 'lucide-react';
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';

@@ -899,28 +899,29 @@ export default function ProductionRecordManagement({
         : [];
       
       const pressInputRolls = existingRec.inputRollsList || ord.inputRollsList || [];
+      const prefilledPressMaterials = pressInputRolls.map((r, idx) => {
+        const consumed = parseFloat(r.consumedWeightKg) || parseFloat(r.initialWeightKg) || 0;
+        const defaultRate = DEFAULT_DAILY_RATES[r.filmType] || 140;
+        return {
+          id: `mat-press-${Date.now()}-${idx + 1}`,
+          itemId: `RM-${(r.filmType || 'FILM').substring(0, 3).toUpperCase()}-${idx + 1}`,
+          itemCode: `RM-${(r.filmType || 'FILM').substring(0, 3).toUpperCase()}-${idx + 1}`,
+          itemName: `${r.filmType || 'Substrate Film'} ${r.micron || 12}µ (${r.widthMm || 800}mm)`,
+          filmType: r.filmType || 'PET Film',
+          micron: String(r.micron || '12'),
+          widthMm: String(r.widthMm || '800'),
+          unit: 'Kg',
+          barcode: r.barcodeId || '',
+          issueQtyKg: consumed,
+          returnQtyKg: 0,
+          netConsumedQtyKg: consumed,
+          unitPricePerKg: defaultRate,
+          totalMaterialCost: consumed * defaultRate,
+          wastagePct: 0
+        };
+      });
+
       if (existingMatList.length === 0 && pressInputRolls.length > 0) {
-        const prefilledPressMaterials = pressInputRolls.map((r, idx) => {
-          const consumed = parseFloat(r.consumedWeightKg) || parseFloat(r.initialWeightKg) || 0;
-          const defaultRate = DEFAULT_DAILY_RATES[r.filmType] || 140;
-          return {
-            id: `mat-press-${Date.now()}-${idx + 1}`,
-            itemId: `RM-${(r.filmType || 'FILM').substring(0, 3).toUpperCase()}-${idx + 1}`,
-            itemCode: `RM-${(r.filmType || 'FILM').substring(0, 3).toUpperCase()}-${idx + 1}`,
-            itemName: `${r.filmType || 'Substrate Film'} ${r.micron || 12}µ (${r.widthMm || 800}mm)`,
-            filmType: r.filmType || 'PET Film',
-            micron: String(r.micron || '12'),
-            widthMm: String(r.widthMm || '800'),
-            unit: 'Kg',
-            barcode: r.barcodeId || '',
-            issueQtyKg: consumed,
-            returnQtyKg: 0,
-            netConsumedQtyKg: consumed,
-            unitPricePerKg: defaultRate,
-            totalMaterialCost: consumed * defaultRate,
-            wastagePct: 0
-          };
-        });
         setMaterialsList(prefilledPressMaterials);
       } else {
         setMaterialsList(existingMatList);
