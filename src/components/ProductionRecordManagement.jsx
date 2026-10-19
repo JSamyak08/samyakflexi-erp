@@ -81,58 +81,80 @@ function RollWiseInputOutputMasterRolls({
   const targetJobCode = String(effectiveOrder?.jobCode || effectiveRecord?.jobCode || '').trim().toLowerCase();
   const targetJobName = String(effectiveOrder?.jobName || effectiveRecord?.jobName || '').trim().toLowerCase();
 
-  // 2. Collect all linked SFG & FG rolls
+  // 2. Collect SFG Store Consumption history for this job/order
+  const sfgLogs = [
+    ...(Array.isArray(effectiveRecord?.sfgConsumptions) ? effectiveRecord.sfgConsumptions : []),
+    ...(Array.isArray(effectiveOrder?.sfgConsumptions) ? effectiveOrder.sfgConsumptions : [])
+  ].filter((log, idx, arr) => {
+    const key = log.id || `${log.timestamp || log.date}-${log.sfgBatchCode}-${log.targetProcess}`;
+    return arr.findIndex(l => (l.id || `${l.timestamp || l.date}-${l.sfgBatchCode}-${l.targetProcess}`) === key) === idx;
+  });
+
+  // 3. Collect real SFG & FG output master rolls (Strictly no dummy or seeded rolls)
   const rollMap = new Map();
   const addRoll = (r) => {
     if (!r) return;
-    const barcode = String(r.barcodeId || r.sfgBatchCode || r.sfg_batch_code || r.id || '').trim();
+    const barcode = String(r.barcodeId || r.sfgBatchCode || r.sfg_batch_code || r.rollId || r.barcode || r.id || '').trim();
     if (!barcode) return;
+
+    // Discard any synthetic or placeholder identifiers
+    if (barcode.startsWith('RM-IN-') || barcode.startsWith('mat-') || barcode === 'null' || barcode === 'undefined') return;
 
     const rOrderId = String(r.orderId || r.order_id || '').replace(/^PR-/, '').replace(/^REC-/, '').trim().toLowerCase();
     const rJobCode = String(r.jobCode || r.job_code || '').trim().toLowerCase();
     const rJobName = String(r.jobName || r.job_name || '').trim().toLowerCase();
-    const rBatch = String(r.sfgBatchCode || r.sfg_batch_code || r.barcodeId || r.id || '').toLowerCase();
+    const rBatch = barcode.toLowerCase();
 
     const matches = (cleanOrderId && rOrderId && rOrderId === cleanOrderId) ||
                     (cleanOrderId && rBatch.includes(cleanOrderId)) ||
                     (targetJobCode && rJobCode && rJobCode === targetJobCode) ||
                     (targetJobName && rJobName && (rJobName.includes(targetJobName) || targetJobName.includes(rJobName)));
 
+    if (!matches) return;
+
     const rType = String(r.rollType || r.roll_type || r.sfgType || r.sfg_type || r.category || '').toLowerCase();
-    const isSfgFg = matches || rType.includes('sfg') || rType.includes('semi') || rType.includes('fg') || rType.includes('finish') || rType.includes('printed') || barcode.startsWith('SFG-') || barcode.startsWith('FG-');
+    const isExplicitRm = rType.includes('raw') || rType === 'rm' || rType.includes('chemical') || rType.includes('ink') || rType.includes('solvent') || barcode.startsWith('CON-');
+    if (isExplicitRm && !barcode.startsWith('SFG-') && !barcode.startsWith('FG-')) {
+      return; // Raw material rolls are input rolls, not output master rolls
+    }
 
-    if (matches && isSfgFg) {
-      if (!rollMap.has(barcode)) {
-        const isFg = rType.includes('finish') || rType === 'fg' || barcode.startsWith('FG-');
-        const netKg = parseFloat(r.netWeightKg || r.total_net_kg || r.totalNetKg || r.availableWeightKg || r.available_weight_kg || 0) || 0;
-        const grossKg = parseFloat(r.grossWeightKg || r.total_gross_kg || r.totalGrossKg || (netKg + 0.8)) || 0;
-        const tareKg = parseFloat(r.tareWeightKg || r.tare_weight_kg || 0.8) || 0.8;
-        const lengthM = parseFloat(r.lengthMeters || r.total_meters || r.totalMeters || r.meters || 0) || 0;
-        const film = r.filmType || r.film_type || effectiveOrder?.printFilmType || 'PET';
-        const micron = r.micron || effectiveOrder?.micron || 12;
-        const widthMm = r.widthMm || r.width_mm || effectiveOrder?.widthMm || effectiveOrder?.printWidthMm || 460;
-        const qc = r.qcStatus || r.qc_status || 'Approved';
-        const loc = r.locationBay || r.storageBay || r.storage_bay || (isFg ? 'FG Warehouse' : 'SFG Store (Pre-Lamination)');
+    const isRealSfgOrFg = rType.includes('sfg') || rType.includes('semi') || rType.includes('fg') || rType.includes('finish') || rType.includes('printed') || barcode.startsWith('SFG-') || barcode.startsWith('FG-');
+    if (!isRealSfgOrFg) return;
 
-        rollMap.set(barcode, {
-          ...r,
-          id: barcode,
-          barcodeId: barcode,
-          rollType: isFg ? 'FG' : 'SFG',
-          category: isFg ? 'Finished Goods (FG)' : 'Semi-Finished Goods (SFG)',
-          netWeightKg: netKg,
-          grossWeightKg: grossKg,
-          tareWeightKg: tareKg,
-          lengthMeters: lengthM,
-          filmType: film,
-          micron: Number(micron),
-          widthMm: Number(widthMm),
-          qcStatus: qc,
-          locationBay: loc,
-          inputSubstrateBarcodes: r.inputSubstrateBarcodes || r.input_barcode_ids || (r.inputRollsTraceability || []).map(inR => inR.barcodeId).filter(Boolean) || [],
-          inputRollsTraceability: r.inputRollsTraceability || []
-        });
-      }
+    const netKg = parseFloat(r.netWeightKg || r.total_net_kg || r.totalNetKg || r.availableWeightKg || r.available_weight_kg || 0) || 0;
+    const grossKg = parseFloat(r.grossWeightKg || r.total_gross_kg || r.totalGrossKg || (netKg > 0 ? netKg + 0.8 : 0)) || 0;
+    const tareKg = parseFloat(r.tareWeightKg || r.tare_weight_kg || 0.8) || 0.8;
+    const lengthM = parseFloat(r.lengthMeters || r.total_meters || r.totalMeters || r.meters || 0) || 0;
+
+    // Discard entries with 0 weight (not weighed or uninitialized placeholder)
+    if (netKg <= 0 && grossKg <= 0) return;
+
+    if (!rollMap.has(barcode)) {
+      const isFg = rType.includes('finish') || rType === 'fg' || barcode.startsWith('FG-');
+      const film = r.filmType || r.film_type || effectiveOrder?.printFilmType || 'Film';
+      const micron = r.micron || effectiveOrder?.micron || 12;
+      const widthMm = r.widthMm || r.width_mm || effectiveOrder?.widthMm || effectiveOrder?.printWidthMm || 460;
+      const qc = r.qcStatus || r.qc_status || 'Approved';
+      const loc = r.locationBay || r.storageBay || r.storage_bay || (isFg ? 'FG Warehouse' : 'SFG Store');
+
+      rollMap.set(barcode, {
+        ...r,
+        id: barcode,
+        barcodeId: barcode,
+        rollType: isFg ? 'FG' : 'SFG',
+        category: isFg ? 'Finished Goods (FG)' : 'Semi-Finished Goods (SFG)',
+        netWeightKg: netKg,
+        grossWeightKg: grossKg,
+        tareWeightKg: tareKg,
+        lengthMeters: lengthM,
+        filmType: film,
+        micron: Number(micron),
+        widthMm: Number(widthMm),
+        qcStatus: qc,
+        locationBay: loc,
+        inputSubstrateBarcodes: r.inputSubstrateBarcodes || r.input_barcode_ids || (r.inputRollsTraceability || []).map(inR => inR.barcodeId).filter(Boolean) || [],
+        inputRollsTraceability: r.inputRollsTraceability || []
+      });
     }
   };
 
@@ -144,44 +166,113 @@ function RollWiseInputOutputMasterRolls({
   (inventoryRolls || []).forEach(addRoll);
   (sfgGoods || []).forEach(addRoll);
 
+  // Add output rolls recorded via SFG Store Consumption
+  sfgLogs.forEach(log => {
+    if (log.outputRoll) {
+      const outB = String(log.outputRoll.barcode || log.outputRoll.barcodeId || '').trim();
+      if (outB) {
+        addRoll({
+          ...log.outputRoll,
+          barcodeId: outB,
+          orderId: log.orderId || effectiveOrder?.id,
+          jobName: log.jobName || effectiveOrder?.jobName,
+          jobCode: log.jobCode || effectiveOrder?.jobCode,
+          rollType: log.outputRoll.outputType || 'SFG',
+          stage: log.targetProcess || log.outputRoll.stage,
+          inputSubstrateBarcodes: [
+            log.sfgBatchCode,
+            log.substrate2?.barcode,
+            log.substrate3?.barcode
+          ].filter(Boolean),
+          inputRollsTraceability: [
+            log.sfgBatchCode ? { barcodeId: log.sfgBatchCode, consumedWeightKg: parseFloat(log.consumedKg) || 0, filmType: 'SFG Base Film' } : null,
+            log.substrate2?.barcode ? { barcodeId: log.substrate2.barcode, consumedWeightKg: parseFloat(log.substrate2.consumedKg) || 0, filmType: log.substrate2.filmType || 'Substrate 2' } : null,
+            log.substrate3?.barcode ? { barcodeId: log.substrate3.barcode, consumedWeightKg: parseFloat(log.substrate3.consumedKg) || 0, filmType: log.substrate3.filmType || 'Substrate 3' } : null
+          ].filter(Boolean)
+        });
+      }
+    }
+  });
+
   const linkedRolls = Array.from(rollMap.values());
 
-  // 3. Collect Input Substrate Rolls
-  const rawInputList = (
-    (effectiveRecord?.inputRollsList && effectiveRecord.inputRollsList.length > 0 ? effectiveRecord.inputRollsList : null) ||
-    (effectiveRecord?.stages?.printing?.inputRollsList && effectiveRecord.stages.printing.inputRollsList.length > 0 ? effectiveRecord.stages.printing.inputRollsList : null) ||
-    (effectiveOrder?.inputRollsList && effectiveOrder.inputRollsList.length > 0 ? effectiveOrder.inputRollsList : null) ||
-    []
-  );
+  // 4. Collect Real Input Substrate Rolls (From Active Print Run or SFG Store Consumption ONLY)
+  // Strictly filter out empty or un-scanned items; never synthesize dummy rolls from formulation layers
+  const rawPressInputs = [
+    ...(Array.isArray(effectiveRecord?.inputRollsList) ? effectiveRecord.inputRollsList : []),
+    ...(Array.isArray(effectiveRecord?.stages?.printing?.inputRollsList) ? effectiveRecord.stages.printing.inputRollsList : []),
+    ...(Array.isArray(effectiveOrder?.inputRollsList) ? effectiveOrder.inputRollsList : [])
+  ];
 
-  let inputRolls = [];
-  if (rawInputList.length > 0) {
-    inputRolls = rawInputList.map((r, i) => ({
-      id: r.id || `in-roll-${i + 1}`,
-      barcodeId: r.barcodeId || r.barcode || `RM-IN-${i + 1}`,
-      filmType: r.filmType || effectiveOrder?.printFilmType || 'PET Film',
-      micron: r.micron || effectiveOrder?.micron || 12,
-      widthMm: r.widthMm || effectiveOrder?.widthMm || effectiveOrder?.printWidthMm || 460,
-      initialWeightKg: parseFloat(r.initialWeightKg || r.initialWeight || r.consumedWeightKg || 0) || 0,
-      consumedWeightKg: parseFloat(r.consumedWeightKg || r.consumedWeight || r.initialWeightKg || 0) || 0
-    }));
-  } else {
-    const mats = (materialsList && materialsList.length > 0) ? materialsList : (effectiveRecord?.materialsList || []);
-    inputRolls = mats.map((m, i) => {
-      const consumed = parseFloat(m.netConsumedQtyKg) || Math.max(0, (parseFloat(m.issueQtyKg) || 0) - (parseFloat(m.returnQtyKg) || 0)) || (parseFloat(m.issueQtyKg) || 0);
-      return {
-        id: m.id || `mat-${i + 1}`,
-        barcodeId: m.barcode || `RM-${m.filmType || 'SUBSTRATE'}-${i + 1}`,
-        filmType: m.filmType || 'Film',
-        micron: m.micron || '12',
-        widthMm: m.widthMm || '460',
-        initialWeightKg: parseFloat(m.issueQtyKg || consumed) || 0,
-        consumedWeightKg: consumed
-      };
-    });
-  }
+  const validPressInputRolls = rawPressInputs.filter(r => {
+    if (!r) return false;
+    const bId = String(r.barcodeId || r.barcode || '').trim();
+    if (!bId || bId.startsWith('RM-IN-') || bId.startsWith('mat-') || bId === 'null' || bId === 'undefined') {
+      return false;
+    }
+    const consW = parseFloat(r.consumedWeightKg || r.consumedWeight || r.initialWeightKg || r.initialWeight || 0);
+    return consW > 0;
+  }).map((r, i) => ({
+    id: r.id || `in-roll-${i + 1}`,
+    barcodeId: String(r.barcodeId || r.barcode).trim(),
+    filmType: r.filmType || effectiveOrder?.printFilmType || 'Film',
+    micron: r.micron || effectiveOrder?.micron || 12,
+    widthMm: r.widthMm || effectiveOrder?.widthMm || effectiveOrder?.printWidthMm || 460,
+    initialWeightKg: parseFloat(r.initialWeightKg || r.initialWeight || r.consumedWeightKg || 0) || 0,
+    consumedWeightKg: parseFloat(r.consumedWeightKg || r.consumedWeight || r.initialWeightKg || 0) || 0,
+    source: 'Active Print Run'
+  }));
 
-  // 4. Pair Input vs Output Roll-Wise
+  // Collect input rolls from SFG Store Consumption logs (e.g. SFG master roll + Substrate 2 & 3 consumed)
+  const sfgInputRolls = [];
+  sfgLogs.forEach(log => {
+    if (log.sfgBatchCode && parseFloat(log.consumedKg) > 0) {
+      sfgInputRolls.push({
+        id: `sfg-cons-${log.id || log.sfgBatchCode}`,
+        barcodeId: log.sfgBatchCode,
+        filmType: 'SFG Base Film',
+        micron: effectiveOrder?.micron || 12,
+        widthMm: effectiveOrder?.widthMm || 800,
+        initialWeightKg: (parseFloat(log.consumedKg) || 0) + (parseFloat(log.remainingBalanceKg) || 0),
+        consumedWeightKg: parseFloat(log.consumedKg) || 0,
+        source: `SFG Store (${log.targetProcess || 'Consumption'})`
+      });
+    }
+    if (log.substrate2 && log.substrate2.barcode && parseFloat(log.substrate2.consumedKg) > 0) {
+      sfgInputRolls.push({
+        id: `sub2-cons-${log.id || log.substrate2.barcode}`,
+        barcodeId: log.substrate2.barcode,
+        filmType: log.substrate2.filmType || 'Substrate 2',
+        micron: log.substrate2.micron || 12,
+        widthMm: log.substrate2.widthMm || 800,
+        initialWeightKg: parseFloat(log.substrate2.initialKg || log.substrate2.consumedKg) || 0,
+        consumedWeightKg: parseFloat(log.substrate2.consumedKg) || 0,
+        source: `SFG Store (${log.targetProcess || 'Lamination Pass 1'})`
+      });
+    }
+    if (log.substrate3 && log.substrate3.barcode && parseFloat(log.substrate3.consumedKg) > 0) {
+      sfgInputRolls.push({
+        id: `sub3-cons-${log.id || log.substrate3.barcode}`,
+        barcodeId: log.substrate3.barcode,
+        filmType: log.substrate3.filmType || 'Substrate 3',
+        micron: log.substrate3.micron || 12,
+        widthMm: log.substrate3.widthMm || 800,
+        initialWeightKg: parseFloat(log.substrate3.initialKg || log.substrate3.consumedKg) || 0,
+        consumedWeightKg: parseFloat(log.substrate3.consumedKg) || 0,
+        source: `SFG Store (${log.targetProcess || 'Lamination Pass 2'})`
+      });
+    }
+  });
+
+  const inputRollMap = new Map();
+  [...validPressInputRolls, ...sfgInputRolls].forEach(r => {
+    if (r.barcodeId && !inputRollMap.has(r.barcodeId)) {
+      inputRollMap.set(r.barcodeId, r);
+    }
+  });
+  const inputRolls = Array.from(inputRollMap.values());
+
+  // 5. Pair Input vs Output Roll-Wise
   const pairedRolls = [];
   const usedInputIds = new Set();
 
@@ -189,34 +280,38 @@ function RollWiseInputOutputMasterRolls({
     const linkedInputBarcodes = outRoll.inputSubstrateBarcodes || 
       (outRoll.inputRollsTraceability || []).map(r => r.barcodeId).filter(Boolean) || [];
 
-    let matchedInput = null;
+    let matchedInputs = [];
     if (linkedInputBarcodes.length > 0) {
-      matchedInput = inputRolls.find(inR => inR && linkedInputBarcodes.includes(inR.barcodeId));
+      matchedInputs = inputRolls.filter(inR => inR && linkedInputBarcodes.includes(inR.barcodeId));
     }
-    if (!matchedInput && inputRolls[outIdx]) {
-      matchedInput = inputRolls[outIdx];
-    } else if (!matchedInput && inputRolls.length === 1) {
-      matchedInput = inputRolls[0];
-    }
-
-    if (matchedInput?.id || matchedInput?.barcodeId) {
-      usedInputIds.add(matchedInput.id || matchedInput.barcodeId);
+    if (matchedInputs.length === 0 && inputRolls[outIdx]) {
+      matchedInputs = [inputRolls[outIdx]];
+    } else if (matchedInputs.length === 0 && inputRolls.length === 1) {
+      matchedInputs = [inputRolls[0]];
     }
 
-    const inConsKg = parseFloat(matchedInput?.consumedWeightKg || 0);
-    const inInitKg = parseFloat(matchedInput?.initialWeightKg || inConsKg);
+    matchedInputs.forEach(inR => {
+      if (inR?.id || inR?.barcodeId) {
+        usedInputIds.add(inR.id || inR.barcodeId);
+      }
+    });
+
+    const primaryInput = matchedInputs[0] || null;
+    const inConsKg = matchedInputs.reduce((sum, inR) => sum + (parseFloat(inR.consumedWeightKg) || 0), 0);
+    const inInitKg = matchedInputs.reduce((sum, inR) => sum + (parseFloat(inR.initialWeightKg) || (parseFloat(inR.consumedWeightKg) || 0)), 0);
     const outNetKg = parseFloat(outRoll.netWeightKg || 0);
-    const outGrossKg = parseFloat(outRoll.grossWeightKg || (outNetKg + 0.8));
+    const outGrossKg = parseFloat(outRoll.grossWeightKg || (outNetKg > 0 ? outNetKg + 0.8 : 0));
     const outLengthM = parseFloat(outRoll.lengthMeters || 0);
 
     const deltaKg = inConsKg > 0 ? Number((outNetKg - inConsKg).toFixed(2)) : 0;
     const deltaPct = inConsKg > 0 ? Number(((deltaKg / inConsKg) * 100).toFixed(2)) : 0;
-    const recoveryPct = inConsKg > 0 ? Number(((outNetKg / inConsKg) * 100).toFixed(1)) : 100;
+    const recoveryPct = inConsKg > 0 ? Number(((outNetKg / inConsKg) * 100).toFixed(1)) : (outNetKg > 0 ? 100 : 0);
 
     pairedRolls.push({
       rollNo: outRoll.rollNo || outIdx + 1,
       outputRoll: outRoll,
-      inputRoll: matchedInput,
+      inputRoll: primaryInput,
+      linkedInputList: matchedInputs,
       outNetKg,
       outGrossKg,
       outLengthM,
@@ -229,16 +324,17 @@ function RollWiseInputOutputMasterRolls({
     });
   });
 
-  // Any leftover input rolls with no output yet
+  // Any leftover real input rolls with actual barcodes from Active Print Run / SFG store with no output yet
   inputRolls.forEach((inRoll) => {
     const key = inRoll.id || inRoll.barcodeId;
-    if (key && !usedInputIds.has(key) && !pairedRolls.some(p => p.inputRoll?.barcodeId === inRoll.barcodeId)) {
+    if (key && !usedInputIds.has(key) && !pairedRolls.some(p => p.inputRoll?.barcodeId === inRoll.barcodeId || (p.linkedInputList || []).some(m => m.barcodeId === inRoll.barcodeId))) {
       const inConsKg = parseFloat(inRoll.consumedWeightKg || 0);
       const inInitKg = parseFloat(inRoll.initialWeightKg || inConsKg);
       pairedRolls.push({
         rollNo: pairedRolls.length + 1,
         outputRoll: null,
         inputRoll: inRoll,
+        linkedInputList: [inRoll],
         outNetKg: 0,
         outGrossKg: 0,
         outLengthM: 0,
@@ -252,7 +348,7 @@ function RollWiseInputOutputMasterRolls({
     }
   });
 
-  // 5. Overall Aggregates
+  // 6. Overall Aggregates
   const totalInputConsumedKg = inputRolls.reduce((sum, r) => sum + (parseFloat(r.consumedWeightKg) || 0), 0);
   const sfgRolls = linkedRolls.filter(r => r.rollType === 'SFG');
   const fgRolls = linkedRolls.filter(r => r.rollType === 'FG');
@@ -260,9 +356,10 @@ function RollWiseInputOutputMasterRolls({
   const totalFgKg = fgRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
   const totalOutputKg = totalSfgKg + totalFgKg;
 
-  const netVarianceKg = Number((totalOutputKg - totalInputConsumedKg).toFixed(2));
-  const netVariancePct = totalInputConsumedKg > 0 ? Number(((netVarianceKg / totalInputConsumedKg) * 100).toFixed(2)) : 0;
-  const cumulativeRecoveryPct = totalInputConsumedKg > 0 ? Number(((totalOutputKg / totalInputConsumedKg) * 100).toFixed(1)) : (totalOutputKg > 0 ? 100 : 0);
+  const hasBothInputAndOutput = totalInputConsumedKg > 0 && totalOutputKg > 0;
+  const netVarianceKg = hasBothInputAndOutput ? Number((totalOutputKg - totalInputConsumedKg).toFixed(2)) : 0;
+  const netVariancePct = hasBothInputAndOutput ? Number(((netVarianceKg / totalInputConsumedKg) * 100).toFixed(2)) : 0;
+  const cumulativeRecoveryPct = hasBothInputAndOutput ? Number(((totalOutputKg / totalInputConsumedKg) * 100).toFixed(1)) : (totalOutputKg > 0 ? 100 : 0);
 
   const jobTitle = effectiveOrder?.jobName || effectiveRecord?.jobName || 'this job';
 
@@ -330,7 +427,7 @@ function RollWiseInputOutputMasterRolls({
             {totalInputConsumedKg.toFixed(2)} kg
           </div>
           <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>
-            {inputRolls.length} Input Roll(s) from Print Run
+            {inputRolls.length} Input Roll(s) Entered
           </div>
         </div>
 
@@ -346,15 +443,38 @@ function RollWiseInputOutputMasterRolls({
           </div>
         </div>
 
-        <div style={{ background: netVarianceKg >= 0 ? '#ecfdf5' : '#fffbeb', border: `1px solid ${netVarianceKg >= 0 ? '#a7f3d0' : '#fde68a'}`, borderRadius: '8px', padding: '10px 14px' }}>
-          <div style={{ fontSize: '0.7rem', fontWeight: '800', color: netVarianceKg >= 0 ? '#059669' : '#b45309', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+        <div style={{ 
+          background: hasBothInputAndOutput ? (netVarianceKg >= 0 ? '#ecfdf5' : '#fffbeb') : '#f8fafc', 
+          border: `1px solid ${hasBothInputAndOutput ? (netVarianceKg >= 0 ? '#a7f3d0' : '#fde68a') : '#e2e8f0'}`, 
+          borderRadius: '8px', 
+          padding: '10px 14px' 
+        }}>
+          <div style={{ 
+            fontSize: '0.7rem', 
+            fontWeight: '800', 
+            color: hasBothInputAndOutput ? (netVarianceKg >= 0 ? '#059669' : '#b45309') : '#64748b', 
+            textTransform: 'uppercase', 
+            letterSpacing: '0.03em' 
+          }}>
             ⚖️ Net Weight Delta (Ink / Variance)
           </div>
-          <div style={{ fontSize: '1.25rem', fontWeight: '900', color: netVarianceKg >= 0 ? '#065f46' : '#92400e', marginTop: '2px' }}>
-            {netVarianceKg >= 0 ? `+${netVarianceKg.toFixed(2)}` : netVarianceKg.toFixed(2)} kg
+          <div style={{ 
+            fontSize: '1.25rem', 
+            fontWeight: '900', 
+            color: hasBothInputAndOutput ? (netVarianceKg >= 0 ? '#065f46' : '#92400e') : '#64748b', 
+            marginTop: '2px' 
+          }}>
+            {hasBothInputAndOutput ? (netVarianceKg >= 0 ? `+${netVarianceKg.toFixed(2)}` : netVarianceKg.toFixed(2)) + ' kg' : '0.00 kg'}
           </div>
-          <div style={{ fontSize: '0.72rem', color: netVarianceKg >= 0 ? '#047857' : '#b45309', marginTop: '2px', fontWeight: '700' }}>
-            {netVarianceKg >= 0 ? `+${netVariancePct.toFixed(1)}% (Ink & Solvent Gain)` : `${netVariancePct.toFixed(1)}% (Trim & Process Loss)`}
+          <div style={{ 
+            fontSize: '0.72rem', 
+            color: hasBothInputAndOutput ? (netVarianceKg >= 0 ? '#047857' : '#b45309') : '#94a3b8', 
+            marginTop: '2px', 
+            fontWeight: '700' 
+          }}>
+            {hasBothInputAndOutput
+              ? (netVarianceKg >= 0 ? `+${netVariancePct.toFixed(1)}% (Ink & Solvent Gain)` : `${netVariancePct.toFixed(1)}% (Trim & Process Loss)`)
+              : (totalInputConsumedKg > 0 ? 'Awaiting Output Weighing' : 'No Output Weighed Yet')}
           </div>
         </div>
 
@@ -362,43 +482,51 @@ function RollWiseInputOutputMasterRolls({
           <div style={{ fontSize: '0.7rem', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
             🎯 Overall Stage Recovery
           </div>
-          <div style={{ fontSize: '1.25rem', fontWeight: '900', color: cumulativeRecoveryPct >= 95 ? '#047857' : '#0f172a', marginTop: '2px' }}>
-            {cumulativeRecoveryPct.toFixed(1)}%
+          <div style={{ 
+            fontSize: '1.25rem', 
+            fontWeight: '900', 
+            color: cumulativeRecoveryPct >= 95 ? '#047857' : (hasBothInputAndOutput ? '#0f172a' : '#94a3b8'), 
+            marginTop: '2px' 
+          }}>
+            {hasBothInputAndOutput ? `${cumulativeRecoveryPct.toFixed(1)}%` : (totalOutputKg > 0 ? '100.0%' : '0.0%')}
           </div>
           <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>
-            Gross Output / Net Input Ratio
+            {hasBothInputAndOutput ? 'Gross Output / Net Input Ratio' : 'Awaiting Roll Entries'}
           </div>
         </div>
       </div>
 
-      {/* Roll-Wise Input Vs Output Comparison Table */}
+      {/* Roll-Wise Input Vs Output Comparison Table or Clean Empty State */}
       {pairedRolls.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '24px', background: '#ffffff', border: '1px dashed #cbd5e1', borderRadius: '8px' }}>
-          <div style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: '700' }}>
-            No SFG or FG master rolls recorded yet for this job.
+        <div style={{ textAlign: 'center', padding: '36px 20px', background: '#ffffff', border: '1px dashed #cbd5e1', borderRadius: '10px' }}>
+          <div style={{ width: '48px', height: '48px', margin: '0 auto 12px', background: '#f1f5f9', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+            <Barcode size={26} />
           </div>
-          <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: '4px 0 14px 0' }}>
-            Input and Output roll details entered during Active Print Run will appear here automatically with roll-wise Input vs Output reconciliation.
+          <div style={{ fontSize: '0.96rem', color: '#1e293b', fontWeight: '800' }}>
+            No Master Rolls Recorded Yet
+          </div>
+          <p style={{ fontSize: '0.78rem', color: '#64748b', maxWidth: '560px', margin: '6px auto 16px auto', lineHeight: '1.45' }}>
+            Linked individual roll details with actual barcodes will appear here automatically once input substrate rolls are entered in <strong>Active Print Run</strong>, master rolls are weighed on the digital scale, or processed in <strong>SFG / FG Store Consumption</strong>.
           </p>
-          <div style={{ display: 'flex', justifyContent: 'center', gap: '10px' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
             {onOpenSfgModal && (
               <button
                 type="button"
                 className="btn-primary"
-                style={{ background: '#6d28d9', borderColor: '#6d28d9', padding: '5px 14px', fontSize: '0.8rem' }}
+                style={{ background: '#6d28d9', borderColor: '#6d28d9', padding: '6px 16px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
                 onClick={onOpenSfgModal}
               >
-                + Add SFG Roll
+                <Plus size={14} /> + Add SFG Roll (Weigh Scale)
               </button>
             )}
             {onOpenFgModal && (
               <button
                 type="button"
                 className="btn-primary"
-                style={{ background: '#059669', borderColor: '#059669', padding: '5px 14px', fontSize: '0.8rem' }}
+                style={{ background: '#059669', borderColor: '#059669', padding: '6px 16px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
                 onClick={onOpenFgModal}
               >
-                + Add FG Roll
+                <Plus size={14} /> + Add FG Roll (Weigh Scale)
               </button>
             )}
           </div>
@@ -411,8 +539,8 @@ function RollWiseInputOutputMasterRolls({
                 <th style={{ width: '5%', textAlign: 'center' }}>Roll #</th>
                 <th style={{ width: '22%' }}>Output SFG / FG Master Roll</th>
                 <th style={{ width: '18%' }}>Output Specs & Weight</th>
-                <th style={{ width: '24%' }}>Linked Input Substrate Roll</th>
-                <th style={{ width: '17%' }}>Input vs Output (Roll-Wise Yield)</th>
+                <th style={{ width: '25%' }}>Linked Input Substrate Roll</th>
+                <th style={{ width: '16%' }}>Input vs Output (Roll-Wise Yield)</th>
                 <th style={{ width: '8%', textAlign: 'center' }}>QC Status</th>
                 <th style={{ width: '6%', textAlign: 'center' }}>Action</th>
               </tr>
@@ -426,7 +554,7 @@ function RollWiseInputOutputMasterRolls({
                       <div style={{ fontWeight: '900', color: '#4f46e5', fontSize: '0.88rem' }}>
                         #{pair.rollNo}
                       </div>
-                      {pair.outputRoll && (
+                      {pair.outputRoll ? (
                         <span 
                           style={{ 
                             fontSize: '0.65rem', 
@@ -441,6 +569,22 @@ function RollWiseInputOutputMasterRolls({
                           }}
                         >
                           {isRollSFG ? 'SFG' : 'FG'}
+                        </span>
+                      ) : (
+                        <span 
+                          style={{ 
+                            fontSize: '0.62rem', 
+                            padding: '1px 4px', 
+                            borderRadius: '4px',
+                            background: '#e0f2fe',
+                            color: '#0369a1',
+                            border: '1px solid #bae6fd',
+                            fontWeight: '700',
+                            display: 'inline-block',
+                            marginTop: '2px'
+                          }}
+                        >
+                          INPUT
                         </span>
                       )}
                     </td>
@@ -462,9 +606,14 @@ function RollWiseInputOutputMasterRolls({
                           </div>
                         </>
                       ) : (
-                        <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: '0.74rem' }}>
-                          Awaiting Output Weighing
-                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          <span style={{ color: '#b45309', fontWeight: '700', fontSize: '0.76rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <Clock size={12} /> Awaiting Output Weighing
+                          </span>
+                          <span style={{ color: '#64748b', fontSize: '0.68rem' }}>
+                            Press run in process
+                          </span>
+                        </div>
                       )}
                     </td>
 
@@ -487,13 +636,38 @@ function RollWiseInputOutputMasterRolls({
                     </td>
 
                     <td style={{ verticalAlign: 'middle' }}>
-                      {pair.inputRoll ? (
+                      {pair.linkedInputList && pair.linkedInputList.length > 1 ? (
+                        <div>
+                          {pair.linkedInputList.map((inR, i) => (
+                            <div key={i} style={{ marginBottom: '4px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                <span style={{ fontSize: '0.72rem', color: '#0369a1', fontWeight: '800' }}>🔗</span>
+                                <code style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0369a1', background: '#f0f9ff', padding: '1px 5px', borderRadius: '3px', border: '1px solid #bae6fd' }}>
+                                  {inR.barcodeId}
+                                </code>
+                                <span style={{ fontSize: '0.68rem', color: '#0284c7', fontWeight: '700' }}>({inR.consumedWeightKg.toFixed(1)} kg)</span>
+                              </div>
+                              <div style={{ fontSize: '0.68rem', color: '#475569', marginLeft: '16px' }}>
+                                {inR.filmType} • {inR.micron}µ • {inR.widthMm}mm
+                              </div>
+                            </div>
+                          ))}
+                          <div style={{ fontSize: '0.72rem', color: '#0f172a', fontWeight: '800', marginTop: '4px', borderTop: '1px dashed #cbd5e1', paddingTop: '3px' }}>
+                            Total Input Consumed: <span style={{ color: '#0369a1' }}>{pair.inConsKg.toFixed(2)} kg</span>
+                          </div>
+                        </div>
+                      ) : pair.inputRoll ? (
                         <>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                             <span style={{ fontSize: '0.72rem', color: '#0369a1', fontWeight: '800' }}>🔗</span>
                             <code style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0369a1', background: '#f0f9ff', padding: '1px 5px', borderRadius: '3px', border: '1px solid #bae6fd' }}>
                               {pair.inputRoll.barcodeId}
                             </code>
+                            {pair.inputRoll.source && (
+                              <span style={{ fontSize: '0.64rem', padding: '1px 4px', borderRadius: '3px', background: '#f1f5f9', color: '#475569', fontWeight: '600' }}>
+                                {pair.inputRoll.source}
+                              </span>
+                            )}
                           </div>
                           <div style={{ fontSize: '0.7rem', color: '#334155', fontWeight: '600', marginTop: '2px' }}>
                             {pair.inputRoll.filmType} • {pair.inputRoll.micron}µ • {pair.inputRoll.widthMm}mm
@@ -510,7 +684,7 @@ function RollWiseInputOutputMasterRolls({
                         </>
                       ) : (
                         <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontStyle: 'italic' }}>
-                          Direct RM Issue / Pre-Lamination
+                          Direct Scale Weighing
                         </span>
                       )}
                     </td>
@@ -556,13 +730,19 @@ function RollWiseInputOutputMasterRolls({
                     </td>
 
                     <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
-                      <span className="badge badge-us" style={{ fontSize: '0.68rem', padding: '2px 6px', background: '#dcfce7', color: '#15803d', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                        <CheckCircle2 size={11} /> {pair.outputRoll?.qcStatus || 'Passed'}
-                      </span>
+                      {pair.outputRoll ? (
+                        <span className="badge badge-us" style={{ fontSize: '0.68rem', padding: '2px 6px', background: '#dcfce7', color: '#15803d', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                          <CheckCircle2 size={11} /> {pair.outputRoll?.qcStatus || 'Passed'}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '0.68rem', padding: '2px 6px', borderRadius: '4px', background: '#fef3c7', color: '#b45309', display: 'inline-flex', alignItems: 'center', gap: '3px', fontWeight: '700' }}>
+                          <Clock size={11} /> In Process
+                        </span>
+                      )}
                     </td>
 
                     <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
-                      {pair.outputRoll && onSelectRollForBarcodeModal && (
+                      {pair.outputRoll && onSelectRollForBarcodeModal ? (
                         <button
                           type="button"
                           className="btn-secondary"
@@ -572,7 +752,17 @@ function RollWiseInputOutputMasterRolls({
                         >
                           <Printer size={12} /> Tag
                         </button>
-                      )}
+                      ) : !pair.outputRoll && onOpenSfgModal ? (
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          style={{ padding: '3px 8px', fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: '3px', background: '#6d28d9', borderColor: '#6d28d9' }}
+                          onClick={onOpenSfgModal}
+                          title="Weigh and register Output Master Roll on digital scale"
+                        >
+                          <Scale size={12} /> Weigh
+                        </button>
+                      ) : null}
                     </td>
                   </tr>
                 );
