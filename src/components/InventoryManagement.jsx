@@ -49,6 +49,7 @@ import SFGFGEntryModal, { SFG_TYPES, FG_TYPES } from './SFGFGEntryModal';
 import { getNextDocRefNumber, generateDocRefNumber, getInventoryAgeingSettings } from '../services/settingsService';
 import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo, sortBatchesByFifo, getItemInwardDate, parseDateFlexible } from '../utils/fifoUtils';
 import { notifyGRNPendingQC, notifyGRNQCEscalation12h, notifyGRNQCVarianceModified } from '../services/emailService';
+import { dispatchOverdueQcAlerts } from '../services/qcEscalationGuard';
 
 import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, saveSystemSetting } from '../services/supabaseDataService';
 import { safeLocalStorageSet, safeLocalStorageGet } from '../utils/safeStorage';
@@ -255,58 +256,21 @@ export default function InventoryManagement({
     return sortInventoryByFifo(rawMaterialsOnly, safeGrns, inventoryRolls);
   }, [inventory, safeGrns, inventoryRolls]);
 
-  // Automated 12-Hour SLA Overdue QC Alert Monitor
+  // One overdue-QC alert per GRN for this tab. A failed send is not retried,
+  // and a re-render does not start another. See qcEscalationGuard.js.
   useEffect(() => {
-    if (!safeGrns || safeGrns.length === 0) return;
-
-    const check12HourQCSLA = async () => {
-      const now = Date.now();
-      for (const grn of safeGrns) {
-        const isPendingQC = grn.status === 'Pending QC Approval' || 
-                            grn.qcStatus === 'Pending QC Approval' || 
-                            grn.status === 'Pending QC' ||
-                            grn.qcStatus === 'Pending QC';
-        
-        if (!isPendingQC || grn.qcEscalationSent) continue;
-
-        const dateStr = grn.receivedDate || grn.created_at || grn.inwardDatetime;
-        if (!dateStr) continue;
-
-        let grnTime = new Date(dateStr).getTime();
-        if (isNaN(grnTime)) {
-          const parts = String(dateStr).split(/[/.-]/);
-          if (parts.length === 3) {
-            grnTime = new Date(parts[2], parts[1] - 1, parts[0]).getTime();
-          }
-        }
-
-        if (isNaN(grnTime)) continue;
-
-        const hoursPending = (now - grnTime) / (1000 * 60 * 60);
-
-        if (hoursPending >= 12) {
-          console.log(`[QC SLA Check] GRN #${grn.grnNo || grn.id} pending QC for ${hoursPending.toFixed(1)} hrs. Dispatching 12h SLA alert to Admin, Plant Manager, Production Manager, Quality...`);
-          
-          await notifyGRNQCEscalation12h({
-            grn,
-            hoursPending: Math.round(hoursPending),
-            users
-          }).catch(err => console.warn('[QC SLA Check] Escalation email failed:', err));
-
-          const updatedGRN = {
-            ...grn,
-            qcEscalationSent: true,
-            qcEscalationSentAt: new Date().toISOString()
-          };
-
-          if (onUpdateGRN) {
-            await onUpdateGRN(updatedGRN).catch(console.warn);
-          }
-        }
-      }
+    if (!safeGrns || safeGrns.length === 0) return undefined;
+    let cancelled = false;
+    dispatchOverdueQcAlerts({
+      grns: safeGrns,
+      users,
+      notify: notifyGRNQCEscalation12h,
+      onUpdateGRN,
+      isCancelled: () => cancelled,
+    });
+    return () => {
+      cancelled = true;
     };
-
-    check12HourQCSLA();
   }, [safeGrns, users, onUpdateGRN]);
 
   // Group inventory items by Item Name / Specs so films of same 'Item Name' but different Inventory Code/ID are consolidated into the same Item row

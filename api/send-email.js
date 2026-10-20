@@ -74,7 +74,37 @@ function bearerToken(req) {
   return String(Array.isArray(header) ? header[0] : header).replace(/^Bearer\s+/i, '').trim();
 }
 
-export default async function handler(req, res) {
+async function releaseEmailClaim(service, claimId) {
+  if (!service || claimId == null || claimId === '') return;
+  try {
+    // rpc() returns a filter builder. It is awaitable (then) and has no catch method.
+    const released = await service.rpc('release_email_send', { p_id: claimId });
+    if (released && released.error) {
+      console.error('Failed to release email send slot:', released.error.message || released.error);
+    }
+  } catch (releaseError) {
+    console.error('Failed to release email send slot:', releaseError);
+  }
+}
+
+function failureResponse(res, error) {
+  const status = Number(error && error.status);
+  const httpStatus = status >= 400 && status < 600 ? status : 500;
+  const message = status >= 400 && status < 600 && error && error.message
+    ? error.message
+    : 'Failed to send email.';
+  try {
+    return res.status(httpStatus).json({ success: false, message });
+  } catch (responseError) {
+    console.error('Failed to write email error response:', responseError);
+    return undefined;
+  }
+}
+
+export async function handleSendEmail(req, res, deps = {}) {
+  const openService = deps.serviceClient || serviceClient;
+  const openTransport = deps.createTransport || (options => nodemailer.createTransport(options));
+
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, message: 'Method not allowed. Use POST.' });
   }
@@ -88,7 +118,7 @@ export default async function handler(req, res) {
       return res.status(401).json({ success: false, message: 'Sign in before sending mail.' });
     }
 
-    service = serviceClient();
+    service = openService();
     const { data: verified, error: verifyError } = await service.auth.getUser(jwt);
     if (verifyError || !verified?.user) {
       return res.status(401).json({ success: false, message: 'Session expired. Sign in again.' });
@@ -151,7 +181,7 @@ export default async function handler(req, res) {
     }
 
     const port = parseInt(serverEnv('SMTP_PORT', '465'), 10);
-    const transporter = nodemailer.createTransport({
+    const transporter = openTransport({
       host: serverEnv('SMTP_HOST', 'smtp.hostinger.com'),
       port,
       secure: serverEnv('SMTP_SECURE', 'true') === 'true' || port === 465,
@@ -170,13 +200,12 @@ export default async function handler(req, res) {
     claimId = null;
     return res.status(200).json({ success: true, messageId: info.messageId });
   } catch (error) {
-    if (service && claimId) {
-      await service.rpc('release_email_send', { p_id: claimId }).catch(() => {});
-    }
     console.error('Notification email error:', error);
-    return res.status(error.status || 500).json({
-      success: false,
-      message: error.status ? error.message : 'Failed to send email.',
-    });
+    await releaseEmailClaim(service, claimId);
+    return failureResponse(res, error);
   }
+}
+
+export default function handler(req, res) {
+  return handleSendEmail(req, res);
 }
