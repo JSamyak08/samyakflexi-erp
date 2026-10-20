@@ -273,7 +273,7 @@ export default function OrderManagement({
       label: jm.jobName || jm.id,
       subtitle: `Client: ${jm.clientName || 'N/A'} • Structure: ${jm.structure || '—'}`
     }));
-    if (editJobName && !list.some(o => o.value.toLowerCase().trim() === editJobName.toLowerCase().trim())) {
+    if (editJobName && !list.some(o => String(o?.value || '').toLowerCase().trim() === String(editJobName).toLowerCase().trim())) {
       list.unshift({
         value: editJobName,
         label: editJobName,
@@ -285,14 +285,14 @@ export default function OrderManagement({
 
   const editClientNameOptions = useMemo(() => {
     const clientSet = new Set();
-    (jobMasters || []).forEach(j => { if (j.clientName) clientSet.add(j.clientName.trim()); });
-    (orders || []).forEach(o => { if (o.clientName) clientSet.add(o.clientName.trim()); });
+    (jobMasters || []).forEach(j => { if (j?.clientName) clientSet.add(j.clientName.trim()); });
+    (orders || []).forEach(o => { if (o?.clientName) clientSet.add(o.clientName.trim()); });
     
     const list = Array.from(clientSet).map(c => ({
       value: c,
       label: c
     }));
-    if (editClientName && !list.some(o => o.value.toLowerCase().trim() === editClientName.toLowerCase().trim())) {
+    if (editClientName && !list.some(o => String(o?.value || '').toLowerCase().trim() === String(editClientName).toLowerCase().trim())) {
       list.unshift({
         value: editClientName,
         label: editClientName
@@ -515,9 +515,10 @@ export default function OrderManagement({
   // Auto-expand order if unique id is present in URL params
   useEffect(() => {
     if (urlParams && urlParams.id && orders && orders.length > 0) {
+      const paramId = String(urlParams.id).toLowerCase();
       const match = orders.find(o => 
-        o.id === urlParams.id || 
-        (o.jobName && o.jobName.toLowerCase().includes(urlParams.id.toLowerCase()))
+        o && (o.id === urlParams.id || 
+        (o.jobName && String(o.jobName).toLowerCase().includes(paramId)))
       );
       if (match) {
         setExpandedOrders(prev => ({ ...prev, [match.id]: true }));
@@ -1037,11 +1038,13 @@ export default function OrderManagement({
 
   // Filter orders
   const filteredOrders = orders.filter(o => {
-    const matchesSearch = 
-      (o.jobName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (o.id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (o.clientName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      getSubstrateStructure(o).toLowerCase().includes(searchTerm.toLowerCase());
+    if (!o) return false;
+    const q = String(searchTerm || '').trim().toLowerCase();
+    const matchesSearch = !q ||
+      String(o.jobName || '').toLowerCase().includes(q) ||
+      String(o.id || '').toLowerCase().includes(q) ||
+      String(o.clientName || '').toLowerCase().includes(q) ||
+      String(getSubstrateStructure(o) || '').toLowerCase().includes(q);
     
     const statusInfo = getOrderStatusInfo(o);
     

@@ -434,8 +434,9 @@ export default function SalesManagement({
 
     // If client is not yet selected in Quotation, auto-select from Job Master
     if (!selectedClientName && jm.clientName) {
+      const targetClient = String(jm.clientName || '').toLowerCase().trim();
       const matchedClient = (clients || []).find(c => 
-        (c.name || c.companyName || '').toLowerCase().trim() === jm.clientName.toLowerCase().trim()
+        String(c?.name || c?.companyName || '').toLowerCase().trim() === targetClient
       );
       if (matchedClient) {
         handleSelectClient(matchedClient);
@@ -769,7 +770,7 @@ export default function SalesManagement({
       const repeatLengthMm = parseFloat(item.repeatLengthMm) || 400;
       const orderQtyKg = parseFloat(item.quantityKg) || 1000;
       const sellingPricePerKg = parseFloat(item.ratePerUom) || 250;
-      const orderType = item.materialFormat.toLowerCase().includes('pouch') ? 'Pouching' : 'Reel';
+      const orderType = String(item.materialFormat || '').toLowerCase().includes('pouch') ? 'Pouching' : 'Reel';
 
       let layers = item.layers || [];
       let materialRequirements = [];
@@ -2183,7 +2184,7 @@ export default function SalesManagement({
                 printWidthMm: parseFloat(item.printWidthMm) || 1000,
                 repeatLengthMm: parseFloat(item.repeatLengthMm) || 400,
                 orderQtyKg: parseFloat(item.quantityKg) || 1000,
-                orderType: item.materialFormat.toLowerCase().includes('pouch') ? 'Pouching' : 'Reel',
+                orderType: String(item.materialFormat || '').toLowerCase().includes('pouch') ? 'Pouching' : 'Reel',
                 inkGsm: parseFloat(item.inkGsm) || 1.5,
                 adhesiveGsm: parseFloat(item.adhesiveGsm) || 1.5,
                 layers: (item.layers || []).map(l => ({

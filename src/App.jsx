@@ -1510,10 +1510,10 @@ export default function App() {
         let updatedInv = [...prevInv];
         newRecord.materialsList.forEach(mat => {
           const netQty = parseFloat(mat.netConsumedQtyKg) || Math.max(0, (parseFloat(mat.issueQtyKg) || 0) - (parseFloat(mat.returnQtyKg) || 0));
-          if (netQty > 0 && mat.filmType) {
-            const matName = mat.filmType.toLowerCase();
+          if (netQty > 0 && mat?.filmType) {
+            const matName = String(mat.filmType || '').toLowerCase();
             updatedInv = updatedInv.map(invItem => {
-              if ((invItem.filmType || '').toLowerCase() === matName) {
+              if (String(invItem?.filmType || '').toLowerCase() === matName) {
                 return {
                   ...invItem,
                   availableQtyKg: Math.max(0, (invItem.availableQtyKg || 0) - netQty)
@@ -4435,13 +4435,15 @@ export default function App() {
                     </thead>
                     <tbody>
                       {(orders || []).map(o => {
+                        if (!o) return null;
                         const statusInfo = getOrderStatusInfo(o);
                         const stageInfo = getOrderStageInfo(o, sfgGoods, productionRecords);
                         const isOverdue = statusInfo.isOverdue;
                         const isNearing = statusInfo.isNearingDeadline;
                         // Derive substrate structure from the matching Job Master's layers, fallback to order.structure
+                        const oJobName = String(o.jobName || '').toLowerCase().trim();
                         const matchedJM = (jobMasters || []).find(j =>
-                          (j.jobName || '').toLowerCase().trim() === (o.jobName || '').toLowerCase().trim()
+                          j && String(j.jobName || '').toLowerCase().trim() === oJobName
                         );
                         const substrateDisplay = matchedJM && matchedJM.layers && matchedJM.layers.length > 0
                           ? matchedJM.layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')

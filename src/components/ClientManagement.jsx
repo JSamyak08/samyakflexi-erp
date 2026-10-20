@@ -19,7 +19,8 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
     if (urlParams && urlParams.id) {
       setSearchTerm(urlParams.id);
       if (clients && clients.length > 0) {
-        const match = clients.find(c => c.id === urlParams.id || c.name.toLowerCase().includes(urlParams.id.toLowerCase()));
+        const paramId = String(urlParams.id).toLowerCase();
+        const match = clients.find(c => c && (c.id === urlParams.id || String(c.name || '').toLowerCase().includes(paramId)));
         if (match) setSelectedClient(match);
       }
     }
@@ -35,10 +36,13 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
 
   const filteredClients = useMemo(() => {
     if (!clients) return [];
-    return clients.filter(c => 
-      c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      (c.gstin && c.gstin.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
+    const q = String(searchTerm || '').toLowerCase().trim();
+    return clients.filter(c => {
+      if (!c) return false;
+      return !q || 
+        String(c.name || '').toLowerCase().includes(q) || 
+        String(c.gstin || '').toLowerCase().includes(q);
+    });
   }, [clients, searchTerm]);
 
   const {

@@ -245,7 +245,7 @@ export default function ConsumablesAndIndents({
 
     // Find matching item in Consumables store for unit cost prefill
     const itemTitle = (item.name || item.itemName || '').toLowerCase();
-    const matchedStoreItem = consumables.find(c => c.name.toLowerCase().includes(itemTitle));
+    const matchedStoreItem = (consumables || []).find(c => c && String(c.name || '').toLowerCase().includes(itemTitle));
     const unitPrice = matchedStoreItem ? matchedStoreItem.unitCost : (item.unitCost || 250);
     setPoUnitPrice(unitPrice);
 
@@ -414,13 +414,14 @@ export default function ConsumablesAndIndents({
   // Items falling below minimum reserve level MUST automatically come to the TOP of the list!
   const sortedAndFilteredConsumables = useMemo(() => {
     return (consumables || []).filter(c => {
+      if (!c) return false;
       // Search term
-      const search = searchTerm.toLowerCase().trim();
+      const search = String(searchTerm || '').toLowerCase().trim();
       const matchesSearch = !search || 
-        c.name.toLowerCase().includes(search) || 
-        c.itemCode.toLowerCase().includes(search) ||
-        c.category.toLowerCase().includes(search) ||
-        c.location.toLowerCase().includes(search);
+        String(c.name || '').toLowerCase().includes(search) || 
+        String(c.itemCode || '').toLowerCase().includes(search) ||
+        String(c.category || '').toLowerCase().includes(search) ||
+        String(c.location || '').toLowerCase().includes(search);
 
       // Machine Filter
       const matchesMachine = machineFilter === "ALL" || c.assignedMachine === machineFilter || c.assignedMachine === "All Printing Presses" || c.assignedMachine === "General Factory & Store";

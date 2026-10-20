@@ -100,13 +100,15 @@ const SearchableSelect = React.forwardRef(({
 
   // 2. Filter options based on search query
   const filteredOptions = useMemo(() => {
-    if (!searchTerm.trim()) return parsedOptions;
-    const query = searchTerm.toLowerCase().trim();
+    const term = String(searchTerm || '').trim();
+    if (!term) return parsedOptions;
+    const query = term.toLowerCase();
     return parsedOptions.filter(opt => {
-      const matchLabel = opt.label.toLowerCase().includes(query);
-      const matchValue = opt.value.toLowerCase().includes(query);
-      const matchSubtitle = opt.subtitle ? opt.subtitle.toLowerCase().includes(query) : false;
-      const matchGroup = opt.group ? opt.group.toLowerCase().includes(query) : false;
+      if (!opt) return false;
+      const matchLabel = opt.label ? String(opt.label).toLowerCase().includes(query) : false;
+      const matchValue = opt.value !== null && opt.value !== undefined ? String(opt.value).toLowerCase().includes(query) : false;
+      const matchSubtitle = opt.subtitle ? String(opt.subtitle).toLowerCase().includes(query) : false;
+      const matchGroup = opt.group ? String(opt.group).toLowerCase().includes(query) : false;
       return matchLabel || matchValue || matchSubtitle || matchGroup;
     });
   }, [parsedOptions, searchTerm]);

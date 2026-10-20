@@ -190,11 +190,14 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
     setIsOnboardingModalOpen(false);
   };
 
-  const filteredVendors = vendors.filter(v => 
-    v.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    v.gstin.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    v.materials.some(m => m.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const filteredVendors = (vendors || []).filter(v => {
+    if (!v) return false;
+    const q = String(searchTerm || '').trim().toLowerCase();
+    return !q ||
+      String(v.companyName || v.name || '').toLowerCase().includes(q) ||
+      String(v.gstin || '').toLowerCase().includes(q) ||
+      (Array.isArray(v.materials) && v.materials.some(m => String(m || '').toLowerCase().includes(q)));
+  });
 
   const {
     currentPage,

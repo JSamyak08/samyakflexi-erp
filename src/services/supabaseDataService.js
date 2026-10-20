@@ -1625,7 +1625,7 @@ export async function fetchUsers() {
       .map(u => ({
         id: u.id,
         name: u.full_name || u.username || 'User',
-        email: u.email || (u.username?.includes('@') ? u.username : `${u.id.toLowerCase()}@plant.com`),
+        email: u.email || (u.username?.includes('@') ? u.username : `${String(u.id || '').toLowerCase()}@plant.com`),
         role: u.role || 'Shop Floor Operator',
         department: u.department || 'Operations',
         status: u.status || (u.active !== false ? 'Active' : 'Inactive')

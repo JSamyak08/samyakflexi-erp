@@ -171,10 +171,11 @@ export default function JobMasterDirectory({
   // Auto-select job master if unique id is present in URL params
   React.useEffect(() => {
     if (urlParams && urlParams.id && jobMasters && jobMasters.length > 0) {
+      const paramId = String(urlParams.id).toLowerCase();
       const match = jobMasters.find(j => 
-        j.id === urlParams.id || 
+        j && (j.id === urlParams.id || 
         j.skuCode === urlParams.id || 
-        (j.jobName && j.jobName.toLowerCase().includes(urlParams.id.toLowerCase()))
+        (j.jobName && String(j.jobName).toLowerCase().includes(paramId)))
       );
       if (match) {
         setSelectedJob(match);
@@ -256,7 +257,7 @@ export default function JobMasterDirectory({
   const filteredClients = useMemo(() => {
     const query = (clientSearchTerm || '').toLowerCase().trim();
     if (!query) return allClientOptions;
-    return allClientOptions.filter(c => c.name.toLowerCase().includes(query));
+    return allClientOptions.filter(c => c && String(c.name || '').toLowerCase().includes(query));
   }, [allClientOptions, clientSearchTerm]);
 
   const handleDownloadSampleCSV = () => {
