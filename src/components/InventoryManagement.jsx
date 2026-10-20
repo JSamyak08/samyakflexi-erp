@@ -193,6 +193,7 @@ export default function InventoryManagement({
   grns = [], 
   vendors = [], 
   orders = [], 
+  purchaseOrders = [],
   indents = [],
   inks = [],
   jobMasters = [],
@@ -880,6 +881,7 @@ export default function InventoryManagement({
   // Inward GRN Form State
   const [grnVendor, setGrnVendor] = useState(vendors[0]?.companyName || '');
   const [grnPoNo, setGrnPoNo] = useState('');
+  const [isManualPoEntry, setIsManualPoEntry] = useState(false);
   const [grnInvoiceNo, setGrnInvoiceNo] = useState('');
   const [grnCategory, setGrnCategory] = useState('Film Substrates');
   const [grnItemName, setGrnItemName] = useState('');
@@ -1254,10 +1256,12 @@ export default function InventoryManagement({
     const list = [];
     const seenPoNumbers = new Set();
 
-    // 1. Load from purchase orders cache & safeLocalStorage
-    const cachedTableList = safeLocalStorageGet('samyak_cache_purchase_orders', []);
-    if (Array.isArray(cachedTableList)) {
-      cachedTableList.forEach(po => {
+    // 1. Load from purchase orders prop or cache & safeLocalStorage
+    const propList = Array.isArray(purchaseOrders) && purchaseOrders.length > 0
+      ? purchaseOrders
+      : (safeLocalStorageGet('samyak_cache_purchase_orders', []) || []);
+    if (Array.isArray(propList)) {
+      propList.forEach(po => {
         if (po && po.poNumber && !seenPoNumbers.has(po.poNumber)) {
           seenPoNumbers.add(po.poNumber);
           list.push({
@@ -1425,7 +1429,152 @@ export default function InventoryManagement({
         priceDiscrepancyResolution: resolvedInfo
       };
     });
-  }, [orders, indents, grns, vendors, poResolutions]);
+  }, [purchaseOrders, orders, indents, grns, vendors, poResolutions]);
+
+  // Helper to normalize strings for robust vendor comparison
+  const normalizeVendorStr = (str) => String(str || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+  // Helper to check if a PO belongs to a specific vendor
+  const isPoVendorMatch = (po, targetVendorStr) => {
+    if (!targetVendorStr || !po) return false;
+    const target = normalizeVendorStr(targetVendorStr);
+    const poName = normalizeVendorStr(po.vendorName || po.vendor?.companyName || po.vendor?.name);
+    if (poName && (poName === target || poName.includes(target) || target.includes(poName))) {
+      return true;
+    }
+    const matchedVendorObj = (vendors || []).find(v => 
+      normalizeVendorStr(v.companyName || v.name) === target || 
+      (v.id && String(v.id).trim().toLowerCase() === target)
+    );
+    if (matchedVendorObj) {
+      const vId = String(matchedVendorObj.id || '').trim().toLowerCase();
+      const poVId = String(po.vendorId || po.vendor?.id || '').trim().toLowerCase();
+      if (vId && poVId && vId === poVId) return true;
+      const vComp = normalizeVendorStr(matchedVendorObj.companyName);
+      if (vComp && poName && (poName === vComp || poName.includes(vComp) || vComp.includes(poName))) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // Helper to determine live PO GRN receipt status (matching PurchaseOrderManagement)
+  const getPoDeliveryInfo = (po) => {
+    if (!po) return { status: 'Unknown', inwardQty: 0, totalQty: 0, pendingQty: 0 };
+    if (String(po.status || '').toLowerCase() === 'cancelled') {
+      return { status: 'Cancelled', inwardQty: 0, totalQty: 0, pendingQty: 0 };
+    }
+
+    const matchingGRNs = (grns || []).filter(g => 
+      g && String(g.poNumber || '').trim().toLowerCase() === String(po.poNumber || '').trim().toLowerCase()
+    );
+
+    const inwardQty = matchingGRNs.reduce((sum, g) => 
+      sum + (parseFloat(g.netWeightKg) || parseFloat(g.receivedQtyKg) || parseFloat(g.quantity) || 0), 0
+    );
+
+    const totalQty = (po.items || []).reduce((sum, it) => 
+      sum + (parseFloat(it.qtyKg) || parseFloat(it.qty) || 0), 0
+    );
+
+    const pendingQty = Math.max(0, totalQty - inwardQty);
+
+    let status = 'Awaiting Delivery';
+    if (totalQty > 0 && inwardQty >= totalQty) {
+      status = 'Fully Received';
+    } else if (inwardQty > 0) {
+      status = 'Partially Received';
+    } else {
+      status = 'Awaiting Delivery';
+    }
+
+    return { status, inwardQty, totalQty, pendingQty, matchingGRNs };
+  };
+
+  // Live memoized list of active POs for the selected vendor awaiting delivery
+  const vendorActivePOs = useMemo(() => {
+    if (!grnVendor || !grnVendor.trim()) return [];
+    
+    return (unifiedIssuedPOs || []).filter(po => {
+      if (!po || !po.poNumber) return false;
+      if (!isPoVendorMatch(po, grnVendor)) return false;
+
+      const info = getPoDeliveryInfo(po);
+      if (info.status === 'Cancelled' || info.status === 'Fully Received') return false;
+
+      return info.status === 'Awaiting Delivery' || info.status === 'Partially Received';
+    });
+  }, [unifiedIssuedPOs, grnVendor, grns, vendors]);
+
+  // Handler when selecting a PO from the Ref PO Number searchable dropdown
+  const handleSelectPoForGrn = (selectedPoNumber) => {
+    if (selectedPoNumber === '__MANUAL__') {
+      setIsManualPoEntry(true);
+      setGrnPoNo('');
+      return;
+    }
+
+    setGrnPoNo(selectedPoNumber);
+
+    const targetPo = (vendorActivePOs || []).find(p => p && p.poNumber === selectedPoNumber) ||
+                     (unifiedIssuedPOs || []).find(p => p && p.poNumber === selectedPoNumber);
+    if (!targetPo) return;
+
+    if (targetPo.category) {
+      setGrnCategory(targetPo.category);
+    }
+
+    const firstItem = (targetPo.items || [])[0];
+    if (firstItem) {
+      if (firstItem.rate && (!grnPurchaseRate || Number(grnPurchaseRate) === 0)) {
+        setGrnPurchaseRate(firstItem.rate);
+      }
+
+      const activeCat = targetPo.category || grnCategory || 'Film Substrates';
+      if (activeCat === 'Film Substrates' || firstItem.filmType) {
+        if (firstItem.filmType) setGrnFilmType(firstItem.filmType);
+        if (firstItem.micron && firstItem.micron !== '-') setGrnMicron(firstItem.micron);
+        if (firstItem.widthMm && firstItem.widthMm !== '-') setGrnWidthMm(firstItem.widthMm);
+
+        const itemTitle = formatFilmItemName(firstItem.filmType || 'PET', firstItem.widthMm || 1000, firstItem.micron || 12);
+        setGrnItemName(itemTitle);
+        setGrnItemSearchTerm(itemTitle);
+
+        const matchedStock = (inventory || []).find(inv => {
+          const catMatch = String(inv.category || '').toLowerCase() === 'film substrates';
+          const typeMatch = String(inv.filmType || '').toUpperCase() === String(firstItem.filmType || '').toUpperCase();
+          const micronMatch = String(inv.micron || '') === String(firstItem.micron || '');
+          const widthMatch = String(inv.widthMm || '') === String(firstItem.widthMm || '');
+          return catMatch && typeMatch && micronMatch && widthMatch;
+        });
+        if (matchedStock) {
+          setGrnSelectedStockItemId(matchedStock.id || matchedStock.itemCode || '');
+        }
+      } else {
+        const desc = firstItem.itemDesc || firstItem.description || firstItem.itemName || '';
+        if (desc) {
+          setGrnItemName(desc);
+          setGrnItemSearchTerm(desc);
+        }
+        if (firstItem.itemId || firstItem.stockItemId) {
+          setGrnSelectedStockItemId(firstItem.itemId || firstItem.stockItemId);
+        }
+      }
+
+      const deliveryInfo = getPoDeliveryInfo(targetPo);
+      const pendingQty = deliveryInfo.pendingQty || firstItem.qtyKg || firstItem.qty || 0;
+      if ((!grnWeightKg || Number(grnWeightKg) === 0) && pendingQty > 0) {
+        setGrnWeightKg(pendingQty);
+        if (Array.isArray(grnItemsList) && grnItemsList.length === 1 && (!grnItemsList[0].grossWeightKg || grnItemsList[0].grossWeightKg === '')) {
+          setGrnItemsList([{
+            ...grnItemsList[0],
+            grossWeightKg: pendingQty,
+            netWeightKg: pendingQty
+          }]);
+        }
+      }
+    }
+  };
 
   const handleConfirmResolveDiscrepancy = () => {
     if (!resolvingPoDiscrepancy) return;
@@ -1621,6 +1770,7 @@ export default function InventoryManagement({
 
   const openNewGRNModal = (preselectedItem = null) => {
     setIsNewGRNModalOpen(true);
+    setIsManualPoEntry(false);
     setGrnRolls('1');
     setGrnItemsList([
       {
@@ -1644,6 +1794,22 @@ export default function InventoryManagement({
       setGrnItemSearchTerm('');
       setGrnSelectedStockItemId('');
       setIsGrnItemDropdownOpen(false);
+    }
+
+    if (grnVendor) {
+      const matching = (unifiedIssuedPOs || []).filter(po => {
+        if (!po || !po.poNumber) return false;
+        if (!isPoVendorMatch(po, grnVendor)) return false;
+        const info = getPoDeliveryInfo(po);
+        return info.status === 'Awaiting Delivery' || info.status === 'Partially Received';
+      });
+      if (matching.length === 1) {
+        handleSelectPoForGrn(matching[0].poNumber);
+      } else {
+        setGrnPoNo('');
+      }
+    } else {
+      setGrnPoNo('');
     }
   };
 
@@ -2226,6 +2392,7 @@ export default function InventoryManagement({
     setGrnInvoiceNo('');
     setGrnBatchNo('');
     setGrnPoNo('');
+    setIsManualPoEntry(false);
     setGrnWeightKg('');
     setGrnPurchaseRate('');
     setGrnItemsList([
@@ -5595,7 +5762,22 @@ export default function InventoryManagement({
                         if (e.target.value === '__CREATE_NEW__') {
                           setIsVendorModalOpen(true);
                         } else {
-                          setGrnVendor(e.target.value);
+                          const newV = e.target.value;
+                          setGrnVendor(newV);
+                          setIsManualPoEntry(false);
+                          
+                          // Check active POs awaiting delivery for this newly selected vendor
+                          const matching = (unifiedIssuedPOs || []).filter(po => {
+                            if (!po || !po.poNumber) return false;
+                            if (!isPoVendorMatch(po, newV)) return false;
+                            const info = getPoDeliveryInfo(po);
+                            return info.status === 'Awaiting Delivery' || info.status === 'Partially Received';
+                          });
+                          if (matching.length === 1) {
+                            handleSelectPoForGrn(matching[0].poNumber);
+                          } else {
+                            setGrnPoNo('');
+                          }
                         }
                       }}
                       triggerStyle={{ fontWeight: '500' }}
@@ -5784,8 +5966,109 @@ export default function InventoryManagement({
 
                 <div className="form-grid">
                   <div className="form-group">
-                    <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>Ref PO Number</label>
-                    <input type="text" className="form-control" placeholder="e.g. SIL/PO/26-27/1941" value={grnPoNo} onChange={e => setGrnPoNo(e.target.value)} />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <label style={{ margin: 0, fontWeight: '600', fontSize: '0.83rem', color: '#334155', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        Ref PO Number
+                        {vendorActivePOs.length > 0 && !isManualPoEntry && (
+                          <span style={{ 
+                            fontSize: '0.7rem', 
+                            fontWeight: '700', 
+                            color: '#b45309', 
+                            background: '#fef3c7', 
+                            border: '1px solid #fde68a', 
+                            padding: '1px 6px', 
+                            borderRadius: '4px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '3px'
+                          }}>
+                            <Clock size={11} /> {vendorActivePOs.length} Active {vendorActivePOs.length === 1 ? 'PO' : 'POs'} Awaiting Delivery
+                          </span>
+                        )}
+                      </label>
+                      {vendorActivePOs.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isManualPoEntry) {
+                              setIsManualPoEntry(false);
+                              if (vendorActivePOs.length === 1) {
+                                handleSelectPoForGrn(vendorActivePOs[0].poNumber);
+                              }
+                            } else {
+                              setIsManualPoEntry(true);
+                            }
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#0284c7',
+                            fontSize: '0.74rem',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            padding: 0,
+                            textDecoration: 'underline'
+                          }}
+                        >
+                          {isManualPoEntry ? `← Select from Active POs (${vendorActivePOs.length})` : 'Enter manually'}
+                        </button>
+                      )}
+                    </div>
+
+                    {vendorActivePOs.length > 0 && !isManualPoEntry ? (
+                      <SearchableSelect
+                        className="form-control"
+                        placeholder="-- Select Active PO (Awaiting Delivery) --"
+                        searchPlaceholder="Search PO #, item, or quantity..."
+                        value={grnPoNo}
+                        onChange={e => handleSelectPoForGrn(e.target.value)}
+                        triggerStyle={{ 
+                          fontWeight: '600',
+                          color: grnPoNo ? '#0f172a' : '#64748b',
+                          borderColor: grnPoNo ? '#0284c7' : '#cbd5e1',
+                          background: grnPoNo ? '#f0f9ff' : '#ffffff'
+                        }}
+                      >
+                        <option value="" disabled>-- Select Active PO (Awaiting Delivery) --</option>
+                        {vendorActivePOs.map(po => {
+                          const firstItem = (po.items || [])[0] || {};
+                          const itemsSummary = (po.items || []).map(it => it.itemDesc || it.description || it.itemName || it.filmType || 'Item').join(', ');
+                          const deliveryInfo = getPoDeliveryInfo(po);
+                          const qtySummary = deliveryInfo.totalQty || po.totalPoQty || firstItem.qtyKg || 0;
+                          const poStatusText = deliveryInfo.status === 'Partially Received'
+                            ? `Partial Inward (${deliveryInfo.inwardQty}/${qtySummary} kg)`
+                            : `⏳ Awaiting Delivery (${qtySummary} kg)`;
+                          
+                          return (
+                            <option
+                              key={po.poNumber || po.id}
+                              value={po.poNumber}
+                              data-subtitle={`${poStatusText} • ${po.category || 'Raw Material'} • ${itemsSummary || 'Item'}`}
+                            >
+                              {po.poNumber} — {itemsSummary || 'Raw Material'} ({qtySummary} kg)
+                            </option>
+                          );
+                        })}
+                        <option value="__MANUAL__" style={{ fontWeight: '700', color: '#0284c7' }}>
+                          ✏️ + Enter Other / Manual PO Number...
+                        </option>
+                      </SearchableSelect>
+                    ) : (
+                      <>
+                        <input 
+                          type="text" 
+                          className="form-control" 
+                          placeholder="e.g. SIL/PO/26-27/1941" 
+                          value={grnPoNo} 
+                          onChange={e => setGrnPoNo(e.target.value)} 
+                        />
+                        {grnVendor && vendorActivePOs.length === 0 && (
+                          <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '3px' }}>
+                            No active POs awaiting delivery for {grnVendor} — enter manually if applicable.
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
 
                   <div className="form-group">
