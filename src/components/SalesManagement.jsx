@@ -201,21 +201,16 @@ export default function SalesManagement({
     return roleStr.includes('admin') || roleStr.includes('sales') || roleStr.includes('plant') || roleStr.includes('director');
   }, [currentUser, userRole]);
 
-  const [quotations, setQuotations] = useState(() => {
-    try {
-      const saved = localStorage.getItem('samyak_erp_sales_quotations');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
-  });
+  const [quotations, setQuotations] = useState([]);
 
   useEffect(() => {
     let isMounted = true;
     async function loadData() {
-      const remote = await fetchSalesQuotations();
-      if (isMounted && remote && Array.isArray(remote)) {
-        setQuotations(remote);
+      try {
+        const remote = await fetchSalesQuotations();
+        if (isMounted && Array.isArray(remote)) setQuotations(remote);
+      } catch (err) {
+        alert(`Sales quotations could not be loaded: ${err.message || err}`);
       }
     }
     loadData();

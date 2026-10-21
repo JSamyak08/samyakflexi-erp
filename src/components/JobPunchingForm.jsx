@@ -109,7 +109,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       saveProcessingRates({
         liquidInkPrice: num,
         adhesivePrice: parseFloat(adhesivePrice) || DEFAULT_PROCESSING_RATES.adhesivePrice
-      });
+      }).catch((err) => alert(`The ink rate was not saved: ${err.message || err}`));
     }
   };
 
@@ -120,7 +120,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       saveProcessingRates({
         liquidInkPrice: parseFloat(inkPrice) || DEFAULT_PROCESSING_RATES.liquidInkPrice,
         adhesivePrice: num
-      });
+      }).catch((err) => alert(`The adhesive rate was not saved: ${err.message || err}`));
     }
   };
   // Job-Specific Pricing Additions (defaults from System Settings, editable per job)

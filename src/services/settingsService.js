@@ -57,30 +57,22 @@ export function getCompanyLogo() {
  * Save custom company logo image (base64 string)
  */
 export async function saveCompanyLogo(base64String) {
-  try {
-    if (base64String) {
-      const compressed = await compressImageDataUrl(base64String, 600, 0.7);
-      safeLocalStorageSet(LOGO_STORAGE_KEY, compressed);
-      await saveSystemSetting('company_logo', compressed);
-    } else {
-      localStorage.removeItem(LOGO_STORAGE_KEY);
-      await saveSystemSetting('company_logo', '');
-    }
-  } catch (e) {
-    console.error("Failed to save logo", e);
+  if (base64String) {
+    const compressed = await compressImageDataUrl(base64String, 600, 0.7);
+    await saveSystemSetting('company_logo', compressed);
+    safeLocalStorageSet(LOGO_STORAGE_KEY, compressed);
+    return compressed;
   }
+  await saveSystemSetting('company_logo', '');
+  localStorage.removeItem(LOGO_STORAGE_KEY);
+  return '';
 }
 
 /**
  * Clear stored company logo
  */
-export function clearCompanyLogo() {
-  try {
-    localStorage.removeItem(LOGO_STORAGE_KEY);
-    saveSystemSetting('company_logo', '').catch(() => {});
-  } catch (e) {
-    console.error("Failed to clear logo", e);
-  }
+export async function clearCompanyLogo() {
+  await saveCompanyLogo('');
 }
 
 
@@ -151,30 +143,22 @@ export function getAuthorisedSignature() {
  * Save authorised signature image (base64 string)
  */
 export async function saveAuthorisedSignature(base64String) {
-  try {
-    if (base64String) {
-      const compressed = await compressImageDataUrl(base64String, 500, 0.7);
-      safeLocalStorageSet(SIGNATURE_STORAGE_KEY, compressed);
-      await saveSystemSetting('auth_signature', compressed);
-    } else {
-      localStorage.removeItem(SIGNATURE_STORAGE_KEY);
-      await saveSystemSetting('auth_signature', '');
-    }
-  } catch (e) {
-    console.error("Failed to save signature", e);
+  if (base64String) {
+    const compressed = await compressImageDataUrl(base64String, 500, 0.7);
+    await saveSystemSetting('auth_signature', compressed);
+    safeLocalStorageSet(SIGNATURE_STORAGE_KEY, compressed);
+    return compressed;
   }
+  await saveSystemSetting('auth_signature', '');
+  localStorage.removeItem(SIGNATURE_STORAGE_KEY);
+  return '';
 }
 
 /**
  * Clear stored signature
  */
-export function clearAuthorisedSignature() {
-  try {
-    localStorage.removeItem(SIGNATURE_STORAGE_KEY);
-    saveSystemSetting('auth_signature', '').catch(() => {});
-  } catch (e) {
-    console.error("Failed to clear signature", e);
-  }
+export async function clearAuthorisedSignature() {
+  await saveAuthorisedSignature('');
 }
 
 
@@ -193,13 +177,14 @@ export function getDocumentPrefixes() {
 /**
  * Save document prefix configuration
  */
-export function saveDocumentPrefixes(prefixConfig) {
-  try {
-    localStorage.setItem(PREFIX_STORAGE_KEY, JSON.stringify(prefixConfig));
-    saveSystemSetting('doc_prefixes', prefixConfig).catch(() => {});
-  } catch (e) {
-    console.error("Failed to save document prefixes", e);
-  }
+function cacheJson(key, value) {
+  localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+}
+
+export async function saveDocumentPrefixes(prefixConfig) {
+  await saveSystemSetting('doc_prefixes', prefixConfig);
+  cacheJson(PREFIX_STORAGE_KEY, prefixConfig);
+  return prefixConfig;
 }
 
 
@@ -228,13 +213,10 @@ export function getDocumentTerms() {
 /**
  * Save document terms & conditions configuration
  */
-export function saveDocumentTerms(termsConfig) {
-  try {
-    localStorage.setItem(TERMS_STORAGE_KEY, JSON.stringify(termsConfig));
-    saveSystemSetting('doc_terms', termsConfig).catch(() => {});
-  } catch (e) {
-    console.error("Failed to save document terms", e);
-  }
+export async function saveDocumentTerms(termsConfig) {
+  await saveSystemSetting('doc_terms', termsConfig);
+  cacheJson(TERMS_STORAGE_KEY, termsConfig);
+  return termsConfig;
 }
 
 
@@ -253,13 +235,10 @@ export function getCoaSignatories() {
 /**
  * Save CoA Signatories configuration
  */
-export function saveCoaSignatories(signatoryConfig) {
-  try {
-    localStorage.setItem(COA_SIGNATORIES_STORAGE_KEY, JSON.stringify(signatoryConfig));
-    saveSystemSetting('coa_signatories', signatoryConfig).catch(() => {});
-  } catch (e) {
-    console.error("Failed to save CoA signatories", e);
-  }
+export async function saveCoaSignatories(signatoryConfig) {
+  await saveSystemSetting('coa_signatories', signatoryConfig);
+  cacheJson(COA_SIGNATORIES_STORAGE_KEY, signatoryConfig);
+  return signatoryConfig;
 }
 
 
@@ -356,9 +335,13 @@ export function getNextDocRefNumber(type) {
   const docRef = generateDocRefNumber(type, num);
   
   if (key) {
-    saveDocumentPrefixes({
-      ...config,
-      [key]: Number(num) + 1
+    const next = { ...config, [key]: Number(num) + 1 };
+    cacheJson(PREFIX_STORAGE_KEY, next);
+    saveDocumentPrefixes(next).catch((err) => {
+      console.error('Document number series was not saved', err);
+      if (typeof window !== 'undefined') {
+        window.alert(`The next document number was not saved to the database: ${err.message || err}`);
+      }
     });
   }
 
@@ -460,21 +443,15 @@ export async function saveMaterialCostSettings(settings) {
       : DEFAULT_MATERIAL_COST_SETTINGS.fixedProfitPerKg,
     updatedAt: new Date().toISOString()
   };
-  try {
-    safeLocalStorageSet(MATERIAL_COST_SETTINGS_STORAGE_KEY, JSON.stringify(payload));
-    await saveSystemSetting('material_cost_settings', payload);
-    // Keep processing_rates in sync as well
-    saveProcessingRates({
-      liquidInkPrice: payload.liquidInkPrice,
-      adhesivePrice: payload.adhesiveCostPerKg,
-      paperCorePrice: payload.paperCoreCostPerKg,
-      conversionChargesPerKg: payload.conversionChargesPerKg,
-      fixedProfitPerKg: payload.fixedProfitPerKg
-    });
-  } catch (e) {
-    console.error("Failed to save material cost settings", e);
-    throw e;
-  }
+  await saveSystemSetting('material_cost_settings', payload);
+  safeLocalStorageSet(MATERIAL_COST_SETTINGS_STORAGE_KEY, JSON.stringify(payload));
+  await saveProcessingRates({
+    liquidInkPrice: payload.liquidInkPrice,
+    adhesivePrice: payload.adhesiveCostPerKg,
+    paperCorePrice: payload.paperCoreCostPerKg,
+    conversionChargesPerKg: payload.conversionChargesPerKg,
+    fixedProfitPerKg: payload.fixedProfitPerKg
+  });
   return payload;
 }
 
@@ -505,13 +482,12 @@ export function getProcessingRates() {
 /**
  * Save processing rates configuration
  */
-export function saveProcessingRates(rates) {
-  try {
-    localStorage.setItem(RATES_STORAGE_KEY, JSON.stringify(rates));
-    saveSystemSetting('processing_rates', rates).catch(() => {});
-  } catch (e) {
-    console.error("Failed to save processing rates", e);
-  }
+export async function saveProcessingRates(rates) {
+  const current = getProcessingRates();
+  const merged = { ...current, ...rates };
+  await saveSystemSetting('processing_rates', merged);
+  cacheJson(RATES_STORAGE_KEY, merged);
+  return merged;
 }
 
 /**
@@ -530,13 +506,10 @@ export function getInventoryAgeingSettings() {
 /**
  * Save inventory ageing threshold configuration
  */
-export function saveInventoryAgeingSettings(settings) {
-  try {
-    localStorage.setItem(AGEING_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-    saveSystemSetting('inventory_ageing_settings', settings).catch(() => {});
-  } catch (e) {
-    console.error("Failed to save inventory ageing settings", e);
-  }
+export async function saveInventoryAgeingSettings(settings) {
+  await saveSystemSetting('inventory_ageing_settings', settings);
+  cacheJson(AGEING_SETTINGS_STORAGE_KEY, settings);
+  return settings;
 }
 
 
@@ -856,14 +829,11 @@ export function getEmailSettings() {
 /**
  * Save Email Settings (SMTP & Department routing)
  */
-export function saveEmailSettings(config) {
-  try {
-    const safe = withoutSmtpSecret(config);
-    localStorage.setItem(EMAIL_SETTINGS_STORAGE_KEY, JSON.stringify(safe));
-    saveEmailSettingsToSupabase(safe).catch(() => {});
-  } catch (e) {
-    console.error("Failed to save email settings", e);
-  }
+export async function saveEmailSettings(config) {
+  const safe = withoutSmtpSecret(config);
+  await saveEmailSettingsToSupabase(safe);
+  cacheJson(EMAIL_SETTINGS_STORAGE_KEY, safe);
+  return safe;
 }
 
 /**
@@ -901,26 +871,17 @@ export function getEmailTemplates() {
 /**
  * Save custom Email Templates
  */
-export function saveEmailTemplates(templates) {
-  try {
-    localStorage.setItem(EMAIL_TEMPLATES_STORAGE_KEY, JSON.stringify(templates));
-    saveEmailTemplatesToSupabase(templates).catch(() => {});
-  } catch (e) {
-    console.error("Failed to save email templates", e);
-  }
+export async function saveEmailTemplates(templates) {
+  await saveEmailTemplatesToSupabase(templates);
+  cacheJson(EMAIL_TEMPLATES_STORAGE_KEY, templates);
+  return templates;
 }
 
 /**
  * Reset Email Templates to Factory Defaults
  */
-export function resetEmailTemplates() {
-  try {
-    localStorage.setItem(EMAIL_TEMPLATES_STORAGE_KEY, JSON.stringify(DEFAULT_EMAIL_TEMPLATES));
-    saveEmailTemplatesToSupabase(DEFAULT_EMAIL_TEMPLATES).catch(() => {});
-    return { ...DEFAULT_EMAIL_TEMPLATES };
-  } catch (e) {
-    return { ...DEFAULT_EMAIL_TEMPLATES };
-  }
+export async function resetEmailTemplates() {
+  return saveEmailTemplates({ ...DEFAULT_EMAIL_TEMPLATES });
 }
 
 /* ========================================================================= */
@@ -929,12 +890,9 @@ export function resetEmailTemplates() {
 
 
 export async function saveFilmSubstrates(substratesList) {
-  try {
-    safeLocalStorageSet(FILM_SUBSTRATES_STORAGE_KEY, JSON.stringify(substratesList));
-    await saveFilmSubstratesToSupabase(substratesList);
-  } catch (e) {
-    console.error("Failed to save film substrates master settings", e);
-  }
+  await saveFilmSubstratesToSupabase(substratesList);
+  safeLocalStorageSet(FILM_SUBSTRATES_STORAGE_KEY, JSON.stringify(substratesList));
+  return substratesList;
 }
 
 export async function loadFilmSubstratesFromSupabase() {
@@ -1039,13 +997,10 @@ export function getStorageBays() {
   }
 }
 
-export function saveStorageBays(baysList) {
-  try {
-    safeLocalStorageSet(STORAGE_BAYS_STORAGE_KEY, JSON.stringify(baysList));
-    saveSystemSetting('storage_bays_master', baysList).catch(() => {});
-  } catch (e) {
-    console.error("Failed to save storage bays master settings", e);
-  }
+export async function saveStorageBays(baysList) {
+  await saveSystemSetting('storage_bays_master', baysList);
+  safeLocalStorageSet(STORAGE_BAYS_STORAGE_KEY, JSON.stringify(baysList));
+  return baysList;
 }
 
 export async function loadStorageBaysFromSupabase() {

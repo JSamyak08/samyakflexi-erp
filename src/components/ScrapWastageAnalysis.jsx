@@ -1,4 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { supabase } from '../services/supabaseClient';
+import { fetchPayloadRecords, describeSaveError } from '../services/businessRecords';
 import { 
   FileSpreadsheet, 
   Search, 
@@ -48,27 +50,14 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
   const [wastageThresholdLimit, setWastageThresholdLimit] = useState(5.0);
 
   // Local storage persisted Physical Scrap Store Items (from QC Hold transfers)
-  const [scrapStoreItems, setScrapStoreItems] = useState(() => {
-    try {
-      const saved = localStorage.getItem('sfg_scrap_items');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
-  });
+  const [scrapStoreItems, setScrapStoreItems] = useState([]);
 
-  // Keep scrap store items updated from localStorage
   useEffect(() => {
-    const handleStorageChange = () => {
-      try {
-        const saved = localStorage.getItem('sfg_scrap_items');
-        if (saved) setScrapStoreItems(JSON.parse(saved));
-      } catch (e) {
-        console.error("Error reading sfg_scrap_items", e);
-      }
-    };
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+    let active = true;
+    fetchPayloadRecords(supabase, 'sfg_scrap_items')
+      .then((rows) => { if (active) setScrapStoreItems(rows || []); })
+      .catch((err) => alert(`Scrap store records could not be loaded: ${describeSaveError(err)}`));
+    return () => { active = false; };
   }, []);
 
   // Sync date range inputs when Month or Financial Year changes

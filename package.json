@@ -10,6 +10,7 @@
     "build": "vite build",
     "start": "node server.js",
     "lint": "eslint .",
+    "test": "node --test tests/business-records.test.js tests/migration-persist.test.js",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -28,6 +29,7 @@
     "react-to-print": "^3.3.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.11",
     "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.62.1",
     "@types/node": "^26.2.0",

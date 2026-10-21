@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import SearchableSelect from './SearchableSelect';
 import { 
   Truck, 
@@ -35,6 +35,8 @@ import BarcodePrinterModal from './BarcodePrinterModal';
 import { generateDocRefNumber, getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import { formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
 import { COMPANY_DETAILS } from '../factoryStore';
+import { supabase } from '../services/supabaseClient';
+import { fetchMaterialTemplates, saveMaterialTemplate, deleteMaterialTemplate, describeSaveError } from '../services/businessRecords';
 
 export function getChallanNatureBadge(nature) {
   const n = nature || 'Sale of Goods';
@@ -343,21 +345,19 @@ export default function DispatchManagement({
   // --------------------------------------------------------------------------
   // COA FORM STATE & MATERIAL STRUCTURE TEMPLATES
   // --------------------------------------------------------------------------
-  const [coaTemplates, setCoaTemplates] = useState(() => {
-    try {
-      const saved = localStorage.getItem('samyak_coa_templates');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const customOnly = parsed.filter(p => !DEFAULT_MATERIAL_TEMPLATES.some(d => d.id === p.id));
-          return [...DEFAULT_MATERIAL_TEMPLATES, ...customOnly];
-        }
-      }
-    } catch (e) {
-      console.error("Failed to load saved CoA templates:", e);
-    }
-    return DEFAULT_MATERIAL_TEMPLATES;
-  });
+  const [coaTemplates, setCoaTemplates] = useState(DEFAULT_MATERIAL_TEMPLATES);
+
+  useEffect(() => {
+    let active = true;
+    fetchMaterialTemplates(supabase)
+      .then((rows) => {
+        if (!active) return;
+        const customOnly = (rows || []).filter(tpl => tpl && tpl.isBuiltIn !== true && !DEFAULT_MATERIAL_TEMPLATES.some(d => d.id === tpl.id));
+        setCoaTemplates([...DEFAULT_MATERIAL_TEMPLATES, ...customOnly]);
+      })
+      .catch((err) => alert(`CoA templates could not be loaded: ${describeSaveError(err)}`));
+    return () => { active = false; };
+  }, []);
 
   const [selectedCoaTemplateId, setSelectedCoaTemplateId] = useState(DEFAULT_MATERIAL_TEMPLATES[0].id);
 
@@ -437,7 +437,7 @@ export default function DispatchManagement({
   };
 
   // Save Template from Editor (Create or Update)
-  const handleSaveTemplateFromEditor = (e) => {
+  const handleSaveTemplateFromEditor = async (e) => {
     if (e) e.preventDefault();
     if (!editingTemplateForm || !editingTemplateForm.name.trim()) {
       alert("Please enter a valid Template Name.");
@@ -455,14 +455,16 @@ export default function DispatchManagement({
         isBuiltIn: false
       };
       updated = [...coaTemplates, newTpl];
-      setSelectedCoaTemplateId(newId);
     }
 
-    setCoaTemplates(updated);
+    const savedTpl = updated.find(t => t.id === (editingTemplateForm.id || updated[updated.length - 1]?.id));
     try {
-      localStorage.setItem('samyak_coa_templates', JSON.stringify(updated.filter(t => !t.isBuiltIn)));
+      if (savedTpl && savedTpl.isBuiltIn !== true) await saveMaterialTemplate(supabase, savedTpl);
+      setCoaTemplates(updated);
+      if (!editingTemplateForm.id && savedTpl) setSelectedCoaTemplateId(savedTpl.id);
     } catch (err) {
-      console.error("Failed to save template to localStorage:", err);
+      alert(`The CoA template was not saved: ${describeSaveError(err)}`);
+      return;
     }
     setIsTemplateEditModalOpen(false);
     setEditingTemplateForm(null);
@@ -486,7 +488,7 @@ export default function DispatchManagement({
   };
 
   // Handler to delete a custom template
-  const handleDeleteCoaTemplate = (templateId) => {
+  const handleDeleteCoaTemplate = async (templateId) => {
     const target = coaTemplates.find(t => t.id === templateId);
     if (!target) return;
     if (target.isBuiltIn) {
@@ -495,16 +497,17 @@ export default function DispatchManagement({
     }
     if (confirm(`Are you sure you want to delete template "${target.name}"?`)) {
       const updated = coaTemplates.filter(t => t.id !== templateId);
+      try {
+        await deleteMaterialTemplate(supabase, templateId);
+      } catch (err) {
+        alert(`The CoA template was not deleted: ${describeSaveError(err)}`);
+        return;
+      }
       setCoaTemplates(updated);
       const nextId = updated[0]?.id || '';
       setSelectedCoaTemplateId(nextId);
       if (nextId) {
         handleSelectCoaTemplate(nextId);
-      }
-      try {
-        localStorage.setItem('samyak_coa_templates', JSON.stringify(updated.filter(t => !t.isBuiltIn)));
-      } catch (e) {
-        console.error("Failed to delete template from localStorage:", e);
       }
     }
   };
