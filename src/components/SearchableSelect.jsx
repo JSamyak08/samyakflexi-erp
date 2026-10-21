@@ -50,7 +50,7 @@ const SearchableSelect = React.forwardRef(({
             subtitle: opt.subtitle ? String(opt.subtitle) : null,
             group: opt.group ? String(opt.group) : null,
             disabled: !!opt.disabled,
-            raw: opt
+            raw: opt.raw !== undefined ? opt.raw : opt
           };
         }
         return {
@@ -131,7 +131,13 @@ const SearchableSelect = React.forwardRef(({
 
   // Find currently selected option label
   const selectedOption = useMemo(() => {
-    return parsedOptions.find(opt => opt.value === stringVal);
+    if (!stringVal) return null;
+    return parsedOptions.find(opt => 
+      opt.value === stringVal ||
+      (opt.raw?.id && String(opt.raw.id) === stringVal) ||
+      (opt.raw?.skuCode && String(opt.raw.skuCode) === stringVal) ||
+      (opt.raw?.jobName && String(opt.raw.jobName).toLowerCase().trim() === stringVal.toLowerCase().trim())
+    );
   }, [parsedOptions, stringVal]);
 
   const [portalPosition, setPortalPosition] = useState({ top: 0, left: 0, width: 0, maxHeight: 300 });
@@ -508,7 +514,16 @@ const SearchableSelect = React.forwardRef(({
                       role="option"
                       aria-selected={isSelected}
                       className={`searchable-select-option ${isSelected ? 'selected' : ''} ${isHighlighted ? 'highlighted' : ''} ${opt.disabled ? 'disabled' : ''}`}
-                      onClick={(e) => handleSelectOption(opt, e)}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleSelectOption(opt, e);
+                      }}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleSelectOption(opt, e);
+                      }}
                       onMouseEnter={() => setHighlightedIndex(idx)}
                       style={{
                         padding: '8px 12px',

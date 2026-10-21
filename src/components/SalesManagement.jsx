@@ -379,24 +379,26 @@ export default function SalesManagement({
     const otherJobs = [];
 
     allJM.forEach(j => {
-      const jmClient = String(j.clientName || '').toLowerCase().trim();
+      const jmClient = String(j.clientName || j.client_name || '').toLowerCase().trim();
       const isMatch = clientNorm && (jmClient.includes(clientNorm) || clientNorm.includes(jmClient));
-      const title = j.jobName || j.skuCode || 'Untitled Job';
-      const sku = j.skuCode ? `[${j.skuCode}] ` : '';
+      const title = j.jobName || j.job_name || j.skuCode || j.sku || 'Untitled Job';
+      const sku = (j.skuCode || j.sku) ? `[${j.skuCode || j.sku}] ` : '';
       const label = `${sku}${title}`;
 
-      let struct = j.structure || '';
-      if (!struct && Array.isArray(j.layers) && j.layers.length > 0) {
-        struct = j.layers.map(l => `${l.filmType || 'PET'} ${l.micron || 12}µ`).join(' / ');
+      let struct = j.structure || j.film_structure || '';
+      const jmLayers = j.layers || j.press_marks?.layers;
+      if (!struct && Array.isArray(jmLayers) && jmLayers.length > 0) {
+        struct = jmLayers.map(l => `${l.filmType || l.film_type || 'PET'} ${l.micron || 12}µ`).join(' / ');
       }
 
-      const rateVal = j.sellingPricePerKg ?? j.minSellingPricePerKg ?? j.ratePerKg ?? j.ratePerUom ?? j.rate ?? (j.materialFormat === 'Rotogravure Cylinder' ? j.cylinderCost : null);
+      const rateVal = j.sellingPricePerKg ?? j.selling_price_per_kg ?? j.minSellingPricePerKg ?? j.ratePerKg ?? j.rate_per_kg ?? j.ratePerUom ?? j.rate ?? (j.materialFormat === 'Rotogravure Cylinder' ? j.cylinderCost : null);
       const rateStr = rateVal ? ` • ₹${rateVal}/kg` : '';
-      const clientStr = j.clientName ? `🏢 ${j.clientName}` : '🏢 General Client';
+      const clientStr = (j.clientName || j.client_name) ? `🏢 ${j.clientName || j.client_name}` : '🏢 General Client';
       const structStr = struct ? ` • 🔬 ${struct}` : '';
+      const optVal = String(j.id || j.skuCode || j.sku || title);
 
       const opt = {
-        value: String(j.id || j.skuCode || j.jobName),
+        value: optVal,
         label: label,
         subtitle: `${clientStr}${structStr}${rateStr}`,
         group: isMatch ? `⭐ Customer Job Masters (${selectedClientName})` : 'All Job Masters',
@@ -437,17 +439,17 @@ export default function SalesManagement({
     if (!q) {
       if (clientNameFilter) {
         const clientNorm = clientNameFilter.toLowerCase().trim();
-        const matched = allJM.filter(j => (j.clientName || '').toLowerCase().includes(clientNorm) || clientNorm.includes((j.clientName || '').toLowerCase()));
-        const others = allJM.filter(j => !(j.clientName || '').toLowerCase().includes(clientNorm) && !clientNorm.includes((j.clientName || '').toLowerCase()));
+        const matched = allJM.filter(j => (j.clientName || j.client_name || '').toLowerCase().includes(clientNorm) || clientNorm.includes((j.clientName || j.client_name || '').toLowerCase()));
+        const others = allJM.filter(j => !(j.clientName || j.client_name || '').toLowerCase().includes(clientNorm) && !clientNorm.includes((j.clientName || j.client_name || '').toLowerCase()));
         return [...matched, ...others];
       }
       return allJM;
     }
     return allJM.filter(j => 
-      (j.jobName || '').toLowerCase().includes(q) ||
-      (j.skuCode || '').toLowerCase().includes(q) ||
-      (j.clientName || '').toLowerCase().includes(q) ||
-      (j.structure || '').toLowerCase().includes(q) ||
+      (j.jobName || j.job_name || '').toLowerCase().includes(q) ||
+      (j.skuCode || j.sku || '').toLowerCase().includes(q) ||
+      (j.clientName || j.client_name || '').toLowerCase().includes(q) ||
+      (j.structure || j.film_structure || '').toLowerCase().includes(q) ||
       (j.id || '').toLowerCase().includes(q)
     );
   };
@@ -458,21 +460,29 @@ export default function SalesManagement({
     const updated = [...items];
     const target = { ...updated[rowIdx] };
 
-    target.jobTitle = jm.jobName || jm.skuCode || '';
-    target.jobMasterId = jm.id || '';
-    target.skuCode = jm.skuCode || '';
+    const effectiveTitle = jm.jobName || jm.job_name || jm.skuCode || jm.sku || '';
+    const effectiveId = String(jm.id || jm.skuCode || jm.sku || effectiveTitle || '');
+    const effectiveSku = jm.skuCode || jm.sku || jm.cylinderSku || '';
+
+    target.jobTitle = effectiveTitle;
+    target.jobMasterId = effectiveId;
+    target.skuCode = effectiveSku;
     target.isCustomTitle = false;
 
     // 1. Pre-fill layers & structure
-    if (Array.isArray(jm.layers) && jm.layers.length > 0) {
-      target.layers = jm.layers.map((l, i) => ({
+    const rawLayers = jm.layers || jm.press_marks?.layers;
+    if (Array.isArray(rawLayers) && rawLayers.length > 0) {
+      target.layers = rawLayers.map((l, i) => ({
         id: l.id || (i + 1),
-        filmType: l.filmType || 'PET',
+        filmType: l.filmType || l.film_type || 'PET',
         micron: Number(l.micron) || 12
       }));
       target.structure = getStructureString(target);
     } else if (jm.structure && jm.structure !== '—') {
       target.layers = parseStructureToLayers(jm.structure);
+      target.structure = getStructureString(target);
+    } else if (jm.film_structure && jm.film_structure !== '—') {
+      target.layers = parseStructureToLayers(jm.film_structure);
       target.structure = getStructureString(target);
     } else {
       target.layers = [
@@ -483,7 +493,7 @@ export default function SalesManagement({
     }
 
     // 2. Pre-fill material format
-    const rawFmt = String(jm.materialFormat || jm.materialForm || jm.orderType || '').trim();
+    const rawFmt = String(jm.materialFormat || jm.materialForm || jm.orderType || jm.material_format || '').trim();
     let matchedFmt = 'Roll Form';
     if (rawFmt.includes('Cylinder')) {
       matchedFmt = 'Rotogravure Cylinder';
@@ -506,7 +516,7 @@ export default function SalesManagement({
 
     // Cylinder-specific details
     if (matchedFmt === 'Rotogravure Cylinder') {
-      target.description = jm.description || `${jm.jobName || 'Job'} - Cylinder Set (${jm.colorsCount || 8} Colors)`;
+      target.description = jm.description || `${effectiveTitle || 'Job'} - Cylinder Set (${jm.colorsCount || jm.colors_count || 8} Colors)`;
       target.structure = target.description;
       target.uom = 'Sets';
     } else if (jm.uom) {
@@ -518,18 +528,20 @@ export default function SalesManagement({
     }
 
     // 3. Pre-fill dimensions
-    const widthVal = jm.printWidthMm || jm.pouchOpenWidth || jm.width_mm || '';
-    const repeatVal = jm.repeatLengthMm || jm.faceLengthMm || jm.circumference_mm || '';
+    const widthVal = jm.printWidthMm || jm.print_width_mm || jm.pouchOpenWidth || jm.pouch_open_width || jm.width_mm || '';
+    const repeatVal = jm.repeatLengthMm || jm.repeat_length_mm || jm.faceLengthMm || jm.circumference_mm || '';
     if (widthVal) target.printWidthMm = widthVal;
     if (repeatVal) target.repeatLengthMm = repeatVal;
 
     // 4. Pre-fill rate from Job Master
     const rateVal = jm.sellingPricePerKg ?? 
+                    jm.selling_price_per_kg ?? 
                     jm.minSellingPricePerKg ?? 
                     jm.ratePerKg ?? 
+                    jm.rate_per_kg ?? 
                     jm.ratePerUom ?? 
                     jm.rate ?? 
-                    (matchedFmt === 'Rotogravure Cylinder' ? parseFloat(String(jm.cylinderCost || '').replace(/[^0-9.]/g, '')) : null);
+                    (matchedFmt === 'Rotogravure Cylinder' ? parseFloat(String(jm.cylinderCost || jm.cylinder_cost || '').replace(/[^0-9.]/g, '')) : null);
     if (rateVal !== undefined && rateVal !== null && rateVal !== '') {
       target.ratePerUom = rateVal;
     }
@@ -545,16 +557,17 @@ export default function SalesManagement({
     setActiveJobDropdownIndex(null);
 
     // 6. If client is not yet selected in Quotation, auto-select from Job Master
-    if (!selectedClientName && jm.clientName) {
-      const targetClient = String(jm.clientName || '').toLowerCase().trim();
+    const clientVal = jm.clientName || jm.client_name;
+    if (!selectedClientName && clientVal) {
+      const targetClient = String(clientVal).toLowerCase().trim();
       const matchedClient = (clients || []).find(c => 
         String(c?.name || c?.companyName || '').toLowerCase().trim() === targetClient
       );
       if (matchedClient) {
         handleSelectClient(matchedClient);
       } else {
-        setSelectedClientName(jm.clientName);
-        setClientSearchQuery(jm.clientName);
+        setSelectedClientName(clientVal);
+        setClientSearchQuery(clientVal);
       }
     }
   };
@@ -1824,7 +1837,7 @@ export default function SalesManagement({
                                 placeholder="Select Job Master or Search..."
                                 searchPlaceholder="Search by Job Name, SKU, Structure, Client..."
                                 options={jobMasterSelectOptions}
-                                value={it.jobMasterId || (it.jobTitle ? (jobMasters || []).find(j => j.jobName === it.jobTitle)?.id || '' : '')}
+                                value={it.jobMasterId || it.skuCode || it.jobTitle || ''}
                                 onChange={(e, opt) => {
                                   const selectedVal = e?.target?.value;
                                   if (!selectedVal) {
@@ -1842,7 +1855,23 @@ export default function SalesManagement({
                                     setItems(updated);
                                     return;
                                   }
-                                  const jm = opt?.raw || (jobMasters || []).find(j => String(j.id) === String(selectedVal) || String(j.skuCode) === String(selectedVal));
+
+                                  // Extract the actual Job Master object reliably
+                                  let candidateJm = null;
+                                  if (opt?.raw && (opt.raw.jobName || opt.raw.job_name || opt.raw.skuCode || opt.raw.id)) {
+                                    candidateJm = opt.raw;
+                                  } else if (opt?.raw?.raw && (opt.raw.raw.jobName || opt.raw.raw.job_name || opt.raw.raw.skuCode || opt.raw.raw.id)) {
+                                    candidateJm = opt.raw.raw;
+                                  } else if (e?.target?.rawOption && (e.target.rawOption.jobName || e.target.rawOption.skuCode)) {
+                                    candidateJm = e.target.rawOption;
+                                  }
+
+                                  const jm = candidateJm || (jobMasters || []).find(j => 
+                                    String(j.id || '') === String(selectedVal) || 
+                                    String(j.skuCode || j.sku || '') === String(selectedVal) ||
+                                    String(j.jobName || j.job_name || '').toLowerCase().trim() === String(selectedVal || '').toLowerCase().trim()
+                                  );
+
                                   if (jm) {
                                     handleSelectJobMaster(jm, idx);
                                   } else {
