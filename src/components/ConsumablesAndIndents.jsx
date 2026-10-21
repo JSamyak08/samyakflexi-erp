@@ -134,33 +134,21 @@ export default function ConsumablesAndIndents({
 
   // ─── Lifted State Setters (Write-through to DB) ───────────────────────────────
   const setConsumables = (val) => {
-    if (onUpdateConsumables) {
-      if (typeof val === 'function') {
-        onUpdateConsumables(val(consumables));
-      } else {
-        onUpdateConsumables(val);
-      }
-    }
+    if (!onUpdateConsumables) return undefined;
+    const next = typeof val === 'function' ? val(consumables) : val;
+    return onUpdateConsumables(next);
   };
 
   const setIndents = (val) => {
-    if (onUpdateIndents) {
-      if (typeof val === 'function') {
-        onUpdateIndents(val(indents));
-      } else {
-        onUpdateIndents(val);
-      }
-    }
+    if (!onUpdateIndents) return undefined;
+    const next = typeof val === 'function' ? val(indents) : val;
+    return onUpdateIndents(next);
   };
 
   const setMachineIssues = (val) => {
-    if (onUpdateMachineIssues) {
-      if (typeof val === 'function') {
-        onUpdateMachineIssues(val(machineIssues));
-      } else {
-        onUpdateMachineIssues(val);
-      }
-    }
+    if (!onUpdateMachineIssues) return undefined;
+    const next = typeof val === 'function' ? val(machineIssues) : val;
+    return onUpdateMachineIssues(next);
   };
 
 
@@ -542,7 +530,7 @@ export default function ConsumablesAndIndents({
   };
 
   // Add New Consumable Item
-  const handleCreateNewItem = (e) => {
+  const handleCreateNewItem = async (e) => {
     e.preventDefault();
     if (!newItemName.trim()) {
       alert("Item Name is required!");
@@ -563,7 +551,12 @@ export default function ConsumablesAndIndents({
       lastRestocked: new Date().toISOString().split('T')[0]
     };
 
-    setConsumables(prev => [newItem, ...prev]);
+    try {
+      await setConsumables(prev => [newItem, ...prev]);
+    } catch (err) {
+      alert(`The store item was not saved: ${err.message || err}`);
+      return;
+    }
     setIsNewItemModalOpen(false);
 
     // Reset Form
@@ -573,7 +566,7 @@ export default function ConsumablesAndIndents({
   };
 
   // Submit New Material Indent Requisition
-  const handleCreateIndent = (e) => {
+  const handleCreateIndent = async (e) => {
     e.preventDefault();
     if (indentLineItems.length === 0) {
       alert("Please add at least one item to the material indent.");
@@ -597,7 +590,12 @@ export default function ConsumablesAndIndents({
       }))
     };
 
-    setIndents(prev => [newIndent, ...prev]);
+    try {
+      await setIndents(prev => [newIndent, ...prev]);
+    } catch (err) {
+      alert(`The material indent was not saved: ${err.message || err}`);
+      return;
+    }
     notifyPurchaseIndentCreated(newIndent).catch(err => console.error("Indent email error:", err));
     setIsIndentModalOpen(false);
     alert(`Material Indent Requisition ${indentId} raised successfully! Pending Plant/Store Manager approval.`);

@@ -83,6 +83,7 @@ import {
   DEFAULT_MATERIAL_COST_SETTINGS
 } from '../services/settingsService';
 import { sendERPEmailNotification, buildEmailTemplate } from '../services/emailService';
+import { fetchSystemSetting } from '../services/supabaseDataService';
 import SearchableSelect from './SearchableSelect';
 
 export default function DocumentSettings({ machines = [], onSaveMachine, onUpdateMachine, onDeleteMachine }) {
@@ -96,6 +97,19 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
   const [termsState, setTermsState] = useState(() => getDocumentTerms());
   const [ratesState, setRatesState] = useState(() => getProcessingRates());
   const [coaSignatoriesState, setCoaSignatoriesState] = useState(() => getCoaSignatories());
+
+  useEffect(() => {
+    let mounted = true;
+    const apply = (setter) => (remote) => {
+      if (mounted && remote && typeof remote === 'object') setter((prev) => ({ ...prev, ...remote }));
+    };
+    fetchSystemSetting('doc_prefixes').then(apply(setPrefixState)).catch(() => {});
+    fetchSystemSetting('doc_terms').then(apply(setTermsState)).catch(() => {});
+    fetchSystemSetting('processing_rates').then(apply(setRatesState)).catch(() => {});
+    fetchSystemSetting('coa_signatories').then(apply(setCoaSignatoriesState)).catch(() => {});
+    fetchSystemSetting('inventory_ageing_settings').then(apply(setAgeingSettings)).catch(() => {});
+    return () => { mounted = false; };
+  }, []);
 
   // Consumable Material Cost Settings State (Adhesive & Paper Core)
   const [materialCostState, setMaterialCostState] = useState(() => getMaterialCostSettings());
