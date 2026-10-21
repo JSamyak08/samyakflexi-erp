@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, Search, X, Check } from 'lucide-react';
 
 /**
@@ -24,13 +25,17 @@ const SearchableSelect = React.forwardRef(({
   noOptionsMessage = "No matching options found",
   renderOption,
   onBlur,
-  onFocus
+  onFocus,
+  portal = false,
+  dropdownWidth,
+  dropdownStyle
 }, ref) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
 
   const containerRef = useRef(null);
+  const dropdownRef = useRef(null);
   const searchInputRef = useRef(null);
   const optionsListRef = useRef(null);
 
@@ -129,10 +134,48 @@ const SearchableSelect = React.forwardRef(({
     return parsedOptions.find(opt => opt.value === stringVal);
   }, [parsedOptions, stringVal]);
 
+  const [portalPosition, setPortalPosition] = useState({ top: 0, left: 0, width: 0, maxHeight: 300 });
+
+  // Update portal floating position based on trigger rect
+  const updatePortalPosition = () => {
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const targetWidth = dropdownWidth || Math.max(rect.width, 240);
+      let left = rect.left;
+      if (left + targetWidth > window.innerWidth - 10) {
+        left = Math.max(10, window.innerWidth - targetWidth - 10);
+      }
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const showAbove = spaceBelow < 260 && rect.top > 260;
+      
+      setPortalPosition({
+        top: showAbove ? Math.max(10, rect.top - 260 - 4) : rect.bottom + 4,
+        left: Math.max(10, left),
+        width: targetWidth,
+        maxHeight: showAbove ? Math.min(260, rect.top - 20) : Math.min(300, spaceBelow - 16)
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen && portal) {
+      updatePortalPosition();
+      const handleScrollOrResize = () => updatePortalPosition();
+      window.addEventListener('scroll', handleScrollOrResize, true);
+      window.addEventListener('resize', handleScrollOrResize);
+      return () => {
+        window.removeEventListener('scroll', handleScrollOrResize, true);
+        window.removeEventListener('resize', handleScrollOrResize);
+      };
+    }
+  }, [isOpen, portal, dropdownWidth]);
+
   // Handle clicking outside to close dropdown
   useEffect(() => {
     const handleClickOutside = (e) => {
-      if (containerRef.current && !containerRef.current.contains(e.target)) {
+      const clickedInsideContainer = containerRef.current && containerRef.current.contains(e.target);
+      const clickedInsideDropdown = dropdownRef.current && dropdownRef.current.contains(e.target);
+      if (!clickedInsideContainer && !clickedInsideDropdown) {
         setIsOpen(false);
         setSearchTerm("");
         if (onBlur) onBlur(e);
@@ -347,162 +390,171 @@ const SearchableSelect = React.forwardRef(({
       </div>
 
       {/* Dropdown Panel with Floating Search Input */}
-      {isOpen && (
-        <div
-          className="searchable-select-dropdown"
-          style={{
-            position: 'absolute',
-            top: 'calc(100% + 4px)',
-            left: 0,
-            right: 0,
-            zIndex: 9999,
-            backgroundColor: 'var(--bg-card, #ffffff)',
-            background: 'var(--bg-card, #ffffff)',
-            border: '1px solid var(--border-color, #cbd5e1)',
-            borderRadius: '8px',
-            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.08)',
-            overflow: 'hidden',
-            minWidth: '220px',
-            maxHeight: '300px',
-            display: 'flex',
-            flexDirection: 'column',
-            animation: 'fadeInSelect 0.15s ease-out'
-          }}
-        >
-          {/* Sticky Search Field Header */}
+      {(() => {
+        if (!isOpen) return null;
+
+        const dropdownElement = (
           <div
-            className="searchable-select-search-header"
+            ref={dropdownRef}
+            className="searchable-select-dropdown"
             style={{
-              padding: '8px 10px',
-              borderBottom: '1px solid var(--border-color, #e2e8f0)',
-              backgroundColor: 'var(--bg-primary, #f8fafc)',
+              position: portal ? 'fixed' : 'absolute',
+              top: portal ? `${portalPosition.top}px` : 'calc(100% + 4px)',
+              left: portal ? `${portalPosition.left}px` : 0,
+              right: portal ? 'auto' : 0,
+              width: portal ? `${portalPosition.width}px` : 'auto',
+              zIndex: 99999,
+              backgroundColor: 'var(--bg-card, #ffffff)',
+              background: 'var(--bg-card, #ffffff)',
+              border: '1px solid var(--border-color, #cbd5e1)',
+              borderRadius: '8px',
+              boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+              overflow: 'hidden',
+              minWidth: '220px',
+              maxHeight: portal ? `${portalPosition.maxHeight}px` : '300px',
               display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              position: 'sticky',
-              top: 0,
-              zIndex: 2
+              flexDirection: 'column',
+              animation: 'fadeInSelect 0.15s ease-out',
+              ...dropdownStyle
             }}
           >
-            <Search size={15} style={{ color: '#94a3b8', flexShrink: 0 }} />
-            <input
-              ref={searchInputRef}
-              type="text"
-              className="searchable-select-input"
-              value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setHighlightedIndex(0);
-              }}
-              onKeyDown={handleKeyDown}
-              placeholder={searchPlaceholder}
+            {/* Sticky Search Field Header */}
+            <div
+              className="searchable-select-search-header"
               style={{
-                width: '100%',
-                background: 'transparent',
-                border: 'none',
-                outline: 'none',
-                color: 'var(--text-primary, #0f172a)',
-                fontSize: '13px',
+                padding: '8px 10px',
+                borderBottom: '1px solid var(--border-color, #e2e8f0)',
+                backgroundColor: 'var(--bg-primary, #f8fafc)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                position: 'sticky',
+                top: 0,
+                zIndex: 2
+              }}
+            >
+              <Search size={15} style={{ color: '#94a3b8', flexShrink: 0 }} />
+              <input
+                ref={searchInputRef}
+                type="text"
+                className="searchable-select-input"
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setHighlightedIndex(0);
+                }}
+                onKeyDown={handleKeyDown}
+                placeholder={searchPlaceholder}
+                style={{
+                  width: '100%',
+                  background: 'transparent',
+                  border: 'none',
+                  outline: 'none',
+                  color: 'var(--text-primary, #0f172a)',
+                  fontSize: '13px',
+                  padding: '4px 0'
+                }}
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm("")}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: '#94a3b8',
+                    padding: '2px',
+                    display: 'flex',
+                    alignItems: 'center'
+                  }}
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            {/* Scrollable Options List */}
+            <div
+              ref={optionsListRef}
+              className="searchable-select-options"
+              role="listbox"
+              style={{
+                overflowY: 'auto',
+                maxHeight: '240px',
                 padding: '4px 0'
               }}
-            />
-            {searchTerm && (
-              <button
-                type="button"
-                onClick={() => setSearchTerm("")}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: '#94a3b8',
-                  padding: '2px',
-                  display: 'flex',
-                  alignItems: 'center'
-                }}
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
+            >
+              {filteredOptions.length === 0 ? (
+                <div 
+                  className="searchable-select-no-options"
+                  style={{
+                    padding: '12px 16px',
+                    fontSize: '13px',
+                    color: 'var(--text-muted, #94a3b8)',
+                    textAlign: 'center'
+                  }}
+                >
+                  {noOptionsMessage}
+                </div>
+              ) : (
+                filteredOptions.map((opt, idx) => {
+                  const isSelected = selectedOption && selectedOption.value === opt.value;
+                  const isHighlighted = idx === highlightedIndex;
 
-          {/* Scrollable Options List */}
-          <div
-            ref={optionsListRef}
-            className="searchable-select-options"
-            role="listbox"
-            style={{
-              overflowY: 'auto',
-              maxHeight: '240px',
-              padding: '4px 0'
-            }}
-          >
-            {filteredOptions.length === 0 ? (
-              <div 
-                className="searchable-select-no-options"
-                style={{
-                  padding: '12px 16px',
-                  fontSize: '13px',
-                  color: 'var(--text-muted, #94a3b8)',
-                  textAlign: 'center'
-                }}
-              >
-                {noOptionsMessage}
-              </div>
-            ) : (
-              filteredOptions.map((opt, idx) => {
-                const isSelected = selectedOption && selectedOption.value === opt.value;
-                const isHighlighted = idx === highlightedIndex;
+                  return (
+                    <div
+                      key={`${opt.value}-${idx}`}
+                      role="option"
+                      aria-selected={isSelected}
+                      className={`searchable-select-option ${isSelected ? 'selected' : ''} ${isHighlighted ? 'highlighted' : ''} ${opt.disabled ? 'disabled' : ''}`}
+                      onClick={(e) => handleSelectOption(opt, e)}
+                      onMouseEnter={() => setHighlightedIndex(idx)}
+                      style={{
+                        padding: '8px 12px',
+                        fontSize: '13px',
+                        cursor: opt.disabled ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        backgroundColor: isHighlighted 
+                          ? 'rgba(59, 130, 246, 0.12)' 
+                          : (isSelected ? 'rgba(59, 130, 246, 0.08)' : 'transparent'),
+                        color: isSelected ? '#2563eb' : (opt.disabled ? '#94a3b8' : (opt.raw?.style?.color || 'var(--text-primary, #0f172a)')),
+                        fontWeight: opt.raw?.style?.fontWeight || (isSelected ? '600' : 'normal'),
+                        transition: 'background-color 0.1s ease',
+                        borderLeft: isSelected ? '3px solid #3b82f6' : '3px solid transparent'
+                      }}
+                    >
+                      <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {renderOption ? renderOption(opt) : opt.label}
+                        </span>
+                        {opt.subtitle && (
+                          <span style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+                            {opt.subtitle}
+                          </span>
+                        )}
+                        {opt.group && (
+                          <span style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                            {opt.group}
+                          </span>
+                        )}
+                      </div>
 
-                return (
-                  <div
-                    key={`${opt.value}-${idx}`}
-                    role="option"
-                    aria-selected={isSelected}
-                    className={`searchable-select-option ${isSelected ? 'selected' : ''} ${isHighlighted ? 'highlighted' : ''} ${opt.disabled ? 'disabled' : ''}`}
-                    onClick={(e) => handleSelectOption(opt, e)}
-                    onMouseEnter={() => setHighlightedIndex(idx)}
-                    style={{
-                      padding: '8px 12px',
-                      fontSize: '13px',
-                      cursor: opt.disabled ? 'not-allowed' : 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      backgroundColor: isHighlighted 
-                        ? 'rgba(59, 130, 246, 0.12)' 
-                        : (isSelected ? 'rgba(59, 130, 246, 0.08)' : 'transparent'),
-                      color: isSelected ? '#2563eb' : (opt.disabled ? '#94a3b8' : (opt.raw?.style?.color || 'var(--text-primary, #0f172a)')),
-                      fontWeight: opt.raw?.style?.fontWeight || (isSelected ? '600' : 'normal'),
-                      transition: 'background-color 0.1s ease',
-                      borderLeft: isSelected ? '3px solid #3b82f6' : '3px solid transparent'
-                    }}
-                  >
-                    <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {renderOption ? renderOption(opt) : opt.label}
-                      </span>
-                      {opt.subtitle && (
-                        <span style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
-                          {opt.subtitle}
-                        </span>
-                      )}
-                      {opt.group && (
-                        <span style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                          {opt.group}
-                        </span>
+                      {isSelected && (
+                        <Check size={15} style={{ color: '#3b82f6', flexShrink: 0, marginLeft: '8px' }} />
                       )}
                     </div>
-
-                    {isSelected && (
-                      <Check size={15} style={{ color: '#3b82f6', flexShrink: 0, marginLeft: '8px' }} />
-                    )}
-                  </div>
-                );
-              })
-            )}
+                  );
+                })
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+
+        return portal ? createPortal(dropdownElement, document.body) : dropdownElement;
+      })()}
     </div>
   );
 });
