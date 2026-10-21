@@ -514,7 +514,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
   };
 
   const handleResetMaterialCosts = async () => {
-    if (window.confirm("Reset consumable material rates to ERP standard defaults (Adhesive: ₹270/kg, Paper Core: ₹45/kg)?")) {
+    if (window.confirm("Reset consumable rates, conversion charges & profit margins to ERP standard defaults (Adhesive: ₹270/kg, Paper Core: ₹45/kg, Inks: ₹1,500/kg, Conversion Charges: ₹45/kg, Fixed Profit: ₹25/kg)?")) {
       setIsSavingMaterialCosts(true);
       try {
         const reset = await saveMaterialCostSettings({ ...DEFAULT_MATERIAL_COST_SETTINGS });
@@ -1221,10 +1221,10 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
             <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '16px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
               <div>
                 <h3 style={{ fontSize: '1.2rem', fontWeight: '900', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <Package size={24} style={{ color: '#4f46e5' }} /> Consumable Material Rates & Production Cost Allocation
+                  <Package size={24} style={{ color: '#4f46e5' }} /> Consumable Rates, Conversion Charges & Profit Margins
                 </h3>
                 <p style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '4px' }}>
-                  Configure cost rates (in ₹/kg) for consumables like <strong>Adhesive</strong> and <strong>Paper Core</strong>. These rates are stored in the database and automatically added to the <strong>Total Ingredients Cost</strong> in Production Records.
+                  Configure cost rates (in ₹/kg) for consumables (<strong>Adhesive</strong>, <strong>Paper Core</strong>, <strong>Ink</strong>) and default factory benchmarks (<strong>Conversion Charges/kg</strong> &amp; <strong>Fixed Profit/kg</strong>) used to derive <strong>Minimum Selling Price/kg</strong> in Job Punching &amp; Costing.
                 </p>
               </div>
               <div style={{ display: 'flex', gap: '10px' }}>
@@ -1256,7 +1256,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
               </div>
               <div style={{ flex: 1, fontSize: '0.85rem', lineHeight: '1.5' }}>
                 <div style={{ fontWeight: '800', color: '#1e1b4b', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span>Permanent Database Persistence & Historical Pricing Integrity</span>
+                  <span>Permanent Database Persistence & Pricing Baseline Integrity</span>
                   <span className="badge" style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontSize: '0.7rem' }}>
                     Synced to Supabase
                   </span>
@@ -1267,15 +1267,15 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                   )}
                 </div>
                 <div style={{ color: '#475569', marginTop: '6px' }}>
-                  <strong>How it works:</strong> All rates entered here are persisted to the cloud database table (<code>system_settings.material_cost_settings</code>).
-                  Whenever rates are updated, <strong>previously submitted Production Records remain completely locked</strong> with their original snapshot rates. 
-                  Any <strong>new Production Record created or filled after the update</strong> will instantly inherit these new rates.
+                  <strong>How it works:</strong> Rates set here serve as the global factory baseline in Supabase (<code>system_settings.material_cost_settings</code>).
+                  Whenever rates are saved, any new <strong>Job Punching &amp; Costing</strong> session automatically pre-fills with these defaults.
+                  In Job Punching, <strong>Conversion Charges/kg</strong> and <strong>Fixed Profit/kg</strong> remain editable on a job-specific basis while inheriting these configured defaults.
                 </div>
               </div>
             </div>
 
             {/* Inputs Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px', marginBottom: '24px' }}>
               
               {/* Card 1: Lamination Adhesive */}
               <div style={{ background: '#ffffff', border: '1.5px solid #e0e7ff', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(79, 70, 229, 0.05)' }}>
@@ -1284,7 +1284,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                     <span style={{ fontSize: '1.4rem' }}>🧪</span>
                     <div>
                       <div style={{ fontWeight: '800', color: '#312e81', fontSize: '1rem' }}>Lamination Adhesive Rate</div>
-                      <div style={{ fontSize: '0.72rem', color: '#6366f1', fontWeight: '600' }}>For L1 & L2 Solventless / Solvent-based passes</div>
+                      <div style={{ fontSize: '0.72rem', color: '#6366f1', fontWeight: '600' }}>For L1 &amp; L2 Solventless / Solvent-based passes</div>
                     </div>
                   </div>
                   <span className="badge" style={{ background: '#e0e7ff', color: '#4338ca', fontWeight: '700' }}>
@@ -1315,7 +1315,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                 </div>
 
                 <p style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4', margin: 0 }}>
-                  This rate is multiplied by <code>Adhesive Consumed (L1 + L2)</code> (kg) in Production Records and added into <strong>Total Ingredients Cost</strong>.
+                  Multiplied by <code>Adhesive Consumed (L1 + L2)</code> (kg) in Production Records and added into <strong>Total Ingredients Cost</strong>.
                 </p>
               </div>
 
@@ -1326,7 +1326,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                     <span style={{ fontSize: '1.4rem' }}>📦</span>
                     <div>
                       <div style={{ fontWeight: '800', color: '#064e3b', fontSize: '1rem' }}>Slitting Paper Core Rate</div>
-                      <div style={{ fontSize: '0.72rem', color: '#059669', fontWeight: '600' }}>For Slitting & Rewinding finished reels</div>
+                      <div style={{ fontSize: '0.72rem', color: '#059669', fontWeight: '600' }}>For Slitting &amp; Rewinding finished reels</div>
                     </div>
                   </div>
                   <span className="badge" style={{ background: '#d1fae5', color: '#047857', fontWeight: '700' }}>
@@ -1357,7 +1357,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                 </div>
 
                 <p style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4', margin: 0 }}>
-                  This rate is multiplied by <code>Paper Core Consumed</code> (kg) in Stage 5 Slitting and added into <strong>Total Ingredients Cost</strong>.
+                  Multiplied by <code>Paper Core Consumed</code> (kg) in Stage 5 Slitting and added into <strong>Total Ingredients Cost</strong>.
                 </p>
               </div>
 
@@ -1368,7 +1368,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                     <span style={{ fontSize: '1.4rem' }}>🎨</span>
                     <div>
                       <div style={{ fontWeight: '800', color: '#78350f', fontSize: '1rem' }}>Liquid Ink Benchmark Rate</div>
-                      <div style={{ fontSize: '0.72rem', color: '#d97706', fontWeight: '600' }}>For Gravure Inks & Pre-costing</div>
+                      <div style={{ fontSize: '0.72rem', color: '#d97706', fontWeight: '600' }}>For Gravure Inks &amp; Pre-costing</div>
                     </div>
                   </div>
                   <span className="badge" style={{ background: '#fef3c7', color: '#b45309', fontWeight: '700' }}>
@@ -1398,7 +1398,91 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                 </div>
 
                 <p style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4', margin: 0 }}>
-                  Standard reference rate used across Job Punching pre-costing estimates and cylinder ink cost checks.
+                  Standard reference rate used across Job Punching pre-costing estimates and cylinder ink checks.
+                </p>
+              </div>
+
+              {/* Card 4: Default Conversion Charges / kg */}
+              <div style={{ background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(15, 23, 42, 0.05)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontSize: '1.4rem' }}>⚙️</span>
+                    <div>
+                      <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '1rem' }}>Default Conversion Charges</div>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '600' }}>Factory operations, labor, electricity &amp; packing</div>
+                    </div>
+                  </div>
+                  <span className="badge" style={{ background: '#f1f5f9', color: '#334155', fontWeight: '700' }}>
+                    Default: ₹ 45/kg
+                  </span>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: '10px' }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: '700', color: '#1e293b', display: 'block', marginBottom: '6px' }}>
+                    Conversion Charges per Kg (₹ / kg) <span style={{ color: '#dc2626' }}>*</span>
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontWeight: '800', color: '#334155', fontSize: '1.1rem' }}>
+                      ₹
+                    </span>
+                    <input 
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      className="form-control"
+                      style={{ paddingLeft: '32px', fontSize: '1.15rem', fontWeight: '800', color: '#0f172a', border: '2px solid #cbd5e1' }}
+                      value={materialCostState.conversionChargesPerKg !== undefined ? materialCostState.conversionChargesPerKg : ''}
+                      onChange={e => handleMaterialCostChange('conversionChargesPerKg', e.target.value)}
+                      placeholder="e.g. 45"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <p style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4', margin: 0 }}>
+                  Pre-filled in <strong>Job Punching &amp; Costing</strong> Live Breakdown. Added to RM Cost to derive Minimum Selling Price. Editable per job.
+                </p>
+              </div>
+
+              {/* Card 5: Default Fixed Profit / kg */}
+              <div style={{ background: '#ffffff', border: '1.5px solid #bbf7d0', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(16, 185, 129, 0.05)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontSize: '1.4rem' }}>📈</span>
+                    <div>
+                      <div style={{ fontWeight: '800', color: '#065f46', fontSize: '1rem' }}>Default Fixed Profit / kg</div>
+                      <div style={{ fontSize: '0.72rem', color: '#059669', fontWeight: '600' }}>Target operating margin per finished kg</div>
+                    </div>
+                  </div>
+                  <span className="badge" style={{ background: '#dcfce7', color: '#15803d', fontWeight: '700' }}>
+                    Default: ₹ 25/kg
+                  </span>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: '10px' }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: '700', color: '#1e293b', display: 'block', marginBottom: '6px' }}>
+                    Fixed Profit per Kg (₹ / kg) <span style={{ color: '#dc2626' }}>*</span>
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontWeight: '800', color: '#15803d', fontSize: '1.1rem' }}>
+                      ₹
+                    </span>
+                    <input 
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      className="form-control"
+                      style={{ paddingLeft: '32px', fontSize: '1.15rem', fontWeight: '800', color: '#065f46', border: '2px solid #86efac' }}
+                      value={materialCostState.fixedProfitPerKg !== undefined ? materialCostState.fixedProfitPerKg : ''}
+                      onChange={e => handleMaterialCostChange('fixedProfitPerKg', e.target.value)}
+                      placeholder="e.g. 25"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <p style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4', margin: 0 }}>
+                  Pre-filled in <strong>Job Punching &amp; Costing</strong> Live Breakdown. Added to RM Cost and Conversion Charges to compute Minimum Selling Price/kg.
                 </p>
               </div>
 
@@ -1414,23 +1498,56 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
               const coreCost = testCoreKg * testCoreRate;
               const totalAdded = adhCost + coreCost;
 
+              const benchmarkRmPerKg = 185;
+              const convPerKg = Number(materialCostState.conversionChargesPerKg) || 45;
+              const profitPerKg = Number(materialCostState.fixedProfitPerKg) || 25;
+              const minSellingPrice = benchmarkRmPerKg + convPerKg + profitPerKg;
+
               return (
-                <div style={{ background: '#f0fdf4', border: '1.5px solid #86efac', borderRadius: '12px', padding: '18px 24px' }}>
-                  <div style={{ fontSize: '0.82rem', fontWeight: '800', color: '#166534', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px' }}>
-                    🧮 Live Calculation Example (Batch of {testAdhKg} kg Adhesive + {testCoreKg} kg Paper Core)
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {/* Costing & Selling Price Derivation Preview */}
+                  <div style={{ background: '#f0fdf4', border: '1.5px solid #86efac', borderRadius: '12px', padding: '18px 24px' }}>
+                    <div style={{ fontSize: '0.82rem', fontWeight: '800', color: '#166534', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px' }}>
+                      🏁 Minimum Selling Price Derivation Benchmark (Example Job: ₹ {benchmarkRmPerKg}/kg Raw Material Cost)
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', fontSize: '0.88rem', alignItems: 'center' }}>
+                      <div>
+                        <span style={{ color: '#166534' }}>Raw Material Cost:</span>{' '}
+                        <strong>₹ {benchmarkRmPerKg.toFixed(2)} / kg</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: '#166534' }}>+ Conversion Charges:</span>{' '}
+                        <strong>₹ {convPerKg.toFixed(2)} / kg</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: '#166534' }}>+ Fixed Profit:</span>{' '}
+                        <strong>₹ {profitPerKg.toFixed(2)} / kg</strong>
+                      </div>
+                      <div style={{ borderLeft: '2px solid #86efac', paddingLeft: '16px' }}>
+                        <span style={{ color: '#166534', fontWeight: '700' }}>= Minimum Selling Price:</span>{' '}
+                        <strong style={{ fontSize: '1.25rem', color: '#15803d' }}>₹ {minSellingPrice.toFixed(2)} / kg</strong>
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', fontSize: '0.88rem' }}>
-                    <div>
-                      <span style={{ color: '#166534' }}>Adhesive Cost:</span>{' '}
-                      <strong>{testAdhKg} kg × ₹ {testAdhRate}/kg = ₹ {adhCost.toLocaleString()}</strong>
+
+                  {/* Production Ingredients Example */}
+                  <div style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: '12px', padding: '16px 24px' }}>
+                    <div style={{ fontSize: '0.8rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
+                      🧪 Production Ingredients Batch Example ({testAdhKg} kg Adhesive + {testCoreKg} kg Paper Core)
                     </div>
-                    <div>
-                      <span style={{ color: '#166534' }}>Paper Core Cost:</span>{' '}
-                      <strong>{testCoreKg} kg × ₹ {testCoreRate}/kg = ₹ {coreCost.toLocaleString()}</strong>
-                    </div>
-                    <div style={{ borderLeft: '2px solid #86efac', paddingLeft: '16px' }}>
-                      <span style={{ color: '#166534', fontWeight: '700' }}>Added to Ingredients Cost:</span>{' '}
-                      <strong style={{ fontSize: '1.1rem', color: '#15803d' }}>+ ₹ {totalAdded.toLocaleString()}</strong>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', fontSize: '0.85rem' }}>
+                      <div>
+                        <span style={{ color: '#64748b' }}>Adhesive:</span>{' '}
+                        <strong>{testAdhKg} kg × ₹ {testAdhRate}/kg = ₹ {adhCost.toLocaleString()}</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: '#64748b' }}>Paper Core:</span>{' '}
+                        <strong>{testCoreKg} kg × ₹ {testCoreRate}/kg = ₹ {coreCost.toLocaleString()}</strong>
+                      </div>
+                      <div style={{ borderLeft: '2px solid #cbd5e1', paddingLeft: '16px' }}>
+                        <span style={{ color: '#475569', fontWeight: '700' }}>Total Added to Record:</span>{' '}
+                        <strong style={{ color: '#1e293b' }}>+ ₹ {totalAdded.toLocaleString()}</strong>
+                      </div>
                     </div>
                   </div>
                 </div>

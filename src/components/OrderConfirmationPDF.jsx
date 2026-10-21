@@ -243,7 +243,14 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
                   <td className="label-col">Wastage Allowed</td>
                   <td className="value-col">{wastagePct}%</td>
                   <td className="label-col">Calculated Rate / Kg</td>
-                  <td className="value-col">₹{summary.costPerKg ? Number(summary.costPerKg).toFixed(2) : '0'} / kg</td>
+                  <td className="value-col">
+                    <div>₹{summary.costPerKg ? Number(summary.costPerKg).toFixed(2) : '0'} / kg</div>
+                    {calculationData?.minSellingPricePerKg ? (
+                      <div style={{ color: '#047857', fontWeight: '700', fontSize: '0.8rem', marginTop: '2px' }}>
+                        Min Selling: ₹{calculationData.minSellingPricePerKg} / kg
+                      </div>
+                    ) : null}
+                  </td>
                 </tr>
                 {hasVariants && (
                   <tr>

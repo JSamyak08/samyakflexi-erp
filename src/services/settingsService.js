@@ -370,15 +370,19 @@ const RATES_STORAGE_KEY = 'samyak_processing_rates';
 export const DEFAULT_RATES = {
   liquidInkPrice: 1500,
   adhesivePrice: 270,
-  paperCorePrice: 45
+  paperCorePrice: 45,
+  conversionChargesPerKg: 45,
+  fixedProfitPerKg: 25
 };
 
 export const MATERIAL_COST_SETTINGS_STORAGE_KEY = 'samyak_material_cost_settings';
 
 export const DEFAULT_MATERIAL_COST_SETTINGS = {
-  adhesiveCostPerKg: 270,    // ₹ / kg for Lamination Adhesive
-  paperCoreCostPerKg: 45,    // ₹ / kg for Slitting Paper Cores
-  liquidInkPrice: 1500,      // ₹ / kg for Inks
+  adhesiveCostPerKg: 270,       // ₹ / kg for Lamination Adhesive
+  paperCoreCostPerKg: 45,       // ₹ / kg for Slitting Paper Cores
+  liquidInkPrice: 1500,         // ₹ / kg for Inks
+  conversionChargesPerKg: 45,   // ₹ / kg default Conversion Charges
+  fixedProfitPerKg: 25,         // ₹ / kg default Fixed Profit Margin
   updatedAt: ''
 };
 
@@ -395,6 +399,12 @@ export async function fetchMaterialCostSettingsFromSupabase() {
         adhesiveCostPerKg: Number(remote.adhesiveCostPerKg ?? remote.adhesivePrice) || DEFAULT_MATERIAL_COST_SETTINGS.adhesiveCostPerKg,
         paperCoreCostPerKg: Number(remote.paperCoreCostPerKg ?? remote.paperCorePrice) || DEFAULT_MATERIAL_COST_SETTINGS.paperCoreCostPerKg,
         liquidInkPrice: Number(remote.liquidInkPrice) || DEFAULT_MATERIAL_COST_SETTINGS.liquidInkPrice,
+        conversionChargesPerKg: (remote.conversionChargesPerKg !== undefined && remote.conversionChargesPerKg !== '')
+          ? Number(remote.conversionChargesPerKg)
+          : DEFAULT_MATERIAL_COST_SETTINGS.conversionChargesPerKg,
+        fixedProfitPerKg: (remote.fixedProfitPerKg !== undefined && remote.fixedProfitPerKg !== '')
+          ? Number(remote.fixedProfitPerKg)
+          : DEFAULT_MATERIAL_COST_SETTINGS.fixedProfitPerKg,
         updatedAt: remote.updatedAt || ''
       };
       safeLocalStorageSet(MATERIAL_COST_SETTINGS_STORAGE_KEY, JSON.stringify(merged));
@@ -419,7 +429,13 @@ export function getMaterialCostSettings() {
       ...parsed,
       adhesiveCostPerKg: Number(parsed.adhesiveCostPerKg ?? parsed.adhesivePrice) || DEFAULT_MATERIAL_COST_SETTINGS.adhesiveCostPerKg,
       paperCoreCostPerKg: Number(parsed.paperCoreCostPerKg ?? parsed.paperCorePrice) || DEFAULT_MATERIAL_COST_SETTINGS.paperCoreCostPerKg,
-      liquidInkPrice: Number(parsed.liquidInkPrice) || DEFAULT_MATERIAL_COST_SETTINGS.liquidInkPrice
+      liquidInkPrice: Number(parsed.liquidInkPrice) || DEFAULT_MATERIAL_COST_SETTINGS.liquidInkPrice,
+      conversionChargesPerKg: (parsed.conversionChargesPerKg !== undefined && parsed.conversionChargesPerKg !== '')
+        ? Number(parsed.conversionChargesPerKg)
+        : DEFAULT_MATERIAL_COST_SETTINGS.conversionChargesPerKg,
+      fixedProfitPerKg: (parsed.fixedProfitPerKg !== undefined && parsed.fixedProfitPerKg !== '')
+        ? Number(parsed.fixedProfitPerKg)
+        : DEFAULT_MATERIAL_COST_SETTINGS.fixedProfitPerKg
     };
   } catch (e) {
     return { ...DEFAULT_MATERIAL_COST_SETTINGS };
@@ -436,6 +452,12 @@ export async function saveMaterialCostSettings(settings) {
     adhesiveCostPerKg: Number(settings.adhesiveCostPerKg ?? settings.adhesivePrice) || DEFAULT_MATERIAL_COST_SETTINGS.adhesiveCostPerKg,
     paperCoreCostPerKg: Number(settings.paperCoreCostPerKg ?? settings.paperCorePrice) || DEFAULT_MATERIAL_COST_SETTINGS.paperCoreCostPerKg,
     liquidInkPrice: Number(settings.liquidInkPrice) || DEFAULT_MATERIAL_COST_SETTINGS.liquidInkPrice,
+    conversionChargesPerKg: (settings.conversionChargesPerKg !== undefined && settings.conversionChargesPerKg !== '')
+      ? Number(settings.conversionChargesPerKg)
+      : DEFAULT_MATERIAL_COST_SETTINGS.conversionChargesPerKg,
+    fixedProfitPerKg: (settings.fixedProfitPerKg !== undefined && settings.fixedProfitPerKg !== '')
+      ? Number(settings.fixedProfitPerKg)
+      : DEFAULT_MATERIAL_COST_SETTINGS.fixedProfitPerKg,
     updatedAt: new Date().toISOString()
   };
   try {
@@ -445,7 +467,9 @@ export async function saveMaterialCostSettings(settings) {
     saveProcessingRates({
       liquidInkPrice: payload.liquidInkPrice,
       adhesivePrice: payload.adhesiveCostPerKg,
-      paperCorePrice: payload.paperCoreCostPerKg
+      paperCorePrice: payload.paperCoreCostPerKg,
+      conversionChargesPerKg: payload.conversionChargesPerKg,
+      fixedProfitPerKg: payload.fixedProfitPerKg
     });
   } catch (e) {
     console.error("Failed to save material cost settings", e);
@@ -465,7 +489,13 @@ export function getProcessingRates() {
     return {
       liquidInkPrice: Number(parsed.liquidInkPrice) || DEFAULT_RATES.liquidInkPrice,
       adhesivePrice: Number(parsed.adhesivePrice) || DEFAULT_RATES.adhesivePrice,
-      paperCorePrice: Number(parsed.paperCorePrice) || DEFAULT_RATES.paperCorePrice
+      paperCorePrice: Number(parsed.paperCorePrice) || DEFAULT_RATES.paperCorePrice,
+      conversionChargesPerKg: (parsed.conversionChargesPerKg !== undefined && parsed.conversionChargesPerKg !== '')
+        ? Number(parsed.conversionChargesPerKg)
+        : DEFAULT_RATES.conversionChargesPerKg,
+      fixedProfitPerKg: (parsed.fixedProfitPerKg !== undefined && parsed.fixedProfitPerKg !== '')
+        ? Number(parsed.fixedProfitPerKg)
+        : DEFAULT_RATES.fixedProfitPerKg
     };
   } catch (e) {
     return { ...DEFAULT_RATES };
