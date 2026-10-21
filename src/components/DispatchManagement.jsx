@@ -781,9 +781,12 @@ export default function DispatchManagement({
         col3: formatINR(item.rate),
         col4: formatINR(item.amount)
       })),
-      onConfirm: () => {
-        if (onSaveDeliveryChallan) {
-          onSaveDeliveryChallan(payload);
+      onConfirm: async () => {
+        try {
+          if (onSaveDeliveryChallan) await onSaveDeliveryChallan(payload);
+        } catch (err) {
+          alert(`The delivery challan was not saved: ${err.message || err}`);
+          return;
         }
         setIsDcModalOpen(false);
         setActiveDcForPDF(payload);
@@ -1184,9 +1187,12 @@ export default function DispatchManagement({
         col3: p.standard || '—',
         col4: p.observation || 'Conforms'
       })),
-      onConfirm: () => {
-        if (onSaveCoA) {
-          onSaveCoA(payload);
+      onConfirm: async () => {
+        try {
+          if (onSaveCoA) await onSaveCoA(payload);
+        } catch (err) {
+          alert(`The certificate was not saved: ${err.message || err}`);
+          return;
         }
         setIsCoaModalOpen(false);
         setActiveCoaForPDF(payload);
@@ -1529,9 +1535,12 @@ export default function DispatchManagement({
         col3: `Net: ${roll.netWeightKg} Kg`,
         col4: `Gross: ${roll.grossWeightKg} Kg`
       })),
-      onConfirm: () => {
-        if (onAddDispatchShipment) {
-          onAddDispatchShipment(newShipment);
+      onConfirm: async () => {
+        try {
+          if (onAddDispatchShipment) await onAddDispatchShipment(newShipment);
+        } catch (err) {
+          alert(`The packing list was not saved: ${err.message || err}`);
+          return;
         }
         setIsPackingModalOpen(false);
         setSelectedDispatchForPackingList(newShipment);
@@ -3886,14 +3895,22 @@ export default function DispatchManagement({
                   />
                 </div>
 
-                {/* Scale #4 Live Weight Input */}
                 <div className="form-group">
-                  <WeighingScaleCaptureButton
-                    weightKg={currentPktNetWeight}
-                    onCaptureWeight={(w) => setCurrentPktNetWeight(Number(w) || 0)}
-                    stationId="SCALE_4_DISPATCH"
-                    label={`Scale #4 Live Net Qty / Weight (${pktUom}) *`}
-                  />
+                  <label>Net Qty / Weight ({pktUom}) *</label>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      className="form-control"
+                      value={currentPktNetWeight}
+                      onChange={e => setCurrentPktNetWeight(parseFloat(e.target.value) || 0)}
+                    />
+                    <WeighingScaleCaptureButton
+                      onCaptureWeight={(w) => setCurrentPktNetWeight(Number(w) || 0)}
+                      label="Scale #4"
+                    />
+                  </div>
                 </div>
 
                 {selectedFgRollForWeighing && (
@@ -3998,7 +4015,7 @@ export default function DispatchManagement({
                     type="button"
                     className="btn-secondary"
                     style={{ fontSize: '0.75rem', padding: '5px 12px', background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontWeight: '800' }}
-                    onClick={handleAddRollToPackingList}
+                    onClick={() => handleAddRollToPackingList()}
                   >
                     + Add Roll / Box ({currentPktNetWeight} {pktUom} Net / {(currentPktNetWeight + Number(pktCoreWeight || 0)).toFixed(1)} Kg Gross)
                   </button>

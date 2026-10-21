@@ -764,7 +764,12 @@ export default function InventoryManagement({
         }
         return invItem;
       });
-      onUpdateInventory(updatedInv);
+      try {
+        await onUpdateInventory(updatedInv);
+      } catch (err) {
+        alert(`The stock quantity was not saved: ${describeSaveError(err)}`);
+        return;
+      }
     }
 
     setIsQuickAdjOpen(false);
@@ -2494,9 +2499,15 @@ export default function InventoryManagement({
     }
 
     // Update associated child rolls/barcodes in inventoryRolls with verified dimensions and weight
+    const grnBarcodes = new Set([
+      ...(Array.isArray(qcInspectingGRN.barcodes) ? qcInspectingGRN.barcodes : []),
+      ...(Array.isArray(qcInspectingGRN.itemsBreakdown) ? qcInspectingGRN.itemsBreakdown.map((item) => item.barcodeId).filter(Boolean) : [])
+    ]);
     const matchingRolls = (inventoryRolls || []).filter(r => 
       (r.grnNo && (r.grnNo === qcInspectingGRN.grnNo || r.grnNo === qcInspectingGRN.id)) ||
-      (r.grn_no && (r.grn_no === qcInspectingGRN.grnNo || r.grn_no === qcInspectingGRN.id))
+      (r.grn_no && (r.grn_no === qcInspectingGRN.grnNo || r.grn_no === qcInspectingGRN.id)) ||
+      (r.invoiceNo && qcInspectingGRN.invoiceNo && r.invoiceNo === qcInspectingGRN.invoiceNo) ||
+      grnBarcodes.has(r.barcodeId || r.id)
     );
 
     if (matchingRolls.length > 0) {
@@ -2982,7 +2993,7 @@ export default function InventoryManagement({
   };
 
   // Issue / Return Submit (Records transaction in Store Issue/Return Ledger & updates Job Production Record Costing)
-  const handleIssueReturnSubmit = () => {
+  const handleIssueReturnSubmit = async () => {
     const itemToIssue = scannedItemDetails?.item || selectedInvItem;
     if (scannedItemDetails?.isQCPending) {
       alert("❌ Blocked by Quality Control: This batch is currently PENDING QC APPROVAL and cannot be issued or returned to production until cleared by the QC Chemist.");
@@ -3023,21 +3034,26 @@ export default function InventoryManagement({
     }
 
     if (onStoreIssueReturn) {
-      onStoreIssueReturn({
-        item: itemToIssue,
-        issueType: issueType,
-        qty: qty,
-        jobName: chosenJobName,
-        user: currentUser?.name || 'Store Manager',
-        unitPrice: finalRate,
-        batchNo: finalBatchNo,
-        vendorName: finalVendor,
-        grnNo: finalGrnNo,
-        barcode: finalBarcode,
-        notes: issueType === 'issue'
-          ? `[2D Scan: ${finalBarcode}] Issued ${qty} ${unitStr} from Batch [${finalBatchNo}] (Rate: ₹${finalRate}/${unitStr}) to Job: ${chosenJobName}`
-          : `Returned ${qty} ${unitStr} from Job: ${chosenJobName} back to Store`
-      });
+      try {
+        await onStoreIssueReturn({
+          item: itemToIssue,
+          issueType: issueType,
+          qty: qty,
+          jobName: chosenJobName,
+          user: currentUser?.name || 'Store Manager',
+          unitPrice: finalRate,
+          batchNo: finalBatchNo,
+          vendorName: finalVendor,
+          grnNo: finalGrnNo,
+          barcode: finalBarcode,
+          notes: issueType === 'issue'
+            ? `[2D Scan: ${finalBarcode}] Issued ${qty} ${unitStr} from Batch [${finalBatchNo}] (Rate: ₹${finalRate}/${unitStr}) to Job: ${chosenJobName}`
+            : `Returned ${qty} ${unitStr} from Job: ${chosenJobName} back to Store`
+        });
+      } catch (err) {
+        alert(`The store issue was not saved: ${err.message || err}`);
+        return;
+      }
     } else {
       let updatedInv = [...inventory];
       const idx = updatedInv.findIndex(i => i.id === itemToIssue.id);

@@ -1823,7 +1823,7 @@ export default function ProductionRecordManagement({
   };
 
   // Step 2: Final Submit upon confirmation
-  const handleFinalSubmitRecord = () => {
+  const handleFinalSubmitRecord = async () => {
     const newRecord = {
       id: selectedRecord?.id || `PR-${selectedOrder.id}`,
       orderId: selectedOrder.id,
@@ -1904,7 +1904,12 @@ export default function ProductionRecordManagement({
       notes: recordNotes
     };
 
-    if (onSaveProductionRecord) onSaveProductionRecord(newRecord);
+    try {
+      if (onSaveProductionRecord) await onSaveProductionRecord(newRecord);
+    } catch (err) {
+      alert(`The production record was not saved: ${err.message || err}`);
+      return;
+    }
     notifyProductionRecordSubmitted(newRecord).catch(err => console.error("Production submission email error:", err));
 
     // Over-Wastage Alert Email Trigger if scrap % exceeds pre-costing target

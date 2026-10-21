@@ -1,7 +1,17 @@
 -- Fresh databases built only from git enable row level security and create no
--- policies. Production already has "Allow anon and auth full access" on these
--- tables (kept outside git). This adds that same policy only when a listed
--- table exists, has row level security, and has zero policies.
+-- policies. Production already has "Allow anon and auth full access" on the
+-- business tables named below (kept outside git). This adds that same policy
+-- only when a listed table exists, has row level security, and has zero policies.
+--
+-- The allow list is closed. A public table that is not named in `targets` is
+-- never opened, including any future service-role-only table.
+--
+-- `email_send_log` is service-role only. claim_email_send and
+-- release_email_send are the only writers, and the table is private because
+-- RLS is on and there is no policy. `Samyak International Ltd` is the stray
+-- baseline table that stays locked the same way. Both names are in `denied`,
+-- which is checked before any grant or policy, so copying either name into
+-- `targets` still does nothing.
 --
 -- A table that already has any policy is left alone, so applying this on
 -- production does not replace or duplicate the live policies.
@@ -11,6 +21,10 @@
 DO $$
 DECLARE
   t text;
+  denied text[] := ARRAY[
+    'email_send_log',
+    'Samyak International Ltd'
+  ];
   targets text[] := ARRAY[
     'audit_logs',
     'certificate_of_analyses',
@@ -19,7 +33,6 @@ DECLARE
     'cylinders',
     'delivery_challans',
     'dispatch_shipments',
-    'email_send_log',
     'email_settings',
     'email_templates',
     'employee_attendance',
@@ -56,6 +69,10 @@ BEGIN
   END IF;
 
   FOREACH t IN ARRAY targets LOOP
+    IF t = ANY (denied) THEN
+      CONTINUE;
+    END IF;
+
     IF NOT EXISTS (
       SELECT 1
       FROM pg_class c

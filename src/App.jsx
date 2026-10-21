@@ -1832,6 +1832,22 @@ export default function App() {
     };
     await handleUpdateOrder(updatedOrder);
     await handleActiveRunningJobChange(updatedOrder);
+    await handleSaveSchedule({
+      id: `SCHED-${order.id}`,
+      orderId: order.id,
+      jobName: order.jobName || '',
+      clientName: order.clientName || order.customerName || '',
+      machineId: machineId || order.machineId || 'UNASSIGNED',
+      shift: 'Day Shift',
+      scheduledDate: new Date().toISOString().split('T')[0],
+      startTime: new Date(startIso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }),
+      orderQtyKg: Number(order.quantityKg || order.quantity || order.orderQtyKg || 0),
+      widthMm: Number(order.widthMm || order.printWidthMm || 0),
+      micron: Number(order.micron || 12),
+      filmType: order.printFilmType || order.filmType || 'PET',
+      status: 'In Production',
+      priority: order.priority || 'Normal'
+    });
 
     // Update or create corresponding Production Record
     const existingRec = productionRecords.find(r => r.orderId === order.id || r.id === order.id || r.jobCode === order.jobCode);
@@ -1866,7 +1882,7 @@ export default function App() {
       },
       createdAt: startIso
     };
-    handleSaveProductionRecord(updatedRecord);
+    await handleSaveProductionRecord(updatedRecord);
     logAudit('UPDATE', 'Printing Scheduler', `Started printing job for "${order.jobName}" (${order.id}) on machine ${machineId || 'Rotogravure Press'}`, order.id);
   };
 
@@ -1978,7 +1994,24 @@ export default function App() {
         }
       }
     };
-    handleSaveProductionRecord(updatedRecord);
+    await handleSaveProductionRecord(updatedRecord);
+    await handleSaveSchedule({
+      id: `SCHED-${order.id}`,
+      orderId: order.id,
+      jobName: order.jobName || '',
+      clientName: order.clientName || order.customerName || '',
+      machineId: order.machineId || 'UNASSIGNED',
+      shift: 'Day Shift',
+      scheduledDate: new Date().toISOString().split('T')[0],
+      endTime: new Date(endIso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }),
+      orderQtyKg: Number(order.quantityKg || order.quantity || order.orderQtyKg || 0),
+      widthMm: Number(order.widthMm || order.printWidthMm || 0),
+      micron: Number(order.micron || 12),
+      filmType: order.printFilmType || order.filmType || 'PET',
+      status: 'Completed',
+      priority: order.priority || 'Normal',
+      totalDurationMins: computedDurationMinutes || 0
+    });
 
     // Automatically store each Printed Output SFG roll barcode into SFG & FG Store
     if (Array.isArray(endData.rollsBreakdown) && endData.rollsBreakdown.length > 0) {

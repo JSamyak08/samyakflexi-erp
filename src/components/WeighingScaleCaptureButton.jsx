@@ -9,7 +9,8 @@ import weighingScaleService from '../services/weighingScaleService';
 export default function WeighingScaleCaptureButton({ 
   onCapture, 
   onWeightCapture, 
-  onWeightCaptured, 
+  onWeightCaptured,
+  onCaptureWeight,
   label = 'Scale', 
   title = 'Capture live weight from RS-232 scale', 
   style = {} 
@@ -36,7 +37,7 @@ export default function WeighingScaleCaptureButton({
     const currentStatus = weighingScaleService.getStatus();
     const weightToUse = currentStatus.netWeight || currentStatus.currentWeight;
 
-    const captureFn = onCapture || onWeightCapture || onWeightCaptured;
+    const captureFn = onCapture || onWeightCapture || onWeightCaptured || onCaptureWeight;
     if (captureFn) {
       captureFn(weightToUse);
       setJustCaptured(true);

@@ -459,7 +459,7 @@ export default function ConsumablesAndIndents({
   };
 
   // Submit Issue Stock to Machine
-  const handleConfirmIssueStock = (e) => {
+  const handleConfirmIssueStock = async (e) => {
     e.preventDefault();
     if (!selectedItemForIssue) return;
     const qty = parseFloat(issueQty);
@@ -473,13 +473,12 @@ export default function ConsumablesAndIndents({
       return;
     }
 
-    // Deduct stock
-    setConsumables(prev => prev.map(c => {
+    const nextConsumables = consumables.map(c => {
       if (c.id === selectedItemForIssue.id) {
         return { ...c, currentStock: c.currentStock - qty };
       }
       return c;
-    }));
+    });
 
     // Add Audit Issue Log
     const newIssueRecord = {
@@ -498,14 +497,20 @@ export default function ConsumablesAndIndents({
       remarks: issueRemarks || "Direct Store Machine Issue"
     };
 
-    setMachineIssues(prev => [newIssueRecord, ...prev]);
+    try {
+      await setConsumables(nextConsumables);
+      await setMachineIssues([newIssueRecord, ...(machineIssues || [])]);
+    } catch (err) {
+      alert(`The machine issue was not saved: ${err.message || err}`);
+      return;
+    }
 
     setIsIssueModalOpen(false);
     alert(`Successfully issued ${qty} ${selectedItemForIssue.unit} of "${selectedItemForIssue.name}" to ${issueMachine}!`);
   };
 
   // Confirm Restock Item
-  const handleConfirmRestock = (e) => {
+  const handleConfirmRestock = async (e) => {
     e.preventDefault();
     if (!selectedItemForRestock) return;
     const qty = parseFloat(restockQty);
@@ -514,7 +519,7 @@ export default function ConsumablesAndIndents({
       return;
     }
 
-    setConsumables(prev => prev.map(c => {
+    const next = consumables.map(c => {
       if (c.id === selectedItemForRestock.id) {
         return { 
           ...c, 
@@ -523,7 +528,14 @@ export default function ConsumablesAndIndents({
         };
       }
       return c;
-    }));
+    });
+
+    try {
+      await setConsumables(next);
+    } catch (err) {
+      alert(`The restock was not saved: ${err.message || err}`);
+      return;
+    }
 
     setIsRestockModalOpen(false);
     alert(`Added ${qty} ${selectedItemForRestock.unit} to store stock for "${selectedItemForRestock.name}". New Stock: ${selectedItemForRestock.currentStock + qty} ${selectedItemForRestock.unit}.`);

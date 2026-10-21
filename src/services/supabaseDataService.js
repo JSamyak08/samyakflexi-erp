@@ -1695,10 +1695,12 @@ export async function fetchInventoryRolls() {
     }
     if (!data) return [];
 
-    return data.map(r => ({
+    return data.map(r => {
+      const meta = r.metadata && typeof r.metadata === 'object' ? r.metadata : {};
+      return {
       id: r.barcode_id,
       barcodeId: r.barcode_id,
-      grnNo: r.grn_no || '',
+      grnNo: r.grn_no || meta.grnNo || '',
       rollType: r.roll_type || 'RAW_MATERIAL',
       itemId: r.item_id,
       itemName: r.item_name || '',
@@ -1736,7 +1738,8 @@ export async function fetchInventoryRolls() {
       stationId: r.station_id || '',
       locationBay: r.location_bay || '',
       status: r.status || 'In Stock'
-    }));
+    };
+    });
   } catch (err) {
     console.error("Error fetching inventory rolls from Supabase:", err);
     throw err;
@@ -3350,7 +3353,11 @@ export async function saveSFGGoodToSupabase(item) {
     micron: Number(item.micron) || 0,
     width_mm: Number(item.widthMm) || 0,
     total_gross_kg: Number(item.totalGrossKg ?? item.grossWeightKg ?? netKg) || 0,
+    gross_weight_kg: Number(item.grossWeightKg ?? item.totalGrossKg ?? netKg) || 0,
+    tare_weight_kg: Number(item.tareWeightKg ?? 0) || 0,
     total_net_kg: netKg,
+    consumed_kg: consumedKg,
+    available_kg: availableKg,
     total_meters: Number(item.totalMeters) || 0,
     rolls_count: Number(item.rollsCount) || 1,
     machine_name: item.machineName || '',
@@ -3364,9 +3371,9 @@ export async function saveSFGGoodToSupabase(item) {
   };
 
   const isValidUUID = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(str));
-  if (item.id && isValidUUID(item.id)) {
-    payload.id = item.id;
-  }
+  // id is a uuid primary key with no database default. Barcode ids such as
+  // SFG-BC-ORD-... are not uuids, and omitting id makes the insert fail.
+  payload.id = item.id && isValidUUID(item.id) ? item.id : crypto.randomUUID();
 
   console.log('[sfg_goods] Upserting item:', sfgBatchCode, 'Status:', computedStatus);
   const { error } = await supabase.from('sfg_goods').upsert(payload, { onConflict: 'sfg_batch_code' });

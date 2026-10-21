@@ -502,10 +502,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
     setShowConfirmModal(true);
   };
 
-  const handleFinalConfirmAndPunch = () => {
-    setShowConfirmModal(false);
-    setIsSubmitted(true);
-
+  const handleFinalConfirmAndPunch = async () => {
     const pw = parseFloat(printWidthMm) || 1000;
     const finalLayers = layers.map(l => {
       const defW = isLDFilm(l.filmType) ? pw + 5 : pw;
@@ -584,9 +581,15 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       }))
     };
 
-    if (onSaveOrder) {
-      onSaveOrder(newOrder);
+    try {
+      if (onSaveOrder) await onSaveOrder(newOrder);
+    } catch (err) {
+      alert(`The sales order was not saved: ${err.message || err}`);
+      return;
     }
+
+    setShowConfirmModal(false);
+    setIsSubmitted(true);
 
     notifyOrderPunched(newOrder).catch(err => console.error("Order punched email error:", err));
 
