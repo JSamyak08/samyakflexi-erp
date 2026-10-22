@@ -954,7 +954,14 @@ export async function saveGRNToSupabase(grn) {
     vendorName: clean.vendorName,
     invoiceNo: clean.invoiceNo,
     receivedDate: clean.receivedDate,
-    qcNotes: clean.qcNotes
+    qcNotes: clean.qcNotes,
+    hasVariation: Boolean(clean.hasVariation || clean.variations?.hasVariation),
+    variations: clean.variations || null,
+    variationSummary: clean.variationSummary || '',
+    originalPoItemName: clean.originalPoItemName || '',
+    orderedPoQtyKg: clean.orderedPoQtyKg || null,
+    agreedPoRate: clean.agreedPoRate || null,
+    vehicleNo: clean.vehicleNo || ''
   };
 
   const combinedItemName = `${itemNameVal} ||| ${JSON.stringify(meta)}`;

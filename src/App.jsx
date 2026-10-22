@@ -4794,6 +4794,10 @@ export default function App() {
             orders={orders}
             onUpdateOrder={handleUpdateOrder}
             currentUser={currentUser}
+            onAddGRN={handleAddGRN}
+            onUpdateGRN={handleUpdateGRN}
+            onSaveInventoryItem={handleSaveInventoryItem}
+            onUpdateInventory={handleUpdateInventory}
           />
         )}
 

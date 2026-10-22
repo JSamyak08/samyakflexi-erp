@@ -1398,31 +1398,93 @@ export default function InventoryManagement({
         deliveryStatus = 'Partial Delivery';
       }
 
+      // Enhanced Discrepancy & Variation Detection across Rate, Quantity, Item Name, and Remarks
+      let rateVariations = [];
+      let qtyVariations = [];
+      let itemVariations = [];
+      let variationNotesList = [];
       let priceDiscrepancy = null;
       let historicalMismatch = null;
       const resolvedInfo = poResolutions[po.poNumber] || po.priceDiscrepancyResolution || null;
 
       matchingGRNs.forEach(g => {
         const grnRate = parseFloat(g.purchaseRatePerKg || g.purchaseRate || g.unitPrice) || 0;
-        (po.items || []).forEach(it => {
-          const poRate = parseFloat(it.rate) || 0;
-          if (grnRate > 0 && poRate > 0 && Math.abs(grnRate - poRate) > 0.5) {
-            const mismatchData = {
-              poRate,
-              grnRate,
-              variance: grnRate - poRate,
-              grnNo: g.grnNo,
-              itemId: it.itemId || it.id,
-              itemName: it.itemDesc || it.description || it.itemName || 'Material Item',
-              message: `⚠️ Rate Mismatch: PO Rate ₹${poRate}/kg vs Inward GRN Rate ₹${grnRate}/kg (₹${(grnRate - poRate).toFixed(2)} variance)`
-            };
-            historicalMismatch = mismatchData;
-            if (!resolvedInfo) {
-              priceDiscrepancy = mismatchData;
-            }
-          }
-        });
+        const grnQty = parseFloat(g.netWeightKg || g.receivedQtyKg || g.quantity) || 0;
+        const grnItemName = (g.itemName || '').trim();
+        const firstPoItem = (po.items || [])[0] || {};
+        const poRate = parseFloat(g.agreedPoRate || firstPoItem.rate) || 0;
+        const poItemName = (g.originalPoItemName || firstPoItem.itemDesc || firstPoItem.itemName || '').trim();
+        const poItemOrderedQty = parseFloat(g.orderedPoQtyKg || firstPoItem.qtyKg || totalPoQty) || 0;
+
+        // 1. Rate variation check
+        if (grnRate > 0 && poRate > 0 && Math.abs(grnRate - poRate) > 0.05) {
+          rateVariations.push({
+            grnNo: g.grnNo || g.grnNumber,
+            poRate,
+            grnRate,
+            variance: grnRate - poRate,
+            variancePct: ((grnRate - poRate) / poRate * 100).toFixed(1)
+          });
+        }
+
+        // 2. Quantity variation check
+        if (g.variations?.hasQtyVariation || (poItemOrderedQty > 0 && grnQty > 0 && Math.abs(grnQty - poItemOrderedQty) > 0.1)) {
+          const qVariance = g.variations?.qtyVariance !== undefined ? g.variations.qtyVariance : (grnQty - poItemOrderedQty);
+          qtyVariations.push({
+            grnNo: g.grnNo || g.grnNumber,
+            orderedQty: poItemOrderedQty,
+            receivedQty: grnQty,
+            variance: qVariance,
+            variancePct: poItemOrderedQty > 0 ? ((qVariance / poItemOrderedQty) * 100).toFixed(1) : '0.0',
+            isShort: qVariance < 0
+          });
+        }
+
+        // 3. Item Name variation check
+        if (g.variations?.hasItemVariation || (poItemName && grnItemName && poItemName.toLowerCase() !== grnItemName.toLowerCase())) {
+          itemVariations.push({
+            grnNo: g.grnNo || g.grnNumber,
+            poItemName: g.variations?.poItemName || poItemName,
+            inwardItemName: g.variations?.inwardItemName || grnItemName
+          });
+        }
+
+        // 4. Variation Notes / Remarks
+        const note = g.variations?.variationReason || g.itemRemarks || g.remarks || g.notes;
+        if (note && note.trim() && !note.toLowerCase().includes('inward grn issued directly') && !note.toLowerCase().includes('inward grn created directly')) {
+          variationNotesList.push({ grnNo: g.grnNo || g.grnNumber, note: note.trim() });
+        }
       });
+
+      // Overall PO Quantity Variance check if goods arrived
+      if (matchingGRNs.length > 0 && totalPoQty > 0 && totalInwardQty > 0 && Math.abs(totalInwardQty - totalPoQty) > 0.1 && qtyVariations.length === 0) {
+        const netDiff = totalInwardQty - totalPoQty;
+        qtyVariations.push({
+          grnNo: matchingGRNs.map(g => g.grnNo || g.grnNumber).join(', '),
+          orderedQty: totalPoQty,
+          receivedQty: totalInwardQty,
+          variance: netDiff,
+          variancePct: ((netDiff / totalPoQty) * 100).toFixed(1),
+          isShort: netDiff < 0
+        });
+      }
+
+      if (rateVariations.length > 0) {
+        const primary = rateVariations[0];
+        const mismatchData = {
+          poRate: primary.poRate,
+          grnRate: primary.grnRate,
+          variance: primary.variance,
+          grnNo: primary.grnNo,
+          message: `⚠️ Rate Mismatch: PO Rate ₹${primary.poRate}/kg vs Inward GRN Rate ₹${primary.grnRate}/kg (${primary.variance > 0 ? '+' : ''}₹${primary.variance.toFixed(2)} variance)`
+        };
+        historicalMismatch = mismatchData;
+        if (!resolvedInfo) {
+          priceDiscrepancy = mismatchData;
+        }
+      }
+
+      const hasAnyVariation = rateVariations.length > 0 || qtyVariations.length > 0 || itemVariations.length > 0;
 
       return {
         ...po,
@@ -1435,6 +1497,11 @@ export default function InventoryManagement({
         pendingInwardQty,
         deliveryStatus,
         matchingGRNs,
+        rateVariations,
+        qtyVariations,
+        itemVariations,
+        variationNotesList,
+        hasAnyVariation,
         priceDiscrepancy,
         historicalMismatch,
         priceDiscrepancyResolution: resolvedInfo
@@ -1723,7 +1790,7 @@ export default function InventoryManagement({
     setGrnFilmType(filmTypeVal);
     setGrnMicron(micronVal);
     setGrnWidthMm(widthVal);
-    setGrnWeightKg(poQty);
+    setGrnWeightKg(''); // Weight must be added by user as requested
     setGrnPurchaseRate(firstItem.rate || 140);
     
     const generatedTitle = categoryVal === 'Film Substrates'
@@ -1732,14 +1799,14 @@ export default function InventoryManagement({
     setGrnItemName(generatedTitle);
     setGrnRolls('1');
     
-    const initialLen = calculateFilmRollLength(poQty, widthVal, micronVal, filmTypeVal);
+    // Weight must be entered by user, not pre-filled
     setGrnItemsList([
       {
         id: `item-${Date.now()}-1`,
-        grossWeightKg: poQty,
+        grossWeightKg: '',
         tareWeightKg: grnDefaultTare || 0,
-        netWeightKg: poQty,
-        lengthMeters: initialLen,
+        netWeightKg: '',
+        lengthMeters: 0,
         vendorRollNo: '',
         notes: ''
       }
@@ -2216,6 +2283,40 @@ export default function InventoryManagement({
     const matchedVendor = (vendors || []).find(v => v.companyName === grnVendor || v.name === grnVendor || v.id === grnVendor);
     const selectedVendorId = matchedVendor?.id || null;
 
+    const matchedPoForGrn = grnPoNo ? ((unifiedIssuedPOs || []).find(p => p.poNumber === grnPoNo) || (purchaseOrders || []).find(p => p.poNumber === grnPoNo)) : null;
+    const poFirstItem = (matchedPoForGrn?.items || [])[0] || {};
+    const poAgreedRate = parseFloat(poFirstItem.rate) || 0;
+    const poOrderedQty = parseFloat(poFirstItem.qtyKg || matchedPoForGrn?.totalPoQty) || 0;
+    const poItemTitle = (poFirstItem.itemDesc || poFirstItem.itemName || '').trim();
+
+    const hasRateVar = poAgreedRate > 0 && Math.abs(rateVal - poAgreedRate) > 0.05;
+    const hasQtyVar = poOrderedQty > 0 && Math.abs(totalNetQty - poOrderedQty) > 0.1;
+    const hasItemVar = Boolean(poItemTitle && itemName && poItemTitle.toLowerCase() !== itemName.toLowerCase());
+    const isAnyVar = Boolean(hasRateVar || hasQtyVar || hasItemVar);
+
+    const varDetails = isAnyVar ? {
+      hasVariation: true,
+      hasRateVariation: hasRateVar,
+      poRate: poAgreedRate,
+      inwardRate: rateVal,
+      rateVariance: Number((rateVal - poAgreedRate).toFixed(2)),
+      hasQtyVariation: hasQtyVar,
+      orderedQtyKg: poOrderedQty,
+      receivedQtyKg: totalNetQty,
+      qtyVariance: Number((totalNetQty - poOrderedQty).toFixed(2)),
+      hasItemVariation: hasItemVar,
+      poItemName: poItemTitle,
+      inwardItemName: itemName,
+      variationReason: grnOverallRemark,
+      notes: grnOverallRemark
+    } : null;
+
+    const varSummary = [
+      hasRateVar ? `Rate: PO ₹${poAgreedRate} -> GRN ₹${rateVal} (${rateVal > poAgreedRate ? '+' : ''}${(rateVal - poAgreedRate).toFixed(2)})` : '',
+      hasQtyVar ? `Qty: PO ${poOrderedQty}kg -> GRN ${totalNetQty}kg (${totalNetQty > poOrderedQty ? '+' : ''}${(totalNetQty - poOrderedQty).toFixed(1)}kg)` : '',
+      hasItemVar ? `Item: "${poItemTitle}" -> "${itemName}"` : ''
+    ].filter(Boolean).join('; ');
+
     const newGRN = {
       grnNo: grnDocNo,
       poNumber: grnPoNo,
@@ -2228,6 +2329,7 @@ export default function InventoryManagement({
       createdAt: nowIso,
       category: grnCategory,
       itemName: itemName,
+      originalPoItemName: poItemTitle || '',
       stockItemId: targetStockItemId,
       masterItemId: masterId,
       filmType: isFilm ? grnFilmType : grnCategory,
@@ -2247,6 +2349,11 @@ export default function InventoryManagement({
       purchaseRatePerKg: rateVal,
       purchaseRate: rateVal,
       unitPrice: rateVal,
+      agreedPoRate: poAgreedRate || null,
+      orderedPoQtyKg: poOrderedQty || null,
+      hasVariation: isAnyVar,
+      variations: varDetails,
+      variationSummary: varSummary,
       batchNo: grnBatchNo,
       freightAmount: parseFloat(grnFreightAmount) || 0,
       transporterName: grnTransporterName.trim() || 'Direct Dispatch / Self',
@@ -3881,7 +3988,7 @@ export default function InventoryManagement({
       if (poStatusFilter === 'PARTIAL' && po.deliveryStatus !== 'Partial Delivery') return false;
       if (poStatusFilter === 'COMPLETED' && po.deliveryStatus !== 'Completed') return false;
       if (poStatusFilter === 'OVERDUE' && !po.isOverdue) return false;
-      if (poStatusFilter === 'ALERT' && !po.priceDiscrepancy) return false;
+      if (poStatusFilter === 'ALERT' && !po.hasAnyVariation && !po.priceDiscrepancy) return false;
 
       // 2. Search Term Filter
       if (!poSearchTerm || !poSearchTerm.trim()) return true;
@@ -4431,9 +4538,9 @@ export default function InventoryManagement({
             </div>
 
             <div>
-              <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>Price Variance Alerts</span>
-              <div style={{ fontSize: '1.3rem', fontWeight: '800', color: '#7c3aed', marginTop: '2px' }}>
-                {unifiedIssuedPOs.filter(p => p.priceDiscrepancy).length} Rate Mismatches
+              <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>Variations & Discrepancy Alerts</span>
+              <div style={{ fontSize: '1.3rem', fontWeight: '800', color: '#dc2626', marginTop: '2px' }}>
+                {unifiedIssuedPOs.filter(p => p.hasAnyVariation || p.priceDiscrepancy).length} POs with Variations
               </div>
             </div>
           </div>
@@ -4453,13 +4560,13 @@ export default function InventoryManagement({
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-secondary)' }}>Status Filter:</span>
-              <SearchableSelect className="form-control" style={{ width: '220px' }} triggerStyle={{ fontWeight: '600' }} value={poStatusFilter} onChange={e => setPoStatusFilter(e.target.value)}>
+              <SearchableSelect className="form-control" style={{ width: '240px' }} triggerStyle={{ fontWeight: '600' }} value={poStatusFilter} onChange={e => setPoStatusFilter(e.target.value)}>
                 <option value="ALL">🌐 All Issued POs ({unifiedIssuedPOs.length})</option>
                 <option value="PENDING">⏳ Pending Inward (0 Received)</option>
                 <option value="PARTIAL">📦 Partial Delivery</option>
                 <option value="COMPLETED">✅ Completed Deliveries</option>
                 <option value="OVERDUE">⚠️ Overdue Delivery SLA</option>
-                <option value="ALERT">🚨 Price Discrepancy Alerts</option>
+                <option value="ALERT">🚨 Variations & Discrepancies ({unifiedIssuedPOs.filter(p => p.hasAnyVariation || p.priceDiscrepancy).length})</option>
               </SearchableSelect>
             </div>
           </div>
@@ -4475,14 +4582,14 @@ export default function InventoryManagement({
                   <th>Days Elapsed</th>
                   <th>Promised Date & Delay Time</th>
                   <th>Inward Status & Delivery</th>
-                  <th>Price Alert (Admin)</th>
+                  <th>Discrepancy & Variation Alerts</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {poPagination.paginatedItems.map(po => {
                   return (
-                    <tr key={po.poNumber} style={po.priceDiscrepancy ? { background: '#fef2f2' } : {}}>
+                    <tr key={po.poNumber} style={po.hasAnyVariation || po.priceDiscrepancy ? { background: '#fffbeb' } : {}}>
                       <td>
                         <div style={{ fontWeight: '800', color: '#4f46e5', fontSize: '0.92rem', fontFamily: 'monospace' }}>
                           {po.poNumber}
@@ -4541,9 +4648,16 @@ export default function InventoryManagement({
 
                       <td>
                         {po.deliveryStatus === 'Completed' && (
-                          <span className="badge badge-success" style={{ fontSize: '0.8rem', padding: '4px 8px' }}>
-                            ✅ Completed ({(po.totalInwardQty || 0).toFixed(0)} kg Inwarded)
-                          </span>
+                          <div>
+                            <span className="badge badge-success" style={{ fontSize: '0.8rem', padding: '4px 8px' }}>
+                              ✅ Completed ({(po.totalInwardQty || 0).toFixed(0)} kg Inwarded)
+                            </span>
+                            {po.qtyVariations && po.qtyVariations.length > 0 && (
+                              <div style={{ fontSize: '0.72rem', fontWeight: '700', color: po.qtyVariations[0].isShort ? '#b45309' : '#047857', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                <Scale size={11} /> Qty Var: {po.qtyVariations[0].variance > 0 ? '+' : ''}{po.qtyVariations[0].variance.toFixed(1)} kg ({po.qtyVariations[0].isShort ? 'Short' : 'Excess'})
+                              </div>
+                            )}
+                          </div>
                         )}
 
                         {po.deliveryStatus === 'Partial Delivery' && (
@@ -4554,6 +4668,11 @@ export default function InventoryManagement({
                             <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#d97706', marginTop: '3px' }}>
                               Pending Inward: {(po.pendingInwardQty || 0).toFixed(1)} kg
                             </div>
+                            {po.qtyVariations && po.qtyVariations.length > 0 && (
+                              <div style={{ fontSize: '0.71rem', fontWeight: '700', color: '#b45309', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                <Scale size={11} /> Inward Diff: {po.qtyVariations[0].variance > 0 ? '+' : ''}{po.qtyVariations[0].variance.toFixed(1)} kg
+                              </div>
+                            )}
                           </div>
                         )}
 
@@ -4565,30 +4684,69 @@ export default function InventoryManagement({
                       </td>
 
                       <td>
-                        {po.priceDiscrepancy ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '4px 8px', borderRadius: '6px' }}>
-                              <span style={{ fontSize: '0.75rem', fontWeight: '800', color: '#dc2626', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <AlertTriangle size={12} /> Rate Mismatch
-                              </span>
-                              <div style={{ fontSize: '0.7rem', color: '#991b1b', marginTop: '2px', fontWeight: '600' }}>
-                                PO: ₹{po.priceDiscrepancy.poRate} vs GRN: ₹{po.priceDiscrepancy.grnRate}
+                        {po.hasAnyVariation || po.priceDiscrepancy ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            {/* Rate Discrepancy Alert */}
+                            {(po.rateVariations && po.rateVariations.length > 0) || po.priceDiscrepancy ? (
+                              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '4px 8px', borderRadius: '6px' }}>
+                                <span style={{ fontSize: '0.74rem', fontWeight: '800', color: '#dc2626', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <AlertTriangle size={12} /> Rate Mismatch
+                                </span>
+                                <div style={{ fontSize: '0.7rem', color: '#991b1b', marginTop: '2px', fontWeight: '600' }}>
+                                  PO: ₹{po.rateVariations?.[0]?.poRate || po.priceDiscrepancy?.poRate} vs GRN: ₹{po.rateVariations?.[0]?.grnRate || po.priceDiscrepancy?.grnRate} 
+                                  {po.rateVariations?.[0]?.variance !== undefined && ` (${po.rateVariations[0].variance > 0 ? '+' : ''}₹${po.rateVariations[0].variance.toFixed(2)})`}
+                                </div>
                               </div>
-                            </div>
-                            {isAdmin ? (
-                              <button 
-                                className="btn-primary" 
-                                style={{ padding: '3px 8px', fontSize: '0.72rem', background: '#dc2626', borderColor: '#dc2626', fontWeight: '700', borderRadius: '4px' }}
-                                onClick={() => {
-                                  setResolvingPoDiscrepancy(po);
-                                  setResolutionAction('UPDATE_PO_RATE');
-                                  setResolutionNotes('');
-                                }}
-                              >
-                                ⚡ Resolve (Admin)
-                              </button>
-                            ) : (
-                              <span style={{ fontSize: '0.68rem', color: '#64748b', fontStyle: 'italic' }}>🔒 Admin Resolution Required</span>
+                            ) : null}
+
+                            {/* Quantity Variation Alert */}
+                            {po.qtyVariations && po.qtyVariations.length > 0 && (
+                              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', padding: '4px 8px', borderRadius: '6px' }}>
+                                <span style={{ fontSize: '0.74rem', fontWeight: '800', color: '#b45309', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <Scale size={12} /> Qty Variation
+                                </span>
+                                <div style={{ fontSize: '0.7rem', color: '#92400e', marginTop: '2px', fontWeight: '600' }}>
+                                  PO: {po.qtyVariations[0].orderedQty}kg vs GRN: {po.qtyVariations[0].receivedQty}kg ({po.qtyVariations[0].variance > 0 ? '+' : ''}{po.qtyVariations[0].variance.toFixed(1)} kg {po.qtyVariations[0].isShort ? 'Short' : 'Excess'})
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Item Name Variation Alert */}
+                            {po.itemVariations && po.itemVariations.length > 0 && (
+                              <div style={{ background: '#faf5ff', border: '1px solid #e9d5ff', padding: '4px 8px', borderRadius: '6px' }}>
+                                <span style={{ fontSize: '0.74rem', fontWeight: '800', color: '#7e22ce', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <FileText size={12} /> Item Alteration
+                                </span>
+                                <div style={{ fontSize: '0.68rem', color: '#6b21a8', marginTop: '2px', fontWeight: '600' }}>
+                                  PO: "{po.itemVariations[0].poItemName}" → GRN: "{po.itemVariations[0].inwardItemName}"
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Discrepancy Remarks / Reason */}
+                            {po.variationNotesList && po.variationNotesList.length > 0 && (
+                              <div style={{ fontSize: '0.67rem', color: '#475569', fontStyle: 'italic', background: '#f8fafc', padding: '2px 6px', borderRadius: '4px', border: '1px dashed #cbd5e1' }}>
+                                💬 "{po.variationNotesList[0].note}"
+                              </div>
+                            )}
+
+                            {/* Admin Resolve button if rate mismatch */}
+                            {po.priceDiscrepancy && (
+                              isAdmin ? (
+                                <button 
+                                  className="btn-primary" 
+                                  style={{ padding: '3px 8px', fontSize: '0.72rem', background: '#dc2626', borderColor: '#dc2626', fontWeight: '700', borderRadius: '4px' }}
+                                  onClick={() => {
+                                    setResolvingPoDiscrepancy(po);
+                                    setResolutionAction('UPDATE_PO_RATE');
+                                    setResolutionNotes('');
+                                  }}
+                                >
+                                  ⚡ Resolve Rate Mismatch
+                                </button>
+                              ) : (
+                                <span style={{ fontSize: '0.68rem', color: '#64748b', fontStyle: 'italic' }}>🔒 Admin Resolution Required</span>
+                              )
                             )}
                           </div>
                         ) : po.priceDiscrepancyResolution ? (
@@ -4604,8 +4762,8 @@ export default function InventoryManagement({
                             </div>
                           </div>
                         ) : (
-                          <span style={{ fontSize: '0.75rem', color: '#059669', fontWeight: '600' }}>
-                            ✓ Price Matched
+                          <span style={{ fontSize: '0.75rem', color: '#059669', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <CheckCircle2 size={13} /> ✓ Exact Match (No Variations)
                           </span>
                         )}
                       </td>
