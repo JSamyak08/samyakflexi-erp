@@ -36,7 +36,7 @@ import SearchableSelect from './SearchableSelect';
 import { generateDocRefNumber, getNextDocRefNumber, getInventoryAgeingSettings } from '../services/settingsService';
 import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo } from '../utils/fifoUtils';
 import { notifyPurchaseOrderIssued } from '../services/emailService';
-import { saveSystemSetting, fetchSystemSetting, savePurchaseOrderToSupabase } from '../services/supabaseDataService';
+import { savePurchaseOrderToSupabase } from '../services/supabaseDataService';
 
 
 export default function InkManagement({
@@ -696,7 +696,7 @@ export default function InkManagement({
   };
 
   // Confirm and Finalize PO Issuance after User Edit
-  const handleConfirmIssuePo = (e) => {
+  const handleConfirmIssuePo = async (e) => {
     if (e) e.preventDefault();
     if (!poConfirmInk || poModalItems.length === 0) {
       alert("Please add at least one ink item to the PO!");
@@ -713,8 +713,8 @@ export default function InkManagement({
       email: 'sales@inksupplier.com'
     };
 
-    const poDateStr = poModalPoDate ? new Date(poModalPoDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    const deliveryDateStr = poModalDeliveryDate ? new Date(poModalDeliveryDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : new Date(Date.now() + 7 * 86400000).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const poDateStr = poModalPoDate || new Date().toISOString().split('T')[0];
+    const deliveryDateStr = poModalDeliveryDate || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
 
     const items = poModalItems.map((item, idx) => {
       const qtyVal = parseFloat(item.qtyKg) || 100;
@@ -748,14 +748,12 @@ export default function InkManagement({
       items: items
     };
 
-    // Save to central samyak_erp_issued_pos store & purchase_orders table via Supabase
-    (async () => {
-      try {
-        await savePurchaseOrderToSupabase(poData);
-      } catch (err) {
-        console.warn('Ink PO save notice:', err);
-      }
-    })();
+    try {
+      await savePurchaseOrderToSupabase(poData);
+    } catch (err) {
+      alert(`The ink purchase order was not saved: ${err.message || err}`);
+      return;
+    }
 
     // Dispatch email notification log
     notifyPurchaseOrderIssued({

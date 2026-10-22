@@ -684,7 +684,7 @@ export default function CylinderManagement({
     }
   };
 
-  const handleSaveCylinder = (e) => {
+  const handleSaveCylinder = async (e) => {
     e.preventDefault();
     if (!jobName.trim() || !sku.trim()) {
       alert("SKU and Job Name are required!");
@@ -745,14 +745,19 @@ export default function CylinderManagement({
       changelogs: updatedLogs
     };
 
-    if (editingCylinder) {
-      if (onUpdateCylinder) onUpdateCylinder(payload);
-    } else {
-      if (onAddCylinder) onAddCylinder(payload);
+    try {
+      if (editingCylinder) {
+        if (onUpdateCylinder) await onUpdateCylinder(payload);
+      } else {
+        if (onAddCylinder) await onAddCylinder(payload);
+      }
+    } catch (err) {
+      alert(`The cylinder set was not saved: ${err.message || err}`);
+      return;
+    }
 
-      // Automatically create consequent product entry in Job Master Directory if enabled
-      if (createJobMaster && onAddJobMaster) {
-        const newJobMaster = {
+    if (!editingCylinder && createJobMaster && onAddJobMaster) {
+      const newJobMaster = {
           id: nextJmId,
           skuCode: sku.trim(),
           jobName: jobName.trim(),
@@ -776,9 +781,12 @@ export default function CylinderManagement({
           slittingMark: slittingMark || 'Yes',
           trackerLine: trackerLine || 'Yes',
           specialInstructions: specialInstructions || '',
-          creationDate: new Date().toISOString().split('T')[0]
-        };
-        onAddJobMaster(newJobMaster);
+        creationDate: new Date().toISOString().split('T')[0]
+      };
+      try {
+        await onAddJobMaster(newJobMaster);
+      } catch (err) {
+        alert(`The cylinder was saved, but the linked job master was not: ${err.message || err}`);
       }
     }
 
@@ -796,9 +804,14 @@ export default function CylinderManagement({
       return;
     }
     if (window.confirm(`Are you sure you want to delete Cylinder Set "${cyl.jobName}" (${cyl.sku})? This cannot be undone.`)) {
-      if (onDeleteCylinder) {
-        onDeleteCylinder(cyl.id);
-      }
+      const remove = async () => {
+        try {
+          if (onDeleteCylinder) await onDeleteCylinder(cyl.id);
+        } catch (err) {
+          alert(`The cylinder set was not deleted: ${err.message || err}`);
+        }
+      };
+      remove();
     }
   };
 

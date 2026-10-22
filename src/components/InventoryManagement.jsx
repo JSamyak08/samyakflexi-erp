@@ -51,8 +51,9 @@ import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInven
 import { notifyGRNPendingQC, notifyGRNQCEscalation12h, notifyGRNQCVarianceModified } from '../services/emailService';
 import { dispatchOverdueQcAlerts } from '../services/qcEscalationGuard';
 
-import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, saveSystemSetting } from '../services/supabaseDataService';
-import { safeLocalStorageSet, safeLocalStorageGet } from '../utils/safeStorage';
+import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName } from '../services/supabaseDataService';
+import { supabase } from '../services/supabaseClient';
+import { fetchPayloadRecords, replacePayloadRecords, describeSaveError } from '../services/businessRecords';
 import { pushSlugState } from '../utils/slugRouter';
 import { 
   isReconciliationDue, 
@@ -601,27 +602,41 @@ export default function InventoryManagement({
   }, [qcInspectingGRN, qcEditNetWeightKg, qcEditWidthMm, qcEditMicron, qcEditBatchNo, qcEditFilmType, qcEditRollsReceived]);
 
   // Updatable Barcodes & Stock Ledger Adjustments state
-  const [customBarcodesMap, setCustomBarcodesMap] = useState(() => {
-    return safeLocalStorageGet('samyak_erp_custom_barcodes', {});
-  });
+  const [customBarcodesMap, setCustomBarcodesMap] = useState({});
 
-  const [stockLedgerAdjustments, setStockLedgerAdjustments] = useState(() => {
-    const list = safeLocalStorageGet('samyak_erp_stock_adjustments', []);
-    return Array.isArray(list) ? list.filter(adj => !['ADJ-2026-001', 'ADJ-2026-002'].includes(adj.id)) : [];
-  });
+  const [stockLedgerAdjustments, setStockLedgerAdjustments] = useState([]);
 
-  const [localStoreIssueTransactions, setLocalStoreIssueTransactions] = useState(() => {
-    try {
-      const saved = localStorage.getItem('samyak_erp_store_issue_transactions');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
+  const effectiveStoreIssueTransactions = storeIssueTransactions || [];
+
+  useEffect(() => {
+    let active = true;
+    async function loadLedgers() {
+      try {
+        const [barcodes, adjustments, resolutions] = await Promise.all([
+          fetchPayloadRecords(supabase, 'custom_barcodes'),
+          fetchPayloadRecords(supabase, 'stock_adjustments'),
+          fetchPayloadRecords(supabase, 'po_discrepancy_resolutions')
+        ]);
+        if (!active) return;
+        const barcodeMap = {};
+        (barcodes || []).forEach((row) => {
+          if (row?.id) barcodeMap[row.id] = row.barcode || '';
+        });
+        setCustomBarcodesMap(barcodeMap);
+        setStockLedgerAdjustments((adjustments || []).filter(adj => !['ADJ-2026-001', 'ADJ-2026-002'].includes(adj.id)));
+        const resolutionMap = {};
+        (resolutions || []).forEach((row) => {
+          if (row?.id) resolutionMap[row.poNumber || row.id] = row;
+        });
+        setPoResolutions(resolutionMap);
+      } catch (err) {
+        console.error(err);
+        alert(`Inventory ledgers could not be loaded from the database: ${describeSaveError(err)}`);
+      }
     }
-  });
-
-  const effectiveStoreIssueTransactions = storeIssueTransactions && storeIssueTransactions.length > 0
-    ? storeIssueTransactions
-    : localStoreIssueTransactions;
+    loadLedgers();
+    return () => { active = false; };
+  }, []);
 
   const [editingTxId, setEditingTxId] = useState(null);
   const [editingBarcodeVal, setEditingBarcodeVal] = useState('');
@@ -694,20 +709,21 @@ export default function InventoryManagement({
     "CPP Natural", "Metalised CPP", "Liquid Inks", "Solvent-less Adhesive", "Solvents"
   ];
 
-  const handleSaveCustomBarcode = (txId, newBarcodeStr) => {
+  const handleSaveCustomBarcode = async (txId, newBarcodeStr) => {
     if (!newBarcodeStr.trim()) return;
     const updated = { ...customBarcodesMap, [txId]: newBarcodeStr.trim() };
-    setCustomBarcodesMap(updated);
-    safeLocalStorageSet('samyak_erp_custom_barcodes', updated);
-    saveSystemSetting('custom_barcodes', updated).catch(console.warn);
-    if (typeof window !== 'undefined' && window.__samyakBroadcastSync) {
-      window.__samyakBroadcastSync('system_settings');
+    const rows = Object.entries(updated).map(([id, barcode]) => ({ id, barcode }));
+    try {
+      await replacePayloadRecords(supabase, 'custom_barcodes', rows);
+      setCustomBarcodesMap(updated);
+      setEditingTxId(null);
+      setEditingBarcodeVal('');
+    } catch (err) {
+      alert(`The barcode was not saved: ${describeSaveError(err)}`);
     }
-    setEditingTxId(null);
-    setEditingBarcodeVal('');
   };
 
-  const handleAddLedgerAdjustment = (e, targetItem) => {
+  const handleAddLedgerAdjustment = async (e, targetItem) => {
     if (e) e.preventDefault();
     const item = targetItem || selectedItemForPurchaseHistory;
     if (!item) return;
@@ -732,11 +748,12 @@ export default function InventoryManagement({
     };
 
     const updated = [newAdj, ...stockLedgerAdjustments];
-    setStockLedgerAdjustments(updated);
-    safeLocalStorageSet('samyak_erp_stock_adjustments', updated);
-    saveSystemSetting('stock_adjustments', updated).catch(console.warn);
-    if (typeof window !== 'undefined' && window.__samyakBroadcastSync) {
-      window.__samyakBroadcastSync('system_settings');
+    try {
+      await replacePayloadRecords(supabase, 'stock_adjustments', updated);
+      setStockLedgerAdjustments(updated);
+    } catch (err) {
+      alert(`The stock adjustment was not saved: ${describeSaveError(err)}`);
+      return;
     }
 
     // Update item available stock in main inventory list for the specific item
@@ -747,7 +764,12 @@ export default function InventoryManagement({
         }
         return invItem;
       });
-      onUpdateInventory(updatedInv);
+      try {
+        await onUpdateInventory(updatedInv);
+      } catch (err) {
+        alert(`The stock quantity was not saved: ${describeSaveError(err)}`);
+        return;
+      }
     }
 
     setIsQuickAdjOpen(false);
@@ -1247,43 +1269,23 @@ export default function InventoryManagement({
   const [resolvingPoDiscrepancy, setResolvingPoDiscrepancy] = useState(null);
   const [resolutionAction, setResolutionAction] = useState('UPDATE_PO_RATE'); // 'UPDATE_PO_RATE' or 'ENFORCE_PO_RATE'
   const [resolutionNotes, setResolutionNotes] = useState('');
-  const [poResolutions, setPoResolutions] = useState(() => {
-    return safeLocalStorageGet('samyak_po_discrepancy_resolutions', {});
-  });
+  const [poResolutions, setPoResolutions] = useState({});
 
   // Unified Platform-wide Issued Purchase Orders Aggregator
   const unifiedIssuedPOs = React.useMemo(() => {
     const list = [];
     const seenPoNumbers = new Set();
 
-    // 1. Load from purchase orders prop or cache & safeLocalStorage
-    const propList = Array.isArray(purchaseOrders) && purchaseOrders.length > 0
-      ? purchaseOrders
-      : (safeLocalStorageGet('samyak_cache_purchase_orders', []) || []);
-    if (Array.isArray(propList)) {
-      propList.forEach(po => {
-        if (po && po.poNumber && !seenPoNumbers.has(po.poNumber)) {
-          seenPoNumbers.add(po.poNumber);
-          list.push({
-            ...po,
-            source: po.source || 'Purchase Order Module'
-          });
-        }
-      });
-    }
-
-    const parsed = safeLocalStorageGet('samyak_erp_issued_pos', {});
-    if (parsed && typeof parsed === 'object') {
-      Object.values(parsed).forEach(po => {
-        if (po && po.poNumber && !seenPoNumbers.has(po.poNumber)) {
-          seenPoNumbers.add(po.poNumber);
-          list.push({
-            ...po,
-            source: po.source || 'Vendor / Purchase Requisition'
-          });
-        }
-      });
-    }
+    const propList = Array.isArray(purchaseOrders) ? purchaseOrders : [];
+    propList.forEach(po => {
+      if (po && po.poNumber && !seenPoNumbers.has(po.poNumber)) {
+        seenPoNumbers.add(po.poNumber);
+        list.push({
+          ...po,
+          source: po.source || 'Purchase Order Module'
+        });
+      }
+    });
 
     // 2. Scrape from Order Material Requirements
     (orders || []).forEach(ord => {
@@ -1576,7 +1578,7 @@ export default function InventoryManagement({
     }
   };
 
-  const handleConfirmResolveDiscrepancy = () => {
+  const handleConfirmResolveDiscrepancy = async () => {
     if (!resolvingPoDiscrepancy) return;
     const po = resolvingPoDiscrepancy;
     const mismatch = po.priceDiscrepancy || po.historicalMismatch || {};
@@ -1584,6 +1586,7 @@ export default function InventoryManagement({
     const resolvedAt = new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
 
     const resolutionObj = {
+      id: po.poNumber,
       poNumber: po.poNumber,
       grnNo: mismatch.grnNo || '',
       poRate: mismatch.poRate || 0,
@@ -1603,9 +1606,13 @@ export default function InventoryManagement({
       ...poResolutions,
       [po.poNumber]: resolutionObj
     };
-    setPoResolutions(updatedResolutions);
-    safeLocalStorageSet('samyak_po_discrepancy_resolutions', updatedResolutions);
-    saveSystemSetting('po_discrepancy_resolutions', updatedResolutions).catch(console.warn);
+    try {
+      await replacePayloadRecords(supabase, 'po_discrepancy_resolutions', Object.values(updatedResolutions));
+      setPoResolutions(updatedResolutions);
+    } catch (err) {
+      alert(`The discrepancy resolution was not saved: ${describeSaveError(err)}`);
+      return;
+    }
     if (typeof window !== 'undefined' && window.__samyakBroadcastSync) {
       window.__samyakBroadcastSync('system_settings');
     }
@@ -2492,9 +2499,15 @@ export default function InventoryManagement({
     }
 
     // Update associated child rolls/barcodes in inventoryRolls with verified dimensions and weight
+    const grnBarcodes = new Set([
+      ...(Array.isArray(qcInspectingGRN.barcodes) ? qcInspectingGRN.barcodes : []),
+      ...(Array.isArray(qcInspectingGRN.itemsBreakdown) ? qcInspectingGRN.itemsBreakdown.map((item) => item.barcodeId).filter(Boolean) : [])
+    ]);
     const matchingRolls = (inventoryRolls || []).filter(r => 
       (r.grnNo && (r.grnNo === qcInspectingGRN.grnNo || r.grnNo === qcInspectingGRN.id)) ||
-      (r.grn_no && (r.grn_no === qcInspectingGRN.grnNo || r.grn_no === qcInspectingGRN.id))
+      (r.grn_no && (r.grn_no === qcInspectingGRN.grnNo || r.grn_no === qcInspectingGRN.id)) ||
+      (r.invoiceNo && qcInspectingGRN.invoiceNo && r.invoiceNo === qcInspectingGRN.invoiceNo) ||
+      grnBarcodes.has(r.barcodeId || r.id)
     );
 
     if (matchingRolls.length > 0) {
@@ -2666,7 +2679,6 @@ export default function InventoryManagement({
       }).catch(err => console.warn('[QC Variance Notification] Failed:', err));
 
       // Also record in in-app notification alerts
-      const existingAlerts = safeLocalStorageGet('samyak_erp_notifications', []);
       const newAlert = {
         id: `notif-${Date.now()}`,
         type: 'QC_VARIANCE_MODIFIED',
@@ -2676,7 +2688,12 @@ export default function InventoryManagement({
         timestamp: inspectionNowIso,
         read: false
       };
-      safeLocalStorageSet('samyak_erp_notifications', [newAlert, ...existingAlerts.slice(0, 49)]);
+      try {
+        const existingAlerts = await fetchPayloadRecords(supabase, 'erp_notifications');
+        await replacePayloadRecords(supabase, 'erp_notifications', [newAlert, ...(existingAlerts || []).filter(item => item.id !== newAlert.id)].slice(0, 50));
+      } catch (err) {
+        alert(`The GRN was updated, but the in-app notice was not saved: ${describeSaveError(err)}`);
+      }
     }
 
     setQcInspectingGRN(null);
@@ -2976,7 +2993,7 @@ export default function InventoryManagement({
   };
 
   // Issue / Return Submit (Records transaction in Store Issue/Return Ledger & updates Job Production Record Costing)
-  const handleIssueReturnSubmit = () => {
+  const handleIssueReturnSubmit = async () => {
     const itemToIssue = scannedItemDetails?.item || selectedInvItem;
     if (scannedItemDetails?.isQCPending) {
       alert("❌ Blocked by Quality Control: This batch is currently PENDING QC APPROVAL and cannot be issued or returned to production until cleared by the QC Chemist.");
@@ -3017,21 +3034,26 @@ export default function InventoryManagement({
     }
 
     if (onStoreIssueReturn) {
-      onStoreIssueReturn({
-        item: itemToIssue,
-        issueType: issueType,
-        qty: qty,
-        jobName: chosenJobName,
-        user: currentUser?.name || 'Store Manager',
-        unitPrice: finalRate,
-        batchNo: finalBatchNo,
-        vendorName: finalVendor,
-        grnNo: finalGrnNo,
-        barcode: finalBarcode,
-        notes: issueType === 'issue'
-          ? `[2D Scan: ${finalBarcode}] Issued ${qty} ${unitStr} from Batch [${finalBatchNo}] (Rate: ₹${finalRate}/${unitStr}) to Job: ${chosenJobName}`
-          : `Returned ${qty} ${unitStr} from Job: ${chosenJobName} back to Store`
-      });
+      try {
+        await onStoreIssueReturn({
+          item: itemToIssue,
+          issueType: issueType,
+          qty: qty,
+          jobName: chosenJobName,
+          user: currentUser?.name || 'Store Manager',
+          unitPrice: finalRate,
+          batchNo: finalBatchNo,
+          vendorName: finalVendor,
+          grnNo: finalGrnNo,
+          barcode: finalBarcode,
+          notes: issueType === 'issue'
+            ? `[2D Scan: ${finalBarcode}] Issued ${qty} ${unitStr} from Batch [${finalBatchNo}] (Rate: ₹${finalRate}/${unitStr}) to Job: ${chosenJobName}`
+            : `Returned ${qty} ${unitStr} from Job: ${chosenJobName} back to Store`
+        });
+      } catch (err) {
+        alert(`The store issue was not saved: ${err.message || err}`);
+        return;
+      }
     } else {
       let updatedInv = [...inventory];
       const idx = updatedInv.findIndex(i => i.id === itemToIssue.id);
@@ -3101,7 +3123,7 @@ export default function InventoryManagement({
   };
 
   // Commit Reconciliation Variances to System Stock & Stock Ledger
-  const handleCommitReconciliation = () => {
+  const handleCommitReconciliation = async () => {
     const newAdjustments = [];
     let updatedInv = inventory.map(item => {
       const physicalQty = physicalCounts[item.id];
@@ -3135,11 +3157,17 @@ export default function InventoryManagement({
 
     if (newAdjustments.length > 0) {
       const updatedAdj = [...newAdjustments, ...stockLedgerAdjustments];
-      setStockLedgerAdjustments(updatedAdj);
+      try {
+        await replacePayloadRecords(supabase, 'stock_adjustments', updatedAdj);
+        setStockLedgerAdjustments(updatedAdj);
+      } catch (err) {
+        alert(`The reconciliation ledger was not saved: ${describeSaveError(err)}`);
+        return;
+      }
     }
 
     if (onUpdateInventory) {
-      onUpdateInventory(updatedInv);
+      await onUpdateInventory(updatedInv);
     }
     alert("Monthly Physical Stock Reconciliation completed successfully! System available stock and audit ledger updated.");
   };
@@ -3732,7 +3760,13 @@ export default function InventoryManagement({
 
     if (newAdjustments.length > 0) {
       const updatedAdj = [...newAdjustments, ...stockLedgerAdjustments];
-      setStockLedgerAdjustments(updatedAdj);
+      try {
+        await replacePayloadRecords(supabase, 'stock_adjustments', updatedAdj);
+        setStockLedgerAdjustments(updatedAdj);
+      } catch (err) {
+        alert(`The bulk stock adjustments were not saved: ${describeSaveError(err)}`);
+        return;
+      }
     }
 
     if (onUpdateInventory) {

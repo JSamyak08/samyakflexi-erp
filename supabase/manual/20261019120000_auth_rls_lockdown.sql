@@ -271,6 +271,20 @@ SELECT private.install_module_access('public.scrap_disposals'::regclass, ARRAY['
 SELECT private.install_module_access('public.sfg_goods'::regclass, ARRAY['production_records','inventory','printing_scheduler','sfg_store']);
 SELECT private.install_module_access('public.fg_goods'::regclass, ARRAY['production_records','inventory','printing_scheduler','sfg_store']);
 SELECT private.install_module_access('public.sfg_fg_store'::regclass, ARRAY['production_records','inventory','printing_scheduler','sfg_store']);
+SELECT private.install_module_access('public.stock_adjustments'::regclass, ARRAY['inventory']);
+SELECT private.install_module_access('public.custom_barcodes'::regclass, ARRAY['inventory']);
+SELECT private.install_module_access('public.po_discrepancy_resolutions'::regclass, ARRAY['purchase_orders','inventory']);
+SELECT private.install_module_access('public.sfg_qc_hold_items'::regclass, ARRAY['sfg_store','production_records']);
+SELECT private.install_module_access('public.sfg_scrap_items'::regclass, ARRAY['sfg_store','scrap_analytics','production_records']);
+SELECT private.install_module_access('public.material_indents'::regclass, ARRAY['material_indents','inventory']);
+SELECT private.install_module_access('public.machine_issues'::regclass, ARRAY['inventory','production_records']);
+SELECT private.install_module_access('public.consumables'::regclass, ARRAY['inventory']);
+SELECT private.install_module_access('public.store_issue_transactions'::regclass, ARRAY['inventory','material_indents']);
+SELECT private.install_module_access('public.erp_notifications'::regclass, ARRAY['inventory','production_records']);
+SELECT private.install_module_access('public.job_card_specs'::regclass, ARRAY['job_masters','cylinders']);
+SELECT private.install_module_access('public.press_board'::regclass, ARRAY['printing_scheduler','production_records']);
+SELECT private.install_module_access('public.pellet_inwards'::regclass, ARRAY['pellet_fuel','inventory']);
+SELECT private.install_module_access('public.pellet_consumptions'::regclass, ARRAY['pellet_fuel','inventory']);
 
 DROP FUNCTION private.install_module_access(regclass, text[]);
 

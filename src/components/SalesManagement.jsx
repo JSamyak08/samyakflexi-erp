@@ -201,21 +201,16 @@ export default function SalesManagement({
     return roleStr.includes('admin') || roleStr.includes('sales') || roleStr.includes('plant') || roleStr.includes('director');
   }, [currentUser, userRole]);
 
-  const [quotations, setQuotations] = useState(() => {
-    try {
-      const saved = localStorage.getItem('samyak_erp_sales_quotations');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
-  });
+  const [quotations, setQuotations] = useState([]);
 
   useEffect(() => {
     let isMounted = true;
     async function loadData() {
-      const remote = await fetchSalesQuotations();
-      if (isMounted && remote && Array.isArray(remote)) {
-        setQuotations(remote);
+      try {
+        const remote = await fetchSalesQuotations();
+        if (isMounted && Array.isArray(remote)) setQuotations(remote);
+      } catch (err) {
+        alert(`Sales quotations could not be loaded: ${err.message || err}`);
       }
     }
     loadData();
@@ -618,6 +613,40 @@ export default function SalesManagement({
     setActiveSubTab('create');
   };
 
+  // Open the same quotation so a rate or comment change updates that row.
+  const handleOpenEditForm = (qtn) => {
+    setEditingQuotationId(qtn.id);
+    setQuotationNo(qtn.quotationNo);
+    setRevisionNo(qtn.revisionNo || 0);
+    setAmendmentNo(qtn.amendmentNo || 'Rev 00');
+    setEnquiryDate(qtn.enquiryDate || new Date().toISOString().split('T')[0]);
+    setEstimatedDeliveryDate(qtn.estimatedDeliveryDate);
+    setSalesManager(qtn.salesManager || currentUser?.name || '');
+    setSelectedClientName(qtn.clientName || '');
+    setClientSearchQuery(qtn.clientName || '');
+    setClientAddress(qtn.clientAddress || '');
+    setClientGstin(qtn.clientGstin || '');
+    setContactPerson(qtn.contactPerson || '');
+    setContactPhone(qtn.contactPhone || '');
+    setContactEmail(qtn.contactEmail || '');
+    setPaymentTerms(qtn.paymentTerms || '');
+    setCylinderTerms(qtn.cylinderTerms || '');
+    setTransportTerms(qtn.transportTerms || '');
+    const sanitizedItems = (qtn.items || []).map(it => {
+      if (it.layers && it.layers.length > 0) return it;
+      return { ...it, layers: parseStructureToLayers(it.structure) };
+    });
+    setItems(sanitizedItems.length > 0 ? sanitizedItems : [{
+      id: 1, jobTitle: '', structure: 'PET 12µ / Natural GP LD 40µ', materialFormat: 'Roll Form',
+      quantity: '', uom: 'Kg', ratePerUom: '', printWidthMm: 1000, repeatLengthMm: 400, gstPct: 18,
+      layers: [{ id: 1, filmType: 'PET', micron: 12 }, { id: 2, filmType: 'Natural GP LD', micron: 40 }]
+    }]);
+    setTermsList(qtn.termsAndConditions || [...QUOTATION_TERMS_TEMPLATES.STANDARD.terms]);
+    setSelectedTermsTemplateKey(qtn.termsTemplateKey || 'STANDARD');
+    setComments(qtn.comments || '');
+    setActiveSubTab('create');
+  };
+
   // Open Amend Form
   const handleOpenAmendForm = (qtn) => {
     setEditingQuotationId(null); // Create new revision
@@ -734,8 +763,12 @@ export default function SalesManagement({
       updatedList = [newQtn, ...quotations];
     }
 
-    // Live sync to Supabase PostgreSQL table
-    await saveSalesQuotationToSupabase(newQtn);
+    try {
+      await saveSalesQuotationToSupabase(newQtn);
+    } catch (err) {
+      alert(`The quotation was not saved: ${err.message || err}`);
+      return;
+    }
     setQuotations(updatedList);
 
     setActiveSubTab('list');
@@ -1367,6 +1400,15 @@ export default function SalesManagement({
                                 <ArrowRight size={13} /> Convert to OCN
                               </button>
                             )}
+
+                            <button 
+                              className="btn-secondary" 
+                              style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                              onClick={() => handleOpenEditForm(qtn)}
+                              title="Edit this quotation"
+                            >
+                              <Edit3 size={13} /> Edit
+                            </button>
 
                             {/* Amend Quotation Button */}
                             <button 

@@ -36,7 +36,7 @@ import {
   getOrderMaterialRequirements as getOrderMaterialRequirementsFromStore,
   calculateOrderStockReservations
 } from '../factoryStore';
-import { saveOrderToSupabase, fetchSystemSetting, saveSystemSetting, savePurchaseOrderToSupabase } from '../services/supabaseDataService';
+import { saveOrderToSupabase, savePurchaseOrderToSupabase } from '../services/supabaseDataService';
 import { getNextDocRefNumber } from '../services/settingsService';
 
 export default function OrderManagement({ 
@@ -552,31 +552,13 @@ export default function OrderManagement({
   const [poRemarks, setPoRemarks] = useState('Raw material must strictly conform to specified micron gauge and slit width. COA required upon delivery.');
   const [editablePoItems, setEditablePoItems] = useState([]);
 
-  // Cache for generated PO documents via Supabase
-  const [issuedPoStore, setIssuedPoStore] = useState({});
-
-  useEffect(() => {
-    let active = true;
-    async function loadPoStore() {
-      try {
-        const remote = await fetchSystemSetting('samyak_erp_issued_pos');
-        if (active && remote && typeof remote === 'object') {
-          setIssuedPoStore(remote);
-        }
-      } catch (e) {}
-    }
-    loadPoStore();
-    return () => { active = false; };
-  }, []);
-
-  const saveIssuedPoStore = async (newStore) => {
-    setIssuedPoStore(newStore);
-    try {
-      await saveSystemSetting('samyak_erp_issued_pos', newStore);
-    } catch (e) {
-      console.warn("Failed to save issued PO store", e);
-    }
-  };
+  const issuedPoStore = useMemo(() => {
+    const map = {};
+    (purchaseOrders || []).forEach((po) => {
+      if (po?.poNumber) map[po.poNumber] = po;
+    });
+    return map;
+  }, [purchaseOrders]);
 
   // Generated PO PDF preview state
   const [activePoPdfData, setActivePoPdfData] = useState(null);
@@ -699,7 +681,7 @@ export default function OrderManagement({
     }));
   };
 
-  const handleIssueEngraverPo = (order, e) => {
+  const handleIssueEngraverPo = async (order, e) => {
     if (e) e.stopPropagation();
     const engraverName = order.engraverName || order.cylinderDetails?.engraverName || 'Jindal Engravers, Mathura';
     let vendorObj = (vendors || []).find(v => 
@@ -753,15 +735,12 @@ export default function OrderManagement({
       linkedOrderName: order.jobName
     };
 
-    saveIssuedPoStore({
-      ...issuedPoStore,
-      [poNo]: poData
-    });
-
-    if (onSavePurchaseOrder) {
-      onSavePurchaseOrder(poData).catch(console.warn);
-    } else {
-      savePurchaseOrderToSupabase(poData).catch(console.warn);
+    try {
+      if (onSavePurchaseOrder) await onSavePurchaseOrder(poData);
+      else await savePurchaseOrderToSupabase(poData);
+    } catch (err) {
+      alert(`The cylinder purchase order was not saved: ${err.message || err}`);
+      return;
     }
 
     // Update order status
@@ -920,7 +899,7 @@ export default function OrderManagement({
     setActivePoPdfData(reconstructedPoData);
   };
 
-  const handleGenerateConsolidatedPO = (e) => {
+  const handleGenerateConsolidatedPO = async (e) => {
     e.preventDefault();
     const vendorObj = vendors.find(v => v.id === selectedVendorId) || vendors[0];
     const poNo = `PO-2026-${100 + (orders || []).length * 10 + (selectedRequirements || []).length}`;
@@ -965,15 +944,12 @@ export default function OrderManagement({
       linkedRequirements: Object.keys(selectedReqIds)
     };
 
-    saveIssuedPoStore({
-      ...issuedPoStore,
-      [poNo]: poData
-    });
-
-    if (onSavePurchaseOrder) {
-      onSavePurchaseOrder(poData).catch(console.warn);
-    } else {
-      savePurchaseOrderToSupabase(poData).catch(console.warn);
+    try {
+      if (onSavePurchaseOrder) await onSavePurchaseOrder(poData);
+      else await savePurchaseOrderToSupabase(poData);
+    } catch (err) {
+      alert(`The purchase order was not saved: ${err.message || err}`);
+      return;
     }
 
     // Update PO status in orders state & database

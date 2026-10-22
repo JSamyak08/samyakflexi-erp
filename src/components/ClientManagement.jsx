@@ -77,7 +77,7 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
     setIsModalOpen(true);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const newClient = {
       id: editingClient ? editingClient.id : `CLI-${Math.floor(100 + Math.random() * 900)}`,
@@ -89,15 +89,19 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
       phone
     };
 
-    if (editingClient) {
-      onUpdateClient(newClient);
-      if (selectedClient && selectedClient.id === newClient.id) {
-        setSelectedClient(newClient);
+    try {
+      if (editingClient) {
+        if (onUpdateClient) await onUpdateClient(newClient);
+        if (selectedClient && selectedClient.id === newClient.id) {
+          setSelectedClient(newClient);
+        }
+      } else if (onAddClient) {
+        await onAddClient(newClient);
       }
-    } else {
-      onAddClient(newClient);
+      setIsModalOpen(false);
+    } catch (err) {
+      alert(`The client was not saved: ${err.message || err}`);
     }
-    setIsModalOpen(false);
   };
 
   const handleDeleteClient = (client) => {

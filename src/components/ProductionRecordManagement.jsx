@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import SearchableSelect from './SearchableSelect';
 import { 
   FileSpreadsheet, 
@@ -41,8 +41,8 @@ import { DEFAULT_DAILY_RATES, generateBarcodeId, calculateJobRawMaterials, calcu
 import { notifyProductionRecordSubmitted, notifyProductionRecordApproved, notifyOverWastageAlert } from '../services/emailService';
 import { pushSlugState } from '../utils/slugRouter';
 import TablePagination, { usePagination } from './TablePagination';
-import { saveSystemSetting } from '../services/supabaseDataService';
-import { safeLocalStorageSet, safeLocalStorageGet } from '../utils/safeStorage';
+import { supabase } from '../services/supabaseClient';
+import { fetchScrapDisposals, saveScrapDisposal, describeSaveError } from '../services/businessRecords';
 import { getMaterialCostSettings, fetchMaterialCostSettingsFromSupabase, DEFAULT_MATERIAL_COST_SETTINGS } from '../services/settingsService';
 import { roundToTwo, formatUpToTwoDecimals, formatCurrency, formatQty } from '../utils/numberHelpers';
 
@@ -1509,9 +1509,15 @@ export default function ProductionRecordManagement({
     return jm?.structure || order.structure || '—';
   };
 
-  const [scrapDisposals, setScrapDisposals] = useState(() => {
-    return safeLocalStorageGet('samyak_erp_scrap_disposals', []);
-  });
+  const [scrapDisposals, setScrapDisposals] = useState([]);
+
+  useEffect(() => {
+    let active = true;
+    fetchScrapDisposals(supabase)
+      .then((rows) => { if (active) setScrapDisposals(rows || []); })
+      .catch((err) => alert(`Scrap disposals could not be loaded: ${describeSaveError(err)}`));
+    return () => { active = false; };
+  }, []);
 
   const [isDisposeModalOpen, setIsDisposeModalOpen] = useState(false);
   const [disposeCategory, setDisposeCategory] = useState('Printing Plain Setting (kg)');
@@ -1732,7 +1738,7 @@ export default function ProductionRecordManagement({
   ]);
 
   // Handle Scrap Disposal Submission
-  const handleAddScrapDisposal = (e) => {
+  const handleAddScrapDisposal = async (e) => {
     e.preventDefault();
     if (!disposeQtyKg || parseFloat(disposeQtyKg) <= 0) {
       alert("Please enter a valid disposal quantity in kg.");
@@ -1749,12 +1755,12 @@ export default function ProductionRecordManagement({
       notes: disposeNotes
     };
 
-    const updated = [newDisposal, ...scrapDisposals];
-    setScrapDisposals(updated);
-    safeLocalStorageSet('samyak_erp_scrap_disposals', updated);
-    saveSystemSetting('scrap_disposals', updated).catch(console.warn);
-    if (typeof window !== 'undefined' && window.__samyakBroadcastSync) {
-      window.__samyakBroadcastSync('system_settings');
+    try {
+      await saveScrapDisposal(supabase, newDisposal);
+      setScrapDisposals([newDisposal, ...scrapDisposals]);
+    } catch (err) {
+      alert(`The scrap disposal was not saved: ${describeSaveError(err)}`);
+      return;
     }
 
     setDisposeQtyKg('');
@@ -1817,7 +1823,7 @@ export default function ProductionRecordManagement({
   };
 
   // Step 2: Final Submit upon confirmation
-  const handleFinalSubmitRecord = () => {
+  const handleFinalSubmitRecord = async () => {
     const newRecord = {
       id: selectedRecord?.id || `PR-${selectedOrder.id}`,
       orderId: selectedOrder.id,
@@ -1898,7 +1904,12 @@ export default function ProductionRecordManagement({
       notes: recordNotes
     };
 
-    if (onSaveProductionRecord) onSaveProductionRecord(newRecord);
+    try {
+      if (onSaveProductionRecord) await onSaveProductionRecord(newRecord);
+    } catch (err) {
+      alert(`The production record was not saved: ${err.message || err}`);
+      return;
+    }
     notifyProductionRecordSubmitted(newRecord).catch(err => console.error("Production submission email error:", err));
 
     // Over-Wastage Alert Email Trigger if scrap % exceeds pre-costing target

@@ -83,6 +83,7 @@ import {
   DEFAULT_MATERIAL_COST_SETTINGS
 } from '../services/settingsService';
 import { sendERPEmailNotification, buildEmailTemplate } from '../services/emailService';
+import { fetchSystemSetting } from '../services/supabaseDataService';
 import SearchableSelect from './SearchableSelect';
 
 export default function DocumentSettings({ machines = [], onSaveMachine, onUpdateMachine, onDeleteMachine }) {
@@ -96,6 +97,19 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
   const [termsState, setTermsState] = useState(() => getDocumentTerms());
   const [ratesState, setRatesState] = useState(() => getProcessingRates());
   const [coaSignatoriesState, setCoaSignatoriesState] = useState(() => getCoaSignatories());
+
+  useEffect(() => {
+    let mounted = true;
+    const apply = (setter) => (remote) => {
+      if (mounted && remote && typeof remote === 'object') setter((prev) => ({ ...prev, ...remote }));
+    };
+    fetchSystemSetting('doc_prefixes').then(apply(setPrefixState)).catch(() => {});
+    fetchSystemSetting('doc_terms').then(apply(setTermsState)).catch(() => {});
+    fetchSystemSetting('processing_rates').then(apply(setRatesState)).catch(() => {});
+    fetchSystemSetting('coa_signatories').then(apply(setCoaSignatoriesState)).catch(() => {});
+    fetchSystemSetting('inventory_ageing_settings').then(apply(setAgeingSettings)).catch(() => {});
+    return () => { mounted = false; };
+  }, []);
 
   // Consumable Material Cost Settings State (Adhesive & Paper Core)
   const [materialCostState, setMaterialCostState] = useState(() => getMaterialCostSettings());
@@ -175,7 +189,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     setIsBayModalOpen(true);
   };
 
-  const handleSaveBaySubmit = (e) => {
+  const handleSaveBaySubmit = async (e) => {
     e.preventDefault();
     if (!bayName.trim()) {
       alert("Storage Bay Name is required!");
@@ -221,25 +235,21 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
       updated = [...storageBays, newBay];
     }
 
-    setStorageBays(updated);
-    saveStorageBays(updated);
-    setIsBayModalOpen(false);
-    triggerSaveNotification();
+    await persistSetting(() => saveStorageBays(updated), () => {
+      setStorageBays(updated);
+      setIsBayModalOpen(false);
+    });
   };
 
-  const handleDeleteBayItem = (id, name) => {
+  const handleDeleteBayItem = async (id, name) => {
     if (!window.confirm(`Are you sure you want to delete Storage Bay "${name}"?`)) return;
     const updated = storageBays.filter(b => b.id !== id);
-    setStorageBays(updated);
-    saveStorageBays(updated);
-    triggerSaveNotification();
+    await persistSetting(() => saveStorageBays(updated), () => setStorageBays(updated));
   };
 
-  const handleResetBaysToDefault = () => {
+  const handleResetBaysToDefault = async () => {
     if (!window.confirm("Reset all Storage Bays to ERP factory defaults? Custom bays will be reset.")) return;
-    setStorageBays(DEFAULT_STORAGE_BAYS);
-    saveStorageBays(DEFAULT_STORAGE_BAYS);
-    triggerSaveNotification();
+    await persistSetting(() => saveStorageBays(DEFAULT_STORAGE_BAYS), () => setStorageBays(DEFAULT_STORAGE_BAYS));
   };
 
   const filteredStorageBays = storageBays.filter(bay => {
@@ -278,7 +288,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     setIsSubstrateModalOpen(true);
   };
 
-  const handleSaveSubstrateSubmit = (e) => {
+  const handleSaveSubstrateSubmit = async (e) => {
     e.preventDefault();
     if (!subName.trim() || !subDensity || parseFloat(subDensity) <= 0) {
       alert("Substrate Name and a valid Density (> 0 g/cm³) are required!");
@@ -319,25 +329,21 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
       updated = [...filmSubstrates, newSub];
     }
 
-    setFilmSubstrates(updated);
-    saveFilmSubstrates(updated);
-    setIsSubstrateModalOpen(false);
-    triggerSaveNotification();
+    await persistSetting(() => saveFilmSubstrates(updated), () => {
+      setFilmSubstrates(updated);
+      setIsSubstrateModalOpen(false);
+    });
   };
 
-  const handleDeleteSubstrateItem = (id, name) => {
+  const handleDeleteSubstrateItem = async (id, name) => {
     if (!window.confirm(`Are you sure you want to delete film substrate "${name}"?`)) return;
     const updated = filmSubstrates.filter(s => s.id !== id && s.name !== name);
-    setFilmSubstrates(updated);
-    saveFilmSubstrates(updated);
-    triggerSaveNotification();
+    await persistSetting(() => saveFilmSubstrates(updated), () => setFilmSubstrates(updated));
   };
 
-  const handleResetSubstratesToDefault = () => {
+  const handleResetSubstratesToDefault = async () => {
     if (!window.confirm("Reset all Film Substrates to ERP factory defaults (PET, METPET, BOPP, LDPE, Aluminium Foil, etc.)? Custom substrates will be reset.")) return;
-    setFilmSubstrates(DEFAULT_FILM_SUBSTRATES);
-    saveFilmSubstrates(DEFAULT_FILM_SUBSTRATES);
-    triggerSaveNotification();
+    await persistSetting(() => saveFilmSubstrates(DEFAULT_FILM_SUBSTRATES), () => setFilmSubstrates(DEFAULT_FILM_SUBSTRATES));
   };
 
 
@@ -372,6 +378,16 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     setTimeout(() => setSavedSuccess(false), 3000);
   };
 
+  const persistSetting = async (saver, onOk) => {
+    try {
+      const result = await saver();
+      if (onOk) onOk(result);
+      triggerSaveNotification();
+    } catch (err) {
+      alert(`This was not saved. The database rejected the change: ${err?.message || err}`);
+    }
+  };
+
   // General Handlers
   const handleLogoUpload = (e) => {
     const file = e.target.files[0];
@@ -387,17 +403,13 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     const reader = new FileReader();
     reader.onload = (uploadEvent) => {
       const base64 = uploadEvent.target.result;
-      setLogoImage(base64);
-      saveCompanyLogo(base64);
-      triggerSaveNotification();
+      persistSetting(() => saveCompanyLogo(base64), () => setLogoImage(base64));
     };
     reader.readAsDataURL(file);
   };
 
   const handleClearLogo = () => {
-    clearCompanyLogo();
-    setLogoImage('/samyak-logo.png');
-    triggerSaveNotification();
+    persistSetting(() => clearCompanyLogo(), () => setLogoImage('/samyak-logo.png'));
   };
 
   const handleSignatureUpload = (e) => {
@@ -414,17 +426,13 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     const reader = new FileReader();
     reader.onload = (uploadEvent) => {
       const base64 = uploadEvent.target.result;
-      setSignatureImage(base64);
-      saveAuthorisedSignature(base64);
-      triggerSaveNotification();
+      persistSetting(() => saveAuthorisedSignature(base64), () => setSignatureImage(base64));
     };
     reader.readAsDataURL(file);
   };
 
   const handleClearSignature = () => {
-    clearAuthorisedSignature();
-    setSignatureImage(null);
-    triggerSaveNotification();
+    persistSetting(() => clearAuthorisedSignature(), () => setSignatureImage(null));
   };
 
   const handlePrefixChange = (field, value) => {
@@ -433,14 +441,11 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
 
   const handleSavePrefixes = (e) => {
     e.preventDefault();
-    saveDocumentPrefixes(prefixState);
-    triggerSaveNotification();
+    persistSetting(() => saveDocumentPrefixes(prefixState));
   };
 
   const handleResetPrefixes = () => {
-    setPrefixState({ ...DEFAULT_PREFIXES });
-    saveDocumentPrefixes({ ...DEFAULT_PREFIXES });
-    triggerSaveNotification();
+    persistSetting(() => saveDocumentPrefixes({ ...DEFAULT_PREFIXES }), () => setPrefixState({ ...DEFAULT_PREFIXES }));
   };
 
   const handleCoaSignatoryChange = (field, value) => {
@@ -449,14 +454,11 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
 
   const handleSaveCoaSignatories = (e) => {
     e.preventDefault();
-    saveCoaSignatories(coaSignatoriesState);
-    triggerSaveNotification();
+    persistSetting(() => saveCoaSignatories(coaSignatoriesState));
   };
 
   const handleResetCoaSignatories = () => {
-    setCoaSignatoriesState({ ...DEFAULT_COA_SIGNATORIES });
-    saveCoaSignatories({ ...DEFAULT_COA_SIGNATORIES });
-    triggerSaveNotification();
+    persistSetting(() => saveCoaSignatories({ ...DEFAULT_COA_SIGNATORIES }), () => setCoaSignatoriesState({ ...DEFAULT_COA_SIGNATORIES }));
   };
 
   const handleTermChange = (category, index, value) => {
@@ -481,14 +483,11 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
 
   const handleSaveTerms = (e) => {
     e.preventDefault();
-    saveDocumentTerms(termsState);
-    triggerSaveNotification();
+    persistSetting(() => saveDocumentTerms(termsState));
   };
 
   const handleResetTerms = () => {
-    setTermsState({ ...DEFAULT_DOCUMENT_TERMS });
-    saveDocumentTerms({ ...DEFAULT_DOCUMENT_TERMS });
-    triggerSaveNotification();
+    persistSetting(() => saveDocumentTerms({ ...DEFAULT_DOCUMENT_TERMS }), () => setTermsState({ ...DEFAULT_DOCUMENT_TERMS }));
   };
 
   // Consumable Material Cost Handlers (Adhesive & Paper Core)
@@ -539,14 +538,11 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
 
   const handleSaveAgeingSettings = (e) => {
     if (e) e.preventDefault();
-    saveInventoryAgeingSettings(ageingSettings);
-    triggerSaveNotification();
+    persistSetting(() => saveInventoryAgeingSettings(ageingSettings));
   };
 
   const handleResetAgeingSettings = () => {
-    setAgeingSettings({ ...DEFAULT_AGEING_SETTINGS });
-    saveInventoryAgeingSettings({ ...DEFAULT_AGEING_SETTINGS });
-    triggerSaveNotification();
+    persistSetting(() => saveInventoryAgeingSettings({ ...DEFAULT_AGEING_SETTINGS }), () => setAgeingSettings({ ...DEFAULT_AGEING_SETTINGS }));
   };
 
 
@@ -572,7 +568,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     setEditMachineStatus(m.status || 'Active');
   };
 
-  const handleSaveEditMachine = (e) => {
+  const handleSaveEditMachine = async (e) => {
     e.preventDefault();
     if (!editMachineName.trim()) {
       alert("Machine Name is required!");
@@ -590,26 +586,22 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
       status: editMachineStatus
     };
     delete updated.isNew;
-    if (onUpdateMachine) {
-      onUpdateMachine(updated);
-    } else if (onSaveMachine) {
-      onSaveMachine(updated);
+    const saveMachine = onUpdateMachine || onSaveMachine;
+    if (!saveMachine) {
+      alert('Printing machines cannot be saved from this screen.');
+      return;
     }
-    setEditingMachine(null);
-    triggerSaveNotification();
+    await persistSetting(() => Promise.resolve(saveMachine(updated)), () => setEditingMachine(null));
   };
 
   // Email Server Settings Handlers
   const handleSaveEmailSettings = (e) => {
     e.preventDefault();
-    saveEmailSettings(emailSettings);
-    triggerSaveNotification();
+    persistSetting(() => saveEmailSettings(emailSettings));
   };
 
   const handleResetEmailSettings = () => {
-    setEmailSettings({ ...DEFAULT_EMAIL_SETTINGS });
-    saveEmailSettings({ ...DEFAULT_EMAIL_SETTINGS });
-    triggerSaveNotification();
+    persistSetting(() => saveEmailSettings({ ...DEFAULT_EMAIL_SETTINGS }), () => setEmailSettings({ ...DEFAULT_EMAIL_SETTINGS }));
   };
 
   // Email Templates Handlers
@@ -625,14 +617,11 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
 
   const handleSaveTemplates = (e) => {
     if (e) e.preventDefault();
-    saveEmailTemplates(emailTemplates);
-    triggerSaveNotification();
+    persistSetting(() => saveEmailTemplates(emailTemplates));
   };
 
   const handleResetTemplates = () => {
-    const res = resetEmailTemplates();
-    setEmailTemplates(res);
-    triggerSaveNotification();
+    persistSetting(() => resetEmailTemplates(), (saved) => setEmailTemplates(saved || { ...DEFAULT_EMAIL_TEMPLATES }));
   };
 
   // Send Test Email Dispatcher

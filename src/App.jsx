@@ -104,13 +104,24 @@ import {
   fetchPelletConsumptionsFromSupabase, savePelletConsumptionToSupabase, deletePelletConsumptionFromSupabase,
   fetchPurchaseOrders, savePurchaseOrderToSupabase, deletePurchaseOrderFromSupabase, sanitizePurchaseOrder,
   fetchFilmSubstratesFromSupabase,
-  fetchSystemSetting, saveSystemSetting, fetchAllSystemSettings
+  fetchAllSystemSettings
 } from './services/supabaseDataService';
 import { fetchSessionProfile, signOutUser } from './services/authService';
 import { createDirectoryUser, updateDirectoryUser, deleteDirectoryUser } from './services/adminUserService';
 
 import JobMasterDirectory from './components/JobMasterDirectory';
 import { safeLocalStorageSet, safeLocalStorageGet, initSafeStorage, idbGet } from './utils/safeStorage';
+import {
+  importLegacyBusinessRecords,
+  fetchPayloadRecords,
+  replacePayloadRecords,
+  fetchPressBoard,
+  savePressBoard,
+  describeSaveError,
+  localKeysToClear,
+  snapshotBrowserStorage,
+  clearImportedLocalKeys
+} from './services/businessRecords';
 import './index.css';
 
 // ============================================================================
@@ -296,60 +307,57 @@ export default function App() {
     }
   }, [isAuthenticated, currentUser, isAuthReady, activeTab]);
 
-  // CACHE-FIRST REACT STATE INITIALIZATION:
-  // Instantly rehydrates from local safe storage cache so tables and dashboard never show empty data on refresh.
-  const [orders, setOrders] = useState(() => safeLocalStorageGet('samyak_cache_orders', []) || []);
-  const [ordersLoading, setOrdersLoading] = useState(() => (safeLocalStorageGet('samyak_cache_orders', []) || []).length === 0);
+  // Supabase is the store of record. Screens stay on the loader until that fetch finishes.
+  const [orders, setOrders] = useState([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
   const [ordersError, setOrdersError] = useState(null);
-  const [isDataLoading, setIsDataLoading] = useState(() => (safeLocalStorageGet('samyak_cache_orders', []) || []).length === 0);
-  const [isDataFetched, setIsDataFetched] = useState(() => (safeLocalStorageGet('samyak_cache_orders', []) || []).length > 0);
+  const [isDataLoading, setIsDataLoading] = useState(true);
+  const [isDataFetched, setIsDataFetched] = useState(false);
   const [deletingOrderId, setDeletingOrderId] = useState(null);
   const deletedOrderIdsRef = useRef(new Set());
   const ordersFetchVersion = useRef(0);
 
-  const [vendors, setVendors] = useState(() => safeLocalStorageGet('samyak_cache_vendors', []) || []);
-  const [inventory, setInventory] = useState(() => safeLocalStorageGet('samyak_cache_inventory', []) || []);
-  const [grns, setGrns] = useState(() => safeLocalStorageGet('samyak_cache_grns', []) || []);
-  const [users, setUsers] = useState(() => safeLocalStorageGet('samyak_cache_users', []) || []);
-  const [jobDataSheets, setJobDataSheets] = useState(() => safeLocalStorageGet('samyak_cache_job_datasheets', []) || []);
-  const [cylinders, setCylinders] = useState(() => safeLocalStorageGet('samyak_cache_cylinders', []) || []);
-  const [productionRecords, setProductionRecords] = useState(() => safeLocalStorageGet('samyak_cache_production_records', []) || []);
-  const [inventoryRolls, setInventoryRolls] = useState(() => safeLocalStorageGet('samyak_cache_inventory_rolls', []) || []);
-  const [dispatchShipments, setDispatchShipments] = useState(() => safeLocalStorageGet('samyak_cache_dispatch_shipments', []) || []);
-  const [deliveryChallans, setDeliveryChallans] = useState(() => safeLocalStorageGet('samyak_cache_delivery_challans', []) || []);
-  const [certificateOfAnalyses, setCertificateOfAnalyses] = useState(() => safeLocalStorageGet('samyak_cache_certificate_of_analyses', []) || []);
-  const [machines, setMachines] = useState(() => safeLocalStorageGet('samyak_cache_printing_machines', []) || []);
-  const [schedules, setSchedules] = useState(() => safeLocalStorageGet('samyak_cache_production_schedules', []) || []);
-  const [pressQueueOrder, setPressQueueOrder] = useState(() => safeLocalStorageGet('samyak_cache_press_queue_order', []) || []);
-  const [pressMachineAssignments, setPressMachineAssignments] = useState(() => safeLocalStorageGet('samyak_cache_press_machine_assignments', {}) || {});
-  const [pressActiveRunningJob, setPressActiveRunningJob] = useState(() => safeLocalStorageGet('samyak_cache_press_running_job', null));
-  const [clients, setClients] = useState(() => safeLocalStorageGet('samyak_cache_clients', []) || []);
-  const [jobMasters, setJobMasters] = useState(() => safeLocalStorageGet('samyak_cache_job_masters', []) || []);
-  const [inks, setInks] = useState(() => safeLocalStorageGet('samyak_cache_inks', []) || []);
+  const [vendors, setVendors] = useState([]);
+  const [inventory, setInventory] = useState([]);
+  const [grns, setGrns] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [jobDataSheets, setJobDataSheets] = useState([]);
+  const [cylinders, setCylinders] = useState([]);
+  const [productionRecords, setProductionRecords] = useState([]);
+  const [inventoryRolls, setInventoryRolls] = useState([]);
+  const [dispatchShipments, setDispatchShipments] = useState([]);
+  const [deliveryChallans, setDeliveryChallans] = useState([]);
+  const [certificateOfAnalyses, setCertificateOfAnalyses] = useState([]);
+  const [machines, setMachines] = useState([]);
+  const [schedules, setSchedules] = useState([]);
+  const [pressQueueOrder, setPressQueueOrder] = useState([]);
+  const [pressMachineAssignments, setPressMachineAssignments] = useState({});
+  const [pressActiveRunningJob, setPressActiveRunningJob] = useState(null);
+  const [clients, setClients] = useState([]);
+  const [jobMasters, setJobMasters] = useState([]);
+  const [inks, setInks] = useState([]);
   const [selectedJobMasterForPunch, setSelectedJobMasterForPunch] = useState(null);
-  const [rolePermissions, setRolePermissions] = useState(() => safeLocalStorageGet('samyak_cache_role_permissions', DEFAULT_ROLE_PERMISSIONS) || DEFAULT_ROLE_PERMISSIONS);
-  const [indents, setIndents] = useState(() => safeLocalStorageGet('samyak_cache_material_indents', []) || []);
-  const [machineIssues, setMachineIssues] = useState(() => safeLocalStorageGet('samyak_cache_machine_issues', []) || []);
-  const [consumables, setConsumables] = useState(() => safeLocalStorageGet('samyak_cache_consumables', []) || []);
-  const [storeIssueTransactions, setStoreIssueTransactions] = useState(() => safeLocalStorageGet('samyak_cache_store_issue_transactions', []) || []);
-  const [auditLogs, setAuditLogs] = useState(() => safeLocalStorageGet('samyak_cache_audit_logs', []) || []);
+  const [rolePermissions, setRolePermissions] = useState(DEFAULT_ROLE_PERMISSIONS);
+  const [indents, setIndents] = useState([]);
+  const [machineIssues, setMachineIssues] = useState([]);
+  const [consumables, setConsumables] = useState([]);
+  const [storeIssueTransactions, setStoreIssueTransactions] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [employeeAttendance, setEmployeeAttendance] = useState([]);
   const [salaryAdvances, setSalaryAdvances] = useState([]);
   const [salaryPayments, setSalaryPayments] = useState([]);
-  const [sfgGoods, setSfgGoods] = useState(() => safeLocalStorageGet('samyak_cache_sfg_goods', []) || []);
-  const [pelletInwards, setPelletInwards] = useState(() => safeLocalStorageGet('samyak_cache_pellet_inwards', []) || []);
-  const [pelletConsumptions, setPelletConsumptions] = useState(() => safeLocalStorageGet('samyak_cache_pellet_consumptions', []) || []);
-  const [purchaseOrders, setPurchaseOrders] = useState(() => safeLocalStorageGet('samyak_cache_purchase_orders', []) || []);
+  const [sfgGoods, setSfgGoods] = useState([]);
+  const [pelletInwards, setPelletInwards] = useState([]);
+  const [pelletConsumptions, setPelletConsumptions] = useState([]);
+  const [purchaseOrders, setPurchaseOrders] = useState([]);
 
   const handleSavePurchaseOrder = async (po) => {
     requireDatabaseConnection('save purchase order');
     const saved = await savePurchaseOrderToSupabase(po);
     setPurchaseOrders(prev => {
       const currentList = Array.isArray(prev) ? prev : [];
-      const copy = [saved, ...currentList.filter(p => p && p.poNumber !== saved.poNumber && p.id !== saved.id)];
-      safeLocalStorageSet('samyak_cache_purchase_orders', copy);
-      return copy;
+      return [saved, ...currentList.filter(p => p && p.poNumber !== saved.poNumber && p.id !== saved.id)];
     });
     return saved;
   };
@@ -359,9 +367,7 @@ export default function App() {
     const updated = await savePurchaseOrderToSupabase(po);
     setPurchaseOrders(prev => {
       const currentList = Array.isArray(prev) ? prev : [];
-      const copy = currentList.map(p => (p && (p.poNumber === updated.poNumber || p.id === updated.id)) ? updated : p);
-      safeLocalStorageSet('samyak_cache_purchase_orders', copy);
-      return copy;
+      return currentList.map(p => (p && (p.poNumber === updated.poNumber || p.id === updated.id)) ? updated : p);
     });
     return updated;
   };
@@ -371,9 +377,7 @@ export default function App() {
     await deletePurchaseOrderFromSupabase(poId);
     setPurchaseOrders(prev => {
       const currentList = Array.isArray(prev) ? prev : [];
-      const copy = currentList.filter(p => p && p.id !== poId && p.poNumber !== poId);
-      safeLocalStorageSet('samyak_cache_purchase_orders', copy);
-      return copy;
+      return currentList.filter(p => p && p.id !== poId && p.poNumber !== poId);
     });
   };
 
@@ -384,8 +388,6 @@ export default function App() {
       status: item.status || 'Pending QC',
       qcStatus: item.qcStatus || item.status || 'Pending QC'
     };
-
-    setPelletInwards(prev => [cleanItem, ...prev.filter(i => String(i.id) !== String(cleanItem.id))]);
 
     // Build corresponding GRN item for central GRN table and QC Approval Lab queue
     const grnRecord = {
@@ -418,62 +420,71 @@ export default function App() {
       updatedAt: new Date().toISOString()
     };
 
-    setGrns(prev => [grnRecord, ...prev.filter(g => String(g.id) !== String(grnRecord.id) && String(g.grnNo) !== String(grnRecord.grnNo))]);
-
     try {
       await savePelletInwardToSupabase(cleanItem);
-      await saveGRNToSupabase(grnRecord);
-      logAudit('Save Pellet Inward', 'Pellet Fuel Stock Management', `GRN ${cleanItem.grnNo} - Inwarded ${cleanItem.inwardQtyKg} kg (Submitted to QC Approval Lab)`, cleanItem.id);
+      setPelletInwards(prev => [cleanItem, ...prev.filter(i => String(i.id) !== String(cleanItem.id))]);
     } catch (e) {
       console.error("Failed to save pellet inward to Supabase:", e);
-      alert(`Saved locally, DB notice: ${e.message}`);
+      alert(`Pellet inward was not saved: ${e.message}`);
+      return;
+    }
+    try {
+      await saveGRNToSupabase(grnRecord);
+      setGrns(prev => [grnRecord, ...prev.filter(g => String(g.id) !== String(grnRecord.id) && String(g.grnNo) !== String(grnRecord.grnNo))]);
+      logAudit('Save Pellet Inward', 'Pellet Fuel Stock Management', `GRN ${cleanItem.grnNo} - Inwarded ${cleanItem.inwardQtyKg} kg (Submitted to QC Approval Lab)`, cleanItem.id);
+    } catch (e) {
+      console.error("Failed to save pellet GRN to Supabase:", e);
+      alert(`The pellet inward was saved, but its GRN was not: ${e.message}`);
     }
   };
 
   const handleDeletePelletInward = async (id) => {
     const targetItem = (pelletInwards || []).find(i => String(i.id) === String(id));
-    setPelletInwards(prev => prev.filter(i => String(i.id) !== String(id)));
-    if (targetItem && targetItem.grnNo) {
-      setGrns(prev => prev.filter(g => g.grnNo !== targetItem.grnNo && String(g.id) !== String(id)));
-      deleteGRNFromSupabase(id || targetItem.grnNo).catch(console.warn);
-    }
     try {
       await deletePelletInwardFromSupabase(id);
+      setPelletInwards(prev => prev.filter(i => String(i.id) !== String(id)));
+      if (targetItem && targetItem.grnNo) {
+        await deleteGRNFromSupabase(id || targetItem.grnNo);
+        setGrns(prev => prev.filter(g => g.grnNo !== targetItem.grnNo && String(g.id) !== String(id)));
+      }
       logAudit('Delete Pellet Inward', 'Pellet Fuel Stock Management', `Deleted Pellet GRN record ${id}`, id);
     } catch (e) {
       console.error("Failed to delete pellet inward from Supabase:", e);
+      alert(`Pellet inward was not deleted: ${e.message}`);
     }
   };
 
   const handleSavePelletConsumption = async (item) => {
-    setPelletConsumptions(prev => [item, ...prev.filter(i => String(i.id) !== String(item.id))]);
     try {
       await savePelletConsumptionToSupabase(item);
+      setPelletConsumptions(prev => [item, ...prev.filter(i => String(i.id) !== String(item.id))]);
       logAudit('Save Pellet Consumption', 'Pellet Fuel Stock Management', `Recorded ${item.consumedQtyKg} kg boiler consumption on ${item.consumptionDate}`, item.id);
     } catch (e) {
       console.error("Failed to save pellet consumption to Supabase:", e);
-      alert(`Saved locally, DB notice: ${e.message}`);
+      alert(`Pellet consumption was not saved: ${e.message}`);
     }
   };
 
   const handleDeletePelletConsumption = async (id) => {
-    setPelletConsumptions(prev => prev.filter(i => String(i.id) !== String(id)));
     try {
       await deletePelletConsumptionFromSupabase(id);
+      setPelletConsumptions(prev => prev.filter(i => String(i.id) !== String(id)));
       logAudit('Delete Pellet Consumption', 'Pellet Fuel Stock Management', `Deleted Pellet consumption record ${id}`, id);
     } catch (e) {
       console.error("Failed to delete pellet consumption from Supabase:", e);
+      alert(`Pellet consumption was not deleted: ${e.message}`);
     }
   };
 
 
   const logAudit = async (actionType, moduleName, details, targetId = null) => {
     const entry = createAuditEntry(currentUser, actionType, moduleName, details, targetId);
-    setAuditLogs(prev => pruneOldAuditLogs([entry, ...prev]));
     try {
       await saveAuditLogToSupabase(entry);
+      setAuditLogs(prev => pruneOldAuditLogs([entry, ...prev]));
     } catch (e) {
-      console.warn("Audit log save notice:", e);
+      console.error("Audit log was not saved:", e);
+      alert(`The change was kept, but the audit log was not saved: ${describeSaveError(e)}`);
     }
   };
 
@@ -549,11 +560,11 @@ export default function App() {
 
   // Fetch all tables from Supabase on initial load or credential changes
   useEffect(() => {
-    if (!isSupaActive || !isAuthReady || !isAuthenticated) {
-      if (!isSupaActive) {
-        setIsDataLoading(false);
-        setIsDataFetched(true);
-      }
+    if (!isAuthReady) return;
+    if (!isSupaActive || !isAuthenticated) {
+      setIsDataLoading(false);
+      setOrdersLoading(false);
+      setIsDataFetched(true);
       return;
     }
 
@@ -590,6 +601,20 @@ export default function App() {
       };
 
       try {
+        try {
+          const localSnapshot = snapshotBrowserStorage(window.localStorage);
+          const settingsSnapshot = await fetchAllSystemSettings().catch(() => ({}));
+          await importLegacyBusinessRecords({
+            supabase,
+            local: localSnapshot,
+            settings: settingsSnapshot || {}
+          });
+          clearImportedLocalKeys(window.localStorage, localKeysToClear(localSnapshot));
+        } catch (importErr) {
+          console.error('[Legacy import] Browser copies were kept because the upload failed:', importErr);
+          alert(`Some records saved only in this browser could not be uploaded. They were left on this device. ${describeSaveError(importErr)}`);
+        }
+
         const currentOrdersVersion = ++ordersFetchVersion.current;
         setOrdersLoading(true);
         setOrdersError(null);
@@ -927,58 +952,23 @@ export default function App() {
             safeLocalStorageSet('samyak_film_substrates_master', JSON.stringify(allSettings.film_substrates_master));
           }
 
-          // Operational local storage persistence keys synced from Supabase system_settings:
-          if (allSettings.issued_pos || allSettings.samyak_erp_issued_pos) {
-            safeLocalStorageSet('samyak_erp_issued_pos', allSettings.issued_pos || allSettings.samyak_erp_issued_pos);
-          }
-          if (allSettings.stock_adjustments || allSettings.samyak_erp_stock_adjustments) {
-            safeLocalStorageSet('samyak_erp_stock_adjustments', allSettings.stock_adjustments || allSettings.samyak_erp_stock_adjustments);
-          }
-          if (allSettings.custom_barcodes || allSettings.samyak_erp_custom_barcodes) {
-            safeLocalStorageSet('samyak_erp_custom_barcodes', allSettings.custom_barcodes || allSettings.samyak_erp_custom_barcodes);
-          }
-          if (allSettings.po_discrepancy_resolutions || allSettings.samyak_po_discrepancy_resolutions) {
-            safeLocalStorageSet('samyak_po_discrepancy_resolutions', allSettings.po_discrepancy_resolutions || allSettings.samyak_po_discrepancy_resolutions);
-          }
-          if (allSettings.scrap_disposals || allSettings.samyak_erp_scrap_disposals) {
-            safeLocalStorageSet('samyak_erp_scrap_disposals', allSettings.scrap_disposals || allSettings.samyak_erp_scrap_disposals);
-          }
-          if (allSettings.sfg_scrap_items) {
-            safeLocalStorageSet('sfg_scrap_items', allSettings.sfg_scrap_items);
-          }
-          if (allSettings.sfg_qc_hold_items) {
-            safeLocalStorageSet('sfg_qc_hold_items', allSettings.sfg_qc_hold_items);
-          }
+        }
 
-          if (allSettings.material_indents && Array.isArray(allSettings.material_indents)) {
-            setIndents(allSettings.material_indents);
-            safeLocalStorageSet('samyak_cache_material_indents', allSettings.material_indents);
-          }
-          if (allSettings.machine_issues && Array.isArray(allSettings.machine_issues)) {
-            setMachineIssues(allSettings.machine_issues);
-            safeLocalStorageSet('samyak_cache_machine_issues', allSettings.machine_issues);
-          }
-          if (allSettings.consumables && Array.isArray(allSettings.consumables)) {
-            setConsumables(allSettings.consumables);
-            safeLocalStorageSet('samyak_cache_consumables', allSettings.consumables);
-          }
-          if (allSettings.store_issue_transactions && Array.isArray(allSettings.store_issue_transactions)) {
-            const cleanStoreTx = stripDummyRecords(allSettings.store_issue_transactions);
-            setStoreIssueTransactions(cleanStoreTx);
-            safeLocalStorageSet('samyak_cache_store_issue_transactions', cleanStoreTx);
-          }
-          if (allSettings.printing_press_machine_assignments && typeof allSettings.printing_press_machine_assignments === 'object') {
-            setPressMachineAssignments(allSettings.printing_press_machine_assignments);
-            safeLocalStorageSet('samyak_cache_press_machine_assignments', allSettings.printing_press_machine_assignments);
-          }
-          if (allSettings.printing_press_queue_order && Array.isArray(allSettings.printing_press_queue_order)) {
-            setPressQueueOrder(allSettings.printing_press_queue_order);
-            safeLocalStorageSet('samyak_cache_press_queue_order', allSettings.printing_press_queue_order);
-          }
-          if (allSettings.printing_press_active_running_job && typeof allSettings.printing_press_active_running_job === 'object') {
-            setPressActiveRunningJob(allSettings.printing_press_active_running_job);
-            safeLocalStorageSet('samyak_cache_press_running_job', allSettings.printing_press_active_running_job);
-          }
+        const [indentRows, issueRows, consumableRows, storeRows, pressBoard] = await Promise.all([
+          fetchSafe(() => fetchPayloadRecords(supabase, 'material_indents'), 'Material indents'),
+          fetchSafe(() => fetchPayloadRecords(supabase, 'machine_issues'), 'Machine issues'),
+          fetchSafe(() => fetchPayloadRecords(supabase, 'consumables'), 'Consumables'),
+          fetchSafe(() => fetchPayloadRecords(supabase, 'store_issue_transactions'), 'Store issues'),
+          fetchSafe(() => fetchPressBoard(supabase), 'Press board')
+        ]);
+        if (Array.isArray(indentRows)) setIndents(indentRows);
+        if (Array.isArray(issueRows)) setMachineIssues(issueRows);
+        if (Array.isArray(consumableRows)) setConsumables(consumableRows);
+        if (Array.isArray(storeRows)) setStoreIssueTransactions(stripDummyRecords(storeRows));
+        if (pressBoard) {
+          setPressQueueOrder(Array.isArray(pressBoard.queueOrder) ? pressBoard.queueOrder : []);
+          setPressMachineAssignments(pressBoard.machineAssignments || {});
+          setPressActiveRunningJob(pressBoard.activeRunningJob || null);
         }
         console.log('[Supabase Load] All 3 stages completed successfully!');
       } catch (err) {
@@ -1260,18 +1250,33 @@ export default function App() {
   };
 
   const handleReorderQueue = async (newQueueOrder) => {
-    setPressQueueOrder(newQueueOrder);
-    await saveSystemSetting('printing_press_queue_order', newQueueOrder);
+    try {
+      const next = await savePressBoard(supabase, { queueOrder: newQueueOrder });
+      setPressQueueOrder(next.queueOrder);
+    } catch (e) {
+      alert(`The press queue was not saved: ${describeSaveError(e)}`);
+      throw e;
+    }
   };
 
   const handleMachineAssignmentsChange = async (newAssignments) => {
-    setPressMachineAssignments(newAssignments);
-    await saveSystemSetting('printing_press_machine_assignments', newAssignments);
+    try {
+      const next = await savePressBoard(supabase, { machineAssignments: newAssignments });
+      setPressMachineAssignments(next.machineAssignments);
+    } catch (e) {
+      alert(`Machine assignments were not saved: ${describeSaveError(e)}`);
+      throw e;
+    }
   };
 
   const handleActiveRunningJobChange = async (newRunningJob) => {
-    setPressActiveRunningJob(newRunningJob);
-    await saveSystemSetting('printing_press_active_running_job', newRunningJob);
+    try {
+      const next = await savePressBoard(supabase, { activeRunningJob: newRunningJob });
+      setPressActiveRunningJob(next.activeRunningJob);
+    } catch (e) {
+      alert(`The running job was not saved: ${describeSaveError(e)}`);
+      throw e;
+    }
   };
 
   const applyAuthenticatedProfile = (profile) => {
@@ -1630,7 +1635,7 @@ export default function App() {
     };
 
     const newTxList = [newTx, ...storeIssueTransactions];
-    await saveSystemSetting('store_issue_transactions', newTxList);
+    await replacePayloadRecords(supabase, 'store_issue_transactions', newTxList);
     setStoreIssueTransactions(newTxList);
 
     // 3. Update / Earmark the Production Record of this Job
@@ -1764,21 +1769,21 @@ export default function App() {
 
   const handleUpdateConsumables = async (newConsumables) => {
     requireDatabaseConnection('update consumables');
-    await saveSystemSetting('consumables', newConsumables);
+    await replacePayloadRecords(supabase, 'consumables', newConsumables);
     setConsumables(newConsumables);
     logAudit('UPDATE', 'Consumable Store', `Updated consumable store inventory levels`, 'CONSUMABLES');
   };
 
   const handleUpdateIndents = async (newIndents) => {
     requireDatabaseConnection('update material indents');
-    await saveSystemSetting('material_indents', newIndents);
+    await replacePayloadRecords(supabase, 'material_indents', newIndents);
     setIndents(newIndents);
     logAudit('UPDATE', 'Material Indents', `Updated plant material indents / purchase requisitions`, 'INDENTS');
   };
 
   const handleUpdateMachineIssues = async (newIssues) => {
     requireDatabaseConnection('update machine stock issue');
-    await saveSystemSetting('machine_issues', newIssues);
+    await replacePayloadRecords(supabase, 'machine_issues', newIssues);
     setMachineIssues(newIssues);
     logAudit('UPDATE', 'Machine Stock Issue', `Recorded stock item issue to machine`, 'ISSUES');
   };
@@ -1827,6 +1832,22 @@ export default function App() {
     };
     await handleUpdateOrder(updatedOrder);
     await handleActiveRunningJobChange(updatedOrder);
+    await handleSaveSchedule({
+      id: `SCHED-${order.id}`,
+      orderId: order.id,
+      jobName: order.jobName || '',
+      clientName: order.clientName || order.customerName || '',
+      machineId: machineId || order.machineId || 'UNASSIGNED',
+      shift: 'Day Shift',
+      scheduledDate: new Date().toISOString().split('T')[0],
+      startTime: new Date(startIso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }),
+      orderQtyKg: Number(order.quantityKg || order.quantity || order.orderQtyKg || 0),
+      widthMm: Number(order.widthMm || order.printWidthMm || 0),
+      micron: Number(order.micron || 12),
+      filmType: order.printFilmType || order.filmType || 'PET',
+      status: 'In Production',
+      priority: order.priority || 'Normal'
+    });
 
     // Update or create corresponding Production Record
     const existingRec = productionRecords.find(r => r.orderId === order.id || r.id === order.id || r.jobCode === order.jobCode);
@@ -1861,7 +1882,7 @@ export default function App() {
       },
       createdAt: startIso
     };
-    handleSaveProductionRecord(updatedRecord);
+    await handleSaveProductionRecord(updatedRecord);
     logAudit('UPDATE', 'Printing Scheduler', `Started printing job for "${order.jobName}" (${order.id}) on machine ${machineId || 'Rotogravure Press'}`, order.id);
   };
 
@@ -1973,7 +1994,24 @@ export default function App() {
         }
       }
     };
-    handleSaveProductionRecord(updatedRecord);
+    await handleSaveProductionRecord(updatedRecord);
+    await handleSaveSchedule({
+      id: `SCHED-${order.id}`,
+      orderId: order.id,
+      jobName: order.jobName || '',
+      clientName: order.clientName || order.customerName || '',
+      machineId: order.machineId || 'UNASSIGNED',
+      shift: 'Day Shift',
+      scheduledDate: new Date().toISOString().split('T')[0],
+      endTime: new Date(endIso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }),
+      orderQtyKg: Number(order.quantityKg || order.quantity || order.orderQtyKg || 0),
+      widthMm: Number(order.widthMm || order.printWidthMm || 0),
+      micron: Number(order.micron || 12),
+      filmType: order.printFilmType || order.filmType || 'PET',
+      status: 'Completed',
+      priority: order.priority || 'Normal',
+      totalDurationMins: computedDurationMinutes || 0
+    });
 
     // Automatically store each Printed Output SFG roll barcode into SFG & FG Store
     if (Array.isArray(endData.rollsBreakdown) && endData.rollsBreakdown.length > 0) {
