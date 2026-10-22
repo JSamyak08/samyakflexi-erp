@@ -56,6 +56,13 @@ import {
   saveSalaryAdvanceToSupabase,
   saveSalaryPaymentToSupabase 
 } from '../services/supabaseDataService';
+import {
+  attendanceCalendarDate,
+  attendanceMatchesEmployeeDate,
+  attendanceSaveErrorText,
+  factoryCalendarDate,
+  formatAttendanceHeading
+} from '../services/employeeAttendance';
 import { pushSlugState } from '../utils/slugRouter';
 import { roundToTwo, formatUpToTwoDecimals } from '../utils/numberHelpers';
 
@@ -577,7 +584,8 @@ export default function EmployeeManagement({
   }, [filteredOtRecords, employees]);
 
   // Selected Date for Daily Attendance Register
-  const [attendanceDate, setAttendanceDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [attendanceDate, setAttendanceDate] = useState(() => factoryCalendarDate());
+  const [attendanceFormError, setAttendanceFormError] = useState('');
 
   // Selected Month for Payroll (Format: YYYY-MM)
   const [payrollMonth, setPayrollMonth] = useState(() => {
@@ -903,8 +911,9 @@ export default function EmployeeManagement({
 
   // Open Attendance Modal for an Employee
   const handleOpenAttendanceModal = (emp) => {
+    setAttendanceFormError('');
     setMarkingAttendanceEmp(emp);
-    const existing = attendanceRecords.find(a => a.employeeId === emp.id && a.date === attendanceDate);
+    const existing = (attendanceRecords || []).find(a => attendanceMatchesEmployeeDate(a, emp.id, attendanceDate));
     if (existing) {
       setAttStatus(existing.status || 'Present');
       setAttShiftType(existing.shiftType || emp.defaultShift || 'Shift A: Day (08:00 - 20:00)');
@@ -931,21 +940,33 @@ export default function EmployeeManagement({
     }
   };
 
+  const persistAttendance = async (record) => {
+    if (onSaveAttendance) await onSaveAttendance(record);
+    else await saveEmployeeAttendanceToSupabase(record);
+  };
+
   // Save Attendance Record
-  const handleSaveAttendance = () => {
+  const handleSaveAttendance = async () => {
     if (!markingAttendanceEmp) return;
 
-    const isNight = attShiftType.toLowerCase().includes('night');
     const ot = parseFloat(attOtHours) || 0;
     const pto = Math.max(0, parseFloat(attPtoHours) || 0);
     const shiftHrs = markingAttendanceEmp.shiftDurationHours || 12;
+    const markedDate = attendanceCalendarDate(attendanceDate);
+
+    if (!markedDate) {
+      const message = 'Choose a valid attendance date before saving.';
+      setAttendanceFormError(message);
+      alert(message);
+      return;
+    }
 
     if (ot > 0 && !attOtReason.trim()) {
       alert("⚠️ Mandatory Requirement: Work / Machine Justification Note must be specified when logging Overtime Hours.");
       return;
     }
 
-    const isExisting = Boolean(markingAttendanceEmp?.id && attendanceRecords.some(a => a.employeeId === markingAttendanceEmp.id && a.date === attendanceDate));
+    const isExisting = Boolean(markingAttendanceEmp?.id && (attendanceRecords || []).some(a => attendanceMatchesEmployeeDate(a, markingAttendanceEmp.id, markedDate)));
     if (isExisting && !isAdmin) {
       alert("⛔ Permission Denied: Attendance has already been marked for this employee. Only the Admin role is authorized to edit or modify locked attendance records.");
       return;
@@ -970,10 +991,11 @@ export default function EmployeeManagement({
       ? Math.max(0, ((shiftHrs / 2) - pto + ot)) 
       : 0;
 
+    const employeeName = markingAttendanceEmp.fullName;
     const record = {
-      id: `ATT-${attendanceDate.replace(/-/g, '')}-${markingAttendanceEmp.id}`,
-      employeeId: markingAttendanceEmp.id,
-      date: attendanceDate,
+      id: `ATT-${markedDate.replace(/-/g, '')}-${markingAttendanceEmp.id}`,
+      employeeId: String(markingAttendanceEmp.id),
+      date: markedDate,
       shiftType: attShiftType,
       shiftHours: shiftHrs,
       status: attStatus,
@@ -995,30 +1017,42 @@ export default function EmployeeManagement({
       markedBy: currentUser?.name || 'Shift Supervisor'
     };
 
-    if (onSaveAttendance) onSaveAttendance(record);
-    saveEmployeeAttendanceToSupabase(record);
-    setMarkingAttendanceEmp(null);
-    alert(`Attendance marked for ${markingAttendanceEmp.fullName} on ${attendanceDate} (${attStatus}, Net Hours: ${netShiftHours.toFixed(1)}h${pto > 0 ? `, PTO: ${pto}h deducted` : ''}${ot > 0 ? `, OT: ${ot}h Pending Approval` : ''})`);
+    try {
+      await persistAttendance(record);
+      setAttendanceFormError('');
+      setMarkingAttendanceEmp(null);
+      alert(`Attendance marked for ${employeeName} on ${markedDate} (${attStatus}, Net Hours: ${netShiftHours.toFixed(1)}h${pto > 0 ? `, PTO: ${pto}h deducted` : ''}${ot > 0 ? `, OT: ${ot}h Pending Approval` : ''})`);
+    } catch (error) {
+      const message = `Could not save attendance. ${attendanceSaveErrorText(error)}`;
+      setAttendanceFormError(message);
+      alert(message);
+    }
   };
 
   // Bulk Mark All Present
-  const handleBulkMarkPresent = () => {
-    if (!window.confirm(`Mark active employees as PRESENT for ${attendanceDate}? (Already marked records will remain locked)`)) return;
+  const handleBulkMarkPresent = async () => {
+    const markedDate = attendanceCalendarDate(attendanceDate);
+    if (!markedDate) {
+      alert('Choose a valid attendance date before saving.');
+      return;
+    }
+    if (!window.confirm(`Mark active employees as PRESENT for ${markedDate}? (Already marked records will remain locked)`)) return;
     let markedCount = 0;
     let lockedCount = 0;
+    const failures = [];
 
-    employees.filter(e => e.status === 'Active' || e.status === 'On Probation').forEach(emp => {
-      const alreadyMarked = attendanceRecords.some(a => a.employeeId === emp.id && a.date === attendanceDate);
+    for (const emp of employees.filter(e => e.status === 'Active' || e.status === 'On Probation')) {
+      const alreadyMarked = (attendanceRecords || []).some(a => attendanceMatchesEmployeeDate(a, emp.id, markedDate));
       if (alreadyMarked && !isAdmin) {
         lockedCount += 1;
-        return;
+        continue;
       }
 
       const shiftHrs = emp.shiftDurationHours || 12;
       const rec = {
-        id: `ATT-${attendanceDate.replace(/-/g, '')}-${emp.id}`,
-        employeeId: emp.id,
-        date: attendanceDate,
+        id: `ATT-${markedDate.replace(/-/g, '')}-${emp.id}`,
+        employeeId: String(emp.id),
+        date: markedDate,
         shiftType: emp.defaultShift || 'Shift A: Day (08:00 - 20:00)',
         shiftHours: shiftHrs,
         status: 'Present',
@@ -1031,16 +1065,24 @@ export default function EmployeeManagement({
         dinnerAllowanceEligible: Boolean(emp.salaryStructure?.optDinner || Number(emp.salaryStructure?.dinnerAllowancePerNight) > 0),
         markedBy: currentUser?.name || 'Shift Supervisor'
       };
-      if (onSaveAttendance) onSaveAttendance(rec);
-      saveEmployeeAttendanceToSupabase(rec);
-      markedCount += 1;
-    });
+      try {
+        await persistAttendance(rec);
+        markedCount += 1;
+      } catch (error) {
+        failures.push(`${emp.fullName || emp.id}: ${attendanceSaveErrorText(error)}`);
+      }
+    }
 
-    alert(`Bulk attendance summary for ${attendanceDate}:\n• Marked Present: ${markedCount} employees\n${lockedCount > 0 ? `• Locked (Already Marked): ${lockedCount} employees (Admin required to change)` : ''}`);
+    if (failures.length > 0) {
+      alert(`Could not save attendance for ${failures.length} employee(s):\n${failures.slice(0, 5).join('\n')}`);
+      return;
+    }
+
+    alert(`Bulk attendance summary for ${markedDate}:\n• Marked Present: ${markedCount} employees\n${lockedCount > 0 ? `• Locked (Already Marked): ${lockedCount} employees (Admin required to change)` : ''}`);
   };
 
   // Approve / Reject Overtime
-  const handleApproveOvertime = (attRecord, isApproved) => {
+  const handleApproveOvertime = async (attRecord, isApproved) => {
     if (!canApprove) {
       alert("Only Plant Head, HR Manager, or Admin can approve Overtime requests!");
       return;
@@ -1063,13 +1105,16 @@ export default function EmployeeManagement({
       overtimeApprovedDate: new Date().toISOString().split('T')[0],
       overtimeApprovalAmount: payout
     };
-    if (onSaveAttendance) onSaveAttendance(updated);
-    saveEmployeeAttendanceToSupabase(updated);
-    alert(`Overtime request for ${empName} on ${attRecord.date} has been ${updated.overtimeStatus} (₹${(payout || 0).toLocaleString()})!`);
+    try {
+      await persistAttendance(updated);
+      alert(`Overtime request for ${empName} on ${attRecord.date} has been ${updated.overtimeStatus} (₹${(payout || 0).toLocaleString()})!`);
+    } catch (error) {
+      alert(`Could not save attendance. ${attendanceSaveErrorText(error)}`);
+    }
   };
 
   // Revert Overtime Approval or Rejection
-  const handleRevertOvertime = (attRecord) => {
+  const handleRevertOvertime = async (attRecord) => {
     if (!canApprove) {
       alert("Only Plant Head, HR Manager, or Admin can revert Overtime approvals!");
       return;
@@ -1093,8 +1138,12 @@ export default function EmployeeManagement({
       overtimeRevertedBy: currentUser?.name || 'Plant Head',
       overtimeRevertedDate: new Date().toISOString().split('T')[0]
     };
-    if (onSaveAttendance) onSaveAttendance(updated);
-    saveEmployeeAttendanceToSupabase(updated);
+    try {
+      await persistAttendance(updated);
+    } catch (error) {
+      alert(`Could not save attendance. ${attendanceSaveErrorText(error)}`);
+      return;
+    }
 
     if (currentStatus === 'Approved') {
       alert(`✅ Approval reverted for ${empName}!\n₹ ${(payout || 0).toLocaleString()} has been deducted from their salary calculation.`);
@@ -1949,7 +1998,7 @@ export default function EmployeeManagement({
               </div>
 
               <div style={{ fontSize: '0.82rem', color: '#334155', marginTop: '16px' }}>
-                Showing shift roster for: <b style={{ color: '#0f172a' }}>{new Date(attendanceDate).toDateString()}</b>
+                Showing shift roster for: <b style={{ color: '#0f172a' }}>{formatAttendanceHeading(attendanceDate)}</b>
               </div>
             </div>
 
@@ -1983,7 +2032,7 @@ export default function EmployeeManagement({
               </thead>
               <tbody>
                 {employees.filter(e => e.status !== 'Relieved' && e.status !== 'Terminated').map(emp => {
-                  const att = attendanceRecords.find(a => a.employeeId === emp.id && a.date === attendanceDate);
+                  const att = (attendanceRecords || []).find(a => attendanceMatchesEmployeeDate(a, emp.id, attendanceDate));
                   const status = att?.status || 'Not Marked';
                   const shiftHrs = emp.shiftDurationHours || 12;
                   const otHours = att?.overtimeHours || 0;
@@ -4116,6 +4165,12 @@ export default function EmployeeManagement({
                 />
               </div>
             </div>
+
+            {attendanceFormError && (
+              <div role="alert" style={{ marginBottom: '14px', padding: '10px 12px', background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '6px', fontSize: '0.82rem', fontWeight: '700' }}>
+                {attendanceFormError}
+              </div>
+            )}
 
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
               <button type="button" className="btn-secondary" onClick={() => setMarkingAttendanceEmp(null)}>

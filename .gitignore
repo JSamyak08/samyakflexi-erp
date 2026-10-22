@@ -28,6 +28,7 @@ dist-ssr
 scratch/
 
 # Playwright
+/artifacts/
 /test-results/
 /playwright-report/
 /blob-report/
