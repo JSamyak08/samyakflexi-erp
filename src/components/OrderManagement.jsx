@@ -148,7 +148,7 @@ export default function OrderManagement({
   };
 
   // Handler to edit Raw Material Size Width, Micron, Quantity or Preferred Vendor for any itemized requirement
-  const handleUpdateReqField = (orderId, reqId, field, value) => {
+  const handleUpdateReqField = async (orderId, reqId, field, value) => {
     const ord = orders.find(o => o.id === orderId);
     if (!ord) return;
 
@@ -200,10 +200,11 @@ export default function OrderManagement({
       rawMaterialRequirements: updatedReqs
     };
 
-    if (onUpdateOrder) {
-      onUpdateOrder(updatedOrder);
-    } else {
-      saveOrderToSupabase(updatedOrder).catch(err => console.error('[ORDERS][DB WRITE] Requirement update failed:', err));
+    try {
+      if (onUpdateOrder) await onUpdateOrder(updatedOrder);
+      else await saveOrderToSupabase(updatedOrder);
+    } catch (err) {
+      if (!onUpdateOrder) alert(`The material requirement was not saved: ${err.message || err}`);
     }
   };
 

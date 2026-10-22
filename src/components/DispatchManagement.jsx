@@ -1539,8 +1539,10 @@ export default function DispatchManagement({
         try {
           if (onAddDispatchShipment) await onAddDispatchShipment(newShipment);
         } catch (err) {
-          alert(`The packing list was not saved: ${err.message || err}`);
-          return;
+          alert(err?.name === 'PartialSaveError'
+            ? err.message
+            : `The packing list was not saved: ${err.message || err}`);
+          if (err?.name !== 'PartialSaveError') return;
         }
         setIsPackingModalOpen(false);
         setSelectedDispatchForPackingList(newShipment);

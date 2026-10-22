@@ -216,13 +216,18 @@ export default function CylinderManagement({
       alert("Please select a Job Master to link with!");
       return;
     }
-    if (onLinkCylinderToJobMaster) {
-      await onLinkCylinderToJobMaster(linkingCylinder.id, selectedExistingJmId);
-    } else {
-      const targetJm = (jobMasters || []).find(j => j.id === selectedExistingJmId);
-      if (onUpdateCylinder) {
-        onUpdateCylinder({ ...linkingCylinder, jobMasterId: selectedExistingJmId, sku: targetJm?.skuCode || linkingCylinder.sku });
+    try {
+      if (onLinkCylinderToJobMaster) {
+        await onLinkCylinderToJobMaster(linkingCylinder.id, selectedExistingJmId);
+      } else {
+        const targetJm = (jobMasters || []).find(j => j.id === selectedExistingJmId);
+        if (onUpdateCylinder) {
+          await onUpdateCylinder({ ...linkingCylinder, jobMasterId: selectedExistingJmId, sku: targetJm?.skuCode || linkingCylinder.sku });
+        }
       }
+    } catch (err) {
+      alert(err?.name === 'PartialSaveError' ? err.message : `The link was not saved: ${err.message || err}`);
+      return;
     }
     setLinkingCylinder(null);
     alert(`✅ Cylinder ${linkingCylinder.sku} successfully linked to Job Master!`);
@@ -256,11 +261,16 @@ export default function CylinderManagement({
       job_master_id: newJmId
     };
 
-    if (onCreateAndLinkPair) {
-      await onCreateAndLinkPair({ cylinder: updatedCyl, jobMaster: newJm });
-    } else {
-      if (onAddJobMaster) await onAddJobMaster(newJm);
-      if (onUpdateCylinder) await onUpdateCylinder(updatedCyl);
+    try {
+      if (onCreateAndLinkPair) {
+        await onCreateAndLinkPair({ cylinder: updatedCyl, jobMaster: newJm });
+      } else {
+        if (onAddJobMaster) await onAddJobMaster(newJm);
+        if (onUpdateCylinder) await onUpdateCylinder(updatedCyl);
+      }
+    } catch (err) {
+      alert(err?.name === 'PartialSaveError' ? err.message : `The link was not saved: ${err.message || err}`);
+      return;
     }
 
     setLinkingCylinder(null);
@@ -752,7 +762,7 @@ export default function CylinderManagement({
         if (onAddCylinder) await onAddCylinder(payload);
       }
     } catch (err) {
-      alert(`The cylinder set was not saved: ${err.message || err}`);
+      alert(err?.name === 'PartialSaveError' ? err.message : `The cylinder set was not saved: ${err.message || err}`);
       return;
     }
 

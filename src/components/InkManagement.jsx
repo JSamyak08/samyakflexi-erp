@@ -205,7 +205,7 @@ export default function InkManagement({
   };
 
   // Save Add / Edit Ink
-  const handleSaveInkForm = (e) => {
+  const handleSaveInkForm = async (e) => {
     e.preventDefault();
     if (!productCode.trim() || !shade.trim()) {
       alert("Manufacturer Product Code and Shade Name are required!");
@@ -237,17 +237,22 @@ export default function InkManagement({
       createdAt: editingInk ? editingInk.createdAt : new Date().toISOString()
     };
 
-    if (editingInk) {
-      if (onUpdateInk) onUpdateInk(inkObj);
-    } else {
-      if (onAddInk) onAddInk(inkObj);
+    try {
+      if (editingInk) {
+        if (onUpdateInk) await onUpdateInk(inkObj);
+      } else if (onAddInk) {
+        await onAddInk(inkObj);
+      }
+    } catch (err) {
+      alert(err?.name === 'PartialSaveError' ? err.message : `The ink was not saved: ${err.message || err}`);
+      return;
     }
 
     setIsAddModalOpen(false);
   };
 
   // Save Price Update
-  const handleSavePriceUpdate = (e) => {
+  const handleSavePriceUpdate = async (e) => {
     e.preventDefault();
     if (!priceUpdateInk || !newPrice || isNaN(parseFloat(newPrice))) {
       alert("Please enter a valid price!");
@@ -266,10 +271,15 @@ export default function InkManagement({
       priceHistory: updatedHistory
     };
 
-    if (onUpdateInkPrice) {
-      onUpdateInkPrice(updatedInk, updatedPriceNum, priceReason);
-    } else if (onUpdateInk) {
-      onUpdateInk(updatedInk);
+    try {
+      if (onUpdateInkPrice) {
+        await onUpdateInkPrice(updatedInk, updatedPriceNum, priceReason);
+      } else if (onUpdateInk) {
+        await onUpdateInk(updatedInk);
+      }
+    } catch (err) {
+      alert(err?.name === 'PartialSaveError' ? err.message : `The ink price was not saved: ${err.message || err}`);
+      return;
     }
 
     setPriceUpdateInk(null);
@@ -277,7 +287,7 @@ export default function InkManagement({
   };
 
   // Save Stock Adjustment
-  const handleSaveStockAdjust = (e) => {
+  const handleSaveStockAdjust = async (e) => {
     e.preventDefault();
     if (!stockAdjustInk || !adjustQtyKg || isNaN(parseFloat(adjustQtyKg))) {
       alert("Please enter a valid quantity!");
@@ -293,7 +303,12 @@ export default function InkManagement({
       stockQtyKg: newStock
     };
 
-    if (onUpdateInk) onUpdateInk(updatedInk);
+    try {
+      if (onUpdateInk) await onUpdateInk(updatedInk);
+    } catch (err) {
+      alert(err?.name === 'PartialSaveError' ? err.message : `The ink stock was not saved: ${err.message || err}`);
+      return;
+    }
     setStockAdjustInk(null);
     setAdjustQtyKg('');
     setAdjustRemarks('');
