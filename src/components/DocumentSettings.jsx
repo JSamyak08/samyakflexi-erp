@@ -689,6 +689,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     });
 
     const res = await sendERPEmailNotification({
+      kind: 'manual',
       to: testEmailRecipient.trim(),
       cc: activeTmpl.ccEmail,
       subject: interpSubject,
@@ -1950,7 +1951,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                   <input
                     type="text"
                     className="form-control"
-                    placeholder="e.g. plant.manager@plant.com"
+                    placeholder="e.g. plant.manager@samyakinternational.in"
                     value={currentTemplate.ccEmail || ''}
                     onChange={e => handleUpdateCurrentTemplate('ccEmail', e.target.value)}
                   />
@@ -2005,7 +2006,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
 
                 {testResult && (
                   <div style={{ marginTop: '10px', padding: '8px 12px', borderRadius: '6px', fontSize: '0.8rem', background: testResult.success ? '#ecfdf5' : '#fef2f2', color: testResult.success ? '#047857' : '#991b1b', border: testResult.success ? '1px solid #a7f3d0' : '1px solid #fecaca' }}>
-                    {testResult.success ? `✅ Test email successfully delivered to ${testEmailRecipient}!` : `❌ Dispatch failed: ${testResult.message}`}
+                    {testResult.success ? `✅ Test email accepted for ${testResult.deliveredTo || testEmailRecipient}.` : `❌ Dispatch failed: ${testResult.message}`}
                   </div>
                 )}
               </div>

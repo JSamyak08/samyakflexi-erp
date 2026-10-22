@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from './supabaseClient';
+import { isCompanyAddress, parseMailbox } from './emailPolicy';
 
 const PROFILE_COLUMNS = 'id, full_name, email, role, department, status, active, auth_user_id';
 
@@ -108,6 +109,15 @@ export async function signInUser(email, password) {
 
 export async function sendPasswordResetEmail(email) {
   const cleanEmail = (email || '').toLowerCase().trim();
+  // Forgot-password is not a signed-in Send click. Supabase Auth would mail
+  // whatever address is typed, so non-company addresses never reach that API.
+  if (!isCompanyAddress(parseMailbox(cleanEmail))) {
+    return {
+      success: true,
+      suppressed: true,
+      message: `If ${cleanEmail} is a registered account, a password setup link is on its way.`,
+    };
+  }
   if (!isSupabaseConfigured()) {
     return { success: false, message: 'Supabase is not configured. Password reset unavailable.' };
   }

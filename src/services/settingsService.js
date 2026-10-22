@@ -528,7 +528,7 @@ export const DEFAULT_EMAIL_SETTINGS = {
   smtpPass: '',
   senderName: 'Samyak International ERP',
   adminEmail: 'admin@samyakinternational.in',
-  plantManagerEmail: 'plant.manager@plant.com',
+  plantManagerEmail: 'admin@samyakinternational.in',
   purchaseEmail: 'purchase@samyakinternational.in',
   dispatchEmail: 'dispatch@samyakinternational.in'
 };
@@ -542,7 +542,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     badgeText: 'Action Task: Order Created',
     badgeBgColor: '#0284c7',
     toEmail: 'admin@samyakinternational.in',
-    ccEmail: 'plant.manager@plant.com',
+    ccEmail: '',
     enabled: true,
     contentHtml: `<p style="font-size: 14px; color: #334155;">A new job order has been punched into the ERP system and queued for raw material allocation and cylinder scheduling.</p>
 <div class="info-card">
@@ -591,7 +591,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     subject: '✅ Production Record Approved: {jobName}',
     badgeText: 'Action Task: Approved by Admin',
     badgeBgColor: '#059669',
-    toEmail: 'plant.manager@plant.com',
+    toEmail: 'admin@samyakinternational.in',
     ccEmail: '',
     enabled: true,
     contentHtml: `<p style="font-size: 14px; color: #334155;">The production record for job <strong>{jobName}</strong> has been officially reviewed and APPROVED by the Admin.</p>
@@ -720,7 +720,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     badgeText: 'Action Task: High Scrap Warning',
     badgeBgColor: '#dc2626',
     toEmail: 'admin@samyakinternational.in',
-    ccEmail: 'plant.manager@plant.com',
+    ccEmail: '',
     enabled: true,
     contentHtml: `<p style="font-size: 14px; color: #334155;">Production record entry for job <strong>{jobName}</strong> exceeded the pre-costing scrap & wastage allowance threshold by <strong>+{wastageVariancePct}%</strong>.</p>
 <div class="info-card">
@@ -775,7 +775,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     badgeText: '🚨 SLA Escalation Alert: QC Overdue',
     badgeBgColor: '#dc2626',
     toEmail: 'admin@samyakinternational.in',
-    ccEmail: 'plant.manager@plant.com, quality@samyakinternational.in',
+    ccEmail: 'quality@samyakinternational.in',
     enabled: true,
     contentHtml: `<div style="background: #fef2f2; border: 1px solid #fca5a5; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
   <h3 style="color: #991b1b; font-size: 16px; margin: 0 0 6px 0;">🚨 12-Hour Quality Inspection SLA Exceeded</h3>

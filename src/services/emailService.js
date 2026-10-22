@@ -6,46 +6,24 @@
 
 import { getEmailTemplates, interpolateTemplate } from './settingsService';
 import { supabase } from './supabaseClient';
+import { legacyFilterInternalRecipients, normalizeKind } from './emailPolicy';
 
 const recentSends = new Map();
 const DEDUPE_MS = 10 * 60 * 1000;
 
-function dedupeKey(to, subject) {
-  return `${String(to || '').trim().toLowerCase()}\n${String(subject || '').trim()}`;
+function dedupeKey(kind, to, cc, subject) {
+  return `${kind}\n${String(to || '').trim().toLowerCase()}\n${String(cc || '').trim().toLowerCase()}\n${String(subject || '').trim()}`;
 }
 
 /**
- * Internal Email Safety Guard
- * Ensures NO emails are sent to Customer or Vendor email addresses.
- * Communication is strictly restricted to internal ERP email addresses.
+ * Historical client-side rewrite. The server applies the real rule.
+ * Callers pass the original recipients and an explicit kind.
  */
-export const filterInternalRecipientsOnly = (emailInput, defaultInternal = 'admin@samyakinternational.in') => {
-  if (!emailInput) return defaultInternal;
+export const filterInternalRecipientsOnly = legacyFilterInternalRecipients;
 
-  // Allowed internal email domains
-  const internalDomainRegex = /@(samyakinternational\.in|plant\.com|samyak\.com|samyakflexi\.com)$/i;
-
-  const emails = String(emailInput)
-    .split(/[,;]/)
-    .map(e => e.trim())
-    .filter(Boolean);
-
-  const internalOnly = emails.filter(e => {
-    const clean = e.toLowerCase();
-    // Exclude customer/vendor email hints
-    if (clean.includes('vendor') || clean.includes('customer') || clean.includes('client') || clean.includes('supplier')) {
-      return false;
-    }
-    return internalDomainRegex.test(clean);
-  });
-
-  return internalOnly.length > 0 ? internalOnly.join(', ') : defaultInternal;
-};
-
-export const sendERPEmailNotification = async ({ to, cc, subject, html, text }) => {
-  const sanitizedTo = filterInternalRecipientsOnly(to, 'admin@samyakinternational.in');
-  const sanitizedCc = cc ? filterInternalRecipientsOnly(cc, '') : '';
-  const key = dedupeKey(sanitizedTo, subject);
+export const sendERPEmailNotification = async ({ to, cc, bcc, replyTo, subject, html, text, kind }) => {
+  const emailKind = normalizeKind(kind);
+  const key = dedupeKey(emailKind, to, cc, subject);
   const now = Date.now();
   const previous = recentSends.get(key);
   if (previous?.promise) return previous.promise;
@@ -66,7 +44,7 @@ export const sendERPEmailNotification = async ({ to, cc, subject, html, text }) 
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ to: sanitizedTo, cc: sanitizedCc, subject, html, text }),
+        body: JSON.stringify({ to, cc, bcc, replyTo, subject, html, text, kind: emailKind }),
       });
     } catch (error) {
       console.error('ERP email notification error:', error);
@@ -195,6 +173,7 @@ export const notifyOrderPunched = async (order, customTo) => {
   });
 
   return await sendERPEmailNotification({
+    kind: 'automated',
     to: targetEmail,
     cc: tmpl.ccEmail,
     subject: tmpl.subject,
@@ -232,6 +211,7 @@ export const notifyProductionRecordSubmitted = async (record, customTo) => {
   });
 
   return await sendERPEmailNotification({
+    kind: 'automated',
     to: targetEmail,
     cc: tmpl.ccEmail,
     subject: tmpl.subject,
@@ -256,7 +236,7 @@ export const notifyProductionRecordApproved = async (record, customTo) => {
   const tmpl = getActiveTemplate('production_approved', vars);
   if (!tmpl || tmpl.enabled === false) return { success: false, message: 'Notification disabled.' };
 
-  const targetEmail = customTo || tmpl.toEmail || 'plant.manager@plant.com';
+  const targetEmail = customTo || tmpl.toEmail || 'admin@samyakinternational.in';
 
   const html = buildEmailTemplate({
     title: tmpl.eventTitle,
@@ -267,6 +247,7 @@ export const notifyProductionRecordApproved = async (record, customTo) => {
   });
 
   return await sendERPEmailNotification({
+    kind: 'automated',
     to: targetEmail,
     cc: tmpl.ccEmail,
     subject: tmpl.subject,
@@ -301,6 +282,7 @@ export const notifyPurchaseIndentCreated = async (indent, customTo) => {
   });
 
   return await sendERPEmailNotification({
+    kind: 'automated',
     to: targetEmail,
     cc: tmpl.ccEmail,
     subject: tmpl.subject,
@@ -337,6 +319,7 @@ export const notifyPurchaseOrderIssued = async (po, customTo) => {
   });
 
   return await sendERPEmailNotification({
+    kind: 'automated',
     to: targetEmail,
     cc: tmpl.ccEmail,
     subject: tmpl.subject,
@@ -372,6 +355,7 @@ export const notifyLowStockAlert = async (stockItem, customTo) => {
   });
 
   return await sendERPEmailNotification({
+    kind: 'automated',
     to: targetEmail,
     cc: tmpl.ccEmail,
     subject: tmpl.subject,
@@ -405,6 +389,7 @@ export const notifyUserCreated = async (user, customTo) => {
   });
 
   return await sendERPEmailNotification({
+    kind: 'automated',
     to: targetEmail,
     cc: tmpl.ccEmail,
     subject: tmpl.subject,
@@ -474,6 +459,7 @@ export const notifyOverWastageAlert = async ({ record, order, allowedWastagePct,
   });
 
   return await sendERPEmailNotification({
+    kind: 'automated',
     to: targetEmail,
     cc: tmpl.ccEmail,
     subject: tmpl.subject,
@@ -594,6 +580,7 @@ export const notifyGRNPendingQC = async ({ grn, users = [], customTo }) => {
   });
 
   return await sendERPEmailNotification({
+    kind: 'automated',
     to: targetEmail,
     cc: tmpl.ccEmail || 'admin@samyakinternational.in',
     subject: tmpl.subject,
@@ -610,7 +597,7 @@ export const notifyGRNQCEscalation12h = async ({ grn, hoursPending = 12, users =
   const escalationEmails = getEmailsForRoles(
     users, 
     ['Admin', 'Plant Manager', 'Production Manager', 'Quality Manager', 'QC Chemist', 'Quality', 'QC'], 
-    'admin@samyakinternational.in, plant.manager@plant.com, quality@samyakinternational.in'
+    'admin@samyakinternational.in, quality@samyakinternational.in'
   );
 
   const targetEmail = customTo || escalationEmails;
@@ -683,6 +670,7 @@ export const notifyGRNQCEscalation12h = async ({ grn, hoursPending = 12, users =
   });
 
   return await sendERPEmailNotification({
+    kind: 'automated',
     to: targetEmail,
     cc: tmpl.ccEmail || 'admin@samyakinternational.in',
     subject: tmpl.subject,
@@ -708,7 +696,7 @@ export const notifyGRNQCVarianceModified = async ({
   const recipientEmails = getEmailsForRoles(
     users,
     ['Admin', 'Store Manager', 'Store', 'Plant Manager', 'Production Manager', 'Quality Manager'],
-    'admin@samyakinternational.in, store@samyakinternational.in, plant.manager@plant.com'
+    'admin@samyakinternational.in, store@samyakinternational.in'
   );
 
   const targetEmail = customTo || recipientEmails;
@@ -798,6 +786,7 @@ export const notifyGRNQCVarianceModified = async ({
   });
 
   return await sendERPEmailNotification({
+    kind: 'automated',
     to: targetEmail,
     cc: 'admin@samyakinternational.in',
     subject: `⚠️ QC Inward Specification Variance Adjusted: GRN #${grnNo} — ${vendorName}`,

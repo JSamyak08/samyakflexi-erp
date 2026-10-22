@@ -15,6 +15,7 @@
 import { createClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
 import { randomBytes } from 'node:crypto';
+import { resolveOutboundRecipients } from '../src/services/emailPolicy.js';
 
 const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -30,6 +31,8 @@ const service = createClient(url, serviceKey, {
 });
 
 async function sendMail(to, name, actionLink) {
+  const resolved = resolveOutboundRecipients({ to, kind: 'automated' });
+  if (resolved.blocked || !resolved.to) return false;
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
   if (!user || !pass) return false;
@@ -42,7 +45,7 @@ async function sendMail(to, name, actionLink) {
   });
   await transporter.sendMail({
     from: `"Samyak International ERP" <${user}>`,
-    to,
+    to: resolved.to,
     subject: 'Set your FlexiERP password',
     text: `Hello ${name},\n\nSet your FlexiERP password with this one-time link:\n${actionLink}\n`,
   });

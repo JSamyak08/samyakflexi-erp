@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
 import { randomBytes } from 'node:crypto';
+import { resolveOutboundRecipients } from '../src/services/emailPolicy.js';
 
 const ROLES = [
   'Admin',
@@ -95,30 +96,79 @@ async function findAuthUserId(service, email) {
   return null;
 }
 
-async function sendSetupMail(to, name, actionLink) {
-  const user = serverEnv('SMTP_USER');
-  const pass = serverEnv('SMTP_PASS');
-  if (!user || !pass || !actionLink) return false;
+const ACCOUNT_MAIL_SUBJECT = 'Set your FlexiERP password';
 
-  const port = parseInt(serverEnv('SMTP_PORT', '465'), 10);
-  const transporter = nodemailer.createTransport({
-    host: serverEnv('SMTP_HOST', 'smtp.hostinger.com'),
+export async function deliverAccountEmail({
+  to,
+  name,
+  actionLink,
+  kind = 'automated',
+  env = process.env,
+  createTransport,
+} = {}) {
+  const resolved = resolveOutboundRecipients({ to, kind, env });
+  if (!actionLink) {
+    return { emailed: false, blocked: false, resolved };
+  }
+  if (resolved.blocked || !resolved.to) {
+    return { emailed: false, blocked: true, resolved };
+  }
+
+  const user = env.SMTP_USER || '';
+  const pass = env.SMTP_PASS || '';
+  if (!user || !pass) {
+    return { emailed: false, blocked: false, resolved };
+  }
+
+  const port = parseInt(env.SMTP_PORT || '465', 10);
+  const openTransport = createTransport || (options => nodemailer.createTransport(options));
+  const transporter = openTransport({
+    host: env.SMTP_HOST || 'smtp.hostinger.com',
     port,
-    secure: serverEnv('SMTP_SECURE', 'true') === 'true' || port === 465,
+    secure: (env.SMTP_SECURE || 'true') === 'true' || port === 465,
     auth: { user, pass },
   });
 
   await transporter.sendMail({
     from: `"Samyak International ERP" <${user}>`,
-    to,
-    subject: 'Set your FlexiERP password',
+    to: resolved.to,
+    ...(resolved.cc ? { cc: resolved.cc } : {}),
+    ...(resolved.bcc ? { bcc: resolved.bcc } : {}),
+    ...(resolved.replyTo ? { replyTo: resolved.replyTo } : {}),
+    subject: ACCOUNT_MAIL_SUBJECT,
     text: `Hello ${name || 'there'},\n\nAn administrator created or reset your FlexiERP account. Set your password here:\n${actionLink}\n\nIf you were not expecting this, contact the plant administrator.`,
     html: `<p>Hello ${name || 'there'},</p><p>An administrator created or reset your FlexiERP account. The password is not stored in the ERP.</p><p><a href="${actionLink}">Set your password</a></p>`,
   });
-  return true;
+  return { emailed: true, blocked: false, resolved };
 }
 
-async function issueRecovery(service, req, body, email, name) {
+async function sendSetupMail(to, name, actionLink, options = {}) {
+  const result = await deliverAccountEmail({
+    to,
+    name,
+    actionLink,
+    kind: options.kind,
+    createTransport: options.createTransport,
+  });
+  if (result.blocked && options.service && options.authUserId) {
+    try {
+      const logged = await options.service.rpc('log_blocked_email_send', {
+        p_user: options.authUserId,
+        p_to: String(to || '').slice(0, 500),
+        p_subject: ACCOUNT_MAIL_SUBJECT,
+        p_kind: result.resolved.kind,
+      });
+      if (logged && logged.error) {
+        console.error('Failed to log blocked account email:', logged.error.message || logged.error);
+      }
+    } catch (logError) {
+      console.error('Failed to log blocked account email:', logError);
+    }
+  }
+  return result;
+}
+
+async function issueRecovery(service, req, body, email, name, options = {}) {
   const redirectTo = `${safeOrigin(req, body)}/reset-password`;
   const { data, error } = await service.auth.admin.generateLink({
     type: 'recovery',
@@ -131,8 +181,17 @@ async function issueRecovery(service, req, body, email, name) {
     throw failure;
   }
   const actionLink = data?.properties?.action_link || '';
-  const emailed = await sendSetupMail(email, name, actionLink).catch(() => false);
-  return { emailed, actionLink: emailed ? undefined : actionLink };
+  const delivery = await sendSetupMail(email, name, actionLink, {
+    kind: options.kind,
+    service,
+    authUserId: options.authUserId,
+  }).catch(() => null);
+  const emailed = Boolean(delivery && delivery.emailed);
+  return {
+    emailed,
+    deliveredTo: delivery?.resolved?.to || '',
+    actionLink: emailed ? undefined : actionLink,
+  };
 }
 
 function publicUser(row) {
@@ -146,7 +205,7 @@ function publicUser(row) {
   };
 }
 
-async function createAccount(service, req, res, body) {
+async function createAccount(service, req, res, body, callerAuthId) {
   const email = String(body.email || '').trim().toLowerCase();
   const name = String(body.name || '').trim();
   const role = body.role;
@@ -216,14 +275,17 @@ async function createAccount(service, req, res, body) {
     if (error) return res.status(400).json({ success: false, message: error.message });
   }
 
-  const mail = await issueRecovery(service, req, body, email, name);
+  const mail = await issueRecovery(service, req, body, email, name, {
+    kind: 'automated',
+    authUserId: callerAuthId,
+  });
   return res.status(200).json({
     success: true,
     user: publicUser({ id, ...profile }),
     emailed: mail.emailed,
     actionLink: mail.actionLink,
     message: mail.emailed
-      ? `Password setup email sent to ${email}.`
+      ? `Password setup email sent to ${mail.deliveredTo}.`
       : 'Account created. Email could not be sent, so share the setup link with the user.',
   });
 }
@@ -300,16 +362,19 @@ async function deleteAccount(service, res, body, caller) {
   return res.status(200).json({ success: true, message: 'User deleted.' });
 }
 
-async function sendReset(service, req, res, body) {
+async function sendReset(service, req, res, body, callerAuthId) {
   const email = String(body.email || '').trim().toLowerCase();
   assertEmail(email);
-  const mail = await issueRecovery(service, req, body, email, body.name || email);
+  const mail = await issueRecovery(service, req, body, email, body.name || email, {
+    kind: 'manual',
+    authUserId: callerAuthId,
+  });
   return res.status(200).json({
     success: true,
     emailed: mail.emailed,
     actionLink: mail.actionLink,
     message: mail.emailed
-      ? `Password setup email sent to ${email}.`
+      ? `Password setup email sent to ${mail.deliveredTo}.`
       : 'Email could not be sent. Share the setup link with the user.',
   });
 }
@@ -339,10 +404,10 @@ export default async function handler(req, res) {
     }
 
     const body = req.body || {};
-    if (body.action === 'create') return await createAccount(service, req, res, body);
+    if (body.action === 'create') return await createAccount(service, req, res, body, verified.user.id);
     if (body.action === 'update') return await updateAccount(service, res, body, caller);
     if (body.action === 'delete') return await deleteAccount(service, res, body, caller);
-    if (body.action === 'send_reset') return await sendReset(service, req, res, body);
+    if (body.action === 'send_reset') return await sendReset(service, req, res, body, verified.user.id);
     return res.status(400).json({ success: false, message: 'Unknown action.' });
   } catch (error) {
     return res.status(error.status || 500).json({
