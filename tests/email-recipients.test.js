@@ -11,6 +11,7 @@ import {
   companyRecipients,
   externalManualDeliveryEnabled,
   isCompanyAddress,
+  legacyFilterInternalRecipients,
   normalizeKind,
   parseMailbox,
   resolveOutboundRecipients,
@@ -148,13 +149,60 @@ test('manual external mail reroutes to admin while the switch is off', () => {
   assert.equal(`${resolved.to} ${resolved.cc} ${resolved.bcc}`.includes('client.com'), false);
 });
 
+test('former internal domains are external on manual sends', () => {
+  const resolved = resolveOutboundRecipients({
+    kind: 'manual',
+    to: 'boss@plant.com',
+    cc: 'a@samyak.com, b@samyakflexi.com',
+    bcc: 'c@plant.com',
+    replyTo: 'd@samyak.com',
+    env: {},
+  });
+  assert.equal(resolved.to, ADMIN_REROUTE);
+  assert.equal(resolved.cc, '');
+  assert.equal(resolved.bcc, '');
+  assert.equal(resolved.replyTo, '');
+  assert.equal(resolved.externalDelivery, false);
+  assert.equal(`${resolved.to} ${resolved.cc} ${resolved.bcc} ${resolved.replyTo}`.includes('plant.com'), false);
+  assert.equal(`${resolved.to} ${resolved.cc} ${resolved.bcc}`.includes('samyak.com'), false);
+  assert.equal(`${resolved.to} ${resolved.cc} ${resolved.bcc}`.includes('samyakflexi.com'), false);
+});
+
+test('a company address stays internal even when the local part says customer', () => {
+  const manual = resolveOutboundRecipients({
+    kind: 'manual',
+    to: `customer@${COMPANY_DOMAIN}`,
+    cc: `vendor@${COMPANY_DOMAIN}`,
+    env: {},
+  });
+  assert.equal(manual.to, `customer@${COMPANY_DOMAIN}`);
+  assert.equal(manual.cc, `vendor@${COMPANY_DOMAIN}`);
+
+  const automated = resolveOutboundRecipients({
+    to: `supplier@${COMPANY_DOMAIN}`,
+    cc: 'boss@plant.com',
+  });
+  assert.equal(automated.blocked, false);
+  assert.equal(automated.to, `supplier@${COMPANY_DOMAIN}`);
+  assert.equal(automated.cc, '');
+});
+
+test('the legacy helper only keeps the company domain', () => {
+  assert.equal(legacyFilterInternalRecipients('boss@plant.com, a@samyak.com, b@samyakflexi.com'), ADMIN_REROUTE);
+  assert.equal(
+    legacyFilterInternalRecipients(`qa@${COMPANY_DOMAIN}, boss@plant.com`),
+    `qa@${COMPANY_DOMAIN}`,
+  );
+  assert.equal(legacyFilterInternalRecipients(`customer@${COMPANY_DOMAIN}`), `customer@${COMPANY_DOMAIN}`);
+});
+
 test('manual display-name smuggling is not handed to SMTP', () => {
   const bracketed = resolveOutboundRecipients({
     kind: 'manual',
     to: 'x@gmail.com <a@samyakinternational.in>',
     env: {},
   });
-  assert.equal(bracketed.to, ADMIN_REROUTE);
+  assert.equal(bracketed.to, 'a@samyakinternational.in');
   assert.equal(bracketed.to.includes('gmail.com'), false);
 
   const suffixTrick = resolveOutboundRecipients({

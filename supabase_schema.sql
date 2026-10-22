@@ -633,7 +633,7 @@ CREATE TABLE IF NOT EXISTS public.email_settings (
     smtp_user TEXT NOT NULL DEFAULT 'admin@samyakinternational.in',
     sender_name TEXT NOT NULL DEFAULT 'Samyak International ERP',
     admin_email TEXT DEFAULT 'admin@samyakinternational.in',
-    plant_manager_email TEXT DEFAULT 'plant.manager@plant.com',
+    plant_manager_email TEXT DEFAULT 'admin@samyakinternational.in',
     purchase_email TEXT DEFAULT 'purchase@samyakinternational.in',
     dispatch_email TEXT DEFAULT 'dispatch@samyakinternational.in',
     created_at TIMESTAMPTZ DEFAULT NOW(),

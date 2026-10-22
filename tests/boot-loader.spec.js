@@ -110,7 +110,7 @@ async function installSupabaseMock(page) {
 }
 
 async function signIn(page) {
-  await page.getByPlaceholder('e.g. samyak@samyak.com').fill(EMAIL);
+  await page.getByPlaceholder('e.g. samyak@samyakinternational.in').fill(EMAIL);
   await page.getByPlaceholder('Enter your password').fill('not-the-real-password');
   await page.getByRole('button', { name: 'Sign In to Dashboard' }).click();
   await expect(page.getByText('Executive Operations Dashboard')).toBeVisible({ timeout: 20000 });

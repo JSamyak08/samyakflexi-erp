@@ -19,7 +19,7 @@ import { resolveOutboundRecipients } from '../src/services/emailPolicy.js';
 
 const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const origin = process.env.APP_ORIGIN || 'https://erp.samyakinternational.in';
+const origin = 'https://erp.samyakinternational.in';
 
 if (!url || !serviceKey) {
   console.error('Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
@@ -115,7 +115,7 @@ for (const row of rows || []) {
   if (mailed) {
     console.log(`invited ${email} (${row.role}) by email`);
   } else {
-    console.log(`invited ${email} (${row.role}). Share this setup link once:\n${actionLink || recovery.error?.message}`);
+    console.error(`invited ${email} (${row.role}) but the setup email was not delivered`);
   }
 }
 

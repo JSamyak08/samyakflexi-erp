@@ -1,25 +1,19 @@
 /**
  * Who may receive FlexiERP mail.
  *
+ * The only internal domain is exactly samyakinternational.in.
  * Automated mail (alerts, page-load checks, save side effects) may go only to
- * a parsed address whose domain is exactly samyakinternational.in.
- * Manual mail is a signed-in user clicking Send. While ALLOW_EXTERNAL_MANUAL_EMAIL
- * is not the string "true", manual mail keeps today's behaviour: anything that
- * is not an internal address is replaced with admin@samyakinternational.in
- * and is not delivered to the original recipient.
- * Reply-To is company-only in every mode. The switch does not relax it.
+ * a parsed address on that domain. Manual mail is a signed-in user clicking
+ * Send. While ALLOW_EXTERNAL_MANUAL_EMAIL is not the string "true", a manual
+ * To that is not on that domain is replaced with admin@samyakinternational.in
+ * and is not delivered to the original recipient. Cc and Bcc outsiders are
+ * dropped. Reply-To is company-only in every mode. The switch does not relax
+ * automated mail or Reply-To.
  */
 
 export const COMPANY_DOMAIN = 'samyakinternational.in';
 export const ADMIN_REROUTE = 'admin@samyakinternational.in';
 export const EXTERNAL_MANUAL_EMAIL_ENV = 'ALLOW_EXTERNAL_MANUAL_EMAIL';
-
-const LEGACY_INTERNAL_DOMAINS = [
-  'samyakinternational.in',
-  'plant.com',
-  'samyak.com',
-  'samyakflexi.com',
-];
 
 export function normalizeKind(kind) {
   return kind === 'manual' ? 'manual' : 'automated';
@@ -148,49 +142,20 @@ export function companyRecipients(input) {
 }
 
 /**
- * Historical recipient rewrite used by /api/send-email before this lock.
- * A token is kept only when the raw string ends with an internal domain and
- * does not contain vendor/customer/client/supplier. Display names are not
- * parsed. An empty result is replaced with defaultInternal (admin@ for To).
+ * Keep parsed mailboxes on samyakinternational.in. Anything else, including
+ * plant.com, samyak.com, and samyakflexi.com, is removed. An empty result is
+ * replaced with defaultInternal (admin@ for To, empty for Cc and Bcc).
+ * The local part is not keyword-filtered: customer@samyakinternational.in
+ * is an internal mailbox.
  */
 export function legacyFilterInternalRecipients(emailInput, defaultInternal = ADMIN_REROUTE) {
-  if (!emailInput) return defaultInternal;
-  const internalDomainRegex = /@(samyakinternational\.in|plant\.com|samyak\.com|samyakflexi\.com)$/i;
-  const emails = String(emailInput)
-    .split(/[,;]/)
-    .map(entry => entry.trim())
-    .filter(Boolean);
-  const internalOnly = emails.filter(entry => {
-    const clean = entry.toLowerCase();
-    if (clean.includes('vendor') || clean.includes('customer') || clean.includes('client') || clean.includes('supplier')) {
-      return false;
-    }
-    return internalDomainRegex.test(clean);
-  });
-  return internalOnly.length > 0 ? internalOnly.join(', ') : defaultInternal;
+  return companyField(emailInput, defaultInternal);
 }
 
-function legacyDomainAllowed(domain) {
-  return LEGACY_INTERNAL_DOMAINS.includes(domain);
-}
-
-/**
- * Apply the historical rewrite, then parse the result. A token the suffix
- * check lets through but that is not one clean internal mailbox (for example
- * `user@gmail.com admin@samyakinternational.in`) is not given to SMTP. To
- * falls back to admin@; Cc and Bcc fall back to empty.
- */
-function manualField(input, emptyDefault) {
-  const legacy = legacyFilterInternalRecipients(input, emptyDefault);
-  if (!legacy) return '';
-  const kept = [];
-  for (const token of splitAddressList(legacy)) {
-    const parsed = parseMailbox(token);
-    if (parsed && legacyDomainAllowed(parsed.domain)) kept.push(parsed.address);
-  }
-  const unique = dedupe(kept);
-  if (unique.length === 0) return emptyDefault || '';
-  return unique.join(', ');
+function companyField(input, emptyDefault) {
+  const { kept } = companyRecipients(input);
+  if (kept.length === 0) return emptyDefault || '';
+  return kept.join(', ');
 }
 
 function passthrough(input) {
@@ -232,9 +197,9 @@ export function resolveOutboundRecipients({ to, cc, bcc, replyTo, kind, env } = 
   }
 
   if (!allowExternal) {
-    const toList = manualField(to, ADMIN_REROUTE);
-    const ccList = cc ? manualField(cc, '') : '';
-    const bccList = bcc ? manualField(bcc, '') : '';
+    const toList = companyField(to, ADMIN_REROUTE);
+    const ccList = cc ? companyField(cc, '') : '';
+    const bccList = bcc ? companyField(bcc, '') : '';
     return {
       kind: 'manual',
       blocked: !toList && !ccList && !bccList,

@@ -123,7 +123,7 @@ export async function sendPasswordResetEmail(email) {
   }
 
   const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-    redirectTo: `${window.location.origin}/reset-password`,
+    redirectTo: 'https://erp.samyakinternational.in/reset-password',
   });
 
   if (error) return { success: false, message: error.message };
