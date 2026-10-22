@@ -353,7 +353,7 @@ export default function ConsumablesAndIndents({
 
     setIsRaisePOModalOpen(false);
     setActivePOData(poPayload); // Open PO PDF viewer immediately!
-    alert(`Purchase Order ${poNumber} issued successfully to ${selectedVendorName}!\n\nEmail notification sent to vendor (${vendorObj?.email || 'purchase@samyakinternational.in'}).`);
+    alert(`Purchase Order ${poNumber} issued successfully to ${selectedVendorName}!`);
   };
 
   // New Issue Form Data

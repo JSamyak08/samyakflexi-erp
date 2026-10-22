@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
 import { randomBytes } from 'node:crypto';
+import { resolveOutboundRecipients } from '../src/services/emailPolicy.js';
 
 const ROLES = [
   'Admin',
@@ -34,28 +35,30 @@ function serviceClient() {
   });
 }
 
-function safeOrigin(req, body) {
-  const candidates = [
-    body?.origin,
-    req.headers.origin,
-    process.env.APP_ORIGIN,
-    'https://erp.samyakinternational.in',
-  ];
-  for (const value of candidates) {
-    if (!value) continue;
-    try {
-      const url = new URL(value);
-      const host = url.hostname;
-      const allowed = host === 'erp.samyakinternational.in'
-        || host === 'localhost'
-        || host === '127.0.0.1'
-        || host.endsWith('.vercel.app');
-      if (allowed) return url.origin;
-    } catch {
-      // Ignore malformed origins.
+export const ACCOUNT_REDIRECT_ORIGIN = 'https://erp.samyakinternational.in';
+
+function safeOrigin() {
+  return ACCOUNT_REDIRECT_ORIGIN;
+}
+
+const SECRET_RESPONSE_KEY = /action_?link|hashed_?token|verification_?token|recovery_?token|email_otp|confirmation_url|redirect_to|^properties$/i;
+
+export function publicAdminPayload(payload) {
+  if (!payload || typeof payload !== 'object') return payload;
+  if (Array.isArray(payload)) return payload.map(item => publicAdminPayload(item));
+  const clean = {};
+  for (const [key, value] of Object.entries(payload)) {
+    if (SECRET_RESPONSE_KEY.test(key)) continue;
+    if (typeof value === 'string' && /https?:\/\//i.test(value) && /(token|verify|recover|type=)/i.test(value)) {
+      continue;
     }
+    clean[key] = value && typeof value === 'object' ? publicAdminPayload(value) : value;
   }
-  return 'https://erp.samyakinternational.in';
+  return clean;
+}
+
+function reply(res, status, payload) {
+  return res.status(status).json(publicAdminPayload(payload));
 }
 
 async function loadProfileByAuthId(service, authId) {
@@ -95,44 +98,115 @@ async function findAuthUserId(service, email) {
   return null;
 }
 
-async function sendSetupMail(to, name, actionLink) {
-  const user = serverEnv('SMTP_USER');
-  const pass = serverEnv('SMTP_PASS');
-  if (!user || !pass || !actionLink) return false;
+const ACCOUNT_MAIL_SUBJECT = 'Set your FlexiERP password';
 
-  const port = parseInt(serverEnv('SMTP_PORT', '465'), 10);
-  const transporter = nodemailer.createTransport({
-    host: serverEnv('SMTP_HOST', 'smtp.hostinger.com'),
+export async function deliverAccountEmail({
+  to,
+  name,
+  actionLink,
+  kind = 'automated',
+  env = process.env,
+  createTransport,
+} = {}) {
+  const resolved = resolveOutboundRecipients({ to, kind, env });
+  if (!actionLink) {
+    return { emailed: false, blocked: false, resolved };
+  }
+  if (resolved.blocked || !resolved.to) {
+    return { emailed: false, blocked: true, resolved };
+  }
+
+  const user = env.SMTP_USER || '';
+  const pass = env.SMTP_PASS || '';
+  if (!user || !pass) {
+    return { emailed: false, blocked: false, resolved };
+  }
+
+  const port = parseInt(env.SMTP_PORT || '465', 10);
+  const openTransport = createTransport || (options => nodemailer.createTransport(options));
+  const transporter = openTransport({
+    host: env.SMTP_HOST || 'smtp.hostinger.com',
     port,
-    secure: serverEnv('SMTP_SECURE', 'true') === 'true' || port === 465,
+    secure: (env.SMTP_SECURE || 'true') === 'true' || port === 465,
     auth: { user, pass },
   });
 
   await transporter.sendMail({
     from: `"Samyak International ERP" <${user}>`,
-    to,
-    subject: 'Set your FlexiERP password',
+    to: resolved.to,
+    ...(resolved.cc ? { cc: resolved.cc } : {}),
+    ...(resolved.bcc ? { bcc: resolved.bcc } : {}),
+    ...(resolved.replyTo ? { replyTo: resolved.replyTo } : {}),
+    subject: ACCOUNT_MAIL_SUBJECT,
     text: `Hello ${name || 'there'},\n\nAn administrator created or reset your FlexiERP account. Set your password here:\n${actionLink}\n\nIf you were not expecting this, contact the plant administrator.`,
     html: `<p>Hello ${name || 'there'},</p><p>An administrator created or reset your FlexiERP account. The password is not stored in the ERP.</p><p><a href="${actionLink}">Set your password</a></p>`,
   });
-  return true;
+  return { emailed: true, blocked: false, resolved };
 }
 
-async function issueRecovery(service, req, body, email, name) {
-  const redirectTo = `${safeOrigin(req, body)}/reset-password`;
+async function sendSetupMail(to, name, actionLink, options = {}) {
+  const result = await deliverAccountEmail({
+    to,
+    name,
+    actionLink,
+    kind: options.kind,
+    createTransport: options.createTransport,
+  });
+  if (!result.emailed) {
+    console.error('Account email was not delivered', {
+      to: String(to || '').slice(0, 200),
+      kind: result.resolved?.kind || options.kind || 'automated',
+      blocked: Boolean(result.blocked),
+    });
+    if (options.service && options.authUserId) {
+      try {
+        const logged = await options.service.rpc('log_blocked_email_send', {
+          p_user: options.authUserId,
+          p_to: String(to || '').slice(0, 500),
+          p_subject: ACCOUNT_MAIL_SUBJECT,
+          p_kind: result.resolved?.kind || options.kind || 'automated',
+        });
+        if (logged && logged.error) {
+          console.error('Failed to log undelivered account email');
+        }
+      } catch {
+        console.error('Failed to log undelivered account email');
+      }
+    }
+  }
+  return result;
+}
+
+async function issueRecovery(service, email, name, options = {}) {
+  const redirectTo = `${safeOrigin()}/reset-password`;
   const { data, error } = await service.auth.admin.generateLink({
     type: 'recovery',
     email,
     options: { redirectTo },
   });
   if (error) {
-    const failure = new Error(error.message);
+    console.error('Account email was not delivered', {
+      to: String(email || '').slice(0, 200),
+      kind: options.kind || 'automated',
+      blocked: false,
+    });
+    const failure = new Error('Could not prepare the password email.');
     failure.status = 400;
     throw failure;
   }
   const actionLink = data?.properties?.action_link || '';
-  const emailed = await sendSetupMail(email, name, actionLink).catch(() => false);
-  return { emailed, actionLink: emailed ? undefined : actionLink };
+  const delivery = await sendSetupMail(email, name, actionLink, {
+    kind: options.kind,
+    service,
+    authUserId: options.authUserId,
+    createTransport: options.createTransport,
+  }).catch(() => null);
+  const emailed = Boolean(delivery && delivery.emailed);
+  return {
+    emailed,
+    emailStatus: emailed ? 'sent' : 'not_delivered',
+    deliveredTo: emailed ? (delivery?.resolved?.to || '') : '',
+  };
 }
 
 function publicUser(row) {
@@ -146,7 +220,7 @@ function publicUser(row) {
   };
 }
 
-async function createAccount(service, req, res, body) {
+async function createAccount(service, res, body, callerAuthId, deps = {}) {
   const email = String(body.email || '').trim().toLowerCase();
   const name = String(body.name || '').trim();
   const role = body.role;
@@ -154,7 +228,7 @@ async function createAccount(service, req, res, body) {
   assertEmail(email);
   assertRole(role);
   if (!name) {
-    return res.status(400).json({ success: false, message: 'Name is required.' });
+    return reply(res, 400, { success: false, message: 'Name is required.' });
   }
 
   const created = await service.auth.admin.createUser({
@@ -168,12 +242,12 @@ async function createAccount(service, req, res, body) {
   let authId = created.data?.user?.id || null;
   if (created.error) {
     if (!/already/i.test(created.error.message || '')) {
-      return res.status(400).json({ success: false, message: created.error.message });
+      return reply(res, 400, { success: false, message: 'Could not create the auth account.' });
     }
     authId = await findAuthUserId(service, email);
   }
   if (!authId) {
-    return res.status(400).json({ success: false, message: 'Could not create the auth account.' });
+    return reply(res, 400, { success: false, message: 'Could not create the auth account.' });
   }
 
   await service.auth.admin.updateUserById(authId, {
@@ -201,7 +275,7 @@ async function createAccount(service, req, res, body) {
   let id = existing?.[0]?.id;
   if (id) {
     const { error } = await service.from('users').update(profile).eq('id', id);
-    if (error) return res.status(400).json({ success: false, message: error.message });
+    if (error) return reply(res, 400, { success: false, message: 'Could not save the user profile.' });
   } else {
     const { data: linked } = await service
       .from('users')
@@ -213,18 +287,29 @@ async function createAccount(service, req, res, body) {
       ? service.from('users').update(profile).eq('id', id)
       : service.from('users').insert({ id, ...profile });
     const { error } = await write;
-    if (error) return res.status(400).json({ success: false, message: error.message });
+    if (error) return reply(res, 400, { success: false, message: 'Could not save the user profile.' });
   }
 
-  const mail = await issueRecovery(service, req, body, email, name);
-  return res.status(200).json({
+  const mail = await issueRecovery(service, email, name, {
+    kind: 'automated',
+    authUserId: callerAuthId,
+    createTransport: deps.createTransport,
+  });
+  const user = publicUser({ id, ...profile });
+  if (!mail.emailed) {
+    return reply(res, 200, {
+      success: false,
+      emailStatus: 'not_delivered',
+      user,
+      message: 'Account created, but the setup email could not be delivered.',
+    });
+  }
+  return reply(res, 200, {
     success: true,
-    user: publicUser({ id, ...profile }),
-    emailed: mail.emailed,
-    actionLink: mail.actionLink,
-    message: mail.emailed
-      ? `Password setup email sent to ${email}.`
-      : 'Account created. Email could not be sent, so share the setup link with the user.',
+    emailed: true,
+    emailStatus: 'sent',
+    user,
+    message: `Password setup email sent to ${mail.deliveredTo}.`,
   });
 }
 
@@ -234,10 +319,10 @@ async function updateAccount(service, res, body, caller) {
   const status = body.status === 'Inactive' ? 'Inactive' : 'Active';
   assertRole(role);
   if (!id || id.startsWith('USR-SETTING-')) {
-    return res.status(400).json({ success: false, message: 'That account cannot be edited here.' });
+    return reply(res, 400, { success: false, message: 'That account cannot be edited here.' });
   }
   if (caller.id === id && (role !== 'Admin' || status !== 'Active')) {
-    return res.status(400).json({ success: false, message: 'You cannot remove your own Admin access.' });
+    return reply(res, 400, { success: false, message: 'You cannot remove your own Admin access.' });
   }
 
   const { data: current, error: readError } = await service
@@ -246,7 +331,7 @@ async function updateAccount(service, res, body, caller) {
     .eq('id', id)
     .maybeSingle();
   if (readError || !current) {
-    return res.status(404).json({ success: false, message: 'User not found.' });
+    return reply(res, 404, { success: false, message: 'User not found.' });
   }
 
   const email = String(body.email || current.email || '').trim().toLowerCase();
@@ -261,7 +346,7 @@ async function updateAccount(service, res, body, caller) {
     active: status === 'Active',
   };
   const { error } = await service.from('users').update(profile).eq('id', id);
-  if (error) return res.status(400).json({ success: false, message: error.message });
+  if (error) return reply(res, 400, { success: false, message: 'Could not save the user profile.' });
 
   if (current.auth_user_id) {
     await service.auth.admin.updateUserById(current.auth_user_id, {
@@ -271,7 +356,7 @@ async function updateAccount(service, res, body, caller) {
     });
   }
 
-  return res.status(200).json({
+  return reply(res, 200, {
     success: true,
     user: publicUser({ id, auth_user_id: current.auth_user_id, ...profile }),
     message: 'User updated.',
@@ -281,73 +366,99 @@ async function updateAccount(service, res, body, caller) {
 async function deleteAccount(service, res, body, caller) {
   const id = String(body.id || '');
   if (!id || id.startsWith('USR-SETTING-')) {
-    return res.status(400).json({ success: false, message: 'That account cannot be deleted here.' });
+    return reply(res, 400, { success: false, message: 'That account cannot be deleted here.' });
   }
   if (caller.id === id) {
-    return res.status(400).json({ success: false, message: 'You cannot delete your own Admin account.' });
+    return reply(res, 400, { success: false, message: 'You cannot delete your own Admin account.' });
   }
   const { data: current } = await service
     .from('users')
     .select('id, auth_user_id')
     .eq('id', id)
     .maybeSingle();
-  if (!current) return res.status(404).json({ success: false, message: 'User not found.' });
+  if (!current) return reply(res, 404, { success: false, message: 'User not found.' });
   if (current.auth_user_id) {
     await service.auth.admin.deleteUser(current.auth_user_id);
   }
   const { error } = await service.from('users').delete().eq('id', id);
-  if (error) return res.status(400).json({ success: false, message: error.message });
-  return res.status(200).json({ success: true, message: 'User deleted.' });
+  if (error) return reply(res, 400, { success: false, message: 'Could not delete the user profile.' });
+  return reply(res, 200, { success: true, message: 'User deleted.' });
 }
 
-async function sendReset(service, req, res, body) {
+async function sendReset(service, res, body, callerAuthId, deps = {}) {
   const email = String(body.email || '').trim().toLowerCase();
   assertEmail(email);
-  const mail = await issueRecovery(service, req, body, email, body.name || email);
-  return res.status(200).json({
+  const mail = await issueRecovery(service, email, body.name || email, {
+    kind: 'manual',
+    authUserId: callerAuthId,
+    createTransport: deps.createTransport,
+  });
+  if (!mail.emailed) {
+    return reply(res, 200, {
+      success: false,
+      emailStatus: 'not_delivered',
+      message: 'The password email could not be delivered.',
+    });
+  }
+  return reply(res, 200, {
     success: true,
-    emailed: mail.emailed,
-    actionLink: mail.actionLink,
-    message: mail.emailed
-      ? `Password setup email sent to ${email}.`
-      : 'Email could not be sent. Share the setup link with the user.',
+    emailed: true,
+    emailStatus: 'sent',
+    message: `Password setup email sent to ${mail.deliveredTo}.`,
   });
 }
 
-export default async function handler(req, res) {
+export async function handleAdminUsers(req, res, deps = {}) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ success: false, message: 'Method not allowed. Use POST.' });
+    return reply(res, 405, { success: false, message: 'Method not allowed. Use POST.' });
   }
 
   try {
     const header = req.headers.authorization || '';
     const jwt = String(header).replace(/^Bearer\s+/i, '').trim();
     if (!jwt) {
-      return res.status(401).json({ success: false, message: 'Sign in as an Admin before managing users.' });
+      return reply(res, 401, { success: false, message: 'Sign in as an Admin before managing users.' });
     }
 
-    const service = serviceClient();
+    const openService = deps.serviceClient || serviceClient;
+    const service = openService();
     const { data: verified, error: verifyError } = await service.auth.getUser(jwt);
     if (verifyError || !verified?.user) {
-      return res.status(401).json({ success: false, message: 'Session expired. Sign in again.' });
+      return reply(res, 401, { success: false, message: 'Session expired. Sign in again.' });
     }
 
+    // The bearer token is validated with Supabase above. The caller's role is
+    // the public.users row for that auth id, read with the service role.
+    // body.role is only the target account's role. JWT app_metadata,
+    // user_metadata, and any caller role in the body are ignored.
     const caller = await loadProfileByAuthId(service, verified.user.id);
     const callerActive = caller && caller.active !== false && (!caller.status || caller.status === 'Active');
     if (!callerActive || caller.role !== 'Admin') {
-      return res.status(403).json({ success: false, message: 'Only an Admin can manage user accounts.' });
+      return reply(res, 403, { success: false, message: 'Only an Admin can manage user accounts.' });
     }
 
-    const body = req.body || {};
-    if (body.action === 'create') return await createAccount(service, req, res, body);
+    const body = { ...(req.body || {}) };
+    delete body.callerRole;
+    delete body.caller_role;
+    delete body.isAdmin;
+    delete body.is_admin;
+    if (body.action === 'create') return await createAccount(service, res, body, verified.user.id, deps);
     if (body.action === 'update') return await updateAccount(service, res, body, caller);
     if (body.action === 'delete') return await deleteAccount(service, res, body, caller);
-    if (body.action === 'send_reset') return await sendReset(service, req, res, body);
-    return res.status(400).json({ success: false, message: 'Unknown action.' });
+    if (body.action === 'send_reset') return await sendReset(service, res, body, verified.user.id, deps);
+    return reply(res, 400, { success: false, message: 'Unknown action.' });
   } catch (error) {
-    return res.status(error.status || 500).json({
+    const raw = String(error?.message || '');
+    const safe = error?.status && !/https?:\/\/|token|action_link|hashed_token/i.test(raw)
+      ? raw
+      : 'User administration failed.';
+    return reply(res, error.status || 500, {
       success: false,
-      message: error.message || 'User administration failed.',
+      message: safe,
     });
   }
+}
+
+export default function handler(req, res) {
+  return handleAdminUsers(req, res);
 }

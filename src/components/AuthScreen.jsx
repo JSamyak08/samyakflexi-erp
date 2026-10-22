@@ -243,7 +243,7 @@ export default function AuthScreen({ onLogin, recoveryMode = false, onPasswordUp
                     <input 
                       type="email" 
                       className="form-control"
-                      placeholder="e.g. samyak@samyak.com"
+                      placeholder="e.g. samyak@samyakinternational.in"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required

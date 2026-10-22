@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
+import { resolveOutboundRecipients } from '../src/services/emailPolicy.js';
 
 const ROLES = [
   'Admin',
@@ -34,24 +35,28 @@ function serviceClient() {
   });
 }
 
-function filterInternalRecipientsOnly(emailInput, defaultInternal = 'admin@samyakinternational.in') {
-  if (!emailInput) return defaultInternal;
-  const internalDomainRegex = /@(samyakinternational\.in|plant\.com|samyak\.com|samyakflexi\.com)$/i;
+function attemptedRecipients(body) {
+  return [body?.to, body?.cc, body?.bcc]
+    .filter(value => value != null && String(value).trim() !== '')
+    .map(value => String(value))
+    .join(', ')
+    .slice(0, 500);
+}
 
-  const emails = String(emailInput)
-    .split(/[,;]/)
-    .map(e => e.trim())
-    .filter(Boolean);
-
-  const internalOnly = emails.filter(e => {
-    const clean = e.toLowerCase();
-    if (clean.includes('vendor') || clean.includes('customer') || clean.includes('client') || clean.includes('supplier')) {
-      return false;
+async function logBlockedEmail(service, userId, body, subject, kind) {
+  try {
+    const logged = await service.rpc('log_blocked_email_send', {
+      p_user: userId,
+      p_to: attemptedRecipients(body),
+      p_subject: String(subject).slice(0, 300),
+      p_kind: kind,
+    });
+    if (logged && logged.error) {
+      console.error('Failed to log blocked email:', logged.error.message || logged.error);
     }
-    return internalDomainRegex.test(clean);
-  });
-
-  return internalOnly.length > 0 ? internalOnly.join(', ') : defaultInternal;
+  } catch (logError) {
+    console.error('Failed to log blocked email:', logError);
+  }
 }
 
 async function loadProfile(service, authId) {
@@ -133,16 +138,38 @@ export async function handleSendEmail(req, res, deps = {}) {
       return res.status(403).json({ success: false, message: 'Only an active plant user can send mail.' });
     }
 
-    const { to, cc, subject, html, text } = req.body || {};
-    const sanitizedTo = filterInternalRecipientsOnly(to, 'admin@samyakinternational.in');
-    const sanitizedCc = cc ? filterInternalRecipientsOnly(cc, '') : '';
-    if (!sanitizedTo || !subject) {
+    const body = req.body || {};
+    const subject = body.subject;
+    if (!subject) {
       return res.status(400).json({ success: false, message: 'Recipient internal email and subject are required.' });
     }
 
+    // Missing kind is automated. Manual still requires the session checked above.
+    // ALLOW_EXTERNAL_MANUAL_EMAIL must be exactly "true" before a manual send
+    // can leave the historical admin@ reroute. It is off unless that env is set.
+    const resolved = resolveOutboundRecipients({
+      to: body.to,
+      cc: body.cc,
+      bcc: body.bcc,
+      replyTo: body.replyTo,
+      kind: body.kind,
+      env: process.env,
+    });
+
+    if (resolved.blocked) {
+      await logBlockedEmail(service, verified.user.id, body, subject, resolved.kind);
+      return res.status(200).json({
+        success: false,
+        blocked: true,
+        kind: resolved.kind,
+        message: 'No allowed recipient remained, so the email was not sent.',
+      });
+    }
+
+    const deliveredTo = [resolved.to, resolved.cc, resolved.bcc].filter(Boolean).join(', ');
     const claim = await service.rpc('claim_email_send', {
       p_user: verified.user.id,
-      p_to: sanitizedTo,
+      p_to: deliveredTo,
       p_subject: String(subject),
     });
     if (claim.error) {
@@ -190,15 +217,22 @@ export async function handleSendEmail(req, res, deps = {}) {
 
     const info = await transporter.sendMail({
       from: `"Samyak International ERP" <${smtpUser}>`,
-      to: sanitizedTo,
-      ...(sanitizedCc ? { cc: sanitizedCc } : {}),
+      ...(resolved.to ? { to: resolved.to } : {}),
+      ...(resolved.cc ? { cc: resolved.cc } : {}),
+      ...(resolved.bcc ? { bcc: resolved.bcc } : {}),
+      ...(resolved.replyTo ? { replyTo: resolved.replyTo } : {}),
       subject,
-      text,
-      html,
+      text: body.text,
+      html: body.html,
     });
 
     claimId = null;
-    return res.status(200).json({ success: true, messageId: info.messageId });
+    return res.status(200).json({
+      success: true,
+      messageId: info.messageId,
+      deliveredTo: resolved.to,
+      kind: resolved.kind,
+    });
   } catch (error) {
     console.error('Notification email error:', error);
     await releaseEmailClaim(service, claimId);

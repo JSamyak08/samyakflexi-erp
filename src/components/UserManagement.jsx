@@ -447,7 +447,7 @@ export default function UserManagement({
                   type="email" 
                   className="form-control" 
                   required 
-                  placeholder="name@samyak.com"
+                  placeholder="name@samyakinternational.in"
                   value={email} 
                   onChange={e => setEmail(e.target.value)} 
                 />

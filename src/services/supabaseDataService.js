@@ -1504,7 +1504,7 @@ export async function fetchUsers() {
       .map(u => ({
         id: u.id,
         name: u.full_name || u.username || 'User',
-        email: u.email || (u.username?.includes('@') ? u.username : `${String(u.id || '').toLowerCase()}@plant.com`),
+        email: u.email || (u.username?.includes('@') ? u.username : ''),
         role: u.role || 'Shop Floor Operator',
         department: u.department || 'Operations',
         status: u.status || (u.active !== false ? 'Active' : 'Inactive')
@@ -2769,7 +2769,7 @@ export async function saveEmailSettingsToSupabase(config) {
       smtp_user: config.smtpUser || 'admin@samyakinternational.in',
       sender_name: config.senderName || 'Samyak International ERP',
       admin_email: config.adminEmail || 'admin@samyakinternational.in',
-      plant_manager_email: config.plantManagerEmail || 'plant.manager@plant.com',
+      plant_manager_email: config.plantManagerEmail || 'admin@samyakinternational.in',
       purchase_email: config.purchaseEmail || 'purchase@samyakinternational.in',
       dispatch_email: config.dispatchEmail || 'dispatch@samyakinternational.in',
       last_updated: new Date().toISOString()

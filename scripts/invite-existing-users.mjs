@@ -15,10 +15,11 @@
 import { createClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
 import { randomBytes } from 'node:crypto';
+import { resolveOutboundRecipients } from '../src/services/emailPolicy.js';
 
 const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const origin = process.env.APP_ORIGIN || 'https://erp.samyakinternational.in';
+const origin = 'https://erp.samyakinternational.in';
 
 if (!url || !serviceKey) {
   console.error('Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
@@ -30,6 +31,8 @@ const service = createClient(url, serviceKey, {
 });
 
 async function sendMail(to, name, actionLink) {
+  const resolved = resolveOutboundRecipients({ to, kind: 'automated' });
+  if (resolved.blocked || !resolved.to) return false;
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
   if (!user || !pass) return false;
@@ -42,7 +45,7 @@ async function sendMail(to, name, actionLink) {
   });
   await transporter.sendMail({
     from: `"Samyak International ERP" <${user}>`,
-    to,
+    to: resolved.to,
     subject: 'Set your FlexiERP password',
     text: `Hello ${name},\n\nSet your FlexiERP password with this one-time link:\n${actionLink}\n`,
   });
@@ -112,7 +115,7 @@ for (const row of rows || []) {
   if (mailed) {
     console.log(`invited ${email} (${row.role}) by email`);
   } else {
-    console.log(`invited ${email} (${row.role}). Share this setup link once:\n${actionLink || recovery.error?.message}`);
+    console.error(`invited ${email} (${row.role}) but the setup email was not delivered`);
   }
 }
 
