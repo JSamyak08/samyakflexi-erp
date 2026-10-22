@@ -30,6 +30,7 @@ import {
   FILM_DENSITIES,
   parseStandardDate
 } from '../factoryStore';
+import { buildEmployeeAttendanceRow, mapEmployeeAttendanceRow } from './employeeAttendance';
 
 /**
  * Strict Supabase Error Handler
@@ -2979,27 +2980,7 @@ export async function fetchEmployeeAttendanceFromSupabase() {
     try {
       const { data, error } = await supabase.from('employee_attendance').select('*').order('date', { ascending: false });
       if (!error && Array.isArray(data)) {
-        tableRecords = data.map(r => ({
-          id: r.id,
-          employeeId: r.employee_id || r.employeeId,
-          date: r.date,
-          shiftType: r.shift_type || r.shiftType,
-          shiftHours: Number(r.shift_hours || r.shiftHours) || 12,
-          status: r.status,
-          checkIn: r.check_in || r.checkIn,
-          checkOut: r.check_out || r.checkOut,
-          totalHoursWorked: Number(r.total_hours_worked || r.totalHoursWorked) || 0,
-          overtimeHours: Number(r.overtime_hours || r.overtimeHours) || 0,
-          overtimeStartTime: r.overtime_start_time || r.overtimeStartTime || r.overtime_start || '',
-          overtimeEndTime: r.overtime_end_time || r.overtimeEndTime || r.overtime_end || '',
-          ptoHours: Number(r.pto_hours || r.ptoHours) || 0,
-          overtimeReason: r.overtime_reason || r.overtimeReason || '',
-          overtimeStatus: r.overtime_status || r.overtimeStatus || 'Pending Approval',
-          overtimeApprovedBy: r.overtime_approved_by || r.overtimeApprovedBy || '',
-          overtimeApprovedDate: r.overtime_approved_date || r.overtimeApprovedDate || '',
-          dinnerAllowanceEligible: r.dinner_allowance_eligible ?? r.dinnerAllowanceEligible ?? false,
-          markedBy: r.marked_by || r.markedBy || ''
-        }));
+        tableRecords = data.map(mapEmployeeAttendanceRow).filter(Boolean);
       } else if (error) {
         handleSupabaseError(error, 'employee_attendance');
       }
@@ -3019,28 +3000,7 @@ export async function saveEmployeeAttendanceToSupabase(record) {
     throw new Error("Cannot save employee attendance: Supabase database connection is not available.");
   }
   await ensureValidSession();
-  const row = {
-    id: record.id,
-    employee_id: record.employeeId,
-    date: record.date,
-    shift_type: record.shiftType,
-    shift_hours: record.shiftHours || 12,
-    status: record.status,
-    check_in: record.checkIn,
-    check_out: record.checkOut,
-    total_hours_worked: record.totalHoursWorked || 0,
-    overtime_hours: record.overtimeHours || 0,
-    overtime_start_time: record.overtimeStartTime || record.overtime_start_time || '',
-    overtime_end_time: record.overtimeEndTime || record.overtime_end_time || '',
-    pto_hours: Number(record.ptoHours || record.pto_hours) || 0,
-    overtime_reason: record.overtimeReason || '',
-    overtime_status: record.overtimeStatus || 'Pending Approval',
-    overtime_approved_by: record.overtimeApprovedBy || '',
-    overtime_approved_date: record.overtimeApprovedDate || '',
-    dinner_allowance_eligible: record.dinnerAllowanceEligible || false,
-    marked_by: record.markedBy || '',
-    updated_at: new Date().toISOString()
-  };
+  const row = buildEmployeeAttendanceRow(record);
 
   const { error } = await supabase.from('employee_attendance').upsert(row, { onConflict: 'id' });
   if (error) handleSupabaseError(error, 'employee_attendance');

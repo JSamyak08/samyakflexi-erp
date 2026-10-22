@@ -106,6 +106,7 @@ import {
   fetchFilmSubstratesFromSupabase,
   fetchAllSystemSettings
 } from './services/supabaseDataService';
+import { attendanceMatchesEmployeeDate } from './services/employeeAttendance';
 import { fetchSessionProfile, signOutUser } from './services/authService';
 import {
   PartialSaveError,
@@ -2245,7 +2246,7 @@ export default function App() {
     requireDatabaseConnection('save attendance');
     await saveEmployeeAttendanceToSupabase(record);
     setEmployeeAttendance(prev => {
-      const idx = prev.findIndex(a => a.id === record.id || (a.employeeId === record.employeeId && a.date === record.date));
+      const idx = prev.findIndex(a => a.id === record.id || attendanceMatchesEmployeeDate(a, record.employeeId, record.date));
       if (idx >= 0) {
         const updated = [...prev];
         updated[idx] = record;

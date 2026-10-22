@@ -16,6 +16,7 @@ export const COMPANY_DETAILS = {
 
 
 import { getFilmSubstrates } from './services/filmSubstratesService';
+import { attendanceCalendarDate } from './services/employeeAttendance';
 
 export const getFilmSubstrateMap = () => {
   const substrates = getFilmSubstrates();
@@ -1544,8 +1545,8 @@ export function calculateEmployeeMonthlySalary(emp, monthKey, attendanceList = [
 
   // Filter attendance for this employee and month (e.g. '2026-08')
   const empAtt = attendanceList.filter(a => 
-    a.employeeId === emp.id && 
-    (a.date || '').startsWith(monthKey)
+    String(a.employeeId) === String(emp.id) && 
+    attendanceCalendarDate(a.date).startsWith(monthKey)
   );
 
   let presentCount = 0;
