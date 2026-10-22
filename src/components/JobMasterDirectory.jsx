@@ -112,15 +112,20 @@ export default function JobMasterDirectory({
       return;
     }
     const targetCyl = (cylinders || []).find(c => c.id === selectedExistingCylId || c.sku === selectedExistingCylId);
-    if (onLinkCylinderToJobMaster) {
-      await onLinkCylinderToJobMaster(selectedExistingCylId, linkingJobMaster.id);
-    } else {
-      if (onUpdateJobMaster) {
-        onUpdateJobMaster({ ...linkingJobMaster, cylinderSku: targetCyl?.sku || linkingJobMaster.skuCode, cylinderId: selectedExistingCylId });
+    try {
+      if (onLinkCylinderToJobMaster) {
+        await onLinkCylinderToJobMaster(selectedExistingCylId, linkingJobMaster.id);
+      } else {
+        if (onUpdateJobMaster) {
+          await onUpdateJobMaster({ ...linkingJobMaster, cylinderSku: targetCyl?.sku || linkingJobMaster.skuCode, cylinderId: selectedExistingCylId });
+        }
+        if (onUpdateCylinder) {
+          await onUpdateCylinder({ ...targetCyl, jobMasterId: linkingJobMaster.id, sku: linkingJobMaster.skuCode || targetCyl.sku });
+        }
       }
-      if (onUpdateCylinder) {
-        onUpdateCylinder({ ...targetCyl, jobMasterId: linkingJobMaster.id, sku: linkingJobMaster.skuCode || targetCyl.sku });
-      }
+    } catch (err) {
+      alert(err?.name === 'PartialSaveError' ? err.message : `The link was not saved: ${err.message || err}`);
+      return;
     }
     setLinkingJobMaster(null);
     alert(`✅ Job Master (${linkingJobMaster.skuCode}) successfully linked to Cylinder (${targetCyl?.sku || selectedExistingCylId})!`);
@@ -157,11 +162,16 @@ export default function JobMasterDirectory({
       cylinderId: newCylId
     };
 
-    if (onCreateAndLinkPair) {
-      await onCreateAndLinkPair({ cylinder: newCyl, jobMaster: updatedJm });
-    } else {
-      if (onAddCylinder) await onAddCylinder(newCyl);
-      if (onUpdateJobMaster) await onUpdateJobMaster(updatedJm);
+    try {
+      if (onCreateAndLinkPair) {
+        await onCreateAndLinkPair({ cylinder: newCyl, jobMaster: updatedJm });
+      } else {
+        if (onAddCylinder) await onAddCylinder(newCyl);
+        if (onUpdateJobMaster) await onUpdateJobMaster(updatedJm);
+      }
+    } catch (err) {
+      alert(err?.name === 'PartialSaveError' ? err.message : `The cylinder link was not saved: ${err.message || err}`);
+      return;
     }
 
     setLinkingJobMaster(null);
@@ -1024,7 +1034,12 @@ export default function JobMasterDirectory({
         specialInstructions: specialInstructions || ''
       };
 
-      if (onUpdateJobMaster) await onUpdateJobMaster(updatedJobMaster);
+      try {
+        if (onUpdateJobMaster) await onUpdateJobMaster(updatedJobMaster);
+      } catch (err) {
+        alert(err?.name === 'PartialSaveError' ? err.message : `The job master was not saved: ${err.message || err}`);
+        return;
+      }
       setIsCreateModalOpen(false);
       setSelectedJob(updatedJobMaster);
       alert(`Job Master ${updatedJobMaster.id} updated successfully!`);
@@ -1065,32 +1080,42 @@ export default function JobMasterDirectory({
       creationDate: new Date().toISOString().split('T')[0]
     };
 
-    if (onAddJobMaster) await onAddJobMaster(newJobMaster);
+    try {
+      if (onAddJobMaster) await onAddJobMaster(newJobMaster);
+    } catch (err) {
+      alert(err?.name === 'PartialSaveError' ? err.message : `The job master was not saved: ${err.message || err}`);
+      return;
+    }
 
     if (createCylinder && onAddCylinder) {
-      await onAddCylinder({
-        id: Date.now(),
-        sku: skuCode.trim(),
-        jobName: jobName.trim(),
-        clientGroup: clientName.trim(),
-        colorsCount: parseInt(colorsCount) || 6,
-        cylinderCost: `₹ ${parseInt(cylinderCost || 0).toLocaleString()}`,
-        engravuresName,
-        costBorneBy,
-        costBorneType: costBorneBy.includes('Client') ? 'client' : (costBorneBy.includes('Us') ? 'us' : 'both'),
-        circumferenceMm: parseFloat(repeatLengthMm) || 400,
-        faceLengthMm: parseFloat(faceLengthMm) || 1050,
-        printWidthMm: parseFloat(printWidthMm) || 1000,
-        layer1PrintedQtyKg: 0,
-        dispatchedQty: 0,
-        utilisationLimit: parseFloat(utilisationLimit) || 10000,
-        status: 'Active In-Use',
-        silLogo: silLogo || '',
-        arcMark: arcMark || 'Yes',
-        slittingMark: slittingMark || 'Yes',
-        trackerLine: trackerLine || 'Yes',
-        specialInstructions: specialInstructions || ''
-      });
+      try {
+        await onAddCylinder({
+          id: Date.now(),
+          sku: skuCode.trim(),
+          jobName: jobName.trim(),
+          clientGroup: clientName.trim(),
+          colorsCount: parseInt(colorsCount) || 6,
+          cylinderCost: `₹ ${parseInt(cylinderCost || 0).toLocaleString()}`,
+          engravuresName,
+          costBorneBy,
+          costBorneType: costBorneBy.includes('Client') ? 'client' : (costBorneBy.includes('Us') ? 'us' : 'both'),
+          circumferenceMm: parseFloat(repeatLengthMm) || 400,
+          faceLengthMm: parseFloat(faceLengthMm) || 1050,
+          printWidthMm: parseFloat(printWidthMm) || 1000,
+          layer1PrintedQtyKg: 0,
+          dispatchedQty: 0,
+          utilisationLimit: parseFloat(utilisationLimit) || 10000,
+          status: 'Active In-Use',
+          silLogo: silLogo || '',
+          arcMark: arcMark || 'Yes',
+          slittingMark: slittingMark || 'Yes',
+          trackerLine: trackerLine || 'Yes',
+          specialInstructions: specialInstructions || ''
+        });
+      } catch (err) {
+        alert(err?.name === 'PartialSaveError' ? err.message : `The job master was saved, but the linked cylinder was not: ${err.message || err}`);
+        return;
+      }
     }
 
     setIsCreateModalOpen(false);

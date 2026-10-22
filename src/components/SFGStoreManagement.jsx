@@ -766,10 +766,16 @@ export default function SFGStoreManagement({
         consumptionHistory: updatedConsumptionHistory
       };
 
-      if (onConsumeSFG) {
-        await onConsumeSFG(updatedItem, logEntry);
-      } else if (onSaveSFGGood) {
-        await onSaveSFGGood(updatedItem);
+      let consumeWarning = null;
+      try {
+        if (onConsumeSFG) {
+          await onConsumeSFG(updatedItem, logEntry);
+        } else if (onSaveSFGGood) {
+          await onSaveSFGGood(updatedItem);
+        }
+      } catch (consumeErr) {
+        if (consumeErr?.name !== 'PartialSaveError') throw consumeErr;
+        consumeWarning = consumeErr;
       }
 
       // Special logic when targetProcess is 'QC Hold Store'
@@ -816,6 +822,7 @@ export default function SFGStoreManagement({
       }
 
       setSelectedItemForConsume(null);
+      if (consumeWarning) alert(consumeWarning.message);
     } catch (err) {
       console.error("Error confirming SFG consumption:", err);
       setFormError(err.message || 'Failed to record consumption');

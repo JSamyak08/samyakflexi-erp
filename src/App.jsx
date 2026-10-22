@@ -107,6 +107,16 @@ import {
   fetchAllSystemSettings
 } from './services/supabaseDataService';
 import { fetchSessionProfile, signOutUser } from './services/authService';
+import {
+  PartialSaveError,
+  writeWithRetry,
+  unsavedItemsMessage,
+  planDispatchSfgDeductions,
+  planDispatchRollDeductions,
+  commitSequentialUpdates,
+  applyCommittedByIndex,
+  assertAllSaved
+} from './services/guardedWrite';
 import { createDirectoryUser, updateDirectoryUser, deleteDirectoryUser } from './services/adminUserService';
 
 import JobMasterDirectory from './components/JobMasterDirectory';
@@ -2013,7 +2023,10 @@ export default function App() {
       totalDurationMins: computedDurationMinutes || 0
     });
 
-    // Automatically store each Printed Output SFG roll barcode into SFG & FG Store
+    // Store each printed roll in SFG stock. The job row is already saved above.
+    // A failed roll is not added to the board. If the database already has it, a
+    // reload keeps that roll and drops the failure from the message.
+    const failedSfgRolls = [];
     if (Array.isArray(endData.rollsBreakdown) && endData.rollsBreakdown.length > 0) {
       for (const r of endData.rollsBreakdown) {
         const barcodeId = r.barcodeId || r.id;
@@ -2038,11 +2051,30 @@ export default function App() {
           createdDate: new Date().toISOString().split('T')[0]
         };
         try {
-          await saveSFGGoodToSupabase(sfgItemRecord);
+          await writeWithRetry(() => saveSFGGoodToSupabase(sfgItemRecord));
+          setSfgGoods(prev => [sfgItemRecord, ...prev.filter(s => (s.sfgBatchCode || s.id) !== barcodeId)]);
         } catch (sfgErr) {
-          console.warn('[handleEndPrintingJob] SFG Good save error:', sfgErr);
+          failedSfgRolls.push({ label: `printed roll ${barcodeId} in sfg_goods`, error: sfgErr, barcodeId });
         }
-        setSfgGoods(prev => [sfgItemRecord, ...prev.filter(s => (s.sfgBatchCode || s.id) !== barcodeId)]);
+      }
+    }
+    if (failedSfgRolls.length > 0) {
+      let stillMissing = failedSfgRolls;
+      try {
+        const freshSfg = await fetchSFGGoodsFromSupabase();
+        if (Array.isArray(freshSfg)) {
+          setSfgGoods(freshSfg);
+          const present = new Set(freshSfg.map(s => String(s.sfgBatchCode || s.id)));
+          stillMissing = failedSfgRolls.filter(item => !present.has(String(item.barcodeId)));
+        }
+      } catch (refetchErr) {
+        console.error('[handleEndPrintingJob] Could not reload SFG stock after a failed save:', refetchErr);
+      }
+      if (stillMissing.length > 0) {
+        throw new PartialSaveError(unsavedItemsMessage({
+          completed: `Printing job "${order.jobName}" (${order.id}) was marked complete. The order, production record, and schedule were saved. Retry End Job to store the missing printed rolls. They are not shown in the SFG store.`,
+          failed: stillMissing
+        }));
       }
     }
 
@@ -2100,14 +2132,23 @@ export default function App() {
 
     // Sync QC status back to pelletInwards if it is a pellet fuel GRN
     if (updatedGRN.category === 'Boiler Pellets / Fuel' || updatedGRN.isPelletFuel || (updatedGRN.grnNo && String(updatedGRN.grnNo).includes('PEL'))) {
-      setPelletInwards(prev => prev.map(p => {
-        if (p.grnNo === updatedGRN.grnNo || String(p.id) === String(updatedGRN.id)) {
-          const updatedPellet = { ...p, status: updatedGRN.status, qcStatus: updatedGRN.status, qcNotes: updatedGRN.qcNotes };
-          savePelletInwardToSupabase(updatedPellet).catch(console.warn);
-          return updatedPellet;
+      const pelletFailures = [];
+      const savedPellets = [];
+      for (const pellet of pelletInwards || []) {
+        if (pellet.grnNo !== updatedGRN.grnNo && String(pellet.id) !== String(updatedGRN.id)) continue;
+        const updatedPellet = { ...pellet, status: updatedGRN.status, qcStatus: updatedGRN.status, qcNotes: updatedGRN.qcNotes };
+        try {
+          await writeWithRetry(() => savePelletInwardToSupabase(updatedPellet));
+          savedPellets.push(updatedPellet);
+        } catch (error) {
+          pelletFailures.push({ label: `pellet inward ${pellet.grnNo || pellet.id}`, error });
         }
-        return p;
-      }));
+      }
+      if (savedPellets.length > 0) {
+        const savedIds = new Set(savedPellets.map(p => String(p.id)));
+        setPelletInwards(prev => prev.map(p => savedIds.has(String(p.id)) ? savedPellets.find(s => String(s.id) === String(p.id)) : p));
+      }
+      assertAllSaved(`GRN ${updatedGRN.grnNo} was saved, but the pellet stock status was not.`, pelletFailures);
     }
 
     logAudit('UPDATE', 'GRN Inward', `Updated GRN ${updatedGRN.grnNo} status to "${updatedGRN.status}"`, updatedGRN.grnNo);
@@ -2357,6 +2398,7 @@ export default function App() {
 
     if (matchedJobMasters.length === 0) return;
 
+    const failedLinks = [];
     for (const jm of matchedJobMasters) {
       const layers = Array.isArray(cyl.layers) && cyl.layers.length > 0 ? cyl.layers : (jm.layers || []);
       const derivedStructure = (layers.length > 0)
@@ -2404,14 +2446,15 @@ export default function App() {
       };
 
       try {
-        await saveJobMasterToSupabase(updatedJm);
+        await writeWithRetry(() => saveJobMasterToSupabase(updatedJm));
+        setJobMasters(prev => prev.map(item => item.id === updatedJm.id ? updatedJm : item));
+        await syncJobMasterToOrders(updatedJm);
       } catch (err) {
-        console.warn("Failed to persist synced Job Master to Supabase:", err);
+        if (err?.name === 'PartialSaveError') throw err;
+        failedLinks.push({ label: `job master ${updatedJm.id || updatedJm.jobName}`, error: err });
       }
-
-      setJobMasters(prev => prev.map(item => item.id === updatedJm.id ? updatedJm : item));
-      await syncJobMasterToOrders(updatedJm);
     }
+    assertAllSaved('The cylinder was saved, but the linked job master was not updated.', failedLinks);
   };
 
   const syncJobMasterToCylinder = async (jobMaster) => {
@@ -2433,6 +2476,7 @@ export default function App() {
 
     console.log(`[JOB MASTER -> CYLINDER SYNC] Syncing updated Job Master "${jobMaster.jobName}" (${jobMaster.id}) to ${matchedCylinders.length} cylinders...`);
 
+    const failedLinks = [];
     for (const cyl of matchedCylinders) {
       const layers = Array.isArray(jobMaster.layers) && jobMaster.layers.length > 0 ? jobMaster.layers : (cyl.layers || []);
       const derivedStructure = (layers.length > 0)
@@ -2475,13 +2519,13 @@ export default function App() {
       };
 
       try {
-        await saveCylinderToSupabase(updatedCyl);
+        await writeWithRetry(() => saveCylinderToSupabase(updatedCyl));
+        setCylinders(prev => prev.map(item => item.id === updatedCyl.id ? updatedCyl : item));
       } catch (err) {
-        console.warn("Failed to persist synced Cylinder to Supabase:", err);
+        failedLinks.push({ label: `cylinder ${updatedCyl.sku || updatedCyl.id}`, error: err });
       }
-
-      setCylinders(prev => prev.map(item => item.id === updatedCyl.id ? updatedCyl : item));
     }
+    assertAllSaved('The job master was saved, but the linked cylinder was not updated.', failedLinks);
   };
 
   const handleBatchAddCylinders = async (newCylList) => {
@@ -2572,16 +2616,26 @@ export default function App() {
   const handleUpdateInventoryRolls = async (updatedRollsList) => {
     if (!Array.isArray(updatedRollsList) || updatedRollsList.length === 0) return;
     requireDatabaseConnection('update inventory rolls');
+    const saved = [];
+    const failed = [];
     for (const roll of updatedRollsList) {
       const rollId = roll.barcodeId || roll.id;
       const cleanRoll = { ...roll, id: rollId, barcodeId: rollId };
-      await saveInventoryRollToSupabase(cleanRoll).catch(console.warn);
+      try {
+        await writeWithRetry(() => saveInventoryRollToSupabase(cleanRoll));
+        saved.push(cleanRoll);
+      } catch (error) {
+        failed.push({ label: `inventory roll ${rollId}`, error });
+      }
     }
-    const updatedMap = new Map(updatedRollsList.map(r => [r.barcodeId || r.id, r]));
-    setInventoryRolls(prev => prev.map(r => {
-      const match = updatedMap.get(r.barcodeId || r.id);
-      return match ? { ...r, ...match } : r;
-    }));
+    if (saved.length > 0) {
+      const updatedMap = new Map(saved.map(r => [r.barcodeId || r.id, r]));
+      setInventoryRolls(prev => prev.map(r => {
+        const match = updatedMap.get(r.barcodeId || r.id);
+        return match ? { ...r, ...match } : r;
+      }));
+    }
+    assertAllSaved('Some inventory rolls were saved. The rolls listed below were not, and they are not shown as updated.', failed);
   };
 
   const handleAddDispatchShipment = async (newShipment) => {
@@ -2596,161 +2650,17 @@ export default function App() {
     const shipJobName = (newShipment.jobName || '').trim().toLowerCase();
     const shipOrderId = newShipment.orderId;
 
-    let updatedSfgList = [...sfgGoods];
-    let remainingNetToDeduct = totalDispatchNetKg;
-
-    // First attempt matching by specific barcodeId / sourceFgBarcode / sourceFgId
-    for (const item of shipmentItems) {
-      const targetBarcode = (item.sourceFgBarcode || item.barcodeId || '').trim();
-      const targetId = (item.sourceFgId || '').trim();
-      const itemNetKg = Number(item.netWeightKg) || 0;
-
-      if (itemNetKg <= 0) continue;
-
-      const foundIdx = updatedSfgList.findIndex(s => 
-        (targetId && (s.id === targetId || s.sfgBatchCode === targetId)) ||
-        (targetBarcode && (s.sfgBatchCode === targetBarcode || s.id === targetBarcode))
-      );
-
-      if (foundIdx >= 0) {
-        const currentSfg = updatedSfgList[foundIdx];
-        const prevDispatched = Number(currentSfg.dispatchedKg) || 0;
-        const newDispatched = Math.round((prevDispatched + itemNetKg) * 100) / 100;
-        const totalNet = Number(currentSfg.totalNetKg) || 0;
-        const newAvailable = Math.max(0, Math.round((totalNet - newDispatched) * 100) / 100);
-        const newStatus = newAvailable <= 0.05 ? 'Dispatched' : 'Partially Dispatched';
-
-        const updatedHistory = Array.isArray(currentSfg.consumptionHistory) ? [...currentSfg.consumptionHistory] : [];
-        updatedHistory.push({
-          date: newShipment.dispatchDate || new Date().toISOString(),
-          type: 'DISPATCH',
-          dispatchId: newShipment.dispatchId || newShipment.id,
-          weightKg: itemNetKg,
-          vehicleNo: newShipment.vehicleNo || '',
-          note: `Dispatched ${itemNetKg} kg in Packing List ${newShipment.dispatchId || newShipment.id}`
-        });
-
-        const updatedSfg = {
-          ...currentSfg,
-          availableKg: newAvailable,
-          dispatchedKg: newDispatched,
-          status: newStatus,
-          consumptionHistory: updatedHistory
-        };
-
-        updatedSfgList[foundIdx] = updatedSfg;
-        remainingNetToDeduct = Math.max(0, remainingNetToDeduct - itemNetKg);
-
-        try {
-          await saveSFGGoodToSupabase(updatedSfg);
-        } catch (e) {
-          console.warn('[handleAddDispatchShipment] Failed to save updated SFG to Supabase:', e);
-        }
-      }
-    }
-
-    // If there's remaining weight to deduct (e.g. general weight entered or unmatched barcode)
-    if (remainingNetToDeduct > 0.01) {
-      for (let i = 0; i < updatedSfgList.length && remainingNetToDeduct > 0.01; i++) {
-        const sfg = updatedSfgList[i];
-        const isJobMatch = (shipJobName && (sfg.jobName || '').trim().toLowerCase() === shipJobName) ||
-                           (shipOrderId && String(sfg.orderId) === String(shipOrderId));
-        const isFG = sfg.rollType === 'FG' || (sfg.sfgType || '').includes('Finished') || (sfg.category || '').includes('Finished') || (sfg.sfgBatchCode || '').startsWith('FG-');
-        const avail = Number(sfg.availableKg) || 0;
-
-        if (isJobMatch && isFG && avail > 0) {
-          const deductKg = Math.min(avail, remainingNetToDeduct);
-          const prevDispatched = Number(sfg.dispatchedKg) || 0;
-          const newDispatched = Math.round((prevDispatched + deductKg) * 100) / 100;
-          const totalNet = Number(sfg.totalNetKg) || 0;
-          const newAvailable = Math.max(0, Math.round((totalNet - newDispatched) * 100) / 100);
-          const newStatus = newAvailable <= 0.05 ? 'Dispatched' : 'Partially Dispatched';
-
-          const updatedHistory = Array.isArray(sfg.consumptionHistory) ? [...sfg.consumptionHistory] : [];
-          updatedHistory.push({
-            date: newShipment.dispatchDate || new Date().toISOString(),
-            type: 'DISPATCH',
-            dispatchId: newShipment.dispatchId || newShipment.id,
-            weightKg: deductKg,
-            vehicleNo: newShipment.vehicleNo || '',
-            note: `Dispatched ${deductKg} kg in Packing List ${newShipment.dispatchId || newShipment.id}`
-          });
-
-          const updatedSfg = {
-            ...sfg,
-            availableKg: newAvailable,
-            dispatchedKg: newDispatched,
-            status: newStatus,
-            consumptionHistory: updatedHistory
-          };
-
-          updatedSfgList[i] = updatedSfg;
-          remainingNetToDeduct = Math.max(0, remainingNetToDeduct - deductKg);
-
-          try {
-            await saveSFGGoodToSupabase(updatedSfg);
-          } catch (e) {
-            console.warn('[handleAddDispatchShipment] Failed to save updated SFG to Supabase:', e);
-          }
-        }
-      }
-    }
-    setSfgGoods(updatedSfgList);
+    const failedFollowUps = [];
+    const sfgPlan = planDispatchSfgDeductions(sfgGoods, newShipment);
+    const sfgResult = await commitSequentialUpdates(sfgPlan.updates, (row) => saveSFGGoodToSupabase(row));
+    setSfgGoods(applyCommittedByIndex(sfgGoods, sfgResult.committed));
+    failedFollowUps.push(...sfgResult.failed);
 
     // 2. Synchronize to inventoryRolls (Finished Goods inventory)
-    setInventoryRolls(prevRolls => {
-      let rollsCopy = [...prevRolls];
-      let remainingToDeductInv = totalDispatchNetKg;
-
-      rollsCopy = rollsCopy.map(r => {
-        const itemMatch = shipmentItems.find(it => 
-          (it.barcodeId && (r.barcodeId === it.barcodeId || r.id === it.barcodeId)) ||
-          (it.sourceFgBarcode && (r.barcodeId === it.sourceFgBarcode || r.id === it.sourceFgBarcode))
-        );
-
-        if (itemMatch) {
-          const dKg = Number(itemMatch.netWeightKg) || 0;
-          const prevDisp = Number(r.dispatchedKg) || 0;
-          const newDisp = Math.round((prevDisp + dKg) * 100) / 100;
-          const netW = Number(r.netWeightKg) || 0;
-          const newAvail = Math.max(0, Math.round((netW - newDisp) * 100) / 100);
-          const updated = {
-            ...r,
-            availableWeightKg: newAvail,
-            dispatchedKg: newDisp,
-            status: newAvail <= 0.05 ? 'Dispatched' : 'Partially Dispatched'
-          };
-          saveInventoryRollToSupabase(updated).catch(console.warn);
-          return updated;
-        }
-
-        const isJobMatch = (shipJobName && (r.jobName || '').trim().toLowerCase() === shipJobName) ||
-                           (shipOrderId && String(r.orderId) === String(shipOrderId));
-        const isFG = r.rollType === 'FINISHED_GOODS' || r.rollType === 'FG' || (r.sfgType || '').includes('Finished') || (r.barcodeId || '').startsWith('FG-');
-        const avail = Number(r.availableWeightKg ?? r.netWeightKg) || 0;
-
-        if (isJobMatch && isFG && avail > 0 && remainingToDeductInv > 0.01) {
-          const dKg = Math.min(avail, remainingToDeductInv);
-          remainingToDeductInv -= dKg;
-          const prevDisp = Number(r.dispatchedKg) || 0;
-          const newDisp = Math.round((prevDisp + dKg) * 100) / 100;
-          const netW = Number(r.netWeightKg) || 0;
-          const newAvail = Math.max(0, Math.round((netW - newDisp) * 100) / 100);
-          const updated = {
-            ...r,
-            availableWeightKg: newAvail,
-            dispatchedKg: newDisp,
-            status: newAvail <= 0.05 ? 'Dispatched' : 'Partially Dispatched'
-          };
-          saveInventoryRollToSupabase(updated).catch(console.warn);
-          return updated;
-        }
-
-        return r;
-      });
-
-      return rollsCopy;
-    });
+    const rollPlan = planDispatchRollDeductions(inventoryRolls, newShipment);
+    const rollResult = await commitSequentialUpdates(rollPlan.updates, (row) => saveInventoryRollToSupabase(row));
+    setInventoryRolls(applyCommittedByIndex(inventoryRolls, rollResult.committed));
+    failedFollowUps.push(...rollResult.failed);
 
     // 3. Synchronize to respective Job Production Record
     const matchedRec = (productionRecords || []).find(r => 
@@ -2813,13 +2723,18 @@ export default function App() {
       };
 
       try {
-        await saveProductionRecordToSupabase(updatedRec);
+        await writeWithRetry(() => saveProductionRecordToSupabase(updatedRec));
+        setProductionRecords(prev => prev.map(r => r.id === updatedRec.id ? updatedRec : r));
       } catch (e) {
-        console.warn('[handleAddDispatchShipment] Failed to save updated ProductionRecord to Supabase:', e);
+        failedFollowUps.push({ label: `production record ${updatedRec.id || updatedRec.jobName || 'dispatch quantity'}`, error: e });
       }
-
-      setProductionRecords(prev => prev.map(r => r.id === updatedRec.id ? updatedRec : r));
     }
+
+    const packingId = newShipment.dispatchId || newShipment.id;
+    assertAllSaved(
+      `Packing list ${packingId} was saved. Do not create this packing list again. The shipment is on the dispatch list, but the stock balances below were left unchanged.`,
+      failedFollowUps
+    );
   };
 
   const handleDeleteDispatchShipment = async (id) => {
@@ -2904,6 +2819,7 @@ export default function App() {
     console.log(`[JOB MASTER SYNC] Syncing updated Job Master "${updatedJm.jobName}" (${updatedJm.id}) to ${matchingOrders.length} orders...`);
 
     const updatedOrdersList = [];
+    const failedOrders = [];
     for (const order of matchingOrders) {
       // Retain existing order's locked structure, layers & rawMaterialRequirements!
       const lockedStructure = (order.structure && order.structure !== '—' && order.structure !== 'PET / PE') 
@@ -2965,10 +2881,10 @@ export default function App() {
       };
 
       try {
-        await saveOrderToSupabase(updatedOrder);
+        await writeWithRetry(() => saveOrderToSupabase(updatedOrder));
         updatedOrdersList.push(updatedOrder);
       } catch (err) {
-        console.warn(`Failed to save synced order ${updatedOrder.id}:`, err);
+        failedOrders.push({ label: `order ${updatedOrder.id}`, error: err });
       }
     }
 
@@ -2976,6 +2892,7 @@ export default function App() {
       const updatedMap = new Map(updatedOrdersList.map(o => [o.id, o]));
       setOrders(prev => prev.map(o => updatedMap.get(o.id) || o));
     }
+    assertAllSaved('The job master was saved, but these linked orders were not updated.', failedOrders);
   };
 
   const handleUpdateJobMaster = async (updatedJobMaster) => {
@@ -3055,36 +2972,35 @@ export default function App() {
   };
 
   // Ink Management Handlers & Inventory Synchronization
-  const syncInkToInventory = (ink, overrideStock = null) => {
+  const syncInkToInventory = async (ink, overrideStock = null) => {
     if (!ink) return;
     const invId = ink.productCode || ink.id;
+    const invItem = sanitizeInventoryItem({
+      id: invId,
+      itemCode: ink.productCode || invId,
+      itemName: `${ink.manufacturer || 'DIC Inks'} ${ink.shade} (${ink.inkType || 'Reverse Ink'})`,
+      category: 'Printing Inks',
+      unit: 'Kg',
+      availableQtyKg: overrideStock !== null ? Number(overrideStock) : (ink.stockQtyKg !== undefined ? Number(ink.stockQtyKg) : 0),
+      allocatedQtyKg: 0,
+      reorderLevelKg: Number(ink.reorderLevelKg || 50),
+      unitPrice: Number(ink.pricePerKg || 300),
+      purchaseRatePerKg: Number(ink.pricePerKg || 300),
+      location: 'Ink Store Room',
+      lastVendor: ink.manufacturer || ink.supplierName || 'DIC Inks',
+      lastBatch: `LOT-${ink.productCode}`,
+      micron: '-',
+      widthMm: '-'
+    });
+    const alreadyStocked = (inventory || []).some(i => i.id === invId || i.itemCode === ink.productCode);
+    if (!alreadyStocked && overrideStock === null) return;
+    await writeWithRetry(() => saveInventoryItemToSupabase(invItem));
     setInventory(prev => {
       const exists = (prev || []).some(i => i.id === invId || i.itemCode === ink.productCode);
       if (!exists && overrideStock === null) return prev;
-
-      const invItem = sanitizeInventoryItem({
-        id: invId,
-        itemCode: ink.productCode || invId,
-        itemName: `${ink.manufacturer || 'DIC Inks'} ${ink.shade} (${ink.inkType || 'Reverse Ink'})`,
-        category: 'Printing Inks',
-        unit: 'Kg',
-        availableQtyKg: overrideStock !== null ? Number(overrideStock) : (ink.stockQtyKg !== undefined ? Number(ink.stockQtyKg) : 0),
-        allocatedQtyKg: 0,
-        reorderLevelKg: Number(ink.reorderLevelKg || 50),
-        unitPrice: Number(ink.pricePerKg || 300),
-        purchaseRatePerKg: Number(ink.pricePerKg || 300),
-        location: 'Ink Store Room',
-        lastVendor: ink.manufacturer || ink.supplierName || 'DIC Inks',
-        lastBatch: `LOT-${ink.productCode}`,
-        micron: '-',
-        widthMm: '-'
-      });
-
-      const updated = exists 
+      const updated = exists
         ? prev.map(i => (i.id === invId || i.itemCode === ink.productCode) ? { ...i, ...invItem, availableQtyKg: overrideStock !== null ? Number(overrideStock) : i.availableQtyKg } : i)
         : [invItem, ...prev];
-
-      saveInventoryItemToSupabase(invItem).catch(console.warn);
       return updated.map(sanitizeInventoryItem);
     });
   };
@@ -3093,7 +3009,14 @@ export default function App() {
     requireDatabaseConnection('add ink');
     await saveInkToSupabase(newInk);
     setInks(prev => [newInk, ...prev.filter(i => i.id !== newInk.id)]);
-    syncInkToInventory(newInk, newInk.stockQtyKg);
+    try {
+      await syncInkToInventory(newInk, newInk.stockQtyKg);
+    } catch (error) {
+      throw new PartialSaveError(unsavedItemsMessage({
+        completed: `Ink ${newInk.productCode || newInk.id} was saved.`,
+        failed: [{ label: `inventory stock for ${newInk.productCode || newInk.id}`, error }]
+      }));
+    }
     logAudit('CREATE', 'Ink Management', `Added ink product code "${newInk.productCode}" - ${newInk.shade} (${newInk.inkType}, ${newInk.solidContentPct}% solid)`, newInk.id);
   };
 
@@ -3101,7 +3024,14 @@ export default function App() {
     requireDatabaseConnection('update ink');
     await saveInkToSupabase(updatedInk);
     setInks(prev => prev.map(i => i.id === updatedInk.id ? updatedInk : i));
-    syncInkToInventory(updatedInk);
+    try {
+      await syncInkToInventory(updatedInk);
+    } catch (error) {
+      throw new PartialSaveError(unsavedItemsMessage({
+        completed: `Ink ${updatedInk.productCode || updatedInk.id} was saved.`,
+        failed: [{ label: `inventory stock for ${updatedInk.productCode || updatedInk.id}`, error }]
+      }));
+    }
     logAudit('UPDATE', 'Ink Management', `Updated ink product code "${updatedInk.productCode}" - ${updatedInk.shade}`, updatedInk.id);
   };
 
@@ -3109,7 +3039,14 @@ export default function App() {
     requireDatabaseConnection('update ink price');
     await saveInkToSupabase(updatedInk);
     setInks(prev => prev.map(i => i.id === updatedInk.id ? updatedInk : i));
-    syncInkToInventory({ ...updatedInk, pricePerKg: newPrice });
+    try {
+      await syncInkToInventory({ ...updatedInk, pricePerKg: newPrice });
+    } catch (error) {
+      throw new PartialSaveError(unsavedItemsMessage({
+        completed: `Ink price for ${updatedInk.productCode || updatedInk.id} was saved.`,
+        failed: [{ label: `inventory price for ${updatedInk.productCode || updatedInk.id}`, error }]
+      }));
+    }
     logAudit('UPDATE', 'Ink Management', `Updated rate for ink "${updatedInk.productCode}" (${updatedInk.shade}) to ₹${newPrice}/kg. Reason: ${reason}`, updatedInk.id);
   };
 
@@ -3140,7 +3077,8 @@ export default function App() {
 
   const handleConsumeSFG = async (updatedSfgItem, logEntry) => {
     requireDatabaseConnection('consume SFG item');
-    await saveSFGGoodToSupabase(updatedSfgItem);
+    await writeWithRetry(() => saveSFGGoodToSupabase(updatedSfgItem));
+    const followUpFailures = [];
 
     // 1. Update SFG Goods State
     setSfgGoods(prev => {
@@ -3164,11 +3102,11 @@ export default function App() {
         status: newAvail <= 0 ? 'Consumed' : (rollMatch.status || 'In Stock (SFG)')
       };
       try {
-        await saveInventoryRollToSupabase(updatedRoll);
+        await writeWithRetry(() => saveInventoryRollToSupabase(updatedRoll));
+        setInventoryRolls(prev => prev.map(r => ((r.barcodeId || r.id) === rollBarcode) ? updatedRoll : r));
       } catch (e) {
-        console.warn('[handleConsumeSFG] Roll update notice:', e);
+        followUpFailures.push({ label: `inventory roll ${rollBarcode}`, error: e });
       }
-      setInventoryRolls(prev => prev.map(r => ((r.barcodeId || r.id) === rollBarcode) ? updatedRoll : r));
     }
 
     // 3. Also synchronize deduction to central inventory if present
@@ -3182,11 +3120,11 @@ export default function App() {
         allocatedQtyKg: Number(updatedSfgItem.consumedKg ?? ((invMatch.allocatedQtyKg || 0) + Number(logEntry.consumedKg || 0)))
       };
       try {
-        await saveInventoryItemToSupabase(updatedInv);
+        await writeWithRetry(() => saveInventoryItemToSupabase(updatedInv));
+        setInventory(prev => prev.map(i => (i.id === invMatch.id) ? updatedInv : i));
       } catch (e) {
-        console.warn('[handleConsumeSFG] Central inventory update notice:', e);
+        followUpFailures.push({ label: `inventory item ${invMatch.id}`, error: e });
       }
-      setInventory(prev => prev.map(i => (i.id === invMatch.id) ? updatedInv : i));
     }
 
     // 4. Synchronize Substrate 2 / Substrate 3 roll deduction if provided
@@ -3204,11 +3142,11 @@ export default function App() {
           status: newSubAvail <= 0 ? 'Consumed' : (subRollMatch.status || 'In Stock')
         };
         try {
-          await saveInventoryRollToSupabase(updatedSubRoll);
+          await writeWithRetry(() => saveInventoryRollToSupabase(updatedSubRoll));
+          setInventoryRolls(prev => prev.map(r => ((r.barcodeId || r.id) === subBarcode) ? updatedSubRoll : r));
         } catch (e) {
-          console.warn('[handleConsumeSFG] Substrate roll update notice:', e);
+          followUpFailures.push({ label: `substrate roll ${subBarcode}`, error: e });
         }
-        setInventoryRolls(prev => prev.map(r => ((r.barcodeId || r.id) === subBarcode) ? updatedSubRoll : r));
       }
     }
 
@@ -3287,17 +3225,17 @@ export default function App() {
       };
 
       try {
-        await saveSFGGoodToSupabase(newSfgGoodItem);
+        await writeWithRetry(() => saveSFGGoodToSupabase(newSfgGoodItem));
         setSfgGoods(prev => [newSfgGoodItem, ...prev]);
       } catch (e) {
-        console.warn('[handleConsumeSFG] New SFG Good save error:', e);
+        followUpFailures.push({ label: `output roll ${createdOutputBarcode} in sfg_goods`, error: e });
       }
 
       try {
-        await saveInventoryRollToSupabase(newInventoryRoll);
+        await writeWithRetry(() => saveInventoryRollToSupabase(newInventoryRoll));
         setInventoryRolls(prev => [newInventoryRoll, ...prev]);
       } catch (e) {
-        console.warn('[handleConsumeSFG] New inventory roll save error:', e);
+        followUpFailures.push({ label: `output roll ${createdOutputBarcode} in inventory rolls`, error: e });
       }
     }
 
@@ -3393,18 +3331,21 @@ export default function App() {
     };
 
     try {
-      await saveProductionRecordToSupabase(updatedRec);
+      await writeWithRetry(() => saveProductionRecordToSupabase(updatedRec));
+      if (matchedRec) {
+        setProductionRecords(prev => prev.map(r => r.id === updatedRec.id ? updatedRec : r));
+      } else {
+        setProductionRecords(prev => [updatedRec, ...prev]);
+      }
     } catch (e) {
-      console.warn('[handleConsumeSFG] Production record save notice:', e);
-    }
-
-    if (matchedRec) {
-      setProductionRecords(prev => prev.map(r => r.id === updatedRec.id ? updatedRec : r));
-    } else {
-      setProductionRecords(prev => [updatedRec, ...prev]);
+      followUpFailures.push({ label: `production record ${updatedRec.id || updatedSfgItem.jobName || 'stage quantities'}`, error: e });
     }
 
     logAudit('UPDATE', 'SFG Store', `Consumed ${logEntry.consumedKg} kg SFG from batch "${updatedSfgItem.sfgBatchCode}" for stage "${logEntry.targetProcess}". Remaining Balance: ${updatedSfgItem.availableKg} kg`, updatedSfgItem.sfgBatchCode);
+    assertAllSaved(
+      `SFG consumption for ${updatedSfgItem.sfgBatchCode} was saved (${updatedSfgItem.availableKg} kg remaining). Do not submit this consumption again.`,
+      followUpFailures
+    );
   };
 
   const handleDeleteSFGGood = async (sfgId) => {

@@ -828,7 +828,7 @@ export default function InventoryManagement({
   };
 
   // Save Dispatch Shipment Handler (Scale #4 Station)
-  const handleSaveDispatchShipment = (e) => {
+  const handleSaveDispatchShipment = async (e) => {
     e.preventDefault();
     if (!dispatchJobName || !dispatchClientName || !dispatchVehicleNo) {
       alert("Job Name, Client Name, and Vehicle Number are required for Dispatch!");
@@ -860,8 +860,17 @@ export default function InventoryManagement({
       items: dispatchRollsList
     };
 
-    if (onAddDispatchShipment) {
-      onAddDispatchShipment(newShipment);
+    try {
+      if (onAddDispatchShipment) await onAddDispatchShipment(newShipment);
+    } catch (err) {
+      alert(err?.name === 'PartialSaveError'
+        ? err.message
+        : `The packing list was not saved: ${err.message || err}`);
+      if (err?.name === 'PartialSaveError') {
+        setIsNewDispatchModalOpen(false);
+        setSelectedDispatchForPackingList(newShipment);
+      }
+      return;
     }
 
     setIsNewDispatchModalOpen(false);
@@ -2012,6 +2021,7 @@ export default function InventoryManagement({
     };
 
     // If editing a grouped item with multiple underlying raw items in subItems, consolidate into single master record
+    const consolidationFailures = [];
     if (editingStockItem.subItems && editingStockItem.subItems.length > 1 && onDeleteInventoryItem) {
       const secondaryItems = editingStockItem.subItems.slice(1);
       for (const sec of secondaryItems) {
@@ -2019,7 +2029,7 @@ export default function InventoryManagement({
           try {
             await onDeleteInventoryItem(sec.id);
           } catch (err) {
-            console.warn('[handleSaveStockEdit] Error consolidating secondary subItem:', sec.id, err);
+            consolidationFailures.push(`${sec.id} (${err.message || err})`);
           }
         }
       }
@@ -2034,6 +2044,10 @@ export default function InventoryManagement({
 
     const actionText = editingStockItem.isNew ? 'created' : 'updated';
     setEditingStockItem(null);
+    if (consolidationFailures.length > 0) {
+      alert(`Stock item ${targetId} (${finalItemName}) was ${actionText}, but these duplicate stock rows were NOT removed and are still listed: ${consolidationFailures.join('; ')}.`);
+      return;
+    }
     alert(`Stock item ${targetId} (${finalItemName}) ${actionText} successfully!`);
   };
 
@@ -2382,14 +2396,21 @@ export default function InventoryManagement({
     }
 
     // 4. Register EACH INDIVIDUAL roll/item with its own separate barcode into stock rolls/batches ledger
-    if (onUpdateInventoryRolls) {
-      await onUpdateInventoryRolls(newRolls);
-    } else {
-      for (const rollObj of newRolls) {
-        if (onAddRoll) {
-          await onAddRoll(rollObj);
+    try {
+      if (onUpdateInventoryRolls) {
+        await onUpdateInventoryRolls(newRolls);
+      } else {
+        for (const rollObj of newRolls) {
+          if (onAddRoll) {
+            await onAddRoll(rollObj);
+          }
         }
       }
+    } catch (err) {
+      alert(`GRN ${newGRN.grnNo} was saved, but the roll barcodes were not all stored. Failed rolls are not shown as received.\n\n${err.message || err}`);
+      setIsNewGRNModalOpen(false);
+      setGrnConfirmationModal({ isOpen: false, pendingData: null });
+      return;
     }
 
     // Reset Form Fields
@@ -2494,8 +2515,15 @@ export default function InventoryManagement({
       qcVarianceLog: hasVariances ? qcVariances : (qcInspectingGRN.qcVarianceLog || null)
     };
 
-    if (onUpdateGRN) {
-      await onUpdateGRN(updatedGRN);
+    try {
+      if (onUpdateGRN) {
+        await onUpdateGRN(updatedGRN);
+      }
+    } catch (err) {
+      alert(err?.name === 'PartialSaveError'
+        ? err.message
+        : `GRN ${updatedGRN.grnNo} was not updated: ${err.message || err}`);
+      return;
     }
 
     // Update associated child rolls/barcodes in inventoryRolls with verified dimensions and weight
@@ -2537,12 +2565,17 @@ export default function InventoryManagement({
         };
       });
 
-      if (onUpdateInventoryRolls) {
-        await onUpdateInventoryRolls(updatedRollsList);
-      } else if (onUpdateRoll) {
-        updatedRollsList.forEach(r => onUpdateRoll(r));
-      } else if (onAddRoll) {
-        updatedRollsList.forEach(r => onAddRoll(r));
+      try {
+        if (onUpdateInventoryRolls) {
+          await onUpdateInventoryRolls(updatedRollsList);
+        } else if (onUpdateRoll) {
+          for (const roll of updatedRollsList) await onUpdateRoll(roll);
+        } else if (onAddRoll) {
+          for (const roll of updatedRollsList) await onAddRoll(roll);
+        }
+      } catch (err) {
+        alert(`GRN ${updatedGRN.grnNo} was updated, but the roll barcodes were NOT saved. Those rolls are not shown as changed.\n\n${err.message || err}`);
+        return;
       }
     }
 
