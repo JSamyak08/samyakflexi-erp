@@ -1,11 +1,15 @@
 import React from 'react';
 import { Printer, ArrowLeft } from 'lucide-react';
-import { COMPANY_DETAILS } from '../factoryStore';
+import { loadLetterhead } from '../services/companyProfile';
+import CompanyProfileNotice from './CompanyProfileNotice';
 import { formatINR } from '../utils/pdfHelpers';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber } from '../services/settingsService';
 
 export default function JobDataSheetPDF({ sheetData, onClose }) {
+  const letterhead = loadLetterhead();
   if (!sheetData) return null;
+  if (letterhead.error) return <CompanyProfileNotice message={letterhead.error} onClose={onClose} />;
+  const COMPANY_DETAILS = letterhead.company;
 
   const signatureImage = getAuthorisedSignature();
   const companyLogo = getCompanyLogo();
@@ -52,7 +56,7 @@ export default function JobDataSheetPDF({ sheetData, onClose }) {
             <div className="letterhead-logo-column">
               <img src={companyLogo} alt="Samyak International Ltd" className="letterhead-logo-img" style={{ maxHeight: '48px', objectFit: 'contain' }} />
               <div style={{ marginTop: '2px', fontSize: '8.5px', fontWeight: '800', color: '#374151' }}>
-                BSE: SAMYAKINT • CIN: L67120MH1994PLC225907
+                {COMPANY_DETAILS.tagline}
               </div>
               <div className="letterhead-brand-title" style={{ marginTop: '4px' }}>{COMPANY_DETAILS.name}</div>
 
@@ -64,7 +68,7 @@ export default function JobDataSheetPDF({ sheetData, onClose }) {
               <div>{COMPANY_DETAILS.address}</div>
               <div>Email: {COMPANY_DETAILS.email}</div>
               <div>Phone: {COMPANY_DETAILS.phones}</div>
-              <div>Factory: Kheda Industrial Area, Pithampur</div>
+              <div>Place of supply: {COMPANY_DETAILS.placeOfSupply}</div>
             </div>
           </div>
 

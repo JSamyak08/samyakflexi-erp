@@ -34,7 +34,7 @@ import {
 import SearchableSelect from './SearchableSelect';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
 import TablePagination, { usePagination } from './TablePagination';
-import { COMPANY_DETAILS } from '../factoryStore';
+import { getCompanyProfile } from '../services/companyProfile';
 import { generateDocRefNumber, getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import { calculateGSTBreakdown, formatINR } from '../utils/pdfHelpers';
 
@@ -325,13 +325,25 @@ export default function PurchaseOrderManagement({
     
     // Determine GST based on vendor state code vs company state code (23)
     const vendorGstin = poForm.vendorDetails?.gstin || '';
-    const gstInfo = calculateGSTBreakdown(
-      vendorGstin, 
-      poForm.vendorDetails?.address || '', 
-      subtotal, 
-      18, 
-      COMPANY_DETAILS.gstin || '23AABCM3526F1ZY'
-    );
+    let profileError = '';
+    let gstInfo = {
+      cgstAmount: 0,
+      sgstAmount: 0,
+      igstAmount: 0,
+      totalGstAmount: 0,
+      isInterState: false,
+    };
+    try {
+      gstInfo = calculateGSTBreakdown(
+        vendorGstin,
+        poForm.vendorDetails?.address || '',
+        subtotal,
+        18,
+        getCompanyProfile().gstin
+      );
+    } catch (error) {
+      profileError = error.message;
+    }
 
     const totalAmount = subtotal + gstInfo.totalGstAmount;
 
@@ -343,7 +355,8 @@ export default function PurchaseOrderManagement({
       igst: gstInfo.igstAmount,
       taxAmount: gstInfo.totalGstAmount,
       totalAmount,
-      isInterState: gstInfo.isInterState
+      isInterState: gstInfo.isInterState,
+      profileError,
     };
   }, [poForm.items, poForm.vendorDetails]);
 
@@ -364,6 +377,10 @@ export default function PurchaseOrderManagement({
     }
     if ((poForm.items || []).length === 0) {
       alert("Please add at least one line item to this Purchase Order!");
+      return;
+    }
+    if (formCalculations.profileError) {
+      alert(formCalculations.profileError);
       return;
     }
 
@@ -431,6 +448,13 @@ export default function PurchaseOrderManagement({
   // WhatsApp Share Dispatch Handler
   const handleShareWhatsApp = (po, e) => {
     if (e) e.stopPropagation();
+    let COMPANY_DETAILS;
+    try {
+      COMPANY_DETAILS = getCompanyProfile();
+    } catch (error) {
+      alert(error.message);
+      return;
+    }
     const vendorPhone = po.vendor?.phone || po.vendor?.contactNo || '';
     const cleanPhone = vendorPhone.replace(/[^0-9]/g, '');
     const phoneWithCountry = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
@@ -1866,7 +1890,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                     </label>
                     <input
                       type="text"
-                      placeholder="e.g. 23AAACS9988F1Z1"
+                      placeholder="15-character GSTIN"
                       value={poForm.vendorDetails.gstin}
                       onChange={(e) => setPoForm({
                         ...poForm,
