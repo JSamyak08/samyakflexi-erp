@@ -883,7 +883,7 @@ export default function PelletFuelManagement({
 
       {/* MODAL 1: DAILY CONSUMPTION ENTRY */}
       {showConsumptionModal && (
-        <div className="modal-backdrop" style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(6px)', zIndex: 9999 }}>
+        <div className="modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(6px)', zIndex: 9999 }}>
           <div className="modal-content" style={{ maxWidth: '720px', width: '92%', borderRadius: '18px', border: '1px solid #cbd5e1', boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.25)', padding: '0', overflow: 'hidden' }}>
             
             {/* Modal Header */}
@@ -1134,7 +1134,7 @@ export default function PelletFuelManagement({
 
       {/* MODAL 2: GRN INWARD ENTRY */}
       {showInwardModal && (
-        <div className="modal-backdrop" style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(6px)', zIndex: 9999 }}>
+        <div className="modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(6px)', zIndex: 9999 }}>
           <div className="modal-content" style={{ maxWidth: '720px', width: '92%', borderRadius: '18px', border: '1px solid #cbd5e1', boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.25)', padding: '0', overflow: 'hidden' }}>
             
             {/* Modal Header */}
