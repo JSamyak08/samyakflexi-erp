@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { pushSlugState } from '../utils/slugRouter';
 import { 
   Database, 
   CheckCircle2, 
@@ -29,7 +30,7 @@ import {
 import { seedAllDataToSupabase, clearAllSupabaseData } from '../services/supabaseDataService';
 import { initializeStorageBuckets } from '../services/supabaseStorageService';
 
-export default function SupabaseManagement() {
+export default function SupabaseManagement({ urlParams = {} }) {
   const [urlInput, setUrlInput] = useState(() => {
     return getSupabaseCredentials().url || '';
   });
@@ -47,7 +48,14 @@ export default function SupabaseManagement() {
   });
 
   const [copied, setCopied] = useState(false);
-  const [activeSubTab, setActiveSubTab] = useState('status'); // 'status', 'config', 'schema', 'auth'
+  const [activeSubTab, setActiveSubTab] = useState(urlParams?.subTab || 'status');
+  useEffect(() => {
+    if (urlParams?.subTab) setActiveSubTab(urlParams.subTab);
+  }, [urlParams?.subTab]);
+  const chooseSupabaseTab = (subTab) => {
+    setActiveSubTab(subTab);
+    pushSlugState('supabase', { subTab });
+  };
 
   const handleSeedData = async () => {
     setSeeding(true);
@@ -914,28 +922,28 @@ ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS creation_date DATE;
       {/* Subtab Navigation Pills */}
       <div className="scrollable-tabs-container" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
         <button
-          onClick={() => setActiveSubTab('status')}
+          onClick={() => chooseSupabaseTab('status')}
           className={`tab-pill ${activeSubTab === 'status' ? 'active' : ''}`}
         >
           <Server size={16} />
           Connection Overview
         </button>
         <button
-          onClick={() => setActiveSubTab('config')}
+          onClick={() => chooseSupabaseTab('config')}
           className={`tab-pill ${activeSubTab === 'config' ? 'active' : ''}`}
         >
           <Key size={16} />
           Credentials & API Setup
         </button>
         <button
-          onClick={() => setActiveSubTab('schema')}
+          onClick={() => chooseSupabaseTab('schema')}
           className={`tab-pill ${activeSubTab === 'schema' ? 'active' : ''}`}
         >
           <FileCode size={16} />
           SQL Schema Script
         </button>
         <button
-          onClick={() => setActiveSubTab('auth')}
+          onClick={() => chooseSupabaseTab('auth')}
           className={`tab-pill ${activeSubTab === 'auth' ? 'active' : ''}`}
         >
           <ShieldCheck size={16} />
