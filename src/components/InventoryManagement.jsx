@@ -440,7 +440,7 @@ export default function InventoryManagement({
 
   const handleTabClick = (tabKey) => {
     setActiveTab(tabKey);
-    pushSlugState('inventory', { tab: tabKey });
+    pushSlugState('inventory', { section: tabKey });
   };
 
   // Modals state

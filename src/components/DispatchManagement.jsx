@@ -166,7 +166,7 @@ export default function DispatchManagement({
 
   const handleTabSwitch = (tabKey) => {
     setActiveTab(tabKey);
-    pushSlugState('dispatch', { subTab: tabKey });
+    pushSlugState('dispatch', { section: tabKey });
   };
 
   // Modal States

@@ -267,7 +267,7 @@ export default function EmployeeManagement({
 
   const handleSubTabChange = (sub) => {
     setActiveSubTab(sub);
-    pushSlugState('employees', { subTab: sub });
+    pushSlugState('employees', { section: sub });
   };
 
   // Search & Filter States
