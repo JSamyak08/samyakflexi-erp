@@ -2,6 +2,9 @@ import { createClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
 import { randomBytes } from 'node:crypto';
 import { resolveOutboundRecipients } from '../src/services/emailPolicy.js';
+import { readUsername } from '../src/utils/activeUserLabel.js';
+import { resolveAppOrigin } from './appOrigin.js';
+import { readSmtpConfig } from './smtpConfig.js';
 
 const ROLES = [
   'Admin',
@@ -16,7 +19,7 @@ const ROLES = [
   'Shop Floor Operator',
 ];
 
-const PROFILE_COLUMNS = 'id, full_name, email, role, department, status, active, auth_user_id';
+const PROFILE_COLUMNS = 'id, username, full_name, email, role, department, status, active, auth_user_id';
 
 function serverEnv(name, fallback = '') {
   return process.env[name] || fallback;
@@ -35,10 +38,8 @@ function serviceClient() {
   });
 }
 
-export const ACCOUNT_REDIRECT_ORIGIN = 'https://erp.samyakinternational.in';
-
 function safeOrigin() {
-  return ACCOUNT_REDIRECT_ORIGIN;
+  return resolveAppOrigin(process.env);
 }
 
 const SECRET_RESPONSE_KEY = /action_?link|hashed_?token|verification_?token|recovery_?token|email_otp|confirmation_url|redirect_to|^properties$/i;
@@ -116,23 +117,12 @@ export async function deliverAccountEmail({
     return { emailed: false, blocked: true, resolved };
   }
 
-  const user = env.SMTP_USER || '';
-  const pass = env.SMTP_PASS || '';
-  if (!user || !pass) {
-    return { emailed: false, blocked: false, resolved };
-  }
-
-  const port = parseInt(env.SMTP_PORT || '465', 10);
+  const smtp = readSmtpConfig(env);
   const openTransport = createTransport || (options => nodemailer.createTransport(options));
-  const transporter = openTransport({
-    host: env.SMTP_HOST || 'smtp.hostinger.com',
-    port,
-    secure: (env.SMTP_SECURE || 'true') === 'true' || port === 465,
-    auth: { user, pass },
-  });
+  const transporter = openTransport(smtp);
 
   await transporter.sendMail({
-    from: `"Samyak International ERP" <${user}>`,
+    from: `"Samyak International ERP" <${smtp.auth.user}>`,
     to: resolved.to,
     ...(resolved.cc ? { cc: resolved.cc } : {}),
     ...(resolved.bcc ? { bcc: resolved.bcc } : {}),
@@ -200,7 +190,10 @@ async function issueRecovery(service, email, name, options = {}) {
     service,
     authUserId: options.authUserId,
     createTransport: options.createTransport,
-  }).catch(() => null);
+  }).catch((error) => {
+    if (error && error.status) throw error;
+    return null;
+  });
   const emailed = Boolean(delivery && delivery.emailed);
   return {
     emailed,
@@ -212,6 +205,7 @@ async function issueRecovery(service, email, name, options = {}) {
 function publicUser(row) {
   return {
     id: row.id,
+    username: readUsername(row),
     name: row.full_name || row.email,
     email: row.email,
     role: row.role,
@@ -290,12 +284,25 @@ async function createAccount(service, res, body, callerAuthId, deps = {}) {
     if (error) return reply(res, 400, { success: false, message: 'Could not save the user profile.' });
   }
 
-  const mail = await issueRecovery(service, email, name, {
-    kind: 'automated',
-    authUserId: callerAuthId,
-    createTransport: deps.createTransport,
-  });
   const user = publicUser({ id, ...profile });
+  let mail;
+  try {
+    mail = await issueRecovery(service, email, name, {
+      kind: 'automated',
+      authUserId: callerAuthId,
+      createTransport: deps.createTransport,
+    });
+  } catch (error) {
+    if (error && error.status) {
+      return reply(res, error.status, {
+        success: false,
+        emailStatus: 'not_delivered',
+        user,
+        message: `Account created, but the setup email was not sent. ${error.message}`,
+      });
+    }
+    throw error;
+  }
   if (!mail.emailed) {
     return reply(res, 200, {
       success: false,

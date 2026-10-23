@@ -31,7 +31,11 @@ import {
   parseStandardDate
 } from '../factoryStore';
 import { buildEmployeeAttendanceRow, mapEmployeeAttendanceRow } from './employeeAttendance';
+import { mapDirectoryUser } from '../utils/activeUserLabel';
+import { groupGrnLineItems, lineItemsForGrn, sanitizeGRN } from './grnLineItems';
+import { linesForSave, stampLineIds } from './grnDocument';
 import { pelletConsumptionFromRow, pelletInwardFromRow } from './pelletFuel';
+export { sanitizeGRN };
 
 /**
  * Strict Supabase Error Handler
@@ -824,77 +828,6 @@ export async function deleteInventoryItemFromSupabase(itemId) {
 // 4. GOODS RECEIPT NOTES (GRN)
 // ============================================================================
 
-export function sanitizeGRN(rawGRN) {
-  if (!rawGRN || typeof rawGRN !== 'object') return rawGRN;
-
-  let rawName = String(rawGRN.itemName || rawGRN.item_name || '').trim();
-  let meta = {};
-
-  while (rawName.includes('|||')) {
-    const idx = rawName.indexOf('|||');
-    const jsonStr = rawName.substring(idx + 3).trim();
-    rawName = rawName.substring(0, idx).trim();
-    if (jsonStr) {
-      try {
-        const parsed = JSON.parse(jsonStr);
-        if (parsed && typeof parsed === 'object') {
-          meta = { ...meta, ...parsed };
-        }
-      } catch (e) {}
-    }
-  }
-
-  const metallocenePct = meta.metallocenePct || rawGRN.metallocene_pct || rawGRN.metallocenePct || '';
-  const statusVal = rawGRN.status || meta.status || 'Pending QC Approval';
-  const qcStatusVal = meta.qcStatus || rawGRN.qcStatus || rawGRN.qc_remarks || statusVal;
-
-  return {
-    ...rawGRN,
-    ...meta,
-    id: rawGRN.id || rawGRN.grn_number || rawGRN.grnNo,
-    grnNo: rawGRN.grn_number || rawGRN.grnNo || rawGRN.id,
-    vendorId: rawGRN.vendorId || rawGRN.vendor_id || meta.vendorId || '',
-    vendorName: rawGRN.vendorName || meta.vendorName || (rawGRN.vendor_id && !rawGRN.vendor_id.startsWith('VEND-') ? rawGRN.vendor_id : 'General Vendor'),
-    poNumber: rawGRN.po_number || rawGRN.poNumber || meta.poNumber || '',
-    invoiceNo: rawGRN.invoice_number || rawGRN.invoiceNo || meta.invoiceNo || '',
-    receivedDate: rawGRN.received_date || rawGRN.receivedDate || meta.receivedDate || new Date().toISOString(),
-    itemName: rawName || 'Item',
-    category: meta.category || rawGRN.category || 'Film Substrates',
-    stockItemId: meta.stockItemId || rawGRN.stockItemId || rawGRN.stock_item_id || '',
-    filmType: meta.filmType || rawGRN.filmType || (rawName ? rawName.split(' ')[0] : 'PET'),
-    micron: meta.micron !== undefined ? meta.micron : (rawGRN.micron !== undefined ? rawGRN.micron : '-'),
-    widthMm: meta.widthMm !== undefined ? meta.widthMm : (rawGRN.widthMm !== undefined ? rawGRN.widthMm : '-'),
-    metallocenePct: metallocenePct,
-    metallocene_pct: metallocenePct,
-    rollsReceived: Number(meta.rollsReceived ?? rawGRN.rollsReceived ?? 0) || 0,
-    purchaseRatePerKg: Number(meta.purchaseRatePerKg ?? meta.unitPrice ?? rawGRN.purchaseRatePerKg ?? rawGRN.unitPrice ?? 0) || 0,
-    purchaseRate: Number(meta.purchaseRatePerKg ?? meta.unitPrice ?? rawGRN.purchaseRatePerKg ?? rawGRN.unitPrice ?? 0) || 0,
-    unitPrice: Number(meta.purchaseRatePerKg ?? meta.unitPrice ?? rawGRN.purchaseRatePerKg ?? rawGRN.unitPrice ?? 0) || 0,
-    unit: meta.unit || rawGRN.unit || 'Kg',
-    batchNo: meta.batchNo || rawGRN.batchNo || '',
-    status: statusVal,
-    qcStatus: qcStatusVal,
-    qcNotes: rawGRN.qc_remarks || rawGRN.qcNotes || meta.qcNotes || '',
-    inspectedBy: meta.inspectedBy || rawGRN.inspectedBy || '',
-    storeManager: meta.storeManager || rawGRN.storeManager || '',
-    receivedQtyKg: Number(rawGRN.received_qty_kg ?? rawGRN.receivedQtyKg ?? rawGRN.netWeightKg ?? 0) || 0,
-    netWeightKg: Number(rawGRN.received_qty_kg ?? rawGRN.receivedQtyKg ?? rawGRN.netWeightKg ?? 0) || 0,
-    grossWeightKg: Number(meta.grossWeightKg ?? rawGRN.grossWeightKg ?? 0) || 0,
-    tareWeightKg: Number(meta.tareWeightKg ?? rawGRN.tareWeightKg ?? 0) || 0,
-    packagingType: meta.packagingType || rawGRN.packagingType || 'Roll',
-    itemsBreakdown: meta.itemsBreakdown || rawGRN.itemsBreakdown || [],
-    barcodes: meta.barcodes || rawGRN.barcodes || [],
-    barcodeId: meta.barcodeId || rawGRN.barcodeId || '',
-    freightAmount: Number(meta.freightAmount ?? rawGRN.freightAmount ?? 0) || 0,
-    transporterName: meta.transporterName || rawGRN.transporterName || 'Direct Dispatch / Self',
-    itemRemarks: meta.itemRemarks || rawGRN.itemRemarks || rawGRN.remarks || meta.remarks || rawGRN.notes || '',
-    remarks: meta.itemRemarks || rawGRN.itemRemarks || rawGRN.remarks || meta.remarks || rawGRN.notes || '',
-    notes: meta.itemRemarks || rawGRN.itemRemarks || rawGRN.remarks || meta.remarks || rawGRN.notes || '',
-    location: meta.location || rawGRN.location || 'Store Bay',
-    storeLocation: meta.storeLocation || rawGRN.storeLocation || 'Store Bay'
-  };
-}
-
 export async function fetchGRNs() {
   if (!isSupabaseConfigured()) {
     throw new Error("Supabase is not configured.");
@@ -904,7 +837,22 @@ export async function fetchGRNs() {
     if (error) throw error;
     if (!data) return [];
 
-    return data.map(g => sanitizeGRN(g));
+    let lineRows = [];
+    const { data: lines, error: lineError } = await supabase
+      .from('grn_line_items')
+      .select('*')
+      .order('line_no', { ascending: true });
+    if (lineError) {
+      console.warn('[GRNs] Line items are not available yet; each receipt is read as one line from its header:', lineError.message);
+    } else if (Array.isArray(lines)) {
+      lineRows = lines;
+    }
+
+    const grouped = groupGrnLineItems(lineRows);
+    return data.map(g => sanitizeGRN({
+      ...g,
+      lineItems: lineItemsForGrn(grouped, g)
+    }));
   } catch (err) {
     console.error("Error fetching GRNs from Supabase:", err);
     throw err;
@@ -917,7 +865,7 @@ export async function saveGRNToSupabase(grn) {
   }
   await ensureValidSession();
   const clean = sanitizeGRN(grn);
-  const grnId = clean.id || clean.grnNo || `GRN-2026-${Math.floor(100 + Math.random() * 900)}`;
+  const grnId = clean.id || clean.grnNo || '';
   const itemNameVal = clean.itemName;
   const weightVal = Number(clean.receivedQtyKg || clean.netWeightKg) || 0;
 
@@ -954,6 +902,11 @@ export async function saveGRNToSupabase(grn) {
     storeLocation: clean.storeLocation,
     poNumber: clean.poNumber,
     vendorName: clean.vendorName,
+    vendorAddress: clean.vendorAddress || '',
+    vendorGstin: clean.vendorGstin || '',
+    vendorEmail: clean.vendorEmail || '',
+    vendorPhone: clean.vendorPhone || '',
+    vendorContact: clean.vendorContact || '',
     invoiceNo: clean.invoiceNo,
     receivedDate: clean.receivedDate,
     qcNotes: clean.qcNotes,
@@ -999,45 +952,92 @@ export async function saveGRNToSupabase(grn) {
     console.warn('[GRNs] Vendor lookup failed:', err);
   }
 
-  const payload = {
-    id: grnId,
-    grn_number: clean.grnNo || grnId,
-    vendor_id: validVendorId, // null if vendor ID is not in vendors table, preventing FK violations while preserving vendorName in metadata
-    po_number: clean.poNumber || '',
-    invoice_number: clean.invoiceNo || '',
-    received_date: dateVal,
-    item_name: combinedItemName,
-    metallocene_pct: clean.metallocenePct || null,
-    received_qty_kg: weightVal,
-    status: clean.status || 'Pending QC Approval',
-    qc_remarks: clean.qcNotes || ''
-  };
-
-  // Duplicate check: Verify if invoice_number + vendor match an existing GRN record in database
-  if (clean.invoiceNo && clean.vendorName) {
+  // Same supplier and the same invoice is a second document. A different supplier may reuse the number.
+  if (clean.invoiceNo && targetVName) {
     const { data: existingGrns, error: duplicateLookupError } = await supabase
       .from('grns')
-      .select('id, grn_number, invoice_number')
+      .select('id, grn_number, invoice_number, vendor_id, item_name')
       .eq('invoice_number', clean.invoiceNo);
     if (duplicateLookupError) {
       throw new Error(`Could not check for a duplicate GRN invoice: ${duplicateLookupError.message}`);
     }
-
-    if (existingGrns && existingGrns.length > 0) {
-      const match = existingGrns.find(g => String(g.id) !== String(grnId) && String(g.grn_number) !== String(clean.grnNo));
-      if (match) {
-        console.warn('[GRNs] Duplicate GRN detected in database:', match);
-        throw new Error(`Duplicate Inward GRN: A GRN (#${match.grn_number || match.id}) with Invoice #${clean.invoiceNo} already exists in database.`);
+    const wantedVendor = targetVName.toLowerCase();
+    const match = (existingGrns || []).find((row) => {
+      const sameDocument = String(row.id) === String(grnId) || String(row.grn_number) === String(clean.grnNo || grnId);
+      if (sameDocument) return false;
+      if (validVendorId && String(row.vendor_id) === String(validVendorId)) return true;
+      const rawName = String(row.item_name || '');
+      const packed = rawName.includes('|||') ? rawName.split('|||').slice(1).join('|||') : '';
+      let metaName = '';
+      if (packed) {
+        try { metaName = JSON.parse(packed).vendorName || ''; } catch { metaName = ''; }
       }
+      return String(metaName).trim().toLowerCase() === wantedVendor;
+    });
+    if (match) {
+      throw new Error(`Duplicate Inward GRN: A GRN (#${match.grn_number || match.id}) with Invoice #${clean.invoiceNo} already exists for this supplier.`);
     }
   }
 
-  console.log('[GRNs] Saving GRN to Supabase:', grnId, payload);
-  const { error } = await supabase.from('grns').upsert(payload, { onConflict: 'id' });
+  const lines = stampLineIds(grnId, linesForSave({ ...clean, id: grnId, grnNo: clean.grnNo || grnId }));
+  const rollLinks = lines.flatMap((line) => (line.rolls || [])
+    .filter((roll) => roll && roll.barcodeId)
+    .map((roll) => ({
+      barcodeId: roll.barcodeId,
+      grnLineItemId: line.id,
+      lineNo: line.lineNo,
+      vendorRollNo: roll.vendorRollNo || '',
+      unitNo: roll.unitNo || null
+    })));
+
+  const payload = {
+    id: grnId,
+    grnNo: clean.grnNo || grnId,
+    grnPrefix: grn.grnPrefix || '',
+    vendorId: validVendorId || '',
+    vendorName: targetVName,
+    poNumber: clean.poNumber || '',
+    invoiceNo: clean.invoiceNo || '',
+    receivedDate: dateVal,
+    itemName: combinedItemName,
+    receivedQtyKg: weightVal,
+    status: clean.status || 'Pending QC Approval',
+    qcRemarks: clean.qcNotes || '',
+    metallocenePct: clean.metallocenePct || '',
+    stockItemId: clean.stockItemId || '',
+    masterItemId: clean.masterItemId || '',
+    lineItems: lines,
+    rolls: rollLinks
+  };
+
+  console.log('[GRNs] Saving GRN and its lines:', payload.grnNo || payload.id, lines.length);
+  const { data, error } = await supabase.rpc('save_grn_with_lines', { p_grn: payload });
   if (error) {
     console.error('[GRNs] Failed to save GRN to Supabase:', error.message);
-    throw new Error(`Database save error for GRN ${grnId}: ${error.message}`);
+    throw new Error(error.message || `Database save error for GRN ${payload.grnNo || grnId}`);
   }
+  const saved = data && typeof data === 'object' ? data : {};
+  const savedId = saved.id || grnId;
+  const savedNo = saved.grnNo || saved.grn_number || clean.grnNo || savedId;
+  return {
+    ...clean,
+    id: savedId,
+    grnNo: savedNo,
+    lineItems: stampLineIds(savedId, lines)
+  };
+}
+
+export async function allocateGrnNumber(prefix) {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase is not configured.');
+  }
+  await ensureValidSession();
+  const { data, error } = await supabase.rpc('allocate_pellet_grn_number', {
+    p_prefix: prefix || 'SIL/GRN/26-27/'
+  });
+  if (error) handleSupabaseError(error, 'allocate_pellet_grn_number');
+  if (!data) throw new Error('The server did not return a GRN number.');
+  return data;
 }
 
 
@@ -1507,14 +1507,7 @@ export async function fetchUsers() {
 
     return data
       .filter(u => u.id && !u.id.startsWith('USR-SETTING-'))
-      .map(u => ({
-        id: u.id,
-        name: u.full_name || u.username || 'User',
-        email: u.email || (u.username?.includes('@') ? u.username : ''),
-        role: u.role || 'Shop Floor Operator',
-        department: u.department || 'Operations',
-        status: u.status || (u.active !== false ? 'Active' : 'Inactive')
-      }));
+      .map(mapDirectoryUser);
   } catch (err) {
     console.error("Error fetching users from Supabase:", err);
     throw err;
@@ -1707,6 +1700,11 @@ export async function fetchInventoryRolls() {
       id: r.barcode_id,
       barcodeId: r.barcode_id,
       grnNo: r.grn_no || meta.grnNo || '',
+      grnId: r.grn_id || null,
+      grnLineItemId: r.grn_line_item_id || null,
+      lineNo: r.line_no === null || r.line_no === undefined ? null : Number(r.line_no),
+      vendorRollNo: r.vendor_roll_no || '',
+      unitNo: r.unit_no === null || r.unit_no === undefined ? null : Number(r.unit_no),
       rollType: r.roll_type || 'RAW_MATERIAL',
       itemId: r.item_id,
       itemName: r.item_name || '',
@@ -1743,7 +1741,8 @@ export async function fetchInventoryRolls() {
       inputBarcodeIds: Array.isArray(r.input_barcode_ids) ? r.input_barcode_ids : [],
       stationId: r.station_id || '',
       locationBay: r.location_bay || '',
-      status: r.status || 'In Stock'
+      status: r.status || 'In Stock',
+      ...(meta.parentSfgBatchCode ? { parentSfgBatchCode: meta.parentSfgBatchCode } : {})
     };
     });
   } catch (err) {
@@ -1796,12 +1795,20 @@ export async function saveInventoryRollToSupabase(roll) {
     job_code: roll.jobCode || '',
     client_name: roll.customerName || roll.clientName || '',
     structure: roll.structure || '',
+    grn_id: roll.grnId || roll.grn_id || null,
+    grn_line_item_id: roll.grnLineItemId || roll.grn_line_item_id || null,
+    line_no: roll.lineNo === 0 || roll.lineNo ? Number(roll.lineNo) : (roll.line_no === 0 || roll.line_no ? Number(roll.line_no) : null),
+    vendor_roll_no: roll.vendorRollNo || roll.vendor_roll_no || null,
+    unit_no: roll.unitNo === 0 || roll.unitNo ? Number(roll.unitNo) : (roll.unit_no === 0 || roll.unit_no ? Number(roll.unit_no) : null),
     metadata: {
       grnNo: roll.grnNo || roll.grn_no || '',
+      grnLineItemId: roll.grnLineItemId || roll.grn_line_item_id || '',
+      vendorRollNo: roll.vendorRollNo || roll.vendor_roll_no || '',
       packagingType: roll.packagingType || 'Roll',
       purchaseRatePerKg: Number(roll.purchaseRatePerKg ?? roll.unitPrice ?? roll.purchaseRate ?? 0) || 0,
       unitPrice: Number(roll.purchaseRatePerKg ?? roll.unitPrice ?? roll.purchaseRate ?? 0) || 0,
-      unit: roll.unit || 'Kg'
+      unit: roll.unit || 'Kg',
+      ...(roll.parentSfgBatchCode ? { parentSfgBatchCode: roll.parentSfgBatchCode } : {})
     }
   };
   console.log('[inventory_rolls] Saving barcode:', roll.barcodeId || roll.id);
@@ -3240,13 +3247,79 @@ export async function fetchSFGGoodsFromSupabase() {
         status: computedStatus,
         notes: extra.notesText || (item.notes && !item.notes.startsWith('{') ? item.notes : ''),
         consumptionHistory: Array.isArray(extra.consumptionHistory) ? extra.consumptionHistory : [],
-        createdAt: item.created_at || new Date().toISOString()
+        createdAt: item.created_at || new Date().toISOString(),
+        ...(extra.parentSfgBatchCode ? {
+          parentSfgBatchCode: extra.parentSfgBatchCode,
+          parentBarcode: extra.parentBarcode || extra.parentSfgBatchCode
+        } : {})
       };
     });
   } catch (err) {
     console.error('Error fetching SFG goods from Supabase:', err);
     throw err;
   }
+}
+
+export function buildSfgNotesEnvelope(item, overrides = {}) {
+  const sfgBatchCode = overrides.sfgBatchCode ?? (item?.sfgBatchCode || item?.id || '');
+  const netKg = overrides.netKg ?? (Number(item?.totalNetKg ?? item?.netWeightKg ?? 0) || 0);
+  const consumedKg = overrides.consumedKg ?? (Number(item?.consumedKg ?? 0) || 0);
+  const dispatchedKg = overrides.dispatchedKg ?? (Number(item?.dispatchedKg ?? 0) || 0);
+  const availableKg = overrides.availableKg ?? (
+    item?.availableKg !== undefined
+      ? Number(item.availableKg)
+      : Math.max(0, netKg - consumedKg - dispatchedKg)
+  );
+  let computedStatus = overrides.computedStatus;
+  if (!computedStatus) {
+    computedStatus = item?.status || 'In Stock (WIP)';
+    if (item?.status === 'Dispatched' || item?.status === 'Partially Dispatched' || item?.status === 'Ready for Dispatch') {
+      computedStatus = item.status;
+    } else if (consumedKg > 0) {
+      computedStatus = availableKg <= 0 ? 'Fully Consumed' : 'Partially Consumed';
+    }
+  }
+  const isFg = overrides.isFg ?? (
+    item?.sfgType?.includes('Finished') || item?.rollType === 'FG' || item?.category?.includes('Finished') || String(sfgBatchCode).startsWith('FG-')
+  );
+  const notesBody = {
+    sfgBatchCode,
+    sfgType: item?.sfgType || (isFg ? 'Finished Goods (FG)' : 'Printed Rolls'),
+    category: item?.category || (isFg ? 'Finished Goods (FG)' : 'Semi-Finished Goods (SFG)'),
+    rollType: item?.rollType || (isFg ? 'FG' : 'SFG'),
+    jobId: item?.jobId,
+    orderId: item?.orderId,
+    jobName: item?.jobName,
+    jobCode: item?.jobCode,
+    clientName: item?.clientName,
+    structure: item?.structure,
+    filmType: item?.filmType,
+    micron: item?.micron,
+    widthMm: item?.widthMm,
+    totalGrossKg: item?.totalGrossKg ?? item?.grossWeightKg ?? netKg,
+    grossWeightKg: item?.grossWeightKg ?? item?.totalGrossKg ?? netKg,
+    tareWeightKg: item?.tareWeightKg ?? 0,
+    totalNetKg: netKg,
+    consumedKg: consumedKg,
+    dispatchedKg: dispatchedKg,
+    availableKg: availableKg,
+    pouchCount: Number(item?.pouchCount || 0),
+    totalMeters: item?.totalMeters,
+    rollsCount: item?.rollsCount,
+    machineName: item?.machineName,
+    operatorName: item?.operatorName,
+    shift: item?.shift,
+    storageBay: item?.storageBay,
+    productionDate: item?.productionDate,
+    status: computedStatus,
+    notesText: item?.notes || '',
+    consumptionHistory: item?.consumptionHistory || []
+  };
+  if (item?.parentSfgBatchCode) {
+    notesBody.parentSfgBatchCode = item.parentSfgBatchCode;
+    notesBody.parentBarcode = item.parentBarcode || item.parentSfgBatchCode;
+  }
+  return JSON.stringify(notesBody);
 }
 
 export async function saveSFGGoodToSupabase(item) {
@@ -3271,38 +3344,14 @@ export async function saveSFGGoodToSupabase(item) {
 
   const isFg = item.sfgType?.includes('Finished') || item.rollType === 'FG' || item.category?.includes('Finished') || sfgBatchCode.startsWith('FG-');
 
-  const notesEnvelope = JSON.stringify({
+  const notesEnvelope = buildSfgNotesEnvelope(item, {
     sfgBatchCode,
-    sfgType: item.sfgType || (isFg ? 'Finished Goods (FG)' : 'Printed Rolls'),
-    category: item.category || (isFg ? 'Finished Goods (FG)' : 'Semi-Finished Goods (SFG)'),
-    rollType: item.rollType || (isFg ? 'FG' : 'SFG'),
-    jobId: item.jobId,
-    orderId: item.orderId,
-    jobName: item.jobName,
-    jobCode: item.jobCode,
-    clientName: item.clientName,
-    structure: item.structure,
-    filmType: item.filmType,
-    micron: item.micron,
-    widthMm: item.widthMm,
-    totalGrossKg: item.totalGrossKg ?? item.grossWeightKg ?? netKg,
-    grossWeightKg: item.grossWeightKg ?? item.totalGrossKg ?? netKg,
-    tareWeightKg: item.tareWeightKg ?? 0,
-    totalNetKg: netKg,
-    consumedKg: consumedKg,
-    dispatchedKg: dispatchedKg,
-    availableKg: availableKg,
-    pouchCount: Number(item.pouchCount || 0),
-    totalMeters: item.totalMeters,
-    rollsCount: item.rollsCount,
-    machineName: item.machineName,
-    operatorName: item.operatorName,
-    shift: item.shift,
-    storageBay: item.storageBay,
-    productionDate: item.productionDate,
-    status: computedStatus,
-    notesText: item.notes || '',
-    consumptionHistory: item.consumptionHistory || []
+    isFg,
+    netKg,
+    consumedKg,
+    dispatchedKg,
+    availableKg,
+    computedStatus
   });
 
   const payload = {

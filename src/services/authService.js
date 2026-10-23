@@ -1,12 +1,15 @@
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 import { isCompanyAddress, parseMailbox } from './emailPolicy';
+import { readUsername } from '../utils/activeUserLabel';
 
-const PROFILE_COLUMNS = 'id, full_name, email, role, department, status, active, auth_user_id';
+const PROFILE_COLUMNS = 'id, username, full_name, email, role, department, status, active, auth_user_id';
 
 function mapProfile(profile) {
+  const username = readUsername(profile);
   return {
     id: profile.id,
-    name: profile.full_name || profile.email || 'User',
+    username,
+    name: profile.full_name || username || profile.email || 'User',
     email: profile.email,
     role: profile.role,
     department: profile.department || '',
@@ -122,8 +125,14 @@ export async function sendPasswordResetEmail(email) {
     return { success: false, message: 'Supabase is not configured. Password reset unavailable.' };
   }
 
+  const configuredOrigin = String(import.meta.env.VITE_APP_ORIGIN || '').trim().replace(/\/$/, '');
+  const origin = configuredOrigin || (typeof window !== 'undefined' ? window.location.origin : '');
+  if (!origin) {
+    return { success: false, message: 'VITE_APP_ORIGIN is not configured. Set it before sending a password reset.' };
+  }
+
   const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-    redirectTo: 'https://erp.samyakinternational.in/reset-password',
+    redirectTo: `${origin}/reset-password`,
   });
 
   if (error) return { success: false, message: error.message };

@@ -370,10 +370,16 @@ async function withMailEnv(run) {
   const previous = {
     SMTP_USER: process.env.SMTP_USER,
     SMTP_PASS: process.env.SMTP_PASS,
+    SMTP_HOST: process.env.SMTP_HOST,
+    SMTP_PORT: process.env.SMTP_PORT,
+    SMTP_SECURE: process.env.SMTP_SECURE,
     [EXTERNAL_MANUAL_EMAIL_ENV]: process.env[EXTERNAL_MANUAL_EMAIL_ENV],
   };
   process.env.SMTP_USER = 'stub-user';
   process.env.SMTP_PASS = 'stub-pass';
+  process.env.SMTP_HOST = 'smtp.example.test';
+  process.env.SMTP_PORT = '587';
+  process.env.SMTP_SECURE = 'false';
   delete process.env[EXTERNAL_MANUAL_EMAIL_ENV];
   try {
     await run();
@@ -486,7 +492,13 @@ test('manual send-email reroutes an external recipient to admin', async () => {
 });
 
 test('account setup mail follows the same kind rules and never uses a live transport in tests', async () => {
-  const env = { SMTP_USER: 'stub-user', SMTP_PASS: 'stub-pass', SMTP_PORT: '465', SMTP_SECURE: 'true' };
+  const env = {
+    SMTP_USER: 'stub-user',
+    SMTP_PASS: 'stub-pass',
+    SMTP_HOST: 'smtp.example.test',
+    SMTP_PORT: '465',
+    SMTP_SECURE: 'true',
+  };
   let opened = 0;
   const transport = () => {
     opened += 1;

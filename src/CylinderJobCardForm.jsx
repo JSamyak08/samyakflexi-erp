@@ -3,7 +3,9 @@ import { useReactToPrint } from 'react-to-print';
 import { Save, Printer, UploadCloud, ArrowLeft, CheckCircle2, RefreshCw, Trash2, Check, ExternalLink, Image as ImageIcon, CheckSquare, ShieldCheck, FileCode, Layers, Plus } from 'lucide-react';
 import { uploadArtworkFile, openArtworkViewer } from './services/supabaseStorageService';
 import { getAuthorisedSignature, getCompanyLogo, getNextDocRefNumber, generateDocRefNumber } from './services/settingsService';
-import { COMPANY_DETAILS, FILM_DENSITIES } from './factoryStore';
+import { FILM_DENSITIES } from './factoryStore';
+import { loadLetterhead } from './services/companyProfile';
+import CompanyProfileNotice from './components/CompanyProfileNotice';
 import { saveJobMasterToSupabase, saveCylinderToSupabase } from './services/supabaseDataService';
 import { supabase } from './services/supabaseClient';
 import { fetchJobCardSpec, saveJobCardSpec } from './services/businessRecords';
@@ -23,8 +25,11 @@ function parseStructureToLayers(structStr) {
 }
 
 const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, ref) => {
+  const letterhead = loadLetterhead();
   const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'SuperAdmin';
   const managementSignature = getAuthorisedSignature();
+  if (letterhead.error) return <CompanyProfileNotice message={letterhead.error} />;
+  const COMPANY_DETAILS = letterhead.company;
   const companyLogo = getCompanyLogo() || COMPANY_DETAILS.logoUrl || '/samyak-logo.png';
 
   return (
@@ -116,7 +121,7 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, 
               {COMPANY_DETAILS.address}
             </div>
             <div style={{ fontSize: '9px', color: '#475569', marginTop: '2px', fontWeight: '800' }}>
-              GSTIN: {COMPANY_DETAILS.gstin} • CIN: L67120MH1994PLC225907
+              GSTIN: {COMPANY_DETAILS.gstin} • CIN: {COMPANY_DETAILS.cin}
             </div>
           </div>
         </div>

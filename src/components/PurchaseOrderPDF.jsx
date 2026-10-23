@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
-import { COMPANY_DETAILS } from '../factoryStore';
+import { loadLetterhead } from '../services/companyProfile';
+import CompanyProfileNotice from './CompanyProfileNotice';
 import { numberToWords, formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import QRCode2D from './QRCode2D';
@@ -13,8 +14,11 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
   const [isEditingRef, setIsEditingRef] = useState(false);
   const [currentPaymentTerms, setCurrentPaymentTerms] = useState(poData?.paymentTerms || savedTerms.paymentTerms || "60 Days");
   const [currentTerms, setCurrentTerms] = useState(savedTerms.poTerms || []);
+  const letterhead = loadLetterhead();
 
   if (!poData) return null;
+  if (letterhead.error) return <CompanyProfileNotice message={letterhead.error} onClose={onClose} />;
+  const COMPANY_DETAILS = letterhead.company;
   
   const signatureImage = getAuthorisedSignature();
   const logoImage = getCompanyLogo();
@@ -93,7 +97,7 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
   }, 0);
 
   // Indian GST Calculation (Vendor in 23 MP: CGST 9% + SGST 9% vs Inter-state: IGST 18%)
-  const gstInfo = calculateGSTBreakdown(supplier.gstin, supplier.address, totalTaxable, 18, COMPANY_DETAILS.gstin || '23AAACS9988F1Z1');
+  const gstInfo = calculateGSTBreakdown(supplier.gstin, supplier.address, totalTaxable, 18, COMPANY_DETAILS.gstin);
   const totalCgst = gstInfo.cgstAmount;
   const totalSgst = gstInfo.sgstAmount;
   const totalIgst = gstInfo.igstAmount;
@@ -119,7 +123,7 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
             <div className="letterhead-brand">
               <img src={logoImage} alt="Samyak International Ltd Logo" className="samyak-logo-img" style={{ height: '50px', objectFit: 'contain' }} />
               <p className="letterhead-company-sub" style={{ marginTop: '4px', fontSize: '8.5px', fontWeight: '800', color: '#475569', letterSpacing: '0.5px' }}>
-                BSE: SAMYAKINT • CIN: L67120MH1994PLC225907
+                {COMPANY_DETAILS.tagline}
               </p>
             </div>
 

@@ -1,17 +1,9 @@
 // FactoryOS Data Store & Flexible Packaging Calculation Engine
 // Samyak International Ltd, Indore
 
-export const COMPANY_DETAILS = {
-  name: "SAMYAK INTERNATIONAL LTD.",
-  tagline: "BSE: SAMYAKINT • CIN: L67120MH1994PLC225907",
-  gstin: "23AABCM3526F1ZY",
-  address: "11-B, Kheda Industrial Area, Pithampur Sector - III, Dist. Dhar, Dhar (Madhya Pradesh- 23), India - 454775",
-  contactPerson: "Samyak Jain",
-  phones: "8889133133",
-  email: "info@samyakinternational.in",
-  placeOfSupply: "Dhar, Madhya Pradesh (23)",
-  logoUrl: "/samyak-logo.svg"
-};
+import { SEED_COMPANY_PROFILE, withCompanyTagline } from './services/companyProfile';
+
+export const COMPANY_DETAILS = withCompanyTagline({ ...SEED_COMPANY_PROFILE });
 
 
 
