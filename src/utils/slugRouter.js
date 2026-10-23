@@ -16,7 +16,7 @@
  * still honors those query keys, hash paths, and the legacy table.
  */
 
-export const ROUTING_PHASE = 3;
+export const ROUTING_PHASE = 4;
 
 const RETURN_KEY = 'samyak_erp_return_to';
 
@@ -803,9 +803,17 @@ function inferSection(mod, params) {
   return defaultPattern(mod).section;
 }
 
+function listPatternFor(mod, pattern) {
+  return mod.patterns.find((item) => !item.idParam && !item.section.endsWith('-new') && (
+    item.section === pattern.section
+    || (pattern.legacy?.tab && item.legacy?.tab === pattern.legacy.tab)
+    || (pattern.legacy?.subTab && item.legacy?.subTab === pattern.legacy.subTab)
+  )) || defaultPattern(mod);
+}
+
 function inferDetail(mod, section, params, allowDetails) {
   const current = patternBySection(mod, section) || defaultPattern(mod);
-  if (current?.idParam) return current;
+  if (current?.idParam) return allowDetails ? current : listPatternFor(mod, current);
   if (!allowDetails) return current;
   const id = params.id || params.recordId || params.jobCardId || params.coaId || params.coaNo || params.challanNo || params.quotationId || params.orderId || params.code;
   if (params.jobCardId && (mod.key === 'production_records' || mod.key === 'job_masters')) {
@@ -888,12 +896,14 @@ export function buildHref(moduleKey, params = {}, phase = ROUTING_PHASE) {
   let section = inferSection(mod, alias === 'job_datasheet' ? { ...params, section: 'job-data-sheets' } : params);
   let pattern = inferDetail(mod, section, params, useDetails);
   if (!useDetails && pattern.idParam) {
-    pattern = mod.patterns.find((item) => !item.idParam && (item.section === section || item.legacy?.tab === pattern.legacy?.tab || item.default)) || defaultPattern(mod);
+    pattern = listPatternFor(mod, pattern);
   }
   const ids = useDetails ? idParamsFrom(pattern, params) : {};
   const path = joinModulePath(mod, pattern, ids);
   const query = { ...keptQuery(params, pattern) };
   if (!useDetails && (params.id || params.recordId)) query.id = params.id || params.recordId;
+  else if (!useDetails && params.jobCardId) query.jobCardId = params.jobCardId;
+  else if (!useDetails && params.coaId) query.coaId = params.coaId;
   if (phase < 7) {
     // Selector query keys are not written once the section lives in the path.
   }

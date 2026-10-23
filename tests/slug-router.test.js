@@ -224,8 +224,8 @@ const LEGACY = [
   ['/scrap?fy=FY%202026-27&filter=ALERTS_ONLY', '/scrap?fy=FY+2026-27&filter=ALERTS_ONLY'],
 ];
 
-test('routing phase writes canonical module paths', () => {
-  assert.equal(ROUTING_PHASE, 3);
+test('routing phase writes section paths for the first four modules', () => {
+  assert.equal(ROUTING_PHASE, 4);
 });
 
 test('every canonical URL round-trips through parse and build', () => {
@@ -287,23 +287,21 @@ test('return-to remembers a deep link and ignores the login page', () => {
   assert.equal(consumeReturnTo(), null);
 });
 
-test('phase 3 writes canonical module paths and keeps section query keys', () => {
-  assert.equal(buildHref('pellet_fuel'), '/pellet-fuel');
-  assert.equal(buildHref('scrap_analytics'), '/scrap');
-  assert.equal(buildHref('job_datasheet'), '/production');
-  assert.equal(buildHref('clients'), '/clients');
+test('phase 4 writes section paths for production, inventory, employees, and dispatch', () => {
+  assert.equal(buildHref('production_records', { tab: 'list' }), '/production/records');
+  assert.equal(buildHref('production_records', { tab: 'list', id: 'REC-1' }), '/production/records?id=REC-1');
+  assert.equal(buildHref('production_records', { tab: 'new_record', orderId: 'ORD-1' }), '/production/records/new?orderId=ORD-1');
+  assert.equal(buildHref('production_records', { tab: 'job_cards', jobCardId: 'JC-1' }), '/production/job-cards?jobCardId=JC-1');
+  assert.equal(buildHref('production_records', { tab: 'scrap_inventory' }), '/production/scrap');
+  assert.equal(buildHref('inventory', { tab: 'grn_inward' }), '/inventory/grn');
+  assert.equal(buildHref('inventory', { tab: 'stock', id: 'ITEM-1' }), '/inventory?id=ITEM-1');
+  assert.equal(buildHref('employees', { subTab: 'payroll' }), '/employees/payroll');
+  assert.equal(buildHref('employees', { subTab: 'attendance' }), '/employees/attendance');
+  assert.equal(buildHref('dispatch', { subTab: 'challans' }), '/dispatch/challans');
+  assert.equal(buildHref('dispatch', { subTab: 'coas', coaId: 'COA-1' }), '/dispatch/coas?coaId=COA-1');
   assert.equal(buildHref('sales'), '/sales');
-  assert.equal(buildHref('dispatch'), '/dispatch');
-  assert.equal(buildHref('ink_management'), '/inks');
-  assert.equal(buildHref('material_indents'), '/store');
-  assert.equal(buildHref('doc_settings'), '/settings');
-  assert.equal(buildHref('user_management'), '/users');
-  assert.equal(buildHref('printing_scheduler'), '/printing');
-  assert.equal(buildHref('production_records'), '/production');
-  assert.equal(buildHref('sfg_store'), '/sfg-fg');
-  assert.equal(buildHref('cylinders'), '/cylinders');
-  assert.equal(buildHref('inventory', { tab: 'grn_inward' }), '/inventory?tab=grn_inward');
-  assert.equal(buildHref('employees', { subTab: 'payroll' }), '/employees?subTab=payroll');
+  assert.equal(buildHref('ink_management', { subTab: 'calculator' }), '/inks?subTab=calculator');
+  assert.equal(buildHref('clients'), '/clients');
   assert.equal(buildHref('login', { section: 'forgot-password' }), '/login/forgot-password');
 });
 
