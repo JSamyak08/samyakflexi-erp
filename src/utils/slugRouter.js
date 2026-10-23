@@ -927,9 +927,6 @@ export function getRouteFromUrl() {
       search: window.location.search,
       hash: window.location.hash,
     });
-    if (route.unknown) {
-      return { ...route, tab: 'dashboard', section: 'home' };
-    }
     return route;
   } catch (error) {
     console.error('Error reading URL route', error);
