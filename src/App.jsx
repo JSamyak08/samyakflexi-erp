@@ -239,7 +239,8 @@ function routeFromHref(href) {
   try {
     const url = new URL(href, 'http://erp.local');
     const route = parseLocation({ pathname: url.pathname, search: url.search, hash: url.hash });
-    if (!route || route.unknown || !route.tab || route.tab === 'login') return null;
+    if (!route || route.tab === 'login') return null;
+    if (!route.unknown && !route.tab) return null;
     return route;
   } catch {
     return null;
@@ -302,8 +303,18 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleTabChange = (tabKey, params = {}) => {
-    setRouteInfo({ tab: tabKey, params });
-    pushSlugState(tabKey, params);
+    const href = pushSlugState(tabKey, params);
+    let next = { tab: tabKey, params, section: params.section || null, unknown: false, canonical: href };
+    if (href && typeof window !== 'undefined') {
+      try {
+        const url = new URL(href, window.location.origin);
+        const parsed = parseLocation({ pathname: url.pathname, search: url.search, hash: url.hash });
+        if (parsed && !parsed.unknown) next = parsed;
+      } catch {
+        /* keep the requested tab */
+      }
+    }
+    setRouteInfo(next);
     setIsMobileMenuOpen(false);
   };
 
@@ -338,6 +349,11 @@ export default function App() {
     if (activeTab === 'login' || loc.pathname === '/login' || loc.pathname.startsWith('/login/') || loc.pathname === '/reset-password') {
       const saved = consumeReturnTo();
       const restored = saved ? routeFromHref(saved) : null;
+      if (restored?.unknown) {
+        window.history.replaceState({ unknown: true }, '', saved);
+        setRouteInfo(restored);
+        return;
+      }
       if (restored && isTabAllowed(restored.tab)) {
         handleTabChange(restored.tab, restored.params || {});
         return;
@@ -1414,6 +1430,11 @@ export default function App() {
     applyAuthenticatedProfile(user);
     const saved = consumeReturnTo();
     const restored = saved ? routeFromHref(saved) : null;
+    if (restored?.unknown && typeof window !== 'undefined') {
+      window.history.replaceState({ unknown: true }, '', saved);
+      setRouteInfo(restored);
+      return;
+    }
     if (restored && isUserTabAllowed(user, restored.tab)) {
       handleTabChange(restored.tab, restored.params || {});
       return;
@@ -3521,6 +3542,7 @@ export default function App() {
   // Render Authentication Screen if user is not signed in
   if (mustSetPassword || !isAuthenticated || !currentUser) {
     return (
+      <div data-module="login" data-section={mustSetPassword ? 'recovery' : (routeInfo.section || 'signin')}>
       <AuthScreen
         onLogin={handleLogin}
         recoveryMode={mustSetPassword}
@@ -3537,11 +3559,18 @@ export default function App() {
           }
         }}
       />
+      </div>
     );
   }
 
+  const moduleOpen = !routeInfo.unknown && isTabAllowed(activeTab);
+
   return (
-    <div className="app-container">
+    <div
+      className="app-container"
+      data-module={routeInfo.unknown ? 'not-found' : (activeTab || '')}
+      data-section={routeInfo.unknown ? 'not-found' : (routeInfo.section || '')}
+    >
       {/* Mobile Top Header Bar */}
       <div className="mobile-header-bar">
         <button className="hamburger-btn" onClick={() => setIsMobileMenuOpen(true)}>
@@ -4002,25 +4031,27 @@ export default function App() {
         <div className="header">
           <div>
             <h1 style={{ fontSize: '1.6rem', fontWeight: '700' }}>
-              {activeTab === 'dashboard' && 'Executive Operations Dashboard'}
-              {activeTab === 'sales' && 'Sales Management Engine'}
-              {activeTab === 'production_records' && 'Job Production Records & Approval Workflow'}
-              {activeTab === 'job_punching' && 'Order Confirmation & Job Punching'}
-              {activeTab === 'orders' && 'Order Management & PO Issuance'}
-              {activeTab === 'job_masters' && 'Job Master Technical Directory & Specs'}
-              {activeTab === 'clients' && 'Client Onboarding & Directory'}
-              {activeTab === 'vendors' && 'Vendor Onboarding & Directory'}
-              {activeTab === 'purchase_orders' && 'Purchase Order Management & Procurement Engine'}
-              {activeTab === 'inventory' && 'Raw Material Inventory, GRN & Quality Control'}
-              {activeTab === 'ink_management' && 'Ink Master Directory, Solid Costing & Stock Management'}
-              {activeTab === 'material_indents' && 'Material Indents Requisitions & Consumable Store'}
-              {activeTab === 'pellet_fuel' && 'Boiler Pellet Fuel Stock & Consumption Management'}
-              {activeTab === 'dispatch' && 'Finished Goods Dispatch, Delivery Challan & Quality CoA Hub'}
-              {activeTab === 'user_management' && 'Departmental User Management (RBAC)'}
-              {activeTab === 'cylinders' && 'Rotogravure Cylinder Database'}
-              {activeTab === 'printing_scheduler' && 'Printing Machine Production Scheduler & Time Board'}
-              {activeTab === 'supabase' && 'Supabase Cloud Database & API Service'}
-              {activeTab === 'doc_settings' && 'Letterhead Signature & Series Settings'}
+              {routeInfo.unknown && 'Page not found'}
+              {!routeInfo.unknown && !isTabAllowed(activeTab) && 'Access restricted'}
+              {moduleOpen && activeTab === 'dashboard' && 'Executive Operations Dashboard'}
+              {moduleOpen && activeTab === 'sales' && 'Sales Management Engine'}
+              {moduleOpen && activeTab === 'production_records' && 'Job Production Records & Approval Workflow'}
+              {moduleOpen && activeTab === 'job_punching' && 'Order Confirmation & Job Punching'}
+              {moduleOpen && activeTab === 'orders' && 'Order Management & PO Issuance'}
+              {moduleOpen && activeTab === 'job_masters' && 'Job Master Technical Directory & Specs'}
+              {moduleOpen && activeTab === 'clients' && 'Client Onboarding & Directory'}
+              {moduleOpen && activeTab === 'vendors' && 'Vendor Onboarding & Directory'}
+              {moduleOpen && activeTab === 'purchase_orders' && 'Purchase Order Management & Procurement Engine'}
+              {moduleOpen && activeTab === 'inventory' && 'Raw Material Inventory, GRN & Quality Control'}
+              {moduleOpen && activeTab === 'ink_management' && 'Ink Master Directory, Solid Costing & Stock Management'}
+              {moduleOpen && activeTab === 'material_indents' && 'Material Indents Requisitions & Consumable Store'}
+              {moduleOpen && activeTab === 'pellet_fuel' && 'Boiler Pellet Fuel Stock & Consumption Management'}
+              {moduleOpen && activeTab === 'dispatch' && 'Finished Goods Dispatch, Delivery Challan & Quality CoA Hub'}
+              {moduleOpen && activeTab === 'user_management' && 'Departmental User Management (RBAC)'}
+              {moduleOpen && activeTab === 'cylinders' && 'Rotogravure Cylinder Database'}
+              {moduleOpen && activeTab === 'printing_scheduler' && 'Printing Machine Production Scheduler & Time Board'}
+              {moduleOpen && activeTab === 'supabase' && 'Supabase Cloud Database & API Service'}
+              {moduleOpen && activeTab === 'doc_settings' && 'Letterhead Signature & Series Settings'}
             </h1>
 
 
@@ -4143,8 +4174,20 @@ export default function App() {
           </div>
         )}
 
-        {!isTabAllowed(activeTab) && (
-          <div className="glass-panel" style={{ padding: '40px', textAlign: 'center', background: '#fffbeb', border: '1px solid #fde68a', margin: '20px 0' }}>
+        {routeInfo.unknown && (
+          <div className="glass-panel" data-screen="not-found" style={{ padding: '40px', textAlign: 'center', margin: '20px 0' }}>
+            <h2 style={{ fontSize: '1.3rem', fontWeight: '700' }}>This page is not in the ERP</h2>
+            <p style={{ color: '#64748b', fontSize: '0.9rem', marginTop: '8px' }}>
+              The address stays in the browser so the link can be checked. Nothing was redirected to the dashboard.
+            </p>
+            <button className="btn-primary" style={{ marginTop: '16px' }} onClick={() => handleTabChange('dashboard')}>
+              Go to dashboard
+            </button>
+          </div>
+        )}
+
+        {!routeInfo.unknown && !isTabAllowed(activeTab) && (
+          <div className="glass-panel" data-screen="forbidden" style={{ padding: '40px', textAlign: 'center', background: '#fffbeb', border: '1px solid #fde68a', margin: '20px 0' }}>
             <Lock size={48} style={{ color: '#d97706', marginBottom: '12px' }} />
             <h3 style={{ fontSize: '1.2rem', fontWeight: '700', color: '#b45309' }}>
               Module Access Restricted for Role ({currentUser?.role})
@@ -4159,7 +4202,7 @@ export default function App() {
         )}
 
         {/* TAB 1: EXECUTIVE DASHBOARD / OPERATOR DASHBOARD */}
-        {activeTab === 'dashboard' && currentUser?.role === 'Printing Operator' ? (
+        {moduleOpen && activeTab === 'dashboard' && currentUser?.role === 'Printing Operator' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <div className="glass-panel" style={{ padding: '20px', background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', color: '#ffffff', borderRadius: '12px' }}>
               <h2 style={{ fontSize: '1.35rem', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -4197,7 +4240,7 @@ export default function App() {
               onActiveRunningJobChange={handleActiveRunningJobChange}
             />
           </div>
-        ) : activeTab === 'dashboard' && (
+        ) : moduleOpen && activeTab === 'dashboard' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
             {/* Redesigned Executive Operational Alerts Hub */}
             {(delayedOrdersCount > 0 || (lowStockInks || []).length > 0) && (
@@ -4782,7 +4825,7 @@ export default function App() {
         )}
 
         {/* TAB: SALES MANAGEMENT & QUOTATION ENGINE */}
-        {activeTab === 'sales' && (
+        {moduleOpen && activeTab === 'sales' && (
           <SalesManagement 
             urlParams={urlParams}
             orders={orders}
@@ -4799,7 +4842,7 @@ export default function App() {
         )}
 
         {/* TAB: PRODUCTION RECORDS & APPROVAL FLOW */}
-        {activeTab === 'production_records' && (
+        {moduleOpen && activeTab === 'production_records' && (
           <ProductionRecordManagement 
             urlParams={urlParams}
             productionRecords={productionRecords}
@@ -4823,7 +4866,7 @@ export default function App() {
         )}
 
         {/* TAB: CLIENTS */}
-        {activeTab === 'clients' && (
+        {moduleOpen && activeTab === 'clients' && (
           <ClientManagement 
             urlParams={urlParams}
             clients={clients}
@@ -4837,7 +4880,7 @@ export default function App() {
         )}
 
         {/* TAB: JOB MASTER DIRECTORY */}
-        {activeTab === 'job_masters' && (
+        {moduleOpen && activeTab === 'job_masters' && (
           <JobMasterDirectory 
             urlParams={urlParams}
             jobMasters={jobMasters}
@@ -4862,7 +4905,7 @@ export default function App() {
 
 
         {/* TAB 1: JOB PUNCHING & PRE-COSTING */}
-        {activeTab === 'job_punching' && (
+        {moduleOpen && activeTab === 'job_punching' && (
           <JobPunchingForm 
             onSaveOrder={handleAddOrder} 
             onNavigateToDashboard={() => handleTabChange('dashboard')} 
@@ -4873,7 +4916,7 @@ export default function App() {
         )}
 
         {/* TAB 2: ORDER MANAGEMENT */}
-        {activeTab === 'orders' && (
+        {moduleOpen && activeTab === 'orders' && (
           <OrderManagement 
             urlParams={urlParams}
             orders={orders} 
@@ -4897,7 +4940,7 @@ export default function App() {
         )}
 
         {/* TAB 5: VENDOR MANAGEMENT */}
-        {activeTab === 'vendors' && (
+        {moduleOpen && activeTab === 'vendors' && (
           <VendorManagement 
             urlParams={urlParams} 
             vendors={vendors} 
@@ -4909,7 +4952,7 @@ export default function App() {
         )}
 
         {/* TAB: PURCHASE ORDER MANAGEMENT */}
-        {activeTab === 'purchase_orders' && (
+        {moduleOpen && activeTab === 'purchase_orders' && (
           <PurchaseOrderManagement 
             urlParams={urlParams}
             purchaseOrders={purchaseOrders}
@@ -4930,7 +4973,7 @@ export default function App() {
         )}
 
         {/* TAB 6: INVENTORY, GRN & QC */}
-        {activeTab === 'inventory' && (
+        {moduleOpen && activeTab === 'inventory' && (
           <InventoryManagement 
             urlParams={urlParams}
             inventory={inventory}
@@ -4967,7 +5010,7 @@ export default function App() {
         )}
 
         {/* TAB: DEDICATED SFG STORE MANAGEMENT */}
-        {activeTab === 'sfg_store' && (
+        {moduleOpen && activeTab === 'sfg_store' && (
           <SFGStoreManagement 
             urlParams={urlParams}
             sfgGoods={sfgGoods}
@@ -4985,7 +5028,7 @@ export default function App() {
         )}
 
         {/* TAB: INK MASTER & COSTING */}
-        {activeTab === 'ink_management' && (
+        {moduleOpen && activeTab === 'ink_management' && (
           <InkManagement 
             urlParams={urlParams}
             inks={inks}
@@ -5005,7 +5048,7 @@ export default function App() {
         )}
 
         {/* TAB: MATERIAL INDENTS & CONSUMABLE STORE */}
-        {activeTab === 'material_indents' && (
+        {moduleOpen && activeTab === 'material_indents' && (
           <ConsumablesAndIndents 
             urlParams={urlParams}
             userRole={currentUser?.role || "Admin"}
@@ -5033,7 +5076,7 @@ export default function App() {
         )}
 
         {/* TAB: BOILER PELLET FUEL STOCK & CONSUMPTION */}
-        {activeTab === 'pellet_fuel' && (
+        {moduleOpen && activeTab === 'pellet_fuel' && (
           <PelletFuelManagement 
             urlParams={urlParams}
             userRole={currentUser?.role || "Admin"}
@@ -5053,7 +5096,7 @@ export default function App() {
         )}
 
         {/* TAB: DISPATCH, DELIVERY CHALLAN & COA HUB */}
-        {activeTab === 'dispatch' && (
+        {moduleOpen && activeTab === 'dispatch' && (
           <DispatchManagement 
             urlParams={urlParams}
             deliveryChallans={deliveryChallans}
@@ -5078,7 +5121,7 @@ export default function App() {
         )}
 
         {/* TAB 7: USER MANAGEMENT (RBAC) */}
-        {activeTab === 'user_management' && (
+        {moduleOpen && activeTab === 'user_management' && (
           <UserManagement 
             users={users}
             currentUser={currentUser}
@@ -5091,7 +5134,7 @@ export default function App() {
         )}
 
         {/* TAB: EMPLOYEE MANAGEMENT & PAYROLL HR */}
-        {activeTab === 'employees' && (
+        {moduleOpen && activeTab === 'employees' && (
           <EmployeeManagement 
             urlParams={urlParams}
             employees={employees}
@@ -5111,7 +5154,7 @@ export default function App() {
         )}
 
         {/* TAB 8: CYLINDER DATABASE & UTILISATION */}
-        {activeTab === 'cylinders' && (
+        {moduleOpen && activeTab === 'cylinders' && (
           <CylinderManagement 
             urlParams={urlParams}
             cylinders={cylinders}
@@ -5134,7 +5177,7 @@ export default function App() {
         )}
 
         {/* TAB 9: PRINTING MACHINE PRODUCTION SCHEDULER */}
-        {activeTab === 'printing_scheduler' && (
+        {moduleOpen && activeTab === 'printing_scheduler' && (
           <ProductionScheduler 
             orders={orders}
             inventory={inventory}
@@ -5165,12 +5208,12 @@ export default function App() {
         )}
 
         {/* TAB 10: SUPABASE DATABASE INTEGRATION */}
-        {activeTab === 'supabase' && (
+        {moduleOpen && activeTab === 'supabase' && (
           <SupabaseManagement />
         )}
 
         {/* TAB 11: LETTERHEAD & SIGNATURE SETTINGS */}
-        {activeTab === 'doc_settings' && (
+        {moduleOpen && activeTab === 'doc_settings' && (
           <DocumentSettings
             machines={machines}
             onSaveMachine={handleSaveMachine}
@@ -5179,7 +5222,7 @@ export default function App() {
         )}
 
         {/* TAB: SCRAP & WASTAGE ANALYSIS */}
-        {activeTab === 'scrap_analytics' && (
+        {moduleOpen && activeTab === 'scrap_analytics' && (
           <ScrapWastageAnalysis 
             productionRecords={productionRecords}
             orders={orders}
@@ -5187,7 +5230,7 @@ export default function App() {
         )}
 
         {/* TAB: SYSTEM AUDIT LOGS (ADMIN ONLY) */}
-        {activeTab === 'audit_logs' && (
+        {moduleOpen && activeTab === 'audit_logs' && (
           <AuditLogsManagement 
             auditLogs={auditLogs}
             currentUser={currentUser}

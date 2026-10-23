@@ -4,6 +4,7 @@ import {
   ROUTING_PHASE,
   buildCanonical,
   buildHref,
+  getRouteFromUrl,
   parseLocation,
   isRecoveryLocation,
   rememberReturnTo,
@@ -301,6 +302,20 @@ test('unknown paths and API paths stay distinguishable', () => {
   assert.equal(resolveInternalPath('/api/send-email').kind, 'api');
   assert.equal(resolveInternalPath('/login').ok, true);
   assert.equal(resolveInternalPath('/nope').ok, false);
+});
+
+test('getRouteFromUrl keeps an unknown path instead of sending it to the dashboard', () => {
+  const previous = globalThis.window;
+  globalThis.window = { location: { pathname: '/this-page-is-not-real', search: '', hash: '' } };
+  try {
+    const route = getRouteFromUrl();
+    assert.equal(route.unknown, true);
+    assert.equal(route.tab, null);
+    assert.equal(route.canonical, '/this-page-is-not-real');
+  } finally {
+    if (previous === undefined) delete globalThis.window;
+    else globalThis.window = previous;
+  }
 });
 
 test('canonical table covers every module that the sidebar can open', () => {
