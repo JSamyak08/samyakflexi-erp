@@ -31,6 +31,7 @@ import {
   parseStandardDate
 } from '../factoryStore';
 import { buildEmployeeAttendanceRow, mapEmployeeAttendanceRow } from './employeeAttendance';
+import { pelletConsumptionFromRow, pelletInwardFromRow } from './pelletFuel';
 
 /**
  * Strict Supabase Error Handler
@@ -1014,22 +1015,19 @@ export async function saveGRNToSupabase(grn) {
 
   // Duplicate check: Verify if invoice_number + vendor match an existing GRN record in database
   if (clean.invoiceNo && clean.vendorName) {
-    try {
-      const { data: existingGrns } = await supabase
-        .from('grns')
-        .select('id, grn_number, invoice_number')
-        .eq('invoice_number', clean.invoiceNo);
+    const { data: existingGrns, error: duplicateLookupError } = await supabase
+      .from('grns')
+      .select('id, grn_number, invoice_number')
+      .eq('invoice_number', clean.invoiceNo);
+    if (duplicateLookupError) {
+      throw new Error(`Could not check for a duplicate GRN invoice: ${duplicateLookupError.message}`);
+    }
 
-      if (existingGrns && existingGrns.length > 0) {
-        const match = existingGrns.find(g => String(g.id) !== String(grnId) && String(g.grn_number) !== String(clean.grnNo));
-        if (match) {
-          console.warn('[GRNs] Duplicate GRN detected in database:', match);
-          throw new Error(`Duplicate Inward GRN: A GRN (#${match.grn_number || match.id}) with Invoice #${clean.invoiceNo} already exists in database.`);
-        }
-      }
-    } catch (checkErr) {
-      if (checkErr.message && checkErr.message.includes('Duplicate Inward GRN')) {
-        throw checkErr;
+    if (existingGrns && existingGrns.length > 0) {
+      const match = existingGrns.find(g => String(g.id) !== String(grnId) && String(g.grn_number) !== String(clean.grnNo));
+      if (match) {
+        console.warn('[GRNs] Duplicate GRN detected in database:', match);
+        throw new Error(`Duplicate Inward GRN: A GRN (#${match.grn_number || match.id}) with Invoice #${clean.invoiceNo} already exists in database.`);
       }
     }
   }
@@ -3480,7 +3478,7 @@ export async function fetchPelletInwardsFromSupabase() {
     try {
       const { data, error } = await supabase.from('pellet_inwards').select('*');
       if (!error && Array.isArray(data)) {
-        tableRecords = data.map(r => r.payload || r.details || r);
+        tableRecords = data.map(pelletInwardFromRow);
       } else if (error) {
         handleSupabaseError(error, 'pellet_inwards');
       }
@@ -3507,6 +3505,7 @@ export async function savePelletInwardToSupabase(item) {
     inward_qty_kg: Number(item.inwardQtyKg) || 0,
     unit_cost_per_kg: Number(item.unitCostPerKg) || 0,
     total_amount: Number(item.totalAmount) || 0,
+    vehicle_no: item.vehicleNo || null,
     payload: item,
     updated_at: new Date().toISOString()
   }, { onConflict: 'id' });
@@ -3531,7 +3530,7 @@ export async function fetchPelletConsumptionsFromSupabase() {
     try {
       const { data, error } = await supabase.from('pellet_consumptions').select('*');
       if (!error && Array.isArray(data)) {
-        tableRecords = data.map(r => r.payload || r.details || r);
+        tableRecords = data.map(pelletConsumptionFromRow);
       } else if (error) {
         handleSupabaseError(error, 'pellet_consumptions');
       }
@@ -3561,6 +3560,33 @@ export async function savePelletConsumptionToSupabase(item) {
     updated_at: new Date().toISOString()
   }, { onConflict: 'id' });
   if (error) handleSupabaseError(error, 'pellet_consumptions');
+}
+
+export async function allocatePelletGrnNumber(prefix) {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Cannot reserve a pellet GRN number: Supabase database connection is not available.');
+  }
+  await ensureValidSession();
+  const { data, error } = await supabase.rpc('allocate_pellet_grn_number', {
+    p_prefix: prefix || 'SIL/GRN/26-27/'
+  });
+  if (error) handleSupabaseError(error, 'allocate_pellet_grn_number');
+  if (!data) {
+    throw new Error('The database did not return a pellet GRN number.');
+  }
+  return data;
+}
+
+export async function savePelletInwardWithGrn(record) {
+  if (!isSupabaseConfigured() || !record) {
+    throw new Error('Cannot save pellet inward: Supabase database connection is not available.');
+  }
+  await ensureValidSession();
+  const { data, error } = await supabase.rpc('save_pellet_inward_with_grn', {
+    p_record: record
+  });
+  if (error) handleSupabaseError(error, 'save_pellet_inward_with_grn');
+  return data;
 }
 
 export async function deletePelletConsumptionFromSupabase(id) {

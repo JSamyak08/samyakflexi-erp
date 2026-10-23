@@ -876,20 +876,20 @@ CREATE TABLE IF NOT EXISTS public.salary_payments (
 -- =========================================================================
 CREATE TABLE IF NOT EXISTS public.pellet_inwards (
     id TEXT PRIMARY KEY,
+    grn_no TEXT,
     inward_date DATE DEFAULT CURRENT_DATE,
+    inward_qty_kg NUMERIC DEFAULT 0,
+    unit_cost_per_kg NUMERIC DEFAULT 0,
+    total_amount NUMERIC DEFAULT 0,
     vehicle_no TEXT,
-    driver_name TEXT,
-    vendor_name TEXT,
-    invoice_no TEXT,
-    gross_weight_kg NUMERIC DEFAULT 0,
-    tare_weight_kg NUMERIC DEFAULT 0,
-    net_weight_kg NUMERIC DEFAULT 0,
-    rate_per_kg NUMERIC DEFAULT 0,
-    total_cost NUMERIC DEFAULT 0,
-    batch_no TEXT,
-    notes TEXT,
+    payload JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.pellet_grn_counters (
+    prefix TEXT PRIMARY KEY,
+    last_value BIGINT NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS public.pellet_consumptions (

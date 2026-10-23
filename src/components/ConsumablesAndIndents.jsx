@@ -78,6 +78,10 @@ export default function ConsumablesAndIndents({
   onUpdateIndents,
   machineIssues = [],
   onUpdateMachineIssues,
+  inventory = [],
+  pelletUserName = '',
+  pelletLoadError = '',
+  onAllocatePelletGrnNumber,
   pelletInwards = [],
   pelletConsumptions = [],
   onSavePelletInward,
@@ -917,9 +921,12 @@ export default function ConsumablesAndIndents({
         <PelletFuelManagement 
           urlParams={urlParams}
           userRole={userRole}
-          userName={userName}
+          userName={pelletUserName}
           vendors={vendors}
           machines={machines}
+          inventory={inventory}
+          loadError={pelletLoadError}
+          onAllocatePelletGrnNumber={onAllocatePelletGrnNumber}
           pelletInwards={pelletInwards}
           pelletConsumptions={pelletConsumptions}
           onSavePelletInward={onSavePelletInward}
