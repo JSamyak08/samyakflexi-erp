@@ -26,6 +26,7 @@ import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import SearchableSelect from './SearchableSelect';
 import { FILM_DENSITIES, getFilmSubstrateDensity, calculateFilmRollLength, COMPANY_DETAILS } from '../factoryStore';
 import { getStorageBays } from '../services/settingsService';
+import { codeText } from '../utils/barcodeCode';
 
 export const SFG_TYPES = [
   'Printed Rolls',
@@ -312,7 +313,7 @@ export default function SFGFGEntryModal({
     let maxExistingIdx = 0;
     existingJobRolls.forEach(r => {
       if (r.rollIndex && Number(r.rollIndex) > maxExistingIdx) maxExistingIdx = Number(r.rollIndex);
-      const match = (r.barcodeId || '').match(/-R0*(\d+)$/i);
+      const match = codeText(r.barcodeId).match(/-R0*(\d+)$/i);
       if (match && match[1]) {
         const num = parseInt(match[1], 10);
         if (num > maxExistingIdx) maxExistingIdx = num;
@@ -416,7 +417,7 @@ export default function SFGFGEntryModal({
     let maxIdx = 0;
     masterRolls.forEach(r => {
       if (r.rollIndex && Number(r.rollIndex) > maxIdx) maxIdx = Number(r.rollIndex);
-      const match = (r.barcodeId || '').match(/-R0*(\d+)$/i);
+      const match = codeText(r.barcodeId).match(/-R0*(\d+)$/i);
       if (match && match[1]) {
         const num = parseInt(match[1], 10);
         if (num > maxIdx) maxIdx = num;

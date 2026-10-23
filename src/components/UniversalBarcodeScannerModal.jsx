@@ -32,6 +32,14 @@ import {
 import QRCode2D from './QRCode2D';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
 import { safeLocalStorageGet } from '../utils/safeStorage';
+import {
+  codeKey,
+  codeKeyFrom,
+  codeStartsWith,
+  findDispatchRollByScan,
+  findInventoryRollByScan,
+  textFrom
+} from '../utils/barcodeCode';
 
 /**
  * Universal Barcode & 2D QR Inspector Modal
@@ -177,15 +185,16 @@ export default function UniversalBarcodeScannerModal({
     // 1. From production record materialsUsed / inputRolls
     const prodMats = matchedProdRec?.materialsUsed || matchedProdRec?.inputRolls || matchedProdRec?.rawMaterials || [];
     prodMats.forEach(m => {
-      const mName = m.itemName || m.name || m.filmType || m.materialName || 'Film Substrate';
-      if (!mName || usedNames.has(mName.toLowerCase())) return;
-      usedNames.add(mName.toLowerCase());
+      const mName = textFrom(m.itemName, m.name, m.filmType, m.materialName) || 'Film Substrate';
+      const mNameKey = codeKey(mName);
+      if (!mNameKey || usedNames.has(mNameKey)) return;
+      usedNames.add(mNameKey);
 
       const matchedGrn = (grns || []).find(g => {
-        const gItem = (g.itemName || g.item_name || '').toLowerCase();
-        const mItem = mName.toLowerCase();
-        const mBatch = (m.batchNo || m.batch_no || '').toLowerCase();
-        const gBatch = (g.batch_no || g.batchNo || '').toLowerCase();
+        const gItem = codeKeyFrom(g.itemName, g.item_name);
+        const mItem = mNameKey;
+        const mBatch = codeKeyFrom(m.batchNo, m.batch_no);
+        const gBatch = codeKeyFrom(g.batch_no, g.batchNo);
         return (gItem && (gItem.includes(mItem) || mItem.includes(gItem))) || (mBatch && gBatch && mBatch === gBatch);
       });
 
@@ -206,12 +215,13 @@ export default function UniversalBarcodeScannerModal({
     const ordReqs = matchedOrd?.materialRequirements || [];
     ordReqs.forEach(req => {
       const rName = `${req.filmType || 'Substrate'} ${req.micron && req.micron !== '-' ? req.micron + 'µ' : ''}`.trim();
-      if (!rName || usedNames.has(rName.toLowerCase())) return;
-      usedNames.add(rName.toLowerCase());
+      const rNameKey = codeKey(rName);
+      if (!rNameKey || usedNames.has(rNameKey)) return;
+      usedNames.add(rNameKey);
 
       const matchedGrn = (grns || []).find(g => {
-        const gItem = (g.itemName || g.item_name || '').toLowerCase();
-        const rItem = rName.toLowerCase();
+        const gItem = codeKeyFrom(g.itemName, g.item_name);
+        const rItem = rNameKey;
         return gItem && (gItem.includes(rItem) || rItem.includes(gItem) || g.category === 'Film Substrates');
       });
 
@@ -232,12 +242,13 @@ export default function UniversalBarcodeScannerModal({
     if (matchedProdRec?.inksUsed || matchedOrd?.inksUsed) {
       const inksList = matchedProdRec?.inksUsed || matchedOrd?.inksUsed || [];
       inksList.forEach(ink => {
-        const inkName = ink.shade || ink.productCode || ink.name || 'Liquid Ink';
-        if (usedNames.has(inkName.toLowerCase())) return;
-        usedNames.add(inkName.toLowerCase());
+        const inkName = textFrom(ink.shade, ink.productCode, ink.name) || 'Liquid Ink';
+        const inkKey = codeKey(inkName);
+        if (usedNames.has(inkKey)) return;
+        usedNames.add(inkKey);
 
-        const matchedGrn = (grns || []).find(g => (g.category || '').includes('Ink') || (g.itemName || '').toLowerCase().includes('ink'));
-        const matchedInkObj = (inks || []).find(i => (i.shade || '').toLowerCase() === inkName.toLowerCase() || (i.product_code || '').toLowerCase() === (ink.productCode || '').toLowerCase());
+        const matchedGrn = (grns || []).find(g => textFrom(g.category).includes('Ink') || codeKey(g.itemName).includes('ink'));
+        const matchedInkObj = (inks || []).find(i => codeKey(i.shade) === inkKey || codeKey(i.product_code) === codeKey(ink.productCode));
 
         materials.push({
           name: inkName,
@@ -276,43 +287,19 @@ export default function UniversalBarcodeScannerModal({
 
   // Cross-Database Multi-Collection Search Algorithm
   const searchResults = useMemo(() => {
-    const query = (activeBarcode || '').trim().toLowerCase();
+    const query = codeKey(activeBarcode);
     if (!query) return null;
 
     // Extract potential GRN code if barcode is formatted as (CON|RM)-BC-YYYYMMDD-XXX or similar
     const grnExtract = query.replace(/^(con|rm)-bc-/, '').replace(/-\d+$/, '');
 
     // 0. Dedicated Finished Goods Dispatch Roll Search (Highest Priority for FG-DISP- Barcodes & Packing List Rolls)
-    let matchedDispatchRollItem = null;
-    let parentDispatchDoc = null;
-
-    // Search inside dispatchShipments items
-    for (const shipment of (dispatchShipments || [])) {
-      const foundRoll = (shipment.items || []).find(it => {
-        const bId = (it.barcodeId || it.id || '').trim().toLowerCase();
-        return bId && (bId === query || query === bId || (query.length >= 4 && (bId.includes(query) || query.includes(bId))));
-      });
-      if (foundRoll) {
-        matchedDispatchRollItem = foundRoll;
-        parentDispatchDoc = shipment;
-        break;
-      }
-    }
-
-    // Search inside deliveryChallans items if not found
-    if (!matchedDispatchRollItem) {
-      for (const dc of (deliveryChallans || [])) {
-        const foundRoll = (dc.items || []).find(it => {
-          const bId = (it.barcodeId || it.id || '').trim().toLowerCase();
-          return bId && (bId === query || query === bId || (query.length >= 4 && (bId.includes(query) || query.includes(bId))));
-        });
-        if (foundRoll) {
-          matchedDispatchRollItem = foundRoll;
-          parentDispatchDoc = dc;
-          break;
-        }
-      }
-    }
+    const dispatchHit = findDispatchRollByScan(
+      [...(dispatchShipments || []), ...(deliveryChallans || [])],
+      query
+    );
+    const matchedDispatchRollItem = dispatchHit?.item || null;
+    const parentDispatchDoc = dispatchHit?.parent || null;
 
     if (matchedDispatchRollItem) {
       const roll = matchedDispatchRollItem;
@@ -327,8 +314,8 @@ export default function UniversalBarcodeScannerModal({
         entityCategory: 'Finished Goods (FG) Dispatch Roll',
         badgeColor: '#059669',
         badgeBg: '#ecfdf5',
-        title: `FG Dispatch Roll: ${roll.barcodeId || roll.id}`,
-        code: roll.barcodeId || roll.id,
+        title: `FG Dispatch Roll: ${textFrom(roll.barcodeId, roll.id)}`,
+        code: textFrom(roll.barcodeId, roll.id),
         raw: roll,
         jobName: traceData.jobName || jName,
         orderId: traceData.orderId || oId,
@@ -336,7 +323,7 @@ export default function UniversalBarcodeScannerModal({
         materialsUsed: traceData.materialsUsed,
         isDispatchBarCode: true,
         properties: [
-          { label: 'Dispatch Roll Barcode ID', value: roll.barcodeId || roll.id, isCode: true },
+          { label: 'Dispatch Roll Barcode ID', value: textFrom(roll.barcodeId, roll.id), isCode: true },
           { label: 'Job Order Name', value: jName },
           { label: 'Client Consignee', value: shipment?.clientName || matchedOrder?.clientName || 'N/A' },
           { label: 'Order OCN / Ref', value: oId, isCode: true },
@@ -356,54 +343,34 @@ export default function UniversalBarcodeScannerModal({
     }
 
     // 1. Inventory Rolls & Inward Packages Search (Highest Priority for Barcodes)
-    // Pass 1: Strict Exact Match on Barcode ID or Roll ID
-    let matchedRoll = (inventoryRolls || []).find(r => {
-      const bId = (r.barcodeId || r.id || '').trim().toLowerCase();
-      return bId === query;
-    });
-
-    // Pass 2: Exact Match on Batch Number, Invoice Number, or GRN Number
-    if (!matchedRoll) {
-      matchedRoll = (inventoryRolls || []).find(r => {
-        const bNo = (r.batchNo || r.lotNo || '').trim().toLowerCase();
-        const invNo = (r.invoiceNo || '').trim().toLowerCase();
-        const rGrn = (r.grnNo || r.grn_no || '').trim().toLowerCase();
-        return (bNo && bNo === query) || (invNo && invNo === query) || (rGrn && rGrn === query);
-      });
-    }
-
-    // Pass 3: Fallback Partial Match (ONLY if query length >= 4 and no exact match exists)
-    if (!matchedRoll && query.length >= 4) {
-      matchedRoll = (inventoryRolls || []).find(r => {
-        const bId = (r.barcodeId || r.id || '').trim().toLowerCase();
-        return bId.includes(query);
-      });
-    }
+    // Pass 1: exact barcode id / roll id. Pass 2: batch, invoice, or GRN.
+    // Pass 3: partial barcode match only when the query is at least 4 characters.
+    const matchedRoll = findInventoryRollByScan(inventoryRolls, query);
 
     if (matchedRoll) {
       // Find linked GRN across grns list to backfill any missing inward metadata
       const linkedGrn = (grns || []).find(g => {
-        const gNum = (g.grn_number || g.grnNumber || g.grnNo || g.id || '').toLowerCase();
+        const gNum = codeKeyFrom(g.grn_number, g.grnNumber, g.grnNo, g.id);
         const gCode = gNum.replace(/^grn-/, '');
-        const rollGrn = (matchedRoll.grnNo || matchedRoll.grn_no || '').toLowerCase();
+        const rollGrn = codeKeyFrom(matchedRoll.grnNo, matchedRoll.grn_no);
         return (rollGrn && (gNum === rollGrn || gNum.includes(rollGrn) || rollGrn.includes(gNum))) ||
                (grnExtract && (gCode === grnExtract || gNum.includes(grnExtract))) ||
-               (matchedRoll.invoiceNo && (String(g.invoice_number || g.invoiceNumber || g.invoiceNo || '').toLowerCase() === String(matchedRoll.invoiceNo).toLowerCase())) ||
-               (matchedRoll.batchNo && (String(g.batch_no || g.batchNo || '').toLowerCase() === String(matchedRoll.batchNo).toLowerCase()));
+               (matchedRoll.invoiceNo && (codeKeyFrom(g.invoice_number, g.invoiceNumber, g.invoiceNo) === codeKey(matchedRoll.invoiceNo))) ||
+               (matchedRoll.batchNo && (codeKeyFrom(g.batch_no, g.batchNo) === codeKey(matchedRoll.batchNo)));
       });
 
       // Find linked Inventory Item across inventory list
       const linkedItem = (inventory || []).find(item => {
-        const iId = (item.id || '').toLowerCase();
-        const iCode = (item.item_code || item.itemCode || '').toLowerCase();
-        const iName = (item.item_name || item.itemName || '').toLowerCase();
-        const rollItemId = (matchedRoll.itemId || matchedRoll.stockItemId || '').toLowerCase();
-        const rollItemName = (matchedRoll.itemName || '').toLowerCase();
+        const iId = codeKey(item.id);
+        const iCode = codeKeyFrom(item.item_code, item.itemCode);
+        const iName = codeKeyFrom(item.item_name, item.itemName);
+        const rollItemId = codeKeyFrom(matchedRoll.itemId, matchedRoll.stockItemId);
+        const rollItemName = codeKey(matchedRoll.itemName);
         return (rollItemId && (iId === rollItemId || iCode === rollItemId)) ||
                (rollItemName && (iName === rollItemName || iCode === rollItemName));
       });
 
-      const resolvedCategory = matchedRoll.category || linkedGrn?.category || linkedItem?.category || (matchedRoll.barcodeId?.startsWith('CON-BC') ? 'Chemicals & Solvents' : '');
+      const resolvedCategory = textFrom(matchedRoll.category, linkedGrn?.category, linkedItem?.category) || (codeStartsWith(matchedRoll.barcodeId, 'CON-BC') ? 'Chemicals & Solvents' : '');
       const resolvedItemName = matchedRoll.itemName || linkedGrn?.itemName || linkedItem?.item_name || linkedItem?.itemName || (resolvedCategory ? `${resolvedCategory} Material` : 'Inward Stock Material');
       const resolvedVendor = matchedRoll.vendorName || matchedRoll.vendor || linkedGrn?.vendor_name || linkedGrn?.vendorName || linkedGrn?.supplier || linkedItem?.vendor || linkedItem?.vendor_name || 'N/A';
       const resolvedBatch = matchedRoll.batchNo || matchedRoll.lotNo || linkedGrn?.batch_no || linkedGrn?.batchNo || 'N/A';
@@ -412,9 +379,10 @@ export default function UniversalBarcodeScannerModal({
       const resolvedGRN = matchedRoll.grnNo || matchedRoll.grn_no || linkedGrn?.grn_number || linkedGrn?.grnNumber || linkedGrn?.grnNo || (grnExtract && grnExtract.length > 3 ? `GRN-${grnExtract.toUpperCase()}` : 'N/A');
       const resolvedPackaging = matchedRoll.packagingType || linkedGrn?.packagingType || (resolvedCategory.includes('Chemical') || resolvedCategory.includes('Solvent') ? 'Drum / Container' : (resolvedCategory.includes('Ink') ? 'Ink Container / Bucket' : 'Roll / Pack'));
 
-      const isSFG = matchedRoll.rollType === 'SFG' || (resolvedCategory && resolvedCategory.includes('Semi-Finished')) || (matchedRoll.rollType || '').includes('SFG');
-      const isFG = matchedRoll.rollType === 'FG' || (resolvedCategory && resolvedCategory.includes('Finished')) || (matchedRoll.rollType || '').includes('FG') || (matchedRoll.barcodeId || '').startsWith('FG-DISP-');
-      const isFilm = resolvedCategory === 'Film Substrates' || (!resolvedCategory && (matchedRoll.rollType === 'RAW_MATERIAL' || (matchedRoll.barcodeId || '').startsWith('RM-BC') || Number(matchedRoll.micron) > 0));
+      const rollTypeText = textFrom(matchedRoll.rollType);
+      const isSFG = matchedRoll.rollType === 'SFG' || (resolvedCategory && resolvedCategory.includes('Semi-Finished')) || rollTypeText.includes('SFG');
+      const isFG = matchedRoll.rollType === 'FG' || (resolvedCategory && resolvedCategory.includes('Finished')) || rollTypeText.includes('FG') || codeStartsWith(matchedRoll.barcodeId, 'FG-DISP-');
+      const isFilm = resolvedCategory === 'Film Substrates' || (!resolvedCategory && (matchedRoll.rollType === 'RAW_MATERIAL' || codeStartsWith(matchedRoll.barcodeId, 'RM-BC') || Number(matchedRoll.micron) > 0));
 
       let entityCatTitle = 'Raw Material (RM) Substrate Roll';
       let badgeCol = '#d97706';
@@ -428,7 +396,7 @@ export default function UniversalBarcodeScannerModal({
         entityCatTitle = 'Finished Goods (FG) Roll';
         badgeCol = '#059669';
         badgeBackground = '#ecfdf5';
-      } else if (resolvedCategory === 'Chemicals & Solvents' || (matchedRoll.barcodeId || '').startsWith('CON-BC')) {
+      } else if (resolvedCategory === 'Chemicals & Solvents' || codeStartsWith(matchedRoll.barcodeId, 'CON-BC')) {
         entityCatTitle = 'Chemicals & Solvents Inward Unit';
         badgeCol = '#0284c7';
         badgeBackground = '#f0f9ff';
@@ -447,7 +415,7 @@ export default function UniversalBarcodeScannerModal({
       }
 
       const rollProps = [
-        { label: 'Barcode ID', value: matchedRoll.barcodeId || matchedRoll.id || 'N/A', isCode: true },
+        { label: 'Barcode ID', value: textFrom(matchedRoll.barcodeId, matchedRoll.id) || 'N/A', isCode: true },
         { label: 'Item Name', value: resolvedItemName },
         { label: 'Material Category', value: resolvedCategory || (isFilm ? 'Film Substrates' : 'General Inventory') },
         { label: 'Packaging Unit', value: resolvedPackaging },
@@ -506,7 +474,7 @@ export default function UniversalBarcodeScannerModal({
         badgeColor: badgeCol,
         badgeBg: badgeBackground,
         title: resolvedItemName,
-        code: matchedRoll.barcodeId || matchedRoll.id,
+        code: textFrom(matchedRoll.barcodeId, matchedRoll.id),
         raw: matchedRoll,
         properties: rollProps,
         parentGenealogy: matchedRoll.inputBarcodeIds || [],
@@ -514,15 +482,15 @@ export default function UniversalBarcodeScannerModal({
         orderId: traceData.orderId || matchedRoll.orderId,
         dateOfPrinting: traceData.dateOfPrinting,
         materialsUsed: traceData.materialsUsed,
-        isDispatchBarCode: isFG || (matchedRoll.barcodeId || '').startsWith('FG-DISP-')
+        isDispatchBarCode: isFG || codeStartsWith(matchedRoll.barcodeId, 'FG-DISP-')
       };
     }
 
     // 2. Orders / OCNs Search
     const matchedOrder = (orders || []).find(o => {
-      const oId = (o.id || '').toLowerCase();
-      const jName = (o.jobName || '').toLowerCase();
-      const ocn = (o.jobDetails?.ocnNumber || o.ocn || '').toLowerCase();
+      const oId = codeKey(o.id);
+      const jName = codeKey(o.jobName);
+      const ocn = codeKeyFrom(o.jobDetails?.ocnNumber, o.ocn);
       return oId === query || oId.includes(query) || (ocn && ocn === query) || (jName && jName.includes(query));
     });
 
@@ -557,9 +525,9 @@ export default function UniversalBarcodeScannerModal({
 
     // 3. Rotogravure Cylinders Search
     const matchedCylinder = (cylinders || []).find(c => {
-      const cId = (c.id || '').toLowerCase();
-      const sku = (c.sku || c.skuCode || c.cylinderSku || '').toLowerCase();
-      const jName = (c.jobName || '').toLowerCase();
+      const cId = codeKey(c.id);
+      const sku = codeKeyFrom(c.sku, c.skuCode, c.cylinderSku);
+      const jName = codeKey(c.jobName);
       return cId === query || sku === query || (sku && sku.includes(query)) || (jName && jName.includes(query));
     });
 
@@ -587,9 +555,9 @@ export default function UniversalBarcodeScannerModal({
 
     // 4. Job Masters Search
     const matchedJobMaster = (jobMasters || []).find(jm => {
-      const sku = (jm.sku_code || jm.skuCode || '').toLowerCase();
-      const jName = (jm.job_name || jm.jobName || '').toLowerCase();
-      const id = (jm.id || '').toLowerCase();
+      const sku = codeKeyFrom(jm.sku_code, jm.skuCode);
+      const jName = codeKeyFrom(jm.job_name, jm.jobName);
+      const id = codeKey(jm.id);
       return sku === query || (sku && sku.includes(query)) || (jName && jName.includes(query)) || id === query;
     });
 
@@ -618,11 +586,11 @@ export default function UniversalBarcodeScannerModal({
 
     // 5. Goods Receipt Note (GRN) Search
     const matchedGrn = (grns || []).find(g => {
-      const gNum = (g.grn_number || g.grnNumber || g.grnNo || g.id || '').toLowerCase();
+      const gNum = codeKeyFrom(g.grn_number, g.grnNumber, g.grnNo, g.id);
       const gCode = gNum.replace(/^grn-/, '');
-      const po = (g.po_number || g.poNumber || '').toLowerCase();
-      const inv = (g.invoice_number || g.invoiceNumber || g.invoiceNo || '').toLowerCase();
-      const bNo = (g.batch_no || g.batchNo || '').toLowerCase();
+      const po = codeKeyFrom(g.po_number, g.poNumber);
+      const inv = codeKeyFrom(g.invoice_number, g.invoiceNumber, g.invoiceNo);
+      const bNo = codeKeyFrom(g.batch_no, g.batchNo);
       return gNum === query || gNum.includes(query) || (po && po === query) || (inv && inv === query) || (bNo && bNo === query) ||
              (grnExtract && (gCode === grnExtract || gNum.includes(grnExtract)));
     });
@@ -654,8 +622,8 @@ export default function UniversalBarcodeScannerModal({
 
     // 6. Inks Master Search
     const matchedInk = (inks || []).find(i => {
-      const pCode = (i.product_code || i.productCode || i.id || '').toLowerCase();
-      const shade = (i.shade || '').toLowerCase();
+      const pCode = codeKeyFrom(i.product_code, i.productCode, i.id);
+      const shade = codeKey(i.shade);
       return pCode === query || pCode.includes(query) || (shade && shade === query);
     });
 
@@ -680,10 +648,10 @@ export default function UniversalBarcodeScannerModal({
 
     // 7. Dispatch Shipments / Challans Search
     const matchedDispatch = (dispatchShipments || []).concat(deliveryChallans || []).find(d => {
-      const dId = (d.dispatch_id || d.dispatchId || d.id || '').toLowerCase();
-      const inv = (d.invoiceNo || d.invoice_no || '').toLowerCase();
-      const lr = (d.lr_no || d.lrNo || d.lr_number || '').toLowerCase();
-      const veh = (d.vehicle_no || d.vehicleNo || d.vehicle_number || '').toLowerCase();
+      const dId = codeKeyFrom(d.dispatch_id, d.dispatchId, d.id);
+      const inv = codeKeyFrom(d.invoiceNo, d.invoice_no);
+      const lr = codeKeyFrom(d.lr_no, d.lrNo, d.lr_number);
+      const veh = codeKeyFrom(d.vehicle_no, d.vehicleNo, d.vehicle_number);
       return (dId && (dId === query || dId.includes(query))) || (inv && inv === query) || (lr && lr === query) || (veh && veh === query);
     });
 
@@ -722,9 +690,9 @@ export default function UniversalBarcodeScannerModal({
 
     // 8. Raw Material Inventory Items Search
     const matchedItem = (inventory || []).find(item => {
-      const iId = (item.id || '').toLowerCase();
-      const iCode = (item.item_code || item.itemCode || '').toLowerCase();
-      const iName = (item.item_name || item.itemName || '').toLowerCase();
+      const iId = codeKey(item.id);
+      const iCode = codeKeyFrom(item.item_code, item.itemCode);
+      const iName = codeKeyFrom(item.item_name, item.itemName);
       return iId === query || iCode === query || (iCode && iCode.includes(query)) || (iName && iName.includes(query));
     });
 
@@ -772,9 +740,9 @@ export default function UniversalBarcodeScannerModal({
     // Check across orders for issued PO numbers if not in store
     if (!matchedPoData && cleanPoQuery.length >= 3) {
       const ordWithPo = (orders || []).find(o => {
-        const poNum = (o.poNumber || o.po_number || '').trim().toLowerCase();
+        const poNum = codeKeyFrom(o.poNumber, o.po_number);
         const hasReqPo = (o.materialRequirements || []).some(r => {
-          const reqPo = (r.poNumber || '').trim().toLowerCase();
+          const reqPo = codeKey(r.poNumber);
           return reqPo.length > 0 && (reqPo === cleanPoQuery || cleanPoQuery.includes(reqPo));
         });
         return (poNum.length > 0 && (poNum === cleanPoQuery || cleanPoQuery.includes(poNum))) || hasReqPo;
@@ -783,8 +751,8 @@ export default function UniversalBarcodeScannerModal({
       if (ordWithPo) {
         matchedPoNo = ordWithPo.poNumber || cleanPoQuery.toUpperCase();
         const matchingReqs = (ordWithPo.materialRequirements || []).filter(r => {
-          const reqPo = (r.poNumber || '').trim().toLowerCase();
-          return reqPo.length > 0 && (reqPo === matchedPoNo.toLowerCase() || cleanPoQuery.includes(reqPo));
+          const reqPo = codeKey(r.poNumber);
+          return reqPo.length > 0 && (reqPo === codeKey(matchedPoNo) || cleanPoQuery.includes(reqPo));
         });
         const preferredVendorName = matchingReqs[0]?.preferredVendor || 'Preferred Supplier';
         const vendorObj = (vendors || []).find(v => (v.companyName || v.name) === preferredVendorName) || { companyName: preferredVendorName };
@@ -810,7 +778,7 @@ export default function UniversalBarcodeScannerModal({
     // Check across GRNs for PO number
     if (!matchedPoData && cleanPoQuery.length >= 3) {
       const grnWithPo = (grns || []).find(g => {
-        const poNum = (g.po_number || g.poNumber || '').trim().toLowerCase();
+        const poNum = codeKeyFrom(g.po_number, g.poNumber);
         return poNum.length > 0 && (poNum === cleanPoQuery || cleanPoQuery.includes(poNum));
       });
       if (grnWithPo) {

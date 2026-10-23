@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
-import { COMPANY_DETAILS } from '../factoryStore';
-import { numberToWords, formatINR } from '../utils/pdfHelpers';
+import { loadLetterhead } from '../services/companyProfile';
+import CompanyProfileNotice from './CompanyProfileNotice';
+import { numberToWords, formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import QRCode2D from './QRCode2D';
 
@@ -12,8 +13,11 @@ export default function GRNPDF({ grnData, onClose }) {
   const [currentGrnNo, setCurrentGrnNo] = useState(defaultGrnNo);
   const [isEditingRef, setIsEditingRef] = useState(false);
   const [currentGrnTerms, setCurrentGrnTerms] = useState(savedTerms.grnTerms || []);
+  const letterhead = loadLetterhead();
 
   if (!grnData) return null;
+  if (letterhead.error) return <CompanyProfileNotice message={letterhead.error} onClose={onClose} />;
+  const COMPANY_DETAILS = letterhead.company;
 
   const signatureImage = getAuthorisedSignature();
   const logoImage = getCompanyLogo();
@@ -35,9 +39,8 @@ export default function GRNPDF({ grnData, onClose }) {
 
 
   const {
-    poNumber = "SIL/PO/26-27/042",
-    vendorName = "FlexiPoly Films Ltd",
-    invoiceNo = "INV-FP-9904",
+    poNumber = "",
+    invoiceNo = "",
     receivedDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
     category = "Film Substrates",
     itemName = "",
@@ -62,19 +65,42 @@ export default function GRNPDF({ grnData, onClose }) {
   const isFilm = category === 'Film Substrates' || (!category && micron !== '-' && parseFloat(micron) > 0);
   const displayItemName = itemName || (isFilm ? `${filmType}` : (category || filmType || 'Chemicals & Solvents'));
 
+  const vendorName = String(grnData.vendorName || grnData.vendor?.companyName || grnData.vendor?.name || '').trim();
+  const vendorAddress = String(grnData.vendorAddress || grnData.vendor?.address || '').trim();
+  const vendorGstin = String(grnData.vendorGstin || grnData.vendor?.gstin || '').trim();
+  const vendorEmail = String(grnData.vendorEmail || grnData.vendor?.email || '').trim();
+  const vendorPhone = String(grnData.vendorPhone || grnData.vendor?.phone || grnData.vendor?.contactNo || '').trim();
+  const vendorContact = String(grnData.vendorContact || grnData.vendor?.contactPerson || '').trim();
+  const missingSupplier = [
+    !vendorName && 'supplier name',
+    !vendorAddress && 'supplier address',
+    !vendorGstin && 'supplier GSTIN',
+  ].filter(Boolean);
+  if (missingSupplier.length) {
+    return (
+      <CompanyProfileNotice
+        title="Goods receipt cannot be printed"
+        message={`This GRN is missing ${missingSupplier.join(', ')}. Those fields have to be on the supplier and copied onto the receipt. A supplier is not filled in for the print.`}
+        onClose={onClose}
+      />
+    );
+  }
+
   const totalTaxable = netWeightKg * unitPrice;
-  const cgstAmt = totalTaxable * 0.09;
-  const sgstAmt = totalTaxable * 0.09;
-  const totalTax = cgstAmt + sgstAmt;
-  const grandTotal = totalTaxable + totalTax + (parseFloat(freightAmount) || 0);
+  const gstInfo = calculateGSTBreakdown(vendorGstin, vendorAddress, totalTaxable, 18, COMPANY_DETAILS.gstin);
+  const cgstAmt = gstInfo.cgstAmount;
+  const sgstAmt = gstInfo.sgstAmount;
+  const igstAmt = gstInfo.igstAmount;
+  const totalTax = gstInfo.totalGstAmount;
+  const grandTotal = gstInfo.grandTotal + (parseFloat(freightAmount) || 0);
 
   const vendorDetails = {
-    name: vendorName || "FlexiPoly Films Ltd",
-    address: "Plot 45, Sector 1, Pithampur Industrial Area, Dhar, M.P. - 454775",
-    contactPerson: "Mahesh Agarwal",
-    email: "sales@flexipoly.com",
-    contactNo: "+91 9425011223",
-    gstin: "23AAACF4432K1Z9"
+    name: vendorName,
+    address: vendorAddress,
+    contactPerson: vendorContact,
+    email: vendorEmail,
+    contactNo: vendorPhone,
+    gstin: vendorGstin
   };
 
   return (
@@ -95,7 +121,7 @@ export default function GRNPDF({ grnData, onClose }) {
             <div className="letterhead-brand">
               <img src={logoImage} alt="Samyak International Ltd Logo" className="samyak-logo-img" style={{ height: '46px', objectFit: 'contain' }} />
               <p className="letterhead-company-sub" style={{ marginTop: '2px', fontSize: '8.5px', fontWeight: '800', color: '#374151' }}>
-                BSE: SAMYAKINT • CIN: L67120MH1994PLC225907
+                {COMPANY_DETAILS.tagline}
               </p>
             </div>
 
@@ -301,6 +327,10 @@ export default function GRNPDF({ grnData, onClose }) {
                 <span className="word-label">SGST</span>
                 <span className="word-value">{numberToWords(sgstAmt)}</span>
               </div>
+              <div className="word-line">
+                <span className="word-label">IGST</span>
+                <span className="word-value">{numberToWords(igstAmt)}</span>
+              </div>
             </div>
 
             <div>
@@ -319,9 +349,9 @@ export default function GRNPDF({ grnData, onClose }) {
                       <table className="tax-subtable">
                         <thead>
                           <tr>
-                            <th>CGST (9%)</th>
-                            <th>SGST (9%)</th>
-                            <th>IGST</th>
+                            <th>CGST ({gstInfo.cgstRatePct}%)</th>
+                            <th>SGST ({gstInfo.sgstRatePct}%)</th>
+                            <th>IGST ({gstInfo.igstRatePct}%)</th>
                             <th>Cess</th>
                           </tr>
                         </thead>
@@ -329,7 +359,7 @@ export default function GRNPDF({ grnData, onClose }) {
                           <tr>
                             <td>{formatINR(cgstAmt)}</td>
                             <td>{formatINR(sgstAmt)}</td>
-                            <td>₹0.00</td>
+                            <td>{formatINR(igstAmt)}</td>
                             <td>₹0.00</td>
                           </tr>
                         </tbody>

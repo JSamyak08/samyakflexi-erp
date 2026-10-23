@@ -122,8 +122,14 @@ export async function sendPasswordResetEmail(email) {
     return { success: false, message: 'Supabase is not configured. Password reset unavailable.' };
   }
 
+  const configuredOrigin = String(import.meta.env.VITE_APP_ORIGIN || '').trim().replace(/\/$/, '');
+  const origin = configuredOrigin || (typeof window !== 'undefined' ? window.location.origin : '');
+  if (!origin) {
+    return { success: false, message: 'VITE_APP_ORIGIN is not configured. Set it before sending a password reset.' };
+  }
+
   const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-    redirectTo: 'https://erp.samyakinternational.in/reset-password',
+    redirectTo: `${origin}/reset-password`,
   });
 
   if (error) return { success: false, message: error.message };

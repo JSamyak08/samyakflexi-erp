@@ -37,6 +37,14 @@ export const DEFAULT_AGEING_SETTINGS = {
 
 import { compressImageDataUrl, safeLocalStorageSet } from '../utils/safeStorage';
 import { saveSystemSetting, fetchSystemSetting, saveEmailSettingsToSupabase, saveEmailTemplatesToSupabase, fetchFilmSubstratesFromSupabase, saveFilmSubstratesToSupabase } from './supabaseDataService';
+import {
+  cacheCompanyProfile,
+  COMPANY_PROFILE_SETTING_KEY,
+  companyProfileError,
+  getCompanyProfile,
+  normalizeCompanyProfile,
+  withCompanyTagline,
+} from './companyProfile';
 import { FILM_SUBSTRATES_STORAGE_KEY, DEFAULT_FILM_SUBSTRATES, getFilmSubstrates } from './filmSubstratesService';
 export { FILM_SUBSTRATES_STORAGE_KEY, DEFAULT_FILM_SUBSTRATES, getFilmSubstrates };
 
@@ -366,8 +374,23 @@ export const DEFAULT_MATERIAL_COST_SETTINGS = {
   liquidInkPrice: 1500,         // ₹ / kg for Inks
   conversionChargesPerKg: 45,   // ₹ / kg default Conversion Charges
   fixedProfitPerKg: 25,         // ₹ / kg default Fixed Profit Margin
+  minPoQtyKg: 100,              // minimum kilograms on an ink purchase order
+  defaultReorderLevelKg: 50,    // used when an ink has no reorder level of its own
   updatedAt: ''
 };
+
+function configuredKilograms(value, fallback) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : Number.NaN;
+}
+
+function inkPurchaseQuantities(source) {
+  return {
+    minPoQtyKg: configuredKilograms(source?.minPoQtyKg, DEFAULT_MATERIAL_COST_SETTINGS.minPoQtyKg),
+    defaultReorderLevelKg: configuredKilograms(source?.defaultReorderLevelKg, DEFAULT_MATERIAL_COST_SETTINGS.defaultReorderLevelKg),
+  };
+}
 
 /**
  * Fetch Material Cost Settings from Supabase Database with local fallback
@@ -388,6 +411,7 @@ export async function fetchMaterialCostSettingsFromSupabase() {
         fixedProfitPerKg: (remote.fixedProfitPerKg !== undefined && remote.fixedProfitPerKg !== '')
           ? Number(remote.fixedProfitPerKg)
           : DEFAULT_MATERIAL_COST_SETTINGS.fixedProfitPerKg,
+        ...inkPurchaseQuantities(remote),
         updatedAt: remote.updatedAt || ''
       };
       safeLocalStorageSet(MATERIAL_COST_SETTINGS_STORAGE_KEY, JSON.stringify(merged));
@@ -418,7 +442,8 @@ export function getMaterialCostSettings() {
         : DEFAULT_MATERIAL_COST_SETTINGS.conversionChargesPerKg,
       fixedProfitPerKg: (parsed.fixedProfitPerKg !== undefined && parsed.fixedProfitPerKg !== '')
         ? Number(parsed.fixedProfitPerKg)
-        : DEFAULT_MATERIAL_COST_SETTINGS.fixedProfitPerKg
+        : DEFAULT_MATERIAL_COST_SETTINGS.fixedProfitPerKg,
+      ...inkPurchaseQuantities(parsed)
     };
   } catch (e) {
     return { ...DEFAULT_MATERIAL_COST_SETTINGS };
@@ -428,10 +453,34 @@ export function getMaterialCostSettings() {
 /**
  * Save Material Cost Settings to Supabase DB and local cache
  */
+export async function saveCompanyProfile(profile) {
+  const problem = companyProfileError(profile);
+  if (problem) {
+    const error = new Error(problem);
+    error.status = 500;
+    throw error;
+  }
+  const stored = withCompanyTagline(normalizeCompanyProfile(profile));
+  await saveSystemSetting(COMPANY_PROFILE_SETTING_KEY, stored);
+  cacheCompanyProfile(stored);
+  return stored;
+}
+
+export async function loadCompanyProfileFromSupabase() {
+  const remote = await fetchSystemSetting(COMPANY_PROFILE_SETTING_KEY);
+  if (!remote) return getCompanyProfile();
+  return cacheCompanyProfile(remote);
+}
+
 export async function saveMaterialCostSettings(settings) {
+  const quantities = inkPurchaseQuantities(settings);
+  if (!Number.isFinite(quantities.minPoQtyKg) || !Number.isFinite(quantities.defaultReorderLevelKg)) {
+    throw new Error('minPoQtyKg and defaultReorderLevelKg must be numbers greater than or equal to 0.');
+  }
   const payload = {
     ...DEFAULT_MATERIAL_COST_SETTINGS,
     ...settings,
+    ...quantities,
     adhesiveCostPerKg: Number(settings.adhesiveCostPerKg ?? settings.adhesivePrice) || DEFAULT_MATERIAL_COST_SETTINGS.adhesiveCostPerKg,
     paperCoreCostPerKg: Number(settings.paperCoreCostPerKg ?? settings.paperCorePrice) || DEFAULT_MATERIAL_COST_SETTINGS.paperCoreCostPerKg,
     liquidInkPrice: Number(settings.liquidInkPrice) || DEFAULT_MATERIAL_COST_SETTINGS.liquidInkPrice,

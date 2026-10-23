@@ -33,11 +33,77 @@ import {
 import TablePagination, { usePagination } from './TablePagination';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
 import SearchableSelect from './SearchableSelect';
-import { generateDocRefNumber, getNextDocRefNumber, getInventoryAgeingSettings } from '../services/settingsService';
+import { generateDocRefNumber, getNextDocRefNumber, getInventoryAgeingSettings, getMaterialCostSettings } from '../services/settingsService';
 import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo } from '../utils/fifoUtils';
 import { notifyPurchaseOrderIssued } from '../services/emailService';
 import { savePurchaseOrderToSupabase } from '../services/supabaseDataService';
 
+
+function vendorRecord(vendor) {
+  if (!vendor) return null;
+  const name = String(vendor.companyName || vendor.name || '').trim();
+  const gstin = String(vendor.gstin || '').trim();
+  const address = String(vendor.address || '').trim();
+  if (!name || !gstin || !address) return null;
+  return { ...vendor, companyName: name, name, gstin, address };
+}
+
+function findVendorForInk(ink, vendors) {
+  const match = (vendors || []).find(vendor =>
+    (ink.supplierId && String(vendor.id) === String(ink.supplierId))
+    || (ink.supplierName && String(vendor.companyName || vendor.name || '') === String(ink.supplierName))
+  );
+  return vendorRecord(match);
+}
+
+function missingInkCommercialFields(ink) {
+  const missing = [];
+  if (!String(ink.manufacturer || '').trim()) missing.push('manufacturer');
+  if (!String(ink.hsnCode || '').trim()) missing.push('HSN');
+  const solids = Number(ink.solidContentPct);
+  if (!Number.isFinite(solids) || solids <= 0) missing.push('solid content');
+  const variation = Number(ink.solidVariationPct);
+  if (!Number.isFinite(variation) || variation < 0) missing.push('solid variation');
+  const rate = Number(ink.pricePerKg);
+  if (!Number.isFinite(rate) || rate <= 0) missing.push('rate');
+  return missing;
+}
+
+function inkOrderQuantity(ink) {
+  const settings = getMaterialCostSettings();
+  const minPoQtyKg = Number(settings.minPoQtyKg);
+  const defaultReorderLevelKg = Number(settings.defaultReorderLevelKg);
+  if (!Number.isFinite(minPoQtyKg) || minPoQtyKg < 0 || !Number.isFinite(defaultReorderLevelKg) || defaultReorderLevelKg < 0) {
+    return { error: 'Ink purchase quantity settings are missing. Set minPoQtyKg and defaultReorderLevelKg in Document Settings before raising a purchase order.' };
+  }
+  const hasReorder = ink.reorderLevelKg !== '' && ink.reorderLevelKg != null && Number.isFinite(Number(ink.reorderLevelKg));
+  const reorder = hasReorder ? Number(ink.reorderLevelKg) : defaultReorderLevelKg;
+  const stock = Number(ink.stockQtyKg) || 0;
+  return { qty: Math.max(minPoQtyKg, Math.ceil((reorder * 2) - stock)) };
+}
+
+function inkPoLine(ink) {
+  const missing = missingInkCommercialFields(ink);
+  if (missing.length) {
+    return { error: `${ink.productCode || ink.shade || 'An ink'} is missing ${missing.join(', ')}. Set those on the ink before raising a purchase order.` };
+  }
+  const quantity = inkOrderQuantity(ink);
+  if (quantity.error) return quantity;
+  return {
+    item: {
+      id: ink.id,
+      productCode: ink.productCode,
+      shade: ink.shade,
+      inkType: ink.inkType,
+      solidContentPct: Number(ink.solidContentPct),
+      solidVariationPct: Number(ink.solidVariationPct),
+      manufacturer: String(ink.manufacturer).trim(),
+      hsnCode: String(ink.hsnCode).trim(),
+      qtyKg: quantity.qty,
+      rate: Number(ink.pricePerKg),
+    },
+  };
+}
 
 export default function InkManagement({
   urlParams = {},
@@ -119,11 +185,12 @@ export default function InkManagement({
   const [productCode, setProductCode] = useState('');
   const [shade, setShade] = useState('');
   const [inkType, setInkType] = useState('Reverse Ink'); // 'Reverse Ink' or 'Surface Ink'
-  const [manufacturer, setManufacturer] = useState('DIC Inks');
+  const [manufacturer, setManufacturer] = useState('');
   const [supplierId, setSupplierId] = useState('');
-  const [solidContentPct, setSolidContentPct] = useState(40);
-  const [solidVariationPct, setSolidVariationPct] = useState(2);
-  const [pricePerKg, setPricePerKg] = useState(300);
+  const [hsnCode, setHsnCode] = useState('');
+  const [solidContentPct, setSolidContentPct] = useState('');
+  const [solidVariationPct, setSolidVariationPct] = useState('');
+  const [pricePerKg, setPricePerKg] = useState('');
   const [stockQtyKg, setStockQtyKg] = useState(200);
   const [reorderLevelKg, setReorderLevelKg] = useState(100);
   const [solventType, setSolventType] = useState('Ethyl Acetate + IPA');
@@ -158,11 +225,12 @@ export default function InkManagement({
     setProductCode('');
     setShade('');
     setInkType('Reverse Ink');
-    setManufacturer('DIC Inks');
-    setSupplierId((vendors || []).length > 0 ? vendors[0].id : '');
-    setSolidContentPct(40);
-    setSolidVariationPct(2);
-    setPricePerKg(300);
+    setManufacturer('');
+    setSupplierId('');
+    setHsnCode('');
+    setSolidContentPct('');
+    setSolidVariationPct('');
+    setPricePerKg('');
     setStockQtyKg(200);
     setReorderLevelKg(100);
     setSolventType('Ethyl Acetate + IPA');
@@ -176,11 +244,12 @@ export default function InkManagement({
     setProductCode(ink.productCode || '');
     setShade(ink.shade || '');
     setInkType(ink.inkType || 'Reverse Ink');
-    setManufacturer(ink.manufacturer || 'DIC Inks');
+    setManufacturer(ink.manufacturer || '');
     setSupplierId(ink.supplierId || '');
-    setSolidContentPct(ink.solidContentPct || 40);
-    setSolidVariationPct(ink.solidVariationPct || 2);
-    setPricePerKg(ink.pricePerKg || 0);
+    setHsnCode(ink.hsnCode || '');
+    setSolidContentPct(ink.solidContentPct ?? '');
+    setSolidVariationPct(ink.solidVariationPct ?? '');
+    setPricePerKg(ink.pricePerKg ?? '');
     setStockQtyKg(ink.stockQtyKg || 0);
     setReorderLevelKg(ink.reorderLevelKg || 0);
     setSolventType(ink.solventType || 'Ethyl Acetate + IPA');
@@ -212,8 +281,27 @@ export default function InkManagement({
       return;
     }
 
-    const matchedVendor = vendors.find(v => String(v.id) === String(supplierId));
-    const suppName = matchedVendor ? (matchedVendor.companyName || matchedVendor.name) : 'Standard Supplier';
+    const matchedVendor = vendorRecord((vendors || []).find(v => String(v.id) === String(supplierId)));
+    const draftInk = {
+      manufacturer,
+      hsnCode,
+      solidContentPct,
+      solidVariationPct,
+      pricePerKg,
+    };
+    const missingCommercial = missingInkCommercialFields(draftInk);
+    if (!matchedVendor) {
+      alert('Select a supplier that has a name, address, and GSTIN. A supplier is not invented for this ink.');
+      return;
+    }
+    if (missingCommercial.length) {
+      alert(`Set ${missingCommercial.join(', ')} before saving this ink.`);
+      return;
+    }
+    const suppName = matchedVendor.companyName || matchedVendor.name;
+    const solids = Number(solidContentPct);
+    const variation = Number(solidVariationPct);
+    const rate = Number(pricePerKg);
 
     const inkObj = {
       id: editingInk ? editingInk.id : `INK-${Date.now().toString().slice(-6)}`,
@@ -221,18 +309,19 @@ export default function InkManagement({
       shade: shade.trim(),
       inkType,
       manufacturer: manufacturer.trim(),
-      supplierId: supplierId || null,
+      hsnCode: String(hsnCode).trim(),
+      supplierId: matchedVendor.id,
       supplierName: suppName,
-      solidContentPct: parseFloat(solidContentPct) || 40,
-      solidVariationPct: parseFloat(solidVariationPct) || 2,
-      pricePerKg: parseFloat(pricePerKg) || 0,
+      solidContentPct: solids,
+      solidVariationPct: variation,
+      pricePerKg: rate,
       stockQtyKg: parseFloat(stockQtyKg) || 0,
       reorderLevelKg: parseFloat(reorderLevelKg) || 0,
       unit: 'Kg',
       solventType: solventType.trim(),
       notes: notes.trim(),
       priceHistory: editingInk ? (editingInk.priceHistory || []) : [
-        { price: parseFloat(pricePerKg) || 0, date: new Date().toISOString().split('T')[0], reason: 'Initial onboarding rate' }
+        { price: rate, date: new Date().toISOString().split('T')[0], reason: 'Initial onboarding rate' }
       ],
       createdAt: editingInk ? editingInk.createdAt : new Date().toISOString()
     };
@@ -372,11 +461,11 @@ export default function InkManagement({
       ink.productCode || '',
       ink.shade || '',
       ink.inkType || 'Reverse Ink',
-      ink.manufacturer || 'DIC Inks',
+      ink.manufacturer || '',
       ink.supplierName || '',
-      ink.solidContentPct !== undefined ? ink.solidContentPct : 40,
-      ink.solidVariationPct !== undefined ? ink.solidVariationPct : 2,
-      ink.pricePerKg !== undefined ? ink.pricePerKg : 300,
+      ink.solidContentPct !== undefined && ink.solidContentPct !== null ? ink.solidContentPct : '',
+      ink.solidVariationPct !== undefined && ink.solidVariationPct !== null ? ink.solidVariationPct : '',
+      ink.pricePerKg !== undefined && ink.pricePerKg !== null ? ink.pricePerKg : '',
       ink.stockQtyKg !== undefined ? ink.stockQtyKg : 0,
       ink.reorderLevelKg !== undefined ? ink.reorderLevelKg : 100,
       ink.solventType || 'Ethyl Acetate + IPA',
@@ -464,11 +553,14 @@ export default function InkManagement({
           const codeVal = (codeIdx >= 0 ? cols[codeIdx] : cols[0]) || `INK-CODE-${i}`;
           const shadeVal = (shadeIdx >= 0 ? cols[shadeIdx] : cols[1]) || 'Standard Shade';
           const typeVal = (typeIdx >= 0 ? cols[typeIdx] : cols[2]) || 'Reverse Ink';
-          const mfrVal = (mfrIdx >= 0 ? cols[mfrIdx] : cols[3]) || 'DIC Inks';
+          const mfrVal = (mfrIdx >= 0 ? cols[mfrIdx] : cols[3]) || '';
           const suppVal = (suppIdx >= 0 ? cols[suppIdx] : cols[4]) || '';
-          const solidVal = parseFloat(solidIdx >= 0 ? cols[solidIdx] : cols[5]) || 40;
-          const solidVarVal = parseFloat(solidVarIdx >= 0 ? cols[solidVarIdx] : cols[6]) || 2;
-          const priceVal = parseFloat(priceIdx >= 0 ? cols[priceIdx] : cols[7]) || 300;
+          const solidRaw = solidIdx >= 0 ? cols[solidIdx] : cols[5];
+          const solidVarRaw = solidVarIdx >= 0 ? cols[solidVarIdx] : cols[6];
+          const priceRaw = priceIdx >= 0 ? cols[priceIdx] : cols[7];
+          const solidVal = solidRaw === undefined || String(solidRaw).trim() === '' ? '' : Number(solidRaw);
+          const solidVarVal = solidVarRaw === undefined || String(solidVarRaw).trim() === '' ? '' : Number(solidVarRaw);
+          const priceVal = priceRaw === undefined || String(priceRaw).trim() === '' ? '' : Number(priceRaw);
           const stockVal = parseFloat(stockIdx >= 0 ? cols[stockIdx] : cols[8]) || 100;
           const reorderVal = parseFloat(reorderIdx >= 0 ? cols[reorderIdx] : cols[9]) || 50;
           const solventVal = (solventIdx >= 0 ? cols[solventIdx] : cols[10]) || 'Ethyl Acetate + IPA';
@@ -487,9 +579,9 @@ export default function InkManagement({
             productCode: upperCode,
             shade: shadeVal.trim(),
             inkType: typeVal.trim() || 'Reverse Ink',
-            manufacturer: mfrVal.trim() || 'DIC Inks',
+            manufacturer: mfrVal.trim(),
             supplierId: matchedVendor ? matchedVendor.id : null,
-            supplierName: matchedVendor ? (matchedVendor.companyName || matchedVendor.name) : (suppVal.trim() || 'Local Supplier'),
+            supplierName: matchedVendor ? (matchedVendor.companyName || matchedVendor.name) : suppVal.trim(),
             solidContentPct: solidVal,
             solidVariationPct: solidVarVal,
             pricePerKg: priceVal,
@@ -623,32 +715,29 @@ export default function InkManagement({
     if (!targetInks || targetInks.length === 0) return;
 
     const firstInk = targetInks[0];
-    const matchedVendor = (vendors || []).find(v => String(v.id) === String(firstInk.supplierId) || String(v.companyName || v.name) === String(firstInk.supplierName)) || (vendors || [])[0] || {
-      id: 'VEN-01',
-      companyName: firstInk.supplierName || 'DIC India Ltd',
-      name: firstInk.supplierName || 'DIC India Ltd',
-      address: 'Industrial Area, Sector 3, Pithampur / Indore (M.P.)',
-      gstin: '23AAACD1020K1Z5',
-      contactPerson: 'Sales Executive',
-      phone: '9826001122',
-      email: 'sales@inksupplier.com'
-    };
-
-    const modalItems = targetInks.map(ink => {
-      const suggestedQty = Math.max(100, Math.ceil(((parseFloat(ink.reorderLevelKg) || 50) * 2) - (parseFloat(ink.stockQtyKg) || 0)));
-      return {
-        id: ink.id,
-        productCode: ink.productCode,
-        shade: ink.shade,
-        inkType: ink.inkType,
-        solidContentPct: ink.solidContentPct || 40,
-        solidVariationPct: ink.solidVariationPct || 2,
-        manufacturer: ink.manufacturer || 'DIC Inks',
-        hsnCode: '3215',
-        qtyKg: suggestedQty,
-        rate: parseFloat(ink.pricePerKg) || 300
-      };
+    const matchedVendor = findVendorForInk(firstInk, vendors);
+    if (!matchedVendor) {
+      alert(`Cannot raise a purchase order for ${firstInk.productCode || 'this ink'}. Match it to a vendor that has a name, address, and GSTIN.`);
+      return;
+    }
+    const mismatched = targetInks.filter(ink => {
+      const other = findVendorForInk(ink, vendors);
+      return !other || String(other.id) !== String(matchedVendor.id);
     });
+    if (mismatched.length) {
+      alert('Every ink on one purchase order must use the same vendor. Split the selection or set the supplier on each ink.');
+      return;
+    }
+
+    const modalItems = [];
+    for (const ink of targetInks) {
+      const line = inkPoLine(ink);
+      if (line.error) {
+        alert(line.error);
+        return;
+      }
+      modalItems.push(line.item);
+    }
 
     setPoModalVendorId(matchedVendor.id || '');
     setPoModalPoNumber(getNextDocRefNumber('po'));
@@ -694,20 +783,17 @@ export default function InkManagement({
   const handleAddInkToPoModal = (inkId) => {
     const ink = inks.find(i => String(i.id) === String(inkId));
     if (!ink || poModalItems.some(i => i.id === ink.id)) return;
-    const suggestedQty = Math.max(100, Math.ceil(((parseFloat(ink.reorderLevelKg) || 50) * 2) - (parseFloat(ink.stockQtyKg) || 0)));
-    const newItem = {
-      id: ink.id,
-      productCode: ink.productCode,
-      shade: ink.shade,
-      inkType: ink.inkType,
-      solidContentPct: ink.solidContentPct || 40,
-      solidVariationPct: ink.solidVariationPct || 2,
-      manufacturer: ink.manufacturer || 'DIC Inks',
-      hsnCode: '3215',
-      qtyKg: suggestedQty,
-      rate: parseFloat(ink.pricePerKg) || 300
-    };
-    setPoModalItems(prev => [...prev, newItem]);
+    const matchedVendor = findVendorForInk(ink, vendors);
+    if (!matchedVendor || String(matchedVendor.id) !== String(poModalVendorId)) {
+      alert('That ink is not supplied by the vendor on this purchase order.');
+      return;
+    }
+    const line = inkPoLine(ink);
+    if (line.error) {
+      alert(line.error);
+      return;
+    }
+    setPoModalItems(prev => [...prev, line.item]);
   };
 
   // Confirm and Finalize PO Issuance after User Edit
@@ -718,33 +804,36 @@ export default function InkManagement({
       return;
     }
 
-    const matchedVendor = (vendors || []).find(v => String(v.id) === String(poModalVendorId)) || {
-      companyName: 'DIC India Ltd',
-      name: 'DIC India Ltd',
-      address: 'Industrial Area, Sector 3, Pithampur / Indore (M.P.)',
-      gstin: '23AAACD1020K1Z5',
-      contactPerson: 'Sales Executive',
-      phone: '9826001122',
-      email: 'sales@inksupplier.com'
-    };
+    const matchedVendor = vendorRecord((vendors || []).find(v => String(v.id) === String(poModalVendorId)));
+    if (!matchedVendor) {
+      alert('Select a vendor with a name, address, and GSTIN before issuing this purchase order.');
+      return;
+    }
 
     const poDateStr = poModalPoDate || new Date().toISOString().split('T')[0];
     const deliveryDateStr = poModalDeliveryDate || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
 
-    const items = poModalItems.map((item, idx) => {
-      const qtyVal = parseFloat(item.qtyKg) || 100;
-      const rateVal = parseFloat(item.rate) || 0;
-      return {
+    const items = [];
+    for (let idx = 0; idx < poModalItems.length; idx += 1) {
+      const item = poModalItems[idx];
+      const missing = missingInkCommercialFields(item);
+      const qtyVal = Number(item.qtyKg);
+      const rateVal = Number(item.rate);
+      if (missing.length || !Number.isFinite(qtyVal) || qtyVal <= 0 || !Number.isFinite(rateVal) || rateVal <= 0) {
+        alert(`${item.productCode || 'A line'} is missing ${missing.concat(!Number.isFinite(qtyVal) || qtyVal <= 0 ? ['quantity'] : [], !Number.isFinite(rateVal) || rateVal <= 0 ? ['rate'] : []).join(', ')}.`);
+        return;
+      }
+      items.push({
         id: idx + 1,
-        itemId: item.productCode, // MANUFACTURER PRODUCT CODE RELAYED IN PO
+        itemId: item.productCode,
         description: `${item.shade} (${item.inkType}) - Solid Content: ${item.solidContentPct}% (±${item.solidVariationPct}%)`,
-        make: item.manufacturer || 'DIC Inks',
-        hsnCode: item.hsnCode || '3215',
+        make: String(item.manufacturer).trim(),
+        hsnCode: String(item.hsnCode).trim(),
         qtyKg: qtyVal,
         rate: rateVal,
         amount: Number((qtyVal * rateVal).toFixed(2))
-      };
-    });
+      });
+    }
 
     const totalQty = items.reduce((sum, i) => sum + i.qtyKg, 0);
     const totalTaxable = items.reduce((sum, i) => sum + i.amount, 0);
@@ -2254,12 +2343,26 @@ export default function InkManagement({
                     <input
                       type="text"
                       className="form-control"
-                      placeholder="e.g. DIC Inks, Flint, Hubergroup"
+                      placeholder="Manufacturer name"
                       value={manufacturer}
                       onChange={e => setManufacturer(e.target.value)}
+                      required
                       style={{ fontSize: '0.9rem' }}
                     />
                   </div>
+                </div>
+
+                <div style={{ marginBottom: '16px' }}>
+                  <label className="form-label" style={{ fontWeight: '700', color: '#1e293b', marginBottom: '6px', display: 'block' }}>HSN Code *</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="HSN from the supplier invoice"
+                    value={hsnCode}
+                    onChange={e => setHsnCode(e.target.value)}
+                    required
+                    style={{ fontSize: '0.9rem' }}
+                  />
                 </div>
 
                 <div>
@@ -2288,9 +2391,9 @@ export default function InkManagement({
                       type="number"
                       step="0.1"
                       className="form-control"
-                      placeholder="40"
+                      placeholder="Solid content %"
                       value={solidContentPct}
-                      onChange={e => setSolidContentPct(parseFloat(e.target.value) || 0)}
+                      onChange={e => setSolidContentPct(e.target.value)}
                     />
                     <span style={{ fontSize: '0.7rem', color: '#0369a1', marginTop: '4px', display: 'block', fontWeight: '600' }}>
                       Multiplier: {solidContentPct > 0 ? (100 / solidContentPct).toFixed(2) : 0}x
@@ -2303,9 +2406,9 @@ export default function InkManagement({
                       type="number"
                       step="0.1"
                       className="form-control"
-                      placeholder="2"
+                      placeholder="Variation %"
                       value={solidVariationPct}
-                      onChange={e => setSolidVariationPct(parseFloat(e.target.value) || 0)}
+                      onChange={e => setSolidVariationPct(e.target.value)}
                     />
                     <span style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '4px', display: 'block' }}>Acceptable tolerance</span>
                   </div>
@@ -2339,7 +2442,7 @@ export default function InkManagement({
                       className="form-control"
                       style={{ fontWeight: '800', color: '#047857' }}
                       value={pricePerKg}
-                      onChange={e => setPricePerKg(parseFloat(e.target.value) || 0)}
+                      onChange={e => setPricePerKg(e.target.value)}
                       required
                     />
                   </div>

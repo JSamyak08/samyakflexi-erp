@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
-import { COMPANY_DETAILS, isLDFilm, getFilmSlitWidth } from '../factoryStore';
+import { isLDFilm, getFilmSlitWidth } from '../factoryStore';
+import { loadLetterhead } from '../services/companyProfile';
+import CompanyProfileNotice from './CompanyProfileNotice';
 import { numberToWords, formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 
@@ -13,9 +15,11 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
   const [currentOcnTerms, setCurrentOcnTerms] = useState(savedTerms.ocnTerms || []);
   const signatureImage = getAuthorisedSignature();
   const logoImage = getCompanyLogo();
-
+  const letterhead = loadLetterhead();
 
   if (!calculationData) return null;
+  if (letterhead.error) return <CompanyProfileNotice message={letterhead.error} onClose={onClose} />;
+  const COMPANY_DETAILS = letterhead.company;
 
   const handleUpdateTerm = (index, value) => {
     const updated = [...currentOcnTerms];
@@ -118,7 +122,7 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
   const totalTaxable = summary.totalRawMaterialCost || summary.totalTaxable || 0;
   
   // Calculate Indian GST applicability (Intra-State 23 MP: CGST 9% + SGST 9% vs Inter-State: IGST 18%)
-  const gstInfo = calculateGSTBreakdown(clientInfo.gstin, clientInfo.address, totalTaxable, 18, COMPANY_DETAILS.gstin || '23AAACS9988F1Z1');
+  const gstInfo = calculateGSTBreakdown(clientInfo.gstin, clientInfo.address, totalTaxable, 18, COMPANY_DETAILS.gstin);
   const cgstAmt = gstInfo.cgstAmount;
   const sgstAmt = gstInfo.sgstAmount;
   const igstAmt = gstInfo.igstAmount;
@@ -143,7 +147,7 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
             <div className="letterhead-brand">
               <img src={logoImage} alt="Samyak International Ltd Logo" className="samyak-logo-img" style={{ height: '46px', objectFit: 'contain' }} />
               <p className="letterhead-company-sub" style={{ marginTop: '2px', fontSize: '8.5px', fontWeight: '800', color: '#374151' }}>
-                BSE: SAMYAKINT • CIN: L67120MH1994PLC225907
+                {COMPANY_DETAILS.tagline}
               </p>
             </div>
 

@@ -11,6 +11,11 @@ const packedMeta = {
   purchaseRatePerKg: 145.5,
   batchNo: 'BATCH-PET-991',
   packagingType: 'Roll',
+  vendorAddress: 'Plot 12, Industrial Area',
+  vendorGstin: '24AAAAA0000A1Z5',
+  vendorEmail: 'stores@example.com',
+  vendorPhone: '9876543210',
+  vendorContact: 'Store desk',
   grossWeightKg: 520,
   tareWeightKg: 20,
   itemsBreakdown: [
@@ -36,6 +41,11 @@ test('a packed single-item GRN keeps its header and gains one synthesized line',
   assert.equal(grn.netWeightKg, 500);
   assert.equal(grn.receivedQtyKg, 500);
   assert.equal(grn.purchaseRatePerKg, 145.5);
+  assert.equal(grn.vendorAddress, 'Plot 12, Industrial Area');
+  assert.equal(grn.vendorGstin, '24AAAAA0000A1Z5');
+  assert.equal(grn.vendorEmail, 'stores@example.com');
+  assert.equal(grn.vendorPhone, '9876543210');
+  assert.equal(grn.vendorContact, 'Store desk');
   assert.equal(grn.rollsReceived, 2);
   assert.equal(grn.itemsBreakdown.length, 2);
   assert.equal(grn.lineItems.length, 1);

@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
 import { resolveOutboundRecipients } from '../src/services/emailPolicy.js';
+import { readSmtpConfig } from './smtpConfig.js';
 
 const ROLES = [
   'Admin',
@@ -201,22 +202,11 @@ export async function handleSendEmail(req, res, deps = {}) {
       return res.status(403).json({ success: false, message: 'Only an active plant user can send mail.' });
     }
 
-    const smtpUser = serverEnv('SMTP_USER');
-    const smtpPass = serverEnv('SMTP_PASS');
-    if (!smtpUser || !smtpPass) {
-      throw new Error('SMTP is not configured.');
-    }
-
-    const port = parseInt(serverEnv('SMTP_PORT', '465'), 10);
-    const transporter = openTransport({
-      host: serverEnv('SMTP_HOST', 'smtp.hostinger.com'),
-      port,
-      secure: serverEnv('SMTP_SECURE', 'true') === 'true' || port === 465,
-      auth: { user: smtpUser, pass: smtpPass },
-    });
+    const smtp = readSmtpConfig(process.env);
+    const transporter = openTransport(smtp);
 
     const info = await transporter.sendMail({
-      from: `"Samyak International ERP" <${smtpUser}>`,
+      from: `"Samyak International ERP" <${smtp.auth.user}>`,
       ...(resolved.to ? { to: resolved.to } : {}),
       ...(resolved.cc ? { cc: resolved.cc } : {}),
       ...(resolved.bcc ? { bcc: resolved.bcc } : {}),
