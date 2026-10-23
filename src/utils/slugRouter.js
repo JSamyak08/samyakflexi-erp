@@ -16,7 +16,7 @@
  * still honors those query keys, hash paths, and the legacy table.
  */
 
-export const ROUTING_PHASE = 4;
+export const ROUTING_PHASE = 5;
 
 const RETURN_KEY = 'samyak_erp_return_to';
 
@@ -873,6 +873,9 @@ export function buildHref(moduleKey, params = {}, phase = ROUTING_PHASE) {
   }
   const mod = MODULE_BY_KEY.get(alias);
   if (!mod) return '/dashboard';
+  if (alias === 'material_indents' && (params.subTab === 'pellet_fuel' || params.tab === 'pellet_fuel')) {
+    return buildHref('pellet_fuel', {}, phase);
+  }
   if (alias === 'login' && phase >= 3) {
     if (params.section === 'forgot-password' || params.section === 'forgot_password') return '/login/forgot-password';
     if (params.section === 'recovery') return '/reset-password';
@@ -960,6 +963,7 @@ export function pushSlugState(tabKey, queryParams = {}, replace = false) {
       const state = { tab: tabKey, params: queryParams };
       if (replace && window.history.replaceState) window.history.replaceState(state, '', finalUrl);
       else if (window.history.pushState) window.history.pushState(state, '', finalUrl);
+      window.dispatchEvent(new CustomEvent('erp-slug-navigate'));
     }
     return finalUrl;
   } catch (error) {

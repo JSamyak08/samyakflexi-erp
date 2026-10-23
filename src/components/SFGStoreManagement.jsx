@@ -51,6 +51,7 @@ import {
   validateAddedConsumeRows
 } from '../utils/consumeRollEntries';
 import TablePagination, { usePagination } from './TablePagination';
+import { pushSlugState } from '../utils/slugRouter';
 import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo } from '../utils/fifoUtils';
 import { getInventoryAgeingSettings } from '../services/settingsService';
 import { supabase } from '../services/supabaseClient';
@@ -65,6 +66,7 @@ export default function SFGStoreManagement({
   productionRecords = [],
   machines = [],
   currentUser,
+  urlParams = {},
   onSaveSFGGood,
   onConsumeSFG,
   onDeleteSFGGood
@@ -74,7 +76,16 @@ export default function SFGStoreManagement({
   const [typeFilter, setTypeFilter] = useState('all');
 
   // Sub-tab Navigation: 'available' | 'qchold' | 'scrap'
-  const [activeStoreTab, setActiveStoreTab] = useState('available');
+  const [activeStoreTab, setActiveStoreTab] = useState(urlParams?.tab || 'available');
+  useEffect(() => {
+    if (urlParams?.tab === 'available' || urlParams?.tab === 'qchold' || urlParams?.tab === 'scrap') {
+      setActiveStoreTab(urlParams.tab);
+    }
+  }, [urlParams?.tab]);
+  const chooseStoreTab = (tab) => {
+    setActiveStoreTab(tab);
+    pushSlugState('sfg_store', { tab });
+  };
 
   // QC Hold Store & Scrap Store Persisted State
   const [qcHoldItems, setQcHoldItems] = useState([]);
@@ -1325,7 +1336,7 @@ export default function SFGStoreManagement({
       }}>
         <button
           type="button"
-          onClick={() => setActiveStoreTab('available')}
+          onClick={() => chooseStoreTab('available')}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -1348,7 +1359,7 @@ export default function SFGStoreManagement({
 
         <button
           type="button"
-          onClick={() => setActiveStoreTab('qchold')}
+          onClick={() => chooseStoreTab('qchold')}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -1384,7 +1395,7 @@ export default function SFGStoreManagement({
 
         <button
           type="button"
-          onClick={() => setActiveStoreTab('scrap')}
+          onClick={() => chooseStoreTab('scrap')}
           style={{
             display: 'inline-flex',
             alignItems: 'center',

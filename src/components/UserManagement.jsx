@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { pushSlugState } from '../utils/slugRouter';
 import { 
   Users, 
   UserPlus, 
@@ -29,13 +30,21 @@ export default function UserManagement({
   onAddUser,
   onUpdateUser,
   onDeleteUser,
-  onUpdateRolePermissions
+  onUpdateRolePermissions,
+  urlParams = {}
 }) {
   const isAuthorized = currentUser?.role === 'Admin';
   const isAdmin = currentUser?.role === 'Admin';
   const [saveNotification, setSaveNotification] = useState(null);
 
-  const [activeSubTab, setActiveSubTab] = useState('directory'); // 'directory' | 'rbac'
+  const [activeSubTab, setActiveSubTab] = useState(urlParams?.subTab || 'directory');
+  useEffect(() => {
+    if (urlParams?.subTab === 'directory' || urlParams?.subTab === 'rbac') setActiveSubTab(urlParams.subTab);
+  }, [urlParams?.subTab]);
+  const chooseUserTab = (subTab) => {
+    setActiveSubTab(subTab);
+    pushSlugState('user_management', { subTab });
+  };
   const [searchTerm, setSearchTerm] = useState('');
   const [isOnboardingModalOpen, setIsOnboardingModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
@@ -214,14 +223,14 @@ export default function UserManagement({
             <button 
               className={`btn-secondary ${activeSubTab === 'directory' ? 'active' : ''}`}
               style={{ background: activeSubTab === 'directory' ? '#0f172a' : 'transparent', color: activeSubTab === 'directory' ? '#ffffff' : '#334155', border: 'none', padding: '6px 14px', fontSize: '0.82rem', fontWeight: '700' }}
-              onClick={() => setActiveSubTab('directory')}
+              onClick={() => chooseUserTab('directory')}
             >
               <Users size={16} /> User Directory ({(users || []).length})
             </button>
             <button 
               className={`btn-secondary ${activeSubTab === 'rbac' ? 'active' : ''}`}
               style={{ background: activeSubTab === 'rbac' ? '#0f172a' : 'transparent', color: activeSubTab === 'rbac' ? '#ffffff' : '#334155', border: 'none', padding: '6px 14px', fontSize: '0.82rem', fontWeight: '700' }}
-              onClick={() => setActiveSubTab('rbac')}
+              onClick={() => chooseUserTab('rbac')}
             >
               <ShieldCheck size={16} /> Role & Module Permissions Matrix
             </button>
