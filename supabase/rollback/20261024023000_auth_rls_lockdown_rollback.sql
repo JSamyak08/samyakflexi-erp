@@ -1,0 +1,16 @@
+-- Do not recreate "Allow anon and auth full access".
+-- That policy gives the public anon key full access to payroll, orders, and the user directory.
+--
+-- If an Admin cannot sign in, in the SQL editor (postgres bypasses RLS):
+--
+--   UPDATE public.users
+--      SET auth_user_id = '<auth.users uuid>',
+--          role = 'Admin',
+--          status = 'Active',
+--          active = true
+--    WHERE lower(email) = lower('<admin email>')
+--      AND id NOT LIKE 'USR-SETTING-%';
+--
+-- Then send that person a password recovery from Authentication, and redeploy
+-- the previous Vercel deployment if the new frontend is the problem.
+-- Leave these policies in place.

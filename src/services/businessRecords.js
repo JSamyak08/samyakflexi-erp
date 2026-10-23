@@ -617,7 +617,7 @@ function auditToRow(item) {
   return {
     id: String(item.id),
     username: item.username || 'System',
-    user_role: item.userRole || item.user_role || 'Admin',
+    user_role: item.userRole || item.user_role || '',
     action_type: item.actionType || item.action_type || 'UPDATE',
     module: item.module || 'System',
     details: item.details || '',

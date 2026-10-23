@@ -866,7 +866,7 @@ ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS creation_date DATE;
               disabled={initializingBuckets || !isSupabaseConfigured()}
               className="btn-primary"
               style={{ background: '#0284c7', borderColor: '#0284c7', opacity: (!isSupabaseConfigured() || initializingBuckets) ? 0.6 : 1 }}
-              title="Create or verify public storage bucket erp-files and artwork in Supabase"
+              title="Create or verify private storage buckets erp-files and artwork"
             >
               <Cloud size={16} className={initializingBuckets ? 'animate-spin' : ''} />
               {initializingBuckets ? 'Configuring...' : 'Setup Storage Buckets'}
@@ -1050,7 +1050,7 @@ ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS creation_date DATE;
                   Run the SQL schema provided under the <strong>SQL Schema Script</strong> tab in your Supabase SQL Editor to create all 14 tables and access policies.
                 </li>
                 <li>
-                  Go to <strong>Storage</strong> in Supabase Dashboard &gt; <strong>New bucket</strong> &gt; Name it <code style={{ background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', color: '#0f172a', fontWeight: '700' }}>erp-files</code> &gt; Toggle <strong>Public bucket</strong> to ON &gt; Save.
+                  Go to <strong>Storage</strong> in Supabase Dashboard &gt; <strong>New bucket</strong> &gt; Name it <code style={{ background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', color: '#0f172a', fontWeight: '700' }}>erp-files</code> &gt; Leave <strong>Public bucket</strong> off &gt; Save. Signed-in users open files with signed URLs.
                 </li>
               </ol>
             </div>

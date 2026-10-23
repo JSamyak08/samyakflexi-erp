@@ -2,13 +2,11 @@
 
 ## Database migrations
 
-`supabase/migrations` is what the Supabase GitHub integration applies when `main` changes. Those five files use the same version numbers as production project `eamstsaqkbeiywfaanhi`, so a merge does not run them again.
+`supabase/migrations` is what the Supabase GitHub integration applies when `main` changes. Files whose version is already in production project `eamstsaqkbeiywfaanhi` are not run again.
 
-The lockdown script is **not** in that directory. Apply it by hand from the Supabase SQL editor, only after this frontend is deployed and staff have set passwords:
+The RLS lockdown is `supabase/migrations/20261024023000_auth_rls_lockdown.sql`. It runs with the identity guard, the secret-copy removal, and the private storage migration. `supabase/manual/20261019120000_auth_rls_lockdown.sql` is the earlier draft and must not be run again.
 
-`supabase/manual/20261019120000_auth_rls_lockdown.sql`
-
-It drops `password_hash` and `smtp_pass`. Do not move it back into `supabase/migrations`.
+SMTP sending uses the server environment (`SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`). The database no longer stores that password.
 
 There is no `supabase/config.toml`, `supabase/seed.sql`, or `supabase/functions`. `supabase/rollback` is comments only. `supabase_schema.sql` at the repo root is historical and must not be run.
 
