@@ -84,7 +84,7 @@ export default function SFGStoreManagement({
   }, [urlParams?.tab]);
   const chooseStoreTab = (tab) => {
     setActiveStoreTab(tab);
-    pushSlugState('sfg_store', { tab });
+    pushSlugState('sfg_store', { section: tab });
   };
 
   // QC Hold Store & Scrap Store Persisted State

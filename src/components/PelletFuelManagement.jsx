@@ -54,7 +54,7 @@ export default function PelletFuelManagement({
   }, [urlParams?.subTab]);
   const choosePelletTab = (subTab) => {
     setActiveSubTab(subTab);
-    pushSlugState('pellet_fuel', { subTab });
+    pushSlugState('pellet_fuel', { section: subTab });
   };
 
   // Filter Bar States

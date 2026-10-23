@@ -44,7 +44,7 @@ export default function UserManagement({
   }, [urlParams?.subTab]);
   const chooseUserTab = (subTab) => {
     setActiveSubTab(subTab);
-    pushSlugState('user_management', { subTab });
+    pushSlugState('user_management', { section: subTab });
   };
   const [searchTerm, setSearchTerm] = useState('');
   const [isOnboardingModalOpen, setIsOnboardingModalOpen] = useState(false);

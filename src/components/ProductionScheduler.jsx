@@ -188,7 +188,7 @@ export default function ProductionScheduler({
   const choosePressTab = (tab) => {
     setActiveTab(tab);
     if (onSectionChange) onSectionChange(tab);
-    else if (urlParams && Object.keys(urlParams).length > 0) pushSlugState('printing_scheduler', { tab });
+    else if (urlParams && Object.keys(urlParams).length > 0) pushSlugState('printing_scheduler', { section: tab });
   };
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMachineFilter, setSelectedMachineFilter] = useState('All');

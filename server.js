@@ -52,9 +52,14 @@ app.post('/api/send-email', (req, res) => sendEmail(req, res));
 // Serve static assets in production if built
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, 'dist')));
-  app.get('*', (req, res) => {
+  const sendSpa = (req, res) => {
+    if (req.path === '/api' || req.path.startsWith('/api/')) {
+      return res.status(404).json({ success: false, message: 'API route not found' });
+    }
     res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
-  });
+  };
+  app.get('/', sendSpa);
+  app.get('/*splat', sendSpa);
 }
 
 app.listen(PORT, () => {

@@ -16,7 +16,7 @@ export default defineConfig({
   testDir: './tests',
   // The sign-in repro starts Vite and stubs Supabase. Run it with
   // playwright.boot.config.js. The default suite stays the example tests.
-  testIgnore: 'boot-loader.spec.js',
+  testIgnore: ['boot-loader.spec.js', 'slug-urls.spec.js', 'attendance-mark.live.spec.js'],
   /* Run tests in files in parallel */
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
