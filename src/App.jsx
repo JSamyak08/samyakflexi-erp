@@ -3590,6 +3590,12 @@ export default function App() {
       <AuthScreen
         onLogin={handleLogin}
         recoveryMode={mustSetPassword}
+        initialView={routeInfo.section === 'forgot-password' ? 'forgot_password' : 'signin'}
+        onViewChange={(mode) => {
+          const section = mode === 'forgot_password' ? 'forgot-password' : 'signin';
+          const href = pushSlugState('login', { section });
+          setRouteInfo({ tab: 'login', section, params: { section }, unknown: false, canonical: href });
+        }}
         onPasswordUpdated={async () => {
           recoveryHandledRef.current = true;
           passwordRecoveryRef.current = false;
