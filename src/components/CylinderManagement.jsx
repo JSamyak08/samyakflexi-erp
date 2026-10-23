@@ -31,7 +31,7 @@ import {
   Link,
   Link2
 } from 'lucide-react';
-import { calculateUtilisation } from '../dataStore';
+import { calculateUtilisation, getCylinderPrintedQtyKg } from '../dataStore';
 import { FILM_DENSITIES } from '../factoryStore';
 import CylinderJobCardForm from '../CylinderJobCardForm';
 import { uploadArtworkFile, openArtworkViewer } from '../services/supabaseStorageService';
@@ -123,57 +123,6 @@ export default function CylinderManagement({
   productionRecords = [],
   orders = []
 }) {
-  // Compute actual printed volume (Kg) dynamically from production records & completed orders
-  const getCylinderPrintedQtyKg = (c) => {
-    if (!c) return 0;
-    const targetId = c.id;
-    const targetJmId = c.jobMasterId;
-    const targetSku = (c.sku || c.skuCode || '').trim().toLowerCase();
-    const targetJobName = (c.jobName || '').trim().toLowerCase();
-
-    let totalKg = 0;
-    let foundProd = false;
-
-    (productionRecords || []).forEach(r => {
-      if (!r) return;
-      const matches = (
-        (r.cylinderId && r.cylinderId === targetId) ||
-        (r.orderId && r.orderId === targetId) ||
-        (targetJmId && r.jobMasterId === targetJmId) ||
-        (targetSku && (r.skuCode || r.jobCode || '').trim().toLowerCase() === targetSku) ||
-        (targetJobName && (r.jobName || '').trim().toLowerCase() === targetJobName)
-      );
-      if (matches) {
-        foundProd = true;
-        const val = parseFloat(r.qtyFirstPassL1 || r.printedOutputKg || r.totalProductionQtyKg || r.grossProductionKg || 0);
-        totalKg += val;
-      }
-    });
-
-    (orders || []).forEach(o => {
-      if (!o) return;
-      const matches = (
-        (o.cylinderId && o.cylinderId === targetId) ||
-        (o.id && o.id === targetId) ||
-        (targetJmId && o.jobMasterId === targetJmId) ||
-        (targetSku && (o.skuCode || o.jobCode || '').trim().toLowerCase() === targetSku) ||
-        (targetJobName && (o.jobName || '').trim().toLowerCase() === targetJobName)
-      );
-      if (matches && (o.printedOutputKg > 0 || o.actualMetersPrinted > 0)) {
-        const inProdRecs = (productionRecords || []).some(r => r.orderId === o.id || r.id === o.id);
-        if (!inProdRecs) {
-          foundProd = true;
-          totalKg += parseFloat(o.printedOutputKg || 0);
-        }
-      }
-    });
-
-    if (foundProd && totalKg > 0) {
-      return Math.round(totalKg * 100) / 100;
-    }
-
-    return parseFloat(c.layer1PrintedQtyKg) || parseFloat(c.dispatchedQty) || 0;
-  };
   // Access Control: Only Admin and Plant Manager have Edit/Lock/Delete access
   const EDIT_ROLES = ['Admin', 'SuperAdmin', 'Plant Manager'];
   const userRole = currentUser?.role || 'Admin';
@@ -541,7 +490,7 @@ export default function CylinderManagement({
       (j.jobName && cyl.jobName && j.jobName.trim().toLowerCase() === cyl.jobName.trim().toLowerCase())
     );
 
-    const computedPrintedKg = getCylinderPrintedQtyKg(cyl);
+    const computedPrintedKg = getCylinderPrintedQtyKg(cyl, productionRecords, orders);
 
     setEditingCylinder(cyl);
     setSku(cyl.sku || '');
@@ -1183,7 +1132,7 @@ export default function CylinderManagement({
                 </tr>
               ) : (
                 paginatedCylinders.map(c => {
-                  const actualPrintedKg = getCylinderPrintedQtyKg(c);
+                  const actualPrintedKg = getCylinderPrintedQtyKg(c, productionRecords, orders);
                   const util = calculateUtilisation(actualPrintedKg, c.utilisationLimit || 10000);
                   const isWarning = util >= 80;
                   const cCirc = c.circumferenceMm || 400;

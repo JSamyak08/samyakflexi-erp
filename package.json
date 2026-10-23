@@ -10,7 +10,7 @@
     "build": "vite build",
     "start": "node server.js",
     "lint": "eslint .",
-    "test": "node --test tests/business-records.test.js tests/migration-persist.test.js tests/migration-open-policies.test.js tests/email-recipients.test.js tests/privilege-guard.test.js tests/employee-attendance.test.js",
+    "test": "node --test tests/business-records.test.js tests/migration-persist.test.js tests/migration-open-policies.test.js tests/email-recipients.test.js tests/privilege-guard.test.js tests/employee-attendance.test.js tests/job-profile-metrics.test.js",
     "preview": "vite preview"
   },
   "dependencies": {
