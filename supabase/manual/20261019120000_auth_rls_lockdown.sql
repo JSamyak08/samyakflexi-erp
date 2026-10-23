@@ -256,6 +256,13 @@ SELECT private.install_module_access('public.job_datasheets'::regclass, ARRAY['j
 SELECT private.install_module_access('public.vendors'::regclass, ARRAY['vendors','purchase_orders','inventory']);
 SELECT private.install_module_access('public.purchase_orders'::regclass, ARRAY['purchase_orders','inventory']);
 SELECT private.install_module_access('public.grns'::regclass, ARRAY['inventory','purchase_orders']);
+-- Present only after 20261023120000_grn_line_items.sql. Older databases skip it.
+DO $$
+BEGIN
+  IF to_regclass('public.grn_line_items') IS NOT NULL THEN
+    PERFORM private.install_module_access('public.grn_line_items'::regclass, ARRAY['inventory','purchase_orders']);
+  END IF;
+END $$;
 SELECT private.install_module_access('public.inventory'::regclass, ARRAY['inventory','material_indents','purchase_orders','production_records','printing_scheduler']);
 SELECT private.install_module_access('public.inventory_rolls'::regclass, ARRAY['inventory','material_indents','production_records','printing_scheduler']);
 SELECT private.install_module_access('public.inks'::regclass, ARRAY['ink_management','inventory']);
