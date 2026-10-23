@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
 import { randomBytes } from 'node:crypto';
 import { resolveOutboundRecipients } from '../src/services/emailPolicy.js';
+import { readUsername } from '../src/utils/activeUserLabel.js';
 
 const ROLES = [
   'Admin',
@@ -16,7 +17,7 @@ const ROLES = [
   'Shop Floor Operator',
 ];
 
-const PROFILE_COLUMNS = 'id, full_name, email, role, department, status, active, auth_user_id';
+const PROFILE_COLUMNS = 'id, username, full_name, email, role, department, status, active, auth_user_id';
 
 function serverEnv(name, fallback = '') {
   return process.env[name] || fallback;
@@ -212,6 +213,7 @@ async function issueRecovery(service, email, name, options = {}) {
 function publicUser(row) {
   return {
     id: row.id,
+    username: readUsername(row),
     name: row.full_name || row.email,
     email: row.email,
     role: row.role,

@@ -75,6 +75,7 @@ import { showSuccessScreen } from './context/SuccessModalContext';
 import { fetchAuditLogsFromSupabase, saveAuditLogToSupabase, createAuditEntry, pruneOldAuditLogs } from './services/auditLogger';
 import { getNextDocRefNumber } from './services/settingsService';
 import { getRouteFromUrl, getTabFromUrl, pushSlugState } from './utils/slugRouter';
+import { activeUserLabel } from './utils/activeUserLabel';
 import { isSupabaseConfigured, checkSupabaseConnection } from './services/supabaseClient';
 import { 
   fetchOrders, saveOrderToSupabase, deleteOrderFromSupabase,
@@ -519,6 +520,17 @@ export default function App() {
     });
     return Array.from(map.values());
   }, [users]);
+
+  const activeUserOptions = useMemo(() => {
+    const list = [...activeUsersList];
+    if (currentUser?.id && !list.some(u => String(u.id) === String(currentUser.id))) {
+      list.unshift(currentUser);
+    }
+    return list.map(u => ({
+      value: String(u.id),
+      label: activeUserLabel(u),
+    }));
+  }, [activeUsersList, currentUser]);
 
   const isTabAllowed = (tabKey) => {
     if (!currentUser) return false;
@@ -3944,6 +3956,7 @@ export default function App() {
                 }}
                 disabled={!(sessionProfile ? sessionProfile.role === 'Admin' : currentUser?.role === 'Admin')}
                 value={currentUser?.id || ''}
+                options={activeUserOptions}
                 onChange={e => {
                   const selectedId = e.target.value;
                   const selectedUser = activeUsersList.find(u => String(u.id) === String(selectedId));
@@ -3952,13 +3965,7 @@ export default function App() {
                     try { sessionStorage.setItem('samyak_erp_ui_role_preview', JSON.stringify(selectedUser)); } catch (e) {}
                   }
                 }}
-              >
-                {activeUsersList.map(u => (
-                  <option key={u.id} value={u.id}>
-                    {u.name} ({u.role})
-                  </option>
-                ))}
-              </SearchableSelect>
+              />
             </div>
 
             <button className="btn-signout" onClick={handleLogout} title="Sign Out of Session">

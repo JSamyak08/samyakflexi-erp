@@ -1,12 +1,15 @@
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 import { isCompanyAddress, parseMailbox } from './emailPolicy';
+import { readUsername } from '../utils/activeUserLabel';
 
-const PROFILE_COLUMNS = 'id, full_name, email, role, department, status, active, auth_user_id';
+const PROFILE_COLUMNS = 'id, username, full_name, email, role, department, status, active, auth_user_id';
 
 function mapProfile(profile) {
+  const username = readUsername(profile);
   return {
     id: profile.id,
-    name: profile.full_name || profile.email || 'User',
+    username,
+    name: profile.full_name || username || profile.email || 'User',
     email: profile.email,
     role: profile.role,
     department: profile.department || '',

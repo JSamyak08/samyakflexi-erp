@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Search, X, Check } from 'lucide-react';
+import { optionLabelFromChildren } from '../utils/activeUserLabel';
 
 /**
  * SearchableSelect
@@ -76,13 +77,9 @@ const SearchableSelect = React.forwardRef(({
             parseChildren(child.props.children, groupLabel);
           }
         } else if (child.type === 'option') {
-          const val = child.props.value !== undefined ? String(child.props.value) : String(child.props.children || '');
-          let lbl = child.props.children;
-          if (typeof lbl === 'object') {
-            lbl = val; // fallback if children is complex element
-          } else {
-            lbl = String(lbl || val);
-          }
+          const text = optionLabelFromChildren(child.props.children, '');
+          const val = child.props.value !== undefined ? String(child.props.value) : text;
+          const lbl = text || val;
 
           extracted.push({
             value: val,
