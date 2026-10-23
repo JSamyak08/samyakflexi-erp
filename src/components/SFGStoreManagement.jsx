@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import SearchableSelect from './SearchableSelect';
 import { 
   Layers, 
@@ -36,6 +36,20 @@ import {
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import SFGFGEntryModal from './SFGFGEntryModal';
+import { OutputExtraRolls, Substrate2ExtraRolls } from './ConsumeExtraRolls';
+import {
+  assignOutputBarcodes,
+  buildChildOutputRoll,
+  buildLegacyOutputRoll,
+  buildLegacySubstrateInfo,
+  buildSubstrate2RollList,
+  collectKnownBarcodes,
+  nextAdditionalOutputBarcode,
+  outputOverReferenceWarning,
+  sumOutputNet,
+  sumSubstrateConsumed,
+  validateAddedConsumeRows
+} from '../utils/consumeRollEntries';
 import TablePagination, { usePagination } from './TablePagination';
 import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo } from '../utils/fifoUtils';
 import { getInventoryAgeingSettings } from '../services/settingsService';
@@ -148,6 +162,10 @@ export default function SFGStoreManagement({
   const [outputTareKg, setOutputTareKg] = useState('0.8');
   const [tarePreset, setTarePreset] = useState('0.8');
   const [outputStorageBay, setOutputStorageBay] = useState('Bay A');
+  const [extraSubstrate2, setExtraSubstrate2] = useState([]);
+  const [extraOutputs, setExtraOutputs] = useState([]);
+  const [barcodePrintRolls, setBarcodePrintRolls] = useState(null);
+  const extraRollSeq = useRef(1);
 
   // Modals for QC Hold Actions
   const [selectedQcItemForApprove, setSelectedQcItemForApprove] = useState(null);
@@ -549,6 +567,9 @@ export default function SFGStoreManagement({
     setOutputTareKg('0.8');
     setTarePreset('0.8');
     setOutputStorageBay(item.storageBay || 'Bay A');
+    setExtraSubstrate2([]);
+    setExtraOutputs([]);
+    setBarcodePrintRolls(null);
   };
 
   const handleSelectSubRoll = (rollId) => {
@@ -582,6 +603,114 @@ export default function SFGStoreManagement({
       setOutputBarcode(`SFG-BC-${cleanOrd}-${Date.now().toString().slice(-4)}`);
       setOutputStorageBay('Bay A');
     }
+    const forcedFg = proc === 'Slitting & Rewinding' || proc === 'Pouching / Bag Making';
+    const nextType = forcedFg ? 'FG' : 'SFG';
+    const nowMs = Date.now();
+    const firstBarcode = `${nextType}-BC-${cleanOrd}-${String(nowMs).slice(-4)}`;
+    setExtraOutputs((prev) => {
+      if (!prev.length) return prev;
+      const taken = new Set([firstBarcode.toLowerCase()]);
+      return prev.map((row) => {
+        const barcode = nextAdditionalOutputBarcode({
+          outputType: nextType,
+          orderId: cleanOrd,
+          nowMs,
+          takenCodes: [...taken]
+        });
+        taken.add(barcode.toLowerCase());
+        return {
+          ...row,
+          outputType: nextType,
+          storageBay: forcedFg ? 'FG Warehouse' : (row.storageBay || 'Bay A'),
+          barcode
+        };
+      });
+    });
+  };
+
+  const nextExtraKey = (prefix) => {
+    extraRollSeq.current += 1;
+    return `${prefix}-${extraRollSeq.current}`;
+  };
+
+  const stockBarcodes = () => collectKnownBarcodes([sfgGoods, inventoryRolls]);
+
+  const addExtraSubstrate2 = () => {
+    setExtraSubstrate2((prev) => [...prev, {
+      key: nextExtraKey('sub2'),
+      rollId: '',
+      barcode: '',
+      filmType: '',
+      initialKg: '',
+      consumedKg: ''
+    }]);
+  };
+
+  const updateExtraSubstrate2 = (key, patch) => {
+    setExtraSubstrate2((prev) => prev.map((row) => (row.key === key ? { ...row, ...patch } : row)));
+  };
+
+  const selectExtraSubstrateRoll = (key, rollId) => {
+    if (!rollId) {
+      updateExtraSubstrate2(key, { rollId: '', barcode: '', filmType: '', initialKg: '' });
+      return;
+    }
+    const match = availableSubstrateRolls.find((roll) => (roll.barcodeId || roll.id) === rollId);
+    if (!match) {
+      updateExtraSubstrate2(key, { rollId });
+      return;
+    }
+    const availKg = Number(match.availableWeightKg ?? match.netWeightKg ?? 0);
+    const filmDesc = `${match.filmType || match.itemName || 'Substrate Film'}${match.micron ? ` (${match.micron}µm` : ''}${match.widthMm ? ` × ${match.widthMm}mm)` : (match.micron ? ')' : '')}`;
+    updateExtraSubstrate2(key, {
+      rollId,
+      barcode: match.barcodeId || match.id,
+      filmType: filmDesc,
+      initialKg: availKg.toFixed(2),
+      consumedKg: availKg.toFixed(2)
+    });
+  };
+
+  const addExtraOutput = () => {
+    const forcedFg = targetProcess === 'Slitting & Rewinding' || targetProcess === 'Pouching / Bag Making';
+    const type = forcedFg ? 'FG' : (outputType || 'SFG');
+    const cleanOrd = String(selectedItemForConsume?.orderId || 'ORD').replace(/[^a-zA-Z0-9]/g, '');
+    const nowMs = Date.now();
+    const taken = [outputBarcode, ...extraOutputs.map((row) => row.barcode), ...stockBarcodes()];
+    const barcode = nextAdditionalOutputBarcode({
+      outputType: type,
+      orderId: cleanOrd,
+      nowMs,
+      takenCodes: taken
+    });
+    setExtraOutputs((prev) => [...prev, {
+      key: nextExtraKey('out'),
+      outputType: type,
+      barcode,
+      grossKg: '',
+      tareKg: outputTareKg || '0.8',
+      tarePreset: tarePreset || '0.8',
+      storageBay: type === 'FG' ? 'FG Warehouse' : (outputStorageBay || 'Bay A')
+    }]);
+  };
+
+  const updateExtraOutput = (key, patch) => {
+    setExtraOutputs((prev) => prev.map((row) => {
+      if (row.key !== key) return row;
+      const next = { ...row, ...patch };
+      if (patch.outputType && patch.outputType !== row.outputType) {
+        const cleanOrd = String(selectedItemForConsume?.orderId || 'ORD').replace(/[^a-zA-Z0-9]/g, '');
+        const taken = [outputBarcode, ...prev.filter((item) => item.key !== key).map((item) => item.barcode), ...stockBarcodes()];
+        next.barcode = nextAdditionalOutputBarcode({
+          outputType: patch.outputType,
+          orderId: cleanOrd,
+          nowMs: Date.now(),
+          takenCodes: taken
+        });
+        if (patch.outputType === 'FG' && row.storageBay === 'Bay A') next.storageBay = 'FG Warehouse';
+      }
+      return next;
+    }));
   };
 
   const handleOutputTypeToggle = (type) => {
@@ -669,6 +798,18 @@ export default function SFGStoreManagement({
       return;
     }
 
+    if (isLaminationPass1 && extraSubstrate2.length > 0) {
+      const substrateCheck = validateAddedConsumeRows({
+        substrateExtras: extraSubstrate2,
+        firstSubstrateBarcode: subBarcode,
+        parentBatchCode: selectedItemForConsume.sfgBatchCode || selectedItemForConsume.id
+      });
+      if (!substrateCheck.ok) {
+        setFormError(substrateCheck.error);
+        return;
+      }
+    }
+
     const outGrossNum = parseFloat(outputGrossKg) || 0;
     const outTareNum = parseFloat(outputTareKg) || 0;
     const outNetNum = Math.max(0, outGrossNum - outTareNum);
@@ -676,6 +817,20 @@ export default function SFGStoreManagement({
     if (isSpecialProcess && isOutputMade && outputGrossKg !== '') {
       if (outGrossNum < outTareNum) {
         setFormError('Produced roll Gross weight cannot be less than Tare weight.');
+        return;
+      }
+    }
+
+    if (extraOutputs.length > 0 && isSpecialProcess && isOutputMade) {
+      const outputCheck = validateAddedConsumeRows({
+        outputExtras: extraOutputs,
+        firstOutputGross: outputGrossKg,
+        firstOutputTare: outputTareKg,
+        isSpecialProcess,
+        isOutputMade
+      });
+      if (!outputCheck.ok) {
+        setFormError(outputCheck.error);
         return;
       }
     }
@@ -692,17 +847,7 @@ export default function SFGStoreManagement({
         newStatus = parseFloat(newAvailableKg) <= 0 ? 'Fully Consumed' : 'Partially Consumed';
       }
 
-      const subConsumedVal = parseFloat(subConsumedKg) || 0;
-      const subInitialVal = parseFloat(subInitialKg) || 0;
-      const subRemainingVal = Math.max(0, subInitialVal - subConsumedVal);
-
-      const subInfo = (subBarcode || subConsumedVal > 0) ? {
-        barcode: (subBarcode || '').trim(),
-        filmType: (subFilmType || '').trim(),
-        initialKg: subInitialVal,
-        consumedKg: subConsumedVal,
-        remainingKg: subRemainingVal
-      } : null;
+      const subInfo = buildLegacySubstrateInfo(subBarcode, subFilmType, subInitialKg, subConsumedKg);
 
       const scrapBreakdown = {
         laminationPlainSubstrateWastageKg: parseFloat(laminationPlainSubstrateWastageKg) || 0,
@@ -720,17 +865,59 @@ export default function SFGStoreManagement({
       };
 
       const finalOutputType = (isSlitting || isPouching) ? 'FG' : outputType;
-      const outputRollInfo = (isSpecialProcess && isOutputMade && outNetNum > 0) ? {
-        barcode: outputBarcode || `${finalOutputType}-BC-${selectedItemForConsume.orderId || 'ORD'}-${Date.now().toString().slice(-4)}`,
+      const outputTimestamp = new Date().toISOString();
+      const outputNowMs = Date.now();
+      let outputRollInfo = (isSpecialProcess && isOutputMade && outNetNum > 0) ? buildLegacyOutputRoll({
+        barcode: outputBarcode,
         outputType: finalOutputType,
+        orderId: selectedItemForConsume.orderId,
+        nowMs: outputNowMs,
         grossWeightKg: outGrossNum,
         tareWeightKg: outTareNum,
         netWeightKg: parseFloat(outNetNum.toFixed(2)),
-        storageBay: outputStorageBay || (finalOutputType === 'FG' ? 'FG Warehouse' : 'Bay A'),
+        storageBay: outputStorageBay,
         stage: targetProcess,
         pouchCount: isPouching ? (parseInt(pouchCount) || 0) : 0,
-        timestamp: new Date().toISOString()
-      } : null;
+        timestamp: outputTimestamp
+      }) : null;
+
+      let multiOutputRolls = null;
+      if (extraOutputs.length > 0 && isSpecialProcess && isOutputMade && outputRollInfo) {
+        const parentBatch = selectedItemForConsume.sfgBatchCode || '';
+        const cleanOrd = String(selectedItemForConsume.orderId || 'ORD').replace(/[^a-zA-Z0-9]/g, '');
+        const barcodeRows = [
+          { barcode: outputRollInfo.barcode, outputType: outputRollInfo.outputType },
+          ...extraOutputs.map((row) => ({
+            barcode: row.barcode,
+            outputType: (isSlitting || isPouching) ? 'FG' : (row.outputType || 'SFG')
+          }))
+        ];
+        const barcodes = assignOutputBarcodes(barcodeRows, {
+          orderId: cleanOrd,
+          nowMs: outputNowMs,
+          takenCodes: stockBarcodes()
+        });
+        multiOutputRolls = [
+          {
+            ...outputRollInfo,
+            barcode: barcodes[0],
+            parentSfgBatchCode: parentBatch,
+            parentBarcode: parentBatch
+          },
+          ...extraOutputs.map((row, index) => buildChildOutputRoll({
+            barcode: barcodes[index + 1],
+            outputType: (isSlitting || isPouching) ? 'FG' : (row.outputType || 'SFG'),
+            grossWeightKg: parseFloat(row.grossKg) || 0,
+            tareWeightKg: parseFloat(row.tareKg) || 0,
+            storageBay: row.storageBay,
+            stage: targetProcess,
+            pouchCount: 0,
+            timestamp: outputTimestamp,
+            parentSfgBatchCode: parentBatch
+          }))
+        ];
+        outputRollInfo = null;
+      }
 
       const logEntry = {
         id: `SFG-LOG-${Date.now()}`,
@@ -752,6 +939,15 @@ export default function SFGStoreManagement({
         scrapBreakdown,
         outputRoll: outputRollInfo
       };
+
+      if (isLaminationPass1 && extraSubstrate2.length > 0) {
+        const substrate2Rolls = buildSubstrate2RollList(subInfo, extraSubstrate2);
+        if (substrate2Rolls.length > 0) logEntry.substrate2Rolls = substrate2Rolls;
+      }
+      if (multiOutputRolls && multiOutputRolls.length > 1) {
+        logEntry.outputRoll = null;
+        logEntry.outputRolls = multiOutputRolls;
+      }
 
       const updatedConsumptionHistory = [
         logEntry,
@@ -818,7 +1014,37 @@ export default function SFGStoreManagement({
         await persistQcHold([newQcHoldEntry, ...qcHoldItems]);
 
         // Open Barcode sticker modal immediately for the new QC Hold tag
+        setBarcodePrintRolls(null);
         setSelectedRollForBarcodeModal(newQcHoldEntry);
+      }
+
+      const childrenFailed = consumeWarning && String(consumeWarning.message || '').includes('child output rolls');
+      if (!childrenFailed && logEntry.outputRolls && logEntry.outputRolls.length > 1) {
+        const stickers = logEntry.outputRolls.map((roll) => ({
+          id: roll.barcode,
+          barcodeId: roll.barcode,
+          rollType: roll.outputType === 'FG' ? 'FG' : 'SFG',
+          category: roll.outputType === 'FG' ? 'Finished Goods (FG)' : 'Semi-Finished Goods (SFG)',
+          itemName: selectedItemForConsume.jobName || 'Child roll',
+          jobName: selectedItemForConsume.jobName || '',
+          jobCode: selectedItemForConsume.jobCode || '',
+          orderId: selectedItemForConsume.orderId || '',
+          clientName: selectedItemForConsume.clientName || '',
+          filmType: selectedItemForConsume.filmType || '',
+          micron: selectedItemForConsume.micron || 0,
+          widthMm: selectedItemForConsume.widthMm || 0,
+          grossWeightKg: roll.grossWeightKg,
+          tareWeightKg: roll.tareWeightKg,
+          netWeightKg: roll.netWeightKg,
+          locationBay: roll.storageBay,
+          storageBay: roll.storageBay,
+          inputBarcodeIds: selectedItemForConsume.sfgBatchCode ? [selectedItemForConsume.sfgBatchCode] : [],
+          parentSfgBatchCode: selectedItemForConsume.sfgBatchCode || '',
+          remarks: `Produced from ${targetProcess}`,
+          inwardDatetime: roll.timestamp
+        }));
+        setBarcodePrintRolls(stickers);
+        setSelectedRollForBarcodeModal(stickers[0]);
       }
 
       setSelectedItemForConsume(null);
@@ -3065,6 +3291,17 @@ export default function SFGStoreManagement({
                               </span>
                             </div>
                           )}
+                          {isLaminationPass1 && (
+                            <Substrate2ExtraRolls
+                              rows={extraSubstrate2}
+                              rolls={availableSubstrateRolls}
+                              firstConsumedKg={subConsumedKg}
+                              onAdd={addExtraSubstrate2}
+                              onRemove={(key) => setExtraSubstrate2((prev) => prev.filter((row) => row.key !== key))}
+                              onChange={updateExtraSubstrate2}
+                              onSelectRoll={selectExtraSubstrateRoll}
+                            />
+                          )}
                         </div>
                       )}
 
@@ -3535,6 +3772,19 @@ export default function SFGStoreManagement({
                             </div>
                           </div>
                         </div>
+                        <OutputExtraRolls
+                          rows={extraOutputs}
+                          firstNetKg={outNetVal}
+                          forceFg={isSlitting || isPouching}
+                          warning={extraOutputs.length > 0 ? outputOverReferenceWarning({
+                            outputNetKg: sumOutputNet(outputGrossKg, outputTareKg, extraOutputs),
+                            consumedKg: parseFloat(consumedWeightKg) || 0,
+                            substrateConsumedKg: isLaminationPass1 ? sumSubstrateConsumed(subConsumedKg, extraSubstrate2) : 0
+                          }) : ''}
+                          onAdd={addExtraOutput}
+                          onRemove={(key) => setExtraOutputs((prev) => prev.filter((row) => row.key !== key))}
+                          onChange={updateExtraOutput}
+                        />
                       </div>
                     </div>
                   );
@@ -3801,7 +4051,11 @@ export default function SFGStoreManagement({
       {selectedRollForBarcodeModal && (
         <BarcodePrinterModal
           roll={selectedRollForBarcodeModal}
-          onClose={() => setSelectedRollForBarcodeModal(null)}
+          rolls={barcodePrintRolls && barcodePrintRolls.length > 1 ? barcodePrintRolls : undefined}
+          onClose={() => {
+            setSelectedRollForBarcodeModal(null);
+            setBarcodePrintRolls(null);
+          }}
         />
       )}
 

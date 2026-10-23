@@ -1714,7 +1714,8 @@ export async function fetchInventoryRolls() {
       inputBarcodeIds: Array.isArray(r.input_barcode_ids) ? r.input_barcode_ids : [],
       stationId: r.station_id || '',
       locationBay: r.location_bay || '',
-      status: r.status || 'In Stock'
+      status: r.status || 'In Stock',
+      ...(meta.parentSfgBatchCode ? { parentSfgBatchCode: meta.parentSfgBatchCode } : {})
     };
     });
   } catch (err) {
@@ -3219,13 +3220,79 @@ export async function fetchSFGGoodsFromSupabase() {
         status: computedStatus,
         notes: extra.notesText || (item.notes && !item.notes.startsWith('{') ? item.notes : ''),
         consumptionHistory: Array.isArray(extra.consumptionHistory) ? extra.consumptionHistory : [],
-        createdAt: item.created_at || new Date().toISOString()
+        createdAt: item.created_at || new Date().toISOString(),
+        ...(extra.parentSfgBatchCode ? {
+          parentSfgBatchCode: extra.parentSfgBatchCode,
+          parentBarcode: extra.parentBarcode || extra.parentSfgBatchCode
+        } : {})
       };
     });
   } catch (err) {
     console.error('Error fetching SFG goods from Supabase:', err);
     throw err;
   }
+}
+
+export function buildSfgNotesEnvelope(item, overrides = {}) {
+  const sfgBatchCode = overrides.sfgBatchCode ?? (item?.sfgBatchCode || item?.id || '');
+  const netKg = overrides.netKg ?? (Number(item?.totalNetKg ?? item?.netWeightKg ?? 0) || 0);
+  const consumedKg = overrides.consumedKg ?? (Number(item?.consumedKg ?? 0) || 0);
+  const dispatchedKg = overrides.dispatchedKg ?? (Number(item?.dispatchedKg ?? 0) || 0);
+  const availableKg = overrides.availableKg ?? (
+    item?.availableKg !== undefined
+      ? Number(item.availableKg)
+      : Math.max(0, netKg - consumedKg - dispatchedKg)
+  );
+  let computedStatus = overrides.computedStatus;
+  if (!computedStatus) {
+    computedStatus = item?.status || 'In Stock (WIP)';
+    if (item?.status === 'Dispatched' || item?.status === 'Partially Dispatched' || item?.status === 'Ready for Dispatch') {
+      computedStatus = item.status;
+    } else if (consumedKg > 0) {
+      computedStatus = availableKg <= 0 ? 'Fully Consumed' : 'Partially Consumed';
+    }
+  }
+  const isFg = overrides.isFg ?? (
+    item?.sfgType?.includes('Finished') || item?.rollType === 'FG' || item?.category?.includes('Finished') || String(sfgBatchCode).startsWith('FG-')
+  );
+  const notesBody = {
+    sfgBatchCode,
+    sfgType: item?.sfgType || (isFg ? 'Finished Goods (FG)' : 'Printed Rolls'),
+    category: item?.category || (isFg ? 'Finished Goods (FG)' : 'Semi-Finished Goods (SFG)'),
+    rollType: item?.rollType || (isFg ? 'FG' : 'SFG'),
+    jobId: item?.jobId,
+    orderId: item?.orderId,
+    jobName: item?.jobName,
+    jobCode: item?.jobCode,
+    clientName: item?.clientName,
+    structure: item?.structure,
+    filmType: item?.filmType,
+    micron: item?.micron,
+    widthMm: item?.widthMm,
+    totalGrossKg: item?.totalGrossKg ?? item?.grossWeightKg ?? netKg,
+    grossWeightKg: item?.grossWeightKg ?? item?.totalGrossKg ?? netKg,
+    tareWeightKg: item?.tareWeightKg ?? 0,
+    totalNetKg: netKg,
+    consumedKg: consumedKg,
+    dispatchedKg: dispatchedKg,
+    availableKg: availableKg,
+    pouchCount: Number(item?.pouchCount || 0),
+    totalMeters: item?.totalMeters,
+    rollsCount: item?.rollsCount,
+    machineName: item?.machineName,
+    operatorName: item?.operatorName,
+    shift: item?.shift,
+    storageBay: item?.storageBay,
+    productionDate: item?.productionDate,
+    status: computedStatus,
+    notesText: item?.notes || '',
+    consumptionHistory: item?.consumptionHistory || []
+  };
+  if (item?.parentSfgBatchCode) {
+    notesBody.parentSfgBatchCode = item.parentSfgBatchCode;
+    notesBody.parentBarcode = item.parentBarcode || item.parentSfgBatchCode;
+  }
+  return JSON.stringify(notesBody);
 }
 
 export async function saveSFGGoodToSupabase(item) {
@@ -3250,38 +3317,14 @@ export async function saveSFGGoodToSupabase(item) {
 
   const isFg = item.sfgType?.includes('Finished') || item.rollType === 'FG' || item.category?.includes('Finished') || sfgBatchCode.startsWith('FG-');
 
-  const notesEnvelope = JSON.stringify({
+  const notesEnvelope = buildSfgNotesEnvelope(item, {
     sfgBatchCode,
-    sfgType: item.sfgType || (isFg ? 'Finished Goods (FG)' : 'Printed Rolls'),
-    category: item.category || (isFg ? 'Finished Goods (FG)' : 'Semi-Finished Goods (SFG)'),
-    rollType: item.rollType || (isFg ? 'FG' : 'SFG'),
-    jobId: item.jobId,
-    orderId: item.orderId,
-    jobName: item.jobName,
-    jobCode: item.jobCode,
-    clientName: item.clientName,
-    structure: item.structure,
-    filmType: item.filmType,
-    micron: item.micron,
-    widthMm: item.widthMm,
-    totalGrossKg: item.totalGrossKg ?? item.grossWeightKg ?? netKg,
-    grossWeightKg: item.grossWeightKg ?? item.totalGrossKg ?? netKg,
-    tareWeightKg: item.tareWeightKg ?? 0,
-    totalNetKg: netKg,
-    consumedKg: consumedKg,
-    dispatchedKg: dispatchedKg,
-    availableKg: availableKg,
-    pouchCount: Number(item.pouchCount || 0),
-    totalMeters: item.totalMeters,
-    rollsCount: item.rollsCount,
-    machineName: item.machineName,
-    operatorName: item.operatorName,
-    shift: item.shift,
-    storageBay: item.storageBay,
-    productionDate: item.productionDate,
-    status: computedStatus,
-    notesText: item.notes || '',
-    consumptionHistory: item.consumptionHistory || []
+    isFg,
+    netKg,
+    consumedKg,
+    dispatchedKg,
+    availableKg,
+    computedStatus
   });
 
   const payload = {

@@ -124,6 +124,7 @@ import {
   assertAllSaved
 } from './services/guardedWrite';
 import { createDirectoryUser, updateDirectoryUser, deleteDirectoryUser } from './services/adminUserService';
+import { buildChildStockRecords, saveConsumeChildRolls } from './services/consumeChildRolls';
 
 import JobMasterDirectory from './components/JobMasterDirectory';
 import { safeLocalStorageSet, safeLocalStorageGet, initSafeStorage, idbGet } from './utils/safeStorage';
@@ -3145,8 +3146,35 @@ export default function App() {
       }
     }
 
-    // 4. Synchronize Substrate 2 / Substrate 3 roll deduction if provided
-    const subInfo = logEntry.substrate2 || logEntry.substrate3;
+    // 4. Synchronize Substrate 2 / Substrate 3 roll deduction if provided.
+    // Several substrate 2 rolls deduct one by one. A single substrate 2 or substrate 3 roll uses the original path.
+    const multiSubstrate2 = Array.isArray(logEntry.substrate2Rolls) && logEntry.substrate2Rolls.length > 0
+      ? logEntry.substrate2Rolls
+      : null;
+    if (multiSubstrate2) {
+      for (const subInfo of multiSubstrate2) {
+        if (!subInfo || !subInfo.barcode) continue;
+        const subBarcode = String(subInfo.barcode).trim();
+        const subConsumed = Number(subInfo.consumedKg) || 0;
+        const subRollMatch = (inventoryRolls || []).find(r => (r.barcodeId || r.id) === subBarcode);
+        if (subRollMatch && subConsumed > 0) {
+          const prevAvail = Number(subRollMatch.availableWeightKg ?? subRollMatch.netWeightKg ?? 0);
+          const newSubAvail = Math.max(0, prevAvail - subConsumed);
+          const updatedSubRoll = {
+            ...subRollMatch,
+            availableWeightKg: newSubAvail,
+            status: newSubAvail <= 0 ? 'Consumed' : (subRollMatch.status || 'In Stock')
+          };
+          try {
+            await writeWithRetry(() => saveInventoryRollToSupabase(updatedSubRoll));
+            setInventoryRolls(prev => prev.map(r => ((r.barcodeId || r.id) === subBarcode) ? updatedSubRoll : r));
+          } catch (e) {
+            followUpFailures.push({ label: `substrate roll ${subBarcode}`, error: e });
+          }
+        }
+      }
+    }
+    const subInfo = multiSubstrate2 ? null : (logEntry.substrate2 || logEntry.substrate3);
     if (subInfo && subInfo.barcode) {
       const subBarcode = subInfo.barcode.trim();
       const subConsumed = Number(subInfo.consumedKg) || 0;
@@ -3257,6 +3285,24 @@ export default function App() {
       }
     }
 
+    const multiOutputs = Array.isArray(logEntry.outputRolls) && logEntry.outputRolls.length > 1
+      ? logEntry.outputRolls
+      : null;
+    if (multiOutputs) {
+      try {
+        const childRecords = buildChildStockRecords({
+          parentItem: updatedSfgItem,
+          logEntry,
+          outputRolls: multiOutputs
+        });
+        await writeWithRetry(() => saveConsumeChildRolls(childRecords));
+        setSfgGoods(prev => [...childRecords.map((record) => record.sfg), ...prev]);
+        setInventoryRolls(prev => [...childRecords.map((record) => record.roll), ...prev]);
+      } catch (e) {
+        followUpFailures.push({ label: `child output rolls (${multiOutputs.length})`, error: e });
+      }
+    }
+
     // 6. Sync to Job's Production Record (Pre-fill Stage Quantities & Scrap Wastage)
     let matchedRec = (productionRecords || []).find(r => 
       (targetOrderId && String(r.orderId) === String(targetOrderId)) || 
@@ -3265,7 +3311,9 @@ export default function App() {
 
     const scrap = logEntry.scrapBreakdown || {};
     const stage = logEntry.targetProcess;
-    const outNetKg = Number(logEntry.outputRoll?.netWeightKg) || 0;
+    const outNetKg = multiOutputs
+      ? multiOutputs.reduce((sum, roll) => sum + (Number(roll.netWeightKg) || 0), 0)
+      : (Number(logEntry.outputRoll?.netWeightKg) || 0);
     const outGrossKg = Number(logEntry.outputRoll?.grossWeightKg) || outNetKg;
     const outTareKg = Number(logEntry.outputRoll?.tareWeightKg) || 0;
     const finalOutBarcode = createdOutputBarcode || logEntry.outputRoll?.barcode;
@@ -3305,13 +3353,39 @@ export default function App() {
         qtyPouching: round2((Number(matchedRec?.qtyPouching) || 0) + outNetKg),
         zipperConsumedKg: round2((Number(matchedRec?.zipperConsumedKg) || 0) + (Number(scrap.zipperConsumedKg) || 0)),
         pouchingScrapKg: round2((Number(matchedRec?.pouchingScrapKg) || 0) + (Number(scrap.pouchingScrapKg) || 0)),
-        pouchCount: Math.round((Number(matchedRec?.pouchCount) || 0) + (Number(logEntry.pouchCount) || Number(outRoll?.pouchCount) || 0))
+        pouchCount: Math.round((Number(matchedRec?.pouchCount) || 0) + (multiOutputs
+          ? multiOutputs.reduce((sum, roll) => sum + (Number(roll.pouchCount) || 0), 0)
+          : (Number(logEntry.pouchCount) || Number(outRoll?.pouchCount) || 0)))
       };
     }
 
     const currentOutputRolls = Array.isArray(matchedRec?.outputRolls) ? matchedRec.outputRolls : [];
     let newOutputRolls = [...currentOutputRolls];
-    if (outNetKg > 0 && finalOutBarcode) {
+    if (multiOutputs) {
+      multiOutputs.forEach((roll, idx) => {
+        const rollNet = Number(roll.netWeightKg) || 0;
+        const rollBarcode = roll.barcode;
+        if (!(rollNet > 0) || !rollBarcode) return;
+        const rollIsFg = roll.outputType === 'FG' || stage === 'Slitting & Rewinding' || stage === 'Pouching / Bag Making';
+        newOutputRolls.push({
+          rollNo: `Roll #${currentOutputRolls.length + idx + 1}`,
+          rollId: rollBarcode,
+          barcodeId: rollBarcode,
+          grossWeightKg: Number(roll.grossWeightKg) || rollNet,
+          tareWeightKg: Number(roll.tareWeightKg) || 0,
+          netWeightKg: rollNet,
+          availableKg: rollNet,
+          dispatchedKg: 0,
+          rollType: rollIsFg ? 'FG' : (roll.outputType || 'SFG'),
+          status: rollIsFg ? 'Ready for Dispatch' : 'In Stock (SFG)',
+          stage: stage,
+          pouchCount: Number(roll.pouchCount) || 0,
+          operator: logEntry.operatorName || '',
+          createdAt: new Date().toISOString(),
+          parentSfgBatchCode: roll.parentSfgBatchCode || updatedSfgItem.sfgBatchCode || ''
+        });
+      });
+    } else if (outNetKg > 0 && finalOutBarcode) {
       newOutputRolls.push({
         rollNo: `Roll #${currentOutputRolls.length + 1}`,
         rollId: finalOutBarcode,
