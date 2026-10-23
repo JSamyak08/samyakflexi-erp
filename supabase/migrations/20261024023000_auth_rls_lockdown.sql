@@ -257,6 +257,16 @@ BEGIN
     EXECUTE 'REVOKE ALL ON FUNCTION public.save_grn_with_lines(jsonb) FROM PUBLIC, anon';
     EXECUTE 'GRANT EXECUTE ON FUNCTION public.save_grn_with_lines(jsonb) TO authenticated';
   END IF;
+  -- These parsers are called by the invoker GRN functions. Signed-in staff
+  -- need execute, and anonymous callers do not.
+  IF to_regprocedure('public._grn_to_numeric(text)') IS NOT NULL THEN
+    EXECUTE 'REVOKE ALL ON FUNCTION public._grn_to_numeric(text) FROM PUBLIC, anon';
+    EXECUTE 'GRANT EXECUTE ON FUNCTION public._grn_to_numeric(text) TO authenticated';
+  END IF;
+  IF to_regprocedure('public._grn_unpack_item_name(text)') IS NOT NULL THEN
+    EXECUTE 'REVOKE ALL ON FUNCTION public._grn_unpack_item_name(text) FROM PUBLIC, anon';
+    EXECUTE 'GRANT EXECUTE ON FUNCTION public._grn_unpack_item_name(text) TO authenticated';
+  END IF;
 END $$;
 
 -- Module screens. Admin is included by private.can_any. One FOR ALL policy
@@ -537,4 +547,7 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.handle_updated_at() FROM PUBLIC, anon, authenticated;
+-- Delivery challans and the SFG store stamp updated_at with this trigger.
+-- The signed-in user who saves the row must be allowed to run it.
+REVOKE ALL ON FUNCTION public.handle_updated_at() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.handle_updated_at() TO authenticated;

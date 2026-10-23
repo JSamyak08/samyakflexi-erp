@@ -94,6 +94,8 @@ test('lockdown SQL closes anon access without giving dispatch the client list', 
   assert.match(sql, /CREATE POLICY audit_logs_update/);
   assert.match(sql, /REVOKE ALL ON TABLE public\.email_send_log FROM anon, authenticated, PUBLIC/);
   assert.match(sql, /public\.save_grn_with_lines\(jsonb\)/);
+  assert.match(sql, /GRANT EXECUTE ON FUNCTION public\._grn_to_numeric\(text\) TO authenticated/);
+  assert.match(sql, /GRANT EXECUTE ON FUNCTION public\.handle_updated_at\(\) TO authenticated/);
   assert.match(
     sql,
     /public\.orders'::regclass, ARRAY\['orders','job_punching','sales','production_records','printing_scheduler'\]/,
