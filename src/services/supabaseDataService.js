@@ -952,6 +952,33 @@ export async function saveGRNToSupabase(grn) {
     console.warn('[GRNs] Vendor lookup failed:', err);
   }
 
+  // Same supplier and the same invoice is a second document. A different supplier may reuse the number.
+  if (clean.invoiceNo && targetVName) {
+    const { data: existingGrns, error: duplicateLookupError } = await supabase
+      .from('grns')
+      .select('id, grn_number, invoice_number, vendor_id, item_name')
+      .eq('invoice_number', clean.invoiceNo);
+    if (duplicateLookupError) {
+      throw new Error(`Could not check for a duplicate GRN invoice: ${duplicateLookupError.message}`);
+    }
+    const wantedVendor = targetVName.toLowerCase();
+    const match = (existingGrns || []).find((row) => {
+      const sameDocument = String(row.id) === String(grnId) || String(row.grn_number) === String(clean.grnNo || grnId);
+      if (sameDocument) return false;
+      if (validVendorId && String(row.vendor_id) === String(validVendorId)) return true;
+      const rawName = String(row.item_name || '');
+      const packed = rawName.includes('|||') ? rawName.split('|||').slice(1).join('|||') : '';
+      let metaName = '';
+      if (packed) {
+        try { metaName = JSON.parse(packed).vendorName || ''; } catch { metaName = ''; }
+      }
+      return String(metaName).trim().toLowerCase() === wantedVendor;
+    });
+    if (match) {
+      throw new Error(`Duplicate Inward GRN: A GRN (#${match.grn_number || match.id}) with Invoice #${clean.invoiceNo} already exists for this supplier.`);
+    }
+  }
+
   const lines = stampLineIds(grnId, linesForSave({ ...clean, id: grnId, grnNo: clean.grnNo || grnId }));
   const rollLinks = lines.flatMap((line) => (line.rolls || [])
     .filter((roll) => roll && roll.barcodeId)
