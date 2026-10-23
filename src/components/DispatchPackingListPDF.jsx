@@ -1,11 +1,15 @@
 import React from 'react';
 import { Printer, ArrowLeft } from 'lucide-react';
-import { COMPANY_DETAILS } from '../factoryStore';
+import { loadLetterhead } from '../services/companyProfile';
+import CompanyProfileNotice from './CompanyProfileNotice';
 import { getCompanyLogo } from '../services/settingsService';
 import { toTitleCase } from '../utils/pdfHelpers';
 
-export default function DispatchPackingListPDF({ shipment, company, onClose }) {
+export default function DispatchPackingListPDF({ shipment, onClose }) {
+  const letterhead = loadLetterhead();
   if (!shipment) return null;
+  if (letterhead.error) return <CompanyProfileNotice message={letterhead.error} onClose={onClose} />;
+  const COMPANY_DETAILS = letterhead.company;
 
   const handlePrint = () => {
     window.print();
@@ -69,7 +73,7 @@ export default function DispatchPackingListPDF({ shipment, company, onClose }) {
                 {COMPANY_DETAILS.address}
               </p>
               <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '2px 0 0 0' }}>
-                GSTIN: <strong>{COMPANY_DETAILS.gstin}</strong> | CIN: {COMPANY_DETAILS.tagline?.split(' • ')[1] || COMPANY_DETAILS.tagline} | Phone: {COMPANY_DETAILS.phones}
+                GSTIN: <strong>{COMPANY_DETAILS.gstin}</strong> | CIN: {COMPANY_DETAILS.cin} | Phone: {COMPANY_DETAILS.phones}
               </p>
             </div>
 

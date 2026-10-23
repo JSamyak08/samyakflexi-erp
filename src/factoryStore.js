@@ -1,17 +1,9 @@
 // FactoryOS Data Store & Flexible Packaging Calculation Engine
 // Samyak International Ltd, Indore
 
-export const COMPANY_DETAILS = {
-  name: "SAMYAK INTERNATIONAL LTD.",
-  tagline: "BSE: SAMYAKINT • CIN: L67120MH1994PLC225907",
-  gstin: "23AABCM3526F1ZY",
-  address: "11-B, Kheda Industrial Area, Pithampur Sector - III, Dist. Dhar, Dhar (Madhya Pradesh- 23), India - 454775",
-  contactPerson: "Samyak Jain",
-  phones: "8889133133",
-  email: "info@samyakinternational.in",
-  placeOfSupply: "Dhar, Madhya Pradesh (23)",
-  logoUrl: "/samyak-logo.svg"
-};
+import { SEED_COMPANY_PROFILE, withCompanyTagline } from './services/companyProfile';
+
+export const COMPANY_DETAILS = withCompanyTagline({ ...SEED_COMPANY_PROFILE });
 
 
 
@@ -1422,6 +1414,7 @@ export const ALL_MODULES = [
   { key: "inventory", label: "Inventory, GRN & QC", category: "Store & Inventory" },
   { key: "ink_management", label: "Ink Management & Solid Costing", category: "Store & Inventory" },
   { key: "material_indents", label: "Material Indents & Store", category: "Store & Inventory" },
+  { key: "pellet_fuel", label: "Pellet Fuel Stock & Consumption", category: "Store & Inventory" },
   { key: "employees", label: "Employee Management & Payroll", category: "Human Resources & Payroll" },
   { key: "user_management", label: "User Management & RBAC", category: "Administration" },
   { key: "cylinders", label: "Rotogravure Cylinders", category: "Pre-Press & Tooling" },
@@ -1458,11 +1451,22 @@ export const generateFullRolePermissions = (allowAll = false) => {
     });
     if (r === "HR & Payroll Manager") perm[r].purchase_orders = false;
     perm[r].audit_logs = r === "Admin";
-    // These three keys are absent from the live JSON, so the current app
-    // shows the screens to every role. Keep that visibility.
+    // dispatch and sfg_store are absent from the live JSON, so the current
+    // app shows those screens to every role. Keep that visibility.
     perm[r].dispatch = true;
     perm[r].sfg_store = true;
-    perm[r].pellet_fuel = true;
+    // Pellet fuel is a real permission. Store, production, purchasing, QC,
+    // and the shop floor record or receive fuel. Other roles stay off.
+    perm[r].pellet_fuel = [
+      "Admin",
+      "Plant Manager",
+      "HR & Payroll Manager",
+      "Production Manager",
+      "Store Manager",
+      "Purchase Manager",
+      "QC Chemist",
+      "Shop Floor Operator"
+    ].includes(r);
   });
   return perm;
 };

@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Printer, X, Tag, ChevronLeft, ChevronRight, QrCode, ArrowRight } from 'lucide-react';
-import { COMPANY_DETAILS } from '../factoryStore';
+import { loadLetterhead } from '../services/companyProfile';
+import CompanyProfileNotice from './CompanyProfileNotice';
 import QRCode2D from './QRCode2D';
+import { codeKey, codeStartsWith, textFrom } from '../utils/barcodeCode';
 
 export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks = [], autoPrint = false, onRecordNext, onClose }) {
   const rollList = Array.isArray(rolls) 
@@ -44,7 +46,10 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
     }
   }, [autoPrint, rollList.length]);
 
+  const letterhead = loadLetterhead();
+  if (letterhead.error) return <CompanyProfileNotice message={letterhead.error} onClose={onClose} />;
   if (rollList.length === 0) return null;
+  const COMPANY_DETAILS = letterhead.company;
 
   const activeRoll = rollList[activeIndex] || rollList[0];
 
@@ -62,11 +67,11 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
     const strippedId = cleanId.replace(/^(lot|bc|bar-iss|bar|roll|inv|grn|item)[-_:]\s*/i, '').trim();
 
     const matchedItem = (inventory || []).find(i => {
-      const iId = (i.id || '').toLowerCase();
-      const iCode = (i.itemCode || '').toLowerCase();
-      const pCode = (i.productCode || '').toLowerCase();
-      const lBatch = (i.lastBatch || '').toLowerCase();
-      const iName = (i.itemName || '').toLowerCase();
+      const iId = codeKey(i.id);
+      const iCode = codeKey(i.itemCode);
+      const pCode = codeKey(i.productCode);
+      const lBatch = codeKey(i.lastBatch);
+      const iName = codeKey(i.itemName);
       return iId === cleanId || iId === strippedId ||
         iCode === cleanId || iCode === strippedId ||
         pCode === cleanId || pCode === strippedId ||
@@ -81,9 +86,9 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
 
     // 3. Cross-reference with inks master
     const matchedInk = (inks || []).find(ink => {
-      const pCode = (ink.productCode || '').toLowerCase();
-      const inkId = (ink.id || '').toLowerCase();
-      const shade = (ink.shade || '').toLowerCase();
+      const pCode = codeKey(ink.productCode);
+      const inkId = codeKey(ink.id);
+      const shade = codeKey(ink.shade);
       return pCode === cleanId || pCode === strippedId || inkId === cleanId || (shade && (shade === cleanId || cleanId.includes(shade)));
     });
 
@@ -130,8 +135,8 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
       (r.rollType === 'RAW_MATERIAL' || r.category === 'Film Substrates') && 
       hasValidFilmSpecs;
 
-    const catStr = (r.category || '').toLowerCase();
-    const isChemicalOrInk = catStr.includes('chemical') || catStr.includes('solvent') || catStr.includes('ink') || catStr.includes('adhesive') || catStr.includes('resin') || (r.barcodeId || '').startsWith('CON-BC') || (r.barcodeId || '').startsWith('RM-BC');
+    const catStr = codeKey(r.category);
+    const isChemicalOrInk = catStr.includes('chemical') || catStr.includes('solvent') || catStr.includes('ink') || catStr.includes('adhesive') || catStr.includes('resin') || codeStartsWith(r.barcodeId, 'CON-BC') || codeStartsWith(r.barcodeId, 'RM-BC');
     const displayUnit = r.unit || r.uom || (isFilmItem || isChemicalOrInk ? 'Kg' : 'Pcs');
     const displayQty = (r.netWeightKg !== undefined && r.netWeightKg !== null && Number(r.netWeightKg) > 0)
       ? Number(r.netWeightKg)
@@ -141,7 +146,7 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
     const rateVal = resolveItemPurchaseRate(r);
     const vendorStr = r.vendorName || r.supplier || r.partyName || '-';
     const batchStr = r.batchNo || r.heatNo || r.batch || '-';
-    const barcodeCodeStr = r.barcodeId || r.id || 'BC-2026-0000';
+    const barcodeCodeStr = textFrom(r.barcodeId, r.id) || 'BC-2026-0000';
 
     const isQCHold = r.isQCHold || r.targetProcess === 'QC Hold Store' || r.status === 'QC_HOLD' || r.rollType === 'QC_HOLD' || r.isHold === true;
 
@@ -176,7 +181,7 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
                   {COMPANY_DETAILS.name}
                 </div>
                 <div style={{ fontSize: '0.65rem', color: '#475569', fontWeight: '600', marginTop: '1px' }}>
-                  Indore Plant • GSTIN: {COMPANY_DETAILS.gstin}
+                  {COMPANY_DETAILS.placeOfSupply} • GSTIN: {COMPANY_DETAILS.gstin}
                 </div>
               </>
             ) : (

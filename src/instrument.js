@@ -1,5 +1,21 @@
 import * as Sentry from '@sentry/react';
 
+function sentryTraceTargets(appOrigin) {
+  const targets = [/^\//];
+  const raw = String(appOrigin || '').trim();
+  if (!raw) {
+    console.error('VITE_APP_ORIGIN is not set. Sentry trace propagation stays on same-origin requests.');
+    return targets;
+  }
+  try {
+    const origin = new URL(raw).origin;
+    targets.push(new RegExp(`^${origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  } catch (error) {
+    console.error('VITE_APP_ORIGIN is not a valid origin. Sentry trace propagation stays on same-origin requests.');
+  }
+  return targets;
+}
+
 const dsn = import.meta.env.VITE_SENTRY_DSN;
 
 if (dsn) {
@@ -16,10 +32,6 @@ if (dsn) {
     },
     integrations: [Sentry.browserTracingIntegration()],
     tracesSampleRate: import.meta.env.MODE === 'production' ? 0.1 : 0,
-    tracePropagationTargets: [
-      /^\//,
-      /^https:\/\/erp\.samyakinternational\.in/,
-      /^https:\/\/samyakflexi-erp-samyak-international-ltd\.vercel\.app/,
-    ],
+    tracePropagationTargets: sentryTraceTargets(import.meta.env.VITE_APP_ORIGIN),
   });
 }

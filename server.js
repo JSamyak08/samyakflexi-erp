@@ -6,6 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import adminUsers from './api/admin-users.js';
 import sendEmail from './api/send-email.js';
+import { readSmtpConfig } from './api/smtpConfig.js';
 
 dotenv.config();
 
@@ -18,28 +19,21 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 5050;
 
-// Hostinger SMTP Transporter Setup
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.hostinger.com',
-  port: parseInt(process.env.SMTP_PORT || '465', 10),
-  secure: process.env.SMTP_SECURE === 'true' || parseInt(process.env.SMTP_PORT, 10) === 465, // true for 465 SSL/TLS
-  auth: {
-    user: process.env.SMTP_USER || 'admin@samyakinternational.in',
-    pass: process.env.SMTP_PASS || '',
-  },
-  tls: {
-    rejectUnauthorized: false
-  }
-});
-
-// Verify SMTP connection on startup
-transporter.verify((error, success) => {
-  if (error) {
-    console.error('❌ Hostinger SMTP Connection Error:', error.message);
-  } else {
-    console.log('✅ Hostinger SMTP Transporter is ready to send emails via admin@samyakinternational.in');
-  }
-});
+// Verify SMTP on startup when it is fully configured. A missing setting is logged
+// and does not stop the API. Mail routes refuse to send until the same settings exist.
+try {
+  const smtp = readSmtpConfig(process.env);
+  const transporter = nodemailer.createTransport(smtp);
+  transporter.verify((error) => {
+    if (error) {
+      console.error('SMTP connection check failed:', error.message);
+    } else {
+      console.log('SMTP transporter is ready.');
+    }
+  });
+} catch (error) {
+  console.error(error.message || 'SMTP is not configured. Mail routes will return an error until it is set.');
+}
 
 /**
  * Retired one-time-code reset. Supabase Auth sends the real reset link.

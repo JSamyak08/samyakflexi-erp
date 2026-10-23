@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Printer, ArrowLeft, Edit3, Plus, Trash2, CheckCircle2 } from 'lucide-react';
-import { COMPANY_DETAILS } from '../factoryStore';
+import { loadLetterhead } from '../services/companyProfile';
+import CompanyProfileNotice from './CompanyProfileNotice';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getCoaSignatories } from '../services/settingsService';
 
 export const DEFAULT_COA_PARAMETERS = [
@@ -33,8 +34,11 @@ export default function CertificateOfAnalysisPDF({ coaData, onClose }) {
       ? coaData.parameters 
       : DEFAULT_COA_PARAMETERS
   );
+  const letterhead = loadLetterhead();
 
   if (!coaData) return null;
+  if (letterhead.error) return <CompanyProfileNotice message={letterhead.error} onClose={onClose} />;
+  const COMPANY_DETAILS = letterhead.company;
 
   const coaSignatories = getCoaSignatories();
   const preparedByHeader = coaSignatories.preparedByLabel || 'PREPARED BY / QUALITY CONTROL CHEMIST';
@@ -97,7 +101,7 @@ export default function CertificateOfAnalysisPDF({ coaData, onClose }) {
             <div className="letterhead-brand">
               <img src={logoImage} alt="Samyak International Ltd Logo" className="samyak-logo-img" style={{ height: '44px', objectFit: 'contain' }} />
               <p className="letterhead-company-sub" style={{ marginTop: '2px', fontSize: '8.5px', fontWeight: '800', color: '#374151' }}>
-                BSE: SAMYAKINT • CIN: L67120MH1994PLC225907 • GSTIN: {COMPANY_DETAILS.gstin}
+                {COMPANY_DETAILS.tagline} • GSTIN: {COMPANY_DETAILS.gstin}
               </p>
             </div>
 

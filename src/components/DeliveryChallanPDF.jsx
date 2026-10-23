@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Printer, ArrowLeft, Edit3, Plus, Trash2, FileText } from 'lucide-react';
-import { COMPANY_DETAILS } from '../factoryStore';
+import { loadLetterhead } from '../services/companyProfile';
+import CompanyProfileNotice from './CompanyProfileNotice';
 import { numberToWords, formatINR, calculateGSTBreakdown, toTitleCase } from '../utils/pdfHelpers';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 
@@ -15,8 +16,11 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
       ? challanData.termsAndConditions 
       : (savedTerms.dcTerms || [])
   );
+  const letterhead = loadLetterhead();
 
   if (!challanData) return null;
+  if (letterhead.error) return <CompanyProfileNotice message={letterhead.error} onClose={onClose} />;
+  const COMPANY_DETAILS = letterhead.company;
   
   const signatureImage = getAuthorisedSignature();
   const logoImage = getCompanyLogo();
@@ -139,7 +143,7 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
             <div className="letterhead-brand">
               <img src={logoImage} alt="Samyak International Ltd Logo" className="samyak-logo-img" style={{ height: '36px', objectFit: 'contain' }} />
               <p className="letterhead-company-sub" style={{ marginTop: '2px', fontSize: '8px', fontWeight: '800', color: '#374151' }}>
-                BSE: SAMYAKINT • CIN: L67120MH1994PLC225907
+                {COMPANY_DETAILS.tagline}
               </p>
             </div>
 

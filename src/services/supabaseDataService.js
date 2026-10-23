@@ -32,6 +32,9 @@ import {
 } from '../factoryStore';
 import { buildEmployeeAttendanceRow, mapEmployeeAttendanceRow } from './employeeAttendance';
 import { mapDirectoryUser } from '../utils/activeUserLabel';
+import { groupGrnLineItems, lineItemsForGrn, sanitizeGRN } from './grnLineItems';
+import { pelletConsumptionFromRow, pelletInwardFromRow } from './pelletFuel';
+export { sanitizeGRN };
 
 /**
  * Strict Supabase Error Handler
@@ -824,77 +827,6 @@ export async function deleteInventoryItemFromSupabase(itemId) {
 // 4. GOODS RECEIPT NOTES (GRN)
 // ============================================================================
 
-export function sanitizeGRN(rawGRN) {
-  if (!rawGRN || typeof rawGRN !== 'object') return rawGRN;
-
-  let rawName = String(rawGRN.itemName || rawGRN.item_name || '').trim();
-  let meta = {};
-
-  while (rawName.includes('|||')) {
-    const idx = rawName.indexOf('|||');
-    const jsonStr = rawName.substring(idx + 3).trim();
-    rawName = rawName.substring(0, idx).trim();
-    if (jsonStr) {
-      try {
-        const parsed = JSON.parse(jsonStr);
-        if (parsed && typeof parsed === 'object') {
-          meta = { ...meta, ...parsed };
-        }
-      } catch (e) {}
-    }
-  }
-
-  const metallocenePct = meta.metallocenePct || rawGRN.metallocene_pct || rawGRN.metallocenePct || '';
-  const statusVal = rawGRN.status || meta.status || 'Pending QC Approval';
-  const qcStatusVal = meta.qcStatus || rawGRN.qcStatus || rawGRN.qc_remarks || statusVal;
-
-  return {
-    ...rawGRN,
-    ...meta,
-    id: rawGRN.id || rawGRN.grn_number || rawGRN.grnNo,
-    grnNo: rawGRN.grn_number || rawGRN.grnNo || rawGRN.id,
-    vendorId: rawGRN.vendorId || rawGRN.vendor_id || meta.vendorId || '',
-    vendorName: rawGRN.vendorName || meta.vendorName || (rawGRN.vendor_id && !rawGRN.vendor_id.startsWith('VEND-') ? rawGRN.vendor_id : 'General Vendor'),
-    poNumber: rawGRN.po_number || rawGRN.poNumber || meta.poNumber || '',
-    invoiceNo: rawGRN.invoice_number || rawGRN.invoiceNo || meta.invoiceNo || '',
-    receivedDate: rawGRN.received_date || rawGRN.receivedDate || meta.receivedDate || new Date().toISOString(),
-    itemName: rawName || 'Item',
-    category: meta.category || rawGRN.category || 'Film Substrates',
-    stockItemId: meta.stockItemId || rawGRN.stockItemId || rawGRN.stock_item_id || '',
-    filmType: meta.filmType || rawGRN.filmType || (rawName ? rawName.split(' ')[0] : 'PET'),
-    micron: meta.micron !== undefined ? meta.micron : (rawGRN.micron !== undefined ? rawGRN.micron : '-'),
-    widthMm: meta.widthMm !== undefined ? meta.widthMm : (rawGRN.widthMm !== undefined ? rawGRN.widthMm : '-'),
-    metallocenePct: metallocenePct,
-    metallocene_pct: metallocenePct,
-    rollsReceived: Number(meta.rollsReceived ?? rawGRN.rollsReceived ?? 0) || 0,
-    purchaseRatePerKg: Number(meta.purchaseRatePerKg ?? meta.unitPrice ?? rawGRN.purchaseRatePerKg ?? rawGRN.unitPrice ?? 0) || 0,
-    purchaseRate: Number(meta.purchaseRatePerKg ?? meta.unitPrice ?? rawGRN.purchaseRatePerKg ?? rawGRN.unitPrice ?? 0) || 0,
-    unitPrice: Number(meta.purchaseRatePerKg ?? meta.unitPrice ?? rawGRN.purchaseRatePerKg ?? rawGRN.unitPrice ?? 0) || 0,
-    unit: meta.unit || rawGRN.unit || 'Kg',
-    batchNo: meta.batchNo || rawGRN.batchNo || '',
-    status: statusVal,
-    qcStatus: qcStatusVal,
-    qcNotes: rawGRN.qc_remarks || rawGRN.qcNotes || meta.qcNotes || '',
-    inspectedBy: meta.inspectedBy || rawGRN.inspectedBy || '',
-    storeManager: meta.storeManager || rawGRN.storeManager || '',
-    receivedQtyKg: Number(rawGRN.received_qty_kg ?? rawGRN.receivedQtyKg ?? rawGRN.netWeightKg ?? 0) || 0,
-    netWeightKg: Number(rawGRN.received_qty_kg ?? rawGRN.receivedQtyKg ?? rawGRN.netWeightKg ?? 0) || 0,
-    grossWeightKg: Number(meta.grossWeightKg ?? rawGRN.grossWeightKg ?? 0) || 0,
-    tareWeightKg: Number(meta.tareWeightKg ?? rawGRN.tareWeightKg ?? 0) || 0,
-    packagingType: meta.packagingType || rawGRN.packagingType || 'Roll',
-    itemsBreakdown: meta.itemsBreakdown || rawGRN.itemsBreakdown || [],
-    barcodes: meta.barcodes || rawGRN.barcodes || [],
-    barcodeId: meta.barcodeId || rawGRN.barcodeId || '',
-    freightAmount: Number(meta.freightAmount ?? rawGRN.freightAmount ?? 0) || 0,
-    transporterName: meta.transporterName || rawGRN.transporterName || 'Direct Dispatch / Self',
-    itemRemarks: meta.itemRemarks || rawGRN.itemRemarks || rawGRN.remarks || meta.remarks || rawGRN.notes || '',
-    remarks: meta.itemRemarks || rawGRN.itemRemarks || rawGRN.remarks || meta.remarks || rawGRN.notes || '',
-    notes: meta.itemRemarks || rawGRN.itemRemarks || rawGRN.remarks || meta.remarks || rawGRN.notes || '',
-    location: meta.location || rawGRN.location || 'Store Bay',
-    storeLocation: meta.storeLocation || rawGRN.storeLocation || 'Store Bay'
-  };
-}
-
 export async function fetchGRNs() {
   if (!isSupabaseConfigured()) {
     throw new Error("Supabase is not configured.");
@@ -904,7 +836,22 @@ export async function fetchGRNs() {
     if (error) throw error;
     if (!data) return [];
 
-    return data.map(g => sanitizeGRN(g));
+    let lineRows = [];
+    const { data: lines, error: lineError } = await supabase
+      .from('grn_line_items')
+      .select('*')
+      .order('line_no', { ascending: true });
+    if (lineError) {
+      console.warn('[GRNs] Line items are not available yet; each receipt is read as one line from its header:', lineError.message);
+    } else if (Array.isArray(lines)) {
+      lineRows = lines;
+    }
+
+    const grouped = groupGrnLineItems(lineRows);
+    return data.map(g => sanitizeGRN({
+      ...g,
+      lineItems: lineItemsForGrn(grouped, g)
+    }));
   } catch (err) {
     console.error("Error fetching GRNs from Supabase:", err);
     throw err;
@@ -954,6 +901,11 @@ export async function saveGRNToSupabase(grn) {
     storeLocation: clean.storeLocation,
     poNumber: clean.poNumber,
     vendorName: clean.vendorName,
+    vendorAddress: clean.vendorAddress || '',
+    vendorGstin: clean.vendorGstin || '',
+    vendorEmail: clean.vendorEmail || '',
+    vendorPhone: clean.vendorPhone || '',
+    vendorContact: clean.vendorContact || '',
     invoiceNo: clean.invoiceNo,
     receivedDate: clean.receivedDate,
     qcNotes: clean.qcNotes,
@@ -1015,22 +967,19 @@ export async function saveGRNToSupabase(grn) {
 
   // Duplicate check: Verify if invoice_number + vendor match an existing GRN record in database
   if (clean.invoiceNo && clean.vendorName) {
-    try {
-      const { data: existingGrns } = await supabase
-        .from('grns')
-        .select('id, grn_number, invoice_number')
-        .eq('invoice_number', clean.invoiceNo);
+    const { data: existingGrns, error: duplicateLookupError } = await supabase
+      .from('grns')
+      .select('id, grn_number, invoice_number')
+      .eq('invoice_number', clean.invoiceNo);
+    if (duplicateLookupError) {
+      throw new Error(`Could not check for a duplicate GRN invoice: ${duplicateLookupError.message}`);
+    }
 
-      if (existingGrns && existingGrns.length > 0) {
-        const match = existingGrns.find(g => String(g.id) !== String(grnId) && String(g.grn_number) !== String(clean.grnNo));
-        if (match) {
-          console.warn('[GRNs] Duplicate GRN detected in database:', match);
-          throw new Error(`Duplicate Inward GRN: A GRN (#${match.grn_number || match.id}) with Invoice #${clean.invoiceNo} already exists in database.`);
-        }
-      }
-    } catch (checkErr) {
-      if (checkErr.message && checkErr.message.includes('Duplicate Inward GRN')) {
-        throw checkErr;
+    if (existingGrns && existingGrns.length > 0) {
+      const match = existingGrns.find(g => String(g.id) !== String(grnId) && String(g.grn_number) !== String(clean.grnNo));
+      if (match) {
+        console.warn('[GRNs] Duplicate GRN detected in database:', match);
+        throw new Error(`Duplicate Inward GRN: A GRN (#${match.grn_number || match.id}) with Invoice #${clean.invoiceNo} already exists in database.`);
       }
     }
   }
@@ -1703,6 +1652,11 @@ export async function fetchInventoryRolls() {
       id: r.barcode_id,
       barcodeId: r.barcode_id,
       grnNo: r.grn_no || meta.grnNo || '',
+      grnId: r.grn_id || null,
+      grnLineItemId: r.grn_line_item_id || null,
+      lineNo: r.line_no === null || r.line_no === undefined ? null : Number(r.line_no),
+      vendorRollNo: r.vendor_roll_no || '',
+      unitNo: r.unit_no === null || r.unit_no === undefined ? null : Number(r.unit_no),
       rollType: r.roll_type || 'RAW_MATERIAL',
       itemId: r.item_id,
       itemName: r.item_name || '',
@@ -3474,7 +3428,7 @@ export async function fetchPelletInwardsFromSupabase() {
     try {
       const { data, error } = await supabase.from('pellet_inwards').select('*');
       if (!error && Array.isArray(data)) {
-        tableRecords = data.map(r => r.payload || r.details || r);
+        tableRecords = data.map(pelletInwardFromRow);
       } else if (error) {
         handleSupabaseError(error, 'pellet_inwards');
       }
@@ -3501,6 +3455,7 @@ export async function savePelletInwardToSupabase(item) {
     inward_qty_kg: Number(item.inwardQtyKg) || 0,
     unit_cost_per_kg: Number(item.unitCostPerKg) || 0,
     total_amount: Number(item.totalAmount) || 0,
+    vehicle_no: item.vehicleNo || null,
     payload: item,
     updated_at: new Date().toISOString()
   }, { onConflict: 'id' });
@@ -3525,7 +3480,7 @@ export async function fetchPelletConsumptionsFromSupabase() {
     try {
       const { data, error } = await supabase.from('pellet_consumptions').select('*');
       if (!error && Array.isArray(data)) {
-        tableRecords = data.map(r => r.payload || r.details || r);
+        tableRecords = data.map(pelletConsumptionFromRow);
       } else if (error) {
         handleSupabaseError(error, 'pellet_consumptions');
       }
@@ -3555,6 +3510,33 @@ export async function savePelletConsumptionToSupabase(item) {
     updated_at: new Date().toISOString()
   }, { onConflict: 'id' });
   if (error) handleSupabaseError(error, 'pellet_consumptions');
+}
+
+export async function allocatePelletGrnNumber(prefix) {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Cannot reserve a pellet GRN number: Supabase database connection is not available.');
+  }
+  await ensureValidSession();
+  const { data, error } = await supabase.rpc('allocate_pellet_grn_number', {
+    p_prefix: prefix || 'SIL/GRN/26-27/'
+  });
+  if (error) handleSupabaseError(error, 'allocate_pellet_grn_number');
+  if (!data) {
+    throw new Error('The database did not return a pellet GRN number.');
+  }
+  return data;
+}
+
+export async function savePelletInwardWithGrn(record) {
+  if (!isSupabaseConfigured() || !record) {
+    throw new Error('Cannot save pellet inward: Supabase database connection is not available.');
+  }
+  await ensureValidSession();
+  const { data, error } = await supabase.rpc('save_pellet_inward_with_grn', {
+    p_record: record
+  });
+  if (error) handleSupabaseError(error, 'save_pellet_inward_with_grn');
+  return data;
 }
 
 export async function deletePelletConsumptionFromSupabase(id) {

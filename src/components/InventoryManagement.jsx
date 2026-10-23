@@ -70,6 +70,7 @@ import {
   calculateOrderStockReservations,
   parseStandardDate
 } from '../factoryStore';
+import { codeKey, codeKeyFrom, codeStartsWith, codesEqual, textFrom } from '../utils/barcodeCode';
 
 export const INVENTORY_CATEGORIES = [
   "Film Substrates",
@@ -2322,6 +2323,11 @@ export default function InventoryManagement({
       poNumber: grnPoNo,
       vendorName: grnVendor,
       vendorId: selectedVendorId,
+      vendorAddress: matchedVendor?.address || '',
+      vendorGstin: matchedVendor?.gstin || '',
+      vendorEmail: matchedVendor?.email || '',
+      vendorPhone: matchedVendor?.phone || matchedVendor?.contactNo || '',
+      vendorContact: matchedVendor?.contactPerson || '',
       invoiceNo: grnInvoiceNo,
       receivedDate: todayIsoDate,
       receivedTime: receivedTimeStr,
@@ -2862,11 +2868,11 @@ export default function InventoryManagement({
 
     // 1. Search in inventoryRolls by barcodeId, id, vendorRollNo, batchNo, barcode
     const matchedRoll = (inventoryRolls || []).find(r => {
-      const bId = (r.barcodeId || '').toLowerCase();
-      const rId = String(r.id || '').toLowerCase();
-      const vRoll = (r.vendorRollNo || '').toLowerCase();
-      const bNo = (r.batchNo || r.lotNo || '').toLowerCase();
-      const rGrn = (r.grnNo || r.grn_no || '').toLowerCase();
+      const bId = codeKey(r.barcodeId);
+      const rId = codeKey(r.id);
+      const vRoll = codeKey(r.vendorRollNo);
+      const bNo = codeKeyFrom(r.batchNo, r.lotNo);
+      const rGrn = codeKeyFrom(r.grnNo, r.grn_no);
       return bId === cleanCode || bId === strippedCode || cleanCode.includes(bId) ||
         rId === cleanCode || rId === strippedCode ||
         vRoll === cleanCode || vRoll === strippedCode || (vRoll && cleanCode.includes(vRoll)) ||
@@ -2876,12 +2882,12 @@ export default function InventoryManagement({
 
     // 2. Search in safeGrns by grnNo, id, batchNo, barcode, invoiceNo, poNumber
     const matchedGrn = (safeGrns || []).find(g => {
-      const gNo = String(g.grnNo || g.grn_number || g.grnNumber || '').toLowerCase();
+      const gNo = codeKeyFrom(g.grnNo, g.grn_number, g.grnNumber);
       const gCode = gNo.replace(/^grn-/, '');
-      const gId = String(g.id || '').toLowerCase();
-      const bNo = (g.batchNo || g.batch_no || '').toLowerCase();
-      const bCode = (g.barcode || '').toLowerCase();
-      const invNo = (g.invoiceNo || g.invoice_number || g.invoiceNumber || '').toLowerCase();
+      const gId = codeKey(g.id);
+      const bNo = codeKeyFrom(g.batchNo, g.batch_no);
+      const bCode = codeKey(g.barcode);
+      const invNo = codeKeyFrom(g.invoiceNo, g.invoice_number, g.invoiceNumber);
       return gNo === cleanCode || gNo === strippedCode || cleanCode.includes(gNo) ||
         gId === cleanCode || gId === strippedCode ||
         bNo === cleanCode || bNo === strippedCode || (bNo && cleanCode.includes(bNo)) ||
@@ -2892,14 +2898,14 @@ export default function InventoryManagement({
 
     // 3. Search in inventory items by id, itemCode, productCode, lastBatch, batchNo, barcode, itemName, shade
     const matchedItemDirect = (inventory || []).find(i => {
-      const iId = (i.id || '').toLowerCase();
-      const iCode = (i.itemCode || i.item_code || '').toLowerCase();
-      const pCode = (i.productCode || i.product_code || '').toLowerCase();
-      const lBatch = (i.lastBatch || '').toLowerCase();
-      const bNo = (i.batchNo || i.batch_no || '').toLowerCase();
-      const bCode = (i.barcode || i.barcodeId || '').toLowerCase();
-      const iName = (i.itemName || i.item_name || '').toLowerCase();
-      const shade = (i.shade || '').toLowerCase();
+      const iId = codeKey(i.id);
+      const iCode = codeKeyFrom(i.itemCode, i.item_code);
+      const pCode = codeKeyFrom(i.productCode, i.product_code);
+      const lBatch = codeKey(i.lastBatch);
+      const bNo = codeKeyFrom(i.batchNo, i.batch_no);
+      const bCode = codeKeyFrom(i.barcode, i.barcodeId);
+      const iName = codeKeyFrom(i.itemName, i.item_name);
+      const shade = codeKey(i.shade);
 
       return (
         iId === cleanCode || iId === strippedCode || (iId && cleanCode.includes(iId)) ||
@@ -2915,10 +2921,10 @@ export default function InventoryManagement({
 
     // 4. Search in inks master list by productCode, id, shade
     const matchedInk = (inks || []).find(ink => {
-      const pCode = (ink.productCode || ink.product_code || '').toLowerCase();
-      const inkId = (ink.id || '').toLowerCase();
-      const shade = (ink.shade || '').toLowerCase();
-      const lBatch = (ink.lastBatch || `lot-${pCode}`).toLowerCase();
+      const pCode = codeKeyFrom(ink.productCode, ink.product_code);
+      const inkId = codeKey(ink.id);
+      const shade = codeKey(ink.shade);
+      const lBatch = codeKey(ink.lastBatch || `lot-${pCode}`);
       return (
         pCode === cleanCode || pCode === strippedCode || (pCode && cleanCode.includes(pCode)) ||
         inkId === cleanCode || inkId === strippedCode ||
@@ -2942,7 +2948,8 @@ export default function InventoryManagement({
 
     const resolveUOM = (item, roll, grn) => {
       const explicit = item?.unit || roll?.unit || grn?.unit;
-      if (explicit && explicit.trim()) return explicit;
+      const explicitText = textFrom(explicit);
+      if (explicitText.trim()) return typeof explicit === 'string' ? explicit : explicitText;
       return 'Kg';
     };
 
@@ -2965,9 +2972,9 @@ export default function InventoryManagement({
 
       targetItem = (inventory || []).find(i => 
         i.id === matchedRoll.itemId || 
-        (i.itemCode && matchedRoll.itemId && i.itemCode.toLowerCase() === matchedRoll.itemId.toLowerCase()) ||
-        (i.itemName && matchedRoll.itemName && i.itemName.toLowerCase() === matchedRoll.itemName.toLowerCase()) ||
-        (i.filmType && matchedRoll.filmType && i.filmType.toLowerCase() === matchedRoll.filmType.toLowerCase())
+        (i.itemCode && matchedRoll.itemId && codesEqual(i.itemCode, matchedRoll.itemId)) ||
+        (i.itemName && matchedRoll.itemName && codesEqual(i.itemName, matchedRoll.itemName)) ||
+        (i.filmType && matchedRoll.filmType && codesEqual(i.filmType, matchedRoll.filmType))
       ) || {
         id: matchedRoll.itemId || `ITEM-${matchedRoll.id}`,
         itemName: matchedRoll.itemName || `${matchedRoll.filmType || 'Film'} ${matchedRoll.micron || ''}µ`,
@@ -2986,7 +2993,7 @@ export default function InventoryManagement({
       purchaseRate = resolveQuantity(matchedRoll.purchaseRatePerKg, matchedRoll.purchaseRate, matchedRoll.unitPrice, targetItem.unitPrice, targetItem.purchaseRatePerKg, linkedGrnForRoll?.purchaseRate);
       vendorName = matchedRoll.vendorName || matchedRoll.vendor || linkedGrnForRoll?.vendorName || linkedGrnForRoll?.vendor_name || targetItem.lastVendor || 'Verified Supplier';
       grnNo = matchedRoll.grnNo || matchedRoll.grn_no || linkedGrnForRoll?.grnNo || linkedGrnForRoll?.grn_number || (grnExtract && grnExtract.length > 3 ? `GRN-${grnExtract.toUpperCase()}` : '');
-      barcodeId = matchedRoll.barcodeId || code;
+      barcodeId = textFrom(matchedRoll.barcodeId) || code;
       availableQty = resolveQuantity(
         matchedRoll.availableWeightKg,
         matchedRoll.available_weight_kg,
@@ -3007,9 +3014,9 @@ export default function InventoryManagement({
       targetItem = (inventory || []).find(i => 
         i.id === matchedGrn.itemId || 
         i.id === matchedGrn.stockItemId ||
-        (i.itemCode && matchedGrn.itemId && i.itemCode.toLowerCase() === matchedGrn.itemId.toLowerCase()) ||
-        (i.itemName && matchedGrn.itemName && i.itemName.toLowerCase() === matchedGrn.itemName.toLowerCase()) ||
-        (i.filmType && matchedGrn.filmType && i.filmType.toLowerCase() === matchedGrn.filmType.toLowerCase())
+        (i.itemCode && matchedGrn.itemId && codesEqual(i.itemCode, matchedGrn.itemId)) ||
+        (i.itemName && matchedGrn.itemName && codesEqual(i.itemName, matchedGrn.itemName)) ||
+        (i.filmType && matchedGrn.filmType && codesEqual(i.filmType, matchedGrn.filmType))
       ) || {
         id: matchedGrn.itemId || matchedGrn.stockItemId || `GRN-ITEM-${matchedGrn.id}`,
         itemName: matchedGrn.itemName || `${matchedGrn.filmType || 'Film'} ${matchedGrn.micron || ''}µ`,
@@ -3025,7 +3032,7 @@ export default function InventoryManagement({
       purchaseRate = resolveQuantity(matchedGrn.purchaseRate, matchedGrn.purchaseRatePerKg, matchedGrn.unitPrice, targetItem.unitPrice);
       vendorName = matchedGrn.vendorName || matchedGrn.vendor_name || matchedGrn.supplier || targetItem.lastVendor || 'Verified Supplier';
       grnNo = matchedGrn.grnNo || matchedGrn.grn_number || '';
-      barcodeId = matchedGrn.barcode || code;
+      barcodeId = textFrom(matchedGrn.barcode) || code;
       availableQty = resolveQuantity(targetItem.availableQtyKg, targetItem.currentStockKg, targetItem.stockQtyKg, matchedGrn.netWeightKg, matchedGrn.receivedQtyKg);
     } else if (matchedItemDirect) {
       targetItem = matchedItemDirect;
@@ -3033,14 +3040,14 @@ export default function InventoryManagement({
       batchNo = targetItem.lastBatch || targetItem.batchNo || (targetItem.itemCode ? `LOT-${targetItem.itemCode}` : `LOT-${targetItem.id}`);
       purchaseRate = resolveQuantity(targetItem.unitPrice, targetItem.purchaseRatePerKg, targetItem.pricePerKg);
       vendorName = targetItem.lastVendor || targetItem.supplierName || targetItem.lastSupplier || targetItem.manufacturer || 'Verified Supplier';
-      barcodeId = targetItem.barcode || (code.toUpperCase().startsWith('LOT-') ? code : (targetItem.lastBatch || targetItem.id));
+      barcodeId = textFrom(targetItem.barcode) || (code.toUpperCase().startsWith('LOT-') ? code : (textFrom(targetItem.lastBatch, targetItem.id) || code));
       availableQty = resolveQuantity(targetItem.availableQtyKg, targetItem.available_qty_kg, targetItem.currentStockKg, targetItem.current_stock_kg, targetItem.stockQtyKg, targetItem.stock_qty_kg, targetItem.quantity, targetItem.qty);
     } else if (matchedInk) {
       targetItem = (inventory || []).find(i => 
-        (i.itemCode && i.itemCode.toLowerCase() === (matchedInk.productCode || '').toLowerCase()) ||
-        (i.id && i.id.toLowerCase() === (matchedInk.productCode || '').toLowerCase()) ||
-        (i.id && i.id.toLowerCase() === (matchedInk.id || '').toLowerCase()) ||
-        (i.itemName && i.itemName.toLowerCase() === (matchedInk.shade || '').toLowerCase())
+        (i.itemCode && codesEqual(i.itemCode, matchedInk.productCode)) ||
+        (i.id && codesEqual(i.id, matchedInk.productCode)) ||
+        (i.id && codesEqual(i.id, matchedInk.id)) ||
+        (i.itemName && codesEqual(i.itemName, matchedInk.shade))
       ) || {
         id: matchedInk.productCode || matchedInk.id,
         itemCode: matchedInk.productCode,
@@ -5390,7 +5397,21 @@ export default function InventoryManagement({
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: '6px' }}>
-                          <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={() => setSelectedGRNForPDF(g)}>
+                          <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={() => {
+                            const supplierName = String(g.vendorName || g.vendor?.companyName || g.vendor?.name || '').trim();
+                            const supplierAddress = String(g.vendorAddress || g.vendor?.address || '').trim();
+                            const supplierGstin = String(g.vendorGstin || g.vendor?.gstin || '').trim();
+                            const missing = [
+                              !supplierName && 'supplier name',
+                              !supplierAddress && 'supplier address',
+                              !supplierGstin && 'supplier GSTIN',
+                            ].filter(Boolean);
+                            if (missing.length) {
+                              alert(`This GRN cannot be printed. It is missing ${missing.join(', ')}.`);
+                              return;
+                            }
+                            setSelectedGRNForPDF(g);
+                          }}>
                             <Printer size={14} /> Print GRN
                           </button>
                           <button 
@@ -7706,10 +7727,10 @@ export default function InventoryManagement({
                         const clean = val.toLowerCase().trim();
                         const stripped = clean.replace(/^(lot|bc|bar-iss|bar|roll|inv|grn|item)[-_:]\s*/i, '').trim();
                         const hasDirectMatch = 
-                          (inventory || []).some(i => (i.id && i.id.toLowerCase() === clean) || (i.itemCode && i.itemCode.toLowerCase() === clean) || (i.lastBatch && i.lastBatch.toLowerCase() === clean) || (i.productCode && i.productCode.toLowerCase() === clean) || (i.id && i.id.toLowerCase() === stripped) || (i.itemCode && i.itemCode.toLowerCase() === stripped)) ||
-                          (inventoryRolls || []).some(r => (r.barcodeId && r.barcodeId.toLowerCase() === clean) || (r.batchNo && r.batchNo.toLowerCase() === clean)) ||
-                          (safeGrns || []).some(g => (g.batchNo && g.batchNo.toLowerCase() === clean) || (g.grnNo && String(g.grnNo).toLowerCase() === clean)) ||
-                          (inks || []).some(ink => (ink.productCode && ink.productCode.toLowerCase() === clean) || (ink.productCode && ink.productCode.toLowerCase() === stripped));
+                          (inventory || []).some(i => codesEqual(i.id, clean) || codesEqual(i.itemCode, clean) || codesEqual(i.lastBatch, clean) || codesEqual(i.productCode, clean) || codesEqual(i.id, stripped) || codesEqual(i.itemCode, stripped)) ||
+                          (inventoryRolls || []).some(r => codesEqual(r.barcodeId, clean) || codesEqual(r.batchNo, clean)) ||
+                          (safeGrns || []).some(g => codesEqual(g.batchNo, clean) || codesEqual(g.grnNo, clean)) ||
+                          (inks || []).some(ink => codesEqual(ink.productCode, clean) || codesEqual(ink.productCode, stripped));
                         if (hasDirectMatch) {
                           handleBarcodeScanLookup(val);
                         }
@@ -7770,10 +7791,10 @@ export default function InventoryManagement({
                   <option value="">-- Choose Item from Inventory Directory --</option>
                   {(inventory || []).filter(i => {
                     const s = (stockSearchTerm || '').toLowerCase();
-                    const filmType = (i.filmType || '').toLowerCase();
-                    const itemName = (i.itemName || '').toLowerCase();
-                    const id = (i.id || '').toLowerCase();
-                    const loc = (i.location || '').toLowerCase();
+                    const filmType = codeKey(i.filmType);
+                    const itemName = codeKey(i.itemName);
+                    const id = codeKey(i.id);
+                    const loc = codeKey(i.location);
                     return filmType.includes(s) || itemName.includes(s) || id.includes(s) || loc.includes(s);
                   }).map(i => (
                     <option key={i.id} value={i.id}>
@@ -8524,8 +8545,8 @@ export default function InventoryManagement({
             resolvedBarcode = g.itemsBreakdown.map(b => b.barcodeId).filter(Boolean).join(', ');
           } else if (Array.isArray(g.barcodes) && g.barcodes.length > 0) {
             resolvedBarcode = g.barcodes.join(', ');
-          } else if (g.barcodeId && (g.barcodeId.startsWith('RM-BC') || g.barcodeId.startsWith('CON-BC'))) {
-            resolvedBarcode = g.barcodeId;
+          } else if (codeStartsWith(g.barcodeId, 'RM-BC') || codeStartsWith(g.barcodeId, 'CON-BC')) {
+            resolvedBarcode = textFrom(g.barcodeId);
           } else {
             const isFilmGRN = (g.category || 'Film Substrates') === 'Film Substrates';
             const specSuffix = isFilmGRN && g.widthMm && g.widthMm !== '-' ? `-${g.micron || '12'}M${g.widthMm}W` : '';
@@ -8591,10 +8612,10 @@ export default function InventoryManagement({
               let barcodeVal = '';
               if (customBarcodesMap[txId]) {
                 barcodeVal = customBarcodesMap[txId];
-              } else if (sub.barcodeId && (sub.barcodeId.startsWith('RM-BC') || sub.barcodeId.startsWith('CON-BC'))) {
-                barcodeVal = sub.barcodeId;
-              } else if (sub.barcode && (sub.barcode.startsWith('RM-BC') || sub.barcode.startsWith('CON-BC'))) {
-                barcodeVal = sub.barcode;
+              } else if (codeStartsWith(sub.barcodeId, 'RM-BC') || codeStartsWith(sub.barcodeId, 'CON-BC')) {
+                barcodeVal = textFrom(sub.barcodeId);
+              } else if (codeStartsWith(sub.barcode, 'RM-BC') || codeStartsWith(sub.barcode, 'CON-BC')) {
+                barcodeVal = textFrom(sub.barcode);
               } else {
                 const specSuffix = isFilmSub && sub.widthMm && sub.widthMm !== '-' 
                   ? `-${sub.micron || '12'}M${sub.widthMm}W` 

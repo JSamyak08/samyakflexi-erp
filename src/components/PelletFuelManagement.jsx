@@ -25,13 +25,21 @@ import {
   Info
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
+import {
+  PELLET_FUEL_SHIFTS,
+  countActiveLoggingDays,
+  findPelletInventoryItem
+} from '../services/pelletFuel';
 
 export default function PelletFuelManagement({
   urlParams = {},
   userRole = "Admin",
-  userName = "Plant Manager",
+  userName = "",
   vendors = [],
   machines = [],
+  inventory = [],
+  loadError = "",
+  onAllocatePelletGrnNumber,
   pelletInwards = [],
   pelletConsumptions = [],
   onSavePelletInward,
@@ -57,40 +65,36 @@ export default function PelletFuelManagement({
 
   // Form State: Consumption
   const [cDate, setCDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [cShift, setCShift] = useState('Shift A: Day (08:00 - 20:00)');
+  const [cShift, setCShift] = useState('');
   const [cMachine, setCMachine] = useState('');
   const [cQtyKg, setCQtyKg] = useState('');
-  const [cHours, setCHours] = useState(12);
+  const [cHours, setCHours] = useState('');
   const [cPrintedKg, setCPrintedKg] = useState('');
   const [cGrnSource, setCGrnSource] = useState('AUTO_WEIGHTED');
-  const [cManager, setCManager] = useState(userName || 'Plant Manager');
+  const [cManager, setCManager] = useState(userName || '');
   const [cRemarks, setCRemarks] = useState('');
 
   // Form State: Inward
   const [iGrnNo, setIGrnNo] = useState('');
+  const [iGrnError, setIGrnError] = useState('');
   const [iDate, setIDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [iVendorId, setIVendorId] = useState('');
   const [iVendor, setIVendor] = useState('');
   const [iInvoiceNo, setIInvoiceNo] = useState('');
   const [iChalanNo, setIChalanNo] = useState('');
   const [iQtyKg, setIQtyKg] = useState('');
   const [iRatePerKg, setIRatePerKg] = useState('');
-  const [iLocation, setILocation] = useState('Boiler Fuel Bay');
+  const [iLocation, setILocation] = useState('');
   const [iVehicleNo, setIVehicleNo] = useState('');
-  const [iReceivedBy, setIReceivedBy] = useState(userName || 'Plant Manager');
+  const [iReceivedBy, setIReceivedBy] = useState(userName || '');
   const [iRemarks, setIRemarks] = useState('');
 
-  // Sourced Machines list
-  const availableMachines = useMemo(() => {
-    if (machines && machines.length > 0) {
-      return machines.map(m => m.name).filter(Boolean);
-    }
-    return [
-      'Printing Press 1 (Boiler 1)',
-      'Printing Press 2 (Boiler 2)',
-      'Solventless Laminator (Hot Water Unit)',
-      'Utility Hot Air Generator'
-    ];
-  }, [machines]);
+  const availableMachines = useMemo(
+    () => (machines || []).map(m => m.name).filter(Boolean),
+    [machines]
+  );
+  const pelletInventoryItem = useMemo(() => findPelletInventoryItem(inventory), [inventory]);
+  const vendorOptions = useMemo(() => (vendors || []).filter(v => v && (v.name || v.companyName)), [vendors]);
 
   // Overall Stock & Weighted Average Cost Calculation
   const stockSummary = useMemo(() => {
@@ -118,11 +122,8 @@ export default function PelletFuelManagement({
     const mtdOperatingHours = mtdConsumptions.reduce((acc, item) => acc + (Number(item.operatingHours) || 0), 0);
     const mtdPrintedKg = mtdConsumptions.reduce((acc, item) => acc + (Number(item.referencePrintingDoneKg) || 0), 0);
 
-    // Active logging days in current month
-    const activeLoggingDaysSet = new Set(mtdConsumptions.map(c => c.consumptionDate));
-    const activeLoggingDaysCount = activeLoggingDaysSet.size || 1;
-
-    const avgDailyConsumptionKg = (mtdConsumedKg / activeLoggingDaysCount) || 0;
+    const activeLoggingDaysCount = countActiveLoggingDays(mtdConsumptions, currentYear, currentMonth);
+    const avgDailyConsumptionKg = activeLoggingDaysCount > 0 ? (mtdConsumedKg / activeLoggingDaysCount) : 0;
 
     // Cost calculations
     const mtdExpenditure = mtdConsumptions.reduce((acc, item) => {
@@ -204,13 +205,13 @@ export default function PelletFuelManagement({
   const handleOpenNewConsumption = () => {
     setEditingConsumption(null);
     setCDate(new Date().toISOString().split('T')[0]);
-    setCShift('Shift A: Day (08:00 - 20:00)');
-    setCMachine(availableMachines[0] || '');
+    setCShift('');
+    setCMachine('');
     setCQtyKg('');
-    setCHours(12);
+    setCHours('');
     setCPrintedKg('');
     setCGrnSource('AUTO_WEIGHTED');
-    setCManager(userName || 'Plant Manager');
+    setCManager(userName || '');
     setCRemarks('');
     setShowConsumptionModal(true);
   };
@@ -219,13 +220,13 @@ export default function PelletFuelManagement({
   const handleEditConsumption = (item) => {
     setEditingConsumption(item);
     setCDate(item.consumptionDate || new Date().toISOString().split('T')[0]);
-    setCShift(item.shift || 'Shift A: Day (08:00 - 20:00)');
-    setCMachine(item.machineName || availableMachines[0] || '');
-    setCQtyKg(item.consumedQtyKg || '');
-    setCHours(item.operatingHours || 12);
+    setCShift(item.shift || '');
+    setCMachine(item.machineName || '');
+    setCQtyKg(item.consumedQtyKg ?? '');
+    setCHours(item.operatingHours ?? '');
     setCPrintedKg(item.referencePrintingDoneKg || '');
     setCGrnSource(item.grnNoRef || 'AUTO_WEIGHTED');
-    setCManager(item.plantManagerName || userName || 'Plant Manager');
+    setCManager(item.plantManagerName || userName || '');
     setCRemarks(item.remarks || '');
     setShowConsumptionModal(true);
   };
@@ -237,8 +238,24 @@ export default function PelletFuelManagement({
       alert("Please enter a valid consumed quantity in Kgs.");
       return;
     }
+    if (!availableMachines.length) {
+      alert("No printing machines are loaded. Consumption cannot be saved until the machine list is available.");
+      return;
+    }
+    if (!cMachine) {
+      alert("Select the boiler or printing machine.");
+      return;
+    }
+    if (!cShift) {
+      alert("Select the operating shift.");
+      return;
+    }
     if (!cHours || Number(cHours) <= 0) {
       alert("Please enter valid operating hours.");
+      return;
+    }
+    if (!String(cManager || '').trim()) {
+      alert("Enter the name of the person recording this consumption.");
       return;
     }
     if (!cPrintedKg || Number(cPrintedKg) <= 0) {
@@ -266,47 +283,71 @@ export default function PelletFuelManagement({
       grnNoRef: cGrnSource,
       costPerHour: Math.round(costPerHour * 100) / 100,
       costPerKgPrinted: Math.round(costPerKgPrinted * 100) / 100,
-      plantManagerName: cManager,
+      plantManagerName: cManager.trim(),
       remarks: cRemarks,
       updatedAt: new Date().toISOString()
     };
 
-    if (onSavePelletConsumption) {
-      await onSavePelletConsumption(record);
+    try {
+      if (onSavePelletConsumption) {
+        await onSavePelletConsumption(record);
+      }
+      setShowConsumptionModal(false);
+    } catch {
+      // The save handler reports the database error. Keep the entered values.
     }
-    setShowConsumptionModal(false);
   };
 
   // Open Add Inward Modal
-  const handleOpenNewInward = () => {
+  const handleOpenNewInward = async () => {
     setEditingInward(null);
-    setIGrnNo(`GRN-PEL-${Math.floor(1000 + Math.random() * 9000)}`);
+    setIGrnNo('');
+    setIGrnError('');
     setIDate(new Date().toISOString().split('T')[0]);
-    setIVendor(vendors[0]?.name || vendors[0]?.companyName || '');
+    setIVendorId('');
+    setIVendor('');
     setIInvoiceNo('');
     setIChalanNo('');
     setIQtyKg('');
     setIRatePerKg('');
-    setILocation('Boiler Fuel Bay');
+    setILocation('');
     setIVehicleNo('');
-    setIReceivedBy(userName || 'Plant Manager');
+    setIReceivedBy(userName || '');
     setIRemarks('');
     setShowInwardModal(true);
+    if (!pelletInventoryItem) {
+      setIGrnError('No pellet fuel item is in inventory. Add that item before recording a GRN.');
+      return;
+    }
+    if (!onAllocatePelletGrnNumber) {
+      setIGrnError('A GRN number cannot be reserved because the numbering service is not connected.');
+      return;
+    }
+    try {
+      const number = await onAllocatePelletGrnNumber();
+      setIGrnNo(number || '');
+      if (!number) setIGrnError('The database did not return a GRN number.');
+    } catch (error) {
+      setIGrnError(error?.message || 'A GRN number could not be reserved.');
+    }
   };
 
   // Open Edit Inward Modal
   const handleEditInward = (item) => {
+    const matchedVendor = vendorOptions.find(v => String(v.id) === String(item.vendorId) || v.name === item.vendorName || v.companyName === item.vendorName);
     setEditingInward(item);
-    setIGrnNo(item.grnNo || `GRN-PEL-${Math.floor(1000 + Math.random() * 9000)}`);
+    setIGrnNo(item.grnNo || '');
+    setIGrnError(item.grnNo ? '' : 'This record has no GRN number.');
     setIDate(item.inwardDate || new Date().toISOString().split('T')[0]);
-    setIVendor(item.vendorName || '');
+    setIVendorId(matchedVendor?.id || '');
+    setIVendor(matchedVendor?.name || matchedVendor?.companyName || '');
     setIInvoiceNo(item.invoiceNo || '');
     setIChalanNo(item.chalanNo || '');
     setIQtyKg(item.inwardQtyKg || '');
     setIRatePerKg(item.unitCostPerKg || '');
-    setILocation(item.storageLocation || 'Boiler Fuel Bay');
+    setILocation(item.storageLocation || '');
     setIVehicleNo(item.vehicleNo || '');
-    setIReceivedBy(item.receivedBy || userName || 'Plant Manager');
+    setIReceivedBy(item.receivedBy || userName || '');
     setIRemarks(item.remarks || '');
     setShowInwardModal(true);
   };
@@ -322,6 +363,26 @@ export default function PelletFuelManagement({
       alert("Please enter a valid purchase price per Kg.");
       return;
     }
+    if (!iGrnNo.trim()) {
+      alert(iGrnError || "A GRN number has not been reserved yet.");
+      return;
+    }
+    if (!pelletInventoryItem) {
+      alert("No pellet fuel item is in inventory. The GRN was not saved.");
+      return;
+    }
+    if (!iVendorId || !String(iVendor || '').trim()) {
+      alert("Select the pellet supplier from the vendor list.");
+      return;
+    }
+    if (!String(iLocation || '').trim()) {
+      alert("Enter the storage location.");
+      return;
+    }
+    if (!String(iReceivedBy || '').trim()) {
+      alert("Enter who received and verified the stock.");
+      return;
+    }
 
     const qty = Number(iQtyKg);
     const rate = Number(iRatePerKg);
@@ -329,30 +390,39 @@ export default function PelletFuelManagement({
 
     const record = {
       id: editingInward ? editingInward.id : `PEL-GRN-${Date.now()}`,
-      grnNo: iGrnNo,
+      grnNo: iGrnNo.trim(),
       inwardDate: iDate,
+      vendorId: iVendorId,
       vendorName: iVendor,
       invoiceNo: iInvoiceNo,
       chalanNo: iChalanNo,
       inwardQtyKg: qty,
       unitCostPerKg: rate,
       totalAmount: Math.round(totalAmt * 100) / 100,
-      storageLocation: iLocation,
-      vehicleNo: iVehicleNo,
-      receivedBy: iReceivedBy,
+      storageLocation: iLocation.trim(),
+      vehicleNo: iVehicleNo.trim(),
+      receivedBy: iReceivedBy.trim(),
+      stockItemId: pelletInventoryItem.id,
+      status: editingInward?.status,
+      qcStatus: editingInward?.qcStatus,
+      qcNotes: editingInward?.qcNotes,
       remarks: iRemarks,
       updatedAt: new Date().toISOString()
     };
 
-    if (onSavePelletInward) {
-      await onSavePelletInward(record);
+    try {
+      if (onSavePelletInward) {
+        await onSavePelletInward(record);
+      }
+      setShowInwardModal(false);
+    } catch {
+      // The save handler reports the database error. Keep the entered values.
     }
-    setShowInwardModal(false);
   };
 
   // Export Consumptions CSV
   const handleExportConsumptionsCSV = () => {
-    let csv = "Consumption Date,Shift,Boiler / Machine,Pellet Consumed (Kg),Operating Time (Hrs),Ref Printing Done (Kg),Inward Cost / Kg (₹),Cost / Operating Hour (₹/hr),Cost / Kg Printed (₹/kg),Plant Manager,Remarks\n";
+    let csv = "Consumption Date,Shift,Boiler / Machine,Pellet Consumed (Kg),Operating Time (Hrs),Ref Printing Done (Kg),Inward Cost / Kg (₹),Cost / Operating Hour (₹/hr),Cost / Kg Printed (₹/kg),Recorded By,Remarks\n";
     filteredConsumptions.forEach(c => {
       csv += `"${c.consumptionDate}","${c.shift}","${c.machineName}",${c.consumedQtyKg},${c.operatingHours},${c.referencePrintingDoneKg},${c.inwardCostPerKgUsed || stockSummary.weightedAvgCostPerKg},${c.costPerHour || 0},${c.costPerKgPrinted || 0},"${c.plantManagerName || ''}","${(c.remarks || '').replace(/"/g, '""')}"\n`;
     });
@@ -423,7 +493,22 @@ export default function PelletFuelManagement({
         </div>
       </div>
 
+      {loadError && (
+        <div role="alert" style={{ marginBottom: '18px', padding: '14px 16px', borderRadius: '12px', background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b' }}>
+          <div style={{ fontWeight: '800', marginBottom: '4px' }}>Pellet fuel stock could not be loaded</div>
+          <div style={{ fontSize: '0.86rem' }}>{loadError}</div>
+          <div style={{ fontSize: '0.8rem', marginTop: '6px' }}>The stock figures are unavailable. An empty list is not a zero balance.</div>
+        </div>
+      )}
+
+      {!availableMachines.length && !loadError && (
+        <div role="status" style={{ marginBottom: '18px', padding: '14px 16px', borderRadius: '12px', background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', fontSize: '0.86rem', fontWeight: '700' }}>
+          No printing machines are loaded. Daily consumption cannot be saved until the machine list is available.
+        </div>
+      )}
+
       {/* Executive KPI Cards Strip */}
+      {loadError ? null : (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '18px', marginBottom: '24px' }}>
         
         {/* Current Stock */}
@@ -516,6 +601,7 @@ export default function PelletFuelManagement({
           </div>
         </div>
       </div>
+      )}
 
       {/* Navigation Sub-Tabs */}
       <div style={{ display: 'flex', gap: '10px', borderBottom: '2px solid #e2e8f0', marginBottom: '20px' }}>
@@ -621,9 +707,9 @@ export default function PelletFuelManagement({
                   onChange={(e) => setShiftFilter(e.target.value)}
                 >
                   <option value="ALL">All Shifts</option>
-                  <option value="Shift A: Day (08:00 - 20:00)">Shift A (Day)</option>
-                  <option value="Shift B: Night (20:00 - 08:00)">Shift B (Night)</option>
-                  <option value="Full Day 24h">Full Day 24h</option>
+                  {PELLET_FUEL_SHIFTS.map(shift => (
+                    <option key={shift.value} value={shift.value}>{shift.label}</option>
+                  ))}
                 </SearchableSelect>
               </div>
             </>
@@ -677,7 +763,7 @@ export default function PelletFuelManagement({
                 <th style={{ padding: '14px 16px', fontSize: '0.76rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#475569' }}>Ref Printing Output (Kg)</th>
                 <th style={{ padding: '14px 16px', fontSize: '0.76rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#475569' }}>Cost / Boiler Hour (₹/hr)</th>
                 <th style={{ padding: '14px 16px', fontSize: '0.76rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#475569' }}>Cost / Kg Printed (₹/kg)</th>
-                <th style={{ padding: '14px 16px', fontSize: '0.76rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#475569' }}>Plant Manager</th>
+                <th style={{ padding: '14px 16px', fontSize: '0.76rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#475569' }}>Recorded By</th>
                 <th style={{ textAlign: 'center', padding: '14px 16px', fontSize: '0.76rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#475569' }}>Action</th>
               </tr>
             </thead>
@@ -686,15 +772,16 @@ export default function PelletFuelManagement({
                 <tr>
                   <td colSpan={9} style={{ textAlign: 'center', padding: '48px 20px', color: '#94a3b8' }}>
                     <Flame size={36} style={{ color: '#cbd5e1', marginBottom: '10px' }} />
-                    <div style={{ fontWeight: '700', fontSize: '0.98rem', color: '#64748b' }}>No boiler pellet consumption records found</div>
-                    <div style={{ fontSize: '0.82rem', color: '#94a3b8', marginTop: '4px' }}>Click "+ Record Daily Consumption" to log day-wise boiler fuel usage.</div>
+                    <div style={{ fontWeight: '700', fontSize: '0.98rem', color: '#64748b' }}>{loadError ? 'Consumption records are unavailable' : 'No boiler pellet consumption records found'}</div>
+                    <div style={{ fontSize: '0.82rem', color: '#94a3b8', marginTop: '4px' }}>{loadError ? 'The stock book did not load, so this is not a zero-consumption day.' : 'Click "+ Record Daily Consumption" to log day-wise boiler fuel usage.'}</div>
                   </td>
                 </tr>
               ) : (
                 filteredConsumptions.map(item => {
                   const costPerKg = Number(item.inwardCostPerKgUsed) || stockSummary.weightedAvgCostPerKg || 0;
                   const consumed = Number(item.consumedQtyKg) || 0;
-                  const hours = Number(item.operatingHours) || 12;
+                  const hours = Number(item.operatingHours);
+                  const shiftLabel = item.shift || '—';
                   const printed = Number(item.referencePrintingDoneKg) || 0;
 
                   const costHr = item.costPerHour || (hours > 0 ? (consumed * costPerKg) / hours : 0);
@@ -704,12 +791,12 @@ export default function PelletFuelManagement({
                     <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '14px 16px' }}>
                         <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '0.88rem' }}>{item.consumptionDate}</div>
-                        <span style={{ display: 'inline-block', marginTop: '4px', background: item.shift.includes('Day') ? '#fef3c7' : '#e0e7ff', color: item.shift.includes('Day') ? '#92400e' : '#3730a3', fontSize: '0.7rem', fontWeight: '800', padding: '2px 7px', borderRadius: '4px' }}>
-                          {item.shift}
+                        <span style={{ display: 'inline-block', marginTop: '4px', background: shiftLabel.includes('Day') ? '#fef3c7' : '#e0e7ff', color: shiftLabel.includes('Day') ? '#92400e' : '#3730a3', fontSize: '0.7rem', fontWeight: '800', padding: '2px 7px', borderRadius: '4px' }}>
+                          {shiftLabel}
                         </span>
                       </td>
                       <td style={{ padding: '14px 16px' }}>
-                        <div style={{ fontWeight: '700', color: '#1e293b', fontSize: '0.88rem' }}>{item.machineName || 'Printing Boiler'}</div>
+                        <div style={{ fontWeight: '700', color: '#1e293b', fontSize: '0.88rem' }}>{item.machineName || '—'}</div>
                         {item.remarks && (
                           <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '3px' }}>Note: {item.remarks}</div>
                         )}
@@ -721,7 +808,7 @@ export default function PelletFuelManagement({
                         <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '2px' }}>@ ₹{costPerKg.toFixed(2)}/kg</div>
                       </td>
                       <td style={{ padding: '14px 16px' }}>
-                        <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '0.88rem' }}>{hours} hrs</div>
+                        <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '0.88rem' }}>{Number.isFinite(hours) ? `${hours} hrs` : '—'}</div>
                       </td>
                       <td style={{ padding: '14px 16px' }}>
                         <div style={{ fontWeight: '800', color: '#0284c7', fontSize: '0.92rem' }}>
@@ -741,7 +828,7 @@ export default function PelletFuelManagement({
                         <div style={{ fontSize: '0.7rem', color: '#64748b' }}>per kg printed</div>
                       </td>
                       <td style={{ padding: '14px 16px' }}>
-                        <div style={{ fontWeight: '700', color: '#334155', fontSize: '0.85rem' }}>{item.plantManagerName || 'Plant Manager'}</div>
+                        <div style={{ fontWeight: '700', color: '#334155', fontSize: '0.85rem' }}>{item.plantManagerName || '—'}</div>
                       </td>
                       <td style={{ textAlign: 'center', padding: '14px 16px' }}>
                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
@@ -802,8 +889,8 @@ export default function PelletFuelManagement({
                 <tr>
                   <td colSpan={9} style={{ textAlign: 'center', padding: '48px 20px', color: '#94a3b8' }}>
                     <Package size={36} style={{ color: '#cbd5e1', marginBottom: '10px' }} />
-                    <div style={{ fontWeight: '700', fontSize: '0.98rem', color: '#64748b' }}>No pellet GRN inward records found</div>
-                    <div style={{ fontSize: '0.82rem', color: '#94a3b8', marginTop: '4px' }}>Click "+ GRN Inward Stock" to record incoming pellet shipments.</div>
+                    <div style={{ fontWeight: '700', fontSize: '0.98rem', color: '#64748b' }}>{loadError ? 'Inward records are unavailable' : 'No pellet GRN inward records found'}</div>
+                    <div style={{ fontSize: '0.82rem', color: '#94a3b8', marginTop: '4px' }}>{loadError ? 'The stock book did not load, so this is not a zero balance.' : 'Click "+ GRN Inward Stock" to record incoming pellet shipments.'}</div>
                   </td>
                 </tr>
               ) : (
@@ -812,9 +899,12 @@ export default function PelletFuelManagement({
                     <td style={{ padding: '14px 16px' }}>
                       <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '0.88rem' }}>{item.grnNo}</div>
                       <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '2px' }}>Date: {item.inwardDate}</div>
+                      {item.vehicleNo ? (
+                        <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Vehicle: {item.vehicleNo}</div>
+                      ) : null}
                     </td>
                     <td style={{ padding: '14px 16px' }}>
-                      <div style={{ fontWeight: '800', color: '#1e293b', fontSize: '0.88rem' }}>{item.vendorName || 'Direct Factory Purchase'}</div>
+                      <div style={{ fontWeight: '800', color: '#1e293b', fontSize: '0.88rem' }}>{item.vendorName || '—'}</div>
                     </td>
                     <td style={{ padding: '14px 16px' }}>
                       <div style={{ fontSize: '0.82rem', fontWeight: '700', color: '#475569' }}>
@@ -839,11 +929,11 @@ export default function PelletFuelManagement({
                     </td>
                     <td style={{ padding: '14px 16px' }}>
                       <span style={{ background: '#fef3c7', color: '#92400e', padding: '3px 10px', borderRadius: '6px', fontSize: '0.76rem', fontWeight: '800' }}>
-                        {item.storageLocation || 'Silo 1'}
+                        {item.storageLocation || '—'}
                       </span>
                     </td>
                     <td style={{ padding: '14px 16px' }}>
-                      <div style={{ fontWeight: '700', color: '#334155', fontSize: '0.85rem' }}>{item.receivedBy || 'Plant Manager'}</div>
+                      <div style={{ fontWeight: '700', color: '#334155', fontSize: '0.85rem' }}>{item.receivedBy || '—'}</div>
                     </td>
                     <td style={{ textAlign: 'center', padding: '14px 16px' }}>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
@@ -883,7 +973,7 @@ export default function PelletFuelManagement({
 
       {/* MODAL 1: DAILY CONSUMPTION ENTRY */}
       {showConsumptionModal && (
-        <div className="modal-backdrop" style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(6px)', zIndex: 9999 }}>
+        <div className="modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(6px)', zIndex: 9999 }}>
           <div className="modal-content" style={{ maxWidth: '720px', width: '92%', borderRadius: '18px', border: '1px solid #cbd5e1', boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.25)', padding: '0', overflow: 'hidden' }}>
             
             {/* Modal Header */}
@@ -938,9 +1028,10 @@ export default function PelletFuelManagement({
                     value={cShift}
                     onChange={(e) => setCShift(e.target.value)}
                   >
-                    <option value="Shift A: Day (08:00 - 20:00)">Shift A: Day (08:00 - 20:00)</option>
-                    <option value="Shift B: Night (20:00 - 08:00)">Shift B: Night (20:00 - 08:00)</option>
-                    <option value="Full Day 24h">Full Day 24h</option>
+                    <option value="">Select shift...</option>
+                    {PELLET_FUEL_SHIFTS.map(shift => (
+                      <option key={shift.value} value={shift.value}>{shift.value}</option>
+                    ))}
                   </SearchableSelect>
                 </div>
               </div>
@@ -961,6 +1052,11 @@ export default function PelletFuelManagement({
                     <option key={m} value={m}>{m}</option>
                   ))}
                 </SearchableSelect>
+                {!availableMachines.length && (
+                  <div style={{ marginTop: '6px', fontSize: '0.78rem', color: '#b45309', fontWeight: '700' }}>
+                    No machines are loaded, so this record cannot be saved.
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '18px' }}>
@@ -989,7 +1085,7 @@ export default function PelletFuelManagement({
                     type="number" 
                     className="input-field" 
                     style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.88rem' }}
-                    placeholder="e.g. 12" 
+                    placeholder="Hours" 
                     required
                     min="0.5"
                     step="0.5"
@@ -1060,7 +1156,7 @@ export default function PelletFuelManagement({
 
               <div style={{ marginBottom: '18px' }}>
                 <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '800', color: '#334155', marginBottom: '6px' }}>
-                  Recorded By (Plant Manager) <span style={{ color: '#dc2626' }}>*</span>
+                  Recorded By <span style={{ color: '#dc2626' }}>*</span>
                 </label>
                 <input 
                   type="text" 
@@ -1134,7 +1230,7 @@ export default function PelletFuelManagement({
 
       {/* MODAL 2: GRN INWARD ENTRY */}
       {showInwardModal && (
-        <div className="modal-backdrop" style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(6px)', zIndex: 9999 }}>
+        <div className="modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(6px)', zIndex: 9999 }}>
           <div className="modal-content" style={{ maxWidth: '720px', width: '92%', borderRadius: '18px', border: '1px solid #cbd5e1', boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.25)', padding: '0', overflow: 'hidden' }}>
             
             {/* Modal Header */}
@@ -1171,11 +1267,14 @@ export default function PelletFuelManagement({
                   <input 
                     type="text" 
                     className="input-field" 
-                    style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.88rem' }}
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.88rem', background: '#f8fafc' }}
                     required
+                    readOnly
                     value={iGrnNo}
-                    onChange={(e) => setIGrnNo(e.target.value)}
                   />
+                  <div style={{ marginTop: '6px', fontSize: '0.75rem', color: iGrnError ? '#b91c1c' : '#64748b', fontWeight: '700' }}>
+                    {iGrnError || 'Reserved from the GRN number series. It is not typed or generated in the browser.'}
+                  </div>
                 </div>
 
                 <div>
@@ -1195,17 +1294,29 @@ export default function PelletFuelManagement({
 
               <div style={{ marginBottom: '18px' }}>
                 <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '800', color: '#334155', marginBottom: '6px' }}>
-                  Pellet Supplier / Vendor Name <span style={{ color: '#dc2626' }}>*</span>
+                  Pellet Supplier / Vendor <span style={{ color: '#dc2626' }}>*</span>
                 </label>
-                <input 
-                  type="text" 
-                  className="input-field" 
+                <SearchableSelect
+                  className="input-field"
                   style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.88rem' }}
-                  placeholder="Supplier name..." 
                   required
-                  value={iVendor}
-                  onChange={(e) => setIVendor(e.target.value)}
-                />
+                  value={iVendorId}
+                  onChange={(e) => {
+                    const selected = vendorOptions.find(v => String(v.id) === String(e.target.value));
+                    setIVendorId(selected?.id || '');
+                    setIVendor(selected?.name || selected?.companyName || '');
+                  }}
+                >
+                  <option value="">Select a vendor...</option>
+                  {vendorOptions.map(vendor => (
+                    <option key={vendor.id} value={vendor.id}>{vendor.name || vendor.companyName}</option>
+                  ))}
+                </SearchableSelect>
+                {!vendorOptions.length && (
+                  <div style={{ marginTop: '6px', fontSize: '0.78rem', color: '#b45309', fontWeight: '700' }}>
+                    No vendors are loaded. This GRN cannot be saved until the vendor list is available.
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px', marginBottom: '18px' }}>
@@ -1297,7 +1408,7 @@ export default function PelletFuelManagement({
                     type="text" 
                     className="input-field" 
                     style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.88rem' }}
-                    placeholder="e.g. Boiler Fuel Bay" 
+                    placeholder="Storage bay or silo" 
                     required
                     value={iLocation}
                     onChange={(e) => setILocation(e.target.value)}
@@ -1319,15 +1430,29 @@ export default function PelletFuelManagement({
                 </div>
               </div>
 
+              <div style={{ marginBottom: '18px' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '800', color: '#334155', marginBottom: '6px' }}>
+                  Vehicle Number
+                </label>
+                <input
+                  type="text"
+                  className="input-field"
+                  style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.88rem' }}
+                  placeholder="Truck or tanker number"
+                  value={iVehicleNo}
+                  onChange={(e) => setIVehicleNo(e.target.value)}
+                />
+              </div>
+
               <div style={{ marginBottom: '22px' }}>
                 <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '800', color: '#334155', marginBottom: '6px' }}>
-                  Vehicle / Lot Number / Remarks
+                  Lot Notes / Remarks
                 </label>
                 <textarea 
                   className="input-field" 
                   rows={2} 
                   style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.88rem', resize: 'vertical' }}
-                  placeholder="Truck No, Moisture Content %, Quality certification notes..."
+                  placeholder="Moisture content, quality notes, or lot remarks"
                   value={iRemarks}
                   onChange={(e) => setIRemarks(e.target.value)}
                 />
