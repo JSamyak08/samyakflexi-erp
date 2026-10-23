@@ -597,6 +597,7 @@ function pelletInToRow(item) {
     inward_qty_kg: Number(item.inwardQtyKg) || 0,
     unit_cost_per_kg: Number(item.unitCostPerKg) || 0,
     total_amount: Number(item.totalAmount) || 0,
+    vehicle_no: item.vehicleNo || null,
     payload: item
   };
 }
