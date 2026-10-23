@@ -224,8 +224,8 @@ const LEGACY = [
   ['/scrap?fy=FY%202026-27&filter=ALERTS_ONLY', '/scrap?fy=FY+2026-27&filter=ALERTS_ONLY'],
 ];
 
-test('routing phase starts at the foundation release', () => {
-  assert.equal(ROUTING_PHASE, 1);
+test('routing phase writes canonical module paths', () => {
+  assert.equal(ROUTING_PHASE, 3);
 });
 
 test('every canonical URL round-trips through parse and build', () => {
@@ -287,13 +287,24 @@ test('return-to remembers a deep link and ignores the login page', () => {
   assert.equal(consumeReturnTo(), null);
 });
 
-test('phase 1 writes the broken-module fixes and keeps the other legacy module paths', () => {
+test('phase 3 writes canonical module paths and keeps section query keys', () => {
   assert.equal(buildHref('pellet_fuel'), '/pellet-fuel');
   assert.equal(buildHref('scrap_analytics'), '/scrap');
-  assert.equal(buildHref('job_datasheet'), '/production-records');
-  assert.equal(buildHref('clients'), '/clients-directory');
+  assert.equal(buildHref('job_datasheet'), '/production');
+  assert.equal(buildHref('clients'), '/clients');
+  assert.equal(buildHref('sales'), '/sales');
+  assert.equal(buildHref('dispatch'), '/dispatch');
+  assert.equal(buildHref('ink_management'), '/inks');
+  assert.equal(buildHref('material_indents'), '/store');
+  assert.equal(buildHref('doc_settings'), '/settings');
+  assert.equal(buildHref('user_management'), '/users');
+  assert.equal(buildHref('printing_scheduler'), '/printing');
+  assert.equal(buildHref('production_records'), '/production');
+  assert.equal(buildHref('sfg_store'), '/sfg-fg');
+  assert.equal(buildHref('cylinders'), '/cylinders');
   assert.equal(buildHref('inventory', { tab: 'grn_inward' }), '/inventory?tab=grn_inward');
-  assert.equal(buildHref('employees', { subTab: 'payroll' }), '/employee-management?subTab=payroll');
+  assert.equal(buildHref('employees', { subTab: 'payroll' }), '/employees?subTab=payroll');
+  assert.equal(buildHref('login', { section: 'forgot-password' }), '/login/forgot-password');
 });
 
 test('unknown paths and API paths stay distinguishable', () => {

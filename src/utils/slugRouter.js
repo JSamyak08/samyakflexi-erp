@@ -16,7 +16,7 @@
  * still honors those query keys, hash paths, and the legacy table.
  */
 
-export const ROUTING_PHASE = 1;
+export const ROUTING_PHASE = 3;
 
 const RETURN_KEY = 'samyak_erp_return_to';
 
@@ -865,6 +865,11 @@ export function buildHref(moduleKey, params = {}, phase = ROUTING_PHASE) {
   }
   const mod = MODULE_BY_KEY.get(alias);
   if (!mod) return '/dashboard';
+  if (alias === 'login' && phase >= 3) {
+    if (params.section === 'forgot-password' || params.section === 'forgot_password') return '/login/forgot-password';
+    if (params.section === 'recovery') return '/reset-password';
+    return '/login';
+  }
   if (alias === 'pellet_fuel' && phase < 5) {
     return appendLegacyQuery('/pellet-fuel', stripStructural(params, phase));
   }
