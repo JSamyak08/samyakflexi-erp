@@ -16,7 +16,7 @@
  * still honors those query keys, hash paths, and the legacy table.
  */
 
-export const ROUTING_PHASE = 1;
+export const ROUTING_PHASE = 7;
 
 const RETURN_KEY = 'samyak_erp_return_to';
 
@@ -794,7 +794,7 @@ function finishRoute(mod, pattern, idParams, query, extra) {
 
 function inferSection(mod, params) {
   if (params.section && patternBySection(mod, params.section)) return params.section;
-  const fromLegacy = sectionFromLegacyValue(mod, params.tab || params.subTab || params.subtab);
+  const fromLegacy = sectionFromLegacyValue(mod, params.section || params.tab || params.subTab || params.subtab);
   if (fromLegacy) return fromLegacy;
   if (params.jobCardId && mod.key === 'production_records') return 'job-card';
   if (params.jobCardId && mod.key === 'job_masters') return 'job-card';
@@ -803,9 +803,17 @@ function inferSection(mod, params) {
   return defaultPattern(mod).section;
 }
 
+function listPatternFor(mod, pattern) {
+  return mod.patterns.find((item) => !item.idParam && !item.section.endsWith('-new') && (
+    item.section === pattern.section
+    || (pattern.legacy?.tab && item.legacy?.tab === pattern.legacy.tab)
+    || (pattern.legacy?.subTab && item.legacy?.subTab === pattern.legacy.subTab)
+  )) || defaultPattern(mod);
+}
+
 function inferDetail(mod, section, params, allowDetails) {
   const current = patternBySection(mod, section) || defaultPattern(mod);
-  if (current?.idParam) return current;
+  if (current?.idParam) return allowDetails ? current : listPatternFor(mod, current);
   if (!allowDetails) return current;
   const id = params.id || params.recordId || params.jobCardId || params.coaId || params.coaNo || params.challanNo || params.quotationId || params.orderId || params.code;
   if (params.jobCardId && (mod.key === 'production_records' || mod.key === 'job_masters')) {
@@ -865,6 +873,14 @@ export function buildHref(moduleKey, params = {}, phase = ROUTING_PHASE) {
   }
   const mod = MODULE_BY_KEY.get(alias);
   if (!mod) return '/dashboard';
+  if (alias === 'material_indents' && (params.subTab === 'pellet_fuel' || params.tab === 'pellet_fuel')) {
+    return buildHref('pellet_fuel', {}, phase);
+  }
+  if (alias === 'login' && phase >= 3) {
+    if (params.section === 'forgot-password' || params.section === 'forgot_password') return '/login/forgot-password';
+    if (params.section === 'recovery') return '/reset-password';
+    return '/login';
+  }
   if (alias === 'pellet_fuel' && phase < 5) {
     return appendLegacyQuery('/pellet-fuel', stripStructural(params, phase));
   }
@@ -883,12 +899,14 @@ export function buildHref(moduleKey, params = {}, phase = ROUTING_PHASE) {
   let section = inferSection(mod, alias === 'job_datasheet' ? { ...params, section: 'job-data-sheets' } : params);
   let pattern = inferDetail(mod, section, params, useDetails);
   if (!useDetails && pattern.idParam) {
-    pattern = mod.patterns.find((item) => !item.idParam && (item.section === section || item.legacy?.tab === pattern.legacy?.tab || item.default)) || defaultPattern(mod);
+    pattern = listPatternFor(mod, pattern);
   }
   const ids = useDetails ? idParamsFrom(pattern, params) : {};
   const path = joinModulePath(mod, pattern, ids);
   const query = { ...keptQuery(params, pattern) };
   if (!useDetails && (params.id || params.recordId)) query.id = params.id || params.recordId;
+  else if (!useDetails && params.jobCardId) query.jobCardId = params.jobCardId;
+  else if (!useDetails && params.coaId) query.coaId = params.coaId;
   if (phase < 7) {
     // Selector query keys are not written once the section lives in the path.
   }
@@ -927,9 +945,6 @@ export function getRouteFromUrl() {
       search: window.location.search,
       hash: window.location.hash,
     });
-    if (route.unknown) {
-      return { ...route, tab: 'dashboard', section: 'home' };
-    }
     return route;
   } catch (error) {
     console.error('Error reading URL route', error);
@@ -948,6 +963,7 @@ export function pushSlugState(tabKey, queryParams = {}, replace = false) {
       const state = { tab: tabKey, params: queryParams };
       if (replace && window.history.replaceState) window.history.replaceState(state, '', finalUrl);
       else if (window.history.pushState) window.history.pushState(state, '', finalUrl);
+      window.dispatchEvent(new CustomEvent('erp-slug-navigate'));
     }
     return finalUrl;
   } catch (error) {
