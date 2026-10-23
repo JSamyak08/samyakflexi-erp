@@ -2,6 +2,9 @@
 // Samyak International Ltd, Indore
 
 import { SEED_COMPANY_PROFILE, withCompanyTagline } from './services/companyProfile';
+import { SYSTEM_ROLES } from './roles.js';
+
+export { SYSTEM_ROLES };
 
 export const COMPANY_DETAILS = withCompanyTagline({ ...SEED_COMPANY_PROFILE });
 
@@ -1385,25 +1388,13 @@ export const initialJobMasters = [];
  */
 export const initialSalesQuotations = [];
 
-export const SYSTEM_ROLES = [
-  "Admin",
-  "Plant Manager",
-  "HR & Payroll Manager",
-  "Production Manager",
-  "Store Manager",
-  "QC Chemist",
-  "Purchase Manager",
-  "Sales Manager",
-  "Printing Operator",
-  "Shop Floor Operator"
-];
-
 // PRODUCTION: No seed inks. All ink masters come from Supabase DB.
 export const initialInks = [];
 
 export const ALL_MODULES = [
   { key: "dashboard", label: "Executive Dashboard", category: "Core Operations" },
   { key: "production_records", label: "Production Records & Sign-Off", category: "Shop Floor & Quality" },
+  { key: "sfg_store", label: "SFG / FG Store", category: "Shop Floor & Quality" },
   { key: "sales", label: "Sales & Quotations Engine", category: "Sales & Commercial" },
   { key: "job_punching", label: "Job Punching & Costing", category: "Pre-Press & Estimation" },
   { key: "orders", label: "Order Management & POs", category: "Core Operations" },
@@ -1415,13 +1406,15 @@ export const ALL_MODULES = [
   { key: "ink_management", label: "Ink Management & Solid Costing", category: "Store & Inventory" },
   { key: "material_indents", label: "Material Indents & Store", category: "Store & Inventory" },
   { key: "pellet_fuel", label: "Pellet Fuel Stock & Consumption", category: "Store & Inventory" },
+  { key: "dispatch", label: "Dispatch, Challan & CoA", category: "Core Operations" },
   { key: "employees", label: "Employee Management & Payroll", category: "Human Resources & Payroll" },
   { key: "user_management", label: "User Management & RBAC", category: "Administration" },
   { key: "cylinders", label: "Rotogravure Cylinders", category: "Pre-Press & Tooling" },
   { key: "printing_scheduler", label: "Printing Machine Scheduler", category: "Shop Floor & Planning" },
   { key: "supabase", label: "Supabase DB Connection", category: "Administration" },
   { key: "doc_settings", label: "Letterhead & Signatures", category: "Administration" },
-  { key: "scrap_analytics", label: "Scrap & Wastage Analysis", category: "Core Operations" }
+  { key: "scrap_analytics", label: "Scrap & Wastage Analysis", category: "Core Operations" },
+  { key: "audit_logs", label: "Audit Logs", category: "Administration" }
 ];
 
 export const generateFullRolePermissions = (allowAll = false) => {
@@ -1451,10 +1444,6 @@ export const generateFullRolePermissions = (allowAll = false) => {
     });
     if (r === "HR & Payroll Manager") perm[r].purchase_orders = false;
     perm[r].audit_logs = r === "Admin";
-    // dispatch and sfg_store are absent from the live JSON, so the current
-    // app shows those screens to every role. Keep that visibility.
-    perm[r].dispatch = true;
-    perm[r].sfg_store = true;
     // Pellet fuel is a real permission. Store, production, purchasing, QC,
     // and the shop floor record or receive fuel. Other roles stay off.
     perm[r].pellet_fuel = [
@@ -1472,6 +1461,25 @@ export const generateFullRolePermissions = (allowAll = false) => {
 };
 
 export const DEFAULT_ROLE_PERMISSIONS = generateFullRolePermissions(false);
+
+export function grantAllRolePermissions() {
+  const perm = {};
+  SYSTEM_ROLES.forEach((role) => {
+    perm[role] = {};
+    ALL_MODULES.forEach((mod) => {
+      perm[role][mod.key] = true;
+    });
+  });
+  return perm;
+}
+
+export function applyAuditLogBoundary(rolePermissions) {
+  const next = {};
+  Object.entries(rolePermissions || {}).forEach(([role, permissions]) => {
+    next[role] = { ...(permissions || {}), audit_logs: role === 'Admin' };
+  });
+  return next;
+}
 
 // ==========================================
 // EMPLOYEE & PAYROLL SYSTEM CONSTANTS & DATA

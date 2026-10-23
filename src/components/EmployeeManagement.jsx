@@ -227,7 +227,7 @@ export default function EmployeeManagement({
   salaryAdvances = [],
   salaryPayments = [],
   currentUser,
-  userRole = "Admin",
+  userRole = "",
   onAddEmployee,
   onUpdateEmployee,
   onDeleteEmployee,

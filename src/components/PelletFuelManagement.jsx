@@ -33,7 +33,7 @@ import {
 
 export default function PelletFuelManagement({
   urlParams = {},
-  userRole = "Admin",
+  userRole = "",
   userName = "",
   vendors = [],
   machines = [],

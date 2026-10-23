@@ -28,7 +28,8 @@ export async function ensureValidSession() {
 
 import { 
   FILM_DENSITIES,
-  parseStandardDate
+  parseStandardDate,
+  applyAuditLogBoundary
 } from '../factoryStore';
 import { buildEmployeeAttendanceRow, mapEmployeeAttendanceRow } from './employeeAttendance';
 import { mapDirectoryUser } from '../utils/activeUserLabel';
@@ -2738,13 +2739,13 @@ export async function saveFilmSubstratesToSupabase(substratesList) {
 }
 
 function enforceRoleBoundaries(role, permissions) {
-  const next = { ...(permissions || {}) };
-  next.audit_logs = role === 'Admin';
-  return next;
+  return applyAuditLogBoundary({ [role]: permissions })[role];
 }
 
 export async function saveRolePermissionsToSupabase(rolePermissions) {
-  if (!isSupabaseConfigured() || !rolePermissions) return;
+  if (!isSupabaseConfigured() || !rolePermissions) {
+    throw new Error('Supabase database connection is not available.');
+  }
   await ensureValidSession();
   const rows = Object.entries(rolePermissions).map(([role, permissions]) => ({
     role,
@@ -2765,7 +2766,7 @@ export async function fetchRolePermissionsFromSupabase() {
     });
     return map;
   }
-  return await fetchSystemSetting('role_permissions');
+  return null;
 }
 
 export async function saveEmailSettingsToSupabase(config) {

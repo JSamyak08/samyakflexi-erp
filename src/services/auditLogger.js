@@ -24,7 +24,7 @@ export function mapAuditLogToDbPayload(entry) {
   return {
     id: String(entry.id),
     username: entry.username || 'System',
-    user_role: entry.userRole || 'Admin',
+    user_role: entry.userRole || '',
     action_type: entry.actionType || 'UPDATE',
     module: entry.module || 'System',
     details: entry.details || '',
@@ -88,7 +88,7 @@ export async function saveAuditLogToSupabase(entry) {
 export function createAuditEntry(user, actionType, module, details, targetId = null) {
   const dt = new Date();
   const username = typeof user === 'string' ? user : (user?.name || user?.username || 'Admin');
-  const userRole = typeof user === 'object' ? (user?.role || 'Admin') : 'Admin';
+  const userRole = typeof user === 'object' ? (user?.role || '') : '';
 
   return {
     id: `LOG-2026-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
