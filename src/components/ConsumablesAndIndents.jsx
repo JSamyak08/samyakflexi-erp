@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { pushSlugState } from '../utils/slugRouter';
 import SearchableSelect from './SearchableSelect';
 import { 
   ClipboardList, 
@@ -66,6 +67,7 @@ export const initialMachineIssues = [];
 
 export default function ConsumablesAndIndents({ 
   urlParams = {},
+  onNavigateTab,
   userRole = "",
   userName = "Samyak Jain",
   vendors = [],
@@ -90,7 +92,19 @@ export default function ConsumablesAndIndents({
   onDeletePelletConsumption
 }) {
   // Navigation Sub-Tabs: "store" | "indents" | "issues" | "pellet_fuel"
-  const [activeSubTab, setActiveSubTab] = useState(urlParams?.subTab || "store");
+  const [activeSubTab, setActiveSubTab] = useState(urlParams?.subTab === 'pellet_fuel' ? 'store' : (urlParams?.subTab || 'store'));
+  useEffect(() => {
+    if (urlParams?.subTab && urlParams.subTab !== 'pellet_fuel') setActiveSubTab(urlParams.subTab);
+  }, [urlParams?.subTab]);
+  const chooseStoreTab = (subTab) => {
+    if (subTab === 'pellet_fuel') {
+      if (onNavigateTab) onNavigateTab('pellet_fuel');
+      else pushSlugState('pellet_fuel');
+      return;
+    }
+    setActiveSubTab(subTab);
+    pushSlugState('material_indents', { subTab });
+  };
 
   // Role-Based Admin Permission Check for Issuing Purchase Orders
   const isAdminRole = useMemo(() => {
@@ -846,7 +860,7 @@ export default function ConsumablesAndIndents({
             alignItems: 'center',
             gap: '8px'
           }}
-          onClick={() => setActiveSubTab('store')}
+          onClick={() => chooseStoreTab('store')}
         >
           <Package size={18} /> Consumables & Spares Store ({(consumables || []).length})
           {lowStockItemsCount > 0 && (
@@ -868,7 +882,7 @@ export default function ConsumablesAndIndents({
             alignItems: 'center',
             gap: '8px'
           }}
-          onClick={() => setActiveSubTab('indents')}
+          onClick={() => chooseStoreTab('indents')}
         >
           <ClipboardList size={18} /> Material Requisition Indents ({(indents || []).length})
           {(indents || []).filter(i => i.status === 'Pending Approval').length > 0 && (
@@ -890,7 +904,7 @@ export default function ConsumablesAndIndents({
             alignItems: 'center',
             gap: '8px'
           }}
-          onClick={() => setActiveSubTab('issues')}
+          onClick={() => chooseStoreTab('issues')}
         >
           <Cpu size={18} /> Machine Stock Issue Log ({(machineIssues || []).length})
         </button>
@@ -908,7 +922,7 @@ export default function ConsumablesAndIndents({
             alignItems: 'center',
             gap: '8px'
           }}
-          onClick={() => setActiveSubTab('pellet_fuel')}
+          onClick={() => chooseStoreTab('pellet_fuel')}
         >
           <Flame size={18} style={{ color: '#d97706' }} /> Pellet Fuel Stock & Boiler Consumption
         </button>

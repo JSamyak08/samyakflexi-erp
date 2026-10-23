@@ -327,7 +327,11 @@ export default function App() {
     };
 
     window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    window.addEventListener('erp-slug-navigate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('erp-slug-navigate', handlePopState);
+    };
   }, []);
 
   // Sync URL path with auth state and deep links.
@@ -5123,6 +5127,7 @@ export default function App() {
             onDeletePelletInward={handleDeletePelletInward}
             onSavePelletConsumption={handleSavePelletConsumption}
             onDeletePelletConsumption={handleDeletePelletConsumption}
+            onNavigateTab={handleTabChange}
           />
         )}
 
@@ -5181,6 +5186,7 @@ export default function App() {
             onUpdateUser={handleUpdateUser}
             onDeleteUser={handleDeleteUser}
             onUpdateRolePermissions={setRolePermissions}
+            urlParams={urlParams}
           />
         )}
 
@@ -5255,12 +5261,13 @@ export default function App() {
             onReorderQueue={handleReorderQueue}
             onMachineAssignmentChange={handleMachineAssignmentsChange}
             onActiveRunningJobChange={handleActiveRunningJobChange}
+            urlParams={urlParams}
           />
         )}
 
         {/* TAB 10: SUPABASE DATABASE INTEGRATION */}
         {moduleOpen && activeTab === 'supabase' && (
-          <SupabaseManagement />
+          <SupabaseManagement urlParams={urlParams} />
         )}
 
         {/* TAB 11: LETTERHEAD & SIGNATURE SETTINGS */}
@@ -5269,6 +5276,7 @@ export default function App() {
             machines={machines}
             onSaveMachine={handleSaveMachine}
             onDeleteMachine={handleDeleteMachine}
+            urlParams={urlParams}
           />
         )}
 

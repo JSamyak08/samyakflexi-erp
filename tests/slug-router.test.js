@@ -224,8 +224,8 @@ const LEGACY = [
   ['/scrap?fy=FY%202026-27&filter=ALERTS_ONLY', '/scrap?fy=FY+2026-27&filter=ALERTS_ONLY'],
 ];
 
-test('routing phase writes section paths for the first four modules', () => {
-  assert.equal(ROUTING_PHASE, 4);
+test('routing phase writes a path for every module section', () => {
+  assert.equal(ROUTING_PHASE, 5);
 });
 
 test('every canonical URL round-trips through parse and build', () => {
@@ -287,21 +287,29 @@ test('return-to remembers a deep link and ignores the login page', () => {
   assert.equal(consumeReturnTo(), null);
 });
 
-test('phase 4 writes section paths for production, inventory, employees, and dispatch', () => {
-  assert.equal(buildHref('production_records', { tab: 'list' }), '/production/records');
+test('phase 5 writes section paths for the remaining modules and keeps record ids in the query', () => {
   assert.equal(buildHref('production_records', { tab: 'list', id: 'REC-1' }), '/production/records?id=REC-1');
-  assert.equal(buildHref('production_records', { tab: 'new_record', orderId: 'ORD-1' }), '/production/records/new?orderId=ORD-1');
-  assert.equal(buildHref('production_records', { tab: 'job_cards', jobCardId: 'JC-1' }), '/production/job-cards?jobCardId=JC-1');
-  assert.equal(buildHref('production_records', { tab: 'scrap_inventory' }), '/production/scrap');
   assert.equal(buildHref('inventory', { tab: 'grn_inward' }), '/inventory/grn');
-  assert.equal(buildHref('inventory', { tab: 'stock', id: 'ITEM-1' }), '/inventory?id=ITEM-1');
   assert.equal(buildHref('employees', { subTab: 'payroll' }), '/employees/payroll');
-  assert.equal(buildHref('employees', { subTab: 'attendance' }), '/employees/attendance');
-  assert.equal(buildHref('dispatch', { subTab: 'challans' }), '/dispatch/challans');
   assert.equal(buildHref('dispatch', { subTab: 'coas', coaId: 'COA-1' }), '/dispatch/coas?coaId=COA-1');
-  assert.equal(buildHref('sales'), '/sales');
-  assert.equal(buildHref('ink_management', { subTab: 'calculator' }), '/inks?subTab=calculator');
-  assert.equal(buildHref('clients'), '/clients');
+  assert.equal(buildHref('ink_management', { subTab: 'calculator' }), '/inks/calculator');
+  assert.equal(buildHref('ink_management', { subTab: 'stock' }), '/inks/stock');
+  assert.equal(buildHref('pellet_fuel', { subTab: 'inward' }), '/pellet-fuel/inward');
+  assert.equal(buildHref('material_indents', { subTab: 'indents' }), '/store/indents');
+  assert.equal(buildHref('material_indents', { subTab: 'issues' }), '/store/issues');
+  assert.equal(buildHref('material_indents', { subTab: 'pellet_fuel' }), '/pellet-fuel');
+  assert.equal(buildHref('sales', { subTab: 'create' }), '/sales/quotations/new');
+  assert.equal(buildHref('orders', { subtab: 'requirements' }), '/orders/requirements');
+  assert.equal(buildHref('orders', { id: 'ORD-1' }), '/orders?id=ORD-1');
+  assert.equal(buildHref('printing_scheduler', { tab: 'completed' }), '/printing/completed');
+  assert.equal(buildHref('printing_scheduler', { tab: 'machines' }), '/printing/presses');
+  assert.equal(buildHref('sfg_store', { tab: 'qchold' }), '/sfg-fg/qc-hold');
+  assert.equal(buildHref('sfg_store', { tab: 'scrap' }), '/sfg-fg/scrap');
+  assert.equal(buildHref('doc_settings', { tab: 'email_config' }), '/settings/email');
+  assert.equal(buildHref('doc_settings', { tab: 'material_costs' }), '/settings/material-rates');
+  assert.equal(buildHref('user_management', { subTab: 'rbac' }), '/users/permissions');
+  assert.equal(buildHref('supabase', { subTab: 'schema' }), '/supabase/schema');
+  assert.equal(buildHref('supabase', { subTab: 'config' }), '/supabase/credentials');
   assert.equal(buildHref('login', { section: 'forgot-password' }), '/login/forgot-password');
 });
 

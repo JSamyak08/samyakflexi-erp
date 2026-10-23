@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { pushSlugState } from '../utils/slugRouter';
 import { 
   Flame, 
   Plus, 
@@ -48,6 +49,13 @@ export default function PelletFuelManagement({
   onDeletePelletConsumption
 }) {
   const [activeSubTab, setActiveSubTab] = useState(urlParams?.subTab || 'consumption'); // 'consumption' | 'inward'
+  useEffect(() => {
+    if (urlParams?.subTab === 'inward' || urlParams?.subTab === 'consumption') setActiveSubTab(urlParams.subTab);
+  }, [urlParams?.subTab]);
+  const choosePelletTab = (subTab) => {
+    setActiveSubTab(subTab);
+    pushSlugState('pellet_fuel', { subTab });
+  };
 
   // Filter Bar States
   const [startDate, setStartDate] = useState('');
@@ -607,7 +615,7 @@ export default function PelletFuelManagement({
       <div style={{ display: 'flex', gap: '10px', borderBottom: '2px solid #e2e8f0', marginBottom: '20px' }}>
         <button
           type="button"
-          onClick={() => setActiveSubTab('consumption')}
+          onClick={() => choosePelletTab('consumption')}
           style={{
             padding: '12px 22px',
             fontSize: '0.92rem',
@@ -626,7 +634,7 @@ export default function PelletFuelManagement({
 
         <button
           type="button"
-          onClick={() => setActiveSubTab('inward')}
+          onClick={() => choosePelletTab('inward')}
           style={{
             padding: '12px 22px',
             fontSize: '0.92rem',
