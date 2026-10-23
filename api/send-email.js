@@ -16,7 +16,7 @@ const ROLES = [
   'Shop Floor Operator',
 ];
 
-const USER_DAILY_CAP = 20;
+const USER_DAILY_CAP = 50;
 const GLOBAL_DAILY_CAP = 60;
 
 function serverEnv(name, fallback = '') {
