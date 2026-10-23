@@ -74,7 +74,7 @@ import SearchableSelect from './components/SearchableSelect';
 import SuccessScreenModal from './components/SuccessScreenModal';
 import { showSuccessScreen } from './context/SuccessModalContext';
 import { fetchAuditLogsFromSupabase, saveAuditLogToSupabase, createAuditEntry, pruneOldAuditLogs } from './services/auditLogger';
-import { getNextDocRefNumber } from './services/settingsService';
+import { getDocumentPrefixes, getNextDocRefNumber } from './services/settingsService';
 import { getRouteFromUrl, getTabFromUrl, pushSlugState } from './utils/slugRouter';
 import { isSupabaseConfigured, checkSupabaseConnection } from './services/supabaseClient';
 import { 
@@ -103,11 +103,13 @@ import {
   fetchCertificatesOfAnalysisFromSupabase, saveCertificateOfAnalysisToSupabase, deleteCertificateOfAnalysisFromSupabase,
   fetchPelletInwardsFromSupabase, savePelletInwardToSupabase, deletePelletInwardFromSupabase,
   fetchPelletConsumptionsFromSupabase, savePelletConsumptionToSupabase, deletePelletConsumptionFromSupabase,
+  allocatePelletGrnNumber, savePelletInwardWithGrn,
   fetchPurchaseOrders, savePurchaseOrderToSupabase, deletePurchaseOrderFromSupabase, sanitizePurchaseOrder,
   fetchFilmSubstratesFromSupabase,
   fetchAllSystemSettings
 } from './services/supabaseDataService';
 import { attendanceMatchesEmployeeDate } from './services/employeeAttendance';
+import { buildPelletCompanionGrn, findPelletInventoryItem, fuelActorName } from './services/pelletFuel';
 import { fetchSessionProfile, signOutUser } from './services/authService';
 import {
   PartialSaveError,
@@ -362,6 +364,7 @@ export default function App() {
   const [sfgGoods, setSfgGoods] = useState([]);
   const [pelletInwards, setPelletInwards] = useState([]);
   const [pelletConsumptions, setPelletConsumptions] = useState([]);
+  const [pelletLoadError, setPelletLoadError] = useState('');
   const [purchaseOrders, setPurchaseOrders] = useState([]);
 
   const handleSavePurchaseOrder = async (po) => {
@@ -393,60 +396,40 @@ export default function App() {
     });
   };
 
+  const handleAllocatePelletGrnNumber = async () => {
+    const prefix = getDocumentPrefixes().grnPrefix || 'SIL/GRN/26-27/';
+    return allocatePelletGrnNumber(prefix);
+  };
+
   const handleSavePelletInward = async (item) => {
     if (!item) return;
+    const inventoryItem = findPelletInventoryItem(inventory);
     const cleanItem = {
       ...item,
+      grnPrefix: getDocumentPrefixes().grnPrefix || 'SIL/GRN/26-27/',
       status: item.status || 'Pending QC',
       qcStatus: item.qcStatus || item.status || 'Pending QC'
     };
-
-    // Build corresponding GRN item for central GRN table and QC Approval Lab queue
-    const grnRecord = {
-      id: cleanItem.id || `PEL-GRN-${cleanItem.grnNo || Date.now()}`,
-      grnNo: cleanItem.grnNo || `GRN-PEL-${Date.now()}`,
-      grn_number: cleanItem.grnNo,
-      receivedDate: cleanItem.inwardDate || new Date().toISOString().split('T')[0],
-      inwardDate: cleanItem.inwardDate || new Date().toISOString().split('T')[0],
-      date: cleanItem.inwardDate || new Date().toISOString().split('T')[0],
-      vendorName: cleanItem.vendorName || 'Pellet Supplier',
-      vendorId: cleanItem.vendorName || 'Pellet Supplier',
-      itemName: 'Boiler Wood Pellets (Biofuel Fuel Stock)',
-      category: 'Boiler Pellets / Fuel',
-      receivedQtyKg: Number(cleanItem.inwardQtyKg) || 0,
-      netWeightKg: Number(cleanItem.inwardQtyKg) || 0,
-      quantity: Number(cleanItem.inwardQtyKg) || 0,
-      unit: 'Kg',
-      unitPrice: Number(cleanItem.unitCostPerKg) || 0,
-      purchaseRatePerKg: Number(cleanItem.unitCostPerKg) || 0,
-      totalAmount: Number(cleanItem.totalAmount) || 0,
-      invoiceNo: cleanItem.invoiceNo || '',
-      chalanNo: cleanItem.chalanNo || '',
-      storageLocation: cleanItem.storageLocation || 'Boiler Fuel Bay',
-      storeManager: cleanItem.receivedBy || 'Plant Manager',
-      status: cleanItem.status || 'Pending QC',
-      qcStatus: cleanItem.qcStatus || cleanItem.status || 'Pending QC',
-      itemRemarks: cleanItem.remarks || '',
-      remarks: cleanItem.remarks || '',
-      isPelletFuel: true,
-      updatedAt: new Date().toISOString()
-    };
+    let companionGrn;
+    try {
+      companionGrn = buildPelletCompanionGrn(cleanItem, inventoryItem);
+    } catch (e) {
+      alert(e.message);
+      throw e;
+    }
 
     try {
-      await savePelletInwardToSupabase(cleanItem);
-      setPelletInwards(prev => [cleanItem, ...prev.filter(i => String(i.id) !== String(cleanItem.id))]);
+      const saved = await savePelletInwardWithGrn({ ...cleanItem, companionGrn });
+      const savedPellet = saved?.pellet || { ...cleanItem, grnNo: companionGrn.grnNo };
+      const savedGrn = sanitizeGRN(saved?.grn || companionGrn);
+      setPelletInwards(prev => [savedPellet, ...(prev || []).filter(i => String(i.id) !== String(savedPellet.id))]);
+      setGrns(prev => [savedGrn, ...(prev || []).filter(g => String(g.id) !== String(savedGrn.id) && String(g.grnNo) !== String(savedGrn.grnNo))]);
+      logAudit('Save Pellet Inward', 'Pellet Fuel Stock Management', `GRN ${savedPellet.grnNo} - Inwarded ${savedPellet.inwardQtyKg} kg (Submitted to QC Approval Lab)`, savedPellet.id);
+      return savedPellet;
     } catch (e) {
       console.error("Failed to save pellet inward to Supabase:", e);
       alert(`Pellet inward was not saved: ${e.message}`);
-      return;
-    }
-    try {
-      await saveGRNToSupabase(grnRecord);
-      setGrns(prev => [grnRecord, ...prev.filter(g => String(g.id) !== String(grnRecord.id) && String(g.grnNo) !== String(grnRecord.grnNo))]);
-      logAudit('Save Pellet Inward', 'Pellet Fuel Stock Management', `GRN ${cleanItem.grnNo} - Inwarded ${cleanItem.inwardQtyKg} kg (Submitted to QC Approval Lab)`, cleanItem.id);
-    } catch (e) {
-      console.error("Failed to save pellet GRN to Supabase:", e);
-      alert(`The pellet inward was saved, but its GRN was not: ${e.message}`);
+      throw e;
     }
   };
 
@@ -474,6 +457,7 @@ export default function App() {
     } catch (e) {
       console.error("Failed to save pellet consumption to Supabase:", e);
       alert(`Pellet consumption was not saved: ${e.message}`);
+      throw e;
     }
   };
 
@@ -609,6 +593,16 @@ export default function App() {
         } catch (e) {
           console.warn(`[Supabase Load Notice] ${label}:`, e?.message || e);
           return null;
+        }
+      };
+
+      const fetchPelletBook = async (fn) => {
+        try {
+          const data = await fetchWithTimeout(fn(), 12000);
+          return { data, error: null };
+        } catch (e) {
+          console.warn('[Supabase Load Notice] Pellet fuel:', e?.message || e);
+          return { data: null, error: e };
         }
       };
 
@@ -776,8 +770,8 @@ export default function App() {
           fetchSafe(fetchSFGGoodsFromSupabase, 'SFG Goods'),
           fetchSafe(fetchDeliveryChallansFromSupabase, 'Delivery Challans'),
           fetchSafe(fetchCertificatesOfAnalysisFromSupabase, 'Certificates of Analysis'),
-          fetchSafe(fetchPelletInwardsFromSupabase, 'Pellet Inwards'),
-          fetchSafe(fetchPelletConsumptionsFromSupabase, 'Pellet Consumptions'),
+          fetchPelletBook(fetchPelletInwardsFromSupabase),
+          fetchPelletBook(fetchPelletConsumptionsFromSupabase),
           fetchSafe(fetchPurchaseOrders, 'Purchase Orders')
         ]);
 
@@ -844,14 +838,19 @@ export default function App() {
           safeLocalStorageSet('samyak_cache_certificate_of_analyses', cleanCoAs);
         }
 
-        if (Array.isArray(supaPelletInwards)) {
-          setPelletInwards(supaPelletInwards);
-          safeLocalStorageSet('samyak_cache_pellet_inwards', supaPelletInwards);
-        }
-
-        if (Array.isArray(supaPelletConsumptions)) {
-          setPelletConsumptions(supaPelletConsumptions);
-          safeLocalStorageSet('samyak_cache_pellet_consumptions', supaPelletConsumptions);
+        const pelletErrors = [supaPelletInwards?.error, supaPelletConsumptions?.error].filter(Boolean);
+        if (pelletErrors.length > 0) {
+          setPelletLoadError(pelletErrors.map(error => error.message || String(error)).join(' '));
+        } else {
+          setPelletLoadError('');
+          if (Array.isArray(supaPelletInwards?.data)) {
+            setPelletInwards(supaPelletInwards.data);
+            safeLocalStorageSet('samyak_cache_pellet_inwards', supaPelletInwards.data);
+          }
+          if (Array.isArray(supaPelletConsumptions?.data)) {
+            setPelletConsumptions(supaPelletConsumptions.data);
+            safeLocalStorageSet('samyak_cache_pellet_consumptions', supaPelletConsumptions.data);
+          }
         }
 
         if (Array.isArray(supaPOs)) {
@@ -4895,6 +4894,10 @@ export default function App() {
             onUpdateIndents={handleUpdateIndents}
             machineIssues={machineIssues}
             onUpdateMachineIssues={handleUpdateMachineIssues}
+            inventory={inventory}
+            pelletUserName={fuelActorName(currentUser)}
+            pelletLoadError={pelletLoadError}
+            onAllocatePelletGrnNumber={handleAllocatePelletGrnNumber}
             pelletInwards={pelletInwards}
             pelletConsumptions={pelletConsumptions}
             onSavePelletInward={handleSavePelletInward}
@@ -4909,9 +4912,12 @@ export default function App() {
           <PelletFuelManagement 
             urlParams={urlParams}
             userRole={currentUser?.role || "Admin"}
-            userName={currentUser?.name || "Plant Manager"}
+            userName={fuelActorName(currentUser)}
             vendors={vendors}
             machines={machines}
+            inventory={inventory}
+            loadError={pelletLoadError}
+            onAllocatePelletGrnNumber={handleAllocatePelletGrnNumber}
             pelletInwards={pelletInwards}
             pelletConsumptions={pelletConsumptions}
             onSavePelletInward={handleSavePelletInward}
