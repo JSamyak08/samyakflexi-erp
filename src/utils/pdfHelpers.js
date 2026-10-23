@@ -70,13 +70,17 @@ export function formatINR(amount) {
  * Intra-State Supply (Within Madhya Pradesh - State Code 23): CGST 9% + SGST 9%
  * Inter-State Supply (Outside Madhya Pradesh - State Code != 23): IGST 18%
  */
-export function calculateGSTBreakdown(gstin = '', address = '', taxableAmount = 0, totalGstRatePct = 18, plantGstin = '23AAACS9988F1Z1', taxTypeOverride = 'auto') {
+export function calculateGSTBreakdown(gstin = '', address = '', taxableAmount = 0, totalGstRatePct = 18, plantGstin = '', taxTypeOverride = 'auto') {
   const taxable = parseFloat(taxableAmount) || 0;
   const ratePct = parseFloat(totalGstRatePct) || 18;
 
   const partyGstinClean = String(gstin || '').trim();
   const partyStateCode = partyGstinClean.substring(0, 2);
-  const plantStateCode = String(plantGstin || '23').trim().substring(0, 2);
+  const plant = String(plantGstin || '').trim();
+  if (!plant) {
+    throw new Error('Company GSTIN is missing. Set the company profile before calculating tax.');
+  }
+  const plantStateCode = plant.substring(0, 2);
 
   const addressUpper = String(address || '').toUpperCase();
   

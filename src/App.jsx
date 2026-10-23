@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from './services/supabaseClient';
+import { applyRemoteCompanyProfile } from './services/companyProfile';
 import { 
   isReconciliationDue,
   DEFAULT_ROLE_PERMISSIONS,
@@ -962,6 +963,7 @@ export default function App() {
           if (allSettings.film_substrates_master && Array.isArray(allSettings.film_substrates_master)) {
             safeLocalStorageSet('samyak_film_substrates_master', JSON.stringify(allSettings.film_substrates_master));
           }
+          applyRemoteCompanyProfile(allSettings.company_profile);
 
         }
 
@@ -1134,6 +1136,7 @@ export default function App() {
               if (settings.storage_bays_master && Array.isArray(settings.storage_bays_master)) {
                 safeLocalStorageSet('samyak_storage_bays_master', JSON.stringify(settings.storage_bays_master));
               }
+              applyRemoteCompanyProfile(settings.company_profile);
             }
           }
         } catch (err) {

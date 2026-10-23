@@ -34,7 +34,7 @@ import DispatchPackingListPDF from './DispatchPackingListPDF';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import { generateDocRefNumber, getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import { formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
-import { COMPANY_DETAILS } from '../factoryStore';
+import { getCompanyProfile } from '../services/companyProfile';
 import { supabase } from '../services/supabaseClient';
 import { fetchMaterialTemplates, saveMaterialTemplate, deleteMaterialTemplate, describeSaveError } from '../services/businessRecords';
 
@@ -717,7 +717,14 @@ export default function DispatchManagement({
     const freightAmount = parseFloat(dcFreightCharges) || 0;
     const totalTaxable = subtotalItems + freightAmount;
 
-    const gstInfo = calculateGSTBreakdown(dcClientGstin, dcClientAddress, totalTaxable, dcGstRatePct, COMPANY_DETAILS.gstin, dcTaxType);
+    let plantGstin;
+    try {
+      plantGstin = getCompanyProfile().gstin;
+    } catch (error) {
+      alert(error.message);
+      return;
+    }
+    const gstInfo = calculateGSTBreakdown(dcClientGstin, dcClientAddress, totalTaxable, dcGstRatePct, plantGstin, dcTaxType);
     const grandTotal = gstInfo.grandTotal;
 
     const isReturnable = ['Returnable Material', 'Job Work Material - Returnable', 'Maintenance Material - Returnable'].includes(dcChallanNature);
@@ -2859,7 +2866,16 @@ export default function DispatchManagement({
                   const freightAmount = parseFloat(dcFreightCharges) || 0;
                   const totalTaxable = subtotalItems + freightAmount;
 
-                  const gstInfo = calculateGSTBreakdown(dcClientGstin, dcClientAddress, totalTaxable, dcGstRatePct, COMPANY_DETAILS.gstin, dcTaxType);
+                  let gstInfo;
+                  try {
+                    gstInfo = calculateGSTBreakdown(dcClientGstin, dcClientAddress, totalTaxable, dcGstRatePct, getCompanyProfile().gstin, dcTaxType);
+                  } catch (error) {
+                    return (
+                      <div style={{ marginTop: '14px', color: '#b91c1c', fontWeight: 700 }}>
+                        {error.message}
+                      </div>
+                    );
+                  }
                   const numGstPct = Number(dcGstRatePct) || 0;
                   return (
                     <div style={{ marginTop: '14px', background: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
@@ -4104,7 +4120,6 @@ export default function DispatchManagement({
       {selectedDispatchForPackingList && (
         <DispatchPackingListPDF 
           shipment={selectedDispatchForPackingList} 
-          company={COMPANY_DETAILS}
           onClose={() => setSelectedDispatchForPackingList(null)} 
         />
       )}

@@ -5,6 +5,7 @@
  */
 
 import { describeSaveError } from './businessRecords.js';
+import { codeStartsWith, codeText, firstCodeValue } from '../utils/barcodeCode.js';
 
 export class PartialSaveError extends Error {
   constructor(message, details = {}) {
@@ -136,7 +137,7 @@ function isFinishedGood(row) {
   return row.rollType === 'FG'
     || (row.sfgType || '').includes('Finished')
     || (row.category || '').includes('Finished')
-    || (row.sfgBatchCode || '').startsWith('FG-');
+    || codeStartsWith(row.sfgBatchCode, 'FG-');
 }
 
 /**
@@ -155,8 +156,8 @@ export function planDispatchSfgDeductions(sfgGoods, shipment) {
   let remainingNetToDeduct = totalDispatchNetKg;
 
   for (const item of shipmentItems) {
-    const targetBarcode = (item.sourceFgBarcode || item.barcodeId || '').trim();
-    const targetId = (item.sourceFgId || '').trim();
+    const targetBarcode = codeText(firstCodeValue(item.sourceFgBarcode, item.barcodeId));
+    const targetId = codeText(item.sourceFgId);
     const itemNetKg = Number(item.netWeightKg) || 0;
     if (itemNetKg <= 0) continue;
 
@@ -205,7 +206,7 @@ function isInventoryFinishedGood(row) {
   return row.rollType === 'FINISHED_GOODS'
     || row.rollType === 'FG'
     || (row.sfgType || '').includes('Finished')
-    || (row.barcodeId || '').startsWith('FG-');
+    || codeStartsWith(row.barcodeId, 'FG-');
 }
 
 /**

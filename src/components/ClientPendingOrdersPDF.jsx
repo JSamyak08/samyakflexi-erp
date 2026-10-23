@@ -1,10 +1,14 @@
 import React from 'react';
 import { Printer, ArrowLeft, Package, FileText, CheckCircle2 } from 'lucide-react';
-import { COMPANY_DETAILS } from '../factoryStore';
+import { loadLetterhead } from '../services/companyProfile';
+import CompanyProfileNotice from './CompanyProfileNotice';
 import { getCompanyLogo, getAuthorisedSignature } from '../services/settingsService';
 
 export default function ClientPendingOrdersPDF({ client = {}, pendingOrders = [], jobMasters = [], onClose }) {
+  const letterhead = loadLetterhead();
   if (!client) return null;
+  if (letterhead.error) return <CompanyProfileNotice message={letterhead.error} onClose={onClose} />;
+  const COMPANY_DETAILS = letterhead.company;
 
   const logoImage = getCompanyLogo();
   const signatureImage = getAuthorisedSignature();
@@ -110,13 +114,13 @@ export default function ClientPendingOrdersPDF({ client = {}, pendingOrders = []
               )}
               <div>
                 <h1 style={{ fontSize: '1.4rem', fontWeight: '900', color: '#1e293b', margin: 0, letterSpacing: '-0.02em', textTransform: 'uppercase' }}>
-                  {COMPANY_DETAILS.name || 'SAMYAK INTERNATIONAL LTD.'}
+                  {COMPANY_DETAILS.name}
                 </h1>
                 <p style={{ fontSize: '0.78rem', color: '#475569', margin: '2px 0 0', fontWeight: '500' }}>
-                  {COMPANY_DETAILS.tagline || 'Flexible Packaging & Converting Solutions | ISO 9001:2015 Certified Plant'}
+                  {COMPANY_DETAILS.tagline}
                 </p>
                 <p style={{ fontSize: '0.72rem', color: '#64748b', margin: '2px 0 0' }}>
-                  {COMPANY_DETAILS.address || 'Plot No. 45-B, Sector E, Sanwer Road Industrial Area, Indore - 452015 (M.P.)'} | GSTIN: <strong>{COMPANY_DETAILS.gstin || '23AAACF1234A1Z5'}</strong>
+                  {COMPANY_DETAILS.address} | GSTIN: <strong>{COMPANY_DETAILS.gstin}</strong>
                 </p>
               </div>
             </div>

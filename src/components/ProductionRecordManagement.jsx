@@ -45,6 +45,7 @@ import { supabase } from '../services/supabaseClient';
 import { fetchScrapDisposals, saveScrapDisposal, describeSaveError } from '../services/businessRecords';
 import { getMaterialCostSettings, fetchMaterialCostSettingsFromSupabase, DEFAULT_MATERIAL_COST_SETTINGS } from '../services/settingsService';
 import { roundToTwo, formatUpToTwoDecimals, formatCurrency, formatQty } from '../utils/numberHelpers';
+import { codeStartsWith, codesEqual } from '../utils/barcodeCode';
 
 /**
  * Roll-Wise Input Vs Output Reconciliation Component for SFG / FG Output Barcode Master Rolls
@@ -2837,7 +2838,7 @@ export default function ProductionRecordManagement({
                         {outputRolls.map((r, idx) => {
                           const netW = parseFloat(r.netWeightKg || r.weightKg) || 0;
                           const lengthM = parseFloat(r.lengthMeters) || 0;
-                          const isFG = r.rollType === 'FG' || (r.stage || '').includes('Slitting') || (r.stage || '').includes('Pouching') || (r.barcodeId || '').startsWith('FG-');
+                          const isFG = r.rollType === 'FG' || (r.stage || '').includes('Slitting') || (r.stage || '').includes('Pouching') || codeStartsWith(r.barcodeId, 'FG-');
                           return (
                             <tr key={idx}>
                               <td style={{ fontWeight: '700' }}>Roll #{r.rollNo || r.unitNo || (idx + 1)}</td>
@@ -3638,8 +3639,8 @@ export default function ProductionRecordManagement({
                               if (val.trim()) {
                                 // 1. Primary lookup in individual barcode rolls
                                 const rollMatch = (inventoryRolls || []).find(r => 
-                                  (r.barcodeId || '').toLowerCase() === val.trim().toLowerCase() ||
-                                  (r.batchNo || '').toLowerCase() === val.trim().toLowerCase()
+                                  codesEqual(r.barcodeId, val) ||
+                                  codesEqual(r.batchNo, val)
                                 );
 
                                 if (rollMatch) {
@@ -3659,10 +3660,10 @@ export default function ProductionRecordManagement({
                                 } else {
                                   // 2. Fallback lookup in central inventory
                                   const match = (inventory || []).find(inv => 
-                                    (inv.itemCode || '').toLowerCase() === val.trim().toLowerCase() ||
-                                    (inv.lastBatch || '').toLowerCase() === val.trim().toLowerCase() || 
-                                    (inv.id || '').toLowerCase() === val.trim().toLowerCase() ||
-                                    (inv.filmType || '').toLowerCase() === val.trim().toLowerCase()
+                                    codesEqual(inv.itemCode, val) ||
+                                    codesEqual(inv.lastBatch, val) || 
+                                    codesEqual(inv.id, val) ||
+                                    codesEqual(inv.filmType, val)
                                   );
                                   if (match) {
                                     updateMaterialRow(m.id, 'issueQtyKg', match.availableQtyKg || 400);
