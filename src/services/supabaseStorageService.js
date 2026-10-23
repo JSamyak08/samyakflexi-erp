@@ -8,7 +8,32 @@ import { supabase, isSupabaseConfigured } from './supabaseClient';
 import { compressImageDataUrl, idbSet } from '../utils/safeStorage';
 
 export const STORAGE_BUCKET = 'erp-files';
-export const FALLBACK_BUCKETS = ['erp-files', 'artwork', 'artworks', 'documents', 'public'];
+export const FALLBACK_BUCKETS = ['erp-files', 'artwork'];
+
+const signedUrlCache = new Map();
+
+/**
+ * Turn a stored Supabase object URL into a short-lived signed URL.
+ * Buckets are private. Data URLs and non-storage links are returned unchanged.
+ */
+export async function resolveReadableUrl(url) {
+  if (!url || typeof url !== 'string') return url || '';
+  if (!url.includes('/storage/v1/object/')) return url;
+
+  const cached = signedUrlCache.get(url);
+  if (cached && cached.expiresAt > Date.now()) return cached.signedUrl;
+
+  const match = url.match(/\/storage\/v1\/object\/(?:public|sign|authenticated)\/([^/]+)\/([^?]+)/);
+  if (!match || !isSupabaseConfigured()) return url;
+
+  const bucket = decodeURIComponent(match[1]);
+  const path = decodeURIComponent(match[2]);
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60);
+  if (error || !data?.signedUrl) return url;
+
+  signedUrlCache.set(url, { signedUrl: data.signedUrl, expiresAt: Date.now() + 50 * 60 * 1000 });
+  return data.signedUrl;
+}
 
 /**
  * Converts a File or Blob into a permanent Base64 Data URL.
@@ -80,15 +105,15 @@ export function dataUrlToBlob(dataUrl) {
  * @param {string} url - Public HTTPS URL or base64 Data URL
  * @param {string} title - Display title for the viewer
  */
-export function openArtworkViewer(url, title = 'Artwork File') {
+export async function openArtworkViewer(url, title = 'Artwork File') {
   if (!url) {
     alert('No artwork or document file available to view.');
     return;
   }
 
-  // If already an HTTP/HTTPS public CDN URL, open directly in new tab
   if (url.startsWith('http://') || url.startsWith('https://')) {
-    window.open(url, '_blank', 'noopener,noreferrer');
+    const readable = await resolveReadableUrl(url);
+    window.open(readable, '_blank', 'noopener,noreferrer');
     return;
   }
 
@@ -331,7 +356,7 @@ export function openArtworkViewer(url, title = 'Artwork File') {
 }
 
 /**
- * Creates or ensures a public storage bucket exists in Supabase.
+ * Ensures a private storage bucket exists. Callers need an authenticated session.
  * 
  * @param {string} bucketName 
  * @returns {Promise<{ success: boolean, message?: string }>}
@@ -350,8 +375,8 @@ export async function createPublicBucketIfNotExists(bucketName = 'erp-files') {
       }
     }
 
-    const { data, error } = await supabase.storage.createBucket(bucketName, {
-      public: true,
+    const { error } = await supabase.storage.createBucket(bucketName, {
+      public: false,
       allowedMimeTypes: ['image/*', 'application/pdf', 'application/octet-stream'],
       fileSizeLimit: 52428800 // 50MB limit
     });
@@ -487,7 +512,7 @@ export async function uploadArtworkFile(fileInput, identifier = 'job_art') {
     publicUrl: null,
     filePath: null,
     isCloud: false,
-    error: `Supabase Storage upload failed (${result.error || 'Bucket not found'}). Please create a public bucket named "erp-files" in your Supabase Dashboard -> Storage.`
+    error: `Supabase Storage upload failed (${result.error || 'Bucket not found'}). The erp-files bucket is private and requires a signed-in user.`
   };
 }
 

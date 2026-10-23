@@ -1,21 +1,14 @@
 // FactoryOS Data Store & Flexible Packaging Calculation Engine
 // Samyak International Ltd, Indore
 
-export const COMPANY_DETAILS = {
-  name: "SAMYAK INTERNATIONAL LTD.",
-  tagline: "BSE: SAMYAKINT • CIN: L67120MH1994PLC225907",
-  gstin: "23AABCM3526F1ZY",
-  address: "11-B, Kheda Industrial Area, Pithampur Sector - III, Dist. Dhar, Dhar (Madhya Pradesh- 23), India - 454775",
-  contactPerson: "Samyak Jain",
-  phones: "8889133133",
-  email: "info@samyakinternational.in",
-  placeOfSupply: "Dhar, Madhya Pradesh (23)",
-  logoUrl: "/samyak-logo.svg"
-};
+import { SEED_COMPANY_PROFILE, withCompanyTagline } from './services/companyProfile';
+
+export const COMPANY_DETAILS = withCompanyTagline({ ...SEED_COMPANY_PROFILE });
 
 
 
 import { getFilmSubstrates } from './services/filmSubstratesService';
+import { attendanceCalendarDate } from './services/employeeAttendance';
 
 export const getFilmSubstrateMap = () => {
   const substrates = getFilmSubstrates();
@@ -196,7 +189,9 @@ export const DEFAULT_PROCESSING_RATES = {
   liquidInkPrice: 1500, // Rs. 1500/kg (incl. solvents, 20% weight gain)
   inkWeightGainPct: 20,
   adhesivePrice: 270,   // Rs. 270/kg (100% weight gain / solvent-less)
-  adhesiveWeightGainPct: 100
+  adhesiveWeightGainPct: 100,
+  conversionChargesPerKg: 45, // Rs. 45/kg default factory conversion charges
+  fixedProfitPerKg: 25        // Rs. 25/kg default fixed profit margin
 };
 
 /**
@@ -227,7 +222,9 @@ export const calculateJobRawMaterials = ({
   layers = [],
   filmPrices = {},
   inkPrice = 1500,
-  adhesivePrice = 270
+  adhesivePrice = 270,
+  conversionChargesPerKg = 0,
+  fixedProfitPerKg = 0
 }) => {
   const isPouching = orderType === "Pouching" || String(orderType).toLowerCase().includes('pouch');
   const wastagePct = getWastagePercentage(orderQtyKg, isPouching);
@@ -312,8 +309,17 @@ export const calculateJobRawMaterials = ({
   const totalAdhesiveCost = Math.round(adhesiveGrossKg * (parseFloat(adhesivePrice) || 270));
 
   const totalRawMaterialCost = Math.round(totalFilmCost + totalInkCost + totalAdhesiveCost);
-  const costPerKg = orderQtyKg > 0 ? (totalRawMaterialCost / orderQtyKg).toFixed(2) : 0;
+  const costPerKg = orderQtyKg > 0 ? parseFloat((totalRawMaterialCost / orderQtyKg).toFixed(2)) : 0;
   const wastageKg = Math.round(totalFilmGrossKg - totalFilmNetKg);
+
+  // 5. Derive Minimum Selling Price/kg: Raw Material Cost + Conversion Charges + Fixed Profit
+  const convPerKg = parseFloat(conversionChargesPerKg) || 0;
+  const profitPerKg = parseFloat(fixedProfitPerKg) || 0;
+  const rawMaterialCostPerKg = costPerKg;
+  const minSellingPricePerKg = parseFloat((rawMaterialCostPerKg + convPerKg + profitPerKg).toFixed(2));
+  const totalConversionCost = Math.round(convPerKg * orderQtyKg);
+  const totalFixedProfit = Math.round(profitPerKg * orderQtyKg);
+  const totalMinSellingAmount = Math.round(minSellingPricePerKg * orderQtyKg);
 
   return {
     jobName,
@@ -325,7 +331,14 @@ export const calculateJobRawMaterials = ({
     wastageKg,
     totalCost: totalRawMaterialCost,
     totalRawMaterialCost,
-    costPerKg: parseFloat(costPerKg) || 0,
+    rawMaterialCostPerKg,
+    costPerKg,
+    conversionChargesPerKg: convPerKg,
+    fixedProfitPerKg: profitPerKg,
+    minSellingPricePerKg,
+    totalConversionCost,
+    totalFixedProfit,
+    totalMinSellingAmount,
     totalLaminateGsm: parseFloat(totalLaminateGsm.toFixed(2)),
     totalAreaSqm: Math.round(totalAreaSqm),
     layerResults,
@@ -347,7 +360,14 @@ export const calculateJobRawMaterials = ({
       totalFilmNetKg: parseFloat(totalFilmNetKg.toFixed(2)),
       totalFilmGrossKg: parseFloat(totalFilmGrossKg.toFixed(2)),
       totalRawMaterialCost,
-      costPerKg: parseFloat(costPerKg) || 0,
+      costPerKg,
+      rawMaterialCostPerKg,
+      conversionChargesPerKg: convPerKg,
+      fixedProfitPerKg: profitPerKg,
+      minSellingPricePerKg,
+      totalConversionCost,
+      totalFixedProfit,
+      totalMinSellingAmount,
       wastagePct,
       wastageKg
     }
@@ -1394,6 +1414,7 @@ export const ALL_MODULES = [
   { key: "inventory", label: "Inventory, GRN & QC", category: "Store & Inventory" },
   { key: "ink_management", label: "Ink Management & Solid Costing", category: "Store & Inventory" },
   { key: "material_indents", label: "Material Indents & Store", category: "Store & Inventory" },
+  { key: "pellet_fuel", label: "Pellet Fuel Stock & Consumption", category: "Store & Inventory" },
   { key: "employees", label: "Employee Management & Payroll", category: "Human Resources & Payroll" },
   { key: "user_management", label: "User Management & RBAC", category: "Administration" },
   { key: "cylinders", label: "Rotogravure Cylinders", category: "Pre-Press & Tooling" },
@@ -1413,7 +1434,7 @@ export const generateFullRolePermissions = (allowAll = false) => {
       } else if (r === "Admin" || r === "Plant Manager" || r === "HR & Payroll Manager") {
         perm[r][m.key] = true;
       } else if (r === "Production Manager") {
-        perm[r][m.key] = (m.key === "dashboard" || m.key === "production_records" || m.key === "printing_scheduler" || m.key === "cylinders" || m.key === "orders" || m.key === "job_masters" || m.key === "inventory" || m.key === "purchase_orders" || m.key === "scrap_analytics" || m.key === "employees");
+        perm[r][m.key] = m.key !== "user_management" && m.key !== "supabase" && m.key !== "doc_settings";
       } else if (r === "Store Manager") {
         perm[r][m.key] = (m.key === "dashboard" || m.key === "inventory" || m.key === "purchase_orders" || m.key === "material_indents" || m.key === "vendors" || m.key === "ink_management" || m.key === "dispatch");
       } else if (r === "QC Chemist") {
@@ -1428,6 +1449,24 @@ export const generateFullRolePermissions = (allowAll = false) => {
         perm[r][m.key] = allowAll;
       }
     });
+    if (r === "HR & Payroll Manager") perm[r].purchase_orders = false;
+    perm[r].audit_logs = r === "Admin";
+    // dispatch and sfg_store are absent from the live JSON, so the current
+    // app shows those screens to every role. Keep that visibility.
+    perm[r].dispatch = true;
+    perm[r].sfg_store = true;
+    // Pellet fuel is a real permission. Store, production, purchasing, QC,
+    // and the shop floor record or receive fuel. Other roles stay off.
+    perm[r].pellet_fuel = [
+      "Admin",
+      "Plant Manager",
+      "HR & Payroll Manager",
+      "Production Manager",
+      "Store Manager",
+      "Purchase Manager",
+      "QC Chemist",
+      "Shop Floor Operator"
+    ].includes(r);
   });
   return perm;
 };
@@ -1510,8 +1549,8 @@ export function calculateEmployeeMonthlySalary(emp, monthKey, attendanceList = [
 
   // Filter attendance for this employee and month (e.g. '2026-08')
   const empAtt = attendanceList.filter(a => 
-    a.employeeId === emp.id && 
-    (a.date || '').startsWith(monthKey)
+    String(a.employeeId) === String(emp.id) && 
+    attendanceCalendarDate(a.date).startsWith(monthKey)
   );
 
   let presentCount = 0;

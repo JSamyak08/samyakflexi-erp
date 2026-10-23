@@ -26,12 +26,15 @@ import {
   Truck,
   DollarSign,
   Download,
-  Info
+  Info,
+  Scale,
+  PackagePlus,
+  Package
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
 import TablePagination, { usePagination } from './TablePagination';
-import { COMPANY_DETAILS } from '../factoryStore';
+import { getCompanyProfile } from '../services/companyProfile';
 import { generateDocRefNumber, getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import { calculateGSTBreakdown, formatINR } from '../utils/pdfHelpers';
 
@@ -45,7 +48,11 @@ export default function PurchaseOrderManagement({
   grns = [],
   orders = [],
   onUpdateOrder,
-  currentUser = null
+  currentUser = null,
+  onAddGRN,
+  onUpdateGRN,
+  onSaveInventoryItem,
+  onUpdateInventory
 }) {
   // Filters state
   const [searchTerm, setSearchTerm] = useState('');
@@ -62,6 +69,33 @@ export default function PurchaseOrderManagement({
   const [activePoForDetails, setActivePoForDetails] = useState(null);
   const [activeCollisionWarning, setActiveCollisionWarning] = useState(null);
   const [isOrderShortageModalOpen, setIsOrderShortageModalOpen] = useState(false);
+
+  // Create Inward GRN Modal State (from Purchase Order)
+  const [activeGrnModalData, setActiveGrnModalData] = useState(null);
+  const [grnFormData, setGrnFormData] = useState({
+    grnNo: '',
+    inwardDate: '',
+    invoiceNo: '',
+    itemName: '',
+    originalPoItemName: '',
+    category: '',
+    micron: '',
+    widthMm: '',
+    filmType: '',
+    unit: 'Kg',
+    poOrderedQty: 0,
+    poRate: 0,
+    inwardRate: 0,
+    weight: '', // strictly blank! User must enter weight
+    packagingType: 'Roll',
+    rollsCount: '1',
+    batchNo: '',
+    transporter: '',
+    vehicleNo: '',
+    variationNotes: '',
+    selectedItemIndex: 0
+  });
+  const [isSubmittingGrn, setIsSubmittingGrn] = useState(false);
 
   // New PO Form State
   const defaultTerms = getDocumentTerms();
@@ -291,13 +325,25 @@ export default function PurchaseOrderManagement({
     
     // Determine GST based on vendor state code vs company state code (23)
     const vendorGstin = poForm.vendorDetails?.gstin || '';
-    const gstInfo = calculateGSTBreakdown(
-      vendorGstin, 
-      poForm.vendorDetails?.address || '', 
-      subtotal, 
-      18, 
-      COMPANY_DETAILS.gstin || '23AABCM3526F1ZY'
-    );
+    let profileError = '';
+    let gstInfo = {
+      cgstAmount: 0,
+      sgstAmount: 0,
+      igstAmount: 0,
+      totalGstAmount: 0,
+      isInterState: false,
+    };
+    try {
+      gstInfo = calculateGSTBreakdown(
+        vendorGstin,
+        poForm.vendorDetails?.address || '',
+        subtotal,
+        18,
+        getCompanyProfile().gstin
+      );
+    } catch (error) {
+      profileError = error.message;
+    }
 
     const totalAmount = subtotal + gstInfo.totalGstAmount;
 
@@ -309,7 +355,8 @@ export default function PurchaseOrderManagement({
       igst: gstInfo.igstAmount,
       taxAmount: gstInfo.totalGstAmount,
       totalAmount,
-      isInterState: gstInfo.isInterState
+      isInterState: gstInfo.isInterState,
+      profileError,
     };
   }, [poForm.items, poForm.vendorDetails]);
 
@@ -330,6 +377,10 @@ export default function PurchaseOrderManagement({
     }
     if ((poForm.items || []).length === 0) {
       alert("Please add at least one line item to this Purchase Order!");
+      return;
+    }
+    if (formCalculations.profileError) {
+      alert(formCalculations.profileError);
       return;
     }
 
@@ -397,6 +448,13 @@ export default function PurchaseOrderManagement({
   // WhatsApp Share Dispatch Handler
   const handleShareWhatsApp = (po, e) => {
     if (e) e.stopPropagation();
+    let COMPANY_DETAILS;
+    try {
+      COMPANY_DETAILS = getCompanyProfile();
+    } catch (error) {
+      alert(error.message);
+      return;
+    }
     const vendorPhone = po.vendor?.phone || po.vendor?.contactNo || '';
     const cleanPhone = vendorPhone.replace(/[^0-9]/g, '');
     const phoneWithCountry = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
@@ -508,6 +566,14 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
       };
     });
   }, [purchaseOrders, grns]);
+
+  // Live Detailed PO resolved from enrichedPurchaseOrders
+  const detailedPo = useMemo(() => {
+    if (!activePoForDetails) return null;
+    return enrichedPurchaseOrders.find(p => 
+      p.poNumber === activePoForDetails.poNumber || (p.id && p.id === activePoForDetails.id)
+    ) || activePoForDetails;
+  }, [activePoForDetails, enrichedPurchaseOrders]);
 
   // Filter enriched Purchase Orders
   const filteredPurchaseOrders = useMemo(() => {
@@ -706,6 +772,292 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
       } catch (err) {
         alert(`Failed to cancel PO: ${err.message}`);
       }
+    }
+  };
+
+  // Handler to open 'Create Inward GRN' modal directly pre-filled from Purchase Order
+  const handleOpenCreateGrnModal = (po, itemIndex = 0) => {
+    if (!po) return;
+    const items = po.items && po.items.length > 0 ? po.items : [{
+      itemDesc: po.itemName || 'Material Item',
+      qtyKg: po.totalPoQty || 0,
+      rate: po.totalAmount && po.totalPoQty ? (po.totalAmount / po.totalPoQty) : 0,
+      micron: po.micron || '',
+      widthMm: po.widthMm || '',
+      filmType: po.filmType || ''
+    }];
+    const item = items[itemIndex] || items[0] || {};
+    const itemOrderedQty = parseFloat(item.qtyKg || item.qty || po.totalPoQty) || 0;
+    const itemRate = parseFloat(item.rate) || 0;
+    const nextGrnNumber = getNextDocRefNumber('grn');
+    const todayStr = new Date().toISOString().split('T')[0];
+    const initialItemName = item.itemDesc || item.itemName || 'Raw Material Inward';
+
+    setGrnFormData({
+      grnNo: nextGrnNumber,
+      inwardDate: todayStr,
+      invoiceNo: '',
+      itemName: initialItemName,
+      originalPoItemName: initialItemName,
+      category: po.category || item.category || 'Raw Materials',
+      micron: item.micron || '',
+      widthMm: item.widthMm || '',
+      filmType: item.filmType || '',
+      unit: item.unit || 'Kg',
+      poOrderedQty: itemOrderedQty,
+      poRate: itemRate,
+      inwardRate: itemRate, // prefilled with PO rate, editable
+      weight: '', // STRICTLY BLANK! As requested: "Weight will have to be added by the user"
+      packagingType: item.packagingType || (po.category === 'Inks & Solvents' ? 'Drum / Container' : 'Roll'),
+      rollsCount: '1',
+      batchNo: '',
+      transporter: po.transporterName || po.logisticDetails || '',
+      vehicleNo: '',
+      variationNotes: '',
+      selectedItemIndex: itemIndex
+    });
+
+    setActiveGrnModalData({
+      po,
+      item,
+      items,
+      itemIndex
+    });
+  };
+
+  // Switch selected item inside GRN creation modal
+  const handleSelectLineItemForGrn = (idx) => {
+    if (!activeGrnModalData || !activeGrnModalData.items) return;
+    const item = activeGrnModalData.items[idx];
+    if (!item) return;
+    const itemOrderedQty = parseFloat(item.qtyKg || item.qty) || 0;
+    const itemRate = parseFloat(item.rate) || 0;
+    const initialItemName = item.itemDesc || item.itemName || 'Raw Material Inward';
+
+    setGrnFormData(prev => ({
+      ...prev,
+      itemName: initialItemName,
+      originalPoItemName: initialItemName,
+      micron: item.micron || '',
+      widthMm: item.widthMm || '',
+      filmType: item.filmType || '',
+      unit: item.unit || 'Kg',
+      poOrderedQty: itemOrderedQty,
+      poRate: itemRate,
+      inwardRate: itemRate,
+      selectedItemIndex: idx
+    }));
+    setActiveGrnModalData(prev => ({ ...prev, item, itemIndex: idx }));
+  };
+
+  // Submit Inward GRN directly from Purchase Order
+  const handleSubmitGrn = async (e) => {
+    e.preventDefault();
+    if (!activeGrnModalData || !activeGrnModalData.po) return;
+
+    const po = activeGrnModalData.po;
+    const enteredWeight = parseFloat(grnFormData.weight);
+    if (isNaN(enteredWeight) || enteredWeight <= 0) {
+      alert('⚠️ Weight Required:\n\nPlease enter the actual received inward weight (Net Weight in kg). Weight cannot be empty or zero.');
+      return;
+    }
+
+    const grnNo = grnFormData.grnNo.trim();
+    if (!grnNo) {
+      alert('⚠️ GRN Number cannot be empty.');
+      return;
+    }
+
+    // Duplicate check
+    const isDup = (grns || []).some(g => String(g.grnNo || g.id).trim().toLowerCase() === grnNo.toLowerCase());
+    if (isDup) {
+      alert(`🚫 Duplicate GRN:\n\nA GRN with number #${grnNo} already exists! Please specify a unique GRN Number.`);
+      return;
+    }
+
+    setIsSubmittingGrn(true);
+
+    try {
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const todayIsoDate = grnFormData.inwardDate || nowIso.split('T')[0];
+      const receivedTimeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+      const vendorName = po.vendorName || po.vendor?.companyName || po.vendor?.name || 'Supplier';
+      const vendorId = po.vendorId || po.vendor?.id || null;
+
+      const poRateVal = parseFloat(grnFormData.poRate) || 0;
+      const inwardRateVal = parseFloat(grnFormData.inwardRate) || 0;
+      const rateDiffVal = inwardRateVal - poRateVal;
+      const hasRateVar = poRateVal > 0 && Math.abs(rateDiffVal) > 0.01;
+      const rateDiffPct = poRateVal > 0 ? ((rateDiffVal / poRateVal) * 100).toFixed(1) : '0.0';
+
+      const poQtyVal = parseFloat(grnFormData.poOrderedQty) || 0;
+      const qtyDiffVal = enteredWeight - poQtyVal;
+      const hasQtyVar = poQtyVal > 0 && Math.abs(qtyDiffVal) > 0.01;
+      const qtyDiffPct = poQtyVal > 0 ? ((qtyDiffVal / poQtyVal) * 100).toFixed(1) : '0.0';
+
+      const origNameClean = (grnFormData.originalPoItemName || '').trim();
+      const enteredNameClean = (grnFormData.itemName || '').trim();
+      const hasItemVar = Boolean(origNameClean && enteredNameClean && origNameClean.toLowerCase() !== enteredNameClean.toLowerCase());
+
+      const isAnyVar = Boolean(hasRateVar || hasQtyVar || hasItemVar);
+
+      const varDetails = {
+        hasVariation: isAnyVar,
+        hasRateVariation: hasRateVar,
+        poRate: poRateVal,
+        inwardRate: inwardRateVal,
+        rateVariance: Number(rateDiffVal.toFixed(2)),
+        rateVariancePct: rateDiffPct,
+        hasQtyVariation: hasQtyVar,
+        orderedQtyKg: poQtyVal,
+        receivedQtyKg: enteredWeight,
+        qtyVariance: Number(qtyDiffVal.toFixed(2)),
+        qtyVariancePct: qtyDiffPct,
+        isShortDelivery: qtyDiffVal < 0,
+        isExcessDelivery: qtyDiffVal > 0,
+        hasItemVariation: hasItemVar,
+        poItemName: origNameClean,
+        inwardItemName: enteredNameClean,
+        variationReason: grnFormData.variationNotes.trim(),
+        notes: grnFormData.variationNotes.trim()
+      };
+
+      const varSummaryList = [];
+      if (hasRateVar) {
+        varSummaryList.push(`Rate: PO ₹${poRateVal} -> GRN ₹${inwardRateVal} (${rateDiffVal > 0 ? '+' : ''}${rateDiffVal.toFixed(2)})`);
+      }
+      if (hasQtyVar) {
+        varSummaryList.push(`Qty: PO ${poQtyVal}kg -> GRN ${enteredWeight}kg (${qtyDiffVal > 0 ? '+' : ''}${qtyDiffVal.toFixed(1)}kg ${qtyDiffVal < 0 ? 'Short' : 'Excess'})`);
+      }
+      if (hasItemVar) {
+        varSummaryList.push(`Item: "${origNameClean}" -> "${enteredNameClean}"`);
+      }
+      const variationSummary = varSummaryList.join('; ');
+
+      const countUnits = parseInt(grnFormData.rollsCount, 10) || 1;
+      const unitWeight = Number((enteredWeight / countUnits).toFixed(2));
+      const newInvId = `INV-${Date.now().toString().slice(-6)}`;
+
+      const itemsBreakdown = Array.from({ length: countUnits }, (_, i) => ({
+        barcodeId: `${grnNo}-U${String(i + 1).padStart(2, '0')}`,
+        unitNo: i + 1,
+        netWeightKg: i === countUnits - 1 ? Number((enteredWeight - (unitWeight * (countUnits - 1))).toFixed(2)) : unitWeight,
+        grossWeightKg: unitWeight,
+        tareWeightKg: 0,
+        vendorRollNo: '',
+        notes: grnFormData.variationNotes.trim()
+      }));
+
+      const newGRN = {
+        id: grnNo,
+        grnNo: grnNo,
+        poNumber: po.poNumber,
+        vendorName: vendorName,
+        vendorId: vendorId,
+        invoiceNo: grnFormData.invoiceNo.trim(),
+        receivedDate: todayIsoDate,
+        receivedTime: receivedTimeStr,
+        inwardTimestamp: nowIso,
+        createdAt: nowIso,
+        category: grnFormData.category || 'Raw Materials',
+        itemName: enteredNameClean,
+        originalPoItemName: origNameClean,
+        stockItemId: newInvId,
+        masterItemId: newInvId,
+        filmType: grnFormData.filmType || '',
+        micron: grnFormData.micron || '-',
+        widthMm: grnFormData.widthMm || '-',
+        unit: grnFormData.unit || 'Kg',
+        packagingType: grnFormData.packagingType || 'Roll',
+        rollsReceived: countUnits,
+        netWeightKg: enteredWeight,
+        receivedQtyKg: enteredWeight,
+        grossWeightKg: enteredWeight,
+        tareWeightKg: 0,
+        itemsBreakdown: itemsBreakdown,
+        barcodes: itemsBreakdown.map(b => b.barcodeId),
+        barcodeId: itemsBreakdown.map(b => b.barcodeId).join(', '),
+        purchaseRatePerKg: inwardRateVal,
+        purchaseRate: inwardRateVal,
+        unitPrice: inwardRateVal,
+        agreedPoRate: poRateVal,
+        orderedPoQtyKg: poQtyVal,
+        hasVariation: isAnyVar,
+        variations: varDetails,
+        variationSummary: variationSummary,
+        batchNo: grnFormData.batchNo.trim() || `LOT-${nowIso.slice(2, 10).replace(/-/g, '')}`,
+        transporterName: grnFormData.transporter.trim() || 'Direct Dispatch / Self',
+        vehicleNo: grnFormData.vehicleNo.trim(),
+        remarks: grnFormData.variationNotes.trim() || `Inward GRN issued directly from PO #${po.poNumber}`,
+        itemRemarks: grnFormData.variationNotes.trim() || `Inward GRN issued directly from PO #${po.poNumber}`,
+        notes: grnFormData.variationNotes.trim(),
+        status: 'Pending QC Approval',
+        qcStatus: 'Pending QC Approval',
+        qcNotes: '',
+        storeManager: currentUser?.name || 'Store Manager'
+      };
+
+      // 1. Save GRN
+      if (onAddGRN) {
+        await onAddGRN(newGRN);
+      }
+
+      // 2. Add to Inventory Stock Item
+      if (onSaveInventoryItem) {
+        const newInvItem = {
+          id: newInvId,
+          itemCode: newInvId,
+          masterItemId: newInvId,
+          itemName: enteredNameClean,
+          category: grnFormData.category || 'Raw Materials',
+          filmType: grnFormData.filmType || '',
+          micron: grnFormData.micron || '-',
+          widthMm: grnFormData.widthMm || '-',
+          unit: grnFormData.unit || 'Kg',
+          availableQtyKg: 0,
+          allocatedQtyKg: 0,
+          unitPrice: inwardRateVal,
+          purchaseRatePerKg: inwardRateVal,
+          purchaseValuation: Number((enteredWeight * inwardRateVal).toFixed(2)),
+          location: 'Inward Dock - Pending QC',
+          reorderLevelKg: 100,
+          lastVendor: vendorName,
+          lastBatch: newGRN.batchNo
+        };
+        await onSaveInventoryItem(newInvItem);
+      }
+
+      // 3. Update Purchase Order delivery status
+      const existingInward = (po.matchingGRNs || []).reduce((sum, g) => sum + (parseFloat(g.netWeightKg || g.receivedQtyKg) || 0), 0);
+      const newTotalInward = existingInward + enteredWeight;
+      const totalPoQty = po.totalPoQty || poQtyVal || 0;
+
+      let newDeliveryStatus = 'Partially Received';
+      if (newTotalInward >= totalPoQty && totalPoQty > 0) {
+        newDeliveryStatus = 'Fully Received';
+      }
+
+      if (onUpdatePurchaseOrder) {
+        const updatedPo = {
+          ...po,
+          deliveryStatus: newDeliveryStatus,
+          lastInwardDate: todayIsoDate,
+          totalInwardQty: newTotalInward,
+          matchingGRNs: [...(po.matchingGRNs || []), newGRN]
+        };
+        await onUpdatePurchaseOrder(updatedPo);
+        setActivePoForDetails(updatedPo);
+      }
+
+      setActiveGrnModalData(null);
+      alert(`✅ Inward GRN #${grnNo} Created Successfully!\n\n${enteredNameClean} (${enteredWeight} kg) has been inwarded under PO #${po.poNumber}.\nStatus: Pending QC Approval${isAnyVar ? '\n\n⚠️ Variations noted and linked with PO Hub.' : ''}`);
+    } catch (err) {
+      console.error('[Create GRN from PO] Error:', err);
+      alert(`❌ Failed to create GRN:\n${err.message || err}`);
+    } finally {
+      setIsSubmittingGrn(false);
     }
   };
 
@@ -1486,15 +1838,22 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                       className="form-control"
                     >
                       <option value="">-- Select Vendor from Directory --</option>
-                      {vendors.map(v => (
-                        <option 
-                          key={v.id} 
-                          value={v.id}
-                          data-subtitle={v.gstin ? `GSTIN: ${v.gstin}` : 'No GSTIN'}
-                        >
-                          {v.companyName || v.name} {v.gstin ? `(${v.gstin})` : ''}
-                        </option>
-                      ))}
+                      {vendors.map(v => {
+                        const vendorName = String(v.companyName || v.name || '').trim();
+                        const vendorCode = v.id != null ? String(v.id) : '';
+                        const optionLabel = vendorName
+                          ? (vendorCode && vendorName !== vendorCode ? `${vendorName} (${vendorCode})` : vendorName)
+                          : vendorCode;
+                        return (
+                          <option
+                            key={v.id}
+                            value={v.id}
+                            data-subtitle={v.gstin ? `GSTIN: ${v.gstin}` : 'No GSTIN'}
+                          >
+                            {optionLabel}
+                          </option>
+                        );
+                      })}
                     </SearchableSelect>
                   </div>
 
@@ -1538,7 +1897,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                     </label>
                     <input
                       type="text"
-                      placeholder="e.g. 23AAACS9988F1Z1"
+                      placeholder="15-character GSTIN"
                       value={poForm.vendorDetails.gstin}
                       onChange={(e) => setPoForm({
                         ...poForm,
@@ -1576,15 +1935,22 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                         triggerStyle={{ height: '34px', fontSize: '0.8rem', padding: '4px 10px' }}
                       >
                         <option value="">+ Add from Inventory...</option>
-                        {inventory.map(inv => (
-                          <option 
-                            key={inv.id} 
-                            value={inv.id}
-                            data-subtitle={`${inv.category} • Avail: ${inv.availableQtyKg || 0} kg`}
-                          >
-                            {inv.itemName || inv.itemCode} ({inv.category})
-                          </option>
-                        ))}
+                        {inventory.map(inv => {
+                          const itemName = String(inv.itemName || '').trim();
+                          const itemCode = String(inv.itemCode || inv.id || '').trim();
+                          const optionLabel = itemName
+                            ? (itemCode && itemName !== itemCode ? `${itemName} (${itemCode})` : itemName)
+                            : itemCode;
+                          return (
+                            <option
+                              key={inv.id}
+                              value={inv.id}
+                              data-subtitle={`${inv.category} • Avail: ${inv.availableQtyKg || 0} kg`}
+                            >
+                              {optionLabel}
+                            </option>
+                          );
+                        })}
                       </SearchableSelect>
                     </div>
 
@@ -2143,185 +2509,698 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
               padding: '24px'
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', borderBottom: '1px solid #e2e8f0', paddingBottom: '16px' }}>
+            {(() => {
+              const currentPo = detailedPo || activePoForDetails;
+              return (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', borderBottom: '1px solid #e2e8f0', paddingBottom: '16px' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '1.3rem', fontWeight: '800', color: '#0f172a' }}>
+                          {currentPo.poNumber}
+                        </span>
+                        <span 
+                          style={{ 
+                            fontSize: '0.72rem', 
+                            fontWeight: '700', 
+                            padding: '3px 8px', 
+                            borderRadius: '6px', 
+                            background: currentPo.deliveryStatus === 'Fully Received' ? '#ecfdf5' : '#eff6ff', 
+                            color: currentPo.deliveryStatus === 'Fully Received' ? '#047857' : '#1d4ed8' 
+                          }}
+                        >
+                          {currentPo.deliveryStatus}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '0.84rem', color: '#64748b', marginTop: '4px' }}>
+                        Vendor: <strong style={{ color: '#0f172a' }}>{currentPo.vendorName || currentPo.vendor?.companyName}</strong> • Date: {currentPo.poDate}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      {/* Create Inward GRN Primary Action */}
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        onClick={() => handleOpenCreateGrnModal(currentPo)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', background: '#059669', borderColor: '#059669', color: '#ffffff', fontWeight: '700', padding: '6px 12px' }}
+                        title="Create Goods Receipt Note (Inward GRN) directly from this Purchase Order"
+                      >
+                        <PackagePlus size={15} /> Create Inward GRN
+                      </button>
+
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => {
+                          const po = currentPo;
+                          setActivePoForDetails(null);
+                          setActivePoForPdf(po);
+                        }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem' }}
+                      >
+                        <Printer size={14} /> View PDF
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={(e) => handleShareWhatsApp(currentPo, e)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', color: '#15803d' }}
+                      >
+                        <MessageSquare size={14} /> WhatsApp
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={() => setActivePoForDetails(null)} 
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}
+                      >
+                        <X size={20} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Inward Progress Summary */}
+                  <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px' }}>
+                      <div>
+                        <span style={{ fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: '700' }}>Ordered Qty</span>
+                        <div style={{ fontSize: '1.15rem', fontWeight: '800', color: '#0f172a' }}>
+                          {(currentPo.totalPoQty || 0).toLocaleString()} kg
+                        </div>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: '700' }}>Received in GRN</span>
+                        <div style={{ fontSize: '1.15rem', fontWeight: '800', color: '#047857' }}>
+                          {(currentPo.totalInwardQty || 0).toLocaleString()} kg
+                        </div>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: '700' }}>Balance Pending</span>
+                        <div style={{ fontSize: '1.15rem', fontWeight: '800', color: currentPo.pendingQty > 0 ? '#b45309' : '#64748b' }}>
+                          {(currentPo.pendingQty || 0).toLocaleString()} kg
+                        </div>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: '700' }}>Promised Date</span>
+                        <div style={{ fontSize: '1.05rem', fontWeight: '800', color: currentPo.isOverdue ? '#dc2626' : '#0f172a' }}>
+                          {currentPo.promisedDeliveryDate || currentPo.deliveryDate || '—'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Line Items */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <h4 style={{ fontSize: '0.88rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                      Line Items in Purchase Order
+                    </h4>
+                    <span style={{ fontSize: '0.74rem', color: '#64748b' }}>
+                      Click 'Inward GRN' on any line to pre-fill specific item specs
+                    </span>
+                  </div>
+                  <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden', marginBottom: '20px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                      <thead>
+                        <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'left', color: '#475569' }}>
+                          <th style={{ padding: '8px 12px' }}>Description</th>
+                          <th style={{ padding: '8px 12px' }}>Micron / Width</th>
+                          <th style={{ padding: '8px 12px' }}>Ordered Qty</th>
+                          <th style={{ padding: '8px 12px' }}>Rate (₹)</th>
+                          <th style={{ padding: '8px 12px' }}>Line Total (₹)</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'center' }}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(currentPo.items || []).map((it, i) => (
+                          <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '8px 12px', fontWeight: '600', color: '#0f172a' }}>
+                              {it.itemDesc || it.itemName}
+                            </td>
+                            <td style={{ padding: '8px 12px', color: '#64748b' }}>
+                              {it.micron ? `${it.micron}µ` : '-'} {it.widthMm ? `• ${it.widthMm}mm` : ''}
+                            </td>
+                            <td style={{ padding: '8px 12px', fontWeight: '700' }}>
+                              {(it.qtyKg || 0).toLocaleString()} {it.unit || 'Kg'}
+                            </td>
+                            <td style={{ padding: '8px 12px' }}>
+                              ₹{it.rate || 0}
+                            </td>
+                            <td style={{ padding: '8px 12px', fontWeight: '700', color: '#0f172a' }}>
+                              ₹{(it.amount || 0).toLocaleString('en-IN')}
+                            </td>
+                            <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                              <button
+                                type="button"
+                                className="btn-secondary"
+                                onClick={() => handleOpenCreateGrnModal(currentPo, i)}
+                                style={{ padding: '3px 8px', fontSize: '0.72rem', color: '#047857', borderColor: '#a7f3d0', background: '#ecfdf5', fontWeight: '700', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                title="Create Inward GRN for this item"
+                              >
+                                <Plus size={11} /> Inward GRN
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Matching GRNs Inward Record History */}
+                  <h4 style={{ fontSize: '0.88rem', fontWeight: '800', color: '#0f172a', marginBottom: '8px' }}>
+                    Goods Received Notes (GRN) Inward Records ({currentPo.matchingGRNs?.length || 0})
+                  </h4>
+                  {currentPo.matchingGRNs && currentPo.matchingGRNs.length > 0 ? (
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                        <thead>
+                          <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'left', color: '#475569' }}>
+                            <th style={{ padding: '8px 12px' }}>GRN #</th>
+                            <th style={{ padding: '8px 12px' }}>Inward Date</th>
+                            <th style={{ padding: '8px 12px' }}>Vendor Invoice</th>
+                            <th style={{ padding: '8px 12px' }}>Net Weight (Kg)</th>
+                            <th style={{ padding: '8px 12px' }}>Rate & Variations</th>
+                            <th style={{ padding: '8px 12px' }}>QC Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {currentPo.matchingGRNs.map((grn, idx) => {
+                            const firstPoItem = (currentPo.items || [])[0] || {};
+                            const poRate = parseFloat(grn.agreedPoRate || firstPoItem.rate) || 0;
+                            const grnRate = parseFloat(grn.purchaseRatePerKg || grn.purchaseRate || grn.unitPrice) || 0;
+                            const rateDiff = grnRate - poRate;
+                            const hasRateVar = poRate > 0 && grnRate > 0 && Math.abs(rateDiff) > 0.05;
+
+                            const poOrderedQty = parseFloat(grn.orderedPoQtyKg || firstPoItem.qtyKg || currentPo.totalPoQty) || 0;
+                            const grnWeight = parseFloat(grn.netWeightKg || grn.receivedQtyKg) || 0;
+                            const qtyDiff = grnWeight - poOrderedQty;
+                            const hasQtyVar = grn.variations?.hasQtyVariation || (poOrderedQty > 0 && grnWeight > 0 && Math.abs(qtyDiff) > 0.1);
+
+                            const poItemName = (grn.originalPoItemName || firstPoItem.itemDesc || firstPoItem.itemName || '').trim();
+                            const grnItemName = (grn.itemName || '').trim();
+                            const hasItemVar = grn.variations?.hasItemVariation || (poItemName && grnItemName && poItemName.toLowerCase() !== grnItemName.toLowerCase());
+
+                            const hasAnyVar = grn.hasVariation || hasRateVar || hasQtyVar || hasItemVar;
+                            const varReason = grn.variations?.variationReason || grn.remarks || '';
+
+                            return (
+                              <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                <td style={{ padding: '8px 12px', fontWeight: '700', color: '#4f46e5' }}>
+                                  {grn.grnNo || grn.grnNumber}
+                                </td>
+                                <td style={{ padding: '8px 12px', color: '#475569' }}>
+                                  {grn.receivedDate || '—'}
+                                </td>
+                                <td style={{ padding: '8px 12px', color: '#475569' }}>
+                                  {grn.invoiceNo || grn.invoiceNumber || '—'}
+                                </td>
+                                <td style={{ padding: '8px 12px', fontWeight: '700', color: '#0f172a' }}>
+                                  {grnWeight.toLocaleString()} kg
+                                </td>
+                                <td style={{ padding: '8px 12px' }}>
+                                  {hasAnyVar ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                      {hasRateVar && (
+                                        <span style={{ fontSize: '0.72rem', fontWeight: '700', color: '#b91c1c', background: '#fef2f2', padding: '2px 6px', borderRadius: '4px', border: '1px solid #fecaca' }}>
+                                          🏷️ Rate: ₹{grnRate} (PO ₹{poRate}, {rateDiff > 0 ? '+' : ''}₹{rateDiff.toFixed(2)})
+                                        </span>
+                                      )}
+                                      {hasQtyVar && (
+                                        <span style={{ fontSize: '0.72rem', fontWeight: '700', color: '#b45309', background: '#fffbeb', padding: '2px 6px', borderRadius: '4px', border: '1px solid #fde68a' }}>
+                                          ⚖️ Qty: {grnWeight} kg ({qtyDiff > 0 ? '+' : ''}{qtyDiff.toFixed(1)} kg {qtyDiff < 0 ? 'Short' : 'Excess'})
+                                        </span>
+                                      )}
+                                      {hasItemVar && (
+                                        <span style={{ fontSize: '0.72rem', fontWeight: '700', color: '#7e22ce', background: '#faf5ff', padding: '2px 6px', borderRadius: '4px', border: '1px solid #e9d5ff' }}>
+                                          📝 Item: {grnItemName}
+                                        </span>
+                                      )}
+                                      {varReason && !varReason.toLowerCase().includes('inward grn issued directly') && (
+                                        <span style={{ fontSize: '0.68rem', color: '#64748b', fontStyle: 'italic' }}>
+                                          💬 "{varReason}"
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span style={{ fontSize: '0.72rem', fontWeight: '700', color: '#047857', background: '#ecfdf5', padding: '2px 6px', borderRadius: '4px' }}>
+                                      ✓ Exact Match
+                                    </span>
+                                  )}
+                                </td>
+                                <td style={{ padding: '8px 12px' }}>
+                                  <span 
+                                    style={{ 
+                                      fontSize: '0.72rem', 
+                                      fontWeight: '700', 
+                                      padding: '2px 6px', 
+                                      borderRadius: '4px', 
+                                      background: grn.status === 'Approved' ? '#ecfdf5' : '#eff6ff', 
+                                      color: grn.status === 'Approved' ? '#047857' : '#1d4ed8' 
+                                    }}
+                                  >
+                                    {grn.status || 'Pending QC Approval'}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', textAlign: 'center', color: '#94a3b8', fontSize: '0.82rem' }}>
+                      No GRN inward receipts recorded for this PO number yet. Click the <strong>'Create Inward GRN'</strong> button above to issue a receipt directly.
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 8B. CREATE INWARD GRN DIRECTLY FROM PURCHASE ORDER MODAL */}
+      {/* ========================================================================= */}
+      {activeGrnModalData && (
+        <div 
+          className="modal-overlay" 
+          style={{ 
+            position: 'fixed', 
+            top: 0, 
+            left: 0, 
+            right: 0, 
+            bottom: 0, 
+            background: 'rgba(15, 23, 42, 0.72)', 
+            backdropFilter: 'blur(5px)', 
+            zIndex: 1200, 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            padding: '20px' 
+          }}
+        >
+          <div 
+            style={{ 
+              background: '#ffffff', 
+              borderRadius: '16px', 
+              width: '100%', 
+              maxWidth: '820px', 
+              maxHeight: '92vh', 
+              overflowY: 'auto', 
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', 
+              border: '1px solid #cbd5e1',
+              padding: '24px'
+            }}
+          >
+            {/* Modal Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '18px', borderBottom: '1px solid #e2e8f0', paddingBottom: '14px' }}>
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '1.3rem', fontWeight: '800', color: '#0f172a' }}>
-                    {activePoForDetails.poNumber}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '1.25rem', fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <PackageCheck size={22} style={{ color: '#059669' }} /> Create Inward GRN from PO
                   </span>
-                  <span 
-                    style={{ 
-                      fontSize: '0.72rem', 
-                      fontWeight: '700', 
-                      padding: '3px 8px', 
-                      borderRadius: '6px', 
-                      background: activePoForDetails.deliveryStatus === 'Fully Received' ? '#ecfdf5' : '#eff6ff', 
-                      color: activePoForDetails.deliveryStatus === 'Fully Received' ? '#047857' : '#1d4ed8' 
-                    }}
-                  >
-                    {activePoForDetails.deliveryStatus}
+                  <span style={{ fontSize: '0.8rem', fontWeight: '700', padding: '3px 8px', borderRadius: '6px', background: '#eff6ff', color: '#1d4ed8', fontFamily: 'monospace' }}>
+                    {activeGrnModalData.po.poNumber}
                   </span>
                 </div>
                 <div style={{ fontSize: '0.84rem', color: '#64748b', marginTop: '4px' }}>
-                  Vendor: <strong style={{ color: '#0f172a' }}>{activePoForDetails.vendorName || activePoForDetails.vendor?.companyName}</strong> • Date: {activePoForDetails.poDate}
+                  Vendor: <strong style={{ color: '#0f172a' }}>{activeGrnModalData.po.vendorName || activeGrnModalData.po.vendor?.companyName}</strong> • Category: <strong>{activeGrnModalData.po.category || 'Raw Materials'}</strong>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => {
-                    const po = activePoForDetails;
-                    setActivePoForDetails(null);
-                    setActivePoForPdf(po);
-                  }}
-                  style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem' }}
-                >
-                  <Printer size={14} /> View PDF
-                </button>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={(e) => handleShareWhatsApp(activePoForDetails, e)}
-                  style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', color: '#15803d' }}
-                >
-                  <MessageSquare size={14} /> WhatsApp
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => setActivePoForDetails(null)} 
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}
-                >
-                  <X size={20} />
-                </button>
-              </div>
+              <button 
+                type="button" 
+                onClick={() => setActiveGrnModalData(null)} 
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: '4px' }}
+                title="Close"
+              >
+                <X size={22} />
+              </button>
             </div>
 
-            {/* Inward Progress Summary */}
-            <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px' }}>
-                <div>
-                  <span style={{ fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: '700' }}>Ordered Qty</span>
-                  <div style={{ fontSize: '1.15rem', fontWeight: '800', color: '#0f172a' }}>
-                    {(activePoForDetails.totalPoQty || 0).toLocaleString()} kg
-                  </div>
+            {/* Line Item Switcher (if multi-item PO) */}
+            {activeGrnModalData.items && activeGrnModalData.items.length > 1 && (
+              <div style={{ marginBottom: '16px', background: '#f8fafc', padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                <span style={{ fontSize: '0.74rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
+                  Select PO Line Item to Inward ({activeGrnModalData.items.length} items on PO):
+                </span>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {activeGrnModalData.items.map((it, idx) => {
+                    const isSelected = activeGrnModalData.itemIndex === idx;
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleSelectLineItemForGrn(idx)}
+                        style={{
+                          padding: '5px 12px',
+                          fontSize: '0.78rem',
+                          fontWeight: '700',
+                          borderRadius: '6px',
+                          border: isSelected ? '2px solid #059669' : '1px solid #cbd5e1',
+                          background: isSelected ? '#ecfdf5' : '#ffffff',
+                          color: isSelected ? '#047857' : '#475569',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Item {idx + 1}: {it.itemDesc || it.itemName} ({it.qtyKg || 0} {it.unit || 'Kg'})
+                      </button>
+                    );
+                  })}
                 </div>
-                <div>
-                  <span style={{ fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: '700' }}>Received in GRN</span>
-                  <div style={{ fontSize: '1.15rem', fontWeight: '800', color: '#047857' }}>
-                    {(activePoForDetails.totalInwardQty || 0).toLocaleString()} kg
-                  </div>
-                </div>
-                <div>
-                  <span style={{ fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: '700' }}>Balance Pending</span>
-                  <div style={{ fontSize: '1.15rem', fontWeight: '800', color: activePoForDetails.pendingQty > 0 ? '#b45309' : '#64748b' }}>
-                    {(activePoForDetails.pendingQty || 0).toLocaleString()} kg
-                  </div>
-                </div>
-                <div>
-                  <span style={{ fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: '700' }}>Promised Date</span>
-                  <div style={{ fontSize: '1.05rem', fontWeight: '800', color: activePoForDetails.isOverdue ? '#dc2626' : '#0f172a' }}>
-                    {activePoForDetails.promisedDeliveryDate || activePoForDetails.deliveryDate || '—'}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Line Items */}
-            <h4 style={{ fontSize: '0.88rem', fontWeight: '800', color: '#0f172a', marginBottom: '8px' }}>
-              Line Items in Purchase Order
-            </h4>
-            <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden', marginBottom: '20px' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
-                <thead>
-                  <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'left', color: '#475569' }}>
-                    <th style={{ padding: '8px 12px' }}>Description</th>
-                    <th style={{ padding: '8px 12px' }}>Micron / Width</th>
-                    <th style={{ padding: '8px 12px' }}>Ordered Qty</th>
-                    <th style={{ padding: '8px 12px' }}>Rate (₹)</th>
-                    <th style={{ padding: '8px 12px' }}>Line Total (₹)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(activePoForDetails.items || []).map((it, i) => (
-                    <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px 12px', fontWeight: '600', color: '#0f172a' }}>
-                        {it.itemDesc || it.itemName}
-                      </td>
-                      <td style={{ padding: '8px 12px', color: '#64748b' }}>
-                        {it.micron ? `${it.micron}µ` : '-'} {it.widthMm ? `• ${it.widthMm}mm` : ''}
-                      </td>
-                      <td style={{ padding: '8px 12px', fontWeight: '700' }}>
-                        {(it.qtyKg || 0).toLocaleString()} {it.unit || 'Kg'}
-                      </td>
-                      <td style={{ padding: '8px 12px' }}>
-                        ₹{it.rate || 0}
-                      </td>
-                      <td style={{ padding: '8px 12px', fontWeight: '700', color: '#0f172a' }}>
-                        ₹{(it.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Matching GRNs Inward Record History */}
-            <h4 style={{ fontSize: '0.88rem', fontWeight: '800', color: '#0f172a', marginBottom: '8px' }}>
-              Goods Received Notes (GRN) Inward Records ({activePoForDetails.matchingGRNs?.length || 0})
-            </h4>
-            {activePoForDetails.matchingGRNs && activePoForDetails.matchingGRNs.length > 0 ? (
-              <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
-                  <thead>
-                    <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'left', color: '#475569' }}>
-                      <th style={{ padding: '8px 12px' }}>GRN #</th>
-                      <th style={{ padding: '8px 12px' }}>Inward Date</th>
-                      <th style={{ padding: '8px 12px' }}>Vendor Invoice</th>
-                      <th style={{ padding: '8px 12px' }}>Net Weight (Kg)</th>
-                      <th style={{ padding: '8px 12px' }}>QC Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {activePoForDetails.matchingGRNs.map((grn, idx) => (
-                      <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '8px 12px', fontWeight: '700', color: '#4f46e5' }}>
-                          {grn.grnNo || grn.grnNumber}
-                        </td>
-                        <td style={{ padding: '8px 12px', color: '#475569' }}>
-                          {grn.receivedDate || '—'}
-                        </td>
-                        <td style={{ padding: '8px 12px', color: '#475569' }}>
-                          {grn.invoiceNo || grn.invoiceNumber || '—'}
-                        </td>
-                        <td style={{ padding: '8px 12px', fontWeight: '700', color: '#0f172a' }}>
-                          {(grn.netWeightKg || grn.receivedQtyKg || 0).toLocaleString()} kg
-                        </td>
-                        <td style={{ padding: '8px 12px' }}>
-                          <span 
-                            style={{ 
-                              fontSize: '0.72rem', 
-                              fontWeight: '700', 
-                              padding: '2px 6px', 
-                              borderRadius: '4px', 
-                              background: '#ecfdf5', 
-                              color: '#047857' 
-                            }}
-                          >
-                            {grn.status || 'Approved'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', textAlign: 'center', color: '#94a3b8', fontSize: '0.82rem' }}>
-                No GRN inward receipts recorded for this PO number yet. When goods are received in Factory Gate & GRN is issued with PO# {activePoForDetails.poNumber}, it will automatically link here.
               </div>
             )}
+
+            {/* PO Reference Specs Card */}
+            <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
+                <div>
+                  <span style={{ fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: '700' }}>PO Item Name</span>
+                  <div style={{ fontSize: '0.88rem', fontWeight: '800', color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={grnFormData.originalPoItemName}>
+                    {grnFormData.originalPoItemName}
+                  </div>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: '700' }}>PO Ordered Qty</span>
+                  <div style={{ fontSize: '1.05rem', fontWeight: '800', color: '#0f172a' }}>
+                    {grnFormData.poOrderedQty} {grnFormData.unit || 'Kg'}
+                  </div>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: '700' }}>Agreed PO Rate</span>
+                  <div style={{ fontSize: '1.05rem', fontWeight: '800', color: '#4f46e5' }}>
+                    ₹{grnFormData.poRate} / {grnFormData.unit || 'Kg'}
+                  </div>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: '700' }}>Specifications</span>
+                  <div style={{ fontSize: '0.88rem', fontWeight: '700', color: '#334155' }}>
+                    {grnFormData.micron ? `${grnFormData.micron}µ` : ''} {grnFormData.widthMm ? `• ${grnFormData.widthMm}mm` : ''} {grnFormData.filmType || ''}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Live Variation & Discrepancy Alert */}
+            {(() => {
+              const poRateVal = parseFloat(grnFormData.poRate) || 0;
+              const inwardRateVal = parseFloat(grnFormData.inwardRate) || 0;
+              const rateDiffVal = inwardRateVal - poRateVal;
+              const hasRateVar = poRateVal > 0 && Math.abs(rateDiffVal) > 0.01;
+              const rateDiffPct = poRateVal > 0 ? ((rateDiffVal / poRateVal) * 100).toFixed(1) : '0.0';
+
+              const poQtyVal = parseFloat(grnFormData.poOrderedQty) || 0;
+              const enteredWeight = parseFloat(grnFormData.weight);
+              const hasWeightEntered = !isNaN(enteredWeight) && enteredWeight > 0;
+              const qtyDiffVal = hasWeightEntered ? (enteredWeight - poQtyVal) : 0;
+              const hasQtyVar = hasWeightEntered && poQtyVal > 0 && Math.abs(qtyDiffVal) > 0.01;
+              const qtyDiffPct = poQtyVal > 0 && hasWeightEntered ? ((qtyDiffVal / poQtyVal) * 100).toFixed(1) : '0.0';
+
+              const origNameClean = (grnFormData.originalPoItemName || '').trim();
+              const enteredNameClean = (grnFormData.itemName || '').trim();
+              const hasItemVar = Boolean(origNameClean && enteredNameClean && origNameClean.toLowerCase() !== enteredNameClean.toLowerCase());
+
+              const isAnyVar = Boolean(hasRateVar || hasQtyVar || hasItemVar);
+
+              if (isAnyVar) {
+                return (
+                  <div style={{ background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '10px', padding: '12px 16px', marginBottom: '18px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#b45309', fontWeight: '800', fontSize: '0.86rem', marginBottom: '6px' }}>
+                      <AlertTriangle size={16} />
+                      <span>Variation Detected vs Purchase Order Specifications</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.82rem', color: '#78350f' }}>
+                      {hasRateVar && (
+                        <div>
+                          🏷️ <strong>Rate Variation:</strong> Agreed PO Rate: ₹{poRateVal}/kg vs Inward GRN Rate: ₹{inwardRateVal}/kg ({rateDiffVal > 0 ? `+₹${rateDiffVal.toFixed(2)} (${rateDiffPct}% Premium)` : `-₹${Math.abs(rateDiffVal).toFixed(2)} (${rateDiffPct}% Discount)`})
+                        </div>
+                      )}
+                      {hasQtyVar && (
+                        <div>
+                          ⚖️ <strong>Quantity Variation:</strong> PO Ordered: {poQtyVal} kg vs Received: {enteredWeight} kg ({qtyDiffVal > 0 ? `+${qtyDiffVal.toFixed(1)} kg (${qtyDiffPct}% Excess)` : `${qtyDiffVal.toFixed(1)} kg (${qtyDiffPct}% Short Inward)`})
+                        </div>
+                      )}
+                      {hasItemVar && (
+                        <div>
+                          📝 <strong>Item Name Alteration:</strong> PO Item: "<em>{origNameClean}</em>" → Inward GRN: "<em>{enteredNameClean}</em>"
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: '#92400e', marginTop: '6px', fontStyle: 'italic' }}>
+                      * This variation will be recorded on the Inward GRN document and prominently highlighted in the 'Centralized Platform Issued Purchase Orders (PO) Hub'.
+                    </div>
+                  </div>
+                );
+              }
+
+              if (hasWeightEntered && !isAnyVar) {
+                return (
+                  <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '10px', padding: '10px 14px', marginBottom: '18px', display: 'flex', alignItems: 'center', gap: '8px', color: '#047857', fontSize: '0.82rem', fontWeight: '700' }}>
+                    <CheckCircle2 size={16} />
+                    <span>Exact Match with Purchase Order specifications (Rate, Quantity & Item Name match).</span>
+                  </div>
+                );
+              }
+
+              return null;
+            })()}
+
+            {/* Inward GRN Form */}
+            <form onSubmit={handleSubmitGrn}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', marginBottom: '14px' }}>
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', display: 'block', marginBottom: '4px' }}>
+                    GRN Number *
+                  </label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    required
+                    value={grnFormData.grnNo}
+                    onChange={e => setGrnFormData({ ...grnFormData, grnNo: e.target.value })}
+                    style={{ fontWeight: '700', fontFamily: 'monospace' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', display: 'block', marginBottom: '4px' }}>
+                    Inward Receipt Date *
+                  </label>
+                  <input
+                    type="date"
+                    className="form-control"
+                    required
+                    value={grnFormData.inwardDate}
+                    onChange={e => setGrnFormData({ ...grnFormData, inwardDate: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', display: 'block', marginBottom: '4px' }}>
+                    Vendor Invoice / DC Number
+                  </label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. INV-2026-9812 or DC-412"
+                    value={grnFormData.invoiceNo}
+                    onChange={e => setGrnFormData({ ...grnFormData, invoiceNo: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              {/* Item Name & Inward Rate */}
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '14px', marginBottom: '14px' }}>
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', display: 'block', marginBottom: '4px' }}>
+                    Item Name / Inward Description *
+                  </label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    required
+                    value={grnFormData.itemName}
+                    onChange={e => setGrnFormData({ ...grnFormData, itemName: e.target.value })}
+                    placeholder="Inward Item Description"
+                  />
+                  {grnFormData.originalPoItemName && grnFormData.itemName.trim().toLowerCase() !== grnFormData.originalPoItemName.trim().toLowerCase() && (
+                    <span style={{ fontSize: '0.71rem', color: '#7c3aed', fontWeight: '600', marginTop: '2px', display: 'block' }}>
+                      ⚠️ Varied from PO Description: "{grnFormData.originalPoItemName}"
+                    </span>
+                  )}
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', display: 'block', marginBottom: '4px' }}>
+                    Inward Purchase Rate (₹/kg) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className="form-control"
+                    required
+                    value={grnFormData.inwardRate}
+                    onChange={e => setGrnFormData({ ...grnFormData, inwardRate: e.target.value })}
+                  />
+                  {parseFloat(grnFormData.poRate) > 0 && parseFloat(grnFormData.inwardRate) !== parseFloat(grnFormData.poRate) && (
+                    <span style={{ fontSize: '0.71rem', color: '#dc2626', fontWeight: '600', marginTop: '2px', display: 'block' }}>
+                      ⚠️ Varied from PO Rate: ₹{grnFormData.poRate}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* MANDATORY WEIGHT ENTRY SECTION (Highlighted prominently) */}
+              <div style={{ background: '#f0fdf4', border: '2px solid #86efac', padding: '16px', borderRadius: '12px', marginBottom: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', alignItems: 'flex-start' }}>
+                  <div>
+                    <label style={{ fontSize: '0.84rem', fontWeight: '800', color: '#166534', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                      <Scale size={16} /> Net Received Weight (Kg) *
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="form-control"
+                      required
+                      autoFocus
+                      placeholder="Enter actual physical weight..."
+                      value={grnFormData.weight}
+                      onChange={e => setGrnFormData({ ...grnFormData, weight: e.target.value })}
+                      style={{ fontSize: '1.15rem', fontWeight: '800', borderColor: '#16a34a', background: '#ffffff', color: '#14532d' }}
+                    />
+                    <span style={{ fontSize: '0.71rem', color: '#15803d', fontWeight: '600', display: 'block', marginTop: '4px' }}>
+                      ⚠️ Physical weighing entry required (not auto-filled).
+                    </span>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', display: 'block', marginBottom: '4px' }}>
+                      Rolls / Packages / Containers Count *
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      className="form-control"
+                      required
+                      value={grnFormData.rollsCount}
+                      onChange={e => setGrnFormData({ ...grnFormData, rollsCount: e.target.value })}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', display: 'block', marginBottom: '4px' }}>
+                      Packaging Type
+                    </label>
+                    <SearchableSelect
+                      className="form-control"
+                      value={grnFormData.packagingType}
+                      onChange={e => setGrnFormData({ ...grnFormData, packagingType: e.target.value })}
+                    >
+                      <option value="Roll">Roll</option>
+                      <option value="Drum / Container">Drum / Container</option>
+                      <option value="Box / Carton">Box / Carton</option>
+                      <option value="Bag / Sack">Bag / Sack</option>
+                      <option value="Cylinder Set">Cylinder Set</option>
+                      <option value="Pallet">Pallet</option>
+                    </SearchableSelect>
+                  </div>
+                </div>
+              </div>
+
+              {/* Logistics & Batch details */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '14px' }}>
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', display: 'block', marginBottom: '4px' }}>
+                    Transporter / Courier Name
+                  </label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. VRL Logistics / Self Delivery"
+                    value={grnFormData.transporter}
+                    onChange={e => setGrnFormData({ ...grnFormData, transporter: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', display: 'block', marginBottom: '4px' }}>
+                    Vehicle / LR Number
+                  </label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. MP-09-HH-1234"
+                    value={grnFormData.vehicleNo}
+                    onChange={e => setGrnFormData({ ...grnFormData, vehicleNo: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', display: 'block', marginBottom: '4px' }}>
+                    Vendor Batch / Lot No
+                  </label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. BATCH-2026-X"
+                    value={grnFormData.batchNo}
+                    onChange={e => setGrnFormData({ ...grnFormData, batchNo: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              {/* Discrepancy & Variation Remarks / Notes */}
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                  <MessageSquare size={13} /> Variation & Discrepancy Notes / Store Remarks
+                </label>
+                <textarea
+                  className="form-control"
+                  rows={2}
+                  placeholder="Mention any reasons for Rate variance, Weight shortage/excess, item variation or store comments (These will be recorded on the Inward GRN and visible in the Centralized PO Hub)..."
+                  value={grnFormData.variationNotes}
+                  onChange={e => setGrnFormData({ ...grnFormData, variationNotes: e.target.value })}
+                />
+              </div>
+
+              {/* Actions Footer */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={isSubmittingGrn}
+                  onClick={() => setActiveGrnModalData(null)}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={isSubmittingGrn}
+                  className="btn-primary"
+                  style={{
+                    background: '#059669',
+                    borderColor: '#059669',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontWeight: '700',
+                    padding: '8px 20px',
+                    fontSize: '0.9rem'
+                  }}
+                >
+                  {isSubmittingGrn ? (
+                    <>
+                      <RefreshCw size={15} className="spin" /> Creating Inward GRN...
+                    </>
+                  ) : (
+                    <>
+                      <PackageCheck size={16} /> Confirm & Issue Inward GRN
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

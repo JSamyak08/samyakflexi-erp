@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import SearchableSelect from './SearchableSelect';
 import { 
   FileSpreadsheet, 
@@ -41,10 +41,11 @@ import { DEFAULT_DAILY_RATES, generateBarcodeId, calculateJobRawMaterials, calcu
 import { notifyProductionRecordSubmitted, notifyProductionRecordApproved, notifyOverWastageAlert } from '../services/emailService';
 import { pushSlugState } from '../utils/slugRouter';
 import TablePagination, { usePagination } from './TablePagination';
-import { saveSystemSetting } from '../services/supabaseDataService';
-import { safeLocalStorageSet, safeLocalStorageGet } from '../utils/safeStorage';
+import { supabase } from '../services/supabaseClient';
+import { fetchScrapDisposals, saveScrapDisposal, describeSaveError } from '../services/businessRecords';
 import { getMaterialCostSettings, fetchMaterialCostSettingsFromSupabase, DEFAULT_MATERIAL_COST_SETTINGS } from '../services/settingsService';
 import { roundToTwo, formatUpToTwoDecimals, formatCurrency, formatQty } from '../utils/numberHelpers';
+import { codeStartsWith, codesEqual } from '../utils/barcodeCode';
 
 /**
  * Roll-Wise Input Vs Output Reconciliation Component for SFG / FG Output Barcode Master Rolls
@@ -1509,9 +1510,15 @@ export default function ProductionRecordManagement({
     return jm?.structure || order.structure || '—';
   };
 
-  const [scrapDisposals, setScrapDisposals] = useState(() => {
-    return safeLocalStorageGet('samyak_erp_scrap_disposals', []);
-  });
+  const [scrapDisposals, setScrapDisposals] = useState([]);
+
+  useEffect(() => {
+    let active = true;
+    fetchScrapDisposals(supabase)
+      .then((rows) => { if (active) setScrapDisposals(rows || []); })
+      .catch((err) => alert(`Scrap disposals could not be loaded: ${describeSaveError(err)}`));
+    return () => { active = false; };
+  }, []);
 
   const [isDisposeModalOpen, setIsDisposeModalOpen] = useState(false);
   const [disposeCategory, setDisposeCategory] = useState('Printing Plain Setting (kg)');
@@ -1732,7 +1739,7 @@ export default function ProductionRecordManagement({
   ]);
 
   // Handle Scrap Disposal Submission
-  const handleAddScrapDisposal = (e) => {
+  const handleAddScrapDisposal = async (e) => {
     e.preventDefault();
     if (!disposeQtyKg || parseFloat(disposeQtyKg) <= 0) {
       alert("Please enter a valid disposal quantity in kg.");
@@ -1749,12 +1756,12 @@ export default function ProductionRecordManagement({
       notes: disposeNotes
     };
 
-    const updated = [newDisposal, ...scrapDisposals];
-    setScrapDisposals(updated);
-    safeLocalStorageSet('samyak_erp_scrap_disposals', updated);
-    saveSystemSetting('scrap_disposals', updated).catch(console.warn);
-    if (typeof window !== 'undefined' && window.__samyakBroadcastSync) {
-      window.__samyakBroadcastSync('system_settings');
+    try {
+      await saveScrapDisposal(supabase, newDisposal);
+      setScrapDisposals([newDisposal, ...scrapDisposals]);
+    } catch (err) {
+      alert(`The scrap disposal was not saved: ${describeSaveError(err)}`);
+      return;
     }
 
     setDisposeQtyKg('');
@@ -1817,7 +1824,7 @@ export default function ProductionRecordManagement({
   };
 
   // Step 2: Final Submit upon confirmation
-  const handleFinalSubmitRecord = () => {
+  const handleFinalSubmitRecord = async () => {
     const newRecord = {
       id: selectedRecord?.id || `PR-${selectedOrder.id}`,
       orderId: selectedOrder.id,
@@ -1898,7 +1905,12 @@ export default function ProductionRecordManagement({
       notes: recordNotes
     };
 
-    if (onSaveProductionRecord) onSaveProductionRecord(newRecord);
+    try {
+      if (onSaveProductionRecord) await onSaveProductionRecord(newRecord);
+    } catch (err) {
+      alert(`The production record was not saved: ${err.message || err}`);
+      return;
+    }
     notifyProductionRecordSubmitted(newRecord).catch(err => console.error("Production submission email error:", err));
 
     // Over-Wastage Alert Email Trigger if scrap % exceeds pre-costing target
@@ -1917,9 +1929,12 @@ export default function ProductionRecordManagement({
     setActiveTab('list');
   };
   const filteredRecords = productionRecords.filter(r => {
-    const matchesSearch = r.jobName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          r.orderId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          r.clientName.toLowerCase().includes(searchTerm.toLowerCase());
+    if (!r) return false;
+    const q = (searchTerm || '').trim().toLowerCase();
+    const matchesSearch = !q || 
+                          String(r.jobName || '').toLowerCase().includes(q) || 
+                          String(r.orderId || '').toLowerCase().includes(q) ||
+                          String(r.clientName || '').toLowerCase().includes(q);
     const matchesFilter = filterStatus === 'all' || r.status === filterStatus;
     return matchesSearch && matchesFilter;
   });
@@ -1936,9 +1951,12 @@ export default function ProductionRecordManagement({
   } = usePagination(filteredRecords, 25);
 
   const filteredPunchedOrders = orders.filter(o => {
-    return o.jobName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-           o.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-           o.clientName.toLowerCase().includes(searchTerm.toLowerCase());
+    if (!o) return false;
+    const q = (searchTerm || '').trim().toLowerCase();
+    return !q ||
+           String(o.jobName || '').toLowerCase().includes(q) || 
+           String(o.id || '').toLowerCase().includes(q) ||
+           String(o.clientName || '').toLowerCase().includes(q);
   });
 
   const handleSaveSFGFG = (inventoryItem, rolls, prodLink) => {
@@ -2820,7 +2838,7 @@ export default function ProductionRecordManagement({
                         {outputRolls.map((r, idx) => {
                           const netW = parseFloat(r.netWeightKg || r.weightKg) || 0;
                           const lengthM = parseFloat(r.lengthMeters) || 0;
-                          const isFG = r.rollType === 'FG' || (r.stage || '').includes('Slitting') || (r.stage || '').includes('Pouching') || (r.barcodeId || '').startsWith('FG-');
+                          const isFG = r.rollType === 'FG' || (r.stage || '').includes('Slitting') || (r.stage || '').includes('Pouching') || codeStartsWith(r.barcodeId, 'FG-');
                           return (
                             <tr key={idx}>
                               <td style={{ fontWeight: '700' }}>Roll #{r.rollNo || r.unitNo || (idx + 1)}</td>
@@ -3621,8 +3639,8 @@ export default function ProductionRecordManagement({
                               if (val.trim()) {
                                 // 1. Primary lookup in individual barcode rolls
                                 const rollMatch = (inventoryRolls || []).find(r => 
-                                  (r.barcodeId || '').toLowerCase() === val.trim().toLowerCase() ||
-                                  (r.batchNo || '').toLowerCase() === val.trim().toLowerCase()
+                                  codesEqual(r.barcodeId, val) ||
+                                  codesEqual(r.batchNo, val)
                                 );
 
                                 if (rollMatch) {
@@ -3642,10 +3660,10 @@ export default function ProductionRecordManagement({
                                 } else {
                                   // 2. Fallback lookup in central inventory
                                   const match = (inventory || []).find(inv => 
-                                    (inv.itemCode || '').toLowerCase() === val.trim().toLowerCase() ||
-                                    (inv.lastBatch || '').toLowerCase() === val.trim().toLowerCase() || 
-                                    (inv.id || '').toLowerCase() === val.trim().toLowerCase() ||
-                                    (inv.filmType || '').toLowerCase() === val.trim().toLowerCase()
+                                    codesEqual(inv.itemCode, val) ||
+                                    codesEqual(inv.lastBatch, val) || 
+                                    codesEqual(inv.id, val) ||
+                                    codesEqual(inv.filmType, val)
                                   );
                                   if (match) {
                                     updateMaterialRow(m.id, 'issueQtyKg', match.availableQtyKg || 400);

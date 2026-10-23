@@ -30,6 +30,10 @@ import {
   FILM_DENSITIES,
   parseStandardDate
 } from '../factoryStore';
+import { buildEmployeeAttendanceRow, mapEmployeeAttendanceRow } from './employeeAttendance';
+import { groupGrnLineItems, lineItemsForGrn, sanitizeGRN } from './grnLineItems';
+import { pelletConsumptionFromRow, pelletInwardFromRow } from './pelletFuel';
+export { sanitizeGRN };
 
 /**
  * Strict Supabase Error Handler
@@ -292,73 +296,11 @@ export async function saveOrderToSupabase(order) {
   delete fullPayload.order_id;
   delete fullPayload.available_qty_kg;
   const { error: fullErr } = await supabase.from('orders').upsert(fullPayload, { onConflict: 'id' });
-  if (!fullErr) {
-    console.log(`[ORDERS][DB WRITE] Successfully saved orderId=${order.id} with full payload.`);
-    return;
+  if (fullErr) {
+    console.error(`[ORDERS][DB WRITE Error] orderId=${order.id}:`, fullErr);
+    handleSupabaseError(fullErr, 'orders');
   }
-
-  console.warn(`[ORDERS][DB WRITE] Full payload notice (${fullErr.message}), trying Tier 2 fallback without delivery_date...`);
-
-  // Tier 2: Without delivery_date
-  const tier2Payload = {
-    id: order.id,
-    job_name: combinedJobName,
-    client_name: order.clientName || 'General Client',
-    order_type: order.orderType || 'Reel',
-    order_qty_kg: Number(order.orderQtyKg) || 0,
-    target_delivery_date: targetDateVal,
-    status: order.status || 'Scheduled',
-    job_details: jobDetails,
-    raw_material_requirements: matReqs
-  };
-
-  delete tier2Payload.order_id;
-  const { error: t2Err } = await supabase.from('orders').upsert(tier2Payload, { onConflict: 'id' });
-  if (!t2Err) {
-    console.log(`[ORDERS][DB WRITE] Successfully saved orderId=${order.id} with Tier 2 payload.`);
-    return;
-  }
-
-  console.warn(`[ORDERS][DB WRITE] Tier 2 notice (${t2Err.message}), trying Tier 3 schema-independent fallback...`);
-
-  // Tier 3: Core baseline payload (All metadata, jobDetails, & matReqs are embedded inside job_name envelope!)
-  const tier3Payload = {
-    id: order.id,
-    job_name: combinedJobName,
-    client_name: order.clientName || 'General Client',
-    order_type: order.orderType || 'Reel',
-    order_qty_kg: Number(order.orderQtyKg) || 0,
-    target_delivery_date: targetDateVal,
-    status: order.status || 'Scheduled'
-  };
-
-  delete tier3Payload.order_id;
-  const { error: t3Err } = await supabase.from('orders').upsert(tier3Payload, { onConflict: 'id' });
-  if (!t3Err) {
-    console.log(`[ORDERS][DB WRITE] Successfully saved orderId=${order.id} with Tier 3 baseline payload.`);
-    return;
-  }
-
-  console.warn(`[ORDERS][DB WRITE] Tier 3 notice (${t3Err.message}), trying Tier 4 minimal fallback...`);
-
-  // Tier 4: Minimal mandatory payload
-  const tier4Payload = {
-    id: order.id,
-    job_name: combinedJobName,
-    client_name: order.clientName || 'General Client',
-    order_type: order.orderType || 'Reel',
-    order_qty_kg: Number(order.orderQtyKg) || 0,
-    status: order.status || 'Scheduled'
-  };
-
-  delete tier4Payload.order_id;
-  const { error: t4Err } = await supabase.from('orders').upsert(tier4Payload, { onConflict: 'id' });
-  if (t4Err) {
-    console.error(`[ORDERS][DB WRITE Error] orderId=${order.id}:`, t4Err);
-    handleSupabaseError(t4Err, 'orders');
-  } else {
-    console.log(`[ORDERS][DB WRITE] Successfully saved orderId=${order.id} with Tier 4 minimal payload.`);
-  }
+  console.log(`[ORDERS][DB WRITE] Successfully saved orderId=${order.id}.`);
 }
 
 
@@ -434,6 +376,8 @@ export async function fetchVendors() {
       email: v.email,
       gstin: v.gstin,
       address: v.address,
+      bankDetails: v.bank_details || v.bankDetails || '',
+      bank_details: v.bank_details || v.bankDetails || '',
       paymentTerms: v.payment_terms || v.paymentTerms || '30 Days Net',
       payment_terms: v.payment_terms || v.paymentTerms || '30 Days Net',
       rating: Number(v.rating) || 5.0,
@@ -462,18 +406,15 @@ export async function saveVendorToSupabase(vendor) {
     email: vendor.email || '',
     gstin: vendor.gstin || '',
     address: vendor.address || '',
+    bank_details: vendor.bankDetails || vendor.bank_details || '',
     payment_terms: vendor.paymentTerms || vendor.payment_terms || '30 Days Net',
     rating: Number(vendor.rating) || 5.0
   };
   console.log('[vendors] Saving:', vendorId, vendorName);
   const { error: fullErr } = await supabase.from('vendors').upsert(fullPayload, { onConflict: 'id' });
   if (fullErr) {
-    console.warn('[vendors] Full payload failed, trying minimal:', fullErr.message);
-    const { error: minErr } = await supabase.from('vendors').upsert({ id: vendorId, name: vendorName, category: vendorCategory }, { onConflict: 'id' });
-    if (minErr) {
-      console.error('[vendors] Minimal payload failed:', minErr.message);
-      handleSupabaseError(minErr, 'vendors');
-    }
+    console.error('[vendors] Save failed:', fullErr.message);
+    handleSupabaseError(fullErr, 'vendors');
   }
 }
 
@@ -927,79 +868,6 @@ export async function deleteInventoryItemFromSupabase(itemId) {
 // 4. GOODS RECEIPT NOTES (GRN)
 // ============================================================================
 
-export function sanitizeGRN(rawGRN) {
-  if (!rawGRN || typeof rawGRN !== 'object') return rawGRN;
-
-  let rawName = String(rawGRN.itemName || rawGRN.item_name || '').trim();
-  let meta = {};
-
-  while (rawName.includes('|||')) {
-    const idx = rawName.indexOf('|||');
-    const jsonStr = rawName.substring(idx + 3).trim();
-    rawName = rawName.substring(0, idx).trim();
-    if (jsonStr) {
-      try {
-        const parsed = JSON.parse(jsonStr);
-        if (parsed && typeof parsed === 'object') {
-          meta = { ...meta, ...parsed };
-        }
-      } catch (e) {}
-    }
-  }
-
-  const metallocenePct = meta.metallocenePct || rawGRN.metallocene_pct || rawGRN.metallocenePct || '';
-  const statusVal = rawGRN.status || meta.status || 'Pending QC Approval';
-  const qcStatusVal = meta.qcStatus || rawGRN.qcStatus || rawGRN.qc_remarks || statusVal;
-
-  return {
-    ...rawGRN,
-    ...meta,
-    id: rawGRN.id || rawGRN.grn_number || rawGRN.grnNo,
-    grnNo: rawGRN.grn_number || rawGRN.grnNo || rawGRN.id,
-    vendorId: rawGRN.vendorId || rawGRN.vendor_id || meta.vendorId || '',
-    vendorName: rawGRN.vendorName || meta.vendorName || (rawGRN.vendor_id && !rawGRN.vendor_id.startsWith('VEND-') ? rawGRN.vendor_id : 'General Vendor'),
-    poNumber: rawGRN.po_number || rawGRN.poNumber || meta.poNumber || '',
-    invoiceNo: rawGRN.invoice_number || rawGRN.invoiceNo || meta.invoiceNo || '',
-    receivedDate: rawGRN.received_date || rawGRN.receivedDate || meta.receivedDate || new Date().toISOString(),
-    itemName: rawName || 'Item',
-    category: meta.category || rawGRN.category || 'Film Substrates',
-    stockItemId: meta.stockItemId || rawGRN.stockItemId || rawGRN.stock_item_id || '',
-    filmType: meta.filmType || rawGRN.filmType || (rawName ? rawName.split(' ')[0] : 'PET'),
-    micron: meta.micron !== undefined ? meta.micron : (rawGRN.micron !== undefined ? rawGRN.micron : '-'),
-    widthMm: meta.widthMm !== undefined ? meta.widthMm : (rawGRN.widthMm !== undefined ? rawGRN.widthMm : '-'),
-    metallocenePct: metallocenePct,
-    metallocene_pct: metallocenePct,
-    rollsReceived: Number(meta.rollsReceived ?? rawGRN.rollsReceived ?? 0) || 0,
-    purchaseRatePerKg: Number(meta.purchaseRatePerKg ?? meta.unitPrice ?? rawGRN.purchaseRatePerKg ?? rawGRN.unitPrice ?? 0) || 0,
-    purchaseRate: Number(meta.purchaseRatePerKg ?? meta.unitPrice ?? rawGRN.purchaseRatePerKg ?? rawGRN.unitPrice ?? 0) || 0,
-    unitPrice: Number(meta.purchaseRatePerKg ?? meta.unitPrice ?? rawGRN.purchaseRatePerKg ?? rawGRN.unitPrice ?? 0) || 0,
-    unit: meta.unit || rawGRN.unit || 'Kg',
-    batchNo: meta.batchNo || rawGRN.batchNo || '',
-    status: statusVal,
-    qcStatus: qcStatusVal,
-    qcNotes: rawGRN.qc_remarks || rawGRN.qcNotes || meta.qcNotes || '',
-    escalatedAt: rawGRN.escalated_at || rawGRN.escalatedAt || meta.escalatedAt || null,
-    escalated_at: rawGRN.escalated_at || rawGRN.escalatedAt || meta.escalatedAt || null,
-    inspectedBy: meta.inspectedBy || rawGRN.inspectedBy || '',
-    storeManager: meta.storeManager || rawGRN.storeManager || '',
-    receivedQtyKg: Number(rawGRN.received_qty_kg ?? rawGRN.receivedQtyKg ?? rawGRN.netWeightKg ?? 0) || 0,
-    netWeightKg: Number(rawGRN.received_qty_kg ?? rawGRN.receivedQtyKg ?? rawGRN.netWeightKg ?? 0) || 0,
-    grossWeightKg: Number(meta.grossWeightKg ?? rawGRN.grossWeightKg ?? 0) || 0,
-    tareWeightKg: Number(meta.tareWeightKg ?? rawGRN.tareWeightKg ?? 0) || 0,
-    packagingType: meta.packagingType || rawGRN.packagingType || 'Roll',
-    itemsBreakdown: meta.itemsBreakdown || rawGRN.itemsBreakdown || [],
-    barcodes: meta.barcodes || rawGRN.barcodes || [],
-    barcodeId: meta.barcodeId || rawGRN.barcodeId || '',
-    freightAmount: Number(meta.freightAmount ?? rawGRN.freightAmount ?? 0) || 0,
-    transporterName: meta.transporterName || rawGRN.transporterName || 'Direct Dispatch / Self',
-    itemRemarks: meta.itemRemarks || rawGRN.itemRemarks || rawGRN.remarks || meta.remarks || rawGRN.notes || '',
-    remarks: meta.itemRemarks || rawGRN.itemRemarks || rawGRN.remarks || meta.remarks || rawGRN.notes || '',
-    notes: meta.itemRemarks || rawGRN.itemRemarks || rawGRN.remarks || meta.remarks || rawGRN.notes || '',
-    location: meta.location || rawGRN.location || 'Store Bay',
-    storeLocation: meta.storeLocation || rawGRN.storeLocation || 'Store Bay'
-  };
-}
-
 export async function fetchGRNs() {
   if (!isSupabaseConfigured()) {
     throw new Error("Supabase is not configured.");
@@ -1009,7 +877,22 @@ export async function fetchGRNs() {
     if (error) throw error;
     if (!data) return [];
 
-    return data.map(g => sanitizeGRN(g));
+    let lineRows = [];
+    const { data: lines, error: lineError } = await supabase
+      .from('grn_line_items')
+      .select('*')
+      .order('line_no', { ascending: true });
+    if (lineError) {
+      console.warn('[GRNs] Line items are not available yet; each receipt is read as one line from its header:', lineError.message);
+    } else if (Array.isArray(lines)) {
+      lineRows = lines;
+    }
+
+    const grouped = groupGrnLineItems(lineRows);
+    return data.map(g => sanitizeGRN({
+      ...g,
+      lineItems: lineItemsForGrn(grouped, g)
+    }));
   } catch (err) {
     console.error("Error fetching GRNs from Supabase:", err);
     throw err;
@@ -1059,9 +942,21 @@ export async function saveGRNToSupabase(grn) {
     storeLocation: clean.storeLocation,
     poNumber: clean.poNumber,
     vendorName: clean.vendorName,
+    vendorAddress: clean.vendorAddress || '',
+    vendorGstin: clean.vendorGstin || '',
+    vendorEmail: clean.vendorEmail || '',
+    vendorPhone: clean.vendorPhone || '',
+    vendorContact: clean.vendorContact || '',
     invoiceNo: clean.invoiceNo,
     receivedDate: clean.receivedDate,
-    qcNotes: clean.qcNotes
+    qcNotes: clean.qcNotes,
+    hasVariation: Boolean(clean.hasVariation || clean.variations?.hasVariation),
+    variations: clean.variations || null,
+    variationSummary: clean.variationSummary || '',
+    originalPoItemName: clean.originalPoItemName || '',
+    orderedPoQtyKg: clean.orderedPoQtyKg || null,
+    agreedPoRate: clean.agreedPoRate || null,
+    vehicleNo: clean.vehicleNo || ''
   };
 
   const combinedItemName = `${itemNameVal} ||| ${JSON.stringify(meta)}`;
@@ -1112,33 +1007,28 @@ export async function saveGRNToSupabase(grn) {
   };
 
   // Duplicate invoice numbers are rejected for a brand-new GRN only.
-  // Updates (QC approval, escalation) must still save when several pending
-  // GRNs share one invoice, which is how the escalated flag used to be lost.
-  let isExistingGrn = false;
-  try {
-    const { data: self, error: selfErr } = await supabase.from('grns').select('id').eq('id', grnId).maybeSingle();
-    if (!selfErr && self) isExistingGrn = true;
-  } catch (lookupErr) {
-    console.warn('[GRNs] Could not tell whether this GRN already exists:', lookupErr.message);
+  // Updates (QC approval, escalation stamp) must still save when several pending
+  // GRNs share one invoice.
+  const { data: self, error: selfErr } = await supabase.from('grns').select('id').eq('id', grnId).maybeSingle();
+  if (selfErr) {
+    throw new Error(`Could not check whether this GRN already exists: ${selfErr.message}`);
   }
+  const isExistingGrn = Boolean(self);
 
   if (!isExistingGrn && clean.invoiceNo && clean.vendorName) {
-    try {
-      const { data: existingGrns } = await supabase
-        .from('grns')
-        .select('id, grn_number, invoice_number')
-        .eq('invoice_number', clean.invoiceNo);
+    const { data: existingGrns, error: duplicateLookupError } = await supabase
+      .from('grns')
+      .select('id, grn_number, invoice_number')
+      .eq('invoice_number', clean.invoiceNo);
+    if (duplicateLookupError) {
+      throw new Error(`Could not check for a duplicate GRN invoice: ${duplicateLookupError.message}`);
+    }
 
-      if (existingGrns && existingGrns.length > 0) {
-        const match = existingGrns.find(g => String(g.id) !== String(grnId) && String(g.grn_number) !== String(clean.grnNo));
-        if (match) {
-          console.warn('[GRNs] Duplicate GRN detected in database:', match);
-          throw new Error(`Duplicate Inward GRN: A GRN (#${match.grn_number || match.id}) with Invoice #${clean.invoiceNo} already exists in database.`);
-        }
-      }
-    } catch (checkErr) {
-      if (checkErr.message && checkErr.message.includes('Duplicate Inward GRN')) {
-        throw checkErr;
+    if (existingGrns && existingGrns.length > 0) {
+      const match = existingGrns.find(g => String(g.id) !== String(grnId) && String(g.grn_number) !== String(clean.grnNo));
+      if (match) {
+        console.warn('[GRNs] Duplicate GRN detected in database:', match);
+        throw new Error(`Duplicate Inward GRN: A GRN (#${match.grn_number || match.id}) with Invoice #${clean.invoiceNo} already exists in database.`);
       }
     }
   }
@@ -1387,45 +1277,8 @@ export async function saveCylinderToSupabase(cyl) {
 
   const { error: fullErr } = await supabase.from('cylinders').upsert(fullPayload, { onConflict: 'id' });
   if (fullErr) {
-    console.warn('[cylinders] Full payload upsert rejected, trying payload with press_marks JSON:', fullErr.message);
-    const fallbackPayload = {
-      id,
-      sku: cyl.sku,
-      job_name: cyl.jobName,
-      colors_count: cyl.colorsCount,
-      cylinder_cost: cyl.cylinderCost,
-      cost_per_cylinder: cyl.costPerCylinder,
-      rate_per_sq_inch: rateVal,
-      engravures_name: cyl.engravuresName,
-      cost_borne_by: cyl.costBorneBy,
-      cost_borne_type: cyl.costBorneType,
-      client_group: cyl.clientGroup,
-      circumference_mm: cyl.circumferenceMm,
-      face_length_mm: cyl.faceLengthMm,
-      layer1_printed_qty_kg: cyl.layer1PrintedQtyKg,
-      dispatched_qty: cyl.dispatchedQty,
-      utilisation_limit: cyl.utilisationLimit,
-      status: cyl.status || 'Active In-Use',
-      artwork_url: fileUrl || null,
-      press_marks: pressMarks
-    };
-    const { error: fbErr } = await supabase.from('cylinders').upsert(fallbackPayload, { onConflict: 'id' });
-    if (fbErr) {
-      console.warn('[cylinders] Fallback with press_marks failed, trying minimal payload:', fbErr.message);
-      const minimalPayload = {
-        id,
-        sku: cyl.sku,
-        job_name: cyl.jobName,
-        colors_count: cyl.colorsCount,
-        cylinder_cost: cyl.cylinderCost,
-        status: cyl.status || 'Active In-Use'
-      };
-      const { error: minErr } = await supabase.from('cylinders').upsert(minimalPayload, { onConflict: 'id' });
-      if (minErr) {
-        console.error('[cylinders] Minimal payload failed:', minErr.message);
-        handleSupabaseError(minErr, 'cylinders');
-      }
-    }
+    console.error('[cylinders] Save failed:', fullErr.message);
+    handleSupabaseError(fullErr, 'cylinders');
   }
 }
 
@@ -1673,37 +1526,13 @@ export async function saveProductionRecordToSupabase(record) {
   
   const { error: fullErr } = await supabase.from('production_records').upsert(fullPayload, { onConflict: 'id' });
   const fkFailed = fullErr && (fullErr.code === '23503' || String(fullErr.message || '').toLowerCase().includes('foreign key'));
-  if (fkFailed) {
+  if (fkFailed && linkedOrderId) {
     console.warn('[production_records] Order foreign key rejected; saving the full record with order_id cleared.');
     const { error: unlinkedErr } = await supabase.from('production_records').upsert({ ...fullPayload, order_id: null }, { onConflict: 'id' });
     if (unlinkedErr) handleSupabaseError(unlinkedErr, 'production_records');
     return;
   }
-  if (fullErr) {
-    // Retry with intermediate payload without optional stage columns
-    const fallbackPayload = {
-      id: recId,
-      order_id: linkedOrderId,
-      job_name: record.jobName || 'Production Record',
-      operator_name: record.operatorName || record.filledBy || '',
-      shift: record.shift || 'Day Shift',
-      gross_production_kg: grossKg,
-      net_usable_kg: netKg,
-      total_wastage_kg: scrapKg,
-      wastage_percentage: scrapPct,
-      status: record.status || 'Filled by Plant Manager',
-      process_logs: extra
-    };
-    const { error: fbErr } = await supabase.from('production_records').upsert(fallbackPayload, { onConflict: 'id' });
-    if (fbErr) {
-      const { error: minErr } = await supabase.from('production_records').upsert({
-        id: recId,
-        job_name: record.jobName || 'Production Record',
-        status: record.status || 'Filled by Plant Manager'
-      }, { onConflict: 'id' });
-      if (minErr) { handleSupabaseError(minErr, 'production_records'); }
-    }
-  }
+  if (fullErr) handleSupabaseError(fullErr, 'production_records');
 }
 
 // ============================================================================
@@ -1729,7 +1558,7 @@ export async function fetchUsers() {
       .map(u => ({
         id: u.id,
         name: u.full_name || u.username || 'User',
-        email: u.email || (u.username?.includes('@') ? u.username : `${u.id.toLowerCase()}@plant.com`),
+        email: u.email || (u.username?.includes('@') ? u.username : ''),
         role: u.role || 'Shop Floor Operator',
         department: u.department || 'Operations',
         status: u.status || (u.active !== false ? 'Active' : 'Inactive')
@@ -1756,7 +1585,6 @@ export async function saveUserToSupabase(user) {
       email: user.email || '',
       role: user.role || 'Shop Floor Operator',
       department: user.department || 'Operations',
-      password_hash: user.password || user.password_hash || '',
       active: user.status !== 'Inactive',
       status: user.status || 'Active'
     };
@@ -1767,23 +1595,7 @@ export async function saveUserToSupabase(user) {
       .select();
 
     if (fullErr) {
-      console.warn('[users] Full payload upsert failed:', fullErr.message, '— trying minimal payload...');
-      const minPayload = {
-        id: userId,
-        username: user.email?.toLowerCase() || userId,
-        full_name: user.name || '',
-        email: user.email || '',
-        role: user.role || 'Shop Floor Operator'
-      };
-      const { data: minData, error: minErr } = await supabase
-        .from('users')
-        .upsert([minPayload], { onConflict: 'id' })
-        .select();
-
-      if (minErr) {
-        handleSupabaseError(minErr, 'users');
-      }
-      return minData ? minData[0] : minPayload;
+      handleSupabaseError(fullErr, 'users');
     }
 
     return data ? data[0] : fullPayload;
@@ -1795,24 +1607,8 @@ export async function saveUserToSupabase(user) {
 /**
  * Update password for a user in the auth system.
  */
-export async function updateUserPasswordInDB(email, newPassword) {
-  if (!isSupabaseConfigured() || !email || !newPassword) {
-    throw new Error("Cannot update user password: Supabase database connection is not available.");
-  }
-  try {
-    await ensureValidSession();
-    const { error } = await supabase
-      .from('users')
-      .update({ password_hash: newPassword })
-      .eq('email', email.toLowerCase().trim());
-    if (error) {
-      console.warn('[users] Could not update user password:', error.message);
-      handleSupabaseError(error, 'users');
-    }
-    return true;
-  } catch (err) {
-    handleSupabaseError(err, 'updateUserPasswordInDB exception');
-  }
+export async function updateUserPasswordInDB() {
+  throw new Error('Passwords are changed with Supabase Auth. Use the reset link or the signed-in password form.');
 }
 
 export async function deleteUserFromSupabase(id) {
@@ -1895,14 +1691,7 @@ export async function saveJobDataSheetToSupabase(sheet) {
   };
   console.log('[job_datasheets] Saving:', sheetId, sheet.jobName);
   const { error: fullErr } = await supabase.from('job_datasheets').upsert(fullPayload, { onConflict: 'id' });
-  if (fullErr) {
-    console.warn('[job_datasheets] Full payload failed, trying minimal:', fullErr.message);
-    const { error: minErr } = await supabase.from('job_datasheets').upsert({ id: sheetId, job_name: sheet.jobName || 'Job Datasheet', client_name: sheet.clientName || '' }, { onConflict: 'id' });
-    if (minErr) {
-      console.error('[job_datasheets] Minimal payload failed:', minErr.message);
-      handleSupabaseError(minErr, 'job_datasheets');
-    }
-  }
+  if (fullErr) handleSupabaseError(fullErr, 'job_datasheets');
 }
 
 export async function deleteJobDataSheetFromSupabase(sheetId) {
@@ -1960,10 +1749,17 @@ export async function fetchInventoryRolls() {
     }
     if (!data) return [];
 
-    return data.map(r => ({
+    return data.map(r => {
+      const meta = r.metadata && typeof r.metadata === 'object' ? r.metadata : {};
+      return {
       id: r.barcode_id,
       barcodeId: r.barcode_id,
-      grnNo: r.grn_no || '',
+      grnNo: r.grn_no || meta.grnNo || '',
+      grnId: r.grn_id || null,
+      grnLineItemId: r.grn_line_item_id || null,
+      lineNo: r.line_no === null || r.line_no === undefined ? null : Number(r.line_no),
+      vendorRollNo: r.vendor_roll_no || '',
+      unitNo: r.unit_no === null || r.unit_no === undefined ? null : Number(r.unit_no),
       rollType: r.roll_type || 'RAW_MATERIAL',
       itemId: r.item_id,
       itemName: r.item_name || '',
@@ -2001,7 +1797,8 @@ export async function fetchInventoryRolls() {
       stationId: r.station_id || '',
       locationBay: r.location_bay || '',
       status: r.status || 'In Stock'
-    }));
+    };
+    });
   } catch (err) {
     console.error("Error fetching inventory rolls from Supabase:", err);
     throw err;
@@ -2062,23 +1859,7 @@ export async function saveInventoryRollToSupabase(roll) {
   };
   console.log('[inventory_rolls] Saving barcode:', roll.barcodeId || roll.id);
   const { error: fullErr } = await supabase.from('inventory_rolls').upsert(fullPayload, { onConflict: 'barcode_id' });
-  if (fullErr) {
-    console.warn('[inventory_rolls] Full payload failed, trying minimal:', fullErr.message);
-    const { error: minErr } = await supabase.from('inventory_rolls').upsert({ 
-      barcode_id: roll.barcodeId || roll.id, 
-      item_name: roll.itemName || 'Roll', 
-      roll_type: roll.rollType || 'RAW_MATERIAL', 
-      net_weight_kg: netWeight, 
-      available_weight_kg: availableWeight,
-      order_id: roll.orderId || null,
-      job_name: roll.jobName || null,
-      status: roll.status || (availableWeight <= 0 ? 'Consumed' : 'In Stock')
-    }, { onConflict: 'barcode_id' });
-    if (minErr) { 
-      console.error('[inventory_rolls] Minimal payload failed:', minErr.message); 
-      handleSupabaseError(minErr, 'inventory_rolls'); 
-    }
-  }
+  if (fullErr) handleSupabaseError(fullErr, 'inventory_rolls');
 }
 
 // ============================================================================
@@ -2122,30 +1903,20 @@ export async function fetchDispatchShipments() {
           };
         });
       } else if (error) {
-        console.warn('[dispatch_shipments] Table fetch notice:', error.message);
+        handleSupabaseError(error, 'dispatch_shipments');
       }
     } catch (err) {
-      console.warn('[dispatch_shipments] Table query exception:', err.message);
+      throw err;
     }
 
-    // If records were found in the dedicated table, return them directly for maximum performance
-    if (tableRecords.length > 0) {
-      tableRecords.sort((a, b) => {
-        const timeA = new Date(a.dispatchDate || a.createdAt || 0).getTime();
-        const timeB = new Date(b.dispatchDate || b.createdAt || 0).getTime();
-        return timeB - timeA;
-      });
-      return tableRecords;
-    }
-
-    // Fallback: system_settings 'dispatch_shipments' if table is empty
-    const settingData = await fetchSystemSetting('dispatch_shipments').catch(() => null);
-    if (Array.isArray(settingData) && settingData.length > 0) return settingData;
-    return [];
+    tableRecords.sort((a, b) => {
+      const timeA = new Date(a.dispatchDate || a.createdAt || 0).getTime();
+      const timeB = new Date(b.dispatchDate || b.createdAt || 0).getTime();
+      return timeB - timeA;
+    });
+    return tableRecords;
   } catch (err) {
     console.error("Error fetching dispatch shipments from Supabase:", err);
-    const settingData = await fetchSystemSetting('dispatch_shipments').catch(() => null);
-    if (Array.isArray(settingData)) return settingData;
     throw err;
   }
 }
@@ -2173,40 +1944,13 @@ export async function saveDispatchShipmentToSupabase(shipment) {
     total_net_weight_kg: Number(shipment.totalNetWeightKg) || 0,
     total_gross_weight_kg: Number(shipment.totalGrossWeightKg) || 0,
     items: shipment.items || [],
+    hide_branding: Boolean(shipment.hideBranding),
     payload: shipment,
     updated_at: new Date().toISOString()
   };
 
-  console.log('[dispatch_shipments] Saving:', shipment.dispatchId || primaryKey);
-  let tableSuccess = false;
-  try {
-    const { error: fullErr } = await supabase.from('dispatch_shipments').upsert(fullPayload, { onConflict: 'dispatch_id' });
-    if (!fullErr) {
-      tableSuccess = true;
-    } else {
-      console.warn('[dispatch_shipments] Table upsert notice:', fullErr.message);
-      const { error: altErr } = await supabase.from('dispatch_shipments').upsert(fullPayload, { onConflict: 'id' });
-      if (!altErr) {
-        tableSuccess = true;
-      } else {
-        console.warn('[dispatch_shipments] Alt upsert notice:', altErr.message);
-      }
-    }
-  } catch (e) {
-    console.warn('[dispatch_shipments] Table write exception:', e.message);
-  }
-
-  // Dual Persistence: Always backup into system_settings under key 'dispatch_shipments'
-  try {
-    const currentList = await fetchDispatchShipments().catch(() => []);
-    const updatedList = [shipment, ...currentList.filter(s => String(s.dispatchId || s.id) !== String(shipment.dispatchId || shipment.id))];
-    await saveSystemSetting('dispatch_shipments', updatedList);
-  } catch (e) {
-    console.warn('[dispatch_shipments] Backup to system_settings notice:', e.message);
-    if (!tableSuccess) {
-      throw e;
-    }
-  }
+  const { error: fullErr } = await supabase.from('dispatch_shipments').upsert(fullPayload, { onConflict: 'dispatch_id' });
+  if (fullErr) handleSupabaseError(fullErr, 'dispatch_shipments');
 }
 
 export async function deleteDispatchShipmentFromSupabase(id) {
@@ -2214,20 +1958,8 @@ export async function deleteDispatchShipmentFromSupabase(id) {
     throw new Error("Cannot delete dispatch shipment: Supabase database connection is not available.");
   }
   await ensureValidSession();
-  try {
-    await supabase.from('dispatch_shipments').delete().eq('dispatch_id', String(id));
-    await supabase.from('dispatch_shipments').delete().eq('id', String(id));
-  } catch (e) {
-    console.warn('[dispatch_shipments] Table delete notice:', e.message);
-  }
-
-  try {
-    const currentList = await fetchDispatchShipments().catch(() => []);
-    const updatedList = currentList.filter(s => String(s.dispatchId || s.id) !== String(id));
-    await saveSystemSetting('dispatch_shipments', updatedList);
-  } catch (e) {
-    console.warn('[dispatch_shipments] Delete from system_settings notice:', e.message);
-  }
+  const { error } = await supabase.from('dispatch_shipments').delete().eq('dispatch_id', String(id));
+  if (error) handleSupabaseError(error, 'dispatch_shipments');
 }
 
 // ============================================================================
@@ -2281,14 +2013,7 @@ export async function savePrintingMachineToSupabase(machine) {
   };
   console.log('[printing_machines] Saving:', machineId, machine.name);
   const { error: fullErr } = await supabase.from('printing_machines').upsert(fullPayload, { onConflict: 'id' });
-  if (fullErr) {
-    console.warn('[printing_machines] Full payload failed, trying minimal:', fullErr.message);
-    const { error: minErr } = await supabase.from('printing_machines').upsert({ id: machineId, name: machine.name || 'Machine', status: machine.status || 'Active' }, { onConflict: 'id' });
-    if (minErr) {
-      console.error('[printing_machines] Minimal payload failed:', minErr.message);
-      handleSupabaseError(minErr, 'printing_machines');
-    }
-  }
+  if (fullErr) handleSupabaseError(fullErr, 'printing_machines');
 }
 
 export async function deletePrintingMachineFromSupabase(machineId) {
@@ -2371,14 +2096,7 @@ export async function saveProductionScheduleToSupabase(schedule) {
   };
   console.log('[production_schedules] Saving:', schedId, schedule.jobName);
   const { error: fullErr } = await supabase.from('production_schedules').upsert(fullPayload, { onConflict: 'id' });
-  if (fullErr) {
-    console.warn('[production_schedules] Full payload failed, trying minimal:', fullErr.message);
-    const { error: minErr } = await supabase.from('production_schedules').upsert({ id: schedId, job_name: schedule.jobName || '', machine_id: schedule.machineId, scheduled_date: schedule.scheduledDate || new Date().toISOString().split('T')[0], status: schedule.status || 'Scheduled' }, { onConflict: 'id' });
-    if (minErr) {
-      console.error('[production_schedules] Minimal payload failed:', minErr.message);
-      handleSupabaseError(minErr, 'production_schedules');
-    }
-  }
+  if (fullErr) handleSupabaseError(fullErr, 'production_schedules');
 }
 
 export async function deleteProductionScheduleFromSupabase(scheduleId) {
@@ -2677,33 +2395,7 @@ export async function saveJobMasterToSupabase(jobMaster) {
 
   // 1. Try extended payload with new columns (including press marks & layers) FIRST
   const { error: extErr } = await supabase.from('job_masters').upsert(extendedPayload, { onConflict: 'id' });
-
-  if (extErr) {
-    console.warn("[Supabase Sync Notice] Extended payload rejected, trying payload with press_marks JSON...", extErr.message);
-    
-    // 2. Try legacy payload with press_marks JSON
-    const { error: legacyErr } = await supabase.from('job_masters').upsert({
-      ...legacyPayload,
-      press_marks: pressMarks,
-      layers: Array.isArray(jobMaster.layers) ? jobMaster.layers : []
-    }, { onConflict: 'id' });
-
-    if (legacyErr) {
-      console.warn("[Supabase Sync Notice] Legacy payload rejected, trying absolute minimal payload...", legacyErr.message);
-      
-      // 3. Absolute minimal payload guaranteed to succeed on any table definition
-      const minimalPayload = {
-        id,
-        sku_code: skuCode,
-        job_name: jobName,
-        client_name: clientName
-      };
-      const { error: minErr } = await supabase.from('job_masters').upsert(minimalPayload, { onConflict: 'id' });
-      if (minErr) {
-        handleSupabaseError(minErr, 'job_masters');
-      }
-    }
-  }
+  if (extErr) handleSupabaseError(extErr, 'job_masters');
 }
 
 export async function deleteJobMasterFromSupabase(jobMasterId) {
@@ -2772,6 +2464,7 @@ export async function fetchSalesQuotations() {
       items: q.items || [],
       termsAndConditions: q.terms_and_conditions || [],
       comments: q.comments || '',
+      termsTemplateKey: q.terms_template_key || '',
       createdAt: q.created_at
     }));
   } catch (err) {
@@ -2809,7 +2502,8 @@ export async function saveSalesQuotationToSupabase(quotation) {
     converted_date: quotation.convertedDate || '',
     items: quotation.items || [],
     terms_and_conditions: quotation.termsAndConditions || [],
-    comments: quotation.comments || ''
+    comments: quotation.comments || '',
+    terms_template_key: quotation.termsTemplateKey || null
   };
 
   const { data, error } = await supabase
@@ -2940,37 +2634,55 @@ export async function deleteInkFromSupabase(inkId) {
 // SYSTEM SETTINGS & ROLE PERMISSIONS & RBAC MATRIX (SCHEMA-INDEPENDENT)
 // ============================================================================
 
+const CLIENT_BLOCKED_SETTINGS = new Set([
+  'employees',
+  'employee_attendance',
+  'salary_advances',
+  'salary_payments',
+  'email_settings',
+  'role_permissions'
+]);
+
+const BUSINESS_RECORD_SETTINGS = new Set([
+  'purchase_orders',
+  'samyak_erp_issued_pos',
+  'issued_pos',
+  'stock_adjustments',
+  'custom_barcodes',
+  'po_discrepancy_resolutions',
+  'scrap_disposals',
+  'sfg_scrap_items',
+  'sfg_qc_hold_items',
+  'material_indents',
+  'machine_issues',
+  'consumables',
+  'store_issue_transactions',
+  'printing_press_queue_order',
+  'printing_press_machine_assignments',
+  'printing_press_active_running_job',
+  'dispatch_shipments',
+  'delivery_challans',
+  'certificate_of_analyses',
+  'pellet_inwards',
+  'pellet_consumptions',
+  'audit_logs',
+  'email_templates'
+]);
+
 export async function saveSystemSetting(key, value) {
-  if (!isSupabaseConfigured()) return;
-  try {
-    await ensureValidSession();
-    const strVal = typeof value === 'object' ? JSON.stringify(value) : String(value);
-
-    // 1. Save to system_settings table
-    const { error: sysErr } = await supabase
-      .from('system_settings')
-      .upsert({ setting_key: key, setting_value: strVal, updated_at: new Date().toISOString() }, { onConflict: 'setting_key' });
-
-    if (sysErr) {
-      console.warn(`[System Setting] Note on system_settings table write for '${key}':`, sysErr.message);
-    } else {
-      console.log(`[System Setting] Successfully synced setting '${key}' to system_settings table.`);
-    }
-
-    // 2. Sync to users table fallback
-    const payload = {
-      id: `USR-SETTING-${key}`,
-      username: `setting_${key}`,
-      full_name: strVal,
-      email: `setting_${key}@samyak.com`,
-      role: 'System',
-      department: 'System',
-      active: true
-    };
-    await supabase.from('users').upsert(payload, { onConflict: 'id' });
-  } catch (err) {
-    console.warn(`[System Setting] Exception saving setting '${key}':`, err.message);
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase database connection is not available.');
   }
+  const normalized = String(key || '');
+  if (CLIENT_BLOCKED_SETTINGS.has(normalized.toLowerCase()) || BUSINESS_RECORD_SETTINGS.has(normalized) || normalized.startsWith('jobcard_')) {
+    throw new Error(`'${key}' is stored in its own table, not system_settings.`);
+  }
+  await ensureValidSession();
+  const strVal = typeof value === 'object' ? JSON.stringify(value) : String(value);
+  const { error: sysErr } = await supabase
+    .from('system_settings')
+    .upsert({ setting_key: key, setting_value: strVal, updated_at: new Date().toISOString() }, { onConflict: 'setting_key' });
+  if (sysErr) handleSupabaseError(sysErr, 'system_settings');
 }
 
 export async function fetchAllSystemSettings() {
@@ -3013,21 +2725,6 @@ export async function fetchSystemSetting(key) {
         return sysData.setting_value;
       }
     }
-
-    // 2. Fallback to users table
-    const { data, error } = await supabase
-      .from('users')
-      .select('full_name')
-      .eq('id', `USR-SETTING-${key}`)
-      .maybeSingle();
-
-    if (data && data.full_name) {
-      try {
-        return JSON.parse(data.full_name);
-      } catch (e) {
-        return data.full_name;
-      }
-    }
   } catch (err) {
     console.warn(`[System Setting] Exception fetching setting '${key}':`, err.message);
   }
@@ -3062,13 +2759,14 @@ export async function fetchFilmSubstratesFromSupabase() {
 }
 
 export async function saveFilmSubstratesToSupabase(substratesList) {
-  if (!isSupabaseConfigured() || !Array.isArray(substratesList)) return;
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase database connection is not available.');
+  }
+  if (!Array.isArray(substratesList)) {
+    throw new Error('Film substrate list is invalid.');
+  }
   try {
     await ensureValidSession();
-    // 1. Save to system_settings
-    await saveSystemSetting('film_substrates_master', substratesList);
-
-    // 2. Sync to film_substrates dedicated table
     const payloads = substratesList.map(item => ({
       id: String(item.id || `sub-${item.name}`),
       name: item.name,
@@ -3078,24 +2776,48 @@ export async function saveFilmSubstratesToSupabase(substratesList) {
       updated_at: new Date().toISOString()
     }));
     const { error } = await supabase.from('film_substrates').upsert(payloads, { onConflict: 'id' });
-    if (error) {
-      console.warn("[Film Substrates] Dedicated table upsert notice:", error.message);
-    }
+    if (error) handleSupabaseError(error, 'film_substrates');
   } catch (e) {
-    console.warn("[Film Substrates] Failed to save film substrates to Supabase:", e.message);
+    if (e?.code || e?.message) throw e;
+    handleSupabaseError(e, 'film_substrates');
   }
 }
 
+function enforceRoleBoundaries(role, permissions) {
+  const next = { ...(permissions || {}) };
+  next.audit_logs = role === 'Admin';
+  return next;
+}
+
 export async function saveRolePermissionsToSupabase(rolePermissions) {
-  await saveSystemSetting('role_permissions', rolePermissions);
+  if (!isSupabaseConfigured() || !rolePermissions) return;
+  await ensureValidSession();
+  const rows = Object.entries(rolePermissions).map(([role, permissions]) => ({
+    role,
+    permissions: enforceRoleBoundaries(role, permissions),
+    updated_at: new Date().toISOString()
+  }));
+  const { error } = await supabase.from('role_permissions').upsert(rows, { onConflict: 'role' });
+  if (error) handleSupabaseError(error, 'role_permissions');
 }
 
 export async function fetchRolePermissionsFromSupabase() {
+  if (!isSupabaseConfigured()) return null;
+  const { data, error } = await supabase.from('role_permissions').select('role, permissions');
+  if (!error && Array.isArray(data) && data.length > 0) {
+    const map = {};
+    data.forEach(row => {
+      if (row?.role) map[row.role] = row.permissions || {};
+    });
+    return map;
+  }
   return await fetchSystemSetting('role_permissions');
 }
 
 export async function saveEmailSettingsToSupabase(config) {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase database connection is not available.');
+  }
   try {
     await ensureValidSession();
     const payload = {
@@ -3104,24 +2826,18 @@ export async function saveEmailSettingsToSupabase(config) {
       smtp_port: parseInt(config.smtpPort || 465, 10),
       smtp_secure: config.smtpSecure !== false,
       smtp_user: config.smtpUser || 'admin@samyakinternational.in',
-      smtp_pass: config.smtpPass || '',
       sender_name: config.senderName || 'Samyak International ERP',
       admin_email: config.adminEmail || 'admin@samyakinternational.in',
-      plant_manager_email: config.plantManagerEmail || 'plant.manager@plant.com',
+      plant_manager_email: config.plantManagerEmail || 'admin@samyakinternational.in',
       purchase_email: config.purchaseEmail || 'purchase@samyakinternational.in',
       dispatch_email: config.dispatchEmail || 'dispatch@samyakinternational.in',
       last_updated: new Date().toISOString()
     };
     const { error } = await supabase.from('email_settings').upsert(payload, { onConflict: 'id' });
-    if (error) {
-      console.warn('[email_settings] Table upsert note:', error.message);
-      await saveSystemSetting('email_settings', config);
-    } else {
-      console.log('[email_settings] Saved successfully to email_settings table.');
-    }
+    if (error) handleSupabaseError(error, 'email_settings');
   } catch (err) {
-    console.warn('[email_settings] Exception, falling back to system_settings:', err.message);
-    await saveSystemSetting('email_settings', config);
+    if (err?.code || err?.message) throw err;
+    handleSupabaseError(err, 'email_settings');
   }
 }
 
@@ -3135,7 +2851,7 @@ export async function fetchEmailSettingsFromSupabase() {
         smtpPort: data.smtp_port,
         smtpSecure: data.smtp_secure,
         smtpUser: data.smtp_user,
-        smtpPass: data.smtp_pass,
+        smtpPass: '',
         senderName: data.sender_name,
         adminEmail: data.admin_email,
         plantManagerEmail: data.plant_manager_email,
@@ -3146,11 +2862,14 @@ export async function fetchEmailSettingsFromSupabase() {
   } catch (e) {
     console.warn('[email_settings] Table fetch note:', e.message);
   }
-  return await fetchSystemSetting('email_settings');
+  return null;
 }
 
 export async function saveEmailTemplatesToSupabase(templates) {
-  if (!isSupabaseConfigured() || !templates) return;
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase database connection is not available.');
+  }
+  if (!templates) throw new Error('Email templates are missing.');
   try {
     await ensureValidSession();
     const rows = Object.values(templates).map(t => ({
@@ -3169,15 +2888,10 @@ export async function saveEmailTemplatesToSupabase(templates) {
     }));
 
     const { error } = await supabase.from('email_templates').upsert(rows, { onConflict: 'key' });
-    if (error) {
-      console.warn('[email_templates] Table upsert note:', error.message);
-      await saveSystemSetting('email_templates', templates);
-    } else {
-      console.log('[email_templates] Saved templates successfully to email_templates table.');
-    }
+    if (error) handleSupabaseError(error, 'email_templates');
   } catch (err) {
-    console.warn('[email_templates] Exception, falling back to system_settings:', err.message);
-    await saveSystemSetting('email_templates', templates);
+    if (err?.code || err?.message) throw err;
+    handleSupabaseError(err, 'email_templates');
   }
 }
 
@@ -3248,23 +2962,15 @@ export async function fetchEmployeesFromSupabase() {
           offboarding: r.offboarding || {}
         }));
       } else if (error) {
-        console.warn('[employees] Table fetch notice:', error.message);
+        handleSupabaseError(error, 'employees');
       }
     } catch (err) {
-      console.warn('[employees] Table query exception:', err.message);
+      handleSupabaseError(err, 'employees');
     }
 
-    if (tableRecords.length > 0) {
-      return tableRecords;
-    }
-
-    const settingData = await fetchSystemSetting('employees').catch(() => null);
-    if (Array.isArray(settingData) && settingData.length > 0) return settingData;
-    return [];
+    return tableRecords;
   } catch (e) {
     console.error("Error fetching employees from Supabase:", e);
-    const settingData = await fetchSystemSetting('employees').catch(() => null);
-    if (Array.isArray(settingData)) return settingData;
     throw e;
   }
 }
@@ -3300,26 +3006,8 @@ export async function saveEmployeeToSupabase(employee) {
     updated_at: new Date().toISOString()
   };
 
-  let tableSuccess = false;
-  try {
-    const { error } = await supabase.from('employees').upsert(row, { onConflict: 'id' });
-    if (!error) {
-      tableSuccess = true;
-    } else {
-      console.warn('[employees] Table upsert notice:', error.message);
-    }
-  } catch (err) {
-    console.warn('[employees] Table write exception:', err.message);
-  }
-
-  try {
-    const currentList = await fetchEmployeesFromSupabase().catch(() => []);
-    const updatedList = [employee, ...currentList.filter(e => String(e.id) !== String(employee.id))];
-    await saveSystemSetting('employees', updatedList);
-  } catch (e) {
-    console.warn('[employees] Backup to system_settings notice:', e.message);
-    if (!tableSuccess) throw e;
-  }
+  const { error } = await supabase.from('employees').upsert(row, { onConflict: 'id' });
+  if (error) handleSupabaseError(error, 'employees');
 }
 
 export async function deleteEmployeeFromSupabase(employeeId) {
@@ -3327,22 +3015,11 @@ export async function deleteEmployeeFromSupabase(employeeId) {
     throw new Error("Cannot delete employee: Supabase database connection is not available.");
   }
   await ensureValidSession();
-  try {
-    await supabase.from('employees').delete().eq('id', employeeId);
-    await supabase.from('employee_attendance').delete().eq('employee_id', employeeId);
-    await supabase.from('salary_advances').delete().eq('employee_id', employeeId);
-    await supabase.from('salary_payments').delete().eq('employee_id', employeeId);
-  } catch (err) {
-    console.warn('[employees] Table delete notice:', err.message);
-  }
-
-  try {
-    const currentList = await fetchEmployeesFromSupabase().catch(() => []);
-    const updatedList = currentList.filter(e => String(e.id) !== String(employeeId));
-    await saveSystemSetting('employees', updatedList);
-  } catch (e) {
-    console.warn('[employees] Delete from system_settings notice:', e.message);
-  }
+  const { error } = await supabase.from('employees').delete().eq('id', employeeId);
+  if (error) handleSupabaseError(error, 'employees');
+  await supabase.from('employee_attendance').delete().eq('employee_id', employeeId);
+  await supabase.from('salary_advances').delete().eq('employee_id', employeeId);
+  await supabase.from('salary_payments').delete().eq('employee_id', employeeId);
 }
 
 export async function fetchEmployeeAttendanceFromSupabase() {
@@ -3354,45 +3031,17 @@ export async function fetchEmployeeAttendanceFromSupabase() {
     try {
       const { data, error } = await supabase.from('employee_attendance').select('*').order('date', { ascending: false });
       if (!error && Array.isArray(data)) {
-        tableRecords = data.map(r => ({
-          id: r.id,
-          employeeId: r.employee_id || r.employeeId,
-          date: r.date,
-          shiftType: r.shift_type || r.shiftType,
-          shiftHours: Number(r.shift_hours || r.shiftHours) || 12,
-          status: r.status,
-          checkIn: r.check_in || r.checkIn,
-          checkOut: r.check_out || r.checkOut,
-          totalHoursWorked: Number(r.total_hours_worked || r.totalHoursWorked) || 0,
-          overtimeHours: Number(r.overtime_hours || r.overtimeHours) || 0,
-          overtimeStartTime: r.overtime_start_time || r.overtimeStartTime || r.overtime_start || '',
-          overtimeEndTime: r.overtime_end_time || r.overtimeEndTime || r.overtime_end || '',
-          ptoHours: Number(r.pto_hours || r.ptoHours) || 0,
-          overtimeReason: r.overtime_reason || r.overtimeReason || '',
-          overtimeStatus: r.overtime_status || r.overtimeStatus || 'Pending Approval',
-          overtimeApprovedBy: r.overtime_approved_by || r.overtimeApprovedBy || '',
-          overtimeApprovedDate: r.overtime_approved_date || r.overtimeApprovedDate || '',
-          dinnerAllowanceEligible: r.dinner_allowance_eligible ?? r.dinnerAllowanceEligible ?? false,
-          markedBy: r.marked_by || r.markedBy || ''
-        }));
+        tableRecords = data.map(mapEmployeeAttendanceRow).filter(Boolean);
       } else if (error) {
-        console.warn('[employee_attendance] Table fetch notice:', error.message);
+        handleSupabaseError(error, 'employee_attendance');
       }
     } catch (err) {
-      console.warn('[employee_attendance] Table query exception:', err.message);
+      handleSupabaseError(err, 'employee_attendance');
     }
 
-    if (tableRecords.length > 0) {
-      return tableRecords;
-    }
-
-    const settingData = await fetchSystemSetting('employee_attendance').catch(() => null);
-    if (Array.isArray(settingData) && settingData.length > 0) return settingData;
-    return [];
+    return tableRecords;
   } catch (e) {
     console.error("Error fetching employee attendance from Supabase:", e);
-    const settingData = await fetchSystemSetting('employee_attendance').catch(() => null);
-    if (Array.isArray(settingData)) return settingData;
     throw e;
   }
 }
@@ -3402,49 +3051,10 @@ export async function saveEmployeeAttendanceToSupabase(record) {
     throw new Error("Cannot save employee attendance: Supabase database connection is not available.");
   }
   await ensureValidSession();
-  const row = {
-    id: record.id,
-    employee_id: record.employeeId,
-    date: record.date,
-    shift_type: record.shiftType,
-    shift_hours: record.shiftHours || 12,
-    status: record.status,
-    check_in: record.checkIn,
-    check_out: record.checkOut,
-    total_hours_worked: record.totalHoursWorked || 0,
-    overtime_hours: record.overtimeHours || 0,
-    overtime_start_time: record.overtimeStartTime || record.overtime_start_time || '',
-    overtime_end_time: record.overtimeEndTime || record.overtime_end_time || '',
-    pto_hours: Number(record.ptoHours || record.pto_hours) || 0,
-    overtime_reason: record.overtimeReason || '',
-    overtime_status: record.overtimeStatus || 'Pending Approval',
-    overtime_approved_by: record.overtimeApprovedBy || '',
-    overtime_approved_date: record.overtimeApprovedDate || '',
-    dinner_allowance_eligible: record.dinnerAllowanceEligible || false,
-    marked_by: record.markedBy || '',
-    updated_at: new Date().toISOString()
-  };
+  const row = buildEmployeeAttendanceRow(record);
 
-  let tableSuccess = false;
-  try {
-    const { error } = await supabase.from('employee_attendance').upsert(row, { onConflict: 'id' });
-    if (!error) {
-      tableSuccess = true;
-    } else {
-      console.warn('[employee_attendance] Upsert notice:', error.message);
-    }
-  } catch (err) {
-    console.warn('[employee_attendance] Table write exception:', err.message);
-  }
-
-  try {
-    const currentList = await fetchEmployeeAttendanceFromSupabase().catch(() => []);
-    const updatedList = [record, ...currentList.filter(r => String(r.id) !== String(record.id))];
-    await saveSystemSetting('employee_attendance', updatedList);
-  } catch (e) {
-    console.warn('[employee_attendance] Backup to system_settings notice:', e.message);
-    if (!tableSuccess) throw e;
-  }
+  const { error } = await supabase.from('employee_attendance').upsert(row, { onConflict: 'id' });
+  if (error) handleSupabaseError(error, 'employee_attendance');
 }
 
 export async function fetchSalaryAdvancesFromSupabase() {
@@ -3475,23 +3085,15 @@ export async function fetchSalaryAdvancesFromSupabase() {
           deductionHistory: r.deduction_history || r.deductionHistory || []
         }));
       } else if (error) {
-        console.warn('[salary_advances] Table fetch notice:', error.message);
+        handleSupabaseError(error, 'salary_advances');
       }
     } catch (err) {
-      console.warn('[salary_advances] Table query exception:', err.message);
+      handleSupabaseError(err, 'salary_advances');
     }
 
-    if (tableRecords.length > 0) {
-      return tableRecords;
-    }
-
-    const settingData = await fetchSystemSetting('salary_advances').catch(() => null);
-    if (Array.isArray(settingData) && settingData.length > 0) return settingData;
-    return [];
+    return tableRecords;
   } catch (e) {
     console.error("Error fetching salary advances from Supabase:", e);
-    const settingData = await fetchSystemSetting('salary_advances').catch(() => null);
-    if (Array.isArray(settingData)) return settingData;
     throw e;
   }
 }
@@ -3521,26 +3123,8 @@ export async function saveSalaryAdvanceToSupabase(adv) {
     updated_at: new Date().toISOString()
   };
 
-  let tableSuccess = false;
-  try {
-    const { error } = await supabase.from('salary_advances').upsert(row, { onConflict: 'id' });
-    if (!error) {
-      tableSuccess = true;
-    } else {
-      console.warn('[salary_advances] Upsert notice:', error.message);
-    }
-  } catch (err) {
-    console.warn('[salary_advances] Table write exception:', err.message);
-  }
-
-  try {
-    const currentList = await fetchSalaryAdvancesFromSupabase().catch(() => []);
-    const updatedList = [adv, ...currentList.filter(a => String(a.id) !== String(adv.id))];
-    await saveSystemSetting('salary_advances', updatedList);
-  } catch (e) {
-    console.warn('[salary_advances] Backup to system_settings notice:', e.message);
-    if (!tableSuccess) throw e;
-  }
+  const { error } = await supabase.from('salary_advances').upsert(row, { onConflict: 'id' });
+  if (error) handleSupabaseError(error, 'salary_advances');
 }
 
 export async function fetchSalaryPaymentsFromSupabase() {
@@ -3573,23 +3157,15 @@ export async function fetchSalaryPaymentsFromSupabase() {
           createdAt: r.created_at || r.createdAt
         }));
       } else if (error) {
-        console.warn('[salary_payments] Table fetch notice:', error.message);
+        handleSupabaseError(error, 'salary_payments');
       }
     } catch (err) {
-      console.warn('[salary_payments] Table query exception:', err.message);
+      handleSupabaseError(err, 'salary_payments');
     }
 
-    if (tableRecords.length > 0) {
-      return tableRecords;
-    }
-
-    const settingData = await fetchSystemSetting('salary_payments').catch(() => null);
-    if (Array.isArray(settingData) && settingData.length > 0) return settingData;
-    return [];
+    return tableRecords;
   } catch (e) {
     console.error("Error fetching salary payments from Supabase:", e);
-    const settingData = await fetchSystemSetting('salary_payments').catch(() => null);
-    if (Array.isArray(settingData)) return settingData;
     throw e;
   }
 }
@@ -3620,26 +3196,8 @@ export async function saveSalaryPaymentToSupabase(payment) {
     updated_at: new Date().toISOString()
   };
 
-  let tableSuccess = false;
-  try {
-    const { error } = await supabase.from('salary_payments').upsert(row, { onConflict: 'id' });
-    if (!error) {
-      tableSuccess = true;
-    } else {
-      console.warn('[salary_payments] Upsert notice:', error.message);
-    }
-  } catch (err) {
-    console.warn('[salary_payments] Table write exception:', err.message);
-  }
-
-  try {
-    const currentList = await fetchSalaryPaymentsFromSupabase().catch(() => []);
-    const updatedList = [payment, ...currentList.filter(p => String(p.id) !== String(payment.id))];
-    await saveSystemSetting('salary_payments', updatedList);
-  } catch (e) {
-    console.warn('[salary_payments] Backup to system_settings notice:', e.message);
-    if (!tableSuccess) throw e;
-  }
+  const { error } = await supabase.from('salary_payments').upsert(row, { onConflict: 'id' });
+  if (error) handleSupabaseError(error, 'salary_payments');
 }
 
 export async function deleteGRNFromSupabase(grnId) {
@@ -3813,7 +3371,11 @@ export async function saveSFGGoodToSupabase(item) {
     micron: Number(item.micron) || 0,
     width_mm: Number(item.widthMm) || 0,
     total_gross_kg: Number(item.totalGrossKg ?? item.grossWeightKg ?? netKg) || 0,
+    gross_weight_kg: Number(item.grossWeightKg ?? item.totalGrossKg ?? netKg) || 0,
+    tare_weight_kg: Number(item.tareWeightKg ?? 0) || 0,
     total_net_kg: netKg,
+    consumed_kg: consumedKg,
+    available_kg: availableKg,
     total_meters: Number(item.totalMeters) || 0,
     rolls_count: Number(item.rollsCount) || 1,
     machine_name: item.machineName || '',
@@ -3826,10 +3388,10 @@ export async function saveSFGGoodToSupabase(item) {
     updated_at: new Date().toISOString()
   };
 
-  // sfg_goods.id is uuid with gen_random_uuid(). Barcode strings such as SFG-BC-... must not be written into it.
-  if (item.id && isUuid(item.id)) {
-    payload.id = item.id;
-  }
+  // sfg_goods.id is a uuid. A barcode such as SFG-BC-... must not be written into it.
+  // Send the existing uuid, or a new one. The column default gen_random_uuid()
+  // is only a backstop if id is omitted.
+  payload.id = item.id && isUuid(item.id) ? item.id : crypto.randomUUID();
 
   console.log('[sfg_goods] Upserting item:', sfgBatchCode, 'Status:', computedStatus);
   const { error } = await supabase.from('sfg_goods').upsert(payload, { onConflict: 'sfg_batch_code' });
@@ -3869,28 +3431,20 @@ export async function fetchDeliveryChallansFromSupabase() {
       if (!error && Array.isArray(data)) {
         tableRecords = data.map(r => r.payload || r.details || r);
       } else if (error) {
-        console.warn('[delivery_challans] Table fetch notice:', error.message);
+        handleSupabaseError(error, 'delivery_challans');
       }
     } catch (err) {
-      console.warn('[delivery_challans] Table query exception:', err.message);
-    }
-    
-    if (tableRecords.length > 0) {
-      tableRecords.sort((a, b) => {
-        const timeA = new Date(a.createdDate || a.dispatchDateTime || a.date || 0).getTime();
-        const timeB = new Date(b.createdDate || b.dispatchDateTime || b.date || 0).getTime();
-        return timeB - timeA;
-      });
-      return tableRecords;
+      throw err;
     }
 
-    const settingData = await fetchSystemSetting('delivery_challans').catch(() => null);
-    if (Array.isArray(settingData) && settingData.length > 0) return settingData;
-    return [];
+    tableRecords.sort((a, b) => {
+      const timeA = new Date(a.createdDate || a.dispatchDateTime || a.date || 0).getTime();
+      const timeB = new Date(b.createdDate || b.dispatchDateTime || b.date || 0).getTime();
+      return timeB - timeA;
+    });
+    return tableRecords;
   } catch (e) {
     console.error("Error fetching delivery challans from Supabase:", e);
-    const settingData = await fetchSystemSetting('delivery_challans').catch(() => null);
-    if (Array.isArray(settingData)) return settingData;
     throw e;
   }
 }
@@ -3900,37 +3454,14 @@ export async function saveDeliveryChallanToSupabase(dc) {
     throw new Error("Cannot save delivery challan: Supabase database connection is not available.");
   }
   await ensureValidSession();
-  
-  let tableSuccess = false;
-  try {
-    const { error } = await supabase.from('delivery_challans').upsert({
-      id: String(dc.id),
-      challan_no: dc.challanNo || '',
-      client_name: dc.clientName || dc.partyName || '',
-      payload: dc,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'id' });
-
-    if (!error) {
-      tableSuccess = true;
-    } else {
-      console.warn('[delivery_challans] Upsert table notice:', error.message);
-    }
-  } catch (e) {
-    console.warn('[delivery_challans] Table write exception:', e.message);
-  }
-
-  // Dual Persistence: Always backup into system_settings under key 'delivery_challans'
-  try {
-    const currentList = await fetchDeliveryChallansFromSupabase().catch(() => []);
-    const updatedList = [dc, ...currentList.filter(d => String(d.id) !== String(dc.id))];
-    await saveSystemSetting('delivery_challans', updatedList);
-  } catch (e) {
-    console.warn('[delivery_challans] Backup to system_settings notice:', e.message);
-    if (!tableSuccess) {
-      throw e;
-    }
-  }
+  const { error } = await supabase.from('delivery_challans').upsert({
+    id: String(dc.id),
+    challan_no: dc.challanNo || '',
+    client_name: dc.clientName || dc.partyName || '',
+    payload: dc,
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'id' });
+  if (error) handleSupabaseError(error, 'delivery_challans');
 }
 
 export async function deleteDeliveryChallanFromSupabase(id) {
@@ -3938,19 +3469,8 @@ export async function deleteDeliveryChallanFromSupabase(id) {
     throw new Error("Cannot delete delivery challan: Supabase database connection is not available.");
   }
   await ensureValidSession();
-  try {
-    await supabase.from('delivery_challans').delete().eq('id', String(id));
-  } catch (e) {
-    console.warn('[delivery_challans] Table delete notice:', e.message);
-  }
-
-  try {
-    const currentList = await fetchDeliveryChallansFromSupabase().catch(() => []);
-    const updatedList = currentList.filter(d => String(d.id) !== String(id));
-    await saveSystemSetting('delivery_challans', updatedList);
-  } catch (e) {
-    console.warn('[delivery_challans] Delete from system_settings notice:', e.message);
-  }
+  const { error } = await supabase.from('delivery_challans').delete().eq('id', String(id));
+  if (error) handleSupabaseError(error, 'delivery_challans');
 }
 
 export async function fetchCertificatesOfAnalysisFromSupabase() {
@@ -3964,28 +3484,16 @@ export async function fetchCertificatesOfAnalysisFromSupabase() {
       if (!error && Array.isArray(data)) {
         tableRecords = data.map(r => r.payload || r.details || r);
       } else if (error) {
-        console.warn('[certificate_of_analyses] Table fetch notice:', error.message);
+        handleSupabaseError(error, 'certificate_of_analyses');
       }
     } catch (err) {
-      console.warn('[certificate_of_analyses] Table query exception:', err.message);
+      throw err;
     }
 
-    if (tableRecords.length > 0) {
-      tableRecords.sort((a, b) => {
-        const timeA = new Date(a.createdDate || a.testDate || 0).getTime();
-        const timeB = new Date(b.createdDate || b.testDate || 0).getTime();
-        return timeB - timeA;
-      });
-      return tableRecords;
-    }
-
-    const settingData = await fetchSystemSetting('certificate_of_analyses').catch(() => null);
-    if (Array.isArray(settingData) && settingData.length > 0) return settingData;
-    return [];
+    tableRecords.sort((a, b) => new Date(b.createdDate || b.testDate || 0) - new Date(a.createdDate || a.testDate || 0));
+    return tableRecords;
   } catch (e) {
     console.error("Error fetching certificate of analyses from Supabase:", e);
-    const settingData = await fetchSystemSetting('certificate_of_analyses').catch(() => null);
-    if (Array.isArray(settingData)) return settingData;
     throw e;
   }
 }
@@ -3995,36 +3503,15 @@ export async function saveCertificateOfAnalysisToSupabase(coa) {
     throw new Error("Cannot save certificate of analysis: Supabase database connection is not available.");
   }
   await ensureValidSession();
-  let tableSuccess = false;
-  try {
-    const { error } = await supabase.from('certificate_of_analyses').upsert({
-      id: String(coa.id),
-      coa_no: coa.coaNo || '',
-      job_name: coa.jobName || '',
-      customer_name: coa.customerName || '',
-      payload: coa,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'id' });
-
-    if (!error) {
-      tableSuccess = true;
-    } else {
-      console.warn('[certificate_of_analyses] Table upsert notice:', error.message);
-    }
-  } catch (e) {
-    console.warn('[certificate_of_analyses] Table write exception:', e.message);
-  }
-
-  try {
-    const currentList = await fetchCertificatesOfAnalysisFromSupabase().catch(() => []);
-    const updatedList = [coa, ...currentList.filter(c => String(c.id) !== String(coa.id))];
-    await saveSystemSetting('certificate_of_analyses', updatedList);
-  } catch (e) {
-    console.warn('[certificate_of_analyses] Backup to system_settings notice:', e.message);
-    if (!tableSuccess) {
-      throw e;
-    }
-  }
+  const { error } = await supabase.from('certificate_of_analyses').upsert({
+    id: String(coa.id),
+    coa_no: coa.coaNo || '',
+    job_name: coa.jobName || '',
+    customer_name: coa.customerName || '',
+    payload: coa,
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'id' });
+  if (error) handleSupabaseError(error, 'certificate_of_analyses');
 }
 
 export async function deleteCertificateOfAnalysisFromSupabase(id) {
@@ -4032,35 +3519,13 @@ export async function deleteCertificateOfAnalysisFromSupabase(id) {
     throw new Error("Cannot delete certificate of analysis: Supabase database connection is not available.");
   }
   await ensureValidSession();
-  try {
-    await supabase.from('certificate_of_analyses').delete().eq('id', String(id));
-  } catch (e) {
-    console.warn('[certificate_of_analyses] Table delete notice:', e.message);
-  }
-
-  try {
-    const currentList = await fetchCertificatesOfAnalysisFromSupabase().catch(() => []);
-    const updatedList = currentList.filter(c => String(c.id) !== String(id));
-    await saveSystemSetting('certificate_of_analyses', updatedList);
-  } catch (e) {
-    console.warn('[certificate_of_analyses] Delete from system_settings notice:', e.message);
-  }
+  const { error } = await supabase.from('certificate_of_analyses').delete().eq('id', String(id));
+  if (error) handleSupabaseError(error, 'certificate_of_analyses');
 }
 
 // ============================================================================
 // PELLET FUEL STOCK & BOILER CONSUMPTION MANAGEMENT
 // ============================================================================
-
-async function readPelletSetting(key) {
-  try {
-    return await Promise.race([
-      fetchSystemSetting(key).catch(() => null),
-      new Promise((resolve) => setTimeout(() => resolve(null), 3000))
-    ]);
-  } catch (err) {
-    return null;
-  }
-}
 
 export async function fetchPelletInwardsFromSupabase() {
   if (!isSupabaseConfigured()) {
@@ -4071,34 +3536,17 @@ export async function fetchPelletInwardsFromSupabase() {
     try {
       const { data, error } = await supabase.from('pellet_inwards').select('*');
       if (!error && Array.isArray(data)) {
-        tableRecords = data.map(r => r.payload || r.details || r);
+        tableRecords = data.map(pelletInwardFromRow);
       } else if (error) {
-        if (isMissingRelationError(error)) {
-          console.warn('[pellet_inwards] Table is not available yet:', error.message);
-        } else {
-          console.warn('[pellet_inwards] Table fetch notice:', error.message);
-        }
+        handleSupabaseError(error, 'pellet_inwards');
       }
     } catch (err) {
-      console.warn('[pellet_inwards] Table query exception:', err.message);
+      throw err;
     }
-    
-    if (tableRecords.length > 0) {
-      tableRecords.sort((a, b) => {
-        const timeA = new Date(a.inwardDate || a.createdDate || 0).getTime();
-        const timeB = new Date(b.inwardDate || b.createdDate || 0).getTime();
-        return timeB - timeA;
-      });
-      return tableRecords;
-    }
-
-    const settingData = await readPelletSetting('pellet_inwards');
-    if (Array.isArray(settingData) && settingData.length > 0) return settingData;
-    return [];
+    tableRecords.sort((a, b) => new Date(b.inwardDate || b.createdDate || 0) - new Date(a.inwardDate || a.createdDate || 0));
+    return tableRecords;
   } catch (e) {
     console.error("Error fetching pellet inwards from Supabase:", e);
-    const settingData = await readPelletSetting('pellet_inwards');
-    if (Array.isArray(settingData)) return settingData;
     throw e;
   }
 }
@@ -4108,40 +3556,18 @@ export async function savePelletInwardToSupabase(item) {
     throw new Error("Cannot save pellet inward: Supabase database connection is not available.");
   }
   await ensureValidSession();
-  
-  let tableSuccess = false;
-  try {
-    const { error } = await supabase.from('pellet_inwards').upsert({
-      id: String(item.id),
-      grn_no: item.grnNo || '',
-      inward_date: item.inwardDate || new Date().toISOString().split('T')[0],
-      inward_qty_kg: Number(item.inwardQtyKg) || 0,
-      unit_cost_per_kg: Number(item.unitCostPerKg) || 0,
-      total_amount: Number(item.totalAmount) || 0,
-      payload: item,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'id' });
-
-    if (!error) {
-      tableSuccess = true;
-    } else {
-      console.warn('[pellet_inwards] Table upsert notice:', error.message);
-    }
-  } catch (e) {
-    console.warn('[pellet_inwards] Table write exception:', e.message);
-  }
-
-  // Backup into system_settings
-  try {
-    const currentList = await fetchPelletInwardsFromSupabase().catch(() => []);
-    const updatedList = [item, ...currentList.filter(d => String(d.id) !== String(item.id))];
-    await saveSystemSetting('pellet_inwards', updatedList);
-  } catch (e) {
-    console.warn('[pellet_inwards] Backup to system_settings notice:', e.message);
-    if (!tableSuccess) {
-      throw e;
-    }
-  }
+  const { error } = await supabase.from('pellet_inwards').upsert({
+    id: String(item.id),
+    grn_no: item.grnNo || '',
+    inward_date: item.inwardDate || new Date().toISOString().split('T')[0],
+    inward_qty_kg: Number(item.inwardQtyKg) || 0,
+    unit_cost_per_kg: Number(item.unitCostPerKg) || 0,
+    total_amount: Number(item.totalAmount) || 0,
+    vehicle_no: item.vehicleNo || null,
+    payload: item,
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'id' });
+  if (error) handleSupabaseError(error, 'pellet_inwards');
 }
 
 export async function deletePelletInwardFromSupabase(id) {
@@ -4149,19 +3575,8 @@ export async function deletePelletInwardFromSupabase(id) {
     throw new Error("Cannot delete pellet inward: Supabase database connection is not available.");
   }
   await ensureValidSession();
-  try {
-    await supabase.from('pellet_inwards').delete().eq('id', String(id));
-  } catch (e) {
-    console.warn('[pellet_inwards] Table delete notice:', e.message);
-  }
-
-  try {
-    const currentList = await fetchPelletInwardsFromSupabase().catch(() => []);
-    const updatedList = currentList.filter(d => String(d.id) !== String(id));
-    await saveSystemSetting('pellet_inwards', updatedList);
-  } catch (e) {
-    console.warn('[pellet_inwards] Delete from system_settings notice:', e.message);
-  }
+  const { error } = await supabase.from('pellet_inwards').delete().eq('id', String(id));
+  if (error) handleSupabaseError(error, 'pellet_inwards');
 }
 
 export async function fetchPelletConsumptionsFromSupabase() {
@@ -4173,34 +3588,17 @@ export async function fetchPelletConsumptionsFromSupabase() {
     try {
       const { data, error } = await supabase.from('pellet_consumptions').select('*');
       if (!error && Array.isArray(data)) {
-        tableRecords = data.map(r => r.payload || r.details || r);
+        tableRecords = data.map(pelletConsumptionFromRow);
       } else if (error) {
-        if (isMissingRelationError(error)) {
-          console.warn('[pellet_consumptions] Table is not available yet:', error.message);
-        } else {
-          console.warn('[pellet_consumptions] Table fetch notice:', error.message);
-        }
+        handleSupabaseError(error, 'pellet_consumptions');
       }
     } catch (err) {
-      console.warn('[pellet_consumptions] Table query exception:', err.message);
+      throw err;
     }
-
-    if (tableRecords.length > 0) {
-      tableRecords.sort((a, b) => {
-        const timeA = new Date(a.consumptionDate || a.date || 0).getTime();
-        const timeB = new Date(b.consumptionDate || b.date || 0).getTime();
-        return timeB - timeA;
-      });
-      return tableRecords;
-    }
-
-    const settingData = await readPelletSetting('pellet_consumptions');
-    if (Array.isArray(settingData) && settingData.length > 0) return settingData;
-    return [];
+    tableRecords.sort((a, b) => new Date(b.consumptionDate || b.date || 0) - new Date(a.consumptionDate || a.date || 0));
+    return tableRecords;
   } catch (e) {
     console.error("Error fetching pellet consumptions from Supabase:", e);
-    const settingData = await readPelletSetting('pellet_consumptions');
-    if (Array.isArray(settingData)) return settingData;
     throw e;
   }
 }
@@ -4210,38 +3608,43 @@ export async function savePelletConsumptionToSupabase(item) {
     throw new Error("Cannot save pellet consumption: Supabase database connection is not available.");
   }
   await ensureValidSession();
-  
-  let tableSuccess = false;
-  try {
-    const { error } = await supabase.from('pellet_consumptions').upsert({
-      id: String(item.id),
-      consumption_date: item.consumptionDate || new Date().toISOString().split('T')[0],
-      consumed_qty_kg: Number(item.consumedQtyKg) || 0,
-      operating_hours: Number(item.operatingHours) || 0,
-      reference_printing_done_kg: Number(item.referencePrintingDoneKg) || 0,
-      payload: item,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'id' });
+  const { error } = await supabase.from('pellet_consumptions').upsert({
+    id: String(item.id),
+    consumption_date: item.consumptionDate || new Date().toISOString().split('T')[0],
+    consumed_qty_kg: Number(item.consumedQtyKg) || 0,
+    operating_hours: Number(item.operatingHours) || 0,
+    reference_printing_done_kg: Number(item.referencePrintingDoneKg) || 0,
+    payload: item,
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'id' });
+  if (error) handleSupabaseError(error, 'pellet_consumptions');
+}
 
-    if (!error) {
-      tableSuccess = true;
-    } else {
-      console.warn('[pellet_consumptions] Table upsert notice:', error.message);
-    }
-  } catch (e) {
-    console.warn('[pellet_consumptions] Table write exception:', e.message);
+export async function allocatePelletGrnNumber(prefix) {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Cannot reserve a pellet GRN number: Supabase database connection is not available.');
   }
+  await ensureValidSession();
+  const { data, error } = await supabase.rpc('allocate_pellet_grn_number', {
+    p_prefix: prefix || 'SIL/GRN/26-27/'
+  });
+  if (error) handleSupabaseError(error, 'allocate_pellet_grn_number');
+  if (!data) {
+    throw new Error('The database did not return a pellet GRN number.');
+  }
+  return data;
+}
 
-  try {
-    const currentList = await fetchPelletConsumptionsFromSupabase().catch(() => []);
-    const updatedList = [item, ...currentList.filter(d => String(d.id) !== String(item.id))];
-    await saveSystemSetting('pellet_consumptions', updatedList);
-  } catch (e) {
-    console.warn('[pellet_consumptions] Backup to system_settings notice:', e.message);
-    if (!tableSuccess) {
-      throw e;
-    }
+export async function savePelletInwardWithGrn(record) {
+  if (!isSupabaseConfigured() || !record) {
+    throw new Error('Cannot save pellet inward: Supabase database connection is not available.');
   }
+  await ensureValidSession();
+  const { data, error } = await supabase.rpc('save_pellet_inward_with_grn', {
+    p_record: record
+  });
+  if (error) handleSupabaseError(error, 'save_pellet_inward_with_grn');
+  return data;
 }
 
 export async function deletePelletConsumptionFromSupabase(id) {
@@ -4249,19 +3652,8 @@ export async function deletePelletConsumptionFromSupabase(id) {
     throw new Error("Cannot delete pellet consumption: Supabase database connection is not available.");
   }
   await ensureValidSession();
-  try {
-    await supabase.from('pellet_consumptions').delete().eq('id', String(id));
-  } catch (e) {
-    console.warn('[pellet_consumptions] Table delete notice:', e.message);
-  }
-
-  try {
-    const currentList = await fetchPelletConsumptionsFromSupabase().catch(() => []);
-    const updatedList = currentList.filter(d => String(d.id) !== String(id));
-    await saveSystemSetting('pellet_consumptions', updatedList);
-  } catch (e) {
-    console.warn('[pellet_consumptions] Delete from system_settings notice:', e.message);
-  }
+  const { error } = await supabase.from('pellet_consumptions').delete().eq('id', String(id));
+  if (error) handleSupabaseError(error, 'pellet_consumptions');
 }
 
 // ============================================================================
@@ -4359,63 +3751,30 @@ export function sanitizePurchaseOrder(raw) {
   };
 }
 
+function toSqlDate(value) {
+  const parsed = parseStandardDate(value);
+  if (!parsed || Number.isNaN(parsed.getTime())) return null;
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export async function fetchPurchaseOrders() {
   if (!isSupabaseConfigured()) {
     throw new Error("Supabase is not configured.");
   }
 
-  const resultsMap = new Map();
+  const { data, error } = await supabase
+    .from('purchase_orders')
+    .select('*')
+    .order('po_date', { ascending: false });
 
-  // 1. Primary: Load from public.purchase_orders table
-  try {
-    const { data, error } = await supabase
-      .from('purchase_orders')
-      .select('*')
-      .order('po_date', { ascending: false });
+  if (error) handleSupabaseError(error, 'purchase_orders');
 
-    if (!error && Array.isArray(data)) {
-      data.forEach(row => {
-        const clean = sanitizePurchaseOrder(row);
-        if (clean && clean.poNumber) {
-          resultsMap.set(clean.poNumber, clean);
-        }
-      });
-    } else if (error && error.code !== 'PGRST205' && error.code !== '42P01') {
-      console.warn('[Purchase Orders] Table fetch notice:', error.message);
-    }
-  } catch (err) {
-    console.warn('[Purchase Orders] Table query caught:', err.message);
-  }
-
-  // 2. Dual Fallback: Check system_settings 'purchase_orders' and 'samyak_erp_issued_pos'
-  try {
-    const backupList = await fetchSystemSetting('purchase_orders').catch(() => null);
-    if (Array.isArray(backupList)) {
-      backupList.forEach(raw => {
-        const clean = sanitizePurchaseOrder(raw);
-        if (clean && clean.poNumber && !resultsMap.has(clean.poNumber)) {
-          resultsMap.set(clean.poNumber, clean);
-        }
-      });
-    }
-
-    const legacyStore = await fetchSystemSetting('samyak_erp_issued_pos').catch(() => null);
-    if (legacyStore && typeof legacyStore === 'object') {
-      Object.values(legacyStore).forEach(legacyPo => {
-        if (legacyPo && (legacyPo.poNumber || legacyPo.id)) {
-          const clean = sanitizePurchaseOrder(legacyPo);
-          if (clean && clean.poNumber && !resultsMap.has(clean.poNumber)) {
-            resultsMap.set(clean.poNumber, clean);
-          }
-        }
-      });
-    }
-  } catch (e) {
-    console.warn('[Purchase Orders] System settings fallback notice:', e.message);
-  }
-
-  // Convert map to array sorted by date descending
-  const list = Array.from(resultsMap.values());
+  const list = (data || [])
+    .map(row => sanitizePurchaseOrder(row))
+    .filter(clean => clean && clean.poNumber);
   list.sort((a, b) => new Date(b.poDate || b.createdAt || 0) - new Date(a.poDate || a.createdAt || 0));
   return list;
 }
@@ -4433,9 +3792,9 @@ export async function savePurchaseOrderToSupabase(po) {
   const dbPayload = {
     id: clean.id,
     po_number: clean.poNumber,
-    po_date: clean.poDate ? (clean.poDate.includes('T') ? clean.poDate.split('T')[0] : clean.poDate) : new Date().toISOString().split('T')[0],
-    delivery_date: clean.deliveryDate ? (clean.deliveryDate.includes('T') ? clean.deliveryDate.split('T')[0] : clean.deliveryDate) : null,
-    promised_delivery_date: clean.promisedDeliveryDate ? (clean.promisedDeliveryDate.includes('T') ? clean.promisedDeliveryDate.split('T')[0] : clean.promisedDeliveryDate) : null,
+    po_date: toSqlDate(clean.poDate) || new Date().toISOString().split('T')[0],
+    delivery_date: toSqlDate(clean.deliveryDate),
+    promised_delivery_date: toSqlDate(clean.promisedDeliveryDate),
     vendor_id: clean.vendorId || null,
     vendor_name: clean.vendorName,
     vendor_details: clean.vendor || {},
@@ -4458,39 +3817,11 @@ export async function savePurchaseOrderToSupabase(po) {
     updated_at: new Date().toISOString()
   };
 
-  let tableSuccess = false;
-  try {
-    const { error } = await supabase
-      .from('purchase_orders')
-      .upsert(dbPayload, { onConflict: 'po_number' });
+  const { error } = await supabase
+    .from('purchase_orders')
+    .upsert(dbPayload, { onConflict: 'po_number' });
 
-    if (!error) {
-      tableSuccess = true;
-      console.log(`[Purchase Orders] Successfully saved PO ${clean.poNumber} to database.`);
-    } else {
-      console.warn(`[Purchase Orders] Note on table upsert for ${clean.poNumber}:`, error.message);
-    }
-  } catch (err) {
-    console.warn(`[Purchase Orders] Database table write error:`, err.message);
-  }
-
-  // Dual Persistence: Always save into system_settings under key 'purchase_orders' & 'samyak_erp_issued_pos'
-  try {
-    const currentList = await fetchSystemSetting('purchase_orders').catch(() => []);
-    const safeList = Array.isArray(currentList) ? currentList : [];
-    const updatedList = [clean, ...safeList.filter(p => p.poNumber !== clean.poNumber && p.id !== clean.id)];
-    await saveSystemSetting('purchase_orders', updatedList);
-
-    const currentStore = (await fetchSystemSetting('samyak_erp_issued_pos').catch(() => ({}))) || {};
-    currentStore[clean.poNumber] = clean;
-    await saveSystemSetting('samyak_erp_issued_pos', currentStore);
-  } catch (e) {
-    console.warn('[Purchase Orders] Backup to system_settings notice:', e.message);
-    if (!tableSuccess) {
-      throw e;
-    }
-  }
-
+  if (error) handleSupabaseError(error, 'purchase_orders');
   return clean;
 }
 
@@ -4501,30 +3832,11 @@ export async function deletePurchaseOrderFromSupabase(poIdOrNumber) {
   await ensureValidSession();
   const target = String(poIdOrNumber).trim();
 
-  try {
-    await supabase
-      .from('purchase_orders')
-      .delete()
-      .or(`id.eq.${target},po_number.eq.${target}`);
-  } catch (e) {
-    console.warn('[Purchase Orders] Table delete notice:', e.message);
-  }
-
-  try {
-    const currentList = await fetchSystemSetting('purchase_orders').catch(() => []);
-    if (Array.isArray(currentList)) {
-      const updatedList = currentList.filter(p => p.poNumber !== target && p.id !== target);
-      await saveSystemSetting('purchase_orders', updatedList);
-    }
-
-    const currentStore = (await fetchSystemSetting('samyak_erp_issued_pos').catch(() => ({}))) || {};
-    if (currentStore[target]) {
-      delete currentStore[target];
-      await saveSystemSetting('samyak_erp_issued_pos', currentStore);
-    }
-  } catch (e) {
-    console.warn('[Purchase Orders] Delete from system_settings notice:', e.message);
-  }
+  const { error } = await supabase
+    .from('purchase_orders')
+    .delete()
+    .or(`id.eq.${target},po_number.eq.${target}`);
+  if (error) handleSupabaseError(error, 'purchase_orders');
 }
 
 // ============================================================================

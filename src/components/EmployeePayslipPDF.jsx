@@ -1,6 +1,7 @@
 import React from 'react';
 import { Printer, ArrowLeft, Download } from 'lucide-react';
-import { COMPANY_DETAILS } from '../factoryStore';
+import { loadLetterhead } from '../services/companyProfile';
+import CompanyProfileNotice from './CompanyProfileNotice';
 import { getAuthorisedSignature, getCompanyLogo } from '../services/settingsService';
 
 // Helper to convert number to Indian currency words
@@ -21,7 +22,10 @@ function numberToWords(num) {
 }
 
 export default function EmployeePayslipPDF({ employee, salaryData, monthKey = "2026-08", payment, onClose }) {
+  const letterhead = loadLetterhead();
   if (!employee || !salaryData) return null;
+  if (letterhead.error) return <CompanyProfileNotice message={letterhead.error} onClose={onClose} />;
+  const COMPANY_DETAILS = letterhead.company;
 
   const logoImage = getCompanyLogo();
   const signatureImage = getAuthorisedSignature();
@@ -79,12 +83,12 @@ export default function EmployeePayslipPDF({ employee, salaryData, monthKey = "2
                 <img src={logoImage} alt="Company Logo" style={{ height: '52px', maxWidth: '240px', objectFit: 'contain', marginBottom: '6px' }} />
               ) : (
                 <h1 style={{ fontSize: '1.6rem', fontWeight: '900', color: '#1e293b', margin: 0, letterSpacing: '-0.5px' }}>
-                  {COMPANY_DETAILS.name || 'SAMYAK INTERNATIONAL LTD'}
+                  {COMPANY_DETAILS.name}
                 </h1>
               )}
               <div style={{ fontSize: '0.8rem', color: '#475569', marginTop: '4px', maxWidth: '440px', lineHeight: '1.4' }}>
-                {COMPANY_DETAILS.address || 'Plot 42, Sector 3, Pithampur Industrial Area, Indore, MP 454775'}<br />
-                <b>GSTIN:</b> {COMPANY_DETAILS.gstin || '23AAACS9988F1Z1'} | <b>CIN:</b> U25200MP2015PLC03412
+                {COMPANY_DETAILS.address}<br />
+                <b>GSTIN:</b> {COMPANY_DETAILS.gstin} | <b>CIN:</b> {COMPANY_DETAILS.cin}
               </div>
             </div>
 

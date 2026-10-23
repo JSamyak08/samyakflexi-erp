@@ -36,7 +36,7 @@ import {
   getOrderMaterialRequirements as getOrderMaterialRequirementsFromStore,
   calculateOrderStockReservations
 } from '../factoryStore';
-import { saveOrderToSupabase, fetchSystemSetting, saveSystemSetting, savePurchaseOrderToSupabase } from '../services/supabaseDataService';
+import { saveOrderToSupabase, savePurchaseOrderToSupabase } from '../services/supabaseDataService';
 import { getNextDocRefNumber } from '../services/settingsService';
 
 export default function OrderManagement({ 
@@ -148,7 +148,7 @@ export default function OrderManagement({
   };
 
   // Handler to edit Raw Material Size Width, Micron, Quantity or Preferred Vendor for any itemized requirement
-  const handleUpdateReqField = (orderId, reqId, field, value) => {
+  const handleUpdateReqField = async (orderId, reqId, field, value) => {
     const ord = orders.find(o => o.id === orderId);
     if (!ord) return;
 
@@ -200,10 +200,11 @@ export default function OrderManagement({
       rawMaterialRequirements: updatedReqs
     };
 
-    if (onUpdateOrder) {
-      onUpdateOrder(updatedOrder);
-    } else {
-      saveOrderToSupabase(updatedOrder).catch(err => console.error('[ORDERS][DB WRITE] Requirement update failed:', err));
+    try {
+      if (onUpdateOrder) await onUpdateOrder(updatedOrder);
+      else await saveOrderToSupabase(updatedOrder);
+    } catch (err) {
+      if (!onUpdateOrder) alert(`The material requirement was not saved: ${err.message || err}`);
     }
   };
 
@@ -273,7 +274,7 @@ export default function OrderManagement({
       label: jm.jobName || jm.id,
       subtitle: `Client: ${jm.clientName || 'N/A'} • Structure: ${jm.structure || '—'}`
     }));
-    if (editJobName && !list.some(o => o.value.toLowerCase().trim() === editJobName.toLowerCase().trim())) {
+    if (editJobName && !list.some(o => String(o?.value || '').toLowerCase().trim() === String(editJobName).toLowerCase().trim())) {
       list.unshift({
         value: editJobName,
         label: editJobName,
@@ -285,14 +286,14 @@ export default function OrderManagement({
 
   const editClientNameOptions = useMemo(() => {
     const clientSet = new Set();
-    (jobMasters || []).forEach(j => { if (j.clientName) clientSet.add(j.clientName.trim()); });
-    (orders || []).forEach(o => { if (o.clientName) clientSet.add(o.clientName.trim()); });
+    (jobMasters || []).forEach(j => { if (j?.clientName) clientSet.add(j.clientName.trim()); });
+    (orders || []).forEach(o => { if (o?.clientName) clientSet.add(o.clientName.trim()); });
     
     const list = Array.from(clientSet).map(c => ({
       value: c,
       label: c
     }));
-    if (editClientName && !list.some(o => o.value.toLowerCase().trim() === editClientName.toLowerCase().trim())) {
+    if (editClientName && !list.some(o => String(o?.value || '').toLowerCase().trim() === String(editClientName).toLowerCase().trim())) {
       list.unshift({
         value: editClientName,
         label: editClientName
@@ -515,9 +516,10 @@ export default function OrderManagement({
   // Auto-expand order if unique id is present in URL params
   useEffect(() => {
     if (urlParams && urlParams.id && orders && orders.length > 0) {
+      const paramId = String(urlParams.id).toLowerCase();
       const match = orders.find(o => 
-        o.id === urlParams.id || 
-        (o.jobName && o.jobName.toLowerCase().includes(urlParams.id.toLowerCase()))
+        o && (o.id === urlParams.id || 
+        (o.jobName && String(o.jobName).toLowerCase().includes(paramId)))
       );
       if (match) {
         setExpandedOrders(prev => ({ ...prev, [match.id]: true }));
@@ -551,31 +553,13 @@ export default function OrderManagement({
   const [poRemarks, setPoRemarks] = useState('Raw material must strictly conform to specified micron gauge and slit width. COA required upon delivery.');
   const [editablePoItems, setEditablePoItems] = useState([]);
 
-  // Cache for generated PO documents via Supabase
-  const [issuedPoStore, setIssuedPoStore] = useState({});
-
-  useEffect(() => {
-    let active = true;
-    async function loadPoStore() {
-      try {
-        const remote = await fetchSystemSetting('samyak_erp_issued_pos');
-        if (active && remote && typeof remote === 'object') {
-          setIssuedPoStore(remote);
-        }
-      } catch (e) {}
-    }
-    loadPoStore();
-    return () => { active = false; };
-  }, []);
-
-  const saveIssuedPoStore = async (newStore) => {
-    setIssuedPoStore(newStore);
-    try {
-      await saveSystemSetting('samyak_erp_issued_pos', newStore);
-    } catch (e) {
-      console.warn("Failed to save issued PO store", e);
-    }
-  };
+  const issuedPoStore = useMemo(() => {
+    const map = {};
+    (purchaseOrders || []).forEach((po) => {
+      if (po?.poNumber) map[po.poNumber] = po;
+    });
+    return map;
+  }, [purchaseOrders]);
 
   // Generated PO PDF preview state
   const [activePoPdfData, setActivePoPdfData] = useState(null);
@@ -698,7 +682,7 @@ export default function OrderManagement({
     }));
   };
 
-  const handleIssueEngraverPo = (order, e) => {
+  const handleIssueEngraverPo = async (order, e) => {
     if (e) e.stopPropagation();
     const engraverName = order.engraverName || order.cylinderDetails?.engraverName || 'Jindal Engravers, Mathura';
     let vendorObj = (vendors || []).find(v => 
@@ -752,15 +736,12 @@ export default function OrderManagement({
       linkedOrderName: order.jobName
     };
 
-    saveIssuedPoStore({
-      ...issuedPoStore,
-      [poNo]: poData
-    });
-
-    if (onSavePurchaseOrder) {
-      onSavePurchaseOrder(poData).catch(console.warn);
-    } else {
-      savePurchaseOrderToSupabase(poData).catch(console.warn);
+    try {
+      if (onSavePurchaseOrder) await onSavePurchaseOrder(poData);
+      else await savePurchaseOrderToSupabase(poData);
+    } catch (err) {
+      alert(`The cylinder purchase order was not saved: ${err.message || err}`);
+      return;
     }
 
     // Update order status
@@ -919,7 +900,7 @@ export default function OrderManagement({
     setActivePoPdfData(reconstructedPoData);
   };
 
-  const handleGenerateConsolidatedPO = (e) => {
+  const handleGenerateConsolidatedPO = async (e) => {
     e.preventDefault();
     const vendorObj = vendors.find(v => v.id === selectedVendorId) || vendors[0];
     const poNo = `PO-2026-${100 + (orders || []).length * 10 + (selectedRequirements || []).length}`;
@@ -964,15 +945,12 @@ export default function OrderManagement({
       linkedRequirements: Object.keys(selectedReqIds)
     };
 
-    saveIssuedPoStore({
-      ...issuedPoStore,
-      [poNo]: poData
-    });
-
-    if (onSavePurchaseOrder) {
-      onSavePurchaseOrder(poData).catch(console.warn);
-    } else {
-      savePurchaseOrderToSupabase(poData).catch(console.warn);
+    try {
+      if (onSavePurchaseOrder) await onSavePurchaseOrder(poData);
+      else await savePurchaseOrderToSupabase(poData);
+    } catch (err) {
+      alert(`The purchase order was not saved: ${err.message || err}`);
+      return;
     }
 
     // Update PO status in orders state & database
@@ -1037,11 +1015,13 @@ export default function OrderManagement({
 
   // Filter orders
   const filteredOrders = orders.filter(o => {
-    const matchesSearch = 
-      (o.jobName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (o.id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (o.clientName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      getSubstrateStructure(o).toLowerCase().includes(searchTerm.toLowerCase());
+    if (!o) return false;
+    const q = String(searchTerm || '').trim().toLowerCase();
+    const matchesSearch = !q ||
+      String(o.jobName || '').toLowerCase().includes(q) ||
+      String(o.id || '').toLowerCase().includes(q) ||
+      String(o.clientName || '').toLowerCase().includes(q) ||
+      String(getSubstrateStructure(o) || '').toLowerCase().includes(q);
     
     const statusInfo = getOrderStatusInfo(o);
     

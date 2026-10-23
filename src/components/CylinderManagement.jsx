@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import StorageImage from './StorageImage';
 import SearchableSelect from './SearchableSelect';
 import { 
   Layers, 
@@ -30,7 +31,7 @@ import {
   Link,
   Link2
 } from 'lucide-react';
-import { calculateUtilisation } from '../dataStore';
+import { calculateUtilisation, getCylinderPrintedQtyKg } from '../dataStore';
 import { FILM_DENSITIES } from '../factoryStore';
 import CylinderJobCardForm from '../CylinderJobCardForm';
 import { uploadArtworkFile, openArtworkViewer } from '../services/supabaseStorageService';
@@ -122,57 +123,6 @@ export default function CylinderManagement({
   productionRecords = [],
   orders = []
 }) {
-  // Compute actual printed volume (Kg) dynamically from production records & completed orders
-  const getCylinderPrintedQtyKg = (c) => {
-    if (!c) return 0;
-    const targetId = c.id;
-    const targetJmId = c.jobMasterId;
-    const targetSku = (c.sku || c.skuCode || '').trim().toLowerCase();
-    const targetJobName = (c.jobName || '').trim().toLowerCase();
-
-    let totalKg = 0;
-    let foundProd = false;
-
-    (productionRecords || []).forEach(r => {
-      if (!r) return;
-      const matches = (
-        (r.cylinderId && r.cylinderId === targetId) ||
-        (r.orderId && r.orderId === targetId) ||
-        (targetJmId && r.jobMasterId === targetJmId) ||
-        (targetSku && (r.skuCode || r.jobCode || '').trim().toLowerCase() === targetSku) ||
-        (targetJobName && (r.jobName || '').trim().toLowerCase() === targetJobName)
-      );
-      if (matches) {
-        foundProd = true;
-        const val = parseFloat(r.qtyFirstPassL1 || r.printedOutputKg || r.totalProductionQtyKg || r.grossProductionKg || 0);
-        totalKg += val;
-      }
-    });
-
-    (orders || []).forEach(o => {
-      if (!o) return;
-      const matches = (
-        (o.cylinderId && o.cylinderId === targetId) ||
-        (o.id && o.id === targetId) ||
-        (targetJmId && o.jobMasterId === targetJmId) ||
-        (targetSku && (o.skuCode || o.jobCode || '').trim().toLowerCase() === targetSku) ||
-        (targetJobName && (o.jobName || '').trim().toLowerCase() === targetJobName)
-      );
-      if (matches && (o.printedOutputKg > 0 || o.actualMetersPrinted > 0)) {
-        const inProdRecs = (productionRecords || []).some(r => r.orderId === o.id || r.id === o.id);
-        if (!inProdRecs) {
-          foundProd = true;
-          totalKg += parseFloat(o.printedOutputKg || 0);
-        }
-      }
-    });
-
-    if (foundProd && totalKg > 0) {
-      return Math.round(totalKg * 100) / 100;
-    }
-
-    return parseFloat(c.layer1PrintedQtyKg) || parseFloat(c.dispatchedQty) || 0;
-  };
   // Access Control: Only Admin and Plant Manager have Edit/Lock/Delete access
   const EDIT_ROLES = ['Admin', 'SuperAdmin', 'Plant Manager'];
   const userRole = currentUser?.role || 'Admin';
@@ -215,13 +165,18 @@ export default function CylinderManagement({
       alert("Please select a Job Master to link with!");
       return;
     }
-    if (onLinkCylinderToJobMaster) {
-      await onLinkCylinderToJobMaster(linkingCylinder.id, selectedExistingJmId);
-    } else {
-      const targetJm = (jobMasters || []).find(j => j.id === selectedExistingJmId);
-      if (onUpdateCylinder) {
-        onUpdateCylinder({ ...linkingCylinder, jobMasterId: selectedExistingJmId, sku: targetJm?.skuCode || linkingCylinder.sku });
+    try {
+      if (onLinkCylinderToJobMaster) {
+        await onLinkCylinderToJobMaster(linkingCylinder.id, selectedExistingJmId);
+      } else {
+        const targetJm = (jobMasters || []).find(j => j.id === selectedExistingJmId);
+        if (onUpdateCylinder) {
+          await onUpdateCylinder({ ...linkingCylinder, jobMasterId: selectedExistingJmId, sku: targetJm?.skuCode || linkingCylinder.sku });
+        }
       }
+    } catch (err) {
+      alert(err?.name === 'PartialSaveError' ? err.message : `The link was not saved: ${err.message || err}`);
+      return;
     }
     setLinkingCylinder(null);
     alert(`✅ Cylinder ${linkingCylinder.sku} successfully linked to Job Master!`);
@@ -255,11 +210,16 @@ export default function CylinderManagement({
       job_master_id: newJmId
     };
 
-    if (onCreateAndLinkPair) {
-      await onCreateAndLinkPair({ cylinder: updatedCyl, jobMaster: newJm });
-    } else {
-      if (onAddJobMaster) await onAddJobMaster(newJm);
-      if (onUpdateCylinder) await onUpdateCylinder(updatedCyl);
+    try {
+      if (onCreateAndLinkPair) {
+        await onCreateAndLinkPair({ cylinder: updatedCyl, jobMaster: newJm });
+      } else {
+        if (onAddJobMaster) await onAddJobMaster(newJm);
+        if (onUpdateCylinder) await onUpdateCylinder(updatedCyl);
+      }
+    } catch (err) {
+      alert(err?.name === 'PartialSaveError' ? err.message : `The link was not saved: ${err.message || err}`);
+      return;
     }
 
     setLinkingCylinder(null);
@@ -530,7 +490,7 @@ export default function CylinderManagement({
       (j.jobName && cyl.jobName && j.jobName.trim().toLowerCase() === cyl.jobName.trim().toLowerCase())
     );
 
-    const computedPrintedKg = getCylinderPrintedQtyKg(cyl);
+    const computedPrintedKg = getCylinderPrintedQtyKg(cyl, productionRecords, orders);
 
     setEditingCylinder(cyl);
     setSku(cyl.sku || '');
@@ -683,7 +643,7 @@ export default function CylinderManagement({
     }
   };
 
-  const handleSaveCylinder = (e) => {
+  const handleSaveCylinder = async (e) => {
     e.preventDefault();
     if (!jobName.trim() || !sku.trim()) {
       alert("SKU and Job Name are required!");
@@ -744,14 +704,19 @@ export default function CylinderManagement({
       changelogs: updatedLogs
     };
 
-    if (editingCylinder) {
-      if (onUpdateCylinder) onUpdateCylinder(payload);
-    } else {
-      if (onAddCylinder) onAddCylinder(payload);
+    try {
+      if (editingCylinder) {
+        if (onUpdateCylinder) await onUpdateCylinder(payload);
+      } else {
+        if (onAddCylinder) await onAddCylinder(payload);
+      }
+    } catch (err) {
+      alert(err?.name === 'PartialSaveError' ? err.message : `The cylinder set was not saved: ${err.message || err}`);
+      return;
+    }
 
-      // Automatically create consequent product entry in Job Master Directory if enabled
-      if (createJobMaster && onAddJobMaster) {
-        const newJobMaster = {
+    if (!editingCylinder && createJobMaster && onAddJobMaster) {
+      const newJobMaster = {
           id: nextJmId,
           skuCode: sku.trim(),
           jobName: jobName.trim(),
@@ -775,9 +740,12 @@ export default function CylinderManagement({
           slittingMark: slittingMark || 'Yes',
           trackerLine: trackerLine || 'Yes',
           specialInstructions: specialInstructions || '',
-          creationDate: new Date().toISOString().split('T')[0]
-        };
-        onAddJobMaster(newJobMaster);
+        creationDate: new Date().toISOString().split('T')[0]
+      };
+      try {
+        await onAddJobMaster(newJobMaster);
+      } catch (err) {
+        alert(`The cylinder was saved, but the linked job master was not: ${err.message || err}`);
       }
     }
 
@@ -795,9 +763,14 @@ export default function CylinderManagement({
       return;
     }
     if (window.confirm(`Are you sure you want to delete Cylinder Set "${cyl.jobName}" (${cyl.sku})? This cannot be undone.`)) {
-      if (onDeleteCylinder) {
-        onDeleteCylinder(cyl.id);
-      }
+      const remove = async () => {
+        try {
+          if (onDeleteCylinder) await onDeleteCylinder(cyl.id);
+        } catch (err) {
+          alert(`The cylinder set was not deleted: ${err.message || err}`);
+        }
+      };
+      remove();
     }
   };
 
@@ -1159,7 +1132,7 @@ export default function CylinderManagement({
                 </tr>
               ) : (
                 paginatedCylinders.map(c => {
-                  const actualPrintedKg = getCylinderPrintedQtyKg(c);
+                  const actualPrintedKg = getCylinderPrintedQtyKg(c, productionRecords, orders);
                   const util = calculateUtilisation(actualPrintedKg, c.utilisationLimit || 10000);
                   const isWarning = util >= 80;
                   const cCirc = c.circumferenceMm || 400;
@@ -1173,7 +1146,7 @@ export default function CylinderManagement({
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                           {c.artworkUrl ? (
-                            <img 
+                            <StorageImage 
                               src={c.artworkUrl} 
                               alt="Artwork" 
                               style={{ width: '40px', height: '40px', objectFit: 'contain', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }} 
@@ -1936,7 +1909,7 @@ export default function CylinderManagement({
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
                   {artworkUrl ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <img 
+                      <StorageImage 
                         src={artworkUrl} 
                         alt="Artwork Preview" 
                         style={{ width: '60px', height: '60px', objectFit: 'contain', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }} 

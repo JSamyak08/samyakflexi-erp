@@ -4,6 +4,9 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import adminUsers from './api/admin-users.js';
+import sendEmail from './api/send-email.js';
+import { readSmtpConfig } from './api/smtpConfig.js';
 
 dotenv.config();
 
@@ -16,147 +19,35 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 5050;
 
-// Hostinger SMTP Transporter Setup
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.hostinger.com',
-  port: parseInt(process.env.SMTP_PORT || '465', 10),
-  secure: process.env.SMTP_SECURE === 'true' || parseInt(process.env.SMTP_PORT, 10) === 465, // true for 465 SSL/TLS
-  auth: {
-    user: process.env.SMTP_USER || 'admin@samyakinternational.in',
-    pass: process.env.SMTP_PASS || '',
-  },
-  tls: {
-    rejectUnauthorized: false
-  }
-});
-
-// Verify SMTP connection on startup
-transporter.verify((error, success) => {
-  if (error) {
-    console.error('❌ Hostinger SMTP Connection Error:', error.message);
-  } else {
-    console.log('✅ Hostinger SMTP Transporter is ready to send emails via admin@samyakinternational.in');
-  }
-});
-
-/**
- * API Endpoint: Password Recovery Email Dispatch
- */
-app.post('/api/recover-password', async (req, res) => {
-  const { email } = req.body;
-
-  if (!email) {
-    return res.status(400).json({ success: false, message: 'Work Email address is required.' });
-  }
-
-  // Generate a random 6-digit OTP verification code
-  const recoveryCode = Math.floor(100000 + Math.random() * 900000).toString();
-
-  const mailOptions = {
-    from: `"Samyak International ERP" <${process.env.SMTP_USER || 'admin@samyakinternational.in'}>`,
-    to: email,
-    subject: "🔐 Password Recovery Request — SamyakFlexi ERP",
-    html: `
-      <div style="font-family: Arial, sans-serif; background-color: #f8fafc; padding: 30px; border-radius: 10px; max-width: 600px; margin: 0 auto; color: #0f172a;">
-        <div style="text-align: center; margin-bottom: 20px;">
-          <h2 style="color: #0f172a; margin-bottom: 4px;">Samyak International Ltd</h2>
-          <p style="color: #64748b; font-size: 13px; margin: 0;">Flexible Packaging Manufacturing Division • Indore Plant</p>
-        </div>
-        
-        <div style="background: #ffffff; padding: 24px; border-radius: 8px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-          <h3 style="color: #0f172a; font-size: 18px; margin-top: 0;">Password Recovery Code</h3>
-          <p style="color: #475569; font-size: 14px; line-height: 1.5;">
-            We received a password reset request for your ERP account associated with <strong>${email}</strong>.
-          </p>
-
-          <div style="background: #f1f5f9; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 16px; text-align: center; margin: 20px 0;">
-            <span style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 6px;">Your 6-Digit Verification Code</span>
-            <span style="font-size: 32px; font-weight: 800; color: #0f172a; letter-spacing: 6px;">${recoveryCode}</span>
-          </div>
-
-          <p style="color: #475569; font-size: 13px;">
-            Please enter this verification code on the ERP login screen to set a new password. This code will expire in 15 minutes.
-          </p>
-
-          <div style="border-top: 1px solid #f1f5f9; margin-top: 20px; padding-top: 16px; font-size: 12px; color: #94a3b8;">
-            If you did not request a password reset, please ignore this email or notify IT Security.
-          </div>
-        </div>
-
-        <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #94a3b8;">
-          GSTIN: 23AABCM3526F1ZY • Kheda Industrial Area, Pithampur, MP
-        </div>
-      </div>
-    `
-  };
-
-  try {
-    const info = await transporter.sendMail(mailOptions);
-    return res.status(200).json({ 
-      success: true, 
-      message: `Password recovery instructions sent to ${email}`
-    });
-  } catch (error) {
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Failed to send recovery email. Please check email address and SMTP server settings.',
-      error: error.message 
-    });
-  }
-});
-
-// Helper to filter out external vendor/customer emails and restrict to internal domains
-function filterInternalRecipientsOnly(emailInput, defaultInternal = 'admin@samyakinternational.in') {
-  if (!emailInput) return defaultInternal;
-  const internalDomainRegex = /@(samyakinternational\.in|plant\.com|samyak\.com|samyakflexi\.com)$/i;
-
-  const emails = String(emailInput)
-    .split(/[,;]/)
-    .map(e => e.trim())
-    .filter(Boolean);
-
-  const internalOnly = emails.filter(e => {
-    const clean = e.toLowerCase();
-    if (clean.includes('vendor') || clean.includes('customer') || clean.includes('client') || clean.includes('supplier')) {
-      return false;
+// Verify SMTP on startup when it is fully configured. A missing setting is logged
+// and does not stop the API. Mail routes refuse to send until the same settings exist.
+try {
+  const smtp = readSmtpConfig(process.env);
+  const transporter = nodemailer.createTransport(smtp);
+  transporter.verify((error) => {
+    if (error) {
+      console.error('SMTP connection check failed:', error.message);
+    } else {
+      console.log('SMTP transporter is ready.');
     }
-    return internalDomainRegex.test(clean);
   });
-
-  return internalOnly.length > 0 ? internalOnly.join(', ') : defaultInternal;
+} catch (error) {
+  console.error(error.message || 'SMTP is not configured. Mail routes will return an error until it is set.');
 }
 
 /**
- * API Endpoint: General ERP Transactional Email Dispatch
+ * Retired one-time-code reset. Supabase Auth sends the real reset link.
  */
-app.post('/api/send-email', async (req, res) => {
-  const { to, cc, subject, html, text } = req.body;
-
-  const sanitizedTo = filterInternalRecipientsOnly(to, 'admin@samyakinternational.in');
-  const sanitizedCc = cc ? filterInternalRecipientsOnly(cc, '') : '';
-
-  if (!sanitizedTo || !subject) {
-    return res.status(400).json({ success: false, message: 'Recipient internal email and subject are required.' });
-  }
-
-  const mailOptions = {
-    from: `"Samyak International ERP" <${process.env.SMTP_USER || 'admin@samyakinternational.in'}>`,
-    to: sanitizedTo,
-    ...(sanitizedCc ? { cc: sanitizedCc } : {}),
-    subject,
-    text,
-    html
-  };
-
-  try {
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`✉️ Internal notification email sent to ${sanitizedTo} ${sanitizedCc ? `(cc: ${sanitizedCc})` : ''} (Message ID: ${info.messageId})`);
-    return res.status(200).json({ success: true, messageId: info.messageId });
-  } catch (error) {
-    console.error('❌ Notification email error:', error);
-    return res.status(500).json({ success: false, message: error.message });
-  }
+app.post('/api/recover-password', (req, res) => {
+  return res.status(410).json({
+    success: false,
+    message: 'Password reset is handled by Supabase Auth. Use Forgot password on the login screen.'
+  });
 });
+
+app.post('/api/admin-users', (req, res) => adminUsers(req, res));
+
+app.post('/api/send-email', (req, res) => sendEmail(req, res));
 
 // Serve static assets in production if built
 if (process.env.NODE_ENV === 'production') {

@@ -272,10 +272,35 @@ export function emergencyCleanLocalStorage() {
   }
 }
 
+const BUSINESS_LOCAL_KEYS = new Set([
+  'samyak_erp_issued_pos',
+  'samyak_erp_stock_adjustments',
+  'samyak_erp_custom_barcodes',
+  'samyak_po_discrepancy_resolutions',
+  'samyak_erp_scrap_disposals',
+  'samyak_erp_store_issue_transactions',
+  'sfg_scrap_items',
+  'sfg_qc_hold_items',
+  'samyak_erp_sales_quotations',
+  'samyak_coa_templates',
+  'samyak_erp_notifications',
+  'samyak_erp_audit_logs',
+  'samyak_cache_audit_logs'
+]);
+
+/** Business records belong in Supabase. UI caches and Auth session keys are allowed. */
+export function isBusinessLocalKey(key) {
+  if (!key) return false;
+  if (BUSINESS_LOCAL_KEYS.has(key)) return true;
+  return key.startsWith('samyak_cache_') || key.startsWith('samyak_erp_jobcard_settings_');
+}
+
 /**
- * Safely writes data to localStorage with automatic IndexedDB backing
+ * Safely writes data to localStorage with automatic IndexedDB backing.
+ * Refuses business records so a failed database write cannot look saved.
  */
 export function safeLocalStorageSet(key, value) {
+  if (isBusinessLocalKey(key)) return;
   if (typeof window === 'undefined' || !window.localStorage) return;
 
   // 1. Always back up full value to IndexedDB

@@ -37,7 +37,7 @@ import {
   UploadCloud,
   Download
 } from 'lucide-react';
-import { calculateUtilisation } from '../dataStore';
+import { calculateUtilisation, parseGsmValue, getJobPrintedQtyKg, productionRecordPrintedKg } from '../dataStore';
 import { FILM_DENSITIES, isLDFilm, getFilmSlitWidth, isMetalloceneEligibleFilm, METALLOCENE_OPTIONS } from '../factoryStore';
 import CylinderJobCardForm from '../CylinderJobCardForm';
 import { saveJobMasterToSupabase, saveCylinderToSupabase } from '../services/supabaseDataService';
@@ -112,15 +112,20 @@ export default function JobMasterDirectory({
       return;
     }
     const targetCyl = (cylinders || []).find(c => c.id === selectedExistingCylId || c.sku === selectedExistingCylId);
-    if (onLinkCylinderToJobMaster) {
-      await onLinkCylinderToJobMaster(selectedExistingCylId, linkingJobMaster.id);
-    } else {
-      if (onUpdateJobMaster) {
-        onUpdateJobMaster({ ...linkingJobMaster, cylinderSku: targetCyl?.sku || linkingJobMaster.skuCode, cylinderId: selectedExistingCylId });
+    try {
+      if (onLinkCylinderToJobMaster) {
+        await onLinkCylinderToJobMaster(selectedExistingCylId, linkingJobMaster.id);
+      } else {
+        if (onUpdateJobMaster) {
+          await onUpdateJobMaster({ ...linkingJobMaster, cylinderSku: targetCyl?.sku || linkingJobMaster.skuCode, cylinderId: selectedExistingCylId });
+        }
+        if (onUpdateCylinder) {
+          await onUpdateCylinder({ ...targetCyl, jobMasterId: linkingJobMaster.id, sku: linkingJobMaster.skuCode || targetCyl.sku });
+        }
       }
-      if (onUpdateCylinder) {
-        onUpdateCylinder({ ...targetCyl, jobMasterId: linkingJobMaster.id, sku: linkingJobMaster.skuCode || targetCyl.sku });
-      }
+    } catch (err) {
+      alert(err?.name === 'PartialSaveError' ? err.message : `The link was not saved: ${err.message || err}`);
+      return;
     }
     setLinkingJobMaster(null);
     alert(`✅ Job Master (${linkingJobMaster.skuCode}) successfully linked to Cylinder (${targetCyl?.sku || selectedExistingCylId})!`);
@@ -157,11 +162,16 @@ export default function JobMasterDirectory({
       cylinderId: newCylId
     };
 
-    if (onCreateAndLinkPair) {
-      await onCreateAndLinkPair({ cylinder: newCyl, jobMaster: updatedJm });
-    } else {
-      if (onAddCylinder) await onAddCylinder(newCyl);
-      if (onUpdateJobMaster) await onUpdateJobMaster(updatedJm);
+    try {
+      if (onCreateAndLinkPair) {
+        await onCreateAndLinkPair({ cylinder: newCyl, jobMaster: updatedJm });
+      } else {
+        if (onAddCylinder) await onAddCylinder(newCyl);
+        if (onUpdateJobMaster) await onUpdateJobMaster(updatedJm);
+      }
+    } catch (err) {
+      alert(err?.name === 'PartialSaveError' ? err.message : `The cylinder link was not saved: ${err.message || err}`);
+      return;
     }
 
     setLinkingJobMaster(null);
@@ -171,10 +181,11 @@ export default function JobMasterDirectory({
   // Auto-select job master if unique id is present in URL params
   React.useEffect(() => {
     if (urlParams && urlParams.id && jobMasters && jobMasters.length > 0) {
+      const paramId = String(urlParams.id).toLowerCase();
       const match = jobMasters.find(j => 
-        j.id === urlParams.id || 
+        j && (j.id === urlParams.id || 
         j.skuCode === urlParams.id || 
-        (j.jobName && j.jobName.toLowerCase().includes(urlParams.id.toLowerCase()))
+        (j.jobName && String(j.jobName).toLowerCase().includes(paramId)))
       );
       if (match) {
         setSelectedJob(match);
@@ -256,7 +267,7 @@ export default function JobMasterDirectory({
   const filteredClients = useMemo(() => {
     const query = (clientSearchTerm || '').toLowerCase().trim();
     if (!query) return allClientOptions;
-    return allClientOptions.filter(c => c.name.toLowerCase().includes(query));
+    return allClientOptions.filter(c => c && String(c.name || '').toLowerCase().includes(query));
   }, [allClientOptions, clientSearchTerm]);
 
   const handleDownloadSampleCSV = () => {
@@ -1007,8 +1018,8 @@ export default function JobMasterDirectory({
         orderType: materialForm === 'Pouching Form' ? 'Pouching' : 'Reel',
         materialFormat: materialForm === 'Pouching Form' ? 'Pouching' : 'Reel',
         layers,
-        inkGsm: parseFloat(inkGsm) || 1.5,
-        adhesiveGsm: parseFloat(adhesiveGsm) || 1.5,
+        inkGsm: parseGsmValue(inkGsm),
+        adhesiveGsm: parseGsmValue(adhesiveGsm),
         processRouting: sanitizedRouting,
         cylinderSku: skuCode.trim(),
         cylinderCost: `₹ ${parseInt(cylinderCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
@@ -1023,7 +1034,12 @@ export default function JobMasterDirectory({
         specialInstructions: specialInstructions || ''
       };
 
-      if (onUpdateJobMaster) await onUpdateJobMaster(updatedJobMaster);
+      try {
+        if (onUpdateJobMaster) await onUpdateJobMaster(updatedJobMaster);
+      } catch (err) {
+        alert(err?.name === 'PartialSaveError' ? err.message : `The job master was not saved: ${err.message || err}`);
+        return;
+      }
       setIsCreateModalOpen(false);
       setSelectedJob(updatedJobMaster);
       alert(`Job Master ${updatedJobMaster.id} updated successfully!`);
@@ -1047,8 +1063,8 @@ export default function JobMasterDirectory({
       orderType: materialForm === 'Pouching Form' ? 'Pouching' : 'Reel',
       materialFormat: materialForm === 'Pouching Form' ? 'Pouching' : 'Reel',
       layers,
-      inkGsm: parseFloat(inkGsm) || 1.5,
-      adhesiveGsm: parseFloat(adhesiveGsm) || 1.5,
+      inkGsm: parseGsmValue(inkGsm),
+      adhesiveGsm: parseGsmValue(adhesiveGsm),
       processRouting: sanitizedRouting,
       cylinderSku: skuCode.trim(),
       cylinderCost: `₹ ${parseInt(cylinderCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
@@ -1064,32 +1080,42 @@ export default function JobMasterDirectory({
       creationDate: new Date().toISOString().split('T')[0]
     };
 
-    if (onAddJobMaster) await onAddJobMaster(newJobMaster);
+    try {
+      if (onAddJobMaster) await onAddJobMaster(newJobMaster);
+    } catch (err) {
+      alert(err?.name === 'PartialSaveError' ? err.message : `The job master was not saved: ${err.message || err}`);
+      return;
+    }
 
     if (createCylinder && onAddCylinder) {
-      await onAddCylinder({
-        id: Date.now(),
-        sku: skuCode.trim(),
-        jobName: jobName.trim(),
-        clientGroup: clientName.trim(),
-        colorsCount: parseInt(colorsCount) || 6,
-        cylinderCost: `₹ ${parseInt(cylinderCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-        engravuresName,
-        costBorneBy,
-        costBorneType: costBorneBy.includes('Client') ? 'client' : (costBorneBy.includes('Us') ? 'us' : 'both'),
-        circumferenceMm: parseFloat(repeatLengthMm) || 400,
-        faceLengthMm: parseFloat(faceLengthMm) || 1050,
-        printWidthMm: parseFloat(printWidthMm) || 1000,
-        layer1PrintedQtyKg: 0,
-        dispatchedQty: 0,
-        utilisationLimit: parseFloat(utilisationLimit) || 10000,
-        status: 'Active In-Use',
-        silLogo: silLogo || '',
-        arcMark: arcMark || 'Yes',
-        slittingMark: slittingMark || 'Yes',
-        trackerLine: trackerLine || 'Yes',
-        specialInstructions: specialInstructions || ''
-      });
+      try {
+        await onAddCylinder({
+          id: Date.now(),
+          sku: skuCode.trim(),
+          jobName: jobName.trim(),
+          clientGroup: clientName.trim(),
+          colorsCount: parseInt(colorsCount) || 6,
+          cylinderCost: `₹ ${parseInt(cylinderCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          engravuresName,
+          costBorneBy,
+          costBorneType: costBorneBy.includes('Client') ? 'client' : (costBorneBy.includes('Us') ? 'us' : 'both'),
+          circumferenceMm: parseFloat(repeatLengthMm) || 400,
+          faceLengthMm: parseFloat(faceLengthMm) || 1050,
+          printWidthMm: parseFloat(printWidthMm) || 1000,
+          layer1PrintedQtyKg: 0,
+          dispatchedQty: 0,
+          utilisationLimit: parseFloat(utilisationLimit) || 10000,
+          status: 'Active In-Use',
+          silLogo: silLogo || '',
+          arcMark: arcMark || 'Yes',
+          slittingMark: slittingMark || 'Yes',
+          trackerLine: trackerLine || 'Yes',
+          specialInstructions: specialInstructions || ''
+        });
+      } catch (err) {
+        alert(err?.name === 'PartialSaveError' ? err.message : `The job master was saved, but the linked cylinder was not: ${err.message || err}`);
+        return;
+      }
     }
 
     setIsCreateModalOpen(false);
@@ -2096,9 +2122,14 @@ export default function JobMasterDirectory({
   if (selectedJob) {
     const linkedCylinder = getLinkedCylinder(selectedJob);
     const jobHistory = getJobProductionRecords(selectedJob);
-    const utilPercentage = linkedCylinder 
-      ? calculateUtilisation(linkedCylinder.dispatchedQty, linkedCylinder.utilisationLimit || 10000)
-      : 0;
+    const printedQtyKg = getJobPrintedQtyKg(selectedJob, {
+      productionRecords,
+      orders,
+      cylinder: linkedCylinder
+    });
+    const wearLimit = Number(linkedCylinder?.utilisationLimit || selectedJob.utilisationLimit) || 10000;
+    const utilPercentage = calculateUtilisation(printedQtyKg, wearLimit);
+    const wearHigh = Number(utilPercentage) >= 80;
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -2241,11 +2272,11 @@ export default function JobMasterDirectory({
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px', background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                 <div>
                   <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Pre-Costing Target Dry Ink GSM</span>
-                  <strong style={{ fontSize: '0.95rem', color: '#0284c7' }}>{selectedJob.inkGsm || 1.5} g/m²</strong>
+                  <strong style={{ fontSize: '0.95rem', color: '#0284c7' }}>{parseGsmValue(selectedJob.inkGsm)} g/m²</strong>
                 </div>
                 <div>
                   <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Pre-Costing Target Adhesive GSM</span>
-                  <strong style={{ fontSize: '0.95rem', color: '#0284c7' }}>{selectedJob.adhesiveGsm || 1.5} g/m²</strong>
+                  <strong style={{ fontSize: '0.95rem', color: '#0284c7' }}>{parseGsmValue(selectedJob.adhesiveGsm)} g/m²</strong>
                 </div>
               </div>
             </div>
@@ -2409,7 +2440,7 @@ export default function JobMasterDirectory({
                         <span className="badge badge-success">{r.status || 'Approved'}</span>
                       </div>
                       <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                        Date: {r.logDate || 'Recent'} | Output: <strong>{r.totalOutputKg || 0} kg</strong>
+                        Date: {r.dateFilled || r.logDate || 'Recent'} | Output: <strong>{productionRecordPrintedKg(r)} kg</strong>
                       </div>
                     </div>
                   ))}
@@ -2422,8 +2453,8 @@ export default function JobMasterDirectory({
             <h3 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Printer size={18} style={{ color: '#2563eb' }} /> Rotogravure Cylinder & Amortization
             </h3>
-            {linkedCylinder ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {linkedCylinder ? (
                 <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                     <span style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>{linkedCylinder.sku}</span>
@@ -2435,20 +2466,23 @@ export default function JobMasterDirectory({
                     <div>Cost Borne By: <strong>{linkedCylinder.costBorneBy || selectedJob.costBorneBy}</strong></div>
                   </div>
                 </div>
-                <div style={{ background: '#ffffff', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <h4 style={{ fontSize: '0.85rem', fontWeight: '700', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <TrendingUp size={16} /> Cylinder Wear Amortization Status
-                  </h4>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '4px' }}>
-                    <span>Run: <strong>{linkedCylinder.dispatchedQty || 0} kg</strong></span>
-                    <span style={{ fontWeight: '800', color: utilPercentage >= 80 ? '#d97706' : '#059669' }}>{utilPercentage}% Wear</span>
+              ) : (
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>No Rotogravure Cylinder linked to this Job Master. Wear below uses this job's utilisation limit and the printed quantity from production records.</p>
+              )}
+              <div style={{ background: '#ffffff', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <h4 style={{ fontSize: '0.85rem', fontWeight: '700', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <TrendingUp size={16} /> Cylinder Wear Amortization Status
+                </h4>
+                <div style={{ fontSize: '0.8rem', marginBottom: '4px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <div>Printed quantity: <strong>{printedQtyKg.toLocaleString()} kg</strong></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                    <span>Run: <strong>{printedQtyKg.toLocaleString()} kg / {wearLimit.toLocaleString()} kg</strong></span>
+                    <span style={{ fontWeight: '800', color: wearHigh ? '#d97706' : '#059669' }}>{utilPercentage}% Wear</span>
                   </div>
-                  <div className="progress-container"><div className="progress-fill" style={{ width: `${utilPercentage}%`, background: utilPercentage >= 80 ? '#d97706' : '#0f172a' }}></div></div>
                 </div>
+                <div className="progress-container"><div className="progress-fill" style={{ width: `${utilPercentage}%`, background: wearHigh ? '#d97706' : '#0f172a' }}></div></div>
               </div>
-            ) : (
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>No Rotogravure Cylinder linked to this Job Master.</p>
-            )}
+            </div>
           </div>
         </div>
 

@@ -50,8 +50,9 @@ import { getNextDocRefNumber, generateDocRefNumber, getInventoryAgeingSettings }
 import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo, sortBatchesByFifo, getItemInwardDate, parseDateFlexible } from '../utils/fifoUtils';
 import { notifyGRNPendingQC, notifyGRNQCVarianceModified } from '../services/emailService';
 
-import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, saveSystemSetting } from '../services/supabaseDataService';
-import { safeLocalStorageSet, safeLocalStorageGet } from '../utils/safeStorage';
+import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName } from '../services/supabaseDataService';
+import { supabase } from '../services/supabaseClient';
+import { fetchPayloadRecords, replacePayloadRecords, describeSaveError } from '../services/businessRecords';
 import { pushSlugState } from '../utils/slugRouter';
 import { 
   isReconciliationDue, 
@@ -68,6 +69,7 @@ import {
   calculateOrderStockReservations,
   parseStandardDate
 } from '../factoryStore';
+import { codeKey, codeKeyFrom, codeStartsWith, codesEqual, textFrom } from '../utils/barcodeCode';
 
 export const INVENTORY_CATEGORIES = [
   "Film Substrates",
@@ -192,6 +194,7 @@ export default function InventoryManagement({
   grns = [], 
   vendors = [], 
   orders = [], 
+  purchaseOrders = [],
   indents = [],
   inks = [],
   jobMasters = [],
@@ -586,27 +589,41 @@ export default function InventoryManagement({
   }, [qcInspectingGRN, qcEditNetWeightKg, qcEditWidthMm, qcEditMicron, qcEditBatchNo, qcEditFilmType, qcEditRollsReceived]);
 
   // Updatable Barcodes & Stock Ledger Adjustments state
-  const [customBarcodesMap, setCustomBarcodesMap] = useState(() => {
-    return safeLocalStorageGet('samyak_erp_custom_barcodes', {});
-  });
+  const [customBarcodesMap, setCustomBarcodesMap] = useState({});
 
-  const [stockLedgerAdjustments, setStockLedgerAdjustments] = useState(() => {
-    const list = safeLocalStorageGet('samyak_erp_stock_adjustments', []);
-    return Array.isArray(list) ? list.filter(adj => !['ADJ-2026-001', 'ADJ-2026-002'].includes(adj.id)) : [];
-  });
+  const [stockLedgerAdjustments, setStockLedgerAdjustments] = useState([]);
 
-  const [localStoreIssueTransactions, setLocalStoreIssueTransactions] = useState(() => {
-    try {
-      const saved = localStorage.getItem('samyak_erp_store_issue_transactions');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
+  const effectiveStoreIssueTransactions = storeIssueTransactions || [];
+
+  useEffect(() => {
+    let active = true;
+    async function loadLedgers() {
+      try {
+        const [barcodes, adjustments, resolutions] = await Promise.all([
+          fetchPayloadRecords(supabase, 'custom_barcodes'),
+          fetchPayloadRecords(supabase, 'stock_adjustments'),
+          fetchPayloadRecords(supabase, 'po_discrepancy_resolutions')
+        ]);
+        if (!active) return;
+        const barcodeMap = {};
+        (barcodes || []).forEach((row) => {
+          if (row?.id) barcodeMap[row.id] = row.barcode || '';
+        });
+        setCustomBarcodesMap(barcodeMap);
+        setStockLedgerAdjustments((adjustments || []).filter(adj => !['ADJ-2026-001', 'ADJ-2026-002'].includes(adj.id)));
+        const resolutionMap = {};
+        (resolutions || []).forEach((row) => {
+          if (row?.id) resolutionMap[row.poNumber || row.id] = row;
+        });
+        setPoResolutions(resolutionMap);
+      } catch (err) {
+        console.error(err);
+        alert(`Inventory ledgers could not be loaded from the database: ${describeSaveError(err)}`);
+      }
     }
-  });
-
-  const effectiveStoreIssueTransactions = storeIssueTransactions && storeIssueTransactions.length > 0
-    ? storeIssueTransactions
-    : localStoreIssueTransactions;
+    loadLedgers();
+    return () => { active = false; };
+  }, []);
 
   const [editingTxId, setEditingTxId] = useState(null);
   const [editingBarcodeVal, setEditingBarcodeVal] = useState('');
@@ -679,20 +696,21 @@ export default function InventoryManagement({
     "CPP Natural", "Metalised CPP", "Liquid Inks", "Solvent-less Adhesive", "Solvents"
   ];
 
-  const handleSaveCustomBarcode = (txId, newBarcodeStr) => {
+  const handleSaveCustomBarcode = async (txId, newBarcodeStr) => {
     if (!newBarcodeStr.trim()) return;
     const updated = { ...customBarcodesMap, [txId]: newBarcodeStr.trim() };
-    setCustomBarcodesMap(updated);
-    safeLocalStorageSet('samyak_erp_custom_barcodes', updated);
-    saveSystemSetting('custom_barcodes', updated).catch(console.warn);
-    if (typeof window !== 'undefined' && window.__samyakBroadcastSync) {
-      window.__samyakBroadcastSync('system_settings');
+    const rows = Object.entries(updated).map(([id, barcode]) => ({ id, barcode }));
+    try {
+      await replacePayloadRecords(supabase, 'custom_barcodes', rows);
+      setCustomBarcodesMap(updated);
+      setEditingTxId(null);
+      setEditingBarcodeVal('');
+    } catch (err) {
+      alert(`The barcode was not saved: ${describeSaveError(err)}`);
     }
-    setEditingTxId(null);
-    setEditingBarcodeVal('');
   };
 
-  const handleAddLedgerAdjustment = (e, targetItem) => {
+  const handleAddLedgerAdjustment = async (e, targetItem) => {
     if (e) e.preventDefault();
     const item = targetItem || selectedItemForPurchaseHistory;
     if (!item) return;
@@ -717,11 +735,12 @@ export default function InventoryManagement({
     };
 
     const updated = [newAdj, ...stockLedgerAdjustments];
-    setStockLedgerAdjustments(updated);
-    safeLocalStorageSet('samyak_erp_stock_adjustments', updated);
-    saveSystemSetting('stock_adjustments', updated).catch(console.warn);
-    if (typeof window !== 'undefined' && window.__samyakBroadcastSync) {
-      window.__samyakBroadcastSync('system_settings');
+    try {
+      await replacePayloadRecords(supabase, 'stock_adjustments', updated);
+      setStockLedgerAdjustments(updated);
+    } catch (err) {
+      alert(`The stock adjustment was not saved: ${describeSaveError(err)}`);
+      return;
     }
 
     // Update item available stock in main inventory list for the specific item
@@ -732,7 +751,12 @@ export default function InventoryManagement({
         }
         return invItem;
       });
-      onUpdateInventory(updatedInv);
+      try {
+        await onUpdateInventory(updatedInv);
+      } catch (err) {
+        alert(`The stock quantity was not saved: ${describeSaveError(err)}`);
+        return;
+      }
     }
 
     setIsQuickAdjOpen(false);
@@ -791,7 +815,7 @@ export default function InventoryManagement({
   };
 
   // Save Dispatch Shipment Handler (Scale #4 Station)
-  const handleSaveDispatchShipment = (e) => {
+  const handleSaveDispatchShipment = async (e) => {
     e.preventDefault();
     if (!dispatchJobName || !dispatchClientName || !dispatchVehicleNo) {
       alert("Job Name, Client Name, and Vehicle Number are required for Dispatch!");
@@ -823,8 +847,17 @@ export default function InventoryManagement({
       items: dispatchRollsList
     };
 
-    if (onAddDispatchShipment) {
-      onAddDispatchShipment(newShipment);
+    try {
+      if (onAddDispatchShipment) await onAddDispatchShipment(newShipment);
+    } catch (err) {
+      alert(err?.name === 'PartialSaveError'
+        ? err.message
+        : `The packing list was not saved: ${err.message || err}`);
+      if (err?.name === 'PartialSaveError') {
+        setIsNewDispatchModalOpen(false);
+        setSelectedDispatchForPackingList(newShipment);
+      }
+      return;
     }
 
     setIsNewDispatchModalOpen(false);
@@ -866,6 +899,7 @@ export default function InventoryManagement({
   // Inward GRN Form State
   const [grnVendor, setGrnVendor] = useState(vendors[0]?.companyName || '');
   const [grnPoNo, setGrnPoNo] = useState('');
+  const [isManualPoEntry, setIsManualPoEntry] = useState(false);
   const [grnInvoiceNo, setGrnInvoiceNo] = useState('');
   const [grnCategory, setGrnCategory] = useState('Film Substrates');
   const [grnItemName, setGrnItemName] = useState('');
@@ -1231,41 +1265,23 @@ export default function InventoryManagement({
   const [resolvingPoDiscrepancy, setResolvingPoDiscrepancy] = useState(null);
   const [resolutionAction, setResolutionAction] = useState('UPDATE_PO_RATE'); // 'UPDATE_PO_RATE' or 'ENFORCE_PO_RATE'
   const [resolutionNotes, setResolutionNotes] = useState('');
-  const [poResolutions, setPoResolutions] = useState(() => {
-    return safeLocalStorageGet('samyak_po_discrepancy_resolutions', {});
-  });
+  const [poResolutions, setPoResolutions] = useState({});
 
   // Unified Platform-wide Issued Purchase Orders Aggregator
   const unifiedIssuedPOs = React.useMemo(() => {
     const list = [];
     const seenPoNumbers = new Set();
 
-    // 1. Load from purchase orders cache & safeLocalStorage
-    const cachedTableList = safeLocalStorageGet('samyak_cache_purchase_orders', []);
-    if (Array.isArray(cachedTableList)) {
-      cachedTableList.forEach(po => {
-        if (po && po.poNumber && !seenPoNumbers.has(po.poNumber)) {
-          seenPoNumbers.add(po.poNumber);
-          list.push({
-            ...po,
-            source: po.source || 'Purchase Order Module'
-          });
-        }
-      });
-    }
-
-    const parsed = safeLocalStorageGet('samyak_erp_issued_pos', {});
-    if (parsed && typeof parsed === 'object') {
-      Object.values(parsed).forEach(po => {
-        if (po && po.poNumber && !seenPoNumbers.has(po.poNumber)) {
-          seenPoNumbers.add(po.poNumber);
-          list.push({
-            ...po,
-            source: po.source || 'Vendor / Purchase Requisition'
-          });
-        }
-      });
-    }
+    const propList = Array.isArray(purchaseOrders) ? purchaseOrders : [];
+    propList.forEach(po => {
+      if (po && po.poNumber && !seenPoNumbers.has(po.poNumber)) {
+        seenPoNumbers.add(po.poNumber);
+        list.push({
+          ...po,
+          source: po.source || 'Purchase Order Module'
+        });
+      }
+    });
 
     // 2. Scrape from Order Material Requirements
     (orders || []).forEach(ord => {
@@ -1369,31 +1385,93 @@ export default function InventoryManagement({
         deliveryStatus = 'Partial Delivery';
       }
 
+      // Enhanced Discrepancy & Variation Detection across Rate, Quantity, Item Name, and Remarks
+      let rateVariations = [];
+      let qtyVariations = [];
+      let itemVariations = [];
+      let variationNotesList = [];
       let priceDiscrepancy = null;
       let historicalMismatch = null;
       const resolvedInfo = poResolutions[po.poNumber] || po.priceDiscrepancyResolution || null;
 
       matchingGRNs.forEach(g => {
         const grnRate = parseFloat(g.purchaseRatePerKg || g.purchaseRate || g.unitPrice) || 0;
-        (po.items || []).forEach(it => {
-          const poRate = parseFloat(it.rate) || 0;
-          if (grnRate > 0 && poRate > 0 && Math.abs(grnRate - poRate) > 0.5) {
-            const mismatchData = {
-              poRate,
-              grnRate,
-              variance: grnRate - poRate,
-              grnNo: g.grnNo,
-              itemId: it.itemId || it.id,
-              itemName: it.itemDesc || it.description || it.itemName || 'Material Item',
-              message: `⚠️ Rate Mismatch: PO Rate ₹${poRate}/kg vs Inward GRN Rate ₹${grnRate}/kg (₹${(grnRate - poRate).toFixed(2)} variance)`
-            };
-            historicalMismatch = mismatchData;
-            if (!resolvedInfo) {
-              priceDiscrepancy = mismatchData;
-            }
-          }
-        });
+        const grnQty = parseFloat(g.netWeightKg || g.receivedQtyKg || g.quantity) || 0;
+        const grnItemName = (g.itemName || '').trim();
+        const firstPoItem = (po.items || [])[0] || {};
+        const poRate = parseFloat(g.agreedPoRate || firstPoItem.rate) || 0;
+        const poItemName = (g.originalPoItemName || firstPoItem.itemDesc || firstPoItem.itemName || '').trim();
+        const poItemOrderedQty = parseFloat(g.orderedPoQtyKg || firstPoItem.qtyKg || totalPoQty) || 0;
+
+        // 1. Rate variation check
+        if (grnRate > 0 && poRate > 0 && Math.abs(grnRate - poRate) > 0.05) {
+          rateVariations.push({
+            grnNo: g.grnNo || g.grnNumber,
+            poRate,
+            grnRate,
+            variance: grnRate - poRate,
+            variancePct: ((grnRate - poRate) / poRate * 100).toFixed(1)
+          });
+        }
+
+        // 2. Quantity variation check
+        if (g.variations?.hasQtyVariation || (poItemOrderedQty > 0 && grnQty > 0 && Math.abs(grnQty - poItemOrderedQty) > 0.1)) {
+          const qVariance = g.variations?.qtyVariance !== undefined ? g.variations.qtyVariance : (grnQty - poItemOrderedQty);
+          qtyVariations.push({
+            grnNo: g.grnNo || g.grnNumber,
+            orderedQty: poItemOrderedQty,
+            receivedQty: grnQty,
+            variance: qVariance,
+            variancePct: poItemOrderedQty > 0 ? ((qVariance / poItemOrderedQty) * 100).toFixed(1) : '0.0',
+            isShort: qVariance < 0
+          });
+        }
+
+        // 3. Item Name variation check
+        if (g.variations?.hasItemVariation || (poItemName && grnItemName && poItemName.toLowerCase() !== grnItemName.toLowerCase())) {
+          itemVariations.push({
+            grnNo: g.grnNo || g.grnNumber,
+            poItemName: g.variations?.poItemName || poItemName,
+            inwardItemName: g.variations?.inwardItemName || grnItemName
+          });
+        }
+
+        // 4. Variation Notes / Remarks
+        const note = g.variations?.variationReason || g.itemRemarks || g.remarks || g.notes;
+        if (note && note.trim() && !note.toLowerCase().includes('inward grn issued directly') && !note.toLowerCase().includes('inward grn created directly')) {
+          variationNotesList.push({ grnNo: g.grnNo || g.grnNumber, note: note.trim() });
+        }
       });
+
+      // Overall PO Quantity Variance check if goods arrived
+      if (matchingGRNs.length > 0 && totalPoQty > 0 && totalInwardQty > 0 && Math.abs(totalInwardQty - totalPoQty) > 0.1 && qtyVariations.length === 0) {
+        const netDiff = totalInwardQty - totalPoQty;
+        qtyVariations.push({
+          grnNo: matchingGRNs.map(g => g.grnNo || g.grnNumber).join(', '),
+          orderedQty: totalPoQty,
+          receivedQty: totalInwardQty,
+          variance: netDiff,
+          variancePct: ((netDiff / totalPoQty) * 100).toFixed(1),
+          isShort: netDiff < 0
+        });
+      }
+
+      if (rateVariations.length > 0) {
+        const primary = rateVariations[0];
+        const mismatchData = {
+          poRate: primary.poRate,
+          grnRate: primary.grnRate,
+          variance: primary.variance,
+          grnNo: primary.grnNo,
+          message: `⚠️ Rate Mismatch: PO Rate ₹${primary.poRate}/kg vs Inward GRN Rate ₹${primary.grnRate}/kg (${primary.variance > 0 ? '+' : ''}₹${primary.variance.toFixed(2)} variance)`
+        };
+        historicalMismatch = mismatchData;
+        if (!resolvedInfo) {
+          priceDiscrepancy = mismatchData;
+        }
+      }
+
+      const hasAnyVariation = rateVariations.length > 0 || qtyVariations.length > 0 || itemVariations.length > 0;
 
       return {
         ...po,
@@ -1406,14 +1484,164 @@ export default function InventoryManagement({
         pendingInwardQty,
         deliveryStatus,
         matchingGRNs,
+        rateVariations,
+        qtyVariations,
+        itemVariations,
+        variationNotesList,
+        hasAnyVariation,
         priceDiscrepancy,
         historicalMismatch,
         priceDiscrepancyResolution: resolvedInfo
       };
     });
-  }, [orders, indents, grns, vendors, poResolutions]);
+  }, [purchaseOrders, orders, indents, grns, vendors, poResolutions]);
 
-  const handleConfirmResolveDiscrepancy = () => {
+  // Helper to normalize strings for robust vendor comparison
+  const normalizeVendorStr = (str) => String(str || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+  // Helper to check if a PO belongs to a specific vendor
+  const isPoVendorMatch = (po, targetVendorStr) => {
+    if (!targetVendorStr || !po) return false;
+    const target = normalizeVendorStr(targetVendorStr);
+    const poName = normalizeVendorStr(po.vendorName || po.vendor?.companyName || po.vendor?.name);
+    if (poName && (poName === target || poName.includes(target) || target.includes(poName))) {
+      return true;
+    }
+    const matchedVendorObj = (vendors || []).find(v => 
+      normalizeVendorStr(v.companyName || v.name) === target || 
+      (v.id && String(v.id).trim().toLowerCase() === target)
+    );
+    if (matchedVendorObj) {
+      const vId = String(matchedVendorObj.id || '').trim().toLowerCase();
+      const poVId = String(po.vendorId || po.vendor?.id || '').trim().toLowerCase();
+      if (vId && poVId && vId === poVId) return true;
+      const vComp = normalizeVendorStr(matchedVendorObj.companyName);
+      if (vComp && poName && (poName === vComp || poName.includes(vComp) || vComp.includes(poName))) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // Helper to determine live PO GRN receipt status (matching PurchaseOrderManagement)
+  const getPoDeliveryInfo = (po) => {
+    if (!po) return { status: 'Unknown', inwardQty: 0, totalQty: 0, pendingQty: 0 };
+    if (String(po.status || '').toLowerCase() === 'cancelled') {
+      return { status: 'Cancelled', inwardQty: 0, totalQty: 0, pendingQty: 0 };
+    }
+
+    const matchingGRNs = (grns || []).filter(g => 
+      g && String(g.poNumber || '').trim().toLowerCase() === String(po.poNumber || '').trim().toLowerCase()
+    );
+
+    const inwardQty = matchingGRNs.reduce((sum, g) => 
+      sum + (parseFloat(g.netWeightKg) || parseFloat(g.receivedQtyKg) || parseFloat(g.quantity) || 0), 0
+    );
+
+    const totalQty = (po.items || []).reduce((sum, it) => 
+      sum + (parseFloat(it.qtyKg) || parseFloat(it.qty) || 0), 0
+    );
+
+    const pendingQty = Math.max(0, totalQty - inwardQty);
+
+    let status = 'Awaiting Delivery';
+    if (totalQty > 0 && inwardQty >= totalQty) {
+      status = 'Fully Received';
+    } else if (inwardQty > 0) {
+      status = 'Partially Received';
+    } else {
+      status = 'Awaiting Delivery';
+    }
+
+    return { status, inwardQty, totalQty, pendingQty, matchingGRNs };
+  };
+
+  // Live memoized list of active POs for the selected vendor awaiting delivery
+  const vendorActivePOs = useMemo(() => {
+    if (!grnVendor || !grnVendor.trim()) return [];
+    
+    return (unifiedIssuedPOs || []).filter(po => {
+      if (!po || !po.poNumber) return false;
+      if (!isPoVendorMatch(po, grnVendor)) return false;
+
+      const info = getPoDeliveryInfo(po);
+      if (info.status === 'Cancelled' || info.status === 'Fully Received') return false;
+
+      return info.status === 'Awaiting Delivery' || info.status === 'Partially Received';
+    });
+  }, [unifiedIssuedPOs, grnVendor, grns, vendors]);
+
+  // Handler when selecting a PO from the Ref PO Number searchable dropdown
+  const handleSelectPoForGrn = (selectedPoNumber) => {
+    if (selectedPoNumber === '__MANUAL__') {
+      setIsManualPoEntry(true);
+      setGrnPoNo('');
+      return;
+    }
+
+    setGrnPoNo(selectedPoNumber);
+
+    const targetPo = (vendorActivePOs || []).find(p => p && p.poNumber === selectedPoNumber) ||
+                     (unifiedIssuedPOs || []).find(p => p && p.poNumber === selectedPoNumber);
+    if (!targetPo) return;
+
+    if (targetPo.category) {
+      setGrnCategory(targetPo.category);
+    }
+
+    const firstItem = (targetPo.items || [])[0];
+    if (firstItem) {
+      if (firstItem.rate && (!grnPurchaseRate || Number(grnPurchaseRate) === 0)) {
+        setGrnPurchaseRate(firstItem.rate);
+      }
+
+      const activeCat = targetPo.category || grnCategory || 'Film Substrates';
+      if (activeCat === 'Film Substrates' || firstItem.filmType) {
+        if (firstItem.filmType) setGrnFilmType(firstItem.filmType);
+        if (firstItem.micron && firstItem.micron !== '-') setGrnMicron(firstItem.micron);
+        if (firstItem.widthMm && firstItem.widthMm !== '-') setGrnWidthMm(firstItem.widthMm);
+
+        const itemTitle = formatFilmItemName(firstItem.filmType || 'PET', firstItem.widthMm || 1000, firstItem.micron || 12);
+        setGrnItemName(itemTitle);
+        setGrnItemSearchTerm(itemTitle);
+
+        const matchedStock = (inventory || []).find(inv => {
+          const catMatch = String(inv.category || '').toLowerCase() === 'film substrates';
+          const typeMatch = String(inv.filmType || '').toUpperCase() === String(firstItem.filmType || '').toUpperCase();
+          const micronMatch = String(inv.micron || '') === String(firstItem.micron || '');
+          const widthMatch = String(inv.widthMm || '') === String(firstItem.widthMm || '');
+          return catMatch && typeMatch && micronMatch && widthMatch;
+        });
+        if (matchedStock) {
+          setGrnSelectedStockItemId(matchedStock.id || matchedStock.itemCode || '');
+        }
+      } else {
+        const desc = firstItem.itemDesc || firstItem.description || firstItem.itemName || '';
+        if (desc) {
+          setGrnItemName(desc);
+          setGrnItemSearchTerm(desc);
+        }
+        if (firstItem.itemId || firstItem.stockItemId) {
+          setGrnSelectedStockItemId(firstItem.itemId || firstItem.stockItemId);
+        }
+      }
+
+      const deliveryInfo = getPoDeliveryInfo(targetPo);
+      const pendingQty = deliveryInfo.pendingQty || firstItem.qtyKg || firstItem.qty || 0;
+      if ((!grnWeightKg || Number(grnWeightKg) === 0) && pendingQty > 0) {
+        setGrnWeightKg(pendingQty);
+        if (Array.isArray(grnItemsList) && grnItemsList.length === 1 && (!grnItemsList[0].grossWeightKg || grnItemsList[0].grossWeightKg === '')) {
+          setGrnItemsList([{
+            ...grnItemsList[0],
+            grossWeightKg: pendingQty,
+            netWeightKg: pendingQty
+          }]);
+        }
+      }
+    }
+  };
+
+  const handleConfirmResolveDiscrepancy = async () => {
     if (!resolvingPoDiscrepancy) return;
     const po = resolvingPoDiscrepancy;
     const mismatch = po.priceDiscrepancy || po.historicalMismatch || {};
@@ -1421,6 +1649,7 @@ export default function InventoryManagement({
     const resolvedAt = new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
 
     const resolutionObj = {
+      id: po.poNumber,
       poNumber: po.poNumber,
       grnNo: mismatch.grnNo || '',
       poRate: mismatch.poRate || 0,
@@ -1440,9 +1669,13 @@ export default function InventoryManagement({
       ...poResolutions,
       [po.poNumber]: resolutionObj
     };
-    setPoResolutions(updatedResolutions);
-    safeLocalStorageSet('samyak_po_discrepancy_resolutions', updatedResolutions);
-    saveSystemSetting('po_discrepancy_resolutions', updatedResolutions).catch(console.warn);
+    try {
+      await replacePayloadRecords(supabase, 'po_discrepancy_resolutions', Object.values(updatedResolutions));
+      setPoResolutions(updatedResolutions);
+    } catch (err) {
+      alert(`The discrepancy resolution was not saved: ${describeSaveError(err)}`);
+      return;
+    }
     if (typeof window !== 'undefined' && window.__samyakBroadcastSync) {
       window.__samyakBroadcastSync('system_settings');
     }
@@ -1544,7 +1777,7 @@ export default function InventoryManagement({
     setGrnFilmType(filmTypeVal);
     setGrnMicron(micronVal);
     setGrnWidthMm(widthVal);
-    setGrnWeightKg(poQty);
+    setGrnWeightKg(''); // Weight must be added by user as requested
     setGrnPurchaseRate(firstItem.rate || 140);
     
     const generatedTitle = categoryVal === 'Film Substrates'
@@ -1553,14 +1786,14 @@ export default function InventoryManagement({
     setGrnItemName(generatedTitle);
     setGrnRolls('1');
     
-    const initialLen = calculateFilmRollLength(poQty, widthVal, micronVal, filmTypeVal);
+    // Weight must be entered by user, not pre-filled
     setGrnItemsList([
       {
         id: `item-${Date.now()}-1`,
-        grossWeightKg: poQty,
+        grossWeightKg: '',
         tareWeightKg: grnDefaultTare || 0,
-        netWeightKg: poQty,
-        lengthMeters: initialLen,
+        netWeightKg: '',
+        lengthMeters: 0,
         vendorRollNo: '',
         notes: ''
       }
@@ -1607,6 +1840,7 @@ export default function InventoryManagement({
 
   const openNewGRNModal = (preselectedItem = null) => {
     setIsNewGRNModalOpen(true);
+    setIsManualPoEntry(false);
     setGrnRolls('1');
     setGrnItemsList([
       {
@@ -1630,6 +1864,22 @@ export default function InventoryManagement({
       setGrnItemSearchTerm('');
       setGrnSelectedStockItemId('');
       setIsGrnItemDropdownOpen(false);
+    }
+
+    if (grnVendor) {
+      const matching = (unifiedIssuedPOs || []).filter(po => {
+        if (!po || !po.poNumber) return false;
+        if (!isPoVendorMatch(po, grnVendor)) return false;
+        const info = getPoDeliveryInfo(po);
+        return info.status === 'Awaiting Delivery' || info.status === 'Partially Received';
+      });
+      if (matching.length === 1) {
+        handleSelectPoForGrn(matching[0].poNumber);
+      } else {
+        setGrnPoNo('');
+      }
+    } else {
+      setGrnPoNo('');
     }
   };
 
@@ -1825,6 +2075,7 @@ export default function InventoryManagement({
     };
 
     // If editing a grouped item with multiple underlying raw items in subItems, consolidate into single master record
+    const consolidationFailures = [];
     if (editingStockItem.subItems && editingStockItem.subItems.length > 1 && onDeleteInventoryItem) {
       const secondaryItems = editingStockItem.subItems.slice(1);
       for (const sec of secondaryItems) {
@@ -1832,7 +2083,7 @@ export default function InventoryManagement({
           try {
             await onDeleteInventoryItem(sec.id);
           } catch (err) {
-            console.warn('[handleSaveStockEdit] Error consolidating secondary subItem:', sec.id, err);
+            consolidationFailures.push(`${sec.id} (${err.message || err})`);
           }
         }
       }
@@ -1847,6 +2098,10 @@ export default function InventoryManagement({
 
     const actionText = editingStockItem.isNew ? 'created' : 'updated';
     setEditingStockItem(null);
+    if (consolidationFailures.length > 0) {
+      alert(`Stock item ${targetId} (${finalItemName}) was ${actionText}, but these duplicate stock rows were NOT removed and are still listed: ${consolidationFailures.join('; ')}.`);
+      return;
+    }
     alert(`Stock item ${targetId} (${finalItemName}) ${actionText} successfully!`);
   };
 
@@ -2015,11 +2270,50 @@ export default function InventoryManagement({
     const matchedVendor = (vendors || []).find(v => v.companyName === grnVendor || v.name === grnVendor || v.id === grnVendor);
     const selectedVendorId = matchedVendor?.id || null;
 
+    const matchedPoForGrn = grnPoNo ? ((unifiedIssuedPOs || []).find(p => p.poNumber === grnPoNo) || (purchaseOrders || []).find(p => p.poNumber === grnPoNo)) : null;
+    const poFirstItem = (matchedPoForGrn?.items || [])[0] || {};
+    const poAgreedRate = parseFloat(poFirstItem.rate) || 0;
+    const poOrderedQty = parseFloat(poFirstItem.qtyKg || matchedPoForGrn?.totalPoQty) || 0;
+    const poItemTitle = (poFirstItem.itemDesc || poFirstItem.itemName || '').trim();
+
+    const hasRateVar = poAgreedRate > 0 && Math.abs(rateVal - poAgreedRate) > 0.05;
+    const hasQtyVar = poOrderedQty > 0 && Math.abs(totalNetQty - poOrderedQty) > 0.1;
+    const hasItemVar = Boolean(poItemTitle && itemName && poItemTitle.toLowerCase() !== itemName.toLowerCase());
+    const isAnyVar = Boolean(hasRateVar || hasQtyVar || hasItemVar);
+
+    const varDetails = isAnyVar ? {
+      hasVariation: true,
+      hasRateVariation: hasRateVar,
+      poRate: poAgreedRate,
+      inwardRate: rateVal,
+      rateVariance: Number((rateVal - poAgreedRate).toFixed(2)),
+      hasQtyVariation: hasQtyVar,
+      orderedQtyKg: poOrderedQty,
+      receivedQtyKg: totalNetQty,
+      qtyVariance: Number((totalNetQty - poOrderedQty).toFixed(2)),
+      hasItemVariation: hasItemVar,
+      poItemName: poItemTitle,
+      inwardItemName: itemName,
+      variationReason: grnOverallRemark,
+      notes: grnOverallRemark
+    } : null;
+
+    const varSummary = [
+      hasRateVar ? `Rate: PO ₹${poAgreedRate} -> GRN ₹${rateVal} (${rateVal > poAgreedRate ? '+' : ''}${(rateVal - poAgreedRate).toFixed(2)})` : '',
+      hasQtyVar ? `Qty: PO ${poOrderedQty}kg -> GRN ${totalNetQty}kg (${totalNetQty > poOrderedQty ? '+' : ''}${(totalNetQty - poOrderedQty).toFixed(1)}kg)` : '',
+      hasItemVar ? `Item: "${poItemTitle}" -> "${itemName}"` : ''
+    ].filter(Boolean).join('; ');
+
     const newGRN = {
       grnNo: grnDocNo,
       poNumber: grnPoNo,
       vendorName: grnVendor,
       vendorId: selectedVendorId,
+      vendorAddress: matchedVendor?.address || '',
+      vendorGstin: matchedVendor?.gstin || '',
+      vendorEmail: matchedVendor?.email || '',
+      vendorPhone: matchedVendor?.phone || matchedVendor?.contactNo || '',
+      vendorContact: matchedVendor?.contactPerson || '',
       invoiceNo: grnInvoiceNo,
       receivedDate: todayIsoDate,
       receivedTime: receivedTimeStr,
@@ -2027,6 +2321,7 @@ export default function InventoryManagement({
       createdAt: nowIso,
       category: grnCategory,
       itemName: itemName,
+      originalPoItemName: poItemTitle || '',
       stockItemId: targetStockItemId,
       masterItemId: masterId,
       filmType: isFilm ? grnFilmType : grnCategory,
@@ -2046,6 +2341,11 @@ export default function InventoryManagement({
       purchaseRatePerKg: rateVal,
       purchaseRate: rateVal,
       unitPrice: rateVal,
+      agreedPoRate: poAgreedRate || null,
+      orderedPoQtyKg: poOrderedQty || null,
+      hasVariation: isAnyVar,
+      variations: varDetails,
+      variationSummary: varSummary,
       batchNo: grnBatchNo,
       freightAmount: parseFloat(grnFreightAmount) || 0,
       transporterName: grnTransporterName.trim() || 'Direct Dispatch / Self',
@@ -2195,14 +2495,21 @@ export default function InventoryManagement({
     }
 
     // 4. Register EACH INDIVIDUAL roll/item with its own separate barcode into stock rolls/batches ledger
-    if (onUpdateInventoryRolls) {
-      await onUpdateInventoryRolls(newRolls);
-    } else {
-      for (const rollObj of newRolls) {
-        if (onAddRoll) {
-          await onAddRoll(rollObj);
+    try {
+      if (onUpdateInventoryRolls) {
+        await onUpdateInventoryRolls(newRolls);
+      } else {
+        for (const rollObj of newRolls) {
+          if (onAddRoll) {
+            await onAddRoll(rollObj);
+          }
         }
       }
+    } catch (err) {
+      alert(`GRN ${newGRN.grnNo} was saved, but the roll barcodes were not all stored. Failed rolls are not shown as received.\n\n${err.message || err}`);
+      setIsNewGRNModalOpen(false);
+      setGrnConfirmationModal({ isOpen: false, pendingData: null });
+      return;
     }
 
     // Reset Form Fields
@@ -2212,6 +2519,7 @@ export default function InventoryManagement({
     setGrnInvoiceNo('');
     setGrnBatchNo('');
     setGrnPoNo('');
+    setIsManualPoEntry(false);
     setGrnWeightKg('');
     setGrnPurchaseRate('');
     setGrnItemsList([
@@ -2306,14 +2614,27 @@ export default function InventoryManagement({
       qcVarianceLog: hasVariances ? qcVariances : (qcInspectingGRN.qcVarianceLog || null)
     };
 
-    if (onUpdateGRN) {
-      await onUpdateGRN(updatedGRN);
+    try {
+      if (onUpdateGRN) {
+        await onUpdateGRN(updatedGRN);
+      }
+    } catch (err) {
+      alert(err?.name === 'PartialSaveError'
+        ? err.message
+        : `GRN ${updatedGRN.grnNo} was not updated: ${err.message || err}`);
+      return;
     }
 
     // Update associated child rolls/barcodes in inventoryRolls with verified dimensions and weight
+    const grnBarcodes = new Set([
+      ...(Array.isArray(qcInspectingGRN.barcodes) ? qcInspectingGRN.barcodes : []),
+      ...(Array.isArray(qcInspectingGRN.itemsBreakdown) ? qcInspectingGRN.itemsBreakdown.map((item) => item.barcodeId).filter(Boolean) : [])
+    ]);
     const matchingRolls = (inventoryRolls || []).filter(r => 
       (r.grnNo && (r.grnNo === qcInspectingGRN.grnNo || r.grnNo === qcInspectingGRN.id)) ||
-      (r.grn_no && (r.grn_no === qcInspectingGRN.grnNo || r.grn_no === qcInspectingGRN.id))
+      (r.grn_no && (r.grn_no === qcInspectingGRN.grnNo || r.grn_no === qcInspectingGRN.id)) ||
+      (r.invoiceNo && qcInspectingGRN.invoiceNo && r.invoiceNo === qcInspectingGRN.invoiceNo) ||
+      grnBarcodes.has(r.barcodeId || r.id)
     );
 
     if (matchingRolls.length > 0) {
@@ -2343,12 +2664,17 @@ export default function InventoryManagement({
         };
       });
 
-      if (onUpdateInventoryRolls) {
-        await onUpdateInventoryRolls(updatedRollsList);
-      } else if (onUpdateRoll) {
-        updatedRollsList.forEach(r => onUpdateRoll(r));
-      } else if (onAddRoll) {
-        updatedRollsList.forEach(r => onAddRoll(r));
+      try {
+        if (onUpdateInventoryRolls) {
+          await onUpdateInventoryRolls(updatedRollsList);
+        } else if (onUpdateRoll) {
+          for (const roll of updatedRollsList) await onUpdateRoll(roll);
+        } else if (onAddRoll) {
+          for (const roll of updatedRollsList) await onAddRoll(roll);
+        }
+      } catch (err) {
+        alert(`GRN ${updatedGRN.grnNo} was updated, but the roll barcodes were NOT saved. Those rolls are not shown as changed.\n\n${err.message || err}`);
+        return;
       }
     }
 
@@ -2485,7 +2811,6 @@ export default function InventoryManagement({
       }).catch(err => console.warn('[QC Variance Notification] Failed:', err));
 
       // Also record in in-app notification alerts
-      const existingAlerts = safeLocalStorageGet('samyak_erp_notifications', []);
       const newAlert = {
         id: `notif-${Date.now()}`,
         type: 'QC_VARIANCE_MODIFIED',
@@ -2495,7 +2820,12 @@ export default function InventoryManagement({
         timestamp: inspectionNowIso,
         read: false
       };
-      safeLocalStorageSet('samyak_erp_notifications', [newAlert, ...existingAlerts.slice(0, 49)]);
+      try {
+        const existingAlerts = await fetchPayloadRecords(supabase, 'erp_notifications');
+        await replacePayloadRecords(supabase, 'erp_notifications', [newAlert, ...(existingAlerts || []).filter(item => item.id !== newAlert.id)].slice(0, 50));
+      } catch (err) {
+        alert(`The GRN was updated, but the in-app notice was not saved: ${describeSaveError(err)}`);
+      }
     }
 
     setQcInspectingGRN(null);
@@ -2524,11 +2854,11 @@ export default function InventoryManagement({
 
     // 1. Search in inventoryRolls by barcodeId, id, vendorRollNo, batchNo, barcode
     const matchedRoll = (inventoryRolls || []).find(r => {
-      const bId = (r.barcodeId || '').toLowerCase();
-      const rId = String(r.id || '').toLowerCase();
-      const vRoll = (r.vendorRollNo || '').toLowerCase();
-      const bNo = (r.batchNo || r.lotNo || '').toLowerCase();
-      const rGrn = (r.grnNo || r.grn_no || '').toLowerCase();
+      const bId = codeKey(r.barcodeId);
+      const rId = codeKey(r.id);
+      const vRoll = codeKey(r.vendorRollNo);
+      const bNo = codeKeyFrom(r.batchNo, r.lotNo);
+      const rGrn = codeKeyFrom(r.grnNo, r.grn_no);
       return bId === cleanCode || bId === strippedCode || cleanCode.includes(bId) ||
         rId === cleanCode || rId === strippedCode ||
         vRoll === cleanCode || vRoll === strippedCode || (vRoll && cleanCode.includes(vRoll)) ||
@@ -2538,12 +2868,12 @@ export default function InventoryManagement({
 
     // 2. Search in safeGrns by grnNo, id, batchNo, barcode, invoiceNo, poNumber
     const matchedGrn = (safeGrns || []).find(g => {
-      const gNo = String(g.grnNo || g.grn_number || g.grnNumber || '').toLowerCase();
+      const gNo = codeKeyFrom(g.grnNo, g.grn_number, g.grnNumber);
       const gCode = gNo.replace(/^grn-/, '');
-      const gId = String(g.id || '').toLowerCase();
-      const bNo = (g.batchNo || g.batch_no || '').toLowerCase();
-      const bCode = (g.barcode || '').toLowerCase();
-      const invNo = (g.invoiceNo || g.invoice_number || g.invoiceNumber || '').toLowerCase();
+      const gId = codeKey(g.id);
+      const bNo = codeKeyFrom(g.batchNo, g.batch_no);
+      const bCode = codeKey(g.barcode);
+      const invNo = codeKeyFrom(g.invoiceNo, g.invoice_number, g.invoiceNumber);
       return gNo === cleanCode || gNo === strippedCode || cleanCode.includes(gNo) ||
         gId === cleanCode || gId === strippedCode ||
         bNo === cleanCode || bNo === strippedCode || (bNo && cleanCode.includes(bNo)) ||
@@ -2554,14 +2884,14 @@ export default function InventoryManagement({
 
     // 3. Search in inventory items by id, itemCode, productCode, lastBatch, batchNo, barcode, itemName, shade
     const matchedItemDirect = (inventory || []).find(i => {
-      const iId = (i.id || '').toLowerCase();
-      const iCode = (i.itemCode || i.item_code || '').toLowerCase();
-      const pCode = (i.productCode || i.product_code || '').toLowerCase();
-      const lBatch = (i.lastBatch || '').toLowerCase();
-      const bNo = (i.batchNo || i.batch_no || '').toLowerCase();
-      const bCode = (i.barcode || i.barcodeId || '').toLowerCase();
-      const iName = (i.itemName || i.item_name || '').toLowerCase();
-      const shade = (i.shade || '').toLowerCase();
+      const iId = codeKey(i.id);
+      const iCode = codeKeyFrom(i.itemCode, i.item_code);
+      const pCode = codeKeyFrom(i.productCode, i.product_code);
+      const lBatch = codeKey(i.lastBatch);
+      const bNo = codeKeyFrom(i.batchNo, i.batch_no);
+      const bCode = codeKeyFrom(i.barcode, i.barcodeId);
+      const iName = codeKeyFrom(i.itemName, i.item_name);
+      const shade = codeKey(i.shade);
 
       return (
         iId === cleanCode || iId === strippedCode || (iId && cleanCode.includes(iId)) ||
@@ -2577,10 +2907,10 @@ export default function InventoryManagement({
 
     // 4. Search in inks master list by productCode, id, shade
     const matchedInk = (inks || []).find(ink => {
-      const pCode = (ink.productCode || ink.product_code || '').toLowerCase();
-      const inkId = (ink.id || '').toLowerCase();
-      const shade = (ink.shade || '').toLowerCase();
-      const lBatch = (ink.lastBatch || `lot-${pCode}`).toLowerCase();
+      const pCode = codeKeyFrom(ink.productCode, ink.product_code);
+      const inkId = codeKey(ink.id);
+      const shade = codeKey(ink.shade);
+      const lBatch = codeKey(ink.lastBatch || `lot-${pCode}`);
       return (
         pCode === cleanCode || pCode === strippedCode || (pCode && cleanCode.includes(pCode)) ||
         inkId === cleanCode || inkId === strippedCode ||
@@ -2604,7 +2934,8 @@ export default function InventoryManagement({
 
     const resolveUOM = (item, roll, grn) => {
       const explicit = item?.unit || roll?.unit || grn?.unit;
-      if (explicit && explicit.trim()) return explicit;
+      const explicitText = textFrom(explicit);
+      if (explicitText.trim()) return typeof explicit === 'string' ? explicit : explicitText;
       return 'Kg';
     };
 
@@ -2627,9 +2958,9 @@ export default function InventoryManagement({
 
       targetItem = (inventory || []).find(i => 
         i.id === matchedRoll.itemId || 
-        (i.itemCode && matchedRoll.itemId && i.itemCode.toLowerCase() === matchedRoll.itemId.toLowerCase()) ||
-        (i.itemName && matchedRoll.itemName && i.itemName.toLowerCase() === matchedRoll.itemName.toLowerCase()) ||
-        (i.filmType && matchedRoll.filmType && i.filmType.toLowerCase() === matchedRoll.filmType.toLowerCase())
+        (i.itemCode && matchedRoll.itemId && codesEqual(i.itemCode, matchedRoll.itemId)) ||
+        (i.itemName && matchedRoll.itemName && codesEqual(i.itemName, matchedRoll.itemName)) ||
+        (i.filmType && matchedRoll.filmType && codesEqual(i.filmType, matchedRoll.filmType))
       ) || {
         id: matchedRoll.itemId || `ITEM-${matchedRoll.id}`,
         itemName: matchedRoll.itemName || `${matchedRoll.filmType || 'Film'} ${matchedRoll.micron || ''}µ`,
@@ -2648,7 +2979,7 @@ export default function InventoryManagement({
       purchaseRate = resolveQuantity(matchedRoll.purchaseRatePerKg, matchedRoll.purchaseRate, matchedRoll.unitPrice, targetItem.unitPrice, targetItem.purchaseRatePerKg, linkedGrnForRoll?.purchaseRate);
       vendorName = matchedRoll.vendorName || matchedRoll.vendor || linkedGrnForRoll?.vendorName || linkedGrnForRoll?.vendor_name || targetItem.lastVendor || 'Verified Supplier';
       grnNo = matchedRoll.grnNo || matchedRoll.grn_no || linkedGrnForRoll?.grnNo || linkedGrnForRoll?.grn_number || (grnExtract && grnExtract.length > 3 ? `GRN-${grnExtract.toUpperCase()}` : '');
-      barcodeId = matchedRoll.barcodeId || code;
+      barcodeId = textFrom(matchedRoll.barcodeId) || code;
       availableQty = resolveQuantity(
         matchedRoll.availableWeightKg,
         matchedRoll.available_weight_kg,
@@ -2669,9 +3000,9 @@ export default function InventoryManagement({
       targetItem = (inventory || []).find(i => 
         i.id === matchedGrn.itemId || 
         i.id === matchedGrn.stockItemId ||
-        (i.itemCode && matchedGrn.itemId && i.itemCode.toLowerCase() === matchedGrn.itemId.toLowerCase()) ||
-        (i.itemName && matchedGrn.itemName && i.itemName.toLowerCase() === matchedGrn.itemName.toLowerCase()) ||
-        (i.filmType && matchedGrn.filmType && i.filmType.toLowerCase() === matchedGrn.filmType.toLowerCase())
+        (i.itemCode && matchedGrn.itemId && codesEqual(i.itemCode, matchedGrn.itemId)) ||
+        (i.itemName && matchedGrn.itemName && codesEqual(i.itemName, matchedGrn.itemName)) ||
+        (i.filmType && matchedGrn.filmType && codesEqual(i.filmType, matchedGrn.filmType))
       ) || {
         id: matchedGrn.itemId || matchedGrn.stockItemId || `GRN-ITEM-${matchedGrn.id}`,
         itemName: matchedGrn.itemName || `${matchedGrn.filmType || 'Film'} ${matchedGrn.micron || ''}µ`,
@@ -2687,7 +3018,7 @@ export default function InventoryManagement({
       purchaseRate = resolveQuantity(matchedGrn.purchaseRate, matchedGrn.purchaseRatePerKg, matchedGrn.unitPrice, targetItem.unitPrice);
       vendorName = matchedGrn.vendorName || matchedGrn.vendor_name || matchedGrn.supplier || targetItem.lastVendor || 'Verified Supplier';
       grnNo = matchedGrn.grnNo || matchedGrn.grn_number || '';
-      barcodeId = matchedGrn.barcode || code;
+      barcodeId = textFrom(matchedGrn.barcode) || code;
       availableQty = resolveQuantity(targetItem.availableQtyKg, targetItem.currentStockKg, targetItem.stockQtyKg, matchedGrn.netWeightKg, matchedGrn.receivedQtyKg);
     } else if (matchedItemDirect) {
       targetItem = matchedItemDirect;
@@ -2695,14 +3026,14 @@ export default function InventoryManagement({
       batchNo = targetItem.lastBatch || targetItem.batchNo || (targetItem.itemCode ? `LOT-${targetItem.itemCode}` : `LOT-${targetItem.id}`);
       purchaseRate = resolveQuantity(targetItem.unitPrice, targetItem.purchaseRatePerKg, targetItem.pricePerKg);
       vendorName = targetItem.lastVendor || targetItem.supplierName || targetItem.lastSupplier || targetItem.manufacturer || 'Verified Supplier';
-      barcodeId = targetItem.barcode || (code.toUpperCase().startsWith('LOT-') ? code : (targetItem.lastBatch || targetItem.id));
+      barcodeId = textFrom(targetItem.barcode) || (code.toUpperCase().startsWith('LOT-') ? code : (textFrom(targetItem.lastBatch, targetItem.id) || code));
       availableQty = resolveQuantity(targetItem.availableQtyKg, targetItem.available_qty_kg, targetItem.currentStockKg, targetItem.current_stock_kg, targetItem.stockQtyKg, targetItem.stock_qty_kg, targetItem.quantity, targetItem.qty);
     } else if (matchedInk) {
       targetItem = (inventory || []).find(i => 
-        (i.itemCode && i.itemCode.toLowerCase() === (matchedInk.productCode || '').toLowerCase()) ||
-        (i.id && i.id.toLowerCase() === (matchedInk.productCode || '').toLowerCase()) ||
-        (i.id && i.id.toLowerCase() === (matchedInk.id || '').toLowerCase()) ||
-        (i.itemName && i.itemName.toLowerCase() === (matchedInk.shade || '').toLowerCase())
+        (i.itemCode && codesEqual(i.itemCode, matchedInk.productCode)) ||
+        (i.id && codesEqual(i.id, matchedInk.productCode)) ||
+        (i.id && codesEqual(i.id, matchedInk.id)) ||
+        (i.itemName && codesEqual(i.itemName, matchedInk.shade))
       ) || {
         id: matchedInk.productCode || matchedInk.id,
         itemCode: matchedInk.productCode,
@@ -2795,7 +3126,7 @@ export default function InventoryManagement({
   };
 
   // Issue / Return Submit (Records transaction in Store Issue/Return Ledger & updates Job Production Record Costing)
-  const handleIssueReturnSubmit = () => {
+  const handleIssueReturnSubmit = async () => {
     const itemToIssue = scannedItemDetails?.item || selectedInvItem;
     if (scannedItemDetails?.isQCPending) {
       alert("❌ Blocked by Quality Control: This batch is currently PENDING QC APPROVAL and cannot be issued or returned to production until cleared by the QC Chemist.");
@@ -2836,21 +3167,26 @@ export default function InventoryManagement({
     }
 
     if (onStoreIssueReturn) {
-      onStoreIssueReturn({
-        item: itemToIssue,
-        issueType: issueType,
-        qty: qty,
-        jobName: chosenJobName,
-        user: currentUser?.name || 'Store Manager',
-        unitPrice: finalRate,
-        batchNo: finalBatchNo,
-        vendorName: finalVendor,
-        grnNo: finalGrnNo,
-        barcode: finalBarcode,
-        notes: issueType === 'issue'
-          ? `[2D Scan: ${finalBarcode}] Issued ${qty} ${unitStr} from Batch [${finalBatchNo}] (Rate: ₹${finalRate}/${unitStr}) to Job: ${chosenJobName}`
-          : `Returned ${qty} ${unitStr} from Job: ${chosenJobName} back to Store`
-      });
+      try {
+        await onStoreIssueReturn({
+          item: itemToIssue,
+          issueType: issueType,
+          qty: qty,
+          jobName: chosenJobName,
+          user: currentUser?.name || 'Store Manager',
+          unitPrice: finalRate,
+          batchNo: finalBatchNo,
+          vendorName: finalVendor,
+          grnNo: finalGrnNo,
+          barcode: finalBarcode,
+          notes: issueType === 'issue'
+            ? `[2D Scan: ${finalBarcode}] Issued ${qty} ${unitStr} from Batch [${finalBatchNo}] (Rate: ₹${finalRate}/${unitStr}) to Job: ${chosenJobName}`
+            : `Returned ${qty} ${unitStr} from Job: ${chosenJobName} back to Store`
+        });
+      } catch (err) {
+        alert(`The store issue was not saved: ${err.message || err}`);
+        return;
+      }
     } else {
       let updatedInv = [...inventory];
       const idx = updatedInv.findIndex(i => i.id === itemToIssue.id);
@@ -2920,7 +3256,7 @@ export default function InventoryManagement({
   };
 
   // Commit Reconciliation Variances to System Stock & Stock Ledger
-  const handleCommitReconciliation = () => {
+  const handleCommitReconciliation = async () => {
     const newAdjustments = [];
     let updatedInv = inventory.map(item => {
       const physicalQty = physicalCounts[item.id];
@@ -2954,11 +3290,17 @@ export default function InventoryManagement({
 
     if (newAdjustments.length > 0) {
       const updatedAdj = [...newAdjustments, ...stockLedgerAdjustments];
-      setStockLedgerAdjustments(updatedAdj);
+      try {
+        await replacePayloadRecords(supabase, 'stock_adjustments', updatedAdj);
+        setStockLedgerAdjustments(updatedAdj);
+      } catch (err) {
+        alert(`The reconciliation ledger was not saved: ${describeSaveError(err)}`);
+        return;
+      }
     }
 
     if (onUpdateInventory) {
-      onUpdateInventory(updatedInv);
+      await onUpdateInventory(updatedInv);
     }
     alert("Monthly Physical Stock Reconciliation completed successfully! System available stock and audit ledger updated.");
   };
@@ -3551,7 +3893,13 @@ export default function InventoryManagement({
 
     if (newAdjustments.length > 0) {
       const updatedAdj = [...newAdjustments, ...stockLedgerAdjustments];
-      setStockLedgerAdjustments(updatedAdj);
+      try {
+        await replacePayloadRecords(supabase, 'stock_adjustments', updatedAdj);
+        setStockLedgerAdjustments(updatedAdj);
+      } catch (err) {
+        alert(`The bulk stock adjustments were not saved: ${describeSaveError(err)}`);
+        return;
+      }
     }
 
     if (onUpdateInventory) {
@@ -3633,7 +3981,7 @@ export default function InventoryManagement({
       if (poStatusFilter === 'PARTIAL' && po.deliveryStatus !== 'Partial Delivery') return false;
       if (poStatusFilter === 'COMPLETED' && po.deliveryStatus !== 'Completed') return false;
       if (poStatusFilter === 'OVERDUE' && !po.isOverdue) return false;
-      if (poStatusFilter === 'ALERT' && !po.priceDiscrepancy) return false;
+      if (poStatusFilter === 'ALERT' && !po.hasAnyVariation && !po.priceDiscrepancy) return false;
 
       // 2. Search Term Filter
       if (!poSearchTerm || !poSearchTerm.trim()) return true;
@@ -4183,9 +4531,9 @@ export default function InventoryManagement({
             </div>
 
             <div>
-              <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>Price Variance Alerts</span>
-              <div style={{ fontSize: '1.3rem', fontWeight: '800', color: '#7c3aed', marginTop: '2px' }}>
-                {unifiedIssuedPOs.filter(p => p.priceDiscrepancy).length} Rate Mismatches
+              <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>Variations & Discrepancy Alerts</span>
+              <div style={{ fontSize: '1.3rem', fontWeight: '800', color: '#dc2626', marginTop: '2px' }}>
+                {unifiedIssuedPOs.filter(p => p.hasAnyVariation || p.priceDiscrepancy).length} POs with Variations
               </div>
             </div>
           </div>
@@ -4205,13 +4553,13 @@ export default function InventoryManagement({
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-secondary)' }}>Status Filter:</span>
-              <SearchableSelect className="form-control" style={{ width: '220px' }} triggerStyle={{ fontWeight: '600' }} value={poStatusFilter} onChange={e => setPoStatusFilter(e.target.value)}>
+              <SearchableSelect className="form-control" style={{ width: '240px' }} triggerStyle={{ fontWeight: '600' }} value={poStatusFilter} onChange={e => setPoStatusFilter(e.target.value)}>
                 <option value="ALL">🌐 All Issued POs ({unifiedIssuedPOs.length})</option>
                 <option value="PENDING">⏳ Pending Inward (0 Received)</option>
                 <option value="PARTIAL">📦 Partial Delivery</option>
                 <option value="COMPLETED">✅ Completed Deliveries</option>
                 <option value="OVERDUE">⚠️ Overdue Delivery SLA</option>
-                <option value="ALERT">🚨 Price Discrepancy Alerts</option>
+                <option value="ALERT">🚨 Variations & Discrepancies ({unifiedIssuedPOs.filter(p => p.hasAnyVariation || p.priceDiscrepancy).length})</option>
               </SearchableSelect>
             </div>
           </div>
@@ -4227,14 +4575,14 @@ export default function InventoryManagement({
                   <th>Days Elapsed</th>
                   <th>Promised Date & Delay Time</th>
                   <th>Inward Status & Delivery</th>
-                  <th>Price Alert (Admin)</th>
+                  <th>Discrepancy & Variation Alerts</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {poPagination.paginatedItems.map(po => {
                   return (
-                    <tr key={po.poNumber} style={po.priceDiscrepancy ? { background: '#fef2f2' } : {}}>
+                    <tr key={po.poNumber} style={po.hasAnyVariation || po.priceDiscrepancy ? { background: '#fffbeb' } : {}}>
                       <td>
                         <div style={{ fontWeight: '800', color: '#4f46e5', fontSize: '0.92rem', fontFamily: 'monospace' }}>
                           {po.poNumber}
@@ -4293,9 +4641,16 @@ export default function InventoryManagement({
 
                       <td>
                         {po.deliveryStatus === 'Completed' && (
-                          <span className="badge badge-success" style={{ fontSize: '0.8rem', padding: '4px 8px' }}>
-                            ✅ Completed ({(po.totalInwardQty || 0).toFixed(0)} kg Inwarded)
-                          </span>
+                          <div>
+                            <span className="badge badge-success" style={{ fontSize: '0.8rem', padding: '4px 8px' }}>
+                              ✅ Completed ({(po.totalInwardQty || 0).toFixed(0)} kg Inwarded)
+                            </span>
+                            {po.qtyVariations && po.qtyVariations.length > 0 && (
+                              <div style={{ fontSize: '0.72rem', fontWeight: '700', color: po.qtyVariations[0].isShort ? '#b45309' : '#047857', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                <Scale size={11} /> Qty Var: {po.qtyVariations[0].variance > 0 ? '+' : ''}{po.qtyVariations[0].variance.toFixed(1)} kg ({po.qtyVariations[0].isShort ? 'Short' : 'Excess'})
+                              </div>
+                            )}
+                          </div>
                         )}
 
                         {po.deliveryStatus === 'Partial Delivery' && (
@@ -4306,6 +4661,11 @@ export default function InventoryManagement({
                             <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#d97706', marginTop: '3px' }}>
                               Pending Inward: {(po.pendingInwardQty || 0).toFixed(1)} kg
                             </div>
+                            {po.qtyVariations && po.qtyVariations.length > 0 && (
+                              <div style={{ fontSize: '0.71rem', fontWeight: '700', color: '#b45309', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                <Scale size={11} /> Inward Diff: {po.qtyVariations[0].variance > 0 ? '+' : ''}{po.qtyVariations[0].variance.toFixed(1)} kg
+                              </div>
+                            )}
                           </div>
                         )}
 
@@ -4317,30 +4677,69 @@ export default function InventoryManagement({
                       </td>
 
                       <td>
-                        {po.priceDiscrepancy ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '4px 8px', borderRadius: '6px' }}>
-                              <span style={{ fontSize: '0.75rem', fontWeight: '800', color: '#dc2626', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <AlertTriangle size={12} /> Rate Mismatch
-                              </span>
-                              <div style={{ fontSize: '0.7rem', color: '#991b1b', marginTop: '2px', fontWeight: '600' }}>
-                                PO: ₹{po.priceDiscrepancy.poRate} vs GRN: ₹{po.priceDiscrepancy.grnRate}
+                        {po.hasAnyVariation || po.priceDiscrepancy ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            {/* Rate Discrepancy Alert */}
+                            {(po.rateVariations && po.rateVariations.length > 0) || po.priceDiscrepancy ? (
+                              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '4px 8px', borderRadius: '6px' }}>
+                                <span style={{ fontSize: '0.74rem', fontWeight: '800', color: '#dc2626', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <AlertTriangle size={12} /> Rate Mismatch
+                                </span>
+                                <div style={{ fontSize: '0.7rem', color: '#991b1b', marginTop: '2px', fontWeight: '600' }}>
+                                  PO: ₹{po.rateVariations?.[0]?.poRate || po.priceDiscrepancy?.poRate} vs GRN: ₹{po.rateVariations?.[0]?.grnRate || po.priceDiscrepancy?.grnRate} 
+                                  {po.rateVariations?.[0]?.variance !== undefined && ` (${po.rateVariations[0].variance > 0 ? '+' : ''}₹${po.rateVariations[0].variance.toFixed(2)})`}
+                                </div>
                               </div>
-                            </div>
-                            {isAdmin ? (
-                              <button 
-                                className="btn-primary" 
-                                style={{ padding: '3px 8px', fontSize: '0.72rem', background: '#dc2626', borderColor: '#dc2626', fontWeight: '700', borderRadius: '4px' }}
-                                onClick={() => {
-                                  setResolvingPoDiscrepancy(po);
-                                  setResolutionAction('UPDATE_PO_RATE');
-                                  setResolutionNotes('');
-                                }}
-                              >
-                                ⚡ Resolve (Admin)
-                              </button>
-                            ) : (
-                              <span style={{ fontSize: '0.68rem', color: '#64748b', fontStyle: 'italic' }}>🔒 Admin Resolution Required</span>
+                            ) : null}
+
+                            {/* Quantity Variation Alert */}
+                            {po.qtyVariations && po.qtyVariations.length > 0 && (
+                              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', padding: '4px 8px', borderRadius: '6px' }}>
+                                <span style={{ fontSize: '0.74rem', fontWeight: '800', color: '#b45309', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <Scale size={12} /> Qty Variation
+                                </span>
+                                <div style={{ fontSize: '0.7rem', color: '#92400e', marginTop: '2px', fontWeight: '600' }}>
+                                  PO: {po.qtyVariations[0].orderedQty}kg vs GRN: {po.qtyVariations[0].receivedQty}kg ({po.qtyVariations[0].variance > 0 ? '+' : ''}{po.qtyVariations[0].variance.toFixed(1)} kg {po.qtyVariations[0].isShort ? 'Short' : 'Excess'})
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Item Name Variation Alert */}
+                            {po.itemVariations && po.itemVariations.length > 0 && (
+                              <div style={{ background: '#faf5ff', border: '1px solid #e9d5ff', padding: '4px 8px', borderRadius: '6px' }}>
+                                <span style={{ fontSize: '0.74rem', fontWeight: '800', color: '#7e22ce', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <FileText size={12} /> Item Alteration
+                                </span>
+                                <div style={{ fontSize: '0.68rem', color: '#6b21a8', marginTop: '2px', fontWeight: '600' }}>
+                                  PO: "{po.itemVariations[0].poItemName}" → GRN: "{po.itemVariations[0].inwardItemName}"
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Discrepancy Remarks / Reason */}
+                            {po.variationNotesList && po.variationNotesList.length > 0 && (
+                              <div style={{ fontSize: '0.67rem', color: '#475569', fontStyle: 'italic', background: '#f8fafc', padding: '2px 6px', borderRadius: '4px', border: '1px dashed #cbd5e1' }}>
+                                💬 "{po.variationNotesList[0].note}"
+                              </div>
+                            )}
+
+                            {/* Admin Resolve button if rate mismatch */}
+                            {po.priceDiscrepancy && (
+                              isAdmin ? (
+                                <button 
+                                  className="btn-primary" 
+                                  style={{ padding: '3px 8px', fontSize: '0.72rem', background: '#dc2626', borderColor: '#dc2626', fontWeight: '700', borderRadius: '4px' }}
+                                  onClick={() => {
+                                    setResolvingPoDiscrepancy(po);
+                                    setResolutionAction('UPDATE_PO_RATE');
+                                    setResolutionNotes('');
+                                  }}
+                                >
+                                  ⚡ Resolve Rate Mismatch
+                                </button>
+                              ) : (
+                                <span style={{ fontSize: '0.68rem', color: '#64748b', fontStyle: 'italic' }}>🔒 Admin Resolution Required</span>
+                              )
                             )}
                           </div>
                         ) : po.priceDiscrepancyResolution ? (
@@ -4356,8 +4755,8 @@ export default function InventoryManagement({
                             </div>
                           </div>
                         ) : (
-                          <span style={{ fontSize: '0.75rem', color: '#059669', fontWeight: '600' }}>
-                            ✓ Price Matched
+                          <span style={{ fontSize: '0.75rem', color: '#059669', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <CheckCircle2 size={13} /> ✓ Exact Match (No Variations)
                           </span>
                         )}
                       </td>
@@ -4984,7 +5383,21 @@ export default function InventoryManagement({
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: '6px' }}>
-                          <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={() => setSelectedGRNForPDF(g)}>
+                          <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={() => {
+                            const supplierName = String(g.vendorName || g.vendor?.companyName || g.vendor?.name || '').trim();
+                            const supplierAddress = String(g.vendorAddress || g.vendor?.address || '').trim();
+                            const supplierGstin = String(g.vendorGstin || g.vendor?.gstin || '').trim();
+                            const missing = [
+                              !supplierName && 'supplier name',
+                              !supplierAddress && 'supplier address',
+                              !supplierGstin && 'supplier GSTIN',
+                            ].filter(Boolean);
+                            if (missing.length) {
+                              alert(`This GRN cannot be printed. It is missing ${missing.join(', ')}.`);
+                              return;
+                            }
+                            setSelectedGRNForPDF(g);
+                          }}>
                             <Printer size={14} /> Print GRN
                           </button>
                           <button 
@@ -5581,7 +5994,22 @@ export default function InventoryManagement({
                         if (e.target.value === '__CREATE_NEW__') {
                           setIsVendorModalOpen(true);
                         } else {
-                          setGrnVendor(e.target.value);
+                          const newV = e.target.value;
+                          setGrnVendor(newV);
+                          setIsManualPoEntry(false);
+                          
+                          // Check active POs awaiting delivery for this newly selected vendor
+                          const matching = (unifiedIssuedPOs || []).filter(po => {
+                            if (!po || !po.poNumber) return false;
+                            if (!isPoVendorMatch(po, newV)) return false;
+                            const info = getPoDeliveryInfo(po);
+                            return info.status === 'Awaiting Delivery' || info.status === 'Partially Received';
+                          });
+                          if (matching.length === 1) {
+                            handleSelectPoForGrn(matching[0].poNumber);
+                          } else {
+                            setGrnPoNo('');
+                          }
                         }
                       }}
                       triggerStyle={{ fontWeight: '500' }}
@@ -5770,8 +6198,109 @@ export default function InventoryManagement({
 
                 <div className="form-grid">
                   <div className="form-group">
-                    <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>Ref PO Number</label>
-                    <input type="text" className="form-control" placeholder="e.g. SIL/PO/26-27/1941" value={grnPoNo} onChange={e => setGrnPoNo(e.target.value)} />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <label style={{ margin: 0, fontWeight: '600', fontSize: '0.83rem', color: '#334155', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        Ref PO Number
+                        {vendorActivePOs.length > 0 && !isManualPoEntry && (
+                          <span style={{ 
+                            fontSize: '0.7rem', 
+                            fontWeight: '700', 
+                            color: '#b45309', 
+                            background: '#fef3c7', 
+                            border: '1px solid #fde68a', 
+                            padding: '1px 6px', 
+                            borderRadius: '4px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '3px'
+                          }}>
+                            <Clock size={11} /> {vendorActivePOs.length} Active {vendorActivePOs.length === 1 ? 'PO' : 'POs'} Awaiting Delivery
+                          </span>
+                        )}
+                      </label>
+                      {vendorActivePOs.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isManualPoEntry) {
+                              setIsManualPoEntry(false);
+                              if (vendorActivePOs.length === 1) {
+                                handleSelectPoForGrn(vendorActivePOs[0].poNumber);
+                              }
+                            } else {
+                              setIsManualPoEntry(true);
+                            }
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#0284c7',
+                            fontSize: '0.74rem',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            padding: 0,
+                            textDecoration: 'underline'
+                          }}
+                        >
+                          {isManualPoEntry ? `← Select from Active POs (${vendorActivePOs.length})` : 'Enter manually'}
+                        </button>
+                      )}
+                    </div>
+
+                    {vendorActivePOs.length > 0 && !isManualPoEntry ? (
+                      <SearchableSelect
+                        className="form-control"
+                        placeholder="-- Select Active PO (Awaiting Delivery) --"
+                        searchPlaceholder="Search PO #, item, or quantity..."
+                        value={grnPoNo}
+                        onChange={e => handleSelectPoForGrn(e.target.value)}
+                        triggerStyle={{ 
+                          fontWeight: '600',
+                          color: grnPoNo ? '#0f172a' : '#64748b',
+                          borderColor: grnPoNo ? '#0284c7' : '#cbd5e1',
+                          background: grnPoNo ? '#f0f9ff' : '#ffffff'
+                        }}
+                      >
+                        <option value="" disabled>-- Select Active PO (Awaiting Delivery) --</option>
+                        {vendorActivePOs.map(po => {
+                          const firstItem = (po.items || [])[0] || {};
+                          const itemsSummary = (po.items || []).map(it => it.itemDesc || it.description || it.itemName || it.filmType || 'Item').join(', ');
+                          const deliveryInfo = getPoDeliveryInfo(po);
+                          const qtySummary = deliveryInfo.totalQty || po.totalPoQty || firstItem.qtyKg || 0;
+                          const poStatusText = deliveryInfo.status === 'Partially Received'
+                            ? `Partial Inward (${deliveryInfo.inwardQty}/${qtySummary} kg)`
+                            : `⏳ Awaiting Delivery (${qtySummary} kg)`;
+                          
+                          return (
+                            <option
+                              key={po.poNumber || po.id}
+                              value={po.poNumber}
+                              data-subtitle={`${poStatusText} • ${po.category || 'Raw Material'} • ${itemsSummary || 'Item'}`}
+                            >
+                              {po.poNumber} — {itemsSummary || 'Raw Material'} ({qtySummary} kg)
+                            </option>
+                          );
+                        })}
+                        <option value="__MANUAL__" style={{ fontWeight: '700', color: '#0284c7' }}>
+                          ✏️ + Enter Other / Manual PO Number...
+                        </option>
+                      </SearchableSelect>
+                    ) : (
+                      <>
+                        <input 
+                          type="text" 
+                          className="form-control" 
+                          placeholder="e.g. SIL/PO/26-27/1941" 
+                          value={grnPoNo} 
+                          onChange={e => setGrnPoNo(e.target.value)} 
+                        />
+                        {grnVendor && vendorActivePOs.length === 0 && (
+                          <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '3px' }}>
+                            No active POs awaiting delivery for {grnVendor} — enter manually if applicable.
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
 
                   <div className="form-group">
@@ -7184,10 +7713,10 @@ export default function InventoryManagement({
                         const clean = val.toLowerCase().trim();
                         const stripped = clean.replace(/^(lot|bc|bar-iss|bar|roll|inv|grn|item)[-_:]\s*/i, '').trim();
                         const hasDirectMatch = 
-                          (inventory || []).some(i => (i.id && i.id.toLowerCase() === clean) || (i.itemCode && i.itemCode.toLowerCase() === clean) || (i.lastBatch && i.lastBatch.toLowerCase() === clean) || (i.productCode && i.productCode.toLowerCase() === clean) || (i.id && i.id.toLowerCase() === stripped) || (i.itemCode && i.itemCode.toLowerCase() === stripped)) ||
-                          (inventoryRolls || []).some(r => (r.barcodeId && r.barcodeId.toLowerCase() === clean) || (r.batchNo && r.batchNo.toLowerCase() === clean)) ||
-                          (safeGrns || []).some(g => (g.batchNo && g.batchNo.toLowerCase() === clean) || (g.grnNo && String(g.grnNo).toLowerCase() === clean)) ||
-                          (inks || []).some(ink => (ink.productCode && ink.productCode.toLowerCase() === clean) || (ink.productCode && ink.productCode.toLowerCase() === stripped));
+                          (inventory || []).some(i => codesEqual(i.id, clean) || codesEqual(i.itemCode, clean) || codesEqual(i.lastBatch, clean) || codesEqual(i.productCode, clean) || codesEqual(i.id, stripped) || codesEqual(i.itemCode, stripped)) ||
+                          (inventoryRolls || []).some(r => codesEqual(r.barcodeId, clean) || codesEqual(r.batchNo, clean)) ||
+                          (safeGrns || []).some(g => codesEqual(g.batchNo, clean) || codesEqual(g.grnNo, clean)) ||
+                          (inks || []).some(ink => codesEqual(ink.productCode, clean) || codesEqual(ink.productCode, stripped));
                         if (hasDirectMatch) {
                           handleBarcodeScanLookup(val);
                         }
@@ -7248,10 +7777,10 @@ export default function InventoryManagement({
                   <option value="">-- Choose Item from Inventory Directory --</option>
                   {(inventory || []).filter(i => {
                     const s = (stockSearchTerm || '').toLowerCase();
-                    const filmType = (i.filmType || '').toLowerCase();
-                    const itemName = (i.itemName || '').toLowerCase();
-                    const id = (i.id || '').toLowerCase();
-                    const loc = (i.location || '').toLowerCase();
+                    const filmType = codeKey(i.filmType);
+                    const itemName = codeKey(i.itemName);
+                    const id = codeKey(i.id);
+                    const loc = codeKey(i.location);
                     return filmType.includes(s) || itemName.includes(s) || id.includes(s) || loc.includes(s);
                   }).map(i => (
                     <option key={i.id} value={i.id}>
@@ -8002,8 +8531,8 @@ export default function InventoryManagement({
             resolvedBarcode = g.itemsBreakdown.map(b => b.barcodeId).filter(Boolean).join(', ');
           } else if (Array.isArray(g.barcodes) && g.barcodes.length > 0) {
             resolvedBarcode = g.barcodes.join(', ');
-          } else if (g.barcodeId && (g.barcodeId.startsWith('RM-BC') || g.barcodeId.startsWith('CON-BC'))) {
-            resolvedBarcode = g.barcodeId;
+          } else if (codeStartsWith(g.barcodeId, 'RM-BC') || codeStartsWith(g.barcodeId, 'CON-BC')) {
+            resolvedBarcode = textFrom(g.barcodeId);
           } else {
             const isFilmGRN = (g.category || 'Film Substrates') === 'Film Substrates';
             const specSuffix = isFilmGRN && g.widthMm && g.widthMm !== '-' ? `-${g.micron || '12'}M${g.widthMm}W` : '';
@@ -8069,10 +8598,10 @@ export default function InventoryManagement({
               let barcodeVal = '';
               if (customBarcodesMap[txId]) {
                 barcodeVal = customBarcodesMap[txId];
-              } else if (sub.barcodeId && (sub.barcodeId.startsWith('RM-BC') || sub.barcodeId.startsWith('CON-BC'))) {
-                barcodeVal = sub.barcodeId;
-              } else if (sub.barcode && (sub.barcode.startsWith('RM-BC') || sub.barcode.startsWith('CON-BC'))) {
-                barcodeVal = sub.barcode;
+              } else if (codeStartsWith(sub.barcodeId, 'RM-BC') || codeStartsWith(sub.barcodeId, 'CON-BC')) {
+                barcodeVal = textFrom(sub.barcodeId);
+              } else if (codeStartsWith(sub.barcode, 'RM-BC') || codeStartsWith(sub.barcode, 'CON-BC')) {
+                barcodeVal = textFrom(sub.barcode);
               } else {
                 const specSuffix = isFilmSub && sub.widthMm && sub.widthMm !== '-' 
                   ? `-${sub.micron || '12'}M${sub.widthMm}W` 

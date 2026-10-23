@@ -1,4 +1,5 @@
 import React from 'react';
+import * as Sentry from '@sentry/react';
 import { AlertTriangle, RefreshCw, LogIn, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 
 export default class ErrorBoundary extends React.Component {
@@ -18,13 +19,7 @@ export default class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, errorInfo) {
     console.error("Uncaught ERP Runtime Error:", error, errorInfo);
-    try {
-      if (typeof window !== 'undefined' && window.Sentry && typeof window.Sentry.captureException === 'function') {
-        window.Sentry.captureException(error, { extra: errorInfo });
-      }
-    } catch (sentryErr) {
-      console.warn("Failed to capture exception to Sentry:", sentryErr);
-    }
+    Sentry.captureException(error, { extra: errorInfo });
     this.setState({ errorInfo });
   }
 

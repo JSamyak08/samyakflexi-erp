@@ -37,6 +37,14 @@ export const DEFAULT_AGEING_SETTINGS = {
 
 import { compressImageDataUrl, safeLocalStorageSet } from '../utils/safeStorage';
 import { saveSystemSetting, fetchSystemSetting, saveEmailSettingsToSupabase, saveEmailTemplatesToSupabase, fetchFilmSubstratesFromSupabase, saveFilmSubstratesToSupabase } from './supabaseDataService';
+import {
+  cacheCompanyProfile,
+  COMPANY_PROFILE_SETTING_KEY,
+  companyProfileError,
+  getCompanyProfile,
+  normalizeCompanyProfile,
+  withCompanyTagline,
+} from './companyProfile';
 import { FILM_SUBSTRATES_STORAGE_KEY, DEFAULT_FILM_SUBSTRATES, getFilmSubstrates } from './filmSubstratesService';
 export { FILM_SUBSTRATES_STORAGE_KEY, DEFAULT_FILM_SUBSTRATES, getFilmSubstrates };
 
@@ -57,30 +65,22 @@ export function getCompanyLogo() {
  * Save custom company logo image (base64 string)
  */
 export async function saveCompanyLogo(base64String) {
-  try {
-    if (base64String) {
-      const compressed = await compressImageDataUrl(base64String, 600, 0.7);
-      safeLocalStorageSet(LOGO_STORAGE_KEY, compressed);
-      await saveSystemSetting('company_logo', compressed);
-    } else {
-      localStorage.removeItem(LOGO_STORAGE_KEY);
-      await saveSystemSetting('company_logo', '');
-    }
-  } catch (e) {
-    console.error("Failed to save logo", e);
+  if (base64String) {
+    const compressed = await compressImageDataUrl(base64String, 600, 0.7);
+    await saveSystemSetting('company_logo', compressed);
+    safeLocalStorageSet(LOGO_STORAGE_KEY, compressed);
+    return compressed;
   }
+  await saveSystemSetting('company_logo', '');
+  localStorage.removeItem(LOGO_STORAGE_KEY);
+  return '';
 }
 
 /**
  * Clear stored company logo
  */
-export function clearCompanyLogo() {
-  try {
-    localStorage.removeItem(LOGO_STORAGE_KEY);
-    saveSystemSetting('company_logo', '').catch(() => {});
-  } catch (e) {
-    console.error("Failed to clear logo", e);
-  }
+export async function clearCompanyLogo() {
+  await saveCompanyLogo('');
 }
 
 
@@ -151,30 +151,22 @@ export function getAuthorisedSignature() {
  * Save authorised signature image (base64 string)
  */
 export async function saveAuthorisedSignature(base64String) {
-  try {
-    if (base64String) {
-      const compressed = await compressImageDataUrl(base64String, 500, 0.7);
-      safeLocalStorageSet(SIGNATURE_STORAGE_KEY, compressed);
-      await saveSystemSetting('auth_signature', compressed);
-    } else {
-      localStorage.removeItem(SIGNATURE_STORAGE_KEY);
-      await saveSystemSetting('auth_signature', '');
-    }
-  } catch (e) {
-    console.error("Failed to save signature", e);
+  if (base64String) {
+    const compressed = await compressImageDataUrl(base64String, 500, 0.7);
+    await saveSystemSetting('auth_signature', compressed);
+    safeLocalStorageSet(SIGNATURE_STORAGE_KEY, compressed);
+    return compressed;
   }
+  await saveSystemSetting('auth_signature', '');
+  localStorage.removeItem(SIGNATURE_STORAGE_KEY);
+  return '';
 }
 
 /**
  * Clear stored signature
  */
-export function clearAuthorisedSignature() {
-  try {
-    localStorage.removeItem(SIGNATURE_STORAGE_KEY);
-    saveSystemSetting('auth_signature', '').catch(() => {});
-  } catch (e) {
-    console.error("Failed to clear signature", e);
-  }
+export async function clearAuthorisedSignature() {
+  await saveAuthorisedSignature('');
 }
 
 
@@ -193,13 +185,14 @@ export function getDocumentPrefixes() {
 /**
  * Save document prefix configuration
  */
-export function saveDocumentPrefixes(prefixConfig) {
-  try {
-    localStorage.setItem(PREFIX_STORAGE_KEY, JSON.stringify(prefixConfig));
-    saveSystemSetting('doc_prefixes', prefixConfig).catch(() => {});
-  } catch (e) {
-    console.error("Failed to save document prefixes", e);
-  }
+function cacheJson(key, value) {
+  localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+}
+
+export async function saveDocumentPrefixes(prefixConfig) {
+  await saveSystemSetting('doc_prefixes', prefixConfig);
+  cacheJson(PREFIX_STORAGE_KEY, prefixConfig);
+  return prefixConfig;
 }
 
 
@@ -228,13 +221,10 @@ export function getDocumentTerms() {
 /**
  * Save document terms & conditions configuration
  */
-export function saveDocumentTerms(termsConfig) {
-  try {
-    localStorage.setItem(TERMS_STORAGE_KEY, JSON.stringify(termsConfig));
-    saveSystemSetting('doc_terms', termsConfig).catch(() => {});
-  } catch (e) {
-    console.error("Failed to save document terms", e);
-  }
+export async function saveDocumentTerms(termsConfig) {
+  await saveSystemSetting('doc_terms', termsConfig);
+  cacheJson(TERMS_STORAGE_KEY, termsConfig);
+  return termsConfig;
 }
 
 
@@ -253,13 +243,10 @@ export function getCoaSignatories() {
 /**
  * Save CoA Signatories configuration
  */
-export function saveCoaSignatories(signatoryConfig) {
-  try {
-    localStorage.setItem(COA_SIGNATORIES_STORAGE_KEY, JSON.stringify(signatoryConfig));
-    saveSystemSetting('coa_signatories', signatoryConfig).catch(() => {});
-  } catch (e) {
-    console.error("Failed to save CoA signatories", e);
-  }
+export async function saveCoaSignatories(signatoryConfig) {
+  await saveSystemSetting('coa_signatories', signatoryConfig);
+  cacheJson(COA_SIGNATORIES_STORAGE_KEY, signatoryConfig);
+  return signatoryConfig;
 }
 
 
@@ -356,9 +343,13 @@ export function getNextDocRefNumber(type) {
   const docRef = generateDocRefNumber(type, num);
   
   if (key) {
-    saveDocumentPrefixes({
-      ...config,
-      [key]: Number(num) + 1
+    const next = { ...config, [key]: Number(num) + 1 };
+    cacheJson(PREFIX_STORAGE_KEY, next);
+    saveDocumentPrefixes(next).catch((err) => {
+      console.error('Document number series was not saved', err);
+      if (typeof window !== 'undefined') {
+        window.alert(`The next document number was not saved to the database: ${err.message || err}`);
+      }
     });
   }
 
@@ -370,17 +361,36 @@ const RATES_STORAGE_KEY = 'samyak_processing_rates';
 export const DEFAULT_RATES = {
   liquidInkPrice: 1500,
   adhesivePrice: 270,
-  paperCorePrice: 45
+  paperCorePrice: 45,
+  conversionChargesPerKg: 45,
+  fixedProfitPerKg: 25
 };
 
 export const MATERIAL_COST_SETTINGS_STORAGE_KEY = 'samyak_material_cost_settings';
 
 export const DEFAULT_MATERIAL_COST_SETTINGS = {
-  adhesiveCostPerKg: 270,    // ₹ / kg for Lamination Adhesive
-  paperCoreCostPerKg: 45,    // ₹ / kg for Slitting Paper Cores
-  liquidInkPrice: 1500,      // ₹ / kg for Inks
+  adhesiveCostPerKg: 270,       // ₹ / kg for Lamination Adhesive
+  paperCoreCostPerKg: 45,       // ₹ / kg for Slitting Paper Cores
+  liquidInkPrice: 1500,         // ₹ / kg for Inks
+  conversionChargesPerKg: 45,   // ₹ / kg default Conversion Charges
+  fixedProfitPerKg: 25,         // ₹ / kg default Fixed Profit Margin
+  minPoQtyKg: 100,              // minimum kilograms on an ink purchase order
+  defaultReorderLevelKg: 50,    // used when an ink has no reorder level of its own
   updatedAt: ''
 };
+
+function configuredKilograms(value, fallback) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : Number.NaN;
+}
+
+function inkPurchaseQuantities(source) {
+  return {
+    minPoQtyKg: configuredKilograms(source?.minPoQtyKg, DEFAULT_MATERIAL_COST_SETTINGS.minPoQtyKg),
+    defaultReorderLevelKg: configuredKilograms(source?.defaultReorderLevelKg, DEFAULT_MATERIAL_COST_SETTINGS.defaultReorderLevelKg),
+  };
+}
 
 /**
  * Fetch Material Cost Settings from Supabase Database with local fallback
@@ -395,6 +405,13 @@ export async function fetchMaterialCostSettingsFromSupabase() {
         adhesiveCostPerKg: Number(remote.adhesiveCostPerKg ?? remote.adhesivePrice) || DEFAULT_MATERIAL_COST_SETTINGS.adhesiveCostPerKg,
         paperCoreCostPerKg: Number(remote.paperCoreCostPerKg ?? remote.paperCorePrice) || DEFAULT_MATERIAL_COST_SETTINGS.paperCoreCostPerKg,
         liquidInkPrice: Number(remote.liquidInkPrice) || DEFAULT_MATERIAL_COST_SETTINGS.liquidInkPrice,
+        conversionChargesPerKg: (remote.conversionChargesPerKg !== undefined && remote.conversionChargesPerKg !== '')
+          ? Number(remote.conversionChargesPerKg)
+          : DEFAULT_MATERIAL_COST_SETTINGS.conversionChargesPerKg,
+        fixedProfitPerKg: (remote.fixedProfitPerKg !== undefined && remote.fixedProfitPerKg !== '')
+          ? Number(remote.fixedProfitPerKg)
+          : DEFAULT_MATERIAL_COST_SETTINGS.fixedProfitPerKg,
+        ...inkPurchaseQuantities(remote),
         updatedAt: remote.updatedAt || ''
       };
       safeLocalStorageSet(MATERIAL_COST_SETTINGS_STORAGE_KEY, JSON.stringify(merged));
@@ -419,7 +436,14 @@ export function getMaterialCostSettings() {
       ...parsed,
       adhesiveCostPerKg: Number(parsed.adhesiveCostPerKg ?? parsed.adhesivePrice) || DEFAULT_MATERIAL_COST_SETTINGS.adhesiveCostPerKg,
       paperCoreCostPerKg: Number(parsed.paperCoreCostPerKg ?? parsed.paperCorePrice) || DEFAULT_MATERIAL_COST_SETTINGS.paperCoreCostPerKg,
-      liquidInkPrice: Number(parsed.liquidInkPrice) || DEFAULT_MATERIAL_COST_SETTINGS.liquidInkPrice
+      liquidInkPrice: Number(parsed.liquidInkPrice) || DEFAULT_MATERIAL_COST_SETTINGS.liquidInkPrice,
+      conversionChargesPerKg: (parsed.conversionChargesPerKg !== undefined && parsed.conversionChargesPerKg !== '')
+        ? Number(parsed.conversionChargesPerKg)
+        : DEFAULT_MATERIAL_COST_SETTINGS.conversionChargesPerKg,
+      fixedProfitPerKg: (parsed.fixedProfitPerKg !== undefined && parsed.fixedProfitPerKg !== '')
+        ? Number(parsed.fixedProfitPerKg)
+        : DEFAULT_MATERIAL_COST_SETTINGS.fixedProfitPerKg,
+      ...inkPurchaseQuantities(parsed)
     };
   } catch (e) {
     return { ...DEFAULT_MATERIAL_COST_SETTINGS };
@@ -429,28 +453,54 @@ export function getMaterialCostSettings() {
 /**
  * Save Material Cost Settings to Supabase DB and local cache
  */
+export async function saveCompanyProfile(profile) {
+  const problem = companyProfileError(profile);
+  if (problem) {
+    const error = new Error(problem);
+    error.status = 500;
+    throw error;
+  }
+  const stored = withCompanyTagline(normalizeCompanyProfile(profile));
+  await saveSystemSetting(COMPANY_PROFILE_SETTING_KEY, stored);
+  cacheCompanyProfile(stored);
+  return stored;
+}
+
+export async function loadCompanyProfileFromSupabase() {
+  const remote = await fetchSystemSetting(COMPANY_PROFILE_SETTING_KEY);
+  if (!remote) return getCompanyProfile();
+  return cacheCompanyProfile(remote);
+}
+
 export async function saveMaterialCostSettings(settings) {
+  const quantities = inkPurchaseQuantities(settings);
+  if (!Number.isFinite(quantities.minPoQtyKg) || !Number.isFinite(quantities.defaultReorderLevelKg)) {
+    throw new Error('minPoQtyKg and defaultReorderLevelKg must be numbers greater than or equal to 0.');
+  }
   const payload = {
     ...DEFAULT_MATERIAL_COST_SETTINGS,
     ...settings,
+    ...quantities,
     adhesiveCostPerKg: Number(settings.adhesiveCostPerKg ?? settings.adhesivePrice) || DEFAULT_MATERIAL_COST_SETTINGS.adhesiveCostPerKg,
     paperCoreCostPerKg: Number(settings.paperCoreCostPerKg ?? settings.paperCorePrice) || DEFAULT_MATERIAL_COST_SETTINGS.paperCoreCostPerKg,
     liquidInkPrice: Number(settings.liquidInkPrice) || DEFAULT_MATERIAL_COST_SETTINGS.liquidInkPrice,
+    conversionChargesPerKg: (settings.conversionChargesPerKg !== undefined && settings.conversionChargesPerKg !== '')
+      ? Number(settings.conversionChargesPerKg)
+      : DEFAULT_MATERIAL_COST_SETTINGS.conversionChargesPerKg,
+    fixedProfitPerKg: (settings.fixedProfitPerKg !== undefined && settings.fixedProfitPerKg !== '')
+      ? Number(settings.fixedProfitPerKg)
+      : DEFAULT_MATERIAL_COST_SETTINGS.fixedProfitPerKg,
     updatedAt: new Date().toISOString()
   };
-  try {
-    safeLocalStorageSet(MATERIAL_COST_SETTINGS_STORAGE_KEY, JSON.stringify(payload));
-    await saveSystemSetting('material_cost_settings', payload);
-    // Keep processing_rates in sync as well
-    saveProcessingRates({
-      liquidInkPrice: payload.liquidInkPrice,
-      adhesivePrice: payload.adhesiveCostPerKg,
-      paperCorePrice: payload.paperCoreCostPerKg
-    });
-  } catch (e) {
-    console.error("Failed to save material cost settings", e);
-    throw e;
-  }
+  await saveSystemSetting('material_cost_settings', payload);
+  safeLocalStorageSet(MATERIAL_COST_SETTINGS_STORAGE_KEY, JSON.stringify(payload));
+  await saveProcessingRates({
+    liquidInkPrice: payload.liquidInkPrice,
+    adhesivePrice: payload.adhesiveCostPerKg,
+    paperCorePrice: payload.paperCoreCostPerKg,
+    conversionChargesPerKg: payload.conversionChargesPerKg,
+    fixedProfitPerKg: payload.fixedProfitPerKg
+  });
   return payload;
 }
 
@@ -465,7 +515,13 @@ export function getProcessingRates() {
     return {
       liquidInkPrice: Number(parsed.liquidInkPrice) || DEFAULT_RATES.liquidInkPrice,
       adhesivePrice: Number(parsed.adhesivePrice) || DEFAULT_RATES.adhesivePrice,
-      paperCorePrice: Number(parsed.paperCorePrice) || DEFAULT_RATES.paperCorePrice
+      paperCorePrice: Number(parsed.paperCorePrice) || DEFAULT_RATES.paperCorePrice,
+      conversionChargesPerKg: (parsed.conversionChargesPerKg !== undefined && parsed.conversionChargesPerKg !== '')
+        ? Number(parsed.conversionChargesPerKg)
+        : DEFAULT_RATES.conversionChargesPerKg,
+      fixedProfitPerKg: (parsed.fixedProfitPerKg !== undefined && parsed.fixedProfitPerKg !== '')
+        ? Number(parsed.fixedProfitPerKg)
+        : DEFAULT_RATES.fixedProfitPerKg
     };
   } catch (e) {
     return { ...DEFAULT_RATES };
@@ -475,13 +531,12 @@ export function getProcessingRates() {
 /**
  * Save processing rates configuration
  */
-export function saveProcessingRates(rates) {
-  try {
-    localStorage.setItem(RATES_STORAGE_KEY, JSON.stringify(rates));
-    saveSystemSetting('processing_rates', rates).catch(() => {});
-  } catch (e) {
-    console.error("Failed to save processing rates", e);
-  }
+export async function saveProcessingRates(rates) {
+  const current = getProcessingRates();
+  const merged = { ...current, ...rates };
+  await saveSystemSetting('processing_rates', merged);
+  cacheJson(RATES_STORAGE_KEY, merged);
+  return merged;
 }
 
 /**
@@ -500,13 +555,10 @@ export function getInventoryAgeingSettings() {
 /**
  * Save inventory ageing threshold configuration
  */
-export function saveInventoryAgeingSettings(settings) {
-  try {
-    localStorage.setItem(AGEING_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-    saveSystemSetting('inventory_ageing_settings', settings).catch(() => {});
-  } catch (e) {
-    console.error("Failed to save inventory ageing settings", e);
-  }
+export async function saveInventoryAgeingSettings(settings) {
+  await saveSystemSetting('inventory_ageing_settings', settings);
+  cacheJson(AGEING_SETTINGS_STORAGE_KEY, settings);
+  return settings;
 }
 
 
@@ -525,7 +577,7 @@ export const DEFAULT_EMAIL_SETTINGS = {
   smtpPass: '',
   senderName: 'Samyak International ERP',
   adminEmail: 'admin@samyakinternational.in',
-  plantManagerEmail: 'plant.manager@plant.com',
+  plantManagerEmail: 'admin@samyakinternational.in',
   purchaseEmail: 'purchase@samyakinternational.in',
   dispatchEmail: 'dispatch@samyakinternational.in'
 };
@@ -539,7 +591,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     badgeText: 'Action Task: Order Created',
     badgeBgColor: '#0284c7',
     toEmail: 'admin@samyakinternational.in',
-    ccEmail: 'plant.manager@plant.com',
+    ccEmail: '',
     enabled: true,
     contentHtml: `<p style="font-size: 14px; color: #334155;">A new job order has been punched into the ERP system and queued for raw material allocation and cylinder scheduling.</p>
 <div class="info-card">
@@ -588,7 +640,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     subject: '✅ Production Record Approved: {jobName}',
     badgeText: 'Action Task: Approved by Admin',
     badgeBgColor: '#059669',
-    toEmail: 'plant.manager@plant.com',
+    toEmail: 'admin@samyakinternational.in',
     ccEmail: '',
     enabled: true,
     contentHtml: `<p style="font-size: 14px; color: #334155;">The production record for job <strong>{jobName}</strong> has been officially reviewed and APPROVED by the Admin.</p>
@@ -689,10 +741,9 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     <tr><td><strong>Login Email:</strong></td><td>{userEmail}</td></tr>
     <tr><td><strong>Assigned Role:</strong></td><td><strong>{userRole}</strong></td></tr>
     <tr><td><strong>Department:</strong></td><td>{userDepartment}</td></tr>
-    <tr><td><strong>Temporary Password:</strong></td><td><code>{userPassword}</code></td></tr>
   </table>
 </div>
-<p style="font-size: 13px; color: #64748b;">Please log in at app.samyakinternational.in and update your password.</p>`,
+<p style="font-size: 13px; color: #64748b;">A separate email contains a link to choose your password. Sign in at erp.samyakinternational.in after you set it. No password is included in this message.</p>`,
     footerNote: 'Samyak International Ltd • Indore Packaging Division\nKheda Industrial Area, Sector 3, Pithampur, MP | GSTIN: 23AABCM3526F1ZY'
   },
   password_recovery: {
@@ -706,14 +757,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     ccEmail: '',
     enabled: true,
     contentHtml: `<p style="color: #475569; font-size: 14px; line-height: 1.5;">
-  We received a password reset request for your ERP account associated with <strong>{userEmail}</strong>.
-</p>
-<div style="background: #f1f5f9; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 16px; text-align: center; margin: 20px 0;">
-  <span style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 6px;">Your 6-Digit Verification Code</span>
-  <span style="font-size: 32px; font-weight: 800; color: #0f172a; letter-spacing: 6px;">{recoveryCode}</span>
-</div>
-<p style="color: #475569; font-size: 13px;">
-  Please enter this verification code on the ERP login screen to set a new password. This code will expire in 15 minutes.
+  Password resets for <strong>{userEmail}</strong> are sent by Supabase Auth. Use Forgot password on the ERP login screen. The message contains a one-time link to choose a new password. There is no verification code.
 </p>`,
     footerNote: 'Samyak International Ltd • Indore Packaging Division\nKheda Industrial Area, Sector 3, Pithampur, MP | GSTIN: 23AABCM3526F1ZY'
   },
@@ -725,7 +769,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     badgeText: 'Action Task: High Scrap Warning',
     badgeBgColor: '#dc2626',
     toEmail: 'admin@samyakinternational.in',
-    ccEmail: 'plant.manager@plant.com',
+    ccEmail: '',
     enabled: true,
     contentHtml: `<p style="font-size: 14px; color: #334155;">Production record entry for job <strong>{jobName}</strong> exceeded the pre-costing scrap & wastage allowance threshold by <strong>+{wastageVariancePct}%</strong>.</p>
 <div class="info-card">
@@ -780,7 +824,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     badgeText: '🚨 SLA Escalation Alert: QC Overdue',
     badgeBgColor: '#dc2626',
     toEmail: 'admin@samyakinternational.in',
-    ccEmail: 'plant.manager@plant.com, quality@samyakinternational.in',
+    ccEmail: 'quality@samyakinternational.in',
     enabled: true,
     contentHtml: `<div style="background: #fef2f2; border: 1px solid #fca5a5; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
   <h3 style="color: #991b1b; font-size: 16px; margin: 0 0 6px 0;">🚨 12-Hour Quality Inspection SLA Exceeded</h3>
@@ -817,10 +861,15 @@ export function interpolateTemplate(str, vars = {}) {
 /**
  * Fetch saved Email Settings (SMTP & Department routing)
  */
+function withoutSmtpSecret(config) {
+  const { smtpPass, ...rest } = config || {};
+  return { ...DEFAULT_EMAIL_SETTINGS, ...rest, smtpPass: '' };
+}
+
 export function getEmailSettings() {
   try {
     const saved = localStorage.getItem(EMAIL_SETTINGS_STORAGE_KEY);
-    return saved ? { ...DEFAULT_EMAIL_SETTINGS, ...JSON.parse(saved) } : { ...DEFAULT_EMAIL_SETTINGS };
+    return withoutSmtpSecret(saved ? JSON.parse(saved) : {});
   } catch (e) {
     return { ...DEFAULT_EMAIL_SETTINGS };
   }
@@ -829,13 +878,11 @@ export function getEmailSettings() {
 /**
  * Save Email Settings (SMTP & Department routing)
  */
-export function saveEmailSettings(config) {
-  try {
-    localStorage.setItem(EMAIL_SETTINGS_STORAGE_KEY, JSON.stringify(config));
-    saveEmailSettingsToSupabase(config).catch(() => {});
-  } catch (e) {
-    console.error("Failed to save email settings", e);
-  }
+export async function saveEmailSettings(config) {
+  const safe = withoutSmtpSecret(config);
+  await saveEmailSettingsToSupabase(safe);
+  cacheJson(EMAIL_SETTINGS_STORAGE_KEY, safe);
+  return safe;
 }
 
 /**
@@ -852,6 +899,18 @@ export function getEmailTemplates() {
         merged[key] = { ...DEFAULT_EMAIL_TEMPLATES[key], ...parsed[key] };
       }
     });
+    if (merged.user_created?.contentHtml?.includes('{userPassword}')) {
+      merged.user_created = {
+        ...merged.user_created,
+        contentHtml: DEFAULT_EMAIL_TEMPLATES.user_created.contentHtml
+      };
+    }
+    if (merged.password_recovery?.contentHtml?.includes('{recoveryCode}')) {
+      merged.password_recovery = {
+        ...merged.password_recovery,
+        contentHtml: DEFAULT_EMAIL_TEMPLATES.password_recovery.contentHtml
+      };
+    }
     return merged;
   } catch (e) {
     return { ...DEFAULT_EMAIL_TEMPLATES };
@@ -861,26 +920,17 @@ export function getEmailTemplates() {
 /**
  * Save custom Email Templates
  */
-export function saveEmailTemplates(templates) {
-  try {
-    localStorage.setItem(EMAIL_TEMPLATES_STORAGE_KEY, JSON.stringify(templates));
-    saveEmailTemplatesToSupabase(templates).catch(() => {});
-  } catch (e) {
-    console.error("Failed to save email templates", e);
-  }
+export async function saveEmailTemplates(templates) {
+  await saveEmailTemplatesToSupabase(templates);
+  cacheJson(EMAIL_TEMPLATES_STORAGE_KEY, templates);
+  return templates;
 }
 
 /**
  * Reset Email Templates to Factory Defaults
  */
-export function resetEmailTemplates() {
-  try {
-    localStorage.setItem(EMAIL_TEMPLATES_STORAGE_KEY, JSON.stringify(DEFAULT_EMAIL_TEMPLATES));
-    saveEmailTemplatesToSupabase(DEFAULT_EMAIL_TEMPLATES).catch(() => {});
-    return { ...DEFAULT_EMAIL_TEMPLATES };
-  } catch (e) {
-    return { ...DEFAULT_EMAIL_TEMPLATES };
-  }
+export async function resetEmailTemplates() {
+  return saveEmailTemplates({ ...DEFAULT_EMAIL_TEMPLATES });
 }
 
 /* ========================================================================= */
@@ -889,12 +939,9 @@ export function resetEmailTemplates() {
 
 
 export async function saveFilmSubstrates(substratesList) {
-  try {
-    safeLocalStorageSet(FILM_SUBSTRATES_STORAGE_KEY, JSON.stringify(substratesList));
-    await saveFilmSubstratesToSupabase(substratesList);
-  } catch (e) {
-    console.error("Failed to save film substrates master settings", e);
-  }
+  await saveFilmSubstratesToSupabase(substratesList);
+  safeLocalStorageSet(FILM_SUBSTRATES_STORAGE_KEY, JSON.stringify(substratesList));
+  return substratesList;
 }
 
 export async function loadFilmSubstratesFromSupabase() {
@@ -999,13 +1046,10 @@ export function getStorageBays() {
   }
 }
 
-export function saveStorageBays(baysList) {
-  try {
-    safeLocalStorageSet(STORAGE_BAYS_STORAGE_KEY, JSON.stringify(baysList));
-    saveSystemSetting('storage_bays_master', baysList).catch(() => {});
-  } catch (e) {
-    console.error("Failed to save storage bays master settings", e);
-  }
+export async function saveStorageBays(baysList) {
+  await saveSystemSetting('storage_bays_master', baysList);
+  safeLocalStorageSet(STORAGE_BAYS_STORAGE_KEY, JSON.stringify(baysList));
+  return baysList;
 }
 
 export async function loadStorageBaysFromSupabase() {

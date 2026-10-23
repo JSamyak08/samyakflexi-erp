@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import SearchableSelect from './SearchableSelect';
 import { 
   FILM_DENSITIES, 
@@ -25,7 +25,13 @@ import {
 } from 'lucide-react';
 import OrderConfirmationPDF from './OrderConfirmationPDF';
 import { notifyOrderPunched } from '../services/emailService';
-import { getProcessingRates, saveProcessingRates, getNextDocRefNumber } from '../services/settingsService';
+import { 
+  getProcessingRates, 
+  saveProcessingRates, 
+  getNextDocRefNumber, 
+  getMaterialCostSettings, 
+  fetchMaterialCostSettingsFromSupabase 
+} from '../services/settingsService';
 
 export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, initialJobMasterData, clients = [], jobMasters = [] }) {
   // Form State
@@ -103,7 +109,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       saveProcessingRates({
         liquidInkPrice: num,
         adhesivePrice: parseFloat(adhesivePrice) || DEFAULT_PROCESSING_RATES.adhesivePrice
-      });
+      }).catch((err) => alert(`The ink rate was not saved: ${err.message || err}`));
     }
   };
 
@@ -114,9 +120,40 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       saveProcessingRates({
         liquidInkPrice: parseFloat(inkPrice) || DEFAULT_PROCESSING_RATES.liquidInkPrice,
         adhesivePrice: num
-      });
+      }).catch((err) => alert(`The adhesive rate was not saved: ${err.message || err}`));
     }
   };
+  // Job-Specific Pricing Additions (defaults from System Settings, editable per job)
+  const [conversionCharges, setConversionCharges] = useState(() => {
+    if (initialJobMasterData?.conversionChargesPerKg !== undefined && initialJobMasterData?.conversionChargesPerKg !== null && initialJobMasterData?.conversionChargesPerKg !== '') {
+      return initialJobMasterData.conversionChargesPerKg;
+    }
+    const settings = getMaterialCostSettings();
+    return settings.conversionChargesPerKg !== undefined ? settings.conversionChargesPerKg : 45;
+  });
+
+  const [fixedProfit, setFixedProfit] = useState(() => {
+    if (initialJobMasterData?.fixedProfitPerKg !== undefined && initialJobMasterData?.fixedProfitPerKg !== null && initialJobMasterData?.fixedProfitPerKg !== '') {
+      return initialJobMasterData.fixedProfitPerKg;
+    }
+    const settings = getMaterialCostSettings();
+    return settings.fixedProfitPerKg !== undefined ? settings.fixedProfitPerKg : 25;
+  });
+
+  // Sync latest baseline from Supabase on mount if not customized in initial master data
+  useEffect(() => {
+    fetchMaterialCostSettingsFromSupabase().then(settings => {
+      if (settings) {
+        if (!initialJobMasterData?.conversionChargesPerKg && settings.conversionChargesPerKg !== undefined) {
+          setConversionCharges(prev => (prev === 45 ? settings.conversionChargesPerKg : prev));
+        }
+        if (!initialJobMasterData?.fixedProfitPerKg && settings.fixedProfitPerKg !== undefined) {
+          setFixedProfit(prev => (prev === 25 ? settings.fixedProfitPerKg : prev));
+        }
+      }
+    }).catch(() => {});
+  }, [initialJobMasterData]);
+
   const [colorsCount, setColorsCount] = useState(() => initialJobMasterData?.colorsCount || '');
   const [targetDeliveryDays, setTargetDeliveryDays] = useState(10);
   const [isWarningIgnored, setIsWarningIgnored] = useState(false);
@@ -410,7 +447,9 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       layers,
       filmPrices: {},
       inkPrice: parseFloat(inkPrice) || 1500,
-      adhesivePrice: parseFloat(adhesivePrice) || 270
+      adhesivePrice: parseFloat(adhesivePrice) || 270,
+      conversionChargesPerKg: parseFloat(conversionCharges) || 0,
+      fixedProfitPerKg: parseFloat(fixedProfit) || 0
     });
 
     return {
@@ -436,6 +475,8 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
     layers,
     inkPrice,
     adhesivePrice,
+    conversionCharges,
+    fixedProfit,
     hasVariants,
     variants
   ]);
@@ -461,10 +502,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
     setShowConfirmModal(true);
   };
 
-  const handleFinalConfirmAndPunch = () => {
-    setShowConfirmModal(false);
-    setIsSubmitted(true);
-
+  const handleFinalConfirmAndPunch = async () => {
     const pw = parseFloat(printWidthMm) || 1000;
     const finalLayers = layers.map(l => {
       const defW = isLDFilm(l.filmType) ? pw + 5 : pw;
@@ -522,6 +560,12 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       },
       wastagePct: parseFloat(calculationResults.wastagePct) || 5,
       wastageKg: parseFloat(calculationResults.wastageKg) || 0,
+      conversionChargesPerKg: parseFloat(conversionCharges) || 0,
+      fixedProfitPerKg: parseFloat(fixedProfit) || 0,
+      minSellingPricePerKg: calculationResults.minSellingPricePerKg,
+      totalConversionCost: calculationResults.totalConversionCost,
+      totalFixedProfit: calculationResults.totalFixedProfit,
+      totalMinSellingAmount: calculationResults.totalMinSellingAmount,
       layers: finalLayers,
       structure: finalLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / '),
       calculationDetails: calculationResults,
@@ -537,9 +581,15 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       }))
     };
 
-    if (onSaveOrder) {
-      onSaveOrder(newOrder);
+    try {
+      if (onSaveOrder) await onSaveOrder(newOrder);
+    } catch (err) {
+      alert(`The sales order was not saved: ${err.message || err}`);
+      return;
     }
+
+    setShowConfirmModal(false);
+    setIsSubmitted(true);
 
     notifyOrderPunched(newOrder).catch(err => console.error("Order punched email error:", err));
 
@@ -1295,6 +1345,107 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
                 </span>
               </div>
             </div>
+
+            {/* Added after Total Raw Material Cost: Job-Specific Conversion Charges & Fixed Profit to derive Minimum Selling Price/kg */}
+            <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.82rem', fontWeight: '800', color: '#334155', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  🏭 Conversion &amp; Profit Margins
+                </span>
+                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '600', background: '#f1f5f9', padding: '2px 8px', borderRadius: '12px' }}>
+                  Job-Specific (Editable)
+                </span>
+              </div>
+
+              {/* Conversion Charges / kg */}
+              <div className="mat-req-card" style={{ borderLeft: '3px solid #3b82f6', background: '#f8fafc' }}>
+                <div>
+                  <div style={{ fontWeight: '700', color: '#1e293b', fontSize: '0.88rem' }}>
+                    Conversion Charges / kg
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
+                    Rate: ₹
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      style={{ width: '75px', padding: '2px 6px', fontSize: '0.85rem', fontWeight: '800', border: '1.5px solid #93c5fd', borderRadius: '4px', color: '#1e40af', background: '#ffffff', textAlign: 'right' }}
+                      value={conversionCharges !== undefined ? conversionCharges : ''}
+                      onChange={e => setConversionCharges(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
+                      title="Conversion charges per kg for this job (default from Settings)"
+                    />
+                    /kg
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '1.05rem', fontWeight: '700', color: '#1e40af' }}>
+                    ₹{(calculationResults.conversionChargesPerKg || 0)} / kg
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                    Total: ₹{(calculationResults.totalConversionCost || 0).toLocaleString()}
+                  </div>
+                </div>
+              </div>
+
+              {/* Fixed Profit / kg */}
+              <div className="mat-req-card" style={{ borderLeft: '3px solid #10b981', background: '#f8fafc' }}>
+                <div>
+                  <div style={{ fontWeight: '700', color: '#1e293b', fontSize: '0.88rem' }}>
+                    Fixed Profit / kg
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
+                    Rate: ₹
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      style={{ width: '75px', padding: '2px 6px', fontSize: '0.85rem', fontWeight: '800', border: '1.5px solid #86efac', borderRadius: '4px', color: '#047857', background: '#ffffff', textAlign: 'right' }}
+                      value={fixedProfit !== undefined ? fixedProfit : ''}
+                      onChange={e => setFixedProfit(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
+                      title="Fixed profit per kg for this job (default from Settings)"
+                    />
+                    /kg
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '1.05rem', fontWeight: '700', color: '#047857' }}>
+                    ₹{(calculationResults.fixedProfitPerKg || 0)} / kg
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: '#059669', fontWeight: '600' }}>
+                    Total: ₹{(calculationResults.totalFixedProfit || 0).toLocaleString()}
+                  </div>
+                </div>
+              </div>
+
+              {/* Minimum Selling Price Box */}
+              <div style={{ background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)', border: '2px solid #059669', borderRadius: '10px', padding: '16px', marginTop: '4px', boxShadow: '0 4px 12px rgba(5, 150, 105, 0.12)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                  <div>
+                    <span style={{ fontSize: '0.8rem', fontWeight: '900', color: '#064e3b', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      🏁 Minimum Selling Price / kg
+                    </span>
+                    <div style={{ fontSize: '0.72rem', color: '#047857', marginTop: '3px', fontWeight: '600' }}>
+                      ₹{calculationResults.summary?.costPerKg || 0} (RM) + ₹{calculationResults.conversionChargesPerKg || 0} (Conv) + ₹{calculationResults.fixedProfitPerKg || 0} (Profit)
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '1.55rem', fontWeight: '900', color: '#047857', lineHeight: 1 }}>
+                      ₹{calculationResults.minSellingPricePerKg}
+                      <span style={{ fontSize: '0.82rem', fontWeight: '700', color: '#065f46' }}> / kg</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ borderTop: '1px dashed #6ee7b7', paddingTop: '8px', marginTop: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.82rem', fontWeight: '700', color: '#064e3b' }}>
+                    Total Minimum Order Value ({orderQtyKg || 0} kg):
+                  </span>
+                  <span style={{ fontSize: '1.2rem', fontWeight: '900', color: '#047857' }}>
+                    ₹{(calculationResults.totalMinSellingAmount || 0).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="glass-card" style={{ padding: '16px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
@@ -1372,11 +1523,41 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
                 <div><span style={{ color: 'var(--text-secondary)' }}>Total Surface Area:</span> <b>{(calculationResults.totalAreaSqm || 0).toLocaleString()} m²</b></div>
                 <div><span style={{ color: 'var(--text-secondary)' }}>Applied Wastage %:</span> <b>{calculationResults.wastagePct}%</b></div>
                 <div><span style={{ color: 'var(--text-secondary)' }}>Gross RM Required:</span> <b>{(calculationResults.summary.totalFilmGrossKg + (calculationResults.inkDetails.grossKg || 0) + (calculationResults.adhesiveDetails.grossKg || 0)).toFixed(2)} Kg</b></div>
-                <div><span style={{ color: 'var(--text-secondary)' }}>Cost Per Finished Kg:</span> <b style={{ color: 'var(--success)' }}>₹{calculationResults.summary.costPerKg}/kg</b></div>
+                <div><span style={{ color: 'var(--text-secondary)' }}>Raw Material Cost / Kg:</span> <b style={{ color: 'var(--primary-brand)' }}>₹{calculationResults.summary.costPerKg}/kg</b></div>
               </div>
-              <div style={{ borderTop: '1px solid #dbeafe', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ borderTop: '1px solid #dbeafe', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                 <span style={{ fontSize: '0.95rem', fontWeight: '600', color: '#1e3a8a' }}>Total Estimated Raw Material Cost:</span>
-                <span style={{ fontSize: '1.3rem', fontWeight: '800', color: '#1e40af' }}>₹{(calculationResults.summary?.totalRawMaterialCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span style={{ fontSize: '1.25rem', fontWeight: '800', color: '#1e40af' }}>₹{(calculationResults.summary?.totalRawMaterialCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+
+              {/* Added after Total Raw Material Cost: Conversion, Profit & Derived Minimum Selling Price */}
+              <div style={{ background: '#ffffff', border: '1.5px solid #86efac', borderRadius: '8px', padding: '14px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.85rem', marginBottom: '10px' }}>
+                  <div>
+                    <span style={{ color: 'var(--text-secondary)' }}>Conversion Charges:</span>{' '}
+                    <b>₹{calculationResults.conversionChargesPerKg}/kg</b>{' '}
+                    <span style={{ fontSize: '0.78rem', color: '#64748b' }}>(₹{(calculationResults.totalConversionCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--text-secondary)' }}>Fixed Profit Margin:</span>{' '}
+                    <b style={{ color: '#047857' }}>₹{calculationResults.fixedProfitPerKg}/kg</b>{' '}
+                    <span style={{ fontSize: '0.78rem', color: '#059669' }}>(₹{(calculationResults.totalFixedProfit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>
+                  </div>
+                </div>
+                <div style={{ borderTop: '1.5px solid #bbf7d0', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <span style={{ fontSize: '0.95rem', fontWeight: '800', color: '#064e3b' }}>Minimum Selling Price / kg:</span>
+                    <div style={{ fontSize: '0.74rem', color: '#059669' }}>
+                      ₹{calculationResults.summary?.costPerKg} (RM) + ₹{calculationResults.conversionChargesPerKg} (Conv) + ₹{calculationResults.fixedProfitPerKg} (Profit)
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <span style={{ fontSize: '1.4rem', fontWeight: '900', color: '#047857' }}>₹{calculationResults.minSellingPricePerKg} / kg</span>
+                    <div style={{ fontSize: '0.8rem', color: '#064e3b', fontWeight: '700' }}>
+                      Total Min Order Value: ₹{(calculationResults.totalMinSellingAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 

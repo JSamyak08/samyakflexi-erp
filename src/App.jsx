@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from './services/supabaseClient';
+import { applyRemoteCompanyProfile } from './services/companyProfile';
 import { 
   isReconciliationDue,
   DEFAULT_ROLE_PERMISSIONS,
@@ -68,11 +69,12 @@ import PurchaseOrderManagement from './components/PurchaseOrderManagement';
 import WeighingScaleWidget from './components/WeighingScaleWidget';
 import UniversalBarcodeScannerModal from './components/UniversalBarcodeScannerModal';
 import Preloader from './components/Preloader';
+import { bootLoaderIsReady, shouldShowBootLoader } from './bootLoader';
 import SearchableSelect from './components/SearchableSelect';
 import SuccessScreenModal from './components/SuccessScreenModal';
 import { showSuccessScreen } from './context/SuccessModalContext';
 import { fetchAuditLogsPage, saveAuditLogToSupabase, createAuditEntry, pruneOldAuditLogs } from './services/auditLogger';
-import { getNextDocRefNumber } from './services/settingsService';
+import { getDocumentPrefixes, getNextDocRefNumber } from './services/settingsService';
 import { getRouteFromUrl, getTabFromUrl, pushSlugState } from './utils/slugRouter';
 import { isSupabaseConfigured, checkSupabaseConnection, withTimeout } from './services/supabaseClient';
 import { cancelQcOverdueEscalationDigest, runQcOverdueEscalationDigest } from './services/qcEscalationDigest';
@@ -83,7 +85,7 @@ import {
   fetchGRNs, saveGRNToSupabase, deleteGRNFromSupabase, sanitizeGRN,
   fetchCylinders, saveCylinderToSupabase, saveCylinderBatchToSupabase, deleteCylinderFromSupabase,
   fetchProductionRecords, saveProductionRecordToSupabase, deleteProductionRecordFromSupabase,
-  fetchUsers, saveUserToSupabase, deleteUserFromSupabase, updateUserPasswordInDB,
+  fetchUsers,
   fetchJobDataSheets, saveJobDataSheetToSupabase, deleteJobDataSheetFromSupabase,
   fetchInventoryRolls, saveInventoryRollToSupabase,
   fetchDispatchShipments, saveDispatchShipmentToSupabase, deleteDispatchShipmentFromSupabase,
@@ -102,14 +104,39 @@ import {
   fetchCertificatesOfAnalysisFromSupabase, saveCertificateOfAnalysisToSupabase, deleteCertificateOfAnalysisFromSupabase,
   fetchPelletInwardsFromSupabase, savePelletInwardToSupabase, deletePelletInwardFromSupabase,
   fetchPelletConsumptionsFromSupabase, savePelletConsumptionToSupabase, deletePelletConsumptionFromSupabase,
+  allocatePelletGrnNumber, savePelletInwardWithGrn,
   fetchPurchaseOrders, savePurchaseOrderToSupabase, deletePurchaseOrderFromSupabase, sanitizePurchaseOrder,
   fetchFilmSubstratesFromSupabase,
-  fetchSystemSetting, saveSystemSetting, fetchAllSystemSettings
+  fetchAllSystemSettings
 } from './services/supabaseDataService';
-import { createUserInSupabaseAuth } from './services/authService';
+import { attendanceMatchesEmployeeDate } from './services/employeeAttendance';
+import { buildPelletCompanionGrn, findPelletInventoryItem, fuelActorName } from './services/pelletFuel';
+import { fetchSessionProfile, signOutUser } from './services/authService';
+import {
+  PartialSaveError,
+  writeWithRetry,
+  unsavedItemsMessage,
+  planDispatchSfgDeductions,
+  planDispatchRollDeductions,
+  commitSequentialUpdates,
+  applyCommittedByIndex,
+  assertAllSaved
+} from './services/guardedWrite';
+import { createDirectoryUser, updateDirectoryUser, deleteDirectoryUser } from './services/adminUserService';
 
 import JobMasterDirectory from './components/JobMasterDirectory';
 import { safeLocalStorageSet, safeLocalStorageGet, initSafeStorage, idbGet } from './utils/safeStorage';
+import {
+  importLegacyBusinessRecords,
+  fetchPayloadRecords,
+  replacePayloadRecords,
+  fetchPressBoard,
+  savePressBoard,
+  describeSaveError,
+  localKeysToClear,
+  snapshotBrowserStorage,
+  clearImportedLocalKeys
+} from './services/businessRecords';
 import './index.css';
 
 // ============================================================================
@@ -250,6 +277,8 @@ export default function App() {
   // Authentication & Active User Session State
   const [currentUser, setCurrentUser] = useState(null);
   const [sessionProfile, setSessionProfile] = useState(null);
+  const [mustSetPassword, setMustSetPassword] = useState(false);
+  const passwordRecoveryRef = useRef(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(!isSupaConfigured);
   const [isSigningIn, setIsSigningIn] = useState(false);
@@ -302,69 +331,60 @@ export default function App() {
     }
   }, [isAuthenticated, currentUser, isAuthReady, activeTab]);
 
-  const hasSavedSession = () => {
-    try {
-      const user = safeLocalStorageGet('samyak_erp_current_user', null);
-      return Boolean(user && user.email);
-    } catch (e) { return false; }
-  };
-
-  // CACHE-FIRST REACT STATE INITIALIZATION:
-  // Instantly rehydrates from local safe storage cache so tables and dashboard never show empty data on refresh.
-  const [orders, setOrders] = useState(() => safeLocalStorageGet('samyak_cache_orders', []) || []);
-  const [ordersLoading, setOrdersLoading] = useState(() => (safeLocalStorageGet('samyak_cache_orders', []) || []).length === 0);
+  // Supabase is the store of record. Screens stay on the loader until that fetch finishes.
+  const [orders, setOrders] = useState([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
   const [ordersError, setOrdersError] = useState(null);
-  const [isDataLoading, setIsDataLoading] = useState(() => (safeLocalStorageGet('samyak_cache_orders', []) || []).length === 0);
-  const [isDataFetched, setIsDataFetched] = useState(() => (safeLocalStorageGet('samyak_cache_orders', []) || []).length > 0);
+  const [isDataLoading, setIsDataLoading] = useState(true);
+  const [isDataFetched, setIsDataFetched] = useState(false);
   const [deletingOrderId, setDeletingOrderId] = useState(null);
   const deletedOrderIdsRef = useRef(new Set());
   const ordersFetchVersion = useRef(0);
 
-  const [vendors, setVendors] = useState(() => safeLocalStorageGet('samyak_cache_vendors', []) || []);
-  const [inventory, setInventory] = useState(() => safeLocalStorageGet('samyak_cache_inventory', []) || []);
-  const [grns, setGrns] = useState(() => safeLocalStorageGet('samyak_cache_grns', []) || []);
-  const [users, setUsers] = useState(() => safeLocalStorageGet('samyak_cache_users', []) || []);
-  const [jobDataSheets, setJobDataSheets] = useState(() => safeLocalStorageGet('samyak_cache_job_datasheets', []) || []);
-  const [cylinders, setCylinders] = useState(() => safeLocalStorageGet('samyak_cache_cylinders', []) || []);
-  const [productionRecords, setProductionRecords] = useState(() => safeLocalStorageGet('samyak_cache_production_records', []) || []);
-  const [inventoryRolls, setInventoryRolls] = useState(() => safeLocalStorageGet('samyak_cache_inventory_rolls', []) || []);
-  const [dispatchShipments, setDispatchShipments] = useState(() => safeLocalStorageGet('samyak_cache_dispatch_shipments', []) || []);
-  const [deliveryChallans, setDeliveryChallans] = useState(() => safeLocalStorageGet('samyak_cache_delivery_challans', []) || []);
-  const [certificateOfAnalyses, setCertificateOfAnalyses] = useState(() => safeLocalStorageGet('samyak_cache_certificate_of_analyses', []) || []);
-  const [machines, setMachines] = useState(() => safeLocalStorageGet('samyak_cache_printing_machines', []) || []);
-  const [schedules, setSchedules] = useState(() => safeLocalStorageGet('samyak_cache_production_schedules', []) || []);
-  const [pressQueueOrder, setPressQueueOrder] = useState(() => safeLocalStorageGet('samyak_cache_press_queue_order', []) || []);
-  const [pressMachineAssignments, setPressMachineAssignments] = useState(() => safeLocalStorageGet('samyak_cache_press_machine_assignments', {}) || {});
-  const [pressActiveRunningJob, setPressActiveRunningJob] = useState(() => safeLocalStorageGet('samyak_cache_press_running_job', null));
-  const [clients, setClients] = useState(() => safeLocalStorageGet('samyak_cache_clients', []) || []);
-  const [jobMasters, setJobMasters] = useState(() => safeLocalStorageGet('samyak_cache_job_masters', []) || []);
-  const [inks, setInks] = useState(() => safeLocalStorageGet('samyak_cache_inks', []) || []);
+  const [vendors, setVendors] = useState([]);
+  const [inventory, setInventory] = useState([]);
+  const [grns, setGrns] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [jobDataSheets, setJobDataSheets] = useState([]);
+  const [cylinders, setCylinders] = useState([]);
+  const [productionRecords, setProductionRecords] = useState([]);
+  const [inventoryRolls, setInventoryRolls] = useState([]);
+  const [dispatchShipments, setDispatchShipments] = useState([]);
+  const [deliveryChallans, setDeliveryChallans] = useState([]);
+  const [certificateOfAnalyses, setCertificateOfAnalyses] = useState([]);
+  const [machines, setMachines] = useState([]);
+  const [schedules, setSchedules] = useState([]);
+  const [pressQueueOrder, setPressQueueOrder] = useState([]);
+  const [pressMachineAssignments, setPressMachineAssignments] = useState({});
+  const [pressActiveRunningJob, setPressActiveRunningJob] = useState(null);
+  const [clients, setClients] = useState([]);
+  const [jobMasters, setJobMasters] = useState([]);
+  const [inks, setInks] = useState([]);
   const [selectedJobMasterForPunch, setSelectedJobMasterForPunch] = useState(null);
-  const [rolePermissions, setRolePermissions] = useState(() => safeLocalStorageGet('samyak_cache_role_permissions', DEFAULT_ROLE_PERMISSIONS) || DEFAULT_ROLE_PERMISSIONS);
-  const [indents, setIndents] = useState(() => safeLocalStorageGet('samyak_cache_material_indents', []) || []);
-  const [machineIssues, setMachineIssues] = useState(() => safeLocalStorageGet('samyak_cache_machine_issues', []) || []);
-  const [consumables, setConsumables] = useState(() => safeLocalStorageGet('samyak_cache_consumables', []) || []);
-  const [storeIssueTransactions, setStoreIssueTransactions] = useState(() => safeLocalStorageGet('samyak_cache_store_issue_transactions', []) || []);
-  const [auditLogs, setAuditLogs] = useState(() => safeLocalStorageGet('samyak_cache_audit_logs', []) || []);
+  const [rolePermissions, setRolePermissions] = useState(DEFAULT_ROLE_PERMISSIONS);
+  const [indents, setIndents] = useState([]);
+  const [machineIssues, setMachineIssues] = useState([]);
+  const [consumables, setConsumables] = useState([]);
+  const [storeIssueTransactions, setStoreIssueTransactions] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
   const [auditLogTotal, setAuditLogTotal] = useState(0);
   const auditFetchedCountRef = useRef(0);
-  const [employees, setEmployees] = useState(() => safeLocalStorageGet('samyak_cache_employees', []) || []);
-  const [employeeAttendance, setEmployeeAttendance] = useState(() => safeLocalStorageGet('samyak_cache_employee_attendance', []) || []);
-  const [salaryAdvances, setSalaryAdvances] = useState(() => safeLocalStorageGet('samyak_cache_salary_advances', []) || []);
-  const [salaryPayments, setSalaryPayments] = useState(() => safeLocalStorageGet('samyak_cache_salary_payments', []) || []);
-  const [sfgGoods, setSfgGoods] = useState(() => safeLocalStorageGet('samyak_cache_sfg_goods', []) || []);
-  const [pelletInwards, setPelletInwards] = useState(() => safeLocalStorageGet('samyak_cache_pellet_inwards', []) || []);
-  const [pelletConsumptions, setPelletConsumptions] = useState(() => safeLocalStorageGet('samyak_cache_pellet_consumptions', []) || []);
-  const [purchaseOrders, setPurchaseOrders] = useState(() => safeLocalStorageGet('samyak_cache_purchase_orders', []) || []);
+  const [employees, setEmployees] = useState([]);
+  const [employeeAttendance, setEmployeeAttendance] = useState([]);
+  const [salaryAdvances, setSalaryAdvances] = useState([]);
+  const [salaryPayments, setSalaryPayments] = useState([]);
+  const [sfgGoods, setSfgGoods] = useState([]);
+  const [pelletInwards, setPelletInwards] = useState([]);
+  const [pelletConsumptions, setPelletConsumptions] = useState([]);
+  const [pelletLoadError, setPelletLoadError] = useState('');
+  const [purchaseOrders, setPurchaseOrders] = useState([]);
 
   const handleSavePurchaseOrder = async (po) => {
     requireDatabaseConnection('save purchase order');
     const saved = await savePurchaseOrderToSupabase(po);
     setPurchaseOrders(prev => {
       const currentList = Array.isArray(prev) ? prev : [];
-      const copy = [saved, ...currentList.filter(p => p && p.poNumber !== saved.poNumber && p.id !== saved.id)];
-      safeLocalStorageSet('samyak_cache_purchase_orders', copy);
-      return copy;
+      return [saved, ...currentList.filter(p => p && p.poNumber !== saved.poNumber && p.id !== saved.id)];
     });
     return saved;
   };
@@ -374,9 +394,7 @@ export default function App() {
     const updated = await savePurchaseOrderToSupabase(po);
     setPurchaseOrders(prev => {
       const currentList = Array.isArray(prev) ? prev : [];
-      const copy = currentList.map(p => (p && (p.poNumber === updated.poNumber || p.id === updated.id)) ? updated : p);
-      safeLocalStorageSet('samyak_cache_purchase_orders', copy);
-      return copy;
+      return currentList.map(p => (p && (p.poNumber === updated.poNumber || p.id === updated.id)) ? updated : p);
     });
     return updated;
   };
@@ -386,109 +404,95 @@ export default function App() {
     await deletePurchaseOrderFromSupabase(poId);
     setPurchaseOrders(prev => {
       const currentList = Array.isArray(prev) ? prev : [];
-      const copy = currentList.filter(p => p && p.id !== poId && p.poNumber !== poId);
-      safeLocalStorageSet('samyak_cache_purchase_orders', copy);
-      return copy;
+      return currentList.filter(p => p && p.id !== poId && p.poNumber !== poId);
     });
+  };
+
+  const handleAllocatePelletGrnNumber = async () => {
+    const prefix = getDocumentPrefixes().grnPrefix || 'SIL/GRN/26-27/';
+    return allocatePelletGrnNumber(prefix);
   };
 
   const handleSavePelletInward = async (item) => {
     if (!item) return;
+    const inventoryItem = findPelletInventoryItem(inventory);
     const cleanItem = {
       ...item,
+      grnPrefix: getDocumentPrefixes().grnPrefix || 'SIL/GRN/26-27/',
       status: item.status || 'Pending QC',
       qcStatus: item.qcStatus || item.status || 'Pending QC'
     };
-
-    setPelletInwards(prev => [cleanItem, ...prev.filter(i => String(i.id) !== String(cleanItem.id))]);
-
-    // Build corresponding GRN item for central GRN table and QC Approval Lab queue
-    const grnRecord = {
-      id: cleanItem.id || `PEL-GRN-${cleanItem.grnNo || Date.now()}`,
-      grnNo: cleanItem.grnNo || `GRN-PEL-${Date.now()}`,
-      grn_number: cleanItem.grnNo,
-      receivedDate: cleanItem.inwardDate || new Date().toISOString().split('T')[0],
-      inwardDate: cleanItem.inwardDate || new Date().toISOString().split('T')[0],
-      date: cleanItem.inwardDate || new Date().toISOString().split('T')[0],
-      vendorName: cleanItem.vendorName || 'Pellet Supplier',
-      vendorId: cleanItem.vendorName || 'Pellet Supplier',
-      itemName: 'Boiler Wood Pellets (Biofuel Fuel Stock)',
-      category: 'Boiler Pellets / Fuel',
-      receivedQtyKg: Number(cleanItem.inwardQtyKg) || 0,
-      netWeightKg: Number(cleanItem.inwardQtyKg) || 0,
-      quantity: Number(cleanItem.inwardQtyKg) || 0,
-      unit: 'Kg',
-      unitPrice: Number(cleanItem.unitCostPerKg) || 0,
-      purchaseRatePerKg: Number(cleanItem.unitCostPerKg) || 0,
-      totalAmount: Number(cleanItem.totalAmount) || 0,
-      invoiceNo: cleanItem.invoiceNo || '',
-      chalanNo: cleanItem.chalanNo || '',
-      storageLocation: cleanItem.storageLocation || 'Boiler Fuel Bay',
-      storeManager: cleanItem.receivedBy || 'Plant Manager',
-      status: cleanItem.status || 'Pending QC',
-      qcStatus: cleanItem.qcStatus || cleanItem.status || 'Pending QC',
-      itemRemarks: cleanItem.remarks || '',
-      remarks: cleanItem.remarks || '',
-      isPelletFuel: true,
-      updatedAt: new Date().toISOString()
-    };
-
-    setGrns(prev => [grnRecord, ...prev.filter(g => String(g.id) !== String(grnRecord.id) && String(g.grnNo) !== String(grnRecord.grnNo))]);
+    let companionGrn;
+    try {
+      companionGrn = buildPelletCompanionGrn(cleanItem, inventoryItem);
+    } catch (e) {
+      alert(e.message);
+      throw e;
+    }
 
     try {
-      await savePelletInwardToSupabase(cleanItem);
-      await saveGRNToSupabase(grnRecord);
-      logAudit('Save Pellet Inward', 'Pellet Fuel Stock Management', `GRN ${cleanItem.grnNo} - Inwarded ${cleanItem.inwardQtyKg} kg (Submitted to QC Approval Lab)`, cleanItem.id);
+      const saved = await savePelletInwardWithGrn({ ...cleanItem, companionGrn });
+      const savedPellet = saved?.pellet || { ...cleanItem, grnNo: companionGrn.grnNo };
+      const savedGrn = sanitizeGRN(saved?.grn || companionGrn);
+      setPelletInwards(prev => [savedPellet, ...(prev || []).filter(i => String(i.id) !== String(savedPellet.id))]);
+      setGrns(prev => [savedGrn, ...(prev || []).filter(g => String(g.id) !== String(savedGrn.id) && String(g.grnNo) !== String(savedGrn.grnNo))]);
+      logAudit('Save Pellet Inward', 'Pellet Fuel Stock Management', `GRN ${savedPellet.grnNo} - Inwarded ${savedPellet.inwardQtyKg} kg (Submitted to QC Approval Lab)`, savedPellet.id);
+      return savedPellet;
     } catch (e) {
       console.error("Failed to save pellet inward to Supabase:", e);
-      alert(`Saved locally, DB notice: ${e.message}`);
+      alert(`Pellet inward was not saved: ${e.message}`);
+      throw e;
     }
   };
 
   const handleDeletePelletInward = async (id) => {
     const targetItem = (pelletInwards || []).find(i => String(i.id) === String(id));
-    setPelletInwards(prev => prev.filter(i => String(i.id) !== String(id)));
-    if (targetItem && targetItem.grnNo) {
-      setGrns(prev => prev.filter(g => g.grnNo !== targetItem.grnNo && String(g.id) !== String(id)));
-      deleteGRNFromSupabase(id || targetItem.grnNo).catch(console.warn);
-    }
     try {
       await deletePelletInwardFromSupabase(id);
+      setPelletInwards(prev => prev.filter(i => String(i.id) !== String(id)));
+      if (targetItem && targetItem.grnNo) {
+        await deleteGRNFromSupabase(id || targetItem.grnNo);
+        setGrns(prev => prev.filter(g => g.grnNo !== targetItem.grnNo && String(g.id) !== String(id)));
+      }
       logAudit('Delete Pellet Inward', 'Pellet Fuel Stock Management', `Deleted Pellet GRN record ${id}`, id);
     } catch (e) {
       console.error("Failed to delete pellet inward from Supabase:", e);
+      alert(`Pellet inward was not deleted: ${e.message}`);
     }
   };
 
   const handleSavePelletConsumption = async (item) => {
-    setPelletConsumptions(prev => [item, ...prev.filter(i => String(i.id) !== String(item.id))]);
     try {
       await savePelletConsumptionToSupabase(item);
+      setPelletConsumptions(prev => [item, ...prev.filter(i => String(i.id) !== String(item.id))]);
       logAudit('Save Pellet Consumption', 'Pellet Fuel Stock Management', `Recorded ${item.consumedQtyKg} kg boiler consumption on ${item.consumptionDate}`, item.id);
     } catch (e) {
       console.error("Failed to save pellet consumption to Supabase:", e);
-      alert(`Saved locally, DB notice: ${e.message}`);
+      alert(`Pellet consumption was not saved: ${e.message}`);
+      throw e;
     }
   };
 
   const handleDeletePelletConsumption = async (id) => {
-    setPelletConsumptions(prev => prev.filter(i => String(i.id) !== String(id)));
     try {
       await deletePelletConsumptionFromSupabase(id);
+      setPelletConsumptions(prev => prev.filter(i => String(i.id) !== String(id)));
       logAudit('Delete Pellet Consumption', 'Pellet Fuel Stock Management', `Deleted Pellet consumption record ${id}`, id);
     } catch (e) {
       console.error("Failed to delete pellet consumption from Supabase:", e);
+      alert(`Pellet consumption was not deleted: ${e.message}`);
     }
   };
 
 
   const logAudit = async (actionType, moduleName, details, targetId = null, actor = undefined) => {
     const entry = createAuditEntry(actor === undefined ? currentUser : actor, actionType, moduleName, details, targetId);
-    setAuditLogs(prev => pruneOldAuditLogs([entry, ...prev]));
     try {
       await saveAuditLogToSupabase(entry);
+      setAuditLogs(prev => pruneOldAuditLogs([entry, ...prev]));
     } catch (e) {
-      console.warn("Audit log save notice:", e);
+      console.error("Audit log was not saved:", e);
+      alert(`The change was kept, but the audit log was not saved: ${describeSaveError(e)}`);
     }
   };
 
@@ -514,12 +518,12 @@ export default function App() {
   }, [users]);
 
   const isTabAllowed = (tabKey) => {
-    if (!currentUser) return true;
+    if (!currentUser) return false;
     if (currentUser.role === 'Admin') return true;
-    if (tabKey === 'user_management' || tabKey === 'audit_logs') return false; // Strictly restricted to Admin role
+    if (tabKey === 'user_management' || tabKey === 'audit_logs') return false;
     const rolePerm = rolePermissions[currentUser.role];
-    if (!rolePerm) return true;
-    return rolePerm[tabKey] !== false;
+    if (!rolePerm) return false;
+    return rolePerm[tabKey] === true;
   };
 
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
@@ -564,11 +568,11 @@ export default function App() {
 
   // Fetch all tables from Supabase on initial load or credential changes
   useEffect(() => {
-    if (!isSupaActive || !isAuthReady || !isAuthenticated) {
-      if (!isSupaActive) {
-        setIsDataLoading(false);
-        setIsDataFetched(true);
-      }
+    if (!isAuthReady) return;
+    if (!isSupaActive || !isAuthenticated) {
+      setIsDataLoading(false);
+      setOrdersLoading(false);
+      setIsDataFetched(true);
       return;
     }
 
@@ -604,26 +608,31 @@ export default function App() {
         }
       };
 
-      // Pellet tables may 404 until the migration is applied. Load them off the
-      // critical path so a missing relation cannot hold the dashboard loader.
-      const pelletLoad = Promise.all([
-        fetchSafe(fetchPelletInwardsFromSupabase, 'Pellet Inwards', 4000),
-        fetchSafe(fetchPelletConsumptionsFromSupabase, 'Pellet Consumptions', 4000)
-      ]).then(([supaPelletInwards, supaPelletConsumptions]) => {
-        if (!isMounted) return;
-        if (Array.isArray(supaPelletInwards)) {
-          setPelletInwards(supaPelletInwards);
-          safeLocalStorageSet('samyak_cache_pellet_inwards', supaPelletInwards);
+      const fetchPelletBook = async (fn) => {
+        try {
+          const data = await fetchWithTimeout(fn(), 12000);
+          return { data, error: null };
+        } catch (e) {
+          console.warn('[Supabase Load Notice] Pellet fuel:', e?.message || e);
+          return { data: null, error: e };
         }
-        if (Array.isArray(supaPelletConsumptions)) {
-          setPelletConsumptions(supaPelletConsumptions);
-          safeLocalStorageSet('samyak_cache_pellet_consumptions', supaPelletConsumptions);
-        }
-      }).catch((err) => {
-        console.warn('[Supabase Load Notice] Pellet fuel:', err?.message || err);
-      });
+      };
 
       try {
+        try {
+          const localSnapshot = snapshotBrowserStorage(window.localStorage);
+          const settingsSnapshot = await fetchAllSystemSettings().catch(() => ({}));
+          await importLegacyBusinessRecords({
+            supabase,
+            local: localSnapshot,
+            settings: settingsSnapshot || {}
+          });
+          clearImportedLocalKeys(window.localStorage, localKeysToClear(localSnapshot));
+        } catch (importErr) {
+          console.error('[Legacy import] Browser copies were kept because the upload failed:', importErr);
+          alert(`Some records saved only in this browser could not be uploaded. They were left on this device. ${describeSaveError(importErr)}`);
+        }
+
         const currentOrdersVersion = ++ordersFetchVersion.current;
         setOrdersLoading(true);
         setOrdersError(null);
@@ -759,6 +768,8 @@ export default function App() {
           supaSFG,
           supaDCs,
           supaCoAs,
+          supaPelletInwards,
+          supaPelletConsumptions,
           supaPOs
         ] = await Promise.all([
           fetchSafe(fetchGRNs, 'GRNs'),
@@ -771,6 +782,8 @@ export default function App() {
           fetchSafe(fetchSFGGoodsFromSupabase, 'SFG Goods'),
           fetchSafe(fetchDeliveryChallansFromSupabase, 'Delivery Challans'),
           fetchSafe(fetchCertificatesOfAnalysisFromSupabase, 'Certificates of Analysis'),
+          fetchPelletBook(fetchPelletInwardsFromSupabase),
+          fetchPelletBook(fetchPelletConsumptionsFromSupabase),
           fetchSafe(fetchPurchaseOrders, 'Purchase Orders')
         ]);
 
@@ -852,6 +865,21 @@ export default function App() {
           safeLocalStorageSet('samyak_cache_certificate_of_analyses', cleanCoAs);
         }
 
+        const pelletErrors = [supaPelletInwards?.error, supaPelletConsumptions?.error].filter(Boolean);
+        if (pelletErrors.length > 0) {
+          setPelletLoadError(pelletErrors.map(error => error.message || String(error)).join(' '));
+        } else {
+          setPelletLoadError('');
+          if (Array.isArray(supaPelletInwards?.data)) {
+            setPelletInwards(supaPelletInwards.data);
+            safeLocalStorageSet('samyak_cache_pellet_inwards', supaPelletInwards.data);
+          }
+          if (Array.isArray(supaPelletConsumptions?.data)) {
+            setPelletConsumptions(supaPelletConsumptions.data);
+            safeLocalStorageSet('samyak_cache_pellet_consumptions', supaPelletConsumptions.data);
+          }
+        }
+
         if (Array.isArray(supaPOs)) {
           const cleanPOs = stripDummyRecords(supaPOs).map(sanitizePurchaseOrder).filter(Boolean);
           setPurchaseOrders(cleanPOs);
@@ -883,14 +911,17 @@ export default function App() {
 
         if (!isMounted) return;
 
-        if (Array.isArray(supaEmployees)) {
+        const hrAllowed = sessionProfile?.role === 'Admin' || sessionProfile?.role === 'HR & Payroll Manager';
+        if (!hrAllowed) {
+          clearHrCache();
+        } else if (Array.isArray(supaEmployees)) {
           const cleanEmps = stripDummyRecords(supaEmployees);
           setEmployees(cleanEmps);
           safeLocalStorageSet('samyak_cache_employees', cleanEmps);
           supaEmployees.filter(isDummyRecord).forEach(d => deleteEmployeeFromSupabase(d.id).catch(console.warn));
         }
 
-        if (Array.isArray(supaAttendance)) {
+        if (hrAllowed && Array.isArray(supaAttendance)) {
           const cleanAtt = stripDummyRecords(supaAttendance);
           setEmployeeAttendance(prev => {
             const map = new Map();
@@ -902,7 +933,7 @@ export default function App() {
           });
         }
 
-        if (Array.isArray(supaAdvances)) {
+        if (hrAllowed && Array.isArray(supaAdvances)) {
           const cleanAdv = stripDummyRecords(supaAdvances);
           setSalaryAdvances(prev => {
             const map = new Map();
@@ -914,7 +945,7 @@ export default function App() {
           });
         }
 
-        if (Array.isArray(supaPayments)) {
+        if (hrAllowed && Array.isArray(supaPayments)) {
           const cleanPay = stripDummyRecords(supaPayments);
           setSalaryPayments(prev => {
             const map = new Map();
@@ -966,61 +997,26 @@ export default function App() {
           if (allSettings.film_substrates_master && Array.isArray(allSettings.film_substrates_master)) {
             safeLocalStorageSet('samyak_film_substrates_master', JSON.stringify(allSettings.film_substrates_master));
           }
+          applyRemoteCompanyProfile(allSettings.company_profile);
 
-          // Operational local storage persistence keys synced from Supabase system_settings:
-          if (allSettings.issued_pos || allSettings.samyak_erp_issued_pos) {
-            safeLocalStorageSet('samyak_erp_issued_pos', allSettings.issued_pos || allSettings.samyak_erp_issued_pos);
-          }
-          if (allSettings.stock_adjustments || allSettings.samyak_erp_stock_adjustments) {
-            safeLocalStorageSet('samyak_erp_stock_adjustments', allSettings.stock_adjustments || allSettings.samyak_erp_stock_adjustments);
-          }
-          if (allSettings.custom_barcodes || allSettings.samyak_erp_custom_barcodes) {
-            safeLocalStorageSet('samyak_erp_custom_barcodes', allSettings.custom_barcodes || allSettings.samyak_erp_custom_barcodes);
-          }
-          if (allSettings.po_discrepancy_resolutions || allSettings.samyak_po_discrepancy_resolutions) {
-            safeLocalStorageSet('samyak_po_discrepancy_resolutions', allSettings.po_discrepancy_resolutions || allSettings.samyak_po_discrepancy_resolutions);
-          }
-          if (allSettings.scrap_disposals || allSettings.samyak_erp_scrap_disposals) {
-            safeLocalStorageSet('samyak_erp_scrap_disposals', allSettings.scrap_disposals || allSettings.samyak_erp_scrap_disposals);
-          }
-          if (allSettings.sfg_scrap_items) {
-            safeLocalStorageSet('sfg_scrap_items', allSettings.sfg_scrap_items);
-          }
-          if (allSettings.sfg_qc_hold_items) {
-            safeLocalStorageSet('sfg_qc_hold_items', allSettings.sfg_qc_hold_items);
-          }
-
-          if (allSettings.material_indents && Array.isArray(allSettings.material_indents)) {
-            setIndents(allSettings.material_indents);
-            safeLocalStorageSet('samyak_cache_material_indents', allSettings.material_indents);
-          }
-          if (allSettings.machine_issues && Array.isArray(allSettings.machine_issues)) {
-            setMachineIssues(allSettings.machine_issues);
-            safeLocalStorageSet('samyak_cache_machine_issues', allSettings.machine_issues);
-          }
-          if (allSettings.consumables && Array.isArray(allSettings.consumables)) {
-            setConsumables(allSettings.consumables);
-            safeLocalStorageSet('samyak_cache_consumables', allSettings.consumables);
-          }
-          if (allSettings.store_issue_transactions && Array.isArray(allSettings.store_issue_transactions)) {
-            const cleanStoreTx = stripDummyRecords(allSettings.store_issue_transactions);
-            setStoreIssueTransactions(cleanStoreTx);
-            safeLocalStorageSet('samyak_cache_store_issue_transactions', cleanStoreTx);
-          }
-          if (allSettings.printing_press_machine_assignments && typeof allSettings.printing_press_machine_assignments === 'object') {
-            setPressMachineAssignments(allSettings.printing_press_machine_assignments);
-            safeLocalStorageSet('samyak_cache_press_machine_assignments', allSettings.printing_press_machine_assignments);
-          }
-          if (allSettings.printing_press_queue_order && Array.isArray(allSettings.printing_press_queue_order)) {
-            setPressQueueOrder(allSettings.printing_press_queue_order);
-            safeLocalStorageSet('samyak_cache_press_queue_order', allSettings.printing_press_queue_order);
-          }
-          if (allSettings.printing_press_active_running_job && typeof allSettings.printing_press_active_running_job === 'object') {
-            setPressActiveRunningJob(allSettings.printing_press_active_running_job);
-            safeLocalStorageSet('samyak_cache_press_running_job', allSettings.printing_press_active_running_job);
-          }
         }
-        await pelletLoad;
+
+        const [indentRows, issueRows, consumableRows, storeRows, pressBoard] = await Promise.all([
+          fetchSafe(() => fetchPayloadRecords(supabase, 'material_indents'), 'Material indents'),
+          fetchSafe(() => fetchPayloadRecords(supabase, 'machine_issues'), 'Machine issues'),
+          fetchSafe(() => fetchPayloadRecords(supabase, 'consumables'), 'Consumables'),
+          fetchSafe(() => fetchPayloadRecords(supabase, 'store_issue_transactions'), 'Store issues'),
+          fetchSafe(() => fetchPressBoard(supabase), 'Press board')
+        ]);
+        if (Array.isArray(indentRows)) setIndents(indentRows);
+        if (Array.isArray(issueRows)) setMachineIssues(issueRows);
+        if (Array.isArray(consumableRows)) setConsumables(consumableRows);
+        if (Array.isArray(storeRows)) setStoreIssueTransactions(stripDummyRecords(storeRows));
+        if (pressBoard) {
+          setPressQueueOrder(Array.isArray(pressBoard.queueOrder) ? pressBoard.queueOrder : []);
+          setPressMachineAssignments(pressBoard.machineAssignments || {});
+          setPressActiveRunningJob(pressBoard.activeRunningJob || null);
+        }
         console.log('[Supabase Load] All 3 stages completed successfully!');
       } catch (err) {
         console.error('[Supabase Load Error]', err);
@@ -1177,6 +1173,7 @@ export default function App() {
               if (settings.storage_bays_master && Array.isArray(settings.storage_bays_master)) {
                 safeLocalStorageSet('samyak_storage_bays_master', JSON.stringify(settings.storage_bays_master));
               }
+              applyRemoteCompanyProfile(settings.company_profile);
             }
           }
         } catch (err) {
@@ -1304,168 +1301,141 @@ export default function App() {
   };
 
   const handleReorderQueue = async (newQueueOrder) => {
-    setPressQueueOrder(newQueueOrder);
-    await saveSystemSetting('printing_press_queue_order', newQueueOrder);
+    try {
+      const next = await savePressBoard(supabase, { queueOrder: newQueueOrder });
+      setPressQueueOrder(next.queueOrder);
+    } catch (e) {
+      alert(`The press queue was not saved: ${describeSaveError(e)}`);
+      throw e;
+    }
   };
 
   const handleMachineAssignmentsChange = async (newAssignments) => {
-    setPressMachineAssignments(newAssignments);
-    await saveSystemSetting('printing_press_machine_assignments', newAssignments);
+    try {
+      const next = await savePressBoard(supabase, { machineAssignments: newAssignments });
+      setPressMachineAssignments(next.machineAssignments);
+    } catch (e) {
+      alert(`Machine assignments were not saved: ${describeSaveError(e)}`);
+      throw e;
+    }
   };
 
   const handleActiveRunningJobChange = async (newRunningJob) => {
-    setPressActiveRunningJob(newRunningJob);
-    await saveSystemSetting('printing_press_active_running_job', newRunningJob);
+    try {
+      const next = await savePressBoard(supabase, { activeRunningJob: newRunningJob });
+      setPressActiveRunningJob(next.activeRunningJob);
+    } catch (e) {
+      alert(`The running job was not saved: ${describeSaveError(e)}`);
+      throw e;
+    }
   };
 
-  const usersRef = useRef(users);
-  useEffect(() => {
-    usersRef.current = users;
-  }, [users]);
-
-  const findUserProfile = (email) => {
-    if (!email) return null;
-    const cleanEmail = email.toLowerCase().trim();
-    let matched = (usersRef.current || []).find(u => u && u.email && u.email.toLowerCase().trim() === cleanEmail);
-    return matched || null;
+  const applyAuthenticatedProfile = (profile) => {
+    setSessionProfile(profile);
+    let nextUser = profile;
+    if (profile?.role === 'Admin') {
+      try {
+        const preview = JSON.parse(sessionStorage.getItem('samyak_erp_ui_role_preview') || 'null');
+        if (preview && preview.role && preview.email) nextUser = preview;
+      } catch (e) {}
+    }
+    setCurrentUser(nextUser);
+    setIsAuthenticated(true);
+    setMustSetPassword(false);
   };
 
-  // Initialize Supabase Auth state
+  // Session comes only from Supabase Auth. A saved browser profile is not a login.
   useEffect(() => {
+    try { localStorage.removeItem('samyak_erp_current_user'); } catch (e) {}
+
     if (!isSupaActive) {
-      const savedUser = safeLocalStorageGet('samyak_erp_current_user', null);
-      if (savedUser && savedUser.email) {
-        setSessionProfile(savedUser);
-        setCurrentUser(savedUser);
-        setIsAuthenticated(true);
-      }
+      setSessionProfile(null);
+      setCurrentUser(null);
+      setIsAuthenticated(false);
       setIsAuthReady(true);
       return;
     }
 
     let mounted = true;
 
-    async function initAuth() {
-      try {
-        const sessionResult = await Promise.race([
-          supabase.auth.getSession(),
-          new Promise((resolve) => setTimeout(() => resolve({ data: { session: null }, timedOut: true }), 8000))
-        ]);
-        if (sessionResult?.timedOut) {
-          console.warn('[Auth] Session check timed out; continuing with any saved local session.');
-        }
-        const session = sessionResult?.data?.session;
-        if (mounted) {
-          if (session?.user) {
-            const matched = findUserProfile(session.user.email);
-            const profile = matched || {
-              id: session.user.id,
-              name: session.user.user_metadata?.full_name || session.user.email.split('@')[0],
-              email: session.user.email,
-              role: session.user.user_metadata?.role || 'Admin',
-              department: 'Executive Management',
-              status: 'Active'
-            };
-            setSessionProfile(profile);
-
-            // Admin is allowed to load a switched user from local storage
-            const savedSwitchedUser = safeLocalStorageGet('samyak_erp_current_user', null);
-            if (savedSwitchedUser && profile.role === 'Admin') {
-              setCurrentUser(savedSwitchedUser);
-            } else {
-              setCurrentUser(profile);
-            }
-            setIsAuthenticated(true);
-          } else {
-            // Check if there is an active verified local/DB session in storage
-            const savedLocalUser = safeLocalStorageGet('samyak_erp_current_user', null);
-            if (savedLocalUser && savedLocalUser.email) {
-              setSessionProfile(savedLocalUser);
-              setCurrentUser(savedLocalUser);
-              setIsAuthenticated(true);
-            } else {
-              setSessionProfile(null);
-              setCurrentUser(null);
-              setIsAuthenticated(false);
-            }
-          }
-          setIsAuthReady(true);
-        }
-      } catch (err) {
-        console.warn('Failed to get Supabase session on mount:', err);
-        const savedLocalUser = safeLocalStorageGet('samyak_erp_current_user', null);
-        if (savedLocalUser && savedLocalUser.email) {
-          setSessionProfile(savedLocalUser);
-          setCurrentUser(savedLocalUser);
-          setIsAuthenticated(true);
-        }
-        if (mounted) setIsAuthReady(true);
+    async function adoptSession(event) {
+      if (event === 'PASSWORD_RECOVERY' || (typeof window !== 'undefined' && window.location.hash.includes('type=recovery'))) {
+        passwordRecoveryRef.current = true;
       }
-    }
-
-    initAuth();
-
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (passwordRecoveryRef.current) {
+        setMustSetPassword(true);
+        setIsAuthenticated(false);
+        setIsAuthReady(true);
+        return;
+      }
+      const profile = await fetchSessionProfile();
       if (!mounted) return;
-      if (session?.user) {
-        const matched = findUserProfile(session.user.email);
-        const profile = matched || {
-          id: session.user.id,
-          name: session.user.user_metadata?.full_name || session.user.email.split('@')[0],
-          email: session.user.email,
-          role: session.user.user_metadata?.role || 'Admin',
-          department: 'Executive Management',
-          status: 'Active'
-        };
-        setSessionProfile(profile);
-
-        const savedSwitchedUser = safeLocalStorageGet('samyak_erp_current_user', null);
-        if (savedSwitchedUser && profile.role === 'Admin') {
-          setCurrentUser(savedSwitchedUser);
-        } else {
-          setCurrentUser(profile);
-        }
-        setIsAuthenticated(true);
-      } else if (event === 'SIGNED_OUT') {
-        localStorage.removeItem('samyak_erp_current_user');
+      if (!profile || profile.pending || profile.inactive) {
+        if (profile) await supabase.auth.signOut().catch(() => {});
         setSessionProfile(null);
         setCurrentUser(null);
         setIsAuthenticated(false);
+        setIsAuthReady(true);
+        return;
+      }
+      applyAuthenticatedProfile(profile);
+      setIsAuthReady(true);
+    }
+
+    adoptSession();
+    const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
+      if (!mounted) return;
+      if (event === 'SIGNED_OUT') {
+        try { sessionStorage.removeItem('samyak_erp_ui_role_preview'); } catch (e) {}
+        setSessionProfile(null);
+        setCurrentUser(null);
+        setIsAuthenticated(false);
+        setMustSetPassword(false);
+        return;
+      }
+      if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED' || event === 'INITIAL_SESSION') {
+        adoptSession(event);
       }
     });
 
     return () => {
       mounted = false;
-      if (authListener && authListener.subscription) {
-        authListener.subscription.unsubscribe();
-      }
+      authListener?.subscription?.unsubscribe();
     };
   }, [isSupaActive]);
 
-  // Login Handler (for UI updates, authService handles Supabase login)
   const handleLogin = (user) => {
     setIsSigningIn(true);
     logAudit('AUTH', 'User Management', `User ${user?.name || user?.email || 'User'} signed in to the system`, user?.id, user);
-    setSessionProfile(user);
-    setCurrentUser(user);
-    setIsAuthenticated(true);
-    safeLocalStorageSet('samyak_erp_current_user', user);
+    applyAuthenticatedProfile(user);
     const targetTab = user?.role === 'Printing Operator'
       ? 'printing_scheduler'
       : (activeTab === 'login' ? 'dashboard' : (activeTab || 'dashboard'));
     handleTabChange(targetTab);
   };
 
-  // Logout Handler (for UI updates, authService handles Supabase logout)
+  const clearHrCache = () => {
+    setEmployees([]);
+    setEmployeeAttendance([]);
+    setSalaryAdvances([]);
+    setSalaryPayments([]);
+    ['samyak_cache_employees', 'samyak_cache_employee_attendance', 'samyak_cache_salary_advances', 'samyak_cache_salary_payments'].forEach((key) => {
+      try { localStorage.removeItem(key); } catch (e) {}
+    });
+  };
+
   const handleLogout = () => {
     cancelQcOverdueEscalationDigest();
     logAudit('AUTH', 'User Management', `User ${currentUser?.name || currentUser?.email || 'User'} signed out of the system`, currentUser?.id);
-    localStorage.removeItem('samyak_erp_current_user');
+    try {
+      localStorage.removeItem('samyak_erp_current_user');
+      sessionStorage.removeItem('samyak_erp_ui_role_preview');
+    } catch (e) {}
     setSessionProfile(null);
     setCurrentUser(null);
     setIsAuthenticated(false);
+    setMustSetPassword(false);
 
-    // PURGE IN-MEMORY ERP DATA ON LOGOUT (ZERO LEAKAGE AT REST OR IN MEMORY)
     setOrders([]);
     setVendors([]);
     setInventory([]);
@@ -1487,17 +1457,14 @@ export default function App() {
     setMachineIssues([]);
     setConsumables([]);
     setStoreIssueTransactions([]);
-    setEmployees([]);
-    setEmployeeAttendance([]);
-    setSalaryAdvances([]);
-    setSalaryPayments([]);
+    clearHrCache();
     setSfgGoods([]);
 
     if (typeof window !== 'undefined') {
       window.history.replaceState({ tab: 'login' }, '', '/login');
     }
     if (isSupaActive) {
-      supabase.auth.signOut().catch(console.warn);
+      signOutUser().catch(console.warn);
     }
   };
 
@@ -1600,10 +1567,10 @@ export default function App() {
         let updatedInv = [...prevInv];
         newRecord.materialsList.forEach(mat => {
           const netQty = parseFloat(mat.netConsumedQtyKg) || Math.max(0, (parseFloat(mat.issueQtyKg) || 0) - (parseFloat(mat.returnQtyKg) || 0));
-          if (netQty > 0 && mat.filmType) {
-            const matName = mat.filmType.toLowerCase();
+          if (netQty > 0 && mat?.filmType) {
+            const matName = String(mat.filmType || '').toLowerCase();
             updatedInv = updatedInv.map(invItem => {
-              if ((invItem.filmType || '').toLowerCase() === matName) {
+              if (String(invItem?.filmType || '').toLowerCase() === matName) {
                 return {
                   ...invItem,
                   availableQtyKg: Math.max(0, (invItem.availableQtyKg || 0) - netQty)
@@ -1720,7 +1687,7 @@ export default function App() {
     };
 
     const newTxList = [newTx, ...storeIssueTransactions];
-    await saveSystemSetting('store_issue_transactions', newTxList);
+    await replacePayloadRecords(supabase, 'store_issue_transactions', newTxList);
     setStoreIssueTransactions(newTxList);
 
     // 3. Update / Earmark the Production Record of this Job
@@ -1854,21 +1821,21 @@ export default function App() {
 
   const handleUpdateConsumables = async (newConsumables) => {
     requireDatabaseConnection('update consumables');
-    await saveSystemSetting('consumables', newConsumables);
+    await replacePayloadRecords(supabase, 'consumables', newConsumables);
     setConsumables(newConsumables);
     logAudit('UPDATE', 'Consumable Store', `Updated consumable store inventory levels`, 'CONSUMABLES');
   };
 
   const handleUpdateIndents = async (newIndents) => {
     requireDatabaseConnection('update material indents');
-    await saveSystemSetting('material_indents', newIndents);
+    await replacePayloadRecords(supabase, 'material_indents', newIndents);
     setIndents(newIndents);
     logAudit('UPDATE', 'Material Indents', `Updated plant material indents / purchase requisitions`, 'INDENTS');
   };
 
   const handleUpdateMachineIssues = async (newIssues) => {
     requireDatabaseConnection('update machine stock issue');
-    await saveSystemSetting('machine_issues', newIssues);
+    await replacePayloadRecords(supabase, 'machine_issues', newIssues);
     setMachineIssues(newIssues);
     logAudit('UPDATE', 'Machine Stock Issue', `Recorded stock item issue to machine`, 'ISSUES');
   };
@@ -1917,6 +1884,22 @@ export default function App() {
     };
     await handleUpdateOrder(updatedOrder);
     await handleActiveRunningJobChange(updatedOrder);
+    await handleSaveSchedule({
+      id: `SCHED-${order.id}`,
+      orderId: order.id,
+      jobName: order.jobName || '',
+      clientName: order.clientName || order.customerName || '',
+      machineId: machineId || order.machineId || 'UNASSIGNED',
+      shift: 'Day Shift',
+      scheduledDate: new Date().toISOString().split('T')[0],
+      startTime: new Date(startIso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }),
+      orderQtyKg: Number(order.quantityKg || order.quantity || order.orderQtyKg || 0),
+      widthMm: Number(order.widthMm || order.printWidthMm || 0),
+      micron: Number(order.micron || 12),
+      filmType: order.printFilmType || order.filmType || 'PET',
+      status: 'In Production',
+      priority: order.priority || 'Normal'
+    });
 
     // Update or create corresponding Production Record
     const existingRec = productionRecords.find(r => r.orderId === order.id || r.id === order.id || r.jobCode === order.jobCode);
@@ -1951,7 +1934,7 @@ export default function App() {
       },
       createdAt: startIso
     };
-    handleSaveProductionRecord(updatedRecord);
+    await handleSaveProductionRecord(updatedRecord);
     logAudit('UPDATE', 'Printing Scheduler', `Started printing job for "${order.jobName}" (${order.id}) on machine ${machineId || 'Rotogravure Press'}`, order.id);
   };
 
@@ -2063,9 +2046,29 @@ export default function App() {
         }
       }
     };
-    handleSaveProductionRecord(updatedRecord);
+    await handleSaveProductionRecord(updatedRecord);
+    await handleSaveSchedule({
+      id: `SCHED-${order.id}`,
+      orderId: order.id,
+      jobName: order.jobName || '',
+      clientName: order.clientName || order.customerName || '',
+      machineId: order.machineId || 'UNASSIGNED',
+      shift: 'Day Shift',
+      scheduledDate: new Date().toISOString().split('T')[0],
+      endTime: new Date(endIso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }),
+      orderQtyKg: Number(order.quantityKg || order.quantity || order.orderQtyKg || 0),
+      widthMm: Number(order.widthMm || order.printWidthMm || 0),
+      micron: Number(order.micron || 12),
+      filmType: order.printFilmType || order.filmType || 'PET',
+      status: 'Completed',
+      priority: order.priority || 'Normal',
+      totalDurationMins: computedDurationMinutes || 0
+    });
 
-    // Automatically store each Printed Output SFG roll barcode into SFG & FG Store
+    // Store each printed roll in SFG stock. The job row is already saved above.
+    // A failed roll is not added to the board. If the database already has it, a
+    // reload keeps that roll and drops the failure from the message.
+    const failedSfgRolls = [];
     if (Array.isArray(endData.rollsBreakdown) && endData.rollsBreakdown.length > 0) {
       for (const r of endData.rollsBreakdown) {
         const barcodeId = r.barcodeId || r.id;
@@ -2090,11 +2093,30 @@ export default function App() {
           createdDate: new Date().toISOString().split('T')[0]
         };
         try {
-          await saveSFGGoodToSupabase(sfgItemRecord);
+          await writeWithRetry(() => saveSFGGoodToSupabase(sfgItemRecord));
+          setSfgGoods(prev => [sfgItemRecord, ...prev.filter(s => (s.sfgBatchCode || s.id) !== barcodeId)]);
         } catch (sfgErr) {
-          console.warn('[handleEndPrintingJob] SFG Good save error:', sfgErr);
+          failedSfgRolls.push({ label: `printed roll ${barcodeId} in sfg_goods`, error: sfgErr, barcodeId });
         }
-        setSfgGoods(prev => [sfgItemRecord, ...prev.filter(s => (s.sfgBatchCode || s.id) !== barcodeId)]);
+      }
+    }
+    if (failedSfgRolls.length > 0) {
+      let stillMissing = failedSfgRolls;
+      try {
+        const freshSfg = await fetchSFGGoodsFromSupabase();
+        if (Array.isArray(freshSfg)) {
+          setSfgGoods(freshSfg);
+          const present = new Set(freshSfg.map(s => String(s.sfgBatchCode || s.id)));
+          stillMissing = failedSfgRolls.filter(item => !present.has(String(item.barcodeId)));
+        }
+      } catch (refetchErr) {
+        console.error('[handleEndPrintingJob] Could not reload SFG stock after a failed save:', refetchErr);
+      }
+      if (stillMissing.length > 0) {
+        throw new PartialSaveError(unsavedItemsMessage({
+          completed: `Printing job "${order.jobName}" (${order.id}) was marked complete. The order, production record, and schedule were saved. Retry End Job to store the missing printed rolls. They are not shown in the SFG store.`,
+          failed: stillMissing
+        }));
       }
     }
 
@@ -2152,14 +2174,23 @@ export default function App() {
 
     // Sync QC status back to pelletInwards if it is a pellet fuel GRN
     if (updatedGRN.category === 'Boiler Pellets / Fuel' || updatedGRN.isPelletFuel || (updatedGRN.grnNo && String(updatedGRN.grnNo).includes('PEL'))) {
-      setPelletInwards(prev => prev.map(p => {
-        if (p.grnNo === updatedGRN.grnNo || String(p.id) === String(updatedGRN.id)) {
-          const updatedPellet = { ...p, status: updatedGRN.status, qcStatus: updatedGRN.status, qcNotes: updatedGRN.qcNotes };
-          savePelletInwardToSupabase(updatedPellet).catch(console.warn);
-          return updatedPellet;
+      const pelletFailures = [];
+      const savedPellets = [];
+      for (const pellet of pelletInwards || []) {
+        if (pellet.grnNo !== updatedGRN.grnNo && String(pellet.id) !== String(updatedGRN.id)) continue;
+        const updatedPellet = { ...pellet, status: updatedGRN.status, qcStatus: updatedGRN.status, qcNotes: updatedGRN.qcNotes };
+        try {
+          await writeWithRetry(() => savePelletInwardToSupabase(updatedPellet));
+          savedPellets.push(updatedPellet);
+        } catch (error) {
+          pelletFailures.push({ label: `pellet inward ${pellet.grnNo || pellet.id}`, error });
         }
-        return p;
-      }));
+      }
+      if (savedPellets.length > 0) {
+        const savedIds = new Set(savedPellets.map(p => String(p.id)));
+        setPelletInwards(prev => prev.map(p => savedIds.has(String(p.id)) ? savedPellets.find(s => String(s.id) === String(p.id)) : p));
+      }
+      assertAllSaved(`GRN ${updatedGRN.grnNo} was saved, but the pellet stock status was not.`, pelletFailures);
     }
 
     logAudit('UPDATE', 'GRN Inward', `Updated GRN ${updatedGRN.grnNo} status to "${updatedGRN.status}"`, updatedGRN.grnNo);
@@ -2197,31 +2228,36 @@ export default function App() {
 
   const handleAddUser = async (newUser) => {
     requireDatabaseConnection('create user');
-    const authResult = await createUserInSupabaseAuth({
-      email: newUser.email,
-      password: newUser.password || 'password123',
-      name: newUser.name,
-      role: newUser.role,
-      department: newUser.department
-    });
-    if (!authResult.success && !authResult.alreadyExists) {
-      console.warn('[UserOnboard] Supabase Auth registration issue:', authResult.message);
+    const authResult = await createDirectoryUser(newUser);
+    if (!authResult.success) {
+      alert(authResult.message || 'Could not create the user.');
+      return;
     }
-    await saveUserToSupabase(newUser);
-    setUsers(prev => [...prev.filter(u => u.id !== newUser.id), newUser]);
-    logAudit('CREATE', 'User Management', `Created user account for ${newUser.name} (${newUser.email}) - Role: ${newUser.role}`, newUser.id);
+    const saved = authResult.user || newUser;
+    setUsers(prev => [...prev.filter(u => u.email !== saved.email), saved]);
+    logAudit('CREATE', 'User Management', `Created user account for ${saved.name} (${saved.email}) - Role: ${saved.role}`, saved.id);
+    alert(authResult.message || 'User created.');
   };
 
   const handleUpdateUser = async (updatedUser) => {
     requireDatabaseConnection('update user');
-    await saveUserToSupabase(updatedUser);
-    setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
-    logAudit('UPDATE', 'User Management', `Updated user account/permissions for ${updatedUser.name} (${updatedUser.email}) - Role: ${updatedUser.role}`, updatedUser.id);
+    const authResult = await updateDirectoryUser(updatedUser);
+    if (!authResult.success) {
+      alert(authResult.message || 'Could not update the user.');
+      return;
+    }
+    const saved = authResult.user || updatedUser;
+    setUsers(prev => prev.map(u => u.id === updatedUser.id ? saved : u));
+    logAudit('UPDATE', 'User Management', `Updated user account for ${saved.name} (${saved.email}) - Role: ${saved.role}`, saved.id);
   };
 
   const handleDeleteUser = async (userId) => {
     requireDatabaseConnection('delete user');
-    await deleteUserFromSupabase(userId);
+    const authResult = await deleteDirectoryUser(userId);
+    if (!authResult.success) {
+      alert(authResult.message || 'Could not delete the user.');
+      return;
+    }
     setUsers(prev => prev.filter(u => u.id !== userId));
     logAudit('DELETE', 'User Management', `Deleted user account ${userId}`, userId);
   };
@@ -2251,7 +2287,7 @@ export default function App() {
     requireDatabaseConnection('save attendance');
     await saveEmployeeAttendanceToSupabase(record);
     setEmployeeAttendance(prev => {
-      const idx = prev.findIndex(a => a.id === record.id || (a.employeeId === record.employeeId && a.date === record.date));
+      const idx = prev.findIndex(a => a.id === record.id || attendanceMatchesEmployeeDate(a, record.employeeId, record.date));
       if (idx >= 0) {
         const updated = [...prev];
         updated[idx] = record;
@@ -2404,6 +2440,7 @@ export default function App() {
 
     if (matchedJobMasters.length === 0) return;
 
+    const failedLinks = [];
     for (const jm of matchedJobMasters) {
       const layers = Array.isArray(cyl.layers) && cyl.layers.length > 0 ? cyl.layers : (jm.layers || []);
       const derivedStructure = (layers.length > 0)
@@ -2451,14 +2488,15 @@ export default function App() {
       };
 
       try {
-        await saveJobMasterToSupabase(updatedJm);
+        await writeWithRetry(() => saveJobMasterToSupabase(updatedJm));
+        setJobMasters(prev => prev.map(item => item.id === updatedJm.id ? updatedJm : item));
+        await syncJobMasterToOrders(updatedJm);
       } catch (err) {
-        console.warn("Failed to persist synced Job Master to Supabase:", err);
+        if (err?.name === 'PartialSaveError') throw err;
+        failedLinks.push({ label: `job master ${updatedJm.id || updatedJm.jobName}`, error: err });
       }
-
-      setJobMasters(prev => prev.map(item => item.id === updatedJm.id ? updatedJm : item));
-      await syncJobMasterToOrders(updatedJm);
     }
+    assertAllSaved('The cylinder was saved, but the linked job master was not updated.', failedLinks);
   };
 
   const syncJobMasterToCylinder = async (jobMaster) => {
@@ -2480,6 +2518,7 @@ export default function App() {
 
     console.log(`[JOB MASTER -> CYLINDER SYNC] Syncing updated Job Master "${jobMaster.jobName}" (${jobMaster.id}) to ${matchedCylinders.length} cylinders...`);
 
+    const failedLinks = [];
     for (const cyl of matchedCylinders) {
       const layers = Array.isArray(jobMaster.layers) && jobMaster.layers.length > 0 ? jobMaster.layers : (cyl.layers || []);
       const derivedStructure = (layers.length > 0)
@@ -2522,13 +2561,13 @@ export default function App() {
       };
 
       try {
-        await saveCylinderToSupabase(updatedCyl);
+        await writeWithRetry(() => saveCylinderToSupabase(updatedCyl));
+        setCylinders(prev => prev.map(item => item.id === updatedCyl.id ? updatedCyl : item));
       } catch (err) {
-        console.warn("Failed to persist synced Cylinder to Supabase:", err);
+        failedLinks.push({ label: `cylinder ${updatedCyl.sku || updatedCyl.id}`, error: err });
       }
-
-      setCylinders(prev => prev.map(item => item.id === updatedCyl.id ? updatedCyl : item));
     }
+    assertAllSaved('The job master was saved, but the linked cylinder was not updated.', failedLinks);
   };
 
   const handleBatchAddCylinders = async (newCylList) => {
@@ -2619,16 +2658,26 @@ export default function App() {
   const handleUpdateInventoryRolls = async (updatedRollsList) => {
     if (!Array.isArray(updatedRollsList) || updatedRollsList.length === 0) return;
     requireDatabaseConnection('update inventory rolls');
+    const saved = [];
+    const failed = [];
     for (const roll of updatedRollsList) {
       const rollId = roll.barcodeId || roll.id;
       const cleanRoll = { ...roll, id: rollId, barcodeId: rollId };
-      await saveInventoryRollToSupabase(cleanRoll).catch(console.warn);
+      try {
+        await writeWithRetry(() => saveInventoryRollToSupabase(cleanRoll));
+        saved.push(cleanRoll);
+      } catch (error) {
+        failed.push({ label: `inventory roll ${rollId}`, error });
+      }
     }
-    const updatedMap = new Map(updatedRollsList.map(r => [r.barcodeId || r.id, r]));
-    setInventoryRolls(prev => prev.map(r => {
-      const match = updatedMap.get(r.barcodeId || r.id);
-      return match ? { ...r, ...match } : r;
-    }));
+    if (saved.length > 0) {
+      const updatedMap = new Map(saved.map(r => [r.barcodeId || r.id, r]));
+      setInventoryRolls(prev => prev.map(r => {
+        const match = updatedMap.get(r.barcodeId || r.id);
+        return match ? { ...r, ...match } : r;
+      }));
+    }
+    assertAllSaved('Some inventory rolls were saved. The rolls listed below were not, and they are not shown as updated.', failed);
   };
 
   const handleAddDispatchShipment = async (newShipment) => {
@@ -2643,161 +2692,17 @@ export default function App() {
     const shipJobName = (newShipment.jobName || '').trim().toLowerCase();
     const shipOrderId = newShipment.orderId;
 
-    let updatedSfgList = [...sfgGoods];
-    let remainingNetToDeduct = totalDispatchNetKg;
-
-    // First attempt matching by specific barcodeId / sourceFgBarcode / sourceFgId
-    for (const item of shipmentItems) {
-      const targetBarcode = (item.sourceFgBarcode || item.barcodeId || '').trim();
-      const targetId = (item.sourceFgId || '').trim();
-      const itemNetKg = Number(item.netWeightKg) || 0;
-
-      if (itemNetKg <= 0) continue;
-
-      const foundIdx = updatedSfgList.findIndex(s => 
-        (targetId && (s.id === targetId || s.sfgBatchCode === targetId)) ||
-        (targetBarcode && (s.sfgBatchCode === targetBarcode || s.id === targetBarcode))
-      );
-
-      if (foundIdx >= 0) {
-        const currentSfg = updatedSfgList[foundIdx];
-        const prevDispatched = Number(currentSfg.dispatchedKg) || 0;
-        const newDispatched = Math.round((prevDispatched + itemNetKg) * 100) / 100;
-        const totalNet = Number(currentSfg.totalNetKg) || 0;
-        const newAvailable = Math.max(0, Math.round((totalNet - newDispatched) * 100) / 100);
-        const newStatus = newAvailable <= 0.05 ? 'Dispatched' : 'Partially Dispatched';
-
-        const updatedHistory = Array.isArray(currentSfg.consumptionHistory) ? [...currentSfg.consumptionHistory] : [];
-        updatedHistory.push({
-          date: newShipment.dispatchDate || new Date().toISOString(),
-          type: 'DISPATCH',
-          dispatchId: newShipment.dispatchId || newShipment.id,
-          weightKg: itemNetKg,
-          vehicleNo: newShipment.vehicleNo || '',
-          note: `Dispatched ${itemNetKg} kg in Packing List ${newShipment.dispatchId || newShipment.id}`
-        });
-
-        const updatedSfg = {
-          ...currentSfg,
-          availableKg: newAvailable,
-          dispatchedKg: newDispatched,
-          status: newStatus,
-          consumptionHistory: updatedHistory
-        };
-
-        updatedSfgList[foundIdx] = updatedSfg;
-        remainingNetToDeduct = Math.max(0, remainingNetToDeduct - itemNetKg);
-
-        try {
-          await saveSFGGoodToSupabase(updatedSfg);
-        } catch (e) {
-          console.warn('[handleAddDispatchShipment] Failed to save updated SFG to Supabase:', e);
-        }
-      }
-    }
-
-    // If there's remaining weight to deduct (e.g. general weight entered or unmatched barcode)
-    if (remainingNetToDeduct > 0.01) {
-      for (let i = 0; i < updatedSfgList.length && remainingNetToDeduct > 0.01; i++) {
-        const sfg = updatedSfgList[i];
-        const isJobMatch = (shipJobName && (sfg.jobName || '').trim().toLowerCase() === shipJobName) ||
-                           (shipOrderId && String(sfg.orderId) === String(shipOrderId));
-        const isFG = sfg.rollType === 'FG' || (sfg.sfgType || '').includes('Finished') || (sfg.category || '').includes('Finished') || (sfg.sfgBatchCode || '').startsWith('FG-');
-        const avail = Number(sfg.availableKg) || 0;
-
-        if (isJobMatch && isFG && avail > 0) {
-          const deductKg = Math.min(avail, remainingNetToDeduct);
-          const prevDispatched = Number(sfg.dispatchedKg) || 0;
-          const newDispatched = Math.round((prevDispatched + deductKg) * 100) / 100;
-          const totalNet = Number(sfg.totalNetKg) || 0;
-          const newAvailable = Math.max(0, Math.round((totalNet - newDispatched) * 100) / 100);
-          const newStatus = newAvailable <= 0.05 ? 'Dispatched' : 'Partially Dispatched';
-
-          const updatedHistory = Array.isArray(sfg.consumptionHistory) ? [...sfg.consumptionHistory] : [];
-          updatedHistory.push({
-            date: newShipment.dispatchDate || new Date().toISOString(),
-            type: 'DISPATCH',
-            dispatchId: newShipment.dispatchId || newShipment.id,
-            weightKg: deductKg,
-            vehicleNo: newShipment.vehicleNo || '',
-            note: `Dispatched ${deductKg} kg in Packing List ${newShipment.dispatchId || newShipment.id}`
-          });
-
-          const updatedSfg = {
-            ...sfg,
-            availableKg: newAvailable,
-            dispatchedKg: newDispatched,
-            status: newStatus,
-            consumptionHistory: updatedHistory
-          };
-
-          updatedSfgList[i] = updatedSfg;
-          remainingNetToDeduct = Math.max(0, remainingNetToDeduct - deductKg);
-
-          try {
-            await saveSFGGoodToSupabase(updatedSfg);
-          } catch (e) {
-            console.warn('[handleAddDispatchShipment] Failed to save updated SFG to Supabase:', e);
-          }
-        }
-      }
-    }
-    setSfgGoods(updatedSfgList);
+    const failedFollowUps = [];
+    const sfgPlan = planDispatchSfgDeductions(sfgGoods, newShipment);
+    const sfgResult = await commitSequentialUpdates(sfgPlan.updates, (row) => saveSFGGoodToSupabase(row));
+    setSfgGoods(applyCommittedByIndex(sfgGoods, sfgResult.committed));
+    failedFollowUps.push(...sfgResult.failed);
 
     // 2. Synchronize to inventoryRolls (Finished Goods inventory)
-    setInventoryRolls(prevRolls => {
-      let rollsCopy = [...prevRolls];
-      let remainingToDeductInv = totalDispatchNetKg;
-
-      rollsCopy = rollsCopy.map(r => {
-        const itemMatch = shipmentItems.find(it => 
-          (it.barcodeId && (r.barcodeId === it.barcodeId || r.id === it.barcodeId)) ||
-          (it.sourceFgBarcode && (r.barcodeId === it.sourceFgBarcode || r.id === it.sourceFgBarcode))
-        );
-
-        if (itemMatch) {
-          const dKg = Number(itemMatch.netWeightKg) || 0;
-          const prevDisp = Number(r.dispatchedKg) || 0;
-          const newDisp = Math.round((prevDisp + dKg) * 100) / 100;
-          const netW = Number(r.netWeightKg) || 0;
-          const newAvail = Math.max(0, Math.round((netW - newDisp) * 100) / 100);
-          const updated = {
-            ...r,
-            availableWeightKg: newAvail,
-            dispatchedKg: newDisp,
-            status: newAvail <= 0.05 ? 'Dispatched' : 'Partially Dispatched'
-          };
-          saveInventoryRollToSupabase(updated).catch(console.warn);
-          return updated;
-        }
-
-        const isJobMatch = (shipJobName && (r.jobName || '').trim().toLowerCase() === shipJobName) ||
-                           (shipOrderId && String(r.orderId) === String(shipOrderId));
-        const isFG = r.rollType === 'FINISHED_GOODS' || r.rollType === 'FG' || (r.sfgType || '').includes('Finished') || (r.barcodeId || '').startsWith('FG-');
-        const avail = Number(r.availableWeightKg ?? r.netWeightKg) || 0;
-
-        if (isJobMatch && isFG && avail > 0 && remainingToDeductInv > 0.01) {
-          const dKg = Math.min(avail, remainingToDeductInv);
-          remainingToDeductInv -= dKg;
-          const prevDisp = Number(r.dispatchedKg) || 0;
-          const newDisp = Math.round((prevDisp + dKg) * 100) / 100;
-          const netW = Number(r.netWeightKg) || 0;
-          const newAvail = Math.max(0, Math.round((netW - newDisp) * 100) / 100);
-          const updated = {
-            ...r,
-            availableWeightKg: newAvail,
-            dispatchedKg: newDisp,
-            status: newAvail <= 0.05 ? 'Dispatched' : 'Partially Dispatched'
-          };
-          saveInventoryRollToSupabase(updated).catch(console.warn);
-          return updated;
-        }
-
-        return r;
-      });
-
-      return rollsCopy;
-    });
+    const rollPlan = planDispatchRollDeductions(inventoryRolls, newShipment);
+    const rollResult = await commitSequentialUpdates(rollPlan.updates, (row) => saveInventoryRollToSupabase(row));
+    setInventoryRolls(applyCommittedByIndex(inventoryRolls, rollResult.committed));
+    failedFollowUps.push(...rollResult.failed);
 
     // 3. Synchronize to respective Job Production Record
     const matchedRec = (productionRecords || []).find(r => 
@@ -2860,13 +2765,18 @@ export default function App() {
       };
 
       try {
-        await saveProductionRecordToSupabase(updatedRec);
+        await writeWithRetry(() => saveProductionRecordToSupabase(updatedRec));
+        setProductionRecords(prev => prev.map(r => r.id === updatedRec.id ? updatedRec : r));
       } catch (e) {
-        console.warn('[handleAddDispatchShipment] Failed to save updated ProductionRecord to Supabase:', e);
+        failedFollowUps.push({ label: `production record ${updatedRec.id || updatedRec.jobName || 'dispatch quantity'}`, error: e });
       }
-
-      setProductionRecords(prev => prev.map(r => r.id === updatedRec.id ? updatedRec : r));
     }
+
+    const packingId = newShipment.dispatchId || newShipment.id;
+    assertAllSaved(
+      `Packing list ${packingId} was saved. Do not create this packing list again. The shipment is on the dispatch list, but the stock balances below were left unchanged.`,
+      failedFollowUps
+    );
   };
 
   const handleDeleteDispatchShipment = async (id) => {
@@ -2951,6 +2861,7 @@ export default function App() {
     console.log(`[JOB MASTER SYNC] Syncing updated Job Master "${updatedJm.jobName}" (${updatedJm.id}) to ${matchingOrders.length} orders...`);
 
     const updatedOrdersList = [];
+    const failedOrders = [];
     for (const order of matchingOrders) {
       // Retain existing order's locked structure, layers & rawMaterialRequirements!
       const lockedStructure = (order.structure && order.structure !== '—' && order.structure !== 'PET / PE') 
@@ -3012,10 +2923,10 @@ export default function App() {
       };
 
       try {
-        await saveOrderToSupabase(updatedOrder);
+        await writeWithRetry(() => saveOrderToSupabase(updatedOrder));
         updatedOrdersList.push(updatedOrder);
       } catch (err) {
-        console.warn(`Failed to save synced order ${updatedOrder.id}:`, err);
+        failedOrders.push({ label: `order ${updatedOrder.id}`, error: err });
       }
     }
 
@@ -3023,6 +2934,7 @@ export default function App() {
       const updatedMap = new Map(updatedOrdersList.map(o => [o.id, o]));
       setOrders(prev => prev.map(o => updatedMap.get(o.id) || o));
     }
+    assertAllSaved('The job master was saved, but these linked orders were not updated.', failedOrders);
   };
 
   const handleUpdateJobMaster = async (updatedJobMaster) => {
@@ -3102,36 +3014,35 @@ export default function App() {
   };
 
   // Ink Management Handlers & Inventory Synchronization
-  const syncInkToInventory = (ink, overrideStock = null) => {
+  const syncInkToInventory = async (ink, overrideStock = null) => {
     if (!ink) return;
     const invId = ink.productCode || ink.id;
+    const invItem = sanitizeInventoryItem({
+      id: invId,
+      itemCode: ink.productCode || invId,
+      itemName: `${ink.manufacturer || 'DIC Inks'} ${ink.shade} (${ink.inkType || 'Reverse Ink'})`,
+      category: 'Printing Inks',
+      unit: 'Kg',
+      availableQtyKg: overrideStock !== null ? Number(overrideStock) : (ink.stockQtyKg !== undefined ? Number(ink.stockQtyKg) : 0),
+      allocatedQtyKg: 0,
+      reorderLevelKg: Number(ink.reorderLevelKg || 50),
+      unitPrice: Number(ink.pricePerKg || 300),
+      purchaseRatePerKg: Number(ink.pricePerKg || 300),
+      location: 'Ink Store Room',
+      lastVendor: ink.manufacturer || ink.supplierName || 'DIC Inks',
+      lastBatch: `LOT-${ink.productCode}`,
+      micron: '-',
+      widthMm: '-'
+    });
+    const alreadyStocked = (inventory || []).some(i => i.id === invId || i.itemCode === ink.productCode);
+    if (!alreadyStocked && overrideStock === null) return;
+    await writeWithRetry(() => saveInventoryItemToSupabase(invItem));
     setInventory(prev => {
       const exists = (prev || []).some(i => i.id === invId || i.itemCode === ink.productCode);
       if (!exists && overrideStock === null) return prev;
-
-      const invItem = sanitizeInventoryItem({
-        id: invId,
-        itemCode: ink.productCode || invId,
-        itemName: `${ink.manufacturer || 'DIC Inks'} ${ink.shade} (${ink.inkType || 'Reverse Ink'})`,
-        category: 'Printing Inks',
-        unit: 'Kg',
-        availableQtyKg: overrideStock !== null ? Number(overrideStock) : (ink.stockQtyKg !== undefined ? Number(ink.stockQtyKg) : 0),
-        allocatedQtyKg: 0,
-        reorderLevelKg: Number(ink.reorderLevelKg || 50),
-        unitPrice: Number(ink.pricePerKg || 300),
-        purchaseRatePerKg: Number(ink.pricePerKg || 300),
-        location: 'Ink Store Room',
-        lastVendor: ink.manufacturer || ink.supplierName || 'DIC Inks',
-        lastBatch: `LOT-${ink.productCode}`,
-        micron: '-',
-        widthMm: '-'
-      });
-
-      const updated = exists 
+      const updated = exists
         ? prev.map(i => (i.id === invId || i.itemCode === ink.productCode) ? { ...i, ...invItem, availableQtyKg: overrideStock !== null ? Number(overrideStock) : i.availableQtyKg } : i)
         : [invItem, ...prev];
-
-      saveInventoryItemToSupabase(invItem).catch(console.warn);
       return updated.map(sanitizeInventoryItem);
     });
   };
@@ -3140,7 +3051,14 @@ export default function App() {
     requireDatabaseConnection('add ink');
     await saveInkToSupabase(newInk);
     setInks(prev => [newInk, ...prev.filter(i => i.id !== newInk.id)]);
-    syncInkToInventory(newInk, newInk.stockQtyKg);
+    try {
+      await syncInkToInventory(newInk, newInk.stockQtyKg);
+    } catch (error) {
+      throw new PartialSaveError(unsavedItemsMessage({
+        completed: `Ink ${newInk.productCode || newInk.id} was saved.`,
+        failed: [{ label: `inventory stock for ${newInk.productCode || newInk.id}`, error }]
+      }));
+    }
     logAudit('CREATE', 'Ink Management', `Added ink product code "${newInk.productCode}" - ${newInk.shade} (${newInk.inkType}, ${newInk.solidContentPct}% solid)`, newInk.id);
   };
 
@@ -3148,7 +3066,14 @@ export default function App() {
     requireDatabaseConnection('update ink');
     await saveInkToSupabase(updatedInk);
     setInks(prev => prev.map(i => i.id === updatedInk.id ? updatedInk : i));
-    syncInkToInventory(updatedInk);
+    try {
+      await syncInkToInventory(updatedInk);
+    } catch (error) {
+      throw new PartialSaveError(unsavedItemsMessage({
+        completed: `Ink ${updatedInk.productCode || updatedInk.id} was saved.`,
+        failed: [{ label: `inventory stock for ${updatedInk.productCode || updatedInk.id}`, error }]
+      }));
+    }
     logAudit('UPDATE', 'Ink Management', `Updated ink product code "${updatedInk.productCode}" - ${updatedInk.shade}`, updatedInk.id);
   };
 
@@ -3156,7 +3081,14 @@ export default function App() {
     requireDatabaseConnection('update ink price');
     await saveInkToSupabase(updatedInk);
     setInks(prev => prev.map(i => i.id === updatedInk.id ? updatedInk : i));
-    syncInkToInventory({ ...updatedInk, pricePerKg: newPrice });
+    try {
+      await syncInkToInventory({ ...updatedInk, pricePerKg: newPrice });
+    } catch (error) {
+      throw new PartialSaveError(unsavedItemsMessage({
+        completed: `Ink price for ${updatedInk.productCode || updatedInk.id} was saved.`,
+        failed: [{ label: `inventory price for ${updatedInk.productCode || updatedInk.id}`, error }]
+      }));
+    }
     logAudit('UPDATE', 'Ink Management', `Updated rate for ink "${updatedInk.productCode}" (${updatedInk.shade}) to ₹${newPrice}/kg. Reason: ${reason}`, updatedInk.id);
   };
 
@@ -3187,7 +3119,8 @@ export default function App() {
 
   const handleConsumeSFG = async (updatedSfgItem, logEntry) => {
     requireDatabaseConnection('consume SFG item');
-    await saveSFGGoodToSupabase(updatedSfgItem);
+    await writeWithRetry(() => saveSFGGoodToSupabase(updatedSfgItem));
+    const followUpFailures = [];
 
     // 1. Update SFG Goods State
     setSfgGoods(prev => {
@@ -3211,11 +3144,11 @@ export default function App() {
         status: newAvail <= 0 ? 'Consumed' : (rollMatch.status || 'In Stock (SFG)')
       };
       try {
-        await saveInventoryRollToSupabase(updatedRoll);
+        await writeWithRetry(() => saveInventoryRollToSupabase(updatedRoll));
+        setInventoryRolls(prev => prev.map(r => ((r.barcodeId || r.id) === rollBarcode) ? updatedRoll : r));
       } catch (e) {
-        console.warn('[handleConsumeSFG] Roll update notice:', e);
+        followUpFailures.push({ label: `inventory roll ${rollBarcode}`, error: e });
       }
-      setInventoryRolls(prev => prev.map(r => ((r.barcodeId || r.id) === rollBarcode) ? updatedRoll : r));
     }
 
     // 3. Also synchronize deduction to central inventory if present
@@ -3229,11 +3162,11 @@ export default function App() {
         allocatedQtyKg: Number(updatedSfgItem.consumedKg ?? ((invMatch.allocatedQtyKg || 0) + Number(logEntry.consumedKg || 0)))
       };
       try {
-        await saveInventoryItemToSupabase(updatedInv);
+        await writeWithRetry(() => saveInventoryItemToSupabase(updatedInv));
+        setInventory(prev => prev.map(i => (i.id === invMatch.id) ? updatedInv : i));
       } catch (e) {
-        console.warn('[handleConsumeSFG] Central inventory update notice:', e);
+        followUpFailures.push({ label: `inventory item ${invMatch.id}`, error: e });
       }
-      setInventory(prev => prev.map(i => (i.id === invMatch.id) ? updatedInv : i));
     }
 
     // 4. Synchronize Substrate 2 / Substrate 3 roll deduction if provided
@@ -3251,11 +3184,11 @@ export default function App() {
           status: newSubAvail <= 0 ? 'Consumed' : (subRollMatch.status || 'In Stock')
         };
         try {
-          await saveInventoryRollToSupabase(updatedSubRoll);
+          await writeWithRetry(() => saveInventoryRollToSupabase(updatedSubRoll));
+          setInventoryRolls(prev => prev.map(r => ((r.barcodeId || r.id) === subBarcode) ? updatedSubRoll : r));
         } catch (e) {
-          console.warn('[handleConsumeSFG] Substrate roll update notice:', e);
+          followUpFailures.push({ label: `substrate roll ${subBarcode}`, error: e });
         }
-        setInventoryRolls(prev => prev.map(r => ((r.barcodeId || r.id) === subBarcode) ? updatedSubRoll : r));
       }
     }
 
@@ -3334,17 +3267,17 @@ export default function App() {
       };
 
       try {
-        await saveSFGGoodToSupabase(newSfgGoodItem);
+        await writeWithRetry(() => saveSFGGoodToSupabase(newSfgGoodItem));
         setSfgGoods(prev => [newSfgGoodItem, ...prev]);
       } catch (e) {
-        console.warn('[handleConsumeSFG] New SFG Good save error:', e);
+        followUpFailures.push({ label: `output roll ${createdOutputBarcode} in sfg_goods`, error: e });
       }
 
       try {
-        await saveInventoryRollToSupabase(newInventoryRoll);
+        await writeWithRetry(() => saveInventoryRollToSupabase(newInventoryRoll));
         setInventoryRolls(prev => [newInventoryRoll, ...prev]);
       } catch (e) {
-        console.warn('[handleConsumeSFG] New inventory roll save error:', e);
+        followUpFailures.push({ label: `output roll ${createdOutputBarcode} in inventory rolls`, error: e });
       }
     }
 
@@ -3440,18 +3373,21 @@ export default function App() {
     };
 
     try {
-      await saveProductionRecordToSupabase(updatedRec);
+      await writeWithRetry(() => saveProductionRecordToSupabase(updatedRec));
+      if (matchedRec) {
+        setProductionRecords(prev => prev.map(r => r.id === updatedRec.id ? updatedRec : r));
+      } else {
+        setProductionRecords(prev => [updatedRec, ...prev]);
+      }
     } catch (e) {
-      console.warn('[handleConsumeSFG] Production record save notice:', e);
-    }
-
-    if (matchedRec) {
-      setProductionRecords(prev => prev.map(r => r.id === updatedRec.id ? updatedRec : r));
-    } else {
-      setProductionRecords(prev => [updatedRec, ...prev]);
+      followUpFailures.push({ label: `production record ${updatedRec.id || updatedSfgItem.jobName || 'stage quantities'}`, error: e });
     }
 
     logAudit('UPDATE', 'SFG Store', `Consumed ${logEntry.consumedKg} kg SFG from batch "${updatedSfgItem.sfgBatchCode}" for stage "${logEntry.targetProcess}". Remaining Balance: ${updatedSfgItem.availableKg} kg`, updatedSfgItem.sfgBatchCode);
+    assertAllSaved(
+      `SFG consumption for ${updatedSfgItem.sfgBatchCode} was saved (${updatedSfgItem.availableKg} kg remaining). Do not submit this consumption again.`,
+      followUpFailures
+    );
   };
 
   const handleDeleteSFGGood = async (sfgId) => {
@@ -3469,12 +3405,18 @@ export default function App() {
 
   const isDataReady = databaseStatus !== 'checking' && (!isAuthenticated || isDataFetched || (!isDataLoading && !ordersLoading));
 
-  // isSigningIn must not be part of isReady. The loader only clears that flag from
-  // onComplete, so requiring !isSigningIn to finish the bar deadlocks at 92%.
-  if (!isAuthReady || isSigningIn || (isAuthenticated && !isDataReady)) {
+  // isSigningIn is cleared only by the loader's onComplete. The bar will not
+  // pass 92% until isReady, so isReady must not require !isSigningIn.
+  const showBootLoader = shouldShowBootLoader({
+    isAuthReady,
+    isSigningIn,
+    isAuthenticated,
+    isDataReady,
+  });
+  if (showBootLoader) {
     return (
       <Preloader 
-        isReady={isAuthReady && isDataReady}
+        isReady={bootLoaderIsReady({ isAuthReady, isDataReady })}
         statusText={
           databaseStatus === 'checking'
             ? 'Connecting to Supabase Cloud Database...'
@@ -3490,16 +3432,21 @@ export default function App() {
   }
 
   // Render Authentication Screen if user is not signed in
-  if (!isAuthenticated || !currentUser) {
-    // Callback: update password in local state after OTP-verified reset
-    const handleUpdatePassword = (email, newPassword) => {
-      setUsers(prev => prev.map(u =>
-        u.email?.toLowerCase().trim() === email?.toLowerCase().trim()
-          ? { ...u, password: newPassword }
-          : u
-      ));
-    };
-    return <AuthScreen onLogin={handleLogin} onUpdatePassword={handleUpdatePassword} />;
+  if (mustSetPassword || !isAuthenticated || !currentUser) {
+    return (
+      <AuthScreen
+        onLogin={handleLogin}
+        recoveryMode={mustSetPassword}
+        onPasswordUpdated={async () => {
+          passwordRecoveryRef.current = false;
+          setMustSetPassword(false);
+          const profile = await fetchSessionProfile();
+          if (profile && !profile.pending && !profile.inactive) {
+            applyAuthenticatedProfile(profile);
+          }
+        }}
+      />
+    );
   }
 
   return (
@@ -3859,7 +3806,7 @@ export default function App() {
           )}
 
           {/* Group: Human Resources & Payroll */}
-          {(isTabAllowed('employees') || currentUser?.role === 'Admin' || currentUser?.role === 'Plant Manager' || currentUser?.role === 'HR & Payroll Manager') && (
+          {(isTabAllowed('employees') || currentUser?.role === 'Admin' || currentUser?.role === 'HR & Payroll Manager') && (
             <>
               <div className="sidebar-section-header">Workforce & HR</div>
 
@@ -4041,9 +3988,9 @@ export default function App() {
                 onChange={e => {
                   const selectedId = e.target.value;
                   const selectedUser = activeUsersList.find(u => String(u.id) === String(selectedId));
-                  if (selectedUser) {
+                  if (selectedUser && sessionProfile?.role === 'Admin') {
                     setCurrentUser(selectedUser);
-                    safeLocalStorageSet('samyak_erp_current_user', selectedUser);
+                    try { sessionStorage.setItem('samyak_erp_ui_role_preview', JSON.stringify(selectedUser)); } catch (e) {}
                   }
                 }}
               >
@@ -4509,13 +4456,15 @@ export default function App() {
                     </thead>
                     <tbody>
                       {(orders || []).map(o => {
+                        if (!o) return null;
                         const statusInfo = getOrderStatusInfo(o);
                         const stageInfo = getOrderStageInfo(o, sfgGoods, productionRecords);
                         const isOverdue = statusInfo.isOverdue;
                         const isNearing = statusInfo.isNearingDeadline;
                         // Derive substrate structure from the matching Job Master's layers, fallback to order.structure
+                        const oJobName = String(o.jobName || '').toLowerCase().trim();
                         const matchedJM = (jobMasters || []).find(j =>
-                          (j.jobName || '').toLowerCase().trim() === (o.jobName || '').toLowerCase().trim()
+                          j && String(j.jobName || '').toLowerCase().trim() === oJobName
                         );
                         const substrateDisplay = matchedJM && matchedJM.layers && matchedJM.layers.length > 0
                           ? matchedJM.layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
@@ -4887,6 +4836,10 @@ export default function App() {
             orders={orders}
             onUpdateOrder={handleUpdateOrder}
             currentUser={currentUser}
+            onAddGRN={handleAddGRN}
+            onUpdateGRN={handleUpdateGRN}
+            onSaveInventoryItem={handleSaveInventoryItem}
+            onUpdateInventory={handleUpdateInventory}
           />
         )}
 
@@ -4898,6 +4851,7 @@ export default function App() {
             grns={grns}
             vendors={vendors}
             orders={orders}
+            purchaseOrders={purchaseOrders}
             indents={indents}
             inks={inks}
             jobMasters={jobMasters}
@@ -4979,6 +4933,10 @@ export default function App() {
             onUpdateIndents={handleUpdateIndents}
             machineIssues={machineIssues}
             onUpdateMachineIssues={handleUpdateMachineIssues}
+            inventory={inventory}
+            pelletUserName={fuelActorName(currentUser)}
+            pelletLoadError={pelletLoadError}
+            onAllocatePelletGrnNumber={handleAllocatePelletGrnNumber}
             pelletInwards={pelletInwards}
             pelletConsumptions={pelletConsumptions}
             onSavePelletInward={handleSavePelletInward}
@@ -4993,9 +4951,12 @@ export default function App() {
           <PelletFuelManagement 
             urlParams={urlParams}
             userRole={currentUser?.role || "Admin"}
-            userName={currentUser?.name || "Plant Manager"}
+            userName={fuelActorName(currentUser)}
             vendors={vendors}
             machines={machines}
+            inventory={inventory}
+            loadError={pelletLoadError}
+            onAllocatePelletGrnNumber={handleAllocatePelletGrnNumber}
             pelletInwards={pelletInwards}
             pelletConsumptions={pelletConsumptions}
             onSavePelletInward={handleSavePelletInward}

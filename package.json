@@ -10,6 +10,7 @@
     "build": "vite build",
     "start": "node server.js",
     "lint": "eslint .",
+    "test": "node --test tests/business-records.test.js tests/migration-persist.test.js tests/migration-open-policies.test.js tests/migration-grn-line-items.test.js tests/grn-line-items.test.js tests/email-recipients.test.js tests/privilege-guard.test.js tests/employee-attendance.test.js tests/company-profile.test.js tests/smtp-config.test.js tests/barcode-code.test.js tests/job-profile-metrics.test.js tests/pellet-fuel.test.js",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -28,6 +29,7 @@
     "react-to-print": "^3.3.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.11",
     "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.62.1",
     "@types/node": "^26.2.0",

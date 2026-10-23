@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import StorageImage from './StorageImage';
 import { 
   Printer, 
   Play,
@@ -52,6 +53,7 @@ import {
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import { saveInventoryRollToSupabase, saveSFGGoodToSupabase } from '../services/supabaseDataService';
+import { PartialSaveError, writeWithRetry, unsavedItemsMessage } from '../services/guardedWrite';
 
 // Helper: Resolve Film Density for flexible packaging substrates
 const getFilmDensity = (filmType = '') => {
@@ -974,6 +976,7 @@ export default function ProductionScheduler({
 
       // Create SFG Barcode Rolls for Database Storage & Automatic Printing
       const createdSfgRolls = [];
+      const unsavedRolls = [];
 
       for (let idx = 0; idx < outputRollsList.length; idx++) {
         const rItem = outputRollsList[idx];
@@ -1030,27 +1033,31 @@ export default function ProductionScheduler({
           inputRollsTraceability: inputRollsList
         };
 
-        createdSfgRolls.push(sfgRollObj);
+        const sfgPayload = {
+          ...sfgRollObj,
+          sfgBatchCode: barcodeId,
+          jobName: `${endJobTargetOrder.jobName} - Roll #${rollSeqNo}`,
+          totalNetKg: rollWeight,
+          availableKg: rollWeight,
+          consumedKg: 0,
+          storageBay: sfgRollObj.locationBay
+        };
 
-        // Dispatch to application state
-        if (onAddRoll) {
-          await onAddRoll(sfgRollObj);
-        }
-
-        // Direct Persistence into Supabase Database (both inventory_rolls and sfg_goods)
+        // Both writes must succeed before the roll is shown or the job is completed.
+        let sfgSaved = false;
         try {
-          await saveInventoryRollToSupabase(sfgRollObj);
-          await saveSFGGoodToSupabase({
-            ...sfgRollObj,
-            sfgBatchCode: barcodeId,
-            jobName: `${endJobTargetOrder.jobName} - Roll #${rollSeqNo}`,
-            totalNetKg: rollWeight,
-            availableKg: rollWeight,
-            consumedKg: 0,
-            storageBay: sfgRollObj.locationBay
-          });
+          await writeWithRetry(() => saveSFGGoodToSupabase(sfgPayload));
+          sfgSaved = true;
+          await writeWithRetry(() => saveInventoryRollToSupabase(sfgRollObj));
+          createdSfgRolls.push(sfgRollObj);
+          if (onAddRoll) await onAddRoll(sfgRollObj);
         } catch (dbErr) {
-          console.warn("[SFG Database Notice] Roll barcode saved locally. Supabase sync notice:", dbErr);
+          unsavedRolls.push({
+            label: sfgSaved
+              ? `inventory roll ${barcodeId} (the SFG stock row was saved; the roll is not shown)`
+              : `printed roll ${barcodeId} in sfg_goods`,
+            error: dbErr
+          });
         }
       }
 
@@ -1095,18 +1102,21 @@ export default function ProductionScheduler({
             locationBay: 'RM Store - Substrate Rolls'
           };
 
-          createdBalanceRolls.push(remainingRollObj);
-
-          if (onAddRoll) {
-            await onAddRoll(remainingRollObj);
-          }
-
           try {
-            await saveInventoryRollToSupabase(remainingRollObj);
+            await writeWithRetry(() => saveInventoryRollToSupabase(remainingRollObj));
+            createdBalanceRolls.push(remainingRollObj);
+            if (onAddRoll) await onAddRoll(remainingRollObj);
           } catch (dbErr) {
-            console.warn("[RM Balance Database Notice] Remaining roll barcode saved locally. Supabase notice:", dbErr);
+            unsavedRolls.push({ label: `remaining film roll ${balBarcodeId}`, error: dbErr });
           }
         }
+      }
+
+      if (unsavedRolls.length > 0) {
+        throw new PartialSaveError(unsavedItemsMessage({
+          completed: `The printing job for "${endJobTargetOrder.jobName}" was NOT marked complete. Rolls that failed are not on the board. Retry End Job — saving the same roll again is safe.`,
+          failed: unsavedRolls
+        }));
       }
 
       // Perform Ink Gain, Substrate Width & Actual Ink GSM Calculations
@@ -1200,7 +1210,7 @@ export default function ProductionScheduler({
       }
     } catch (err) {
       console.error("Error ending printing job:", err);
-      alert("Failed to save job completion data. Please try again.");
+      alert(err?.message || "Failed to save job completion data. Please try again.");
     } finally {
       setIsSubmittingEndJob(false);
     }
@@ -1622,7 +1632,7 @@ export default function ProductionScheduler({
                         title={order.artworkUrl ? "Click to Zoom Artwork" : "No Artwork Attached"}
                       >
                         {order.artworkUrl ? (
-                          <img 
+                          <StorageImage 
                             src={order.artworkUrl} 
                             alt={order.jobName} 
                             style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
@@ -1918,7 +1928,7 @@ export default function ProductionScheduler({
                         title={order.artworkUrl ? "Click to Zoom Artwork" : "No Artwork Attached"}
                       >
                         {order.artworkUrl ? (
-                          <img 
+                          <StorageImage 
                             src={order.artworkUrl} 
                             alt={order.jobName} 
                             style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
@@ -2546,7 +2556,7 @@ export default function ProductionScheduler({
                   }}
                 >
                   {activeRunningJob.artworkUrl ? (
-                    <img 
+                    <StorageImage 
                       src={activeRunningJob.artworkUrl} 
                       alt={activeRunningJob.jobName} 
                       style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} 
@@ -3146,7 +3156,7 @@ export default function ProductionScheduler({
             >
               <X size={20} />
             </button>
-            <img 
+            <StorageImage 
               src={zoomArtworkSrc} 
               alt="Artwork Fullscreen" 
               style={{ maxWidth: '92vw', maxHeight: '92vh', objectFit: 'contain', borderRadius: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', background: '#ffffff' }} 

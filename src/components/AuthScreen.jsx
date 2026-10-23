@@ -8,22 +8,16 @@ import {
   ArrowRight, 
   Building2,
   AlertCircle,
-  KeyRound,
   ArrowLeft,
   CheckCircle2,
-  Send,
-  Database
+  Send
 } from 'lucide-react';
-import { requestPasswordRecovery } from '../services/emailService';
-import { signInUser, sendPasswordResetEmail } from '../services/authService';
-import { isSupabaseConfigured } from '../services/supabaseClient';
-import { updateUserPasswordInDB } from '../services/supabaseDataService';
+import { signInUser, sendPasswordResetEmail, updateOwnPassword } from '../services/authService';
 
 
-export default function AuthScreen({ onLogin, onUpdatePassword }) {
+export default function AuthScreen({ onLogin, recoveryMode = false, onPasswordUpdated }) {
 
-  const [viewMode, setViewMode] = useState('signin'); // 'signin', 'forgot_password', 'code_sent'
-  const isSupabaseActive = isSupabaseConfigured();
+  const [viewMode, setViewMode] = useState('signin'); // 'signin' | 'forgot_password'
   
   // Login Form State
   const [email, setEmail] = useState('');
@@ -72,11 +66,8 @@ export default function AuthScreen({ onLogin, onUpdatePassword }) {
     return () => clearInterval(interval);
   }, [lockoutUntil]);
 
-  // Recovery State
   const [recoveryEmail, setRecoveryEmail] = useState('');
   const [recoverySuccessMsg, setRecoverySuccessMsg] = useState('');
-  const [otpCode, setOtpCode] = useState('');
-  const [serverOtp, setServerOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [passwordResetDone, setPasswordResetDone] = useState(false);
 
@@ -149,66 +140,32 @@ export default function AuthScreen({ onLogin, onUpdatePassword }) {
     }
 
     setIsLoading(true);
-    
-    // Try Supabase Auth password reset if configured
-    if (isSupabaseActive) {
-      const supaResp = await sendPasswordResetEmail(recoveryEmail.trim());
-      if (supaResp.success) {
-        setIsLoading(false);
-        setRecoverySuccessMsg(supaResp.message || `Password recovery link sent via Supabase Auth.`);
-        return;
-      }
-    }
-
-    // Fallback to SMTP email recovery
-    const response = await requestPasswordRecovery(recoveryEmail.trim());
+    const supaResp = await sendPasswordResetEmail(recoveryEmail.trim());
     setIsLoading(false);
 
-    if (response.success) {
-      setRecoverySuccessMsg(`Password recovery instructions sent to ${recoveryEmail}. Please check your inbox.`);
-      setViewMode('code_sent');
+    if (supaResp.success) {
+      setRecoverySuccessMsg(supaResp.message || 'Password setup link sent.');
     } else {
-      setError(response.message || 'Failed to dispatch recovery email.');
+      setError(supaResp.message || 'Failed to send the password setup email.');
     }
   };
 
-
-  // Verify OTP & Reset Password Handler
-  const handleVerifyOtpAndReset = async (e) => {
+  const handleSetNewPassword = async (e) => {
     e.preventDefault();
     setError('');
-
-    if (!otpCode.trim() || otpCode.trim().length !== 6) {
-      setError('Please enter the valid 6-digit verification code sent to your email.');
+    if (!newPassword || newPassword.length < 8) {
+      setError('New password must be at least 8 characters long.');
       return;
     }
-    if (!newPassword.trim() || newPassword.length < 6) {
-      setError('New password must be at least 6 characters long.');
+    setIsLoading(true);
+    const result = await updateOwnPassword(newPassword);
+    setIsLoading(false);
+    if (!result.success) {
+      setError(result.message || 'Could not update the password.');
       return;
     }
-
     setPasswordResetDone(true);
-    setError('');
-
-    // Persist new password to Supabase users table
-    try {
-      await updateUserPasswordInDB(recoveryEmail, newPassword);
-    } catch (err) {
-      console.warn('[PasswordReset] Could not persist password to DB:', err.message);
-    }
-
-    // Also update in local users state so the change is reflected immediately
-    if (onUpdatePassword) {
-      onUpdatePassword(recoveryEmail, newPassword);
-    }
-
-    setTimeout(() => {
-      setViewMode('signin');
-      setEmail(recoveryEmail);
-      setPassword(newPassword);
-      setPasswordResetDone(false);
-      setRecoverySuccessMsg('✅ Password updated successfully! You can now sign in with your new password.');
-    }, 1200);
+    if (onPasswordUpdated) await onPasswordUpdated();
   };
 
   return (
@@ -254,7 +211,7 @@ export default function AuthScreen({ onLogin, onUpdatePassword }) {
         <div className="auth-form-side">
           
           {/* VIEW 1: SIGN IN FORM */}
-          {viewMode === 'signin' && (
+          {!recoveryMode && viewMode === 'signin' && (
             <>
               <div className="auth-form-header">
                 <div>
@@ -286,7 +243,7 @@ export default function AuthScreen({ onLogin, onUpdatePassword }) {
                     <input 
                       type="email" 
                       className="form-control"
-                      placeholder="e.g. samyak@samyak.com"
+                      placeholder="e.g. samyak@samyakinternational.in"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
@@ -349,7 +306,7 @@ export default function AuthScreen({ onLogin, onUpdatePassword }) {
           )}
 
           {/* VIEW 2: FORGOT PASSWORD REQUEST */}
-          {viewMode === 'forgot_password' && (
+          {!recoveryMode && viewMode === 'forgot_password' && (
             <>
               <div className="auth-form-header">
                 <button 
@@ -362,7 +319,7 @@ export default function AuthScreen({ onLogin, onUpdatePassword }) {
                   <ArrowLeft size={16} /> Back to Sign In
                 </button>
                 <h3 style={{ marginTop: '12px' }}>Password Recovery</h3>
-                <p>Enter your registered work email address. We will send a verification code via Hostinger SMTP.</p>
+                <p>Enter your registered work email. We will send a link to choose a new password.</p>
               </div>
 
               {error && (
@@ -394,10 +351,10 @@ export default function AuthScreen({ onLogin, onUpdatePassword }) {
                   disabled={isLoading}
                 >
                   {isLoading ? (
-                    <span>Sending Code via Hostinger SMTP...</span>
+                    <span>Sending password link...</span>
                   ) : (
                     <>
-                      Send Recovery Code <Send size={16} />
+                      Send Password Link <Send size={16} />
                     </>
                   )}
                 </button>
@@ -405,86 +362,43 @@ export default function AuthScreen({ onLogin, onUpdatePassword }) {
             </>
           )}
 
-          {/* VIEW 3: OTP VERIFICATION & RESET */}
-          {viewMode === 'code_sent' && (
+          {recoveryMode && (
             <>
               <div className="auth-form-header">
-                <button 
-                  className="btn-back-link"
-                  onClick={() => {
-                    setError('');
-                    setViewMode('forgot_password');
-                  }}
-                >
-                  <ArrowLeft size={16} /> Resend Code
-                </button>
-                <h3 style={{ marginTop: '12px' }}>Enter Recovery Code</h3>
-                <p>Verification code sent via Hostinger SMTP to <strong>{recoveryEmail}</strong></p>
+                <h3>Choose a new password</h3>
+                <p>This replaces the previous password. It is stored by Supabase Auth, not in the ERP database.</p>
               </div>
-
               {passwordResetDone ? (
-                <div className="auth-success-alert" style={{ flexDirection: 'column', textAlign: 'center', padding: '20px' }}>
-                  <CheckCircle2 size={36} style={{ marginBottom: '8px' }} />
-                  <span style={{ fontSize: '1rem', fontWeight: 'bold' }}>Password Reset Complete!</span>
-                  <span style={{ fontSize: '0.85rem', marginTop: '4px' }}>Redirecting to Sign In screen...</span>
+                <div className="auth-success-alert">
+                  <CheckCircle2 size={18} />
+                  <span>Password updated. Opening your workspace...</span>
                 </div>
               ) : (
-                <>
+                <form onSubmit={handleSetNewPassword} className="auth-form">
                   {error && (
                     <div className="auth-error-alert">
                       <AlertCircle size={18} />
                       <span>{error}</span>
                     </div>
                   )}
-
-                  <form onSubmit={handleVerifyOtpAndReset} className="auth-form">
-                    <div className="form-group">
-                      <label>6-Digit Verification Code</label>
-                      <div className="input-with-icon">
-                        <KeyRound size={18} className="input-icon" />
-                        <input 
-                          type="text" 
-                          className="form-control"
-                          placeholder="e.g. 849301"
-                          maxLength={6}
-                          value={otpCode}
-                          onChange={(e) => setOtpCode(e.target.value)}
-                          required
-                        />
-                      </div>
+                  <div className="form-group">
+                    <label>New password</label>
+                    <div className="input-with-icon">
+                      <Lock size={18} className="input-icon" />
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        className="form-control"
+                        placeholder="At least 8 characters"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        required
+                      />
                     </div>
-
-                    <div className="form-group">
-                      <label>New Account Password</label>
-                      <div className="input-with-icon">
-                        <Lock size={18} className="input-icon" />
-                        <input 
-                          type={showPassword ? "text" : "password"} 
-                          className="form-control"
-                          placeholder="Enter new password (min. 6 characters)"
-                          value={newPassword}
-                          onChange={(e) => setNewPassword(e.target.value)}
-                          required
-                        />
-                        <button 
-                          type="button" 
-                          className="password-toggle-btn"
-                          onClick={() => setShowPassword(!showPassword)}
-                          tabIndex={-1}
-                        >
-                          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                        </button>
-                      </div>
-                    </div>
-
-                    <button 
-                      type="submit" 
-                      className="btn-primary auth-submit-btn"
-                    >
-                      Reset Password & Login <CheckCircle2 size={18} />
-                    </button>
-                  </form>
-                </>
+                  </div>
+                  <button type="submit" className="btn-primary auth-submit-btn" disabled={isLoading}>
+                    {isLoading ? 'Saving password...' : 'Save password and continue'}
+                  </button>
+                </form>
               )}
             </>
           )}

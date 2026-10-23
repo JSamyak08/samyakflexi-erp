@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Plus, Search, Building2, Phone, MapPin, Briefcase, ChevronRight, Package, Layers, X, Edit, Trash2, AlertTriangle, ExternalLink, IndianRupee, Image as ImageIcon, Printer, FileText } from 'lucide-react';
 import { openArtworkViewer } from '../services/supabaseStorageService';
+import StorageImage from './StorageImage';
 import ArtworkModal from './ArtworkModal';
 import TablePagination, { usePagination } from './TablePagination';
 import ClientPendingOrdersPDF from './ClientPendingOrdersPDF';
@@ -18,7 +19,8 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
     if (urlParams && urlParams.id) {
       setSearchTerm(urlParams.id);
       if (clients && clients.length > 0) {
-        const match = clients.find(c => c.id === urlParams.id || c.name.toLowerCase().includes(urlParams.id.toLowerCase()));
+        const paramId = String(urlParams.id).toLowerCase();
+        const match = clients.find(c => c && (c.id === urlParams.id || String(c.name || '').toLowerCase().includes(paramId)));
         if (match) setSelectedClient(match);
       }
     }
@@ -34,10 +36,13 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
 
   const filteredClients = useMemo(() => {
     if (!clients) return [];
-    return clients.filter(c => 
-      c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      (c.gstin && c.gstin.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
+    const q = String(searchTerm || '').toLowerCase().trim();
+    return clients.filter(c => {
+      if (!c) return false;
+      return !q || 
+        String(c.name || '').toLowerCase().includes(q) || 
+        String(c.gstin || '').toLowerCase().includes(q);
+    });
   }, [clients, searchTerm]);
 
   const {
@@ -72,7 +77,7 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
     setIsModalOpen(true);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const newClient = {
       id: editingClient ? editingClient.id : `CLI-${Math.floor(100 + Math.random() * 900)}`,
@@ -84,15 +89,19 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
       phone
     };
 
-    if (editingClient) {
-      onUpdateClient(newClient);
-      if (selectedClient && selectedClient.id === newClient.id) {
-        setSelectedClient(newClient);
+    try {
+      if (editingClient) {
+        if (onUpdateClient) await onUpdateClient(newClient);
+        if (selectedClient && selectedClient.id === newClient.id) {
+          setSelectedClient(newClient);
+        }
+      } else if (onAddClient) {
+        await onAddClient(newClient);
       }
-    } else {
-      onAddClient(newClient);
+      setIsModalOpen(false);
+    } catch (err) {
+      alert(`The client was not saved: ${err.message || err}`);
     }
-    setIsModalOpen(false);
   };
 
   const handleDeleteClient = (client) => {
@@ -335,7 +344,7 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                               {artwork ? (
-                                <img 
+                                <StorageImage 
                                   src={artwork} 
                                   alt="Artwork" 
                                   style={{ width: '32px', height: '32px', objectFit: 'contain', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }} 

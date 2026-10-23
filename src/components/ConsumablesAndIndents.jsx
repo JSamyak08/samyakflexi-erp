@@ -78,6 +78,10 @@ export default function ConsumablesAndIndents({
   onUpdateIndents,
   machineIssues = [],
   onUpdateMachineIssues,
+  inventory = [],
+  pelletUserName = '',
+  pelletLoadError = '',
+  onAllocatePelletGrnNumber,
   pelletInwards = [],
   pelletConsumptions = [],
   onSavePelletInward,
@@ -134,33 +138,21 @@ export default function ConsumablesAndIndents({
 
   // ─── Lifted State Setters (Write-through to DB) ───────────────────────────────
   const setConsumables = (val) => {
-    if (onUpdateConsumables) {
-      if (typeof val === 'function') {
-        onUpdateConsumables(val(consumables));
-      } else {
-        onUpdateConsumables(val);
-      }
-    }
+    if (!onUpdateConsumables) return undefined;
+    const next = typeof val === 'function' ? val(consumables) : val;
+    return onUpdateConsumables(next);
   };
 
   const setIndents = (val) => {
-    if (onUpdateIndents) {
-      if (typeof val === 'function') {
-        onUpdateIndents(val(indents));
-      } else {
-        onUpdateIndents(val);
-      }
-    }
+    if (!onUpdateIndents) return undefined;
+    const next = typeof val === 'function' ? val(indents) : val;
+    return onUpdateIndents(next);
   };
 
   const setMachineIssues = (val) => {
-    if (onUpdateMachineIssues) {
-      if (typeof val === 'function') {
-        onUpdateMachineIssues(val(machineIssues));
-      } else {
-        onUpdateMachineIssues(val);
-      }
-    }
+    if (!onUpdateMachineIssues) return undefined;
+    const next = typeof val === 'function' ? val(machineIssues) : val;
+    return onUpdateMachineIssues(next);
   };
 
 
@@ -245,7 +237,7 @@ export default function ConsumablesAndIndents({
 
     // Find matching item in Consumables store for unit cost prefill
     const itemTitle = (item.name || item.itemName || '').toLowerCase();
-    const matchedStoreItem = consumables.find(c => c.name.toLowerCase().includes(itemTitle));
+    const matchedStoreItem = (consumables || []).find(c => c && String(c.name || '').toLowerCase().includes(itemTitle));
     const unitPrice = matchedStoreItem ? matchedStoreItem.unitCost : (item.unitCost || 250);
     setPoUnitPrice(unitPrice);
 
@@ -365,7 +357,7 @@ export default function ConsumablesAndIndents({
 
     setIsRaisePOModalOpen(false);
     setActivePOData(poPayload); // Open PO PDF viewer immediately!
-    alert(`Purchase Order ${poNumber} issued successfully to ${selectedVendorName}!\n\nEmail notification sent to vendor (${vendorObj?.email || 'purchase@samyakinternational.in'}).`);
+    alert(`Purchase Order ${poNumber} issued successfully to ${selectedVendorName}!`);
   };
 
   // New Issue Form Data
@@ -414,13 +406,14 @@ export default function ConsumablesAndIndents({
   // Items falling below minimum reserve level MUST automatically come to the TOP of the list!
   const sortedAndFilteredConsumables = useMemo(() => {
     return (consumables || []).filter(c => {
+      if (!c) return false;
       // Search term
-      const search = searchTerm.toLowerCase().trim();
+      const search = String(searchTerm || '').toLowerCase().trim();
       const matchesSearch = !search || 
-        c.name.toLowerCase().includes(search) || 
-        c.itemCode.toLowerCase().includes(search) ||
-        c.category.toLowerCase().includes(search) ||
-        c.location.toLowerCase().includes(search);
+        String(c.name || '').toLowerCase().includes(search) || 
+        String(c.itemCode || '').toLowerCase().includes(search) ||
+        String(c.category || '').toLowerCase().includes(search) ||
+        String(c.location || '').toLowerCase().includes(search);
 
       // Machine Filter
       const matchesMachine = machineFilter === "ALL" || c.assignedMachine === machineFilter || c.assignedMachine === "All Printing Presses" || c.assignedMachine === "General Factory & Store";
@@ -470,7 +463,7 @@ export default function ConsumablesAndIndents({
   };
 
   // Submit Issue Stock to Machine
-  const handleConfirmIssueStock = (e) => {
+  const handleConfirmIssueStock = async (e) => {
     e.preventDefault();
     if (!selectedItemForIssue) return;
     const qty = parseFloat(issueQty);
@@ -484,13 +477,12 @@ export default function ConsumablesAndIndents({
       return;
     }
 
-    // Deduct stock
-    setConsumables(prev => prev.map(c => {
+    const nextConsumables = consumables.map(c => {
       if (c.id === selectedItemForIssue.id) {
         return { ...c, currentStock: c.currentStock - qty };
       }
       return c;
-    }));
+    });
 
     // Add Audit Issue Log
     const newIssueRecord = {
@@ -509,14 +501,20 @@ export default function ConsumablesAndIndents({
       remarks: issueRemarks || "Direct Store Machine Issue"
     };
 
-    setMachineIssues(prev => [newIssueRecord, ...prev]);
+    try {
+      await setConsumables(nextConsumables);
+      await setMachineIssues([newIssueRecord, ...(machineIssues || [])]);
+    } catch (err) {
+      alert(`The machine issue was not saved: ${err.message || err}`);
+      return;
+    }
 
     setIsIssueModalOpen(false);
     alert(`Successfully issued ${qty} ${selectedItemForIssue.unit} of "${selectedItemForIssue.name}" to ${issueMachine}!`);
   };
 
   // Confirm Restock Item
-  const handleConfirmRestock = (e) => {
+  const handleConfirmRestock = async (e) => {
     e.preventDefault();
     if (!selectedItemForRestock) return;
     const qty = parseFloat(restockQty);
@@ -525,7 +523,7 @@ export default function ConsumablesAndIndents({
       return;
     }
 
-    setConsumables(prev => prev.map(c => {
+    const next = consumables.map(c => {
       if (c.id === selectedItemForRestock.id) {
         return { 
           ...c, 
@@ -534,14 +532,21 @@ export default function ConsumablesAndIndents({
         };
       }
       return c;
-    }));
+    });
+
+    try {
+      await setConsumables(next);
+    } catch (err) {
+      alert(`The restock was not saved: ${err.message || err}`);
+      return;
+    }
 
     setIsRestockModalOpen(false);
     alert(`Added ${qty} ${selectedItemForRestock.unit} to store stock for "${selectedItemForRestock.name}". New Stock: ${selectedItemForRestock.currentStock + qty} ${selectedItemForRestock.unit}.`);
   };
 
   // Add New Consumable Item
-  const handleCreateNewItem = (e) => {
+  const handleCreateNewItem = async (e) => {
     e.preventDefault();
     if (!newItemName.trim()) {
       alert("Item Name is required!");
@@ -562,7 +567,12 @@ export default function ConsumablesAndIndents({
       lastRestocked: new Date().toISOString().split('T')[0]
     };
 
-    setConsumables(prev => [newItem, ...prev]);
+    try {
+      await setConsumables(prev => [newItem, ...prev]);
+    } catch (err) {
+      alert(`The store item was not saved: ${err.message || err}`);
+      return;
+    }
     setIsNewItemModalOpen(false);
 
     // Reset Form
@@ -572,7 +582,7 @@ export default function ConsumablesAndIndents({
   };
 
   // Submit New Material Indent Requisition
-  const handleCreateIndent = (e) => {
+  const handleCreateIndent = async (e) => {
     e.preventDefault();
     if (indentLineItems.length === 0) {
       alert("Please add at least one item to the material indent.");
@@ -596,7 +606,12 @@ export default function ConsumablesAndIndents({
       }))
     };
 
-    setIndents(prev => [newIndent, ...prev]);
+    try {
+      await setIndents(prev => [newIndent, ...prev]);
+    } catch (err) {
+      alert(`The material indent was not saved: ${err.message || err}`);
+      return;
+    }
     notifyPurchaseIndentCreated(newIndent).catch(err => console.error("Indent email error:", err));
     setIsIndentModalOpen(false);
     alert(`Material Indent Requisition ${indentId} raised successfully! Pending Plant/Store Manager approval.`);
@@ -906,9 +921,12 @@ export default function ConsumablesAndIndents({
         <PelletFuelManagement 
           urlParams={urlParams}
           userRole={userRole}
-          userName={userName}
+          userName={pelletUserName}
           vendors={vendors}
           machines={machines}
+          inventory={inventory}
+          loadError={pelletLoadError}
+          onAllocatePelletGrnNumber={onAllocatePelletGrnNumber}
           pelletInwards={pelletInwards}
           pelletConsumptions={pelletConsumptions}
           onSavePelletInward={onSavePelletInward}

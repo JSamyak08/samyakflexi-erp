@@ -1,8 +1,6 @@
-import { safeLocalStorageGet, safeLocalStorageSet } from '../utils/safeStorage';
 import { isSupabaseConfigured, supabase } from './supabaseClient';
 import { ensureValidSession, handleSupabaseError } from './supabaseDataService';
 
-const AUDIT_LOGS_KEY = 'samyak_erp_audit_logs';
 const RETENTION_DAYS = 180; // Minimum 6 months retention
 const PLANT_TIME_ZONE = 'Asia/Kolkata';
 
@@ -69,53 +67,27 @@ export function mapAuditLogToDbPayload(entry) {
 }
 
 /**
- * Fetch Audit Logs from Supabase with fallback to local storage
+ * Fetch Audit Logs from the audit_logs table
  */
 export async function fetchAuditLogsPage({ limit = 100, offset = 0 } = {}) {
   const pageSize = Math.max(1, Math.min(Number(limit) || 100, 500));
   const start = Math.max(0, Number(offset) || 0);
   if (!isSupabaseConfigured()) {
-    const local = pruneOldAuditLogs(safeLocalStorageGet(AUDIT_LOGS_KEY, []));
-    return { logs: local.slice(start, start + pageSize), total: local.length };
+    throw new Error('Supabase database connection is not available.');
   }
-  try {
-    const { data, error, count } = await supabase
-      .from('audit_logs')
-      .select('*', { count: 'exact' })
-      .order('created_at', { ascending: false })
-      .range(start, start + pageSize - 1);
+  const { data, error, count } = await supabase
+    .from('audit_logs')
+    .select('*', { count: 'exact' })
+    .order('created_at', { ascending: false })
+    .range(start, start + pageSize - 1);
 
-    if (error) {
-      console.warn('[AuditLogs] Table fetch error, attempting fallback:', error.message);
-      const { data: settingData } = await supabase
-        .from('system_settings')
-        .select('setting_value')
-        .eq('setting_key', 'audit_logs')
-        .single();
+  if (error) handleSupabaseError(error, 'audit_logs');
 
-      if (settingData && settingData.setting_value) {
-        try {
-          const parsed = JSON.parse(settingData.setting_value);
-          if (Array.isArray(parsed)) {
-            const local = pruneOldAuditLogs(parsed);
-            return { logs: local.slice(start, start + pageSize), total: local.length };
-          }
-        } catch (e) { /* ignore */ }
-      }
-      const local = pruneOldAuditLogs(safeLocalStorageGet(AUDIT_LOGS_KEY, []));
-      return { logs: local.slice(start, start + pageSize), total: local.length };
-    }
-
-    const fetchedLogs = (data || []).map(mapAuditRow);
-    return {
-      logs: pruneOldAuditLogs(fetchedLogs),
-      total: typeof count === 'number' ? count : fetchedLogs.length
-    };
-  } catch (err) {
-    console.error("Error fetching audit logs:", err);
-    const local = pruneOldAuditLogs(safeLocalStorageGet(AUDIT_LOGS_KEY, []));
-    return { logs: local.slice(start, start + pageSize), total: local.length };
-  }
+  const fetchedLogs = (data || []).map(mapAuditRow);
+  return {
+    logs: pruneOldAuditLogs(fetchedLogs),
+    total: typeof count === 'number' ? count : fetchedLogs.length
+  };
 }
 
 export async function fetchAuditLogsFromSupabase(limit = 100) {
@@ -128,39 +100,13 @@ export async function fetchAuditLogsFromSupabase(limit = 100) {
  */
 export async function saveAuditLogToSupabase(entry) {
   if (!entry) return;
-  
-  // 1. Update local storage immediately
-  try {
-    const existing = safeLocalStorageGet(AUDIT_LOGS_KEY, []);
-    const updated = [entry, ...existing.filter(l => l.id !== entry.id)];
-    const pruned = pruneOldAuditLogs(updated);
-    safeLocalStorageSet(AUDIT_LOGS_KEY, pruned);
-  } catch (e) {
-    console.warn("Local storage audit log error:", e);
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase database connection is not available.');
   }
-
-  // 2. Async save to Supabase if active
-  if (!isSupabaseConfigured()) return;
-  try {
-    await ensureValidSession();
-    const payload = mapAuditLogToDbPayload(entry);
-    
-    // Attempt upsert to public.audit_logs
-    const { error } = await supabase.from('audit_logs').upsert(payload, { onConflict: 'id' });
-    if (error) {
-      console.warn('[AuditLogs] Supabase direct insert notice:', error.message);
-      // Fallback: save to system_settings envelope if table is missing
-      const local = safeLocalStorageGet(AUDIT_LOGS_KEY, []);
-      const pruned = pruneOldAuditLogs(local).slice(0, 500);
-      await supabase.from('system_settings').upsert({
-        setting_key: 'audit_logs',
-        setting_value: JSON.stringify(pruned),
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'setting_key' });
-    }
-  } catch (err) {
-    console.warn("Supabase audit log sync warning:", err);
-  }
+  await ensureValidSession();
+  const payload = mapAuditLogToDbPayload(entry);
+  const { error } = await supabase.from('audit_logs').upsert(payload, { onConflict: 'id' });
+  if (error) handleSupabaseError(error, 'audit_logs');
 }
 
 /**

@@ -1,36 +1,25 @@
 -- B-026: remember which GRNs were included in the QC-overdue digest.
--- Apply after 20261019120100_create_pellet_fuel_tables.sql and after
--- 20261019120000_auth_rls_lockdown.sql (PR #1). Merge this PR after PR #1.
 --
--- The column lives on public.grns. Row access stays on the lockdown policy
--- grns_access: FOR ALL TO authenticated, private.can_any(ARRAY['inventory','purchase_orders']).
--- This file does not create a policy, and it does not grant anon.
+-- This version (20261019120200) is older than migrations already applied on
+-- production. The GitHub integration still runs a missing history row and
+-- finishes with a warning. It is not skipped. `supabase db push` without
+-- --include-all refuses the push instead of applying the file.
 --
--- Rollback:
---   DROP INDEX IF EXISTS public.idx_grns_escalated_at;
---   ALTER TABLE public.grns DROP COLUMN IF EXISTS escalated_at;
-
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE schemaname = 'public'
-      AND tablename = 'grns'
-      AND policyname = 'grns_access'
-  ) THEN
-    RAISE EXCEPTION
-      'grns_access is missing. Apply 20261019120000_auth_rls_lockdown.sql (PR #1) before this migration.';
-  END IF;
-END $$;
+-- Checked read-only on 23 Oct 2026: public.grns has no escalated_at column.
+-- Its policy is "Allow anon and auth full access", not grns_access.
+-- private.can_any(text[]) is not installed. The original body raised when
+-- grns_access was missing, then revoked anon and granted only authenticated.
+-- That would fail the deploy, or change grants the later open-policy
+-- migrations left in place. This file does not enable, drop, or replace
+-- policies and does not change grants.
+--
+-- ADD COLUMN IF NOT EXISTS and CREATE INDEX IF NOT EXISTS are safe to run
+-- once, late, on the live table. Nothing here is applied by this change;
+-- it runs only when the migration integration applies the file.
 
 ALTER TABLE public.grns ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMPTZ;
 
 COMMENT ON COLUMN public.grns.escalated_at IS
   'Stamped once, before the daily QC-overdue digest email. Null means this GRN has not been escalated.';
-
-ALTER TABLE public.grns ENABLE ROW LEVEL SECURITY;
-
-REVOKE ALL ON TABLE public.grns FROM anon, PUBLIC;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.grns TO authenticated;
 
 CREATE INDEX IF NOT EXISTS idx_grns_escalated_at ON public.grns (escalated_at);

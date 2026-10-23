@@ -3,9 +3,12 @@ import { useReactToPrint } from 'react-to-print';
 import { Save, Printer, UploadCloud, ArrowLeft, CheckCircle2, RefreshCw, Trash2, Check, ExternalLink, Image as ImageIcon, CheckSquare, ShieldCheck, FileCode, Layers, Plus } from 'lucide-react';
 import { uploadArtworkFile, openArtworkViewer } from './services/supabaseStorageService';
 import { getAuthorisedSignature, getCompanyLogo, getNextDocRefNumber, generateDocRefNumber } from './services/settingsService';
-import { safeLocalStorageSet, safeLocalStorageGet } from './utils/safeStorage';
-import { COMPANY_DETAILS, FILM_DENSITIES } from './factoryStore';
-import { saveJobMasterToSupabase, saveCylinderToSupabase, saveSystemSetting } from './services/supabaseDataService';
+import { FILM_DENSITIES } from './factoryStore';
+import { loadLetterhead } from './services/companyProfile';
+import CompanyProfileNotice from './components/CompanyProfileNotice';
+import { saveJobMasterToSupabase, saveCylinderToSupabase } from './services/supabaseDataService';
+import { supabase } from './services/supabaseClient';
+import { fetchJobCardSpec, saveJobCardSpec } from './services/businessRecords';
 import ArtworkModal from './components/ArtworkModal';
 import SearchableSelect from './components/SearchableSelect';
 
@@ -22,8 +25,11 @@ function parseStructureToLayers(structStr) {
 }
 
 const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, ref) => {
+  const letterhead = loadLetterhead();
   const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'SuperAdmin';
   const managementSignature = getAuthorisedSignature();
+  if (letterhead.error) return <CompanyProfileNotice message={letterhead.error} />;
+  const COMPANY_DETAILS = letterhead.company;
   const companyLogo = getCompanyLogo() || COMPANY_DETAILS.logoUrl || '/samyak-logo.png';
 
   return (
@@ -115,7 +121,7 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, 
               {COMPANY_DETAILS.address}
             </div>
             <div style={{ fontSize: '9px', color: '#475569', marginTop: '2px', fontWeight: '800' }}>
-              GSTIN: {COMPANY_DETAILS.gstin} • CIN: L67120MH1994PLC225907
+              GSTIN: {COMPANY_DETAILS.gstin} • CIN: {COMPANY_DETAILS.cin}
             </div>
           </div>
         </div>
@@ -338,6 +344,20 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
   });
 
   useEffect(() => {
+    if (!initialData) return undefined;
+    const specId = `jobcard_${initialData.sku || initialData.skuCode || initialData.id}`;
+    let cancelled = false;
+    fetchJobCardSpec(supabase, specId).then((spec) => {
+      if (cancelled || !spec) return;
+      setCustomData((prev) => ({ ...prev, ...spec }));
+      if (Array.isArray(spec.layers) && spec.layers.length) setLayers(spec.layers);
+    }).catch((err) => {
+      alert(`The saved job card could not be loaded: ${err.message || err}`);
+    });
+    return () => { cancelled = true; };
+  }, [initialData]);
+
+  useEffect(() => {
     if (initialData) {
       const matchingJM = (jobMasters || []).find(j => 
         (j.id && (j.id === initialData.jobMasterId || j.id === initialData.id)) ||
@@ -345,10 +365,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         (j.jobName && j.jobName.toLowerCase() === (initialData.jobName || '').toLowerCase().trim())
       );
 
-      const storageKey = `samyak_erp_jobcard_settings_${initialData.sku || initialData.skuCode || initialData.jobName || initialData.id}`;
-      const savedLocal = safeLocalStorageGet(storageKey, null);
-
-      const src = { ...(matchingJM || {}), ...initialData, ...(savedLocal || {}) };
+      const src = { ...(matchingJM || {}), ...initialData };
 
       let initLayers = src.layers || [];
       if (initLayers.length === 0 && (src.structure || src.film_structure)) {
@@ -754,14 +771,10 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         creationDate: customData.creationDate || new Date().toLocaleDateString('en-GB')
       };
 
-      await Promise.allSettled([
-        saveJobMasterToSupabase(targetJobMaster),
-        saveCylinderToSupabase(targetCylinder),
-        saveSystemSetting(`jobcard_${targetJobMaster.skuCode || targetJobMaster.id}`, { ...customData, jobStructure: derivedStruct, layers, artworkUrl: fileUrl, targetJobMaster, targetCylinder })
-      ]);
-
-      const storageKey = `samyak_erp_jobcard_settings_${customData.skuCode || customData.jobName || targetJobMaster.id}`;
-      safeLocalStorageSet(storageKey, { ...customData, jobStructure: derivedStruct, layers, artworkUrl: fileUrl, printWidth: `${printWidthNum} mm`, faceLength: `${faceLengthNum} mm` });
+      const specPayload = { ...customData, jobStructure: derivedStruct, layers, artworkUrl: fileUrl, targetJobMaster, targetCylinder, printWidth: `${printWidthNum} mm`, faceLength: `${faceLengthNum} mm` };
+      await saveJobMasterToSupabase(targetJobMaster);
+      await saveCylinderToSupabase(targetCylinder);
+      await saveJobCardSpec(supabase, `jobcard_${targetJobMaster.skuCode || targetJobMaster.id}`, specPayload);
 
       if (onSave) {
         onSave({ ...customData, jobStructure: derivedStruct, layers, artworkUrl: fileUrl, printWidth: `${printWidthNum} mm`, faceLength: `${faceLengthNum} mm` }, targetJobMaster, targetCylinder);

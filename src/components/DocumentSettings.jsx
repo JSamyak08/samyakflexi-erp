@@ -80,9 +80,12 @@ import {
   getMaterialCostSettings,
   saveMaterialCostSettings,
   fetchMaterialCostSettingsFromSupabase,
-  DEFAULT_MATERIAL_COST_SETTINGS
+  DEFAULT_MATERIAL_COST_SETTINGS,
+  saveCompanyProfile
 } from '../services/settingsService';
+import { SEED_COMPANY_PROFILE, readStoredCompanyProfile, REQUIRED_COMPANY_FIELDS } from '../services/companyProfile';
 import { sendERPEmailNotification, buildEmailTemplate } from '../services/emailService';
+import { fetchSystemSetting } from '../services/supabaseDataService';
 import SearchableSelect from './SearchableSelect';
 
 export default function DocumentSettings({ machines = [], onSaveMachine, onUpdateMachine, onDeleteMachine }) {
@@ -97,8 +100,34 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
   const [ratesState, setRatesState] = useState(() => getProcessingRates());
   const [coaSignatoriesState, setCoaSignatoriesState] = useState(() => getCoaSignatories());
 
+  useEffect(() => {
+    let mounted = true;
+    const apply = (setter) => (remote) => {
+      if (mounted && remote && typeof remote === 'object') setter((prev) => ({ ...prev, ...remote }));
+    };
+    fetchSystemSetting('doc_prefixes').then(apply(setPrefixState)).catch(() => {});
+    fetchSystemSetting('doc_terms').then(apply(setTermsState)).catch(() => {});
+    fetchSystemSetting('processing_rates').then(apply(setRatesState)).catch(() => {});
+    fetchSystemSetting('coa_signatories').then(apply(setCoaSignatoriesState)).catch(() => {});
+    fetchSystemSetting('inventory_ageing_settings').then(apply(setAgeingSettings)).catch(() => {});
+    fetchSystemSetting('company_profile').then((remote) => {
+      if (mounted && remote && typeof remote === 'object') {
+        setCompanyProfile(prev => ({ ...prev, ...remote }));
+      }
+    }).catch(() => {});
+    return () => { mounted = false; };
+  }, []);
+
   // Consumable Material Cost Settings State (Adhesive & Paper Core)
   const [materialCostState, setMaterialCostState] = useState(() => getMaterialCostSettings());
+  const [companyProfile, setCompanyProfile] = useState(() => {
+    try {
+      const stored = readStoredCompanyProfile();
+      return stored ? { ...SEED_COMPANY_PROFILE, ...stored } : { ...SEED_COMPANY_PROFILE };
+    } catch {
+      return { ...SEED_COMPANY_PROFILE };
+    }
+  });
   const [isSavingMaterialCosts, setIsSavingMaterialCosts] = useState(false);
 
   useEffect(() => {
@@ -175,7 +204,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     setIsBayModalOpen(true);
   };
 
-  const handleSaveBaySubmit = (e) => {
+  const handleSaveBaySubmit = async (e) => {
     e.preventDefault();
     if (!bayName.trim()) {
       alert("Storage Bay Name is required!");
@@ -221,25 +250,21 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
       updated = [...storageBays, newBay];
     }
 
-    setStorageBays(updated);
-    saveStorageBays(updated);
-    setIsBayModalOpen(false);
-    triggerSaveNotification();
+    await persistSetting(() => saveStorageBays(updated), () => {
+      setStorageBays(updated);
+      setIsBayModalOpen(false);
+    });
   };
 
-  const handleDeleteBayItem = (id, name) => {
+  const handleDeleteBayItem = async (id, name) => {
     if (!window.confirm(`Are you sure you want to delete Storage Bay "${name}"?`)) return;
     const updated = storageBays.filter(b => b.id !== id);
-    setStorageBays(updated);
-    saveStorageBays(updated);
-    triggerSaveNotification();
+    await persistSetting(() => saveStorageBays(updated), () => setStorageBays(updated));
   };
 
-  const handleResetBaysToDefault = () => {
+  const handleResetBaysToDefault = async () => {
     if (!window.confirm("Reset all Storage Bays to ERP factory defaults? Custom bays will be reset.")) return;
-    setStorageBays(DEFAULT_STORAGE_BAYS);
-    saveStorageBays(DEFAULT_STORAGE_BAYS);
-    triggerSaveNotification();
+    await persistSetting(() => saveStorageBays(DEFAULT_STORAGE_BAYS), () => setStorageBays(DEFAULT_STORAGE_BAYS));
   };
 
   const filteredStorageBays = storageBays.filter(bay => {
@@ -278,7 +303,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     setIsSubstrateModalOpen(true);
   };
 
-  const handleSaveSubstrateSubmit = (e) => {
+  const handleSaveSubstrateSubmit = async (e) => {
     e.preventDefault();
     if (!subName.trim() || !subDensity || parseFloat(subDensity) <= 0) {
       alert("Substrate Name and a valid Density (> 0 g/cm³) are required!");
@@ -293,7 +318,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     let updated = [];
     if (editingSubstrate) {
       updated = filmSubstrates.map(s => {
-        if (s.id === editingSubstrate.id || (s.name && s.name.toLowerCase() === editingSubstrate.name.toLowerCase())) {
+        if (s.id === editingSubstrate.id || (s.name && editingSubstrate?.name && String(s.name).toLowerCase() === String(editingSubstrate.name).toLowerCase())) {
           return {
             ...s,
             name: cleanName,
@@ -319,25 +344,21 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
       updated = [...filmSubstrates, newSub];
     }
 
-    setFilmSubstrates(updated);
-    saveFilmSubstrates(updated);
-    setIsSubstrateModalOpen(false);
-    triggerSaveNotification();
+    await persistSetting(() => saveFilmSubstrates(updated), () => {
+      setFilmSubstrates(updated);
+      setIsSubstrateModalOpen(false);
+    });
   };
 
-  const handleDeleteSubstrateItem = (id, name) => {
+  const handleDeleteSubstrateItem = async (id, name) => {
     if (!window.confirm(`Are you sure you want to delete film substrate "${name}"?`)) return;
     const updated = filmSubstrates.filter(s => s.id !== id && s.name !== name);
-    setFilmSubstrates(updated);
-    saveFilmSubstrates(updated);
-    triggerSaveNotification();
+    await persistSetting(() => saveFilmSubstrates(updated), () => setFilmSubstrates(updated));
   };
 
-  const handleResetSubstratesToDefault = () => {
+  const handleResetSubstratesToDefault = async () => {
     if (!window.confirm("Reset all Film Substrates to ERP factory defaults (PET, METPET, BOPP, LDPE, Aluminium Foil, etc.)? Custom substrates will be reset.")) return;
-    setFilmSubstrates(DEFAULT_FILM_SUBSTRATES);
-    saveFilmSubstrates(DEFAULT_FILM_SUBSTRATES);
-    triggerSaveNotification();
+    await persistSetting(() => saveFilmSubstrates(DEFAULT_FILM_SUBSTRATES), () => setFilmSubstrates(DEFAULT_FILM_SUBSTRATES));
   };
 
 
@@ -372,6 +393,16 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     setTimeout(() => setSavedSuccess(false), 3000);
   };
 
+  const persistSetting = async (saver, onOk) => {
+    try {
+      const result = await saver();
+      if (onOk) onOk(result);
+      triggerSaveNotification();
+    } catch (err) {
+      alert(`This was not saved. The database rejected the change: ${err?.message || err}`);
+    }
+  };
+
   // General Handlers
   const handleLogoUpload = (e) => {
     const file = e.target.files[0];
@@ -387,17 +418,13 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     const reader = new FileReader();
     reader.onload = (uploadEvent) => {
       const base64 = uploadEvent.target.result;
-      setLogoImage(base64);
-      saveCompanyLogo(base64);
-      triggerSaveNotification();
+      persistSetting(() => saveCompanyLogo(base64), () => setLogoImage(base64));
     };
     reader.readAsDataURL(file);
   };
 
   const handleClearLogo = () => {
-    clearCompanyLogo();
-    setLogoImage('/samyak-logo.png');
-    triggerSaveNotification();
+    persistSetting(() => clearCompanyLogo(), () => setLogoImage('/samyak-logo.png'));
   };
 
   const handleSignatureUpload = (e) => {
@@ -414,17 +441,13 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     const reader = new FileReader();
     reader.onload = (uploadEvent) => {
       const base64 = uploadEvent.target.result;
-      setSignatureImage(base64);
-      saveAuthorisedSignature(base64);
-      triggerSaveNotification();
+      persistSetting(() => saveAuthorisedSignature(base64), () => setSignatureImage(base64));
     };
     reader.readAsDataURL(file);
   };
 
   const handleClearSignature = () => {
-    clearAuthorisedSignature();
-    setSignatureImage(null);
-    triggerSaveNotification();
+    persistSetting(() => clearAuthorisedSignature(), () => setSignatureImage(null));
   };
 
   const handlePrefixChange = (field, value) => {
@@ -433,14 +456,11 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
 
   const handleSavePrefixes = (e) => {
     e.preventDefault();
-    saveDocumentPrefixes(prefixState);
-    triggerSaveNotification();
+    persistSetting(() => saveDocumentPrefixes(prefixState));
   };
 
   const handleResetPrefixes = () => {
-    setPrefixState({ ...DEFAULT_PREFIXES });
-    saveDocumentPrefixes({ ...DEFAULT_PREFIXES });
-    triggerSaveNotification();
+    persistSetting(() => saveDocumentPrefixes({ ...DEFAULT_PREFIXES }), () => setPrefixState({ ...DEFAULT_PREFIXES }));
   };
 
   const handleCoaSignatoryChange = (field, value) => {
@@ -449,14 +469,11 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
 
   const handleSaveCoaSignatories = (e) => {
     e.preventDefault();
-    saveCoaSignatories(coaSignatoriesState);
-    triggerSaveNotification();
+    persistSetting(() => saveCoaSignatories(coaSignatoriesState));
   };
 
   const handleResetCoaSignatories = () => {
-    setCoaSignatoriesState({ ...DEFAULT_COA_SIGNATORIES });
-    saveCoaSignatories({ ...DEFAULT_COA_SIGNATORIES });
-    triggerSaveNotification();
+    persistSetting(() => saveCoaSignatories({ ...DEFAULT_COA_SIGNATORIES }), () => setCoaSignatoriesState({ ...DEFAULT_COA_SIGNATORIES }));
   };
 
   const handleTermChange = (category, index, value) => {
@@ -481,14 +498,11 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
 
   const handleSaveTerms = (e) => {
     e.preventDefault();
-    saveDocumentTerms(termsState);
-    triggerSaveNotification();
+    persistSetting(() => saveDocumentTerms(termsState));
   };
 
   const handleResetTerms = () => {
-    setTermsState({ ...DEFAULT_DOCUMENT_TERMS });
-    saveDocumentTerms({ ...DEFAULT_DOCUMENT_TERMS });
-    triggerSaveNotification();
+    persistSetting(() => saveDocumentTerms({ ...DEFAULT_DOCUMENT_TERMS }), () => setTermsState({ ...DEFAULT_DOCUMENT_TERMS }));
   };
 
   // Consumable Material Cost Handlers (Adhesive & Paper Core)
@@ -514,7 +528,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
   };
 
   const handleResetMaterialCosts = async () => {
-    if (window.confirm("Reset consumable material rates to ERP standard defaults (Adhesive: ₹270/kg, Paper Core: ₹45/kg)?")) {
+    if (window.confirm("Reset consumable rates, conversion charges & profit margins to ERP standard defaults (Adhesive: ₹270/kg, Paper Core: ₹45/kg, Inks: ₹1,500/kg, Conversion Charges: ₹45/kg, Fixed Profit: ₹25/kg)?")) {
       setIsSavingMaterialCosts(true);
       try {
         const reset = await saveMaterialCostSettings({ ...DEFAULT_MATERIAL_COST_SETTINGS });
@@ -539,14 +553,11 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
 
   const handleSaveAgeingSettings = (e) => {
     if (e) e.preventDefault();
-    saveInventoryAgeingSettings(ageingSettings);
-    triggerSaveNotification();
+    persistSetting(() => saveInventoryAgeingSettings(ageingSettings));
   };
 
   const handleResetAgeingSettings = () => {
-    setAgeingSettings({ ...DEFAULT_AGEING_SETTINGS });
-    saveInventoryAgeingSettings({ ...DEFAULT_AGEING_SETTINGS });
-    triggerSaveNotification();
+    persistSetting(() => saveInventoryAgeingSettings({ ...DEFAULT_AGEING_SETTINGS }), () => setAgeingSettings({ ...DEFAULT_AGEING_SETTINGS }));
   };
 
 
@@ -572,7 +583,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     setEditMachineStatus(m.status || 'Active');
   };
 
-  const handleSaveEditMachine = (e) => {
+  const handleSaveEditMachine = async (e) => {
     e.preventDefault();
     if (!editMachineName.trim()) {
       alert("Machine Name is required!");
@@ -590,26 +601,22 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
       status: editMachineStatus
     };
     delete updated.isNew;
-    if (onUpdateMachine) {
-      onUpdateMachine(updated);
-    } else if (onSaveMachine) {
-      onSaveMachine(updated);
+    const saveMachine = onUpdateMachine || onSaveMachine;
+    if (!saveMachine) {
+      alert('Printing machines cannot be saved from this screen.');
+      return;
     }
-    setEditingMachine(null);
-    triggerSaveNotification();
+    await persistSetting(() => Promise.resolve(saveMachine(updated)), () => setEditingMachine(null));
   };
 
   // Email Server Settings Handlers
   const handleSaveEmailSettings = (e) => {
     e.preventDefault();
-    saveEmailSettings(emailSettings);
-    triggerSaveNotification();
+    persistSetting(() => saveEmailSettings(emailSettings));
   };
 
   const handleResetEmailSettings = () => {
-    setEmailSettings({ ...DEFAULT_EMAIL_SETTINGS });
-    saveEmailSettings({ ...DEFAULT_EMAIL_SETTINGS });
-    triggerSaveNotification();
+    persistSetting(() => saveEmailSettings({ ...DEFAULT_EMAIL_SETTINGS }), () => setEmailSettings({ ...DEFAULT_EMAIL_SETTINGS }));
   };
 
   // Email Templates Handlers
@@ -625,14 +632,11 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
 
   const handleSaveTemplates = (e) => {
     if (e) e.preventDefault();
-    saveEmailTemplates(emailTemplates);
-    triggerSaveNotification();
+    persistSetting(() => saveEmailTemplates(emailTemplates));
   };
 
   const handleResetTemplates = () => {
-    const res = resetEmailTemplates();
-    setEmailTemplates(res);
-    triggerSaveNotification();
+    persistSetting(() => resetEmailTemplates(), (saved) => setEmailTemplates(saved || { ...DEFAULT_EMAIL_TEMPLATES }));
   };
 
   // Send Test Email Dispatcher
@@ -682,8 +686,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
       userEmail: testEmailRecipient.trim(),
       userRole: 'Plant Manager',
       userDepartment: 'Production Operations',
-      userPassword: 'Samyak#Pass2026',
-      recoveryCode: '849201'
+      recoveryCode: ''
     };
 
     const interpTitle = interpolateTemplate(activeTmpl.eventTitle || '', sampleVars);
@@ -701,6 +704,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     });
 
     const res = await sendERPEmailNotification({
+      kind: 'manual',
       to: testEmailRecipient.trim(),
       cc: activeTmpl.ccEmail,
       subject: interpSubject,
@@ -722,8 +726,8 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     indent_created: ['{indentNo}', '{department}', '{priority}', '{itemCount}', '{remarks}'],
     po_issued: ['{poNumber}', '{supplierName}', '{indentNumber}', '{itemName}', '{qty}', '{unit}', '{totalAmount}'],
     low_stock: ['{itemCode}', '{itemName}', '{stockQty}', '{unit}', '{reorderLevel}', '{location}'],
-    user_created: ['{userName}', '{userEmail}', '{userRole}', '{userDepartment}', '{userPassword}'],
-    password_recovery: ['{userEmail}', '{recoveryCode}'],
+    user_created: ['{userName}', '{userEmail}', '{userRole}', '{userDepartment}'],
+    password_recovery: ['{userEmail}'],
     over_wastage: ['{jobName}', '{orderId}', '{productionDateTime}', '{orderQtyKg}', '{totalProductionQtyKg}', '{allowedWastagePct}', '{actualWastagePct}', '{actualWastageKg}', '{wastageVariancePct}', '{wastageBreakdownHtml}']
   };
 
@@ -763,8 +767,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     userEmail: 'rsharma@samyakinternational.in',
     userRole: 'Plant Manager',
     userDepartment: 'Production Operations',
-    userPassword: 'Samyak#Pass2026',
-    recoveryCode: '849201',
+    recoveryCode: '',
     productionDateTime: '11/08/2026, 09:30:15 PM',
     allowedWastagePct: '5.0',
     actualWastagePct: '8.4',
@@ -875,6 +878,61 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
       {/* ========================================================================= */}
       {activeTab === 'general' && (
         <>
+          <form
+            className="glass-panel"
+            style={{ padding: '24px', marginBottom: '24px' }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              const missing = REQUIRED_COMPANY_FIELDS.filter(field => !String(companyProfile[field] || '').trim());
+              if (missing.length) {
+                alert(`Company profile was not saved. Set ${missing.join(', ')}.`);
+                return;
+              }
+              persistSetting(() => saveCompanyProfile(companyProfile), (saved) => setCompanyProfile(saved));
+            }}
+          >
+            <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '1.05rem', fontWeight: '700', margin: 0 }}>Company identity on documents</h3>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '8px 0 0' }}>
+                Purchase orders, challans, payslips, and goods receipts read this profile. A blank statutory field stops the document instead of printing another GSTIN, CIN, or address.
+              </p>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+              {[
+                ['name', 'Legal name'],
+                ['bseSymbol', 'BSE symbol'],
+                ['cin', 'CIN'],
+                ['gstin', 'GSTIN'],
+                ['contactPerson', 'Contact person'],
+                ['phones', 'Phones'],
+                ['email', 'Email'],
+                ['placeOfSupply', 'Place of supply'],
+              ].map(([field, label]) => (
+                <label key={field} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.78rem', fontWeight: 700 }}>
+                  {label}
+                  <input
+                    className="form-control"
+                    value={companyProfile[field] || ''}
+                    onChange={(e) => setCompanyProfile(prev => ({ ...prev, [field]: e.target.value }))}
+                    required
+                  />
+                </label>
+              ))}
+            </div>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.78rem', fontWeight: 700, marginTop: '12px' }}>
+              Address
+              <textarea
+                className="form-control"
+                rows={3}
+                value={companyProfile.address || ''}
+                onChange={(e) => setCompanyProfile(prev => ({ ...prev, address: e.target.value }))}
+                required
+              />
+            </label>
+            <div style={{ marginTop: '16px' }}>
+              <button type="submit" className="btn-primary">Save company profile</button>
+            </div>
+          </form>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
             
             {/* SECTION 1: COMPANY LOGO UPLOAD */}
@@ -1223,10 +1281,10 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
             <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '16px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
               <div>
                 <h3 style={{ fontSize: '1.2rem', fontWeight: '900', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <Package size={24} style={{ color: '#4f46e5' }} /> Consumable Material Rates & Production Cost Allocation
+                  <Package size={24} style={{ color: '#4f46e5' }} /> Consumable Rates, Conversion Charges & Profit Margins
                 </h3>
                 <p style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '4px' }}>
-                  Configure cost rates (in ₹/kg) for consumables like <strong>Adhesive</strong> and <strong>Paper Core</strong>. These rates are stored in the database and automatically added to the <strong>Total Ingredients Cost</strong> in Production Records.
+                  Configure cost rates (in ₹/kg) for consumables (<strong>Adhesive</strong>, <strong>Paper Core</strong>, <strong>Ink</strong>) and default factory benchmarks (<strong>Conversion Charges/kg</strong> &amp; <strong>Fixed Profit/kg</strong>) used to derive <strong>Minimum Selling Price/kg</strong> in Job Punching &amp; Costing.
                 </p>
               </div>
               <div style={{ display: 'flex', gap: '10px' }}>
@@ -1258,7 +1316,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
               </div>
               <div style={{ flex: 1, fontSize: '0.85rem', lineHeight: '1.5' }}>
                 <div style={{ fontWeight: '800', color: '#1e1b4b', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span>Permanent Database Persistence & Historical Pricing Integrity</span>
+                  <span>Permanent Database Persistence & Pricing Baseline Integrity</span>
                   <span className="badge" style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontSize: '0.7rem' }}>
                     Synced to Supabase
                   </span>
@@ -1269,15 +1327,15 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                   )}
                 </div>
                 <div style={{ color: '#475569', marginTop: '6px' }}>
-                  <strong>How it works:</strong> All rates entered here are persisted to the cloud database table (<code>system_settings.material_cost_settings</code>).
-                  Whenever rates are updated, <strong>previously submitted Production Records remain completely locked</strong> with their original snapshot rates. 
-                  Any <strong>new Production Record created or filled after the update</strong> will instantly inherit these new rates.
+                  <strong>How it works:</strong> Rates set here serve as the global factory baseline in Supabase (<code>system_settings.material_cost_settings</code>).
+                  Whenever rates are saved, any new <strong>Job Punching &amp; Costing</strong> session automatically pre-fills with these defaults.
+                  In Job Punching, <strong>Conversion Charges/kg</strong> and <strong>Fixed Profit/kg</strong> remain editable on a job-specific basis while inheriting these configured defaults.
                 </div>
               </div>
             </div>
 
             {/* Inputs Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px', marginBottom: '24px' }}>
               
               {/* Card 1: Lamination Adhesive */}
               <div style={{ background: '#ffffff', border: '1.5px solid #e0e7ff', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(79, 70, 229, 0.05)' }}>
@@ -1286,7 +1344,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                     <span style={{ fontSize: '1.4rem' }}>🧪</span>
                     <div>
                       <div style={{ fontWeight: '800', color: '#312e81', fontSize: '1rem' }}>Lamination Adhesive Rate</div>
-                      <div style={{ fontSize: '0.72rem', color: '#6366f1', fontWeight: '600' }}>For L1 & L2 Solventless / Solvent-based passes</div>
+                      <div style={{ fontSize: '0.72rem', color: '#6366f1', fontWeight: '600' }}>For L1 &amp; L2 Solventless / Solvent-based passes</div>
                     </div>
                   </div>
                   <span className="badge" style={{ background: '#e0e7ff', color: '#4338ca', fontWeight: '700' }}>
@@ -1317,7 +1375,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                 </div>
 
                 <p style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4', margin: 0 }}>
-                  This rate is multiplied by <code>Adhesive Consumed (L1 + L2)</code> (kg) in Production Records and added into <strong>Total Ingredients Cost</strong>.
+                  Multiplied by <code>Adhesive Consumed (L1 + L2)</code> (kg) in Production Records and added into <strong>Total Ingredients Cost</strong>.
                 </p>
               </div>
 
@@ -1328,7 +1386,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                     <span style={{ fontSize: '1.4rem' }}>📦</span>
                     <div>
                       <div style={{ fontWeight: '800', color: '#064e3b', fontSize: '1rem' }}>Slitting Paper Core Rate</div>
-                      <div style={{ fontSize: '0.72rem', color: '#059669', fontWeight: '600' }}>For Slitting & Rewinding finished reels</div>
+                      <div style={{ fontSize: '0.72rem', color: '#059669', fontWeight: '600' }}>For Slitting &amp; Rewinding finished reels</div>
                     </div>
                   </div>
                   <span className="badge" style={{ background: '#d1fae5', color: '#047857', fontWeight: '700' }}>
@@ -1359,7 +1417,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                 </div>
 
                 <p style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4', margin: 0 }}>
-                  This rate is multiplied by <code>Paper Core Consumed</code> (kg) in Stage 5 Slitting and added into <strong>Total Ingredients Cost</strong>.
+                  Multiplied by <code>Paper Core Consumed</code> (kg) in Stage 5 Slitting and added into <strong>Total Ingredients Cost</strong>.
                 </p>
               </div>
 
@@ -1370,7 +1428,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                     <span style={{ fontSize: '1.4rem' }}>🎨</span>
                     <div>
                       <div style={{ fontWeight: '800', color: '#78350f', fontSize: '1rem' }}>Liquid Ink Benchmark Rate</div>
-                      <div style={{ fontSize: '0.72rem', color: '#d97706', fontWeight: '600' }}>For Gravure Inks & Pre-costing</div>
+                      <div style={{ fontSize: '0.72rem', color: '#d97706', fontWeight: '600' }}>For Gravure Inks &amp; Pre-costing</div>
                     </div>
                   </div>
                   <span className="badge" style={{ background: '#fef3c7', color: '#b45309', fontWeight: '700' }}>
@@ -1400,7 +1458,122 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                 </div>
 
                 <p style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4', margin: 0 }}>
-                  Standard reference rate used across Job Punching pre-costing estimates and cylinder ink cost checks.
+                  Standard reference rate used across Job Punching pre-costing estimates and cylinder ink checks.
+                </p>
+              </div>
+
+              <div style={{ background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
+                <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '1rem', marginBottom: '8px' }}>Ink purchase quantity</div>
+                <p style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>
+                  Suggested ink purchase orders use these kilograms. They are not filled in on the purchase order when this setting is missing.
+                </p>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '10px' }}>
+                  Minimum PO quantity (kg)
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    className="form-control"
+                    value={materialCostState.minPoQtyKg !== undefined ? materialCostState.minPoQtyKg : ''}
+                    onChange={e => handleMaterialCostChange('minPoQtyKg', e.target.value)}
+                    required
+                  />
+                </label>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700 }}>
+                  Default reorder level (kg)
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    className="form-control"
+                    value={materialCostState.defaultReorderLevelKg !== undefined ? materialCostState.defaultReorderLevelKg : ''}
+                    onChange={e => handleMaterialCostChange('defaultReorderLevelKg', e.target.value)}
+                    required
+                  />
+                </label>
+              </div>
+
+              {/* Card 4: Default Conversion Charges / kg */}
+              <div style={{ background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(15, 23, 42, 0.05)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontSize: '1.4rem' }}>⚙️</span>
+                    <div>
+                      <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '1rem' }}>Default Conversion Charges</div>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '600' }}>Factory operations, labor, electricity &amp; packing</div>
+                    </div>
+                  </div>
+                  <span className="badge" style={{ background: '#f1f5f9', color: '#334155', fontWeight: '700' }}>
+                    Default: ₹ 45/kg
+                  </span>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: '10px' }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: '700', color: '#1e293b', display: 'block', marginBottom: '6px' }}>
+                    Conversion Charges per Kg (₹ / kg) <span style={{ color: '#dc2626' }}>*</span>
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontWeight: '800', color: '#334155', fontSize: '1.1rem' }}>
+                      ₹
+                    </span>
+                    <input 
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      className="form-control"
+                      style={{ paddingLeft: '32px', fontSize: '1.15rem', fontWeight: '800', color: '#0f172a', border: '2px solid #cbd5e1' }}
+                      value={materialCostState.conversionChargesPerKg !== undefined ? materialCostState.conversionChargesPerKg : ''}
+                      onChange={e => handleMaterialCostChange('conversionChargesPerKg', e.target.value)}
+                      placeholder="e.g. 45"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <p style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4', margin: 0 }}>
+                  Pre-filled in <strong>Job Punching &amp; Costing</strong> Live Breakdown. Added to RM Cost to derive Minimum Selling Price. Editable per job.
+                </p>
+              </div>
+
+              {/* Card 5: Default Fixed Profit / kg */}
+              <div style={{ background: '#ffffff', border: '1.5px solid #bbf7d0', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(16, 185, 129, 0.05)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontSize: '1.4rem' }}>📈</span>
+                    <div>
+                      <div style={{ fontWeight: '800', color: '#065f46', fontSize: '1rem' }}>Default Fixed Profit / kg</div>
+                      <div style={{ fontSize: '0.72rem', color: '#059669', fontWeight: '600' }}>Target operating margin per finished kg</div>
+                    </div>
+                  </div>
+                  <span className="badge" style={{ background: '#dcfce7', color: '#15803d', fontWeight: '700' }}>
+                    Default: ₹ 25/kg
+                  </span>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: '10px' }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: '700', color: '#1e293b', display: 'block', marginBottom: '6px' }}>
+                    Fixed Profit per Kg (₹ / kg) <span style={{ color: '#dc2626' }}>*</span>
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontWeight: '800', color: '#15803d', fontSize: '1.1rem' }}>
+                      ₹
+                    </span>
+                    <input 
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      className="form-control"
+                      style={{ paddingLeft: '32px', fontSize: '1.15rem', fontWeight: '800', color: '#065f46', border: '2px solid #86efac' }}
+                      value={materialCostState.fixedProfitPerKg !== undefined ? materialCostState.fixedProfitPerKg : ''}
+                      onChange={e => handleMaterialCostChange('fixedProfitPerKg', e.target.value)}
+                      placeholder="e.g. 25"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <p style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4', margin: 0 }}>
+                  Pre-filled in <strong>Job Punching &amp; Costing</strong> Live Breakdown. Added to RM Cost and Conversion Charges to compute Minimum Selling Price/kg.
                 </p>
               </div>
 
@@ -1416,23 +1589,55 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
               const coreCost = testCoreKg * testCoreRate;
               const totalAdded = adhCost + coreCost;
 
+              const benchmarkRmPerKg = 185;
+              const convPerKg = Number(materialCostState.conversionChargesPerKg) || 45;
+              const profitPerKg = Number(materialCostState.fixedProfitPerKg) || 25;
+              const minSellingPrice = benchmarkRmPerKg + convPerKg + profitPerKg;
+
               return (
-                <div style={{ background: '#f0fdf4', border: '1.5px solid #86efac', borderRadius: '12px', padding: '18px 24px' }}>
-                  <div style={{ fontSize: '0.82rem', fontWeight: '800', color: '#166534', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px' }}>
-                    🧮 Live Calculation Example (Batch of {testAdhKg} kg Adhesive + {testCoreKg} kg Paper Core)
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {/* Costing & Selling Price Derivation Preview */}
+                  <div style={{ background: '#f0fdf4', border: '1.5px solid #86efac', borderRadius: '12px', padding: '18px 24px' }}>
+                    <div style={{ fontSize: '0.82rem', fontWeight: '800', color: '#166534', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px' }}>
+                      🏁 Minimum Selling Price Derivation Benchmark (Example Job: ₹ {benchmarkRmPerKg}/kg Raw Material Cost)
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', fontSize: '0.88rem', alignItems: 'center' }}>
+                      <div>
+                        <span style={{ color: '#166534' }}>Raw Material Cost:</span>{' '}
+                        <strong>₹ {benchmarkRmPerKg.toFixed(2)} / kg</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: '#166534' }}>+ Conversion Charges:</span>{' '}
+                        <strong>₹ {convPerKg.toFixed(2)} / kg</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: '#166534' }}>+ Fixed Profit:</span>{' '}
+                        <strong>₹ {profitPerKg.toFixed(2)} / kg</strong>
+                      </div>
+                      <div style={{ borderLeft: '2px solid #86efac', paddingLeft: '16px' }}>
+                        <span style={{ color: '#166534', fontWeight: '700' }}>= Minimum Selling Price:</span>{' '}
+                        <strong style={{ fontSize: '1.25rem', color: '#15803d' }}>₹ {minSellingPrice.toFixed(2)} / kg</strong>
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', fontSize: '0.88rem' }}>
-                    <div>
-                      <span style={{ color: '#166534' }}>Adhesive Cost:</span>{' '}
-                      <strong>{testAdhKg} kg × ₹ {testAdhRate}/kg = ₹ {adhCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                  {/* Production Ingredients Example */}
+                  <div style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: '12px', padding: '16px 24px' }}>
+                    <div style={{ fontSize: '0.8rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
+                      🧪 Production Ingredients Batch Example ({testAdhKg} kg Adhesive + {testCoreKg} kg Paper Core)
                     </div>
-                    <div>
-                      <span style={{ color: '#166534' }}>Paper Core Cost:</span>{' '}
-                      <strong>{testCoreKg} kg × ₹ {testCoreRate}/kg = ₹ {coreCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
-                    </div>
-                    <div style={{ borderLeft: '2px solid #86efac', paddingLeft: '16px' }}>
-                      <span style={{ color: '#166534', fontWeight: '700' }}>Added to Ingredients Cost:</span>{' '}
-                      <strong style={{ fontSize: '1.1rem', color: '#15803d' }}>+ ₹ {totalAdded.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', fontSize: '0.85rem' }}>
+                      <div>
+                        <span style={{ color: '#64748b' }}>Adhesive:</span>{' '}
+                        <strong>{testAdhKg} kg × ₹ {testAdhRate}/kg = ₹ {adhCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: '#64748b' }}>Paper Core:</span>{' '}
+                        <strong>{testCoreKg} kg × ₹ {testCoreRate}/kg = ₹ {coreCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                      </div>
+                      <div style={{ borderLeft: '2px solid #cbd5e1', paddingLeft: '16px' }}>
+                        <span style={{ color: '#475569', fontWeight: '700' }}>Total Added to Record:</span>{' '}
+                        <strong style={{ color: '#1e293b' }}>+ ₹ {totalAdded.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1625,15 +1830,10 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
               </div>
 
               <div>
-                <label className="form-label" style={{ fontWeight: '700' }}>SMTP Password / App Secret *</label>
-                <input
-                  type="password"
-                  className="form-control"
-                  placeholder="••••••••••••"
-                  value={emailSettings.smtpPass}
-                  onChange={e => setEmailSettings({ ...emailSettings, smtpPass: e.target.value })}
-                  required
-                />
+                <label className="form-label" style={{ fontWeight: '700' }}>SMTP Password</label>
+                <p style={{ margin: '6px 0 0', fontSize: '0.85rem', color: '#475569', lineHeight: 1.5 }}>
+                  The mailbox password is the server environment variable SMTP_PASS on Vercel. It is not stored in the database or in this browser.
+                </p>
               </div>
 
               <div>
@@ -1851,7 +2051,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                   <input
                     type="text"
                     className="form-control"
-                    placeholder="e.g. plant.manager@plant.com"
+                    placeholder="e.g. plant.manager@samyakinternational.in"
                     value={currentTemplate.ccEmail || ''}
                     onChange={e => handleUpdateCurrentTemplate('ccEmail', e.target.value)}
                   />
@@ -1906,7 +2106,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
 
                 {testResult && (
                   <div style={{ marginTop: '10px', padding: '8px 12px', borderRadius: '6px', fontSize: '0.8rem', background: testResult.success ? '#ecfdf5' : '#fef2f2', color: testResult.success ? '#047857' : '#991b1b', border: testResult.success ? '1px solid #a7f3d0' : '1px solid #fecaca' }}>
-                    {testResult.success ? `✅ Test email successfully delivered to ${testEmailRecipient}!` : `❌ Dispatch failed: ${testResult.message}`}
+                    {testResult.success ? `✅ Test email accepted for ${testResult.deliveredTo || testEmailRecipient}.` : `❌ Dispatch failed: ${testResult.message}`}
                   </div>
                 )}
               </div>

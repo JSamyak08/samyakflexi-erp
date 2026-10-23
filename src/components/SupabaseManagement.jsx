@@ -570,7 +570,6 @@ CREATE TABLE IF NOT EXISTS public.email_settings (
     smtp_port INT DEFAULT 465,
     smtp_secure BOOLEAN DEFAULT true,
     smtp_user TEXT,
-    smtp_pass TEXT,
     sender_name TEXT,
     admin_email TEXT,
     plant_manager_email TEXT,
@@ -777,32 +776,7 @@ SELECT
 FROM public.production_records pr
 ORDER BY pr.recorded_at DESC;
 
--- Enable Row Level Security (RLS) & Grant Permissive Access to Anon & Authenticated Roles for Internal ERP
-DO $$ 
-DECLARE
-  pol RECORD;
-  tbl text;
-BEGIN
-  -- 1. Drop existing policies on public tables to prevent syntax/duplicate policy conflicts
-  FOR pol IN 
-    SELECT policyname, tablename 
-    FROM pg_policies 
-    WHERE schemaname = 'public'
-  LOOP
-    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I;', pol.policyname, pol.tablename);
-  END LOOP;
-
-  -- 2. Enable RLS and grant full read-write access to anon & authenticated roles for ERP
-  FOR tbl IN 
-    SELECT table_name 
-    FROM information_schema.tables 
-    WHERE table_schema = 'public' 
-      AND table_type = 'BASE TABLE'
-  LOOP
-    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY;', tbl);
-    EXECUTE format('CREATE POLICY %I ON public.%I FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);', 'Allow anon and auth full access', tbl);
-  END LOOP;
-END $$;
+-- Access control lives in supabase/migrations. Do not recreate an anon full-access policy.
 
 -- Column extensions & updates for backward compatibility
 ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS item_code TEXT;
@@ -834,26 +808,8 @@ ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS job_card_file_name TEXT;
 ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS job_card_file_url TEXT;
 ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS creation_date DATE;
 
--- STORAGE BUCKETS FOR PACKAGING ARTWORK & DOCUMENTS
-INSERT INTO storage.buckets (id, name, public) 
-VALUES ('erp-files', 'erp-files', true), ('artwork', 'artwork', true)
-ON CONFLICT (id) DO UPDATE SET public = true;
-
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow public uploads to erp-files' AND tablename = 'objects') THEN
-    CREATE POLICY "Allow public uploads to erp-files" ON storage.objects FOR INSERT WITH CHECK (bucket_id IN ('erp-files', 'artwork'));
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow public read from erp-files' AND tablename = 'objects') THEN
-    CREATE POLICY "Allow public read from erp-files" ON storage.objects FOR SELECT USING (bucket_id IN ('erp-files', 'artwork'));
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow public update to erp-files' AND tablename = 'objects') THEN
-    CREATE POLICY "Allow public update to erp-files" ON storage.objects FOR UPDATE USING (bucket_id IN ('erp-files', 'artwork'));
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow public delete from erp-files' AND tablename = 'objects') THEN
-    CREATE POLICY "Allow public delete from erp-files" ON storage.objects FOR DELETE USING (bucket_id IN ('erp-files', 'artwork'));
-  END IF;
-END $$;`;
+-- Storage lockdown is in supabase/manual/20261019120000_auth_rls_lockdown.sql.
+-- Buckets erp-files and artwork are private. Do not set public = true.`;
 
   const copySqlToClipboard = () => {
     navigator.clipboard.writeText(sqlSchemaSnippet);
@@ -1325,26 +1281,11 @@ END $$;`;
               lineHeight: '1.5',
               overflowX: 'auto'
             }}>
-{`CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
-RETURNS TRIGGER AS $$
-BEGIN
-  INSERT INTO public.users (id, username, full_name, email, role, department, active)
-  VALUES (
-    NEW.id::text,
-    LOWER(NEW.email),
-    COALESCE(NEW.raw_user_meta_data->>'full_name', SPLIT_PART(NEW.email, '@', 1)),
-    NEW.email,
-    COALESCE(NEW.raw_user_meta_data->>'role', 'Admin'),
-    COALESCE(NEW.raw_user_meta_data->>'department', 'Executive Management'),
-    TRUE
-  )
-  ON CONFLICT (id) DO UPDATE SET
-    email = EXCLUDED.email,
-    full_name = EXCLUDED.full_name,
-    role = EXCLUDED.role;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;`}
+{`Signup does not copy a role from user metadata and does not default to Admin.
+The directory row is created by private.handle_new_auth_user() in
+supabase/migrations/20261019040439_auth_identity_prep.sql.
+New accounts are Pending until an Admin assigns a role.
+Apply the versioned migrations. Do not run the old open-access script.`}
             </pre>
           </div>
 

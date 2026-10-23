@@ -1,29 +1,22 @@
--- B-017: pellet fuel tables the client upserts into.
--- Apply only after 20261019120000_auth_rls_lockdown.sql (PR #1). That migration
--- creates private.can_any() and then drops private.install_module_access(), so
--- these policies call private.can_any directly. Merge this PR after PR #1.
+-- B-017 pellet fuel tables.
 --
--- Columns match savePelletInwardToSupabase / savePelletConsumptionToSupabase.
--- id is TEXT (codes such as PEL-GRN-…), not uuid. The UI reads payload.
+-- This version (20261019120100) is older than migrations already applied on
+-- production (latest recorded: 20261023190000). The Supabase GitHub integration
+-- still runs a file missing from schema_migrations and finishes with a warning.
+-- It is not skipped. `supabase db push` without --include-all refuses instead.
 --
--- Access matches the lockdown's pellet settings rule and the inventory-style
--- module policy: FOR ALL TO authenticated, allowed when
--- private.can_any(ARRAY['pellet_fuel', 'inventory']) is true. Admin is included
--- inside private.can_any. There is no anon policy and no anon grant.
+-- Production already has public.pellet_inwards and public.pellet_consumptions
+-- from 20261021180000_persist_business_records.sql, plus pellet_inwards.vehicle_no
+-- and the GRN numbering functions from 20261023190000_pellet_fuel_grn_and_vehicle.sql.
+-- Those tables use the open policy "Allow anon and auth full access".
+-- private.can_any(text[]) is not installed (the lockdown SQL lives under
+-- supabase/manual and was not applied). The original body of this file raised
+-- if can_any was missing, then dropped the live policies and revoked anon.
+-- That would fail the deploy, or replace the policies production is using.
 --
--- Rollback:
---   DROP POLICY IF EXISTS pellet_inwards_access ON public.pellet_inwards;
---   DROP POLICY IF EXISTS pellet_consumptions_access ON public.pellet_consumptions;
---   DROP TABLE IF EXISTS public.pellet_consumptions;
---   DROP TABLE IF EXISTS public.pellet_inwards;
-
-DO $$
-BEGIN
-  IF to_regprocedure('private.can_any(text[])') IS NULL THEN
-    RAISE EXCEPTION
-      'private.can_any(text[]) is missing. Apply 20261019120000_auth_rls_lockdown.sql (PR #1) before this migration.';
-  END IF;
-END $$;
+-- This file now only makes sure the base tables, columns, and date indexes
+-- exist. It does not create policies, revoke grants, or touch vehicle_no.
+-- CREATE TABLE / ADD COLUMN / CREATE INDEX are no-ops when the object exists.
 
 CREATE TABLE IF NOT EXISTS public.pellet_inwards (
     id TEXT PRIMARY KEY,
@@ -67,31 +60,3 @@ ALTER TABLE public.pellet_consumptions ADD COLUMN IF NOT EXISTS updated_at TIMES
 
 CREATE INDEX IF NOT EXISTS idx_pellet_inward_date ON public.pellet_inwards (inward_date DESC);
 CREATE INDEX IF NOT EXISTS idx_pellet_consum_date ON public.pellet_consumptions (consumption_date DESC);
-
-ALTER TABLE public.pellet_inwards ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.pellet_consumptions ENABLE ROW LEVEL SECURITY;
-
--- Drop any earlier permissive draft policies if this file replaces one that was applied by hand.
-DROP POLICY IF EXISTS "Allow anon and auth full access on pellet_inwards" ON public.pellet_inwards;
-DROP POLICY IF EXISTS "Allow anon and auth full access on pellet_consumptions" ON public.pellet_consumptions;
-DROP POLICY IF EXISTS pellet_inwards_access ON public.pellet_inwards;
-DROP POLICY IF EXISTS pellet_consumptions_access ON public.pellet_consumptions;
-
-CREATE POLICY pellet_inwards_access
-  ON public.pellet_inwards
-  FOR ALL
-  TO authenticated
-  USING (private.can_any(ARRAY['pellet_fuel', 'inventory']))
-  WITH CHECK (private.can_any(ARRAY['pellet_fuel', 'inventory']));
-
-CREATE POLICY pellet_consumptions_access
-  ON public.pellet_consumptions
-  FOR ALL
-  TO authenticated
-  USING (private.can_any(ARRAY['pellet_fuel', 'inventory']))
-  WITH CHECK (private.can_any(ARRAY['pellet_fuel', 'inventory']));
-
-REVOKE ALL ON TABLE public.pellet_inwards FROM anon, PUBLIC;
-REVOKE ALL ON TABLE public.pellet_consumptions FROM anon, PUBLIC;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.pellet_inwards TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.pellet_consumptions TO authenticated;

@@ -1,4 +1,16 @@
 -- B-015: drop duplicate btree indexes.
+--
+-- This version (20261019040000) is older than every migration already recorded
+-- on production, whose history starts at 20261019040433. The Supabase GitHub
+-- integration still runs a file that has no schema_migrations row, then finishes
+-- with a warning. It does not skip it. `supabase db push` without --include-all
+-- refuses the push instead of applying it.
+--
+-- Checked read-only on 23 Oct 2026: the six duplicate indexes below are still
+-- present beside the indexes this file keeps. DROP INDEX IF EXISTS is a no-op
+-- when a name is already gone, so a second apply cannot fail. On a from-scratch
+-- replay this file runs before the baseline creates the indexes, so it does
+-- nothing there; the duplicates only exist on databases built before this file.
 -- Each dropped index has the same column list and access method as the index that is kept.
 -- Unique indexes (primary keys and sfg_goods_sfg_batch_code_key) are not touched.
 --

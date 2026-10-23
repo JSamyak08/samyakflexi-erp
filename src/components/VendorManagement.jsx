@@ -141,7 +141,7 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
     }
   };
 
-  const handleSaveVendor = (e) => {
+  const handleSaveVendor = async (e) => {
     e.preventDefault();
     if (!companyName.trim() || !gstin.trim()) {
       alert("Company Name and GSTIN are required!");
@@ -157,28 +157,27 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
       contactPerson: contactPerson.trim(),
       phone: phone.trim(),
       email: email.trim(),
-      bankDetails: bankDetails || "HDFC Bank | A/C: 502000000000 | IFSC: HDFC0000123",
+      bankDetails: bankDetails.trim(),
       materials: selectedMaterials,
       paymentTerms: paymentTerms.trim(),
       payment_terms: paymentTerms.trim(),
       rating: editingVendor ? (editingVendor.rating || 5.0) : 5.0
     };
 
-    if (editingVendor) {
-      if (onUpdateVendor) {
-        onUpdateVendor(vendorPayload);
-      } else if (onAddVendor) {
-        onAddVendor(vendorPayload);
+    try {
+      if (editingVendor) {
+        if (onUpdateVendor) await onUpdateVendor(vendorPayload);
+        else if (onAddVendor) await onAddVendor(vendorPayload);
+        alert(`Vendor "${companyName}" updated successfully!`);
+      } else {
+        if (onAddVendor) await onAddVendor(vendorPayload);
+        alert(`Vendor "${companyName}" onboarded successfully!`);
       }
-      alert(`Vendor "${companyName}" updated successfully!`);
-    } else {
-      if (onAddVendor) {
-        onAddVendor(vendorPayload);
-      }
-      alert(`Vendor "${companyName}" onboarded successfully!`);
+    } catch (err) {
+      alert(`The vendor was not saved: ${err.message || err}`);
+      return;
     }
 
-    // Reset Form
     setEditingVendor(null);
     setCompanyName('');
     setGstin('');
@@ -190,11 +189,14 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
     setIsOnboardingModalOpen(false);
   };
 
-  const filteredVendors = vendors.filter(v => 
-    v.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    v.gstin.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    v.materials.some(m => m.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const filteredVendors = (vendors || []).filter(v => {
+    if (!v) return false;
+    const q = String(searchTerm || '').trim().toLowerCase();
+    return !q ||
+      String(v.companyName || v.name || '').toLowerCase().includes(q) ||
+      String(v.gstin || '').toLowerCase().includes(q) ||
+      (Array.isArray(v.materials) && v.materials.some(m => String(m || '').toLowerCase().includes(q)));
+  });
 
   const {
     currentPage,

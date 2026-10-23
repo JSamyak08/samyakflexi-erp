@@ -40,8 +40,8 @@ import SFGFGEntryModal from './SFGFGEntryModal';
 import TablePagination, { usePagination } from './TablePagination';
 import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo } from '../utils/fifoUtils';
 import { getInventoryAgeingSettings } from '../services/settingsService';
-import { saveSystemSetting } from '../services/supabaseDataService';
-import { safeLocalStorageSet, safeLocalStorageGet } from '../utils/safeStorage';
+import { supabase } from '../services/supabaseClient';
+import { fetchPayloadRecords, replacePayloadRecords, describeSaveError } from '../services/businessRecords';
 
 export default function SFGStoreManagement({
   sfgGoods = [],
@@ -64,29 +64,37 @@ export default function SFGStoreManagement({
   const [activeStoreTab, setActiveStoreTab] = useState('available');
 
   // QC Hold Store & Scrap Store Persisted State
-  const [qcHoldItems, setQcHoldItems] = useState(() => {
-    return safeLocalStorageGet('sfg_qc_hold_items', []);
-  });
-
-  const [scrapItems, setScrapItems] = useState(() => {
-    return safeLocalStorageGet('sfg_scrap_items', []);
-  });
+  const [qcHoldItems, setQcHoldItems] = useState([]);
+  const [scrapItems, setScrapItems] = useState([]);
 
   useEffect(() => {
-    safeLocalStorageSet('sfg_qc_hold_items', qcHoldItems);
-    saveSystemSetting('sfg_qc_hold_items', qcHoldItems).catch(console.warn);
-    if (typeof window !== 'undefined' && window.__samyakBroadcastSync) {
-      window.__samyakBroadcastSync('system_settings');
+    let active = true;
+    async function loadHoldAndScrap() {
+      try {
+        const [hold, scrap] = await Promise.all([
+          fetchPayloadRecords(supabase, 'sfg_qc_hold_items'),
+          fetchPayloadRecords(supabase, 'sfg_scrap_items')
+        ]);
+        if (!active) return;
+        setQcHoldItems(hold || []);
+        setScrapItems(scrap || []);
+      } catch (err) {
+        alert(`QC hold and scrap records could not be loaded: ${describeSaveError(err)}`);
+      }
     }
-  }, [qcHoldItems]);
+    loadHoldAndScrap();
+    return () => { active = false; };
+  }, []);
 
-  useEffect(() => {
-    safeLocalStorageSet('sfg_scrap_items', scrapItems);
-    saveSystemSetting('sfg_scrap_items', scrapItems).catch(console.warn);
-    if (typeof window !== 'undefined' && window.__samyakBroadcastSync) {
-      window.__samyakBroadcastSync('system_settings');
-    }
-  }, [scrapItems]);
+  const persistQcHold = async (next) => {
+    await replacePayloadRecords(supabase, 'sfg_qc_hold_items', next);
+    setQcHoldItems(next);
+  };
+
+  const persistScrap = async (next) => {
+    await replacePayloadRecords(supabase, 'sfg_scrap_items', next);
+    setScrapItems(next);
+  };
 
   // Inventory Ageing Settings Configuration
   const ageingSettings = useMemo(() => getInventoryAgeingSettings(), []);
@@ -759,10 +767,16 @@ export default function SFGStoreManagement({
         consumptionHistory: updatedConsumptionHistory
       };
 
-      if (onConsumeSFG) {
-        await onConsumeSFG(updatedItem, logEntry);
-      } else if (onSaveSFGGood) {
-        await onSaveSFGGood(updatedItem);
+      let consumeWarning = null;
+      try {
+        if (onConsumeSFG) {
+          await onConsumeSFG(updatedItem, logEntry);
+        } else if (onSaveSFGGood) {
+          await onSaveSFGGood(updatedItem);
+        }
+      } catch (consumeErr) {
+        if (consumeErr?.name !== 'PartialSaveError') throw consumeErr;
+        consumeWarning = consumeErr;
       }
 
       // Special logic when targetProcess is 'QC Hold Store'
@@ -802,13 +816,14 @@ export default function SFGStoreManagement({
           scrapLogs: []
         };
 
-        setQcHoldItems(prev => [newQcHoldEntry, ...prev]);
+        await persistQcHold([newQcHoldEntry, ...qcHoldItems]);
 
         // Open Barcode sticker modal immediately for the new QC Hold tag
         setSelectedRollForBarcodeModal(newQcHoldEntry);
       }
 
       setSelectedItemForConsume(null);
+      if (consumeWarning) alert(consumeWarning.message);
     } catch (err) {
       console.error("Error confirming SFG consumption:", err);
       setFormError(err.message || 'Failed to record consumption');
@@ -818,7 +833,7 @@ export default function SFGStoreManagement({
   };
 
   // Submit Option 1: Approve & Move to Store
-  const handleConfirmApproveMove = (e) => {
+  const handleConfirmApproveMove = async (e) => {
     e.preventDefault();
     if (!selectedQcItemForApprove) return;
 
@@ -890,27 +905,29 @@ export default function SFGStoreManagement({
     }
 
     // 2. Update or automatically remove from QC Hold Store if remaining is 0 kg!
-    if (newRemainingKg <= 0) {
-      setQcHoldItems(prev => prev.filter(item => item.id !== selectedQcItemForApprove.id));
-    } else {
-      setQcHoldItems(prev => prev.map(item => {
-        if (item.id === selectedQcItemForApprove.id) {
-          return {
-            ...item,
-            remainingHoldKg: parseFloat(newRemainingKg.toFixed(2)),
-            approvedKg: parseFloat(newApprovedKg.toFixed(2)),
-            approvalLogs: [approvalLog, ...(item.approvalLogs || [])]
-          };
-        }
-        return item;
-      }));
+    const nextHold = newRemainingKg <= 0
+      ? qcHoldItems.filter(item => item.id !== selectedQcItemForApprove.id)
+      : qcHoldItems.map(item => {
+        if (item.id !== selectedQcItemForApprove.id) return item;
+        return {
+          ...item,
+          remainingHoldKg: parseFloat(newRemainingKg.toFixed(2)),
+          approvedKg: parseFloat(newApprovedKg.toFixed(2)),
+          approvalLogs: [approvalLog, ...(item.approvalLogs || [])]
+        };
+      });
+    try {
+      await persistQcHold(nextHold);
+    } catch (err) {
+      alert(`The QC hold update was not saved: ${describeSaveError(err)}`);
+      return;
     }
 
     setSelectedQcItemForApprove(null);
   };
 
   // Submit Option 2: Send to Scrap
-  const handleConfirmSendToScrap = (e) => {
+  const handleConfirmSendToScrap = async (e) => {
     e.preventDefault();
     if (!selectedQcItemForScrap) return;
 
@@ -964,23 +981,23 @@ export default function SFGStoreManagement({
       timestamp: new Date().toISOString()
     };
 
-    setScrapItems(prev => [scrapStoreEntry, ...prev]);
-
-    // 2. Update or automatically remove from QC Hold Store if remaining is 0 kg!
-    if (newRemainingKg <= 0) {
-      setQcHoldItems(prev => prev.filter(item => item.id !== selectedQcItemForScrap.id));
-    } else {
-      setQcHoldItems(prev => prev.map(item => {
-        if (item.id === selectedQcItemForScrap.id) {
-          return {
-            ...item,
-            remainingHoldKg: parseFloat(newRemainingKg.toFixed(2)),
-            scrappedKg: parseFloat(newScrappedKg.toFixed(2)),
-            scrapLogs: [scrapLog, ...(item.scrapLogs || [])]
-          };
-        }
-        return item;
-      }));
+    const nextHold = newRemainingKg <= 0
+      ? qcHoldItems.filter(item => item.id !== selectedQcItemForScrap.id)
+      : qcHoldItems.map(item => {
+        if (item.id !== selectedQcItemForScrap.id) return item;
+        return {
+          ...item,
+          remainingHoldKg: parseFloat(newRemainingKg.toFixed(2)),
+          scrappedKg: parseFloat(newScrappedKg.toFixed(2)),
+          scrapLogs: [scrapLog, ...(item.scrapLogs || [])]
+        };
+      });
+    try {
+      await persistScrap([scrapStoreEntry, ...scrapItems]);
+      await persistQcHold(nextHold);
+    } catch (err) {
+      alert(`The scrap movement was not saved: ${describeSaveError(err)}`);
+      return;
     }
 
     setSelectedQcItemForScrap(null);
