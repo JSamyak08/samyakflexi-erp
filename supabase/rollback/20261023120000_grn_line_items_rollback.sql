@@ -1,0 +1,20 @@
+-- This file is a no-op. Every statement is a comment.
+-- The migration it refers to is supabase/migrations/20261023120000_grn_line_items.sql.
+-- This directory is not applied by the GitHub integration.
+--
+-- The goods-receipt header columns are not changed by that migration.
+-- Dropping the line table returns the app to reading one synthesized line
+-- from the header. Inventory rolls stay; only the new link columns go away.
+--
+-- Run by hand in the Supabase SQL editor (postgres), only to undo this step:
+--
+-- ALTER TABLE public.inventory_rolls DROP CONSTRAINT IF EXISTS inventory_rolls_grn_line_item_id_fkey;
+-- ALTER TABLE public.inventory_rolls DROP CONSTRAINT IF EXISTS inventory_rolls_grn_id_fkey;
+-- ALTER TABLE public.inventory_rolls DROP COLUMN IF EXISTS grn_line_item_id;
+-- ALTER TABLE public.inventory_rolls DROP COLUMN IF EXISTS grn_id;
+-- ALTER TABLE public.inventory_rolls DROP COLUMN IF EXISTS line_no;
+-- ALTER TABLE public.inventory_rolls DROP COLUMN IF EXISTS vendor_roll_no;
+-- ALTER TABLE public.inventory_rolls DROP COLUMN IF EXISTS unit_no;
+-- DROP TABLE IF EXISTS public.grn_line_items;
+-- DROP FUNCTION IF EXISTS public._grn_unpack_item_name(text);
+-- DROP FUNCTION IF EXISTS public._grn_to_numeric(text);

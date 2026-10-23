@@ -31,6 +31,8 @@ import {
   parseStandardDate
 } from '../factoryStore';
 import { buildEmployeeAttendanceRow, mapEmployeeAttendanceRow } from './employeeAttendance';
+import { groupGrnLineItems, lineItemsForGrn, sanitizeGRN } from './grnLineItems';
+export { sanitizeGRN };
 
 /**
  * Strict Supabase Error Handler
@@ -823,77 +825,6 @@ export async function deleteInventoryItemFromSupabase(itemId) {
 // 4. GOODS RECEIPT NOTES (GRN)
 // ============================================================================
 
-export function sanitizeGRN(rawGRN) {
-  if (!rawGRN || typeof rawGRN !== 'object') return rawGRN;
-
-  let rawName = String(rawGRN.itemName || rawGRN.item_name || '').trim();
-  let meta = {};
-
-  while (rawName.includes('|||')) {
-    const idx = rawName.indexOf('|||');
-    const jsonStr = rawName.substring(idx + 3).trim();
-    rawName = rawName.substring(0, idx).trim();
-    if (jsonStr) {
-      try {
-        const parsed = JSON.parse(jsonStr);
-        if (parsed && typeof parsed === 'object') {
-          meta = { ...meta, ...parsed };
-        }
-      } catch (e) {}
-    }
-  }
-
-  const metallocenePct = meta.metallocenePct || rawGRN.metallocene_pct || rawGRN.metallocenePct || '';
-  const statusVal = rawGRN.status || meta.status || 'Pending QC Approval';
-  const qcStatusVal = meta.qcStatus || rawGRN.qcStatus || rawGRN.qc_remarks || statusVal;
-
-  return {
-    ...rawGRN,
-    ...meta,
-    id: rawGRN.id || rawGRN.grn_number || rawGRN.grnNo,
-    grnNo: rawGRN.grn_number || rawGRN.grnNo || rawGRN.id,
-    vendorId: rawGRN.vendorId || rawGRN.vendor_id || meta.vendorId || '',
-    vendorName: rawGRN.vendorName || meta.vendorName || (rawGRN.vendor_id && !rawGRN.vendor_id.startsWith('VEND-') ? rawGRN.vendor_id : 'General Vendor'),
-    poNumber: rawGRN.po_number || rawGRN.poNumber || meta.poNumber || '',
-    invoiceNo: rawGRN.invoice_number || rawGRN.invoiceNo || meta.invoiceNo || '',
-    receivedDate: rawGRN.received_date || rawGRN.receivedDate || meta.receivedDate || new Date().toISOString(),
-    itemName: rawName || 'Item',
-    category: meta.category || rawGRN.category || 'Film Substrates',
-    stockItemId: meta.stockItemId || rawGRN.stockItemId || rawGRN.stock_item_id || '',
-    filmType: meta.filmType || rawGRN.filmType || (rawName ? rawName.split(' ')[0] : 'PET'),
-    micron: meta.micron !== undefined ? meta.micron : (rawGRN.micron !== undefined ? rawGRN.micron : '-'),
-    widthMm: meta.widthMm !== undefined ? meta.widthMm : (rawGRN.widthMm !== undefined ? rawGRN.widthMm : '-'),
-    metallocenePct: metallocenePct,
-    metallocene_pct: metallocenePct,
-    rollsReceived: Number(meta.rollsReceived ?? rawGRN.rollsReceived ?? 0) || 0,
-    purchaseRatePerKg: Number(meta.purchaseRatePerKg ?? meta.unitPrice ?? rawGRN.purchaseRatePerKg ?? rawGRN.unitPrice ?? 0) || 0,
-    purchaseRate: Number(meta.purchaseRatePerKg ?? meta.unitPrice ?? rawGRN.purchaseRatePerKg ?? rawGRN.unitPrice ?? 0) || 0,
-    unitPrice: Number(meta.purchaseRatePerKg ?? meta.unitPrice ?? rawGRN.purchaseRatePerKg ?? rawGRN.unitPrice ?? 0) || 0,
-    unit: meta.unit || rawGRN.unit || 'Kg',
-    batchNo: meta.batchNo || rawGRN.batchNo || '',
-    status: statusVal,
-    qcStatus: qcStatusVal,
-    qcNotes: rawGRN.qc_remarks || rawGRN.qcNotes || meta.qcNotes || '',
-    inspectedBy: meta.inspectedBy || rawGRN.inspectedBy || '',
-    storeManager: meta.storeManager || rawGRN.storeManager || '',
-    receivedQtyKg: Number(rawGRN.received_qty_kg ?? rawGRN.receivedQtyKg ?? rawGRN.netWeightKg ?? 0) || 0,
-    netWeightKg: Number(rawGRN.received_qty_kg ?? rawGRN.receivedQtyKg ?? rawGRN.netWeightKg ?? 0) || 0,
-    grossWeightKg: Number(meta.grossWeightKg ?? rawGRN.grossWeightKg ?? 0) || 0,
-    tareWeightKg: Number(meta.tareWeightKg ?? rawGRN.tareWeightKg ?? 0) || 0,
-    packagingType: meta.packagingType || rawGRN.packagingType || 'Roll',
-    itemsBreakdown: meta.itemsBreakdown || rawGRN.itemsBreakdown || [],
-    barcodes: meta.barcodes || rawGRN.barcodes || [],
-    barcodeId: meta.barcodeId || rawGRN.barcodeId || '',
-    freightAmount: Number(meta.freightAmount ?? rawGRN.freightAmount ?? 0) || 0,
-    transporterName: meta.transporterName || rawGRN.transporterName || 'Direct Dispatch / Self',
-    itemRemarks: meta.itemRemarks || rawGRN.itemRemarks || rawGRN.remarks || meta.remarks || rawGRN.notes || '',
-    remarks: meta.itemRemarks || rawGRN.itemRemarks || rawGRN.remarks || meta.remarks || rawGRN.notes || '',
-    notes: meta.itemRemarks || rawGRN.itemRemarks || rawGRN.remarks || meta.remarks || rawGRN.notes || '',
-    location: meta.location || rawGRN.location || 'Store Bay',
-    storeLocation: meta.storeLocation || rawGRN.storeLocation || 'Store Bay'
-  };
-}
-
 export async function fetchGRNs() {
   if (!isSupabaseConfigured()) {
     throw new Error("Supabase is not configured.");
@@ -903,7 +834,22 @@ export async function fetchGRNs() {
     if (error) throw error;
     if (!data) return [];
 
-    return data.map(g => sanitizeGRN(g));
+    let lineRows = [];
+    const { data: lines, error: lineError } = await supabase
+      .from('grn_line_items')
+      .select('*')
+      .order('line_no', { ascending: true });
+    if (lineError) {
+      console.warn('[GRNs] Line items are not available yet; each receipt is read as one line from its header:', lineError.message);
+    } else if (Array.isArray(lines)) {
+      lineRows = lines;
+    }
+
+    const grouped = groupGrnLineItems(lineRows);
+    return data.map(g => sanitizeGRN({
+      ...g,
+      lineItems: lineItemsForGrn(grouped, g)
+    }));
   } catch (err) {
     console.error("Error fetching GRNs from Supabase:", err);
     throw err;
@@ -1709,6 +1655,11 @@ export async function fetchInventoryRolls() {
       id: r.barcode_id,
       barcodeId: r.barcode_id,
       grnNo: r.grn_no || meta.grnNo || '',
+      grnId: r.grn_id || null,
+      grnLineItemId: r.grn_line_item_id || null,
+      lineNo: r.line_no === null || r.line_no === undefined ? null : Number(r.line_no),
+      vendorRollNo: r.vendor_roll_no || '',
+      unitNo: r.unit_no === null || r.unit_no === undefined ? null : Number(r.unit_no),
       rollType: r.roll_type || 'RAW_MATERIAL',
       itemId: r.item_id,
       itemName: r.item_name || '',
