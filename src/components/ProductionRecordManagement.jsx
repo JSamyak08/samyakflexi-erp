@@ -40,6 +40,15 @@ import SFGFGEntryModal from './SFGFGEntryModal';
 import { DEFAULT_DAILY_RATES, generateBarcodeId, calculateJobRawMaterials, calculatePreVsPostCosting } from '../factoryStore';
 import { notifyProductionRecordSubmitted, notifyProductionRecordApproved, notifyOverWastageAlert } from '../services/emailService';
 import { pushSlugState } from '../utils/slugRouter';
+import {
+  additionalSubstrate2Materials,
+  consumptionOutputNetKg,
+  consumptionOutputTrace,
+  outputRollsFromLog,
+  resolveInputSubstrateBarcodes,
+  sharedInputWeight,
+  substrate2InputRolls
+} from '../utils/consumeRollEntries';
 import TablePagination, { usePagination } from './TablePagination';
 import { supabase } from '../services/supabaseClient';
 import { fetchScrapDisposals, saveScrapDisposal, describeSaveError } from '../services/businessRecords';
@@ -153,7 +162,7 @@ function RollWiseInputOutputMasterRolls({
         widthMm: Number(widthMm),
         qcStatus: qc,
         locationBay: loc,
-        inputSubstrateBarcodes: r.inputSubstrateBarcodes || r.input_barcode_ids || (r.inputRollsTraceability || []).map(inR => inR.barcodeId).filter(Boolean) || [],
+        inputSubstrateBarcodes: resolveInputSubstrateBarcodes(r),
         inputRollsTraceability: r.inputRollsTraceability || []
       });
     }
@@ -169,30 +178,22 @@ function RollWiseInputOutputMasterRolls({
 
   // Add output rolls recorded via SFG Store Consumption
   sfgLogs.forEach(log => {
-    if (log.outputRoll) {
-      const outB = String(log.outputRoll.barcode || log.outputRoll.barcodeId || '').trim();
-      if (outB) {
-        addRoll({
-          ...log.outputRoll,
-          barcodeId: outB,
-          orderId: log.orderId || effectiveOrder?.id,
-          jobName: log.jobName || effectiveOrder?.jobName,
-          jobCode: log.jobCode || effectiveOrder?.jobCode,
-          rollType: log.outputRoll.outputType || 'SFG',
-          stage: log.targetProcess || log.outputRoll.stage,
-          inputSubstrateBarcodes: [
-            log.sfgBatchCode,
-            log.substrate2?.barcode,
-            log.substrate3?.barcode
-          ].filter(Boolean),
-          inputRollsTraceability: [
-            log.sfgBatchCode ? { barcodeId: log.sfgBatchCode, consumedWeightKg: parseFloat(log.consumedKg) || 0, filmType: 'SFG Base Film' } : null,
-            log.substrate2?.barcode ? { barcodeId: log.substrate2.barcode, consumedWeightKg: parseFloat(log.substrate2.consumedKg) || 0, filmType: log.substrate2.filmType || 'Substrate 2' } : null,
-            log.substrate3?.barcode ? { barcodeId: log.substrate3.barcode, consumedWeightKg: parseFloat(log.substrate3.consumedKg) || 0, filmType: log.substrate3.filmType || 'Substrate 3' } : null
-          ].filter(Boolean)
-        });
-      }
-    }
+    const trace = consumptionOutputTrace(log);
+    outputRollsFromLog(log).forEach((outputRoll) => {
+      const outB = String(outputRoll.barcode || outputRoll.barcodeId || '').trim();
+      if (!outB) return;
+      addRoll({
+        ...outputRoll,
+        barcodeId: outB,
+        orderId: log.orderId || effectiveOrder?.id,
+        jobName: log.jobName || effectiveOrder?.jobName,
+        jobCode: log.jobCode || effectiveOrder?.jobCode,
+        rollType: outputRoll.outputType || 'SFG',
+        stage: log.targetProcess || outputRoll.stage,
+        inputSubstrateBarcodes: trace.inputSubstrateBarcodes,
+        inputRollsTraceability: trace.inputRollsTraceability
+      });
+    });
   });
 
   const linkedRolls = Array.from(rollMap.values());
@@ -239,18 +240,7 @@ function RollWiseInputOutputMasterRolls({
         source: `SFG Store (${log.targetProcess || 'Consumption'})`
       });
     }
-    if (log.substrate2 && log.substrate2.barcode && parseFloat(log.substrate2.consumedKg) > 0) {
-      sfgInputRolls.push({
-        id: `sub2-cons-${log.id || log.substrate2.barcode}`,
-        barcodeId: log.substrate2.barcode,
-        filmType: log.substrate2.filmType || 'Substrate 2',
-        micron: log.substrate2.micron || 12,
-        widthMm: log.substrate2.widthMm || 800,
-        initialWeightKg: parseFloat(log.substrate2.initialKg || log.substrate2.consumedKg) || 0,
-        consumedWeightKg: parseFloat(log.substrate2.consumedKg) || 0,
-        source: `SFG Store (${log.targetProcess || 'Lamination Pass 1'})`
-      });
-    }
+    substrate2InputRolls(log).forEach((roll) => sfgInputRolls.push(roll));
     if (log.substrate3 && log.substrate3.barcode && parseFloat(log.substrate3.consumedKg) > 0) {
       sfgInputRolls.push({
         id: `sub3-cons-${log.id || log.substrate3.barcode}`,
@@ -298,8 +288,10 @@ function RollWiseInputOutputMasterRolls({
     });
 
     const primaryInput = matchedInputs[0] || null;
-    const inConsKg = matchedInputs.reduce((sum, inR) => sum + (parseFloat(inR.consumedWeightKg) || 0), 0);
-    const inInitKg = matchedInputs.reduce((sum, inR) => sum + (parseFloat(inR.initialWeightKg) || (parseFloat(inR.consumedWeightKg) || 0)), 0);
+    const rawInConsKg = matchedInputs.reduce((sum, inR) => sum + (parseFloat(inR.consumedWeightKg) || 0), 0);
+    const rawInInitKg = matchedInputs.reduce((sum, inR) => sum + (parseFloat(inR.initialWeightKg) || (parseFloat(inR.consumedWeightKg) || 0)), 0);
+    const inConsKg = sharedInputWeight(outRoll, linkedRolls, rawInConsKg);
+    const inInitKg = sharedInputWeight(outRoll, linkedRolls, rawInInitKg);
     const outNetKg = parseFloat(outRoll.netWeightKg || 0);
     const outGrossKg = parseFloat(outRoll.grossWeightKg || (outNetKg > 0 ? outNetKg + 0.8 : 0));
     const outLengthM = parseFloat(outRoll.lengthMeters || 0);
@@ -963,7 +955,7 @@ export default function ProductionRecordManagement({
       sfgLogs.forEach(log => {
         const p = log.targetProcess || '';
         const sb = log.scrapBreakdown || {};
-        const outKg = log.outputRoll ? (parseFloat(log.outputRoll.netWeightKg) || 0) : 0;
+        const outKg = consumptionOutputNetKg(log);
 
         if (p === 'Lamination (Pass 1)') {
           sfgQtyL1 += outKg;
@@ -1024,6 +1016,7 @@ export default function ProductionRecordManagement({
             });
           }
         }
+        additionalSubstrate2Materials(log, (film) => DEFAULT_DAILY_RATES[film] || 150).forEach((row) => updatedMatList.push(row));
         if (log.substrate3 && (parseFloat(log.substrate3.consumedKg) > 0 || log.substrate3.barcode)) {
           const s3 = log.substrate3;
           const foundIdx = updatedMatList.findIndex(m => (s3.barcode && m.barcode === s3.barcode) || (m.itemName && m.itemName.includes('Substrate 3')));
@@ -1130,7 +1123,7 @@ export default function ProductionRecordManagement({
     ordSfgLogs.forEach(log => {
       const p = log.targetProcess || '';
       const sb = log.scrapBreakdown || {};
-      const outKg = log.outputRoll ? (parseFloat(log.outputRoll.netWeightKg) || 0) : 0;
+      const outKg = consumptionOutputNetKg(log);
 
       if (p === 'Lamination (Pass 1)') {
         sfgQtyL1 += outKg;
@@ -1222,6 +1215,7 @@ export default function ProductionRecordManagement({
             wastagePct: 0
           });
         }
+        additionalSubstrate2Materials(log, (film) => DEFAULT_DAILY_RATES[film] || 150).forEach((row) => loadedMats.push(row));
         if (log.substrate3 && (parseFloat(log.substrate3.consumedKg) > 0 || log.substrate3.barcode)) {
           const s3 = log.substrate3;
           const defaultRate = DEFAULT_DAILY_RATES[s3.filmType] || 150;
@@ -1293,6 +1287,7 @@ export default function ProductionRecordManagement({
               wastagePct: 0
             });
           }
+          additionalSubstrate2Materials(log, (film) => DEFAULT_DAILY_RATES[film] || 150).forEach((row) => generatedList.push(row));
           if (log.substrate3 && (parseFloat(log.substrate3.consumedKg) > 0 || log.substrate3.barcode)) {
             const s3 = log.substrate3;
             const defaultRate = DEFAULT_DAILY_RATES[s3.filmType] || 150;
@@ -3059,7 +3054,19 @@ export default function ProductionRecordManagement({
                               )}
                             </td>
                             <td>
-                              {sub2 && (parseFloat(sub2.consumedKg) > 0 || sub2.barcode) ? (
+                              {Array.isArray(log.substrate2Rolls) && log.substrate2Rolls.length > 1 ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                  {log.substrate2Rolls.map((roll, rollIdx) => (
+                                    <div key={roll.barcode || rollIdx} style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '6px 8px', borderRadius: '6px', fontSize: '0.75rem' }}>
+                                      <div style={{ fontWeight: '800', color: '#166534', marginBottom: '2px' }}>Substrate 2 roll {rollIdx + 1}</div>
+                                      <div><code style={{ fontWeight: '800', color: '#15803d' }}>{roll.barcode || 'N/A'}</code> ({roll.filmType || 'Film'})</div>
+                                      <div style={{ color: '#166534', marginTop: '2px' }}>
+                                        Consumed: <strong>{roll.consumedKg} kg</strong> {roll.initialKg ? `/ ${roll.initialKg} kg` : ''}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : sub2 && (parseFloat(sub2.consumedKg) > 0 || sub2.barcode) ? (
                                 <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '6px 8px', borderRadius: '6px', fontSize: '0.75rem' }}>
                                   <div style={{ fontWeight: '800', color: '#166534', marginBottom: '2px' }}>Substrate 2 (Pass 1)</div>
                                   <div><code style={{ fontWeight: '800', color: '#15803d' }}>{sub2.barcode || 'N/A'}</code> ({sub2.filmType || 'Film'})</div>
@@ -3120,7 +3127,21 @@ export default function ProductionRecordManagement({
                               </div>
                             </td>
                             <td>
-                              {out && (parseFloat(out.netWeightKg) > 0 || out.barcode) ? (
+                              {Array.isArray(log.outputRolls) && log.outputRolls.length > 1 ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                  {log.outputRolls.map((roll, rollIdx) => (
+                                    <div key={roll.barcode || rollIdx} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '6px 8px', borderRadius: '6px', fontSize: '0.75rem' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
+                                        <span className={`badge ${roll.outputType === 'FG' ? 'badge-success' : 'badge-info'}`} style={{ fontSize: '0.68rem', padding: '1px 6px' }}>
+                                          {roll.outputType || 'SFG'}
+                                        </span>
+                                        <code style={{ fontWeight: '800', color: '#0f172a' }}>{roll.barcode}</code>
+                                      </div>
+                                      <div style={{ fontWeight: '800', color: '#0369a1' }}>Net: {roll.netWeightKg} kg</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : out && (parseFloat(out.netWeightKg) > 0 || out.barcode) ? (
                                 <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '6px 8px', borderRadius: '6px', fontSize: '0.75rem' }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
                                     <span className={`badge ${out.type === 'FG' ? 'badge-success' : 'badge-info'}`} style={{ fontSize: '0.68rem', padding: '1px 6px' }}>
@@ -3925,7 +3946,15 @@ export default function ProductionRecordManagement({
                                   {log.targetProcess}
                                 </td>
                                 <td>
-                                  {sub2 && (parseFloat(sub2.consumedKg) > 0 || sub2.barcode) ? (
+                                  {Array.isArray(log.substrate2Rolls) && log.substrate2Rolls.length > 1 ? (
+                                    <div style={{ fontSize: '0.72rem', color: '#166534' }}>
+                                      {log.substrate2Rolls.map((roll, rollIdx) => (
+                                        <div key={roll.barcode || rollIdx}>
+                                          Sub 2 roll {rollIdx + 1}: <strong>{roll.barcode || 'N/A'}</strong> ({roll.consumedKg} kg)
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : sub2 && (parseFloat(sub2.consumedKg) > 0 || sub2.barcode) ? (
                                     <div style={{ fontSize: '0.72rem', color: '#166534' }}>
                                       Sub 2: <strong>{sub2.barcode || 'N/A'}</strong> ({sub2.consumedKg} kg)
                                     </div>
@@ -3949,7 +3978,17 @@ export default function ProductionRecordManagement({
                                   </div>
                                 </td>
                                 <td>
-                                  {out && (parseFloat(out.netWeightKg) > 0 || out.barcode) ? (
+                                  {Array.isArray(log.outputRolls) && log.outputRolls.length > 1 ? (
+                                    <div style={{ fontSize: '0.72rem' }}>
+                                      {log.outputRolls.map((roll, rollIdx) => (
+                                        <div key={roll.barcode || rollIdx}>
+                                          <span className={`badge ${roll.outputType === 'FG' ? 'badge-success' : 'badge-info'}`} style={{ padding: '1px 5px', fontSize: '0.65rem' }}>
+                                            {roll.outputType || 'SFG'}
+                                          </span> <code>{roll.barcode}</code> ({roll.netWeightKg} kg)
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : out && (parseFloat(out.netWeightKg) > 0 || out.barcode) ? (
                                     <div style={{ fontSize: '0.72rem' }}>
                                       <span className={`badge ${out.type === 'FG' ? 'badge-success' : 'badge-info'}`} style={{ padding: '1px 5px', fontSize: '0.65rem' }}>
                                         {out.type}
