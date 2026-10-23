@@ -1,0 +1,3 @@
+-- This migration only sets dispatch and sfg_store to true where they were not
+-- already true. Reversing it would hide Dispatch and SFG Store for those roles.
+-- Do not run a reverse update. Leave the explicit true values in place.

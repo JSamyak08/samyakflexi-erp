@@ -1,3 +1,6 @@
+-- SUPERSEDED. Do not run this file.
+-- The applied copy is supabase/migrations/20261024023000_auth_rls_lockdown.sql
+-- plus 20261024020000, 20261024021000, 20261024022000, and 20261024024000.
 -- MANUAL ONLY. This file lives in supabase/manual so the GitHub integration
 -- does not apply it on merge to main. Do not move it into supabase/migrations.
 -- Run it from the SQL editor after this frontend is deployed and after staff

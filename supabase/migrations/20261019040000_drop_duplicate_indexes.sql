@@ -6,8 +6,10 @@
 -- with a warning. It does not skip it. `supabase db push` without --include-all
 -- refuses the push instead of applying it.
 --
--- Checked read-only on 23 Oct 2026: the six duplicate indexes below are still
--- present beside the indexes this file keeps. DROP INDEX IF EXISTS is a no-op
+-- Checked read-only on 23 Oct 2026, after 20261024023000: the six duplicate
+-- indexes below are still present beside the indexes this file keeps.
+-- Later migrations, including the lockdown, do not recreate these names.
+-- DROP INDEX IF EXISTS is a no-op
 -- when a name is already gone, so a second apply cannot fail. On a from-scratch
 -- replay this file runs before the baseline creates the indexes, so it does
 -- nothing there; the duplicates only exist on databases built before this file.

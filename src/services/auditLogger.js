@@ -57,7 +57,7 @@ export function mapAuditLogToDbPayload(entry) {
   return {
     id: String(entry.id),
     username: entry.username || 'System',
-    user_role: entry.userRole || 'Admin',
+    user_role: entry.userRole || '',
     action_type: entry.actionType || 'UPDATE',
     module: entry.module || 'System',
     details: entry.details || '',
@@ -116,7 +116,7 @@ export function createAuditEntry(user, actionType, module, details, targetId = n
   const dt = new Date();
   const formatted = formatAuditTimestamp(dt);
   const username = typeof user === 'string' ? user : (user?.name || user?.full_name || user?.username || user?.email || 'Admin');
-  const userRole = typeof user === 'object' && user ? (user?.role || 'Admin') : 'Admin';
+  const userRole = typeof user === 'object' && user ? (user?.role || '') : '';
 
   return {
     id: `LOG-2026-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,

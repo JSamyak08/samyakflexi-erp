@@ -1,18 +1,17 @@
 -- B-017 pellet fuel tables.
 --
 -- This version (20261019120100) is older than migrations already applied on
--- production (latest recorded: 20261023190000). The Supabase GitHub integration
--- still runs a file missing from schema_migrations and finishes with a warning.
--- It is not skipped. `supabase db push` without --include-all refuses instead.
+-- production (latest recorded in this check: 20261024023000). The Supabase
+-- GitHub integration still runs a file missing from schema_migrations and
+-- finishes with a warning. It is not skipped. `supabase db push` without
+-- --include-all refuses instead.
 --
 -- Production already has public.pellet_inwards and public.pellet_consumptions
 -- from 20261021180000_persist_business_records.sql, plus pellet_inwards.vehicle_no
 -- and the GRN numbering functions from 20261023190000_pellet_fuel_grn_and_vehicle.sql.
--- Those tables use the open policy "Allow anon and auth full access".
--- private.can_any(text[]) is not installed (the lockdown SQL lives under
--- supabase/manual and was not applied). The original body of this file raised
--- if can_any was missing, then dropped the live policies and revoked anon.
--- That would fail the deploy, or replace the policies production is using.
+-- 20261024023000_auth_rls_lockdown.sql is applied and private.can_any(text[])
+-- is installed. The original body of this file dropped the live policies and
+-- revoked anon. Running that now would undo the lockdown. This file does not.
 --
 -- This file now only makes sure the base tables, columns, and date indexes
 -- exist. It does not create policies, revoke grants, or touch vehicle_no.

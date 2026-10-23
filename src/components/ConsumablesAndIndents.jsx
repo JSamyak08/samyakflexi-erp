@@ -66,7 +66,7 @@ export const initialMachineIssues = [];
 
 export default function ConsumablesAndIndents({ 
   urlParams = {},
-  userRole = "Admin",
+  userRole = "",
   userName = "Samyak Jain",
   vendors = [],
   orders = [],

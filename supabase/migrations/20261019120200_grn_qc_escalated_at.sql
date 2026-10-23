@@ -5,13 +5,13 @@
 -- finishes with a warning. It is not skipped. `supabase db push` without
 -- --include-all refuses the push instead of applying the file.
 --
--- Checked read-only on 23 Oct 2026: public.grns has no escalated_at column.
--- Its policy is "Allow anon and auth full access", not grns_access.
--- private.can_any(text[]) is not installed. The original body raised when
--- grns_access was missing, then revoked anon and granted only authenticated.
--- That would fail the deploy, or change grants the later open-policy
--- migrations left in place. This file does not enable, drop, or replace
--- policies and does not change grants.
+-- Checked read-only on 23 Oct 2026, after 20261024023000 was applied:
+-- public.grns still has no escalated_at column. private.can_any(text[]) is
+-- now installed by that lockdown. The original body of this file looked for
+-- a grns_access policy, then revoked anon and granted only authenticated.
+-- That would change the grants the lockdown just installed. This file does
+-- not enable, drop, or replace policies and does not change grants.
+-- save_grn_with_lines updates named columns and does not clear escalated_at.
 --
 -- ADD COLUMN IF NOT EXISTS and CREATE INDEX IF NOT EXISTS are safe to run
 -- once, late, on the live table. Nothing here is applied by this change;
