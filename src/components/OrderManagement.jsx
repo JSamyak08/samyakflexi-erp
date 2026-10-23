@@ -359,7 +359,7 @@ export default function OrderManagement({
   }, [urlParams?.subtab]);
   const chooseOrderTab = (subtab) => {
     setActiveSubTab(subtab);
-    pushSlugState('orders', { subtab });
+    pushSlugState('orders', { section: subtab });
   };
 
   // Search and Filter states for Orders View

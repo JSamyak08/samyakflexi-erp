@@ -97,7 +97,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
   }, [urlParams?.tab]);
   const chooseSettingsTab = (tab) => {
     setActiveTab(tab);
-    pushSlugState('doc_settings', { tab });
+    pushSlugState('doc_settings', { section: tab });
   };
 
   // General Settings State

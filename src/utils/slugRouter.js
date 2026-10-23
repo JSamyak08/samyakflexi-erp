@@ -16,7 +16,7 @@
  * still honors those query keys, hash paths, and the legacy table.
  */
 
-export const ROUTING_PHASE = 5;
+export const ROUTING_PHASE = 7;
 
 const RETURN_KEY = 'samyak_erp_return_to';
 
@@ -794,7 +794,7 @@ function finishRoute(mod, pattern, idParams, query, extra) {
 
 function inferSection(mod, params) {
   if (params.section && patternBySection(mod, params.section)) return params.section;
-  const fromLegacy = sectionFromLegacyValue(mod, params.tab || params.subTab || params.subtab);
+  const fromLegacy = sectionFromLegacyValue(mod, params.section || params.tab || params.subTab || params.subtab);
   if (fromLegacy) return fromLegacy;
   if (params.jobCardId && mod.key === 'production_records') return 'job-card';
   if (params.jobCardId && mod.key === 'job_masters') return 'job-card';

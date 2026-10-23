@@ -224,7 +224,7 @@ export default function SalesManagement({
   }, [urlParams?.subTab]);
   const chooseSalesTab = (subTab) => {
     setActiveSubTab(subTab);
-    pushSlugState('sales', { subTab });
+    pushSlugState('sales', { section: subTab });
   };
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');

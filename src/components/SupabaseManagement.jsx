@@ -54,7 +54,7 @@ export default function SupabaseManagement({ urlParams = {} }) {
   }, [urlParams?.subTab]);
   const chooseSupabaseTab = (subTab) => {
     setActiveSubTab(subTab);
-    pushSlugState('supabase', { subTab });
+    pushSlugState('supabase', { section: subTab });
   };
 
   const handleSeedData = async () => {

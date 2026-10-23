@@ -103,7 +103,7 @@ export default function ConsumablesAndIndents({
       return;
     }
     setActiveSubTab(subTab);
-    pushSlugState('material_indents', { subTab });
+    pushSlugState('material_indents', { section: subTab });
   };
 
   // Role-Based Admin Permission Check for Issuing Purchase Orders
