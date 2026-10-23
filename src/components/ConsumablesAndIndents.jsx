@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { configuredGstRate } from '../utils/pdfHelpers';
 import SearchableSelect from './SearchableSelect';
 import { 
   ClipboardList, 
@@ -279,7 +280,7 @@ export default function ConsumablesAndIndents({
     const qty = parseFloat(poQty) || 0;
     const price = parseFloat(poUnitPrice) || 0;
     const totalTaxable = qty * price;
-    const gstRate = parseFloat(poGstPct) || 18;
+    const gstRate = configuredGstRate(poGstPct);
     const gstAmt = (totalTaxable * gstRate) / 100;
     const totalAmount = totalTaxable + gstAmt;
 

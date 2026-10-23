@@ -224,8 +224,6 @@ function sanitizeForLocalStorage(obj, depth = 0) {
 }
 
 const PROTECTED_KEYS = [
-  'samyak_supabase_url',
-  'samyak_supabase_key',
   'samyak_erp_user',
   'samyak_auth_token'
 ];
@@ -365,7 +363,7 @@ export function initSafeStorage() {
 export async function purgeApplicationCache() {
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
-      const keysToKeep = new Set(['samyak_supabase_url', 'samyak_supabase_key', 'sb-access-token', 'sb-refresh-token']);
+      const keysToKeep = new Set(['sb-access-token', 'sb-refresh-token']);
       const allKeys = Object.keys(window.localStorage);
       allKeys.forEach(k => {
         if (!keysToKeep.has(k) && !k.startsWith('sb-')) {

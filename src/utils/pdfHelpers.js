@@ -1,3 +1,5 @@
+import { getCompanyProfile, requireCompanyField } from '../services/companyProfile.js';
+
 /**
  * Converts a number to Indian Currency Words
  * Example: 764994 -> "Seven Lakh, Sixty-Four Thousand, Nine Hundred Ninety-Four Rupees and Zero Paise Only"
@@ -55,24 +57,50 @@ export function numberToWords(num) {
 /**
  * Format currency to Indian standard (e.g. ₹7,64,994.00)
  */
-export function formatINR(amount) {
+export function formatMoney(amount, profile) {
+  const source = profile || getCompanyProfile();
+  const locale = String(requireCompanyField(source, 'locale'));
+  const currency = String(requireCompanyField(source, 'currency'));
   const num = parseFloat(amount) || 0;
   const isNegative = num < 0;
-  const formatted = (Math.abs(num) || 0).toLocaleString('en-IN', {
+  const formatted = Math.abs(num).toLocaleString(locale, {
     minimumFractionDigits: 2,
-    maximumFractionDigits: 2
+    maximumFractionDigits: 2,
   });
-  return (isNegative ? '- ₹' : '₹') + formatted;
+  if (currency === 'INR') return `${isNegative ? '- ₹' : '₹'}${formatted}`;
+  return `${isNegative ? '-' : ''}${currency} ${formatted}`;
+}
+
+export function formatINR(amount) {
+  return formatMoney(amount);
 }
 
 /**
- * Determines Indian GST Applicability & Breakdown based on State Code (MP = "23")
- * Intra-State Supply (Within Madhya Pradesh - State Code 23): CGST 9% + SGST 9%
- * Inter-State Supply (Outside Madhya Pradesh - State Code != 23): IGST 18%
+ * GST from the party GSTIN state code and the plant GSTIN state code.
+ * A missing party GSTIN does not guess from city names. Pass taxTypeOverride
+ * 'igst' or 'cgst_sgst' when the party has no GSTIN. The rate is required.
  */
-export function calculateGSTBreakdown(gstin = '', address = '', taxableAmount = 0, totalGstRatePct = 18, plantGstin = '', taxTypeOverride = 'auto') {
+export function configuredGstRate(explicit) {
+  if (explicit !== undefined && explicit !== null && explicit !== '') {
+    const number = Number(explicit);
+    if (!Number.isFinite(number) || number < 0) {
+      throw new Error('GST rate is not a number. Set defaultGstRatePct on the company profile or a line gstRatePct.');
+    }
+    return number;
+  }
+  const rate = Number(requireCompanyField(getCompanyProfile(), 'defaultGstRatePct'));
+  if (!Number.isFinite(rate) || rate < 0) {
+    throw new Error('Company profile is missing defaultGstRatePct. Set it in Document Settings.');
+  }
+  return rate;
+}
+
+export function calculateGSTBreakdown(gstin = '', address = '', taxableAmount = 0, totalGstRatePct, plantGstin = '', taxTypeOverride = 'auto') {
   const taxable = parseFloat(taxableAmount) || 0;
-  const ratePct = parseFloat(totalGstRatePct) || 18;
+  const ratePct = Number(totalGstRatePct);
+  if (!Number.isFinite(ratePct) || ratePct < 0) {
+    throw new Error('GST rate is not configured. Set defaultGstRatePct on the company profile or a line gstRatePct.');
+  }
 
   const partyGstinClean = String(gstin || '').trim();
   const partyStateCode = partyGstinClean.substring(0, 2);
@@ -82,28 +110,19 @@ export function calculateGSTBreakdown(gstin = '', address = '', taxableAmount = 
   }
   const plantStateCode = plant.substring(0, 2);
 
-  const addressUpper = String(address || '').toUpperCase();
-  
   let isIntraState = false;
+  const override = String(taxTypeOverride || 'auto').toLowerCase();
 
-  if (taxTypeOverride === 'igst') {
+  if (override === 'igst') {
     isIntraState = false;
-  } else if (taxTypeOverride === 'cgst_sgst') {
+  } else if (override === 'cgst_sgst' || override === 'cgst') {
     isIntraState = true;
+  } else if (/^\d{2}/.test(partyGstinClean)) {
+    isIntraState = partyStateCode === plantStateCode;
   } else {
-    // Auto-detect: Party GSTIN starts with plant state code (23) OR address contains MP locations
-    if (/^\d{2}/.test(partyGstinClean)) {
-      isIntraState = partyStateCode === plantStateCode;
-    } else {
-      isIntraState = addressUpper.includes('MADHYA PRADESH') || 
-                     addressUpper.includes(' M.P.') || 
-                     addressUpper.includes(' MP ') || 
-                     addressUpper.includes('PITHAMPUR') || 
-                     addressUpper.includes('INDORE') || 
-                     addressUpper.includes('BHOPAL') ||
-                     addressUpper.includes('UJJAIN');
-    }
+    throw new Error('Party GSTIN is missing. Choose IGST or CGST+SGST explicitly. Place of supply is not guessed from the city.');
   }
+  void address;
 
   if (isIntraState) {
     const halfRate = ratePct / 2;
@@ -117,7 +136,7 @@ export function calculateGSTBreakdown(gstin = '', address = '', taxableAmount = 
     return {
       isIntraState: true,
       type: 'INTRA_STATE',
-      label: 'Intra-State Supply (Within Madhya Pradesh)',
+      label: `Intra-State Supply (CGST ${halfRate}% + SGST ${halfRate}%)`,
       cgstRatePct: halfRate,
       cgstAmount: cgstAmount,
       sgstRatePct: halfRate,

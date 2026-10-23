@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { resolveOutboundRecipients } from '../src/services/emailPolicy.js';
 import { resolveAppOrigin } from './appOrigin.js';
 import { readSmtpConfig } from './smtpConfig.js';
+import { quotedFrom, readCompanySenderName } from './companySender.js';
 
 const ROLES = [
   'Admin',
@@ -107,6 +108,7 @@ export async function deliverAccountEmail({
   kind = 'automated',
   env = process.env,
   createTransport,
+  service,
 } = {}) {
   const resolved = resolveOutboundRecipients({ to, kind, env });
   if (!actionLink) {
@@ -117,11 +119,12 @@ export async function deliverAccountEmail({
   }
 
   const smtp = readSmtpConfig(env);
+  const senderName = await readCompanySenderName(service);
   const openTransport = createTransport || (options => nodemailer.createTransport(options));
   const transporter = openTransport(smtp);
 
   await transporter.sendMail({
-    from: `"Samyak International ERP" <${smtp.auth.user}>`,
+    from: quotedFrom(senderName, smtp.auth.user),
     to: resolved.to,
     ...(resolved.cc ? { cc: resolved.cc } : {}),
     ...(resolved.bcc ? { bcc: resolved.bcc } : {}),
@@ -140,6 +143,7 @@ async function sendSetupMail(to, name, actionLink, options = {}) {
     actionLink,
     kind: options.kind,
     createTransport: options.createTransport,
+    service: options.service,
   });
   if (!result.emailed) {
     console.error('Account email was not delivered', {

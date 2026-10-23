@@ -16,6 +16,8 @@ import { createClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
 import { randomBytes } from 'node:crypto';
 import { resolveOutboundRecipients } from '../src/services/emailPolicy.js';
+import { readSmtpConfig } from '../api/smtpConfig.js';
+import { quotedFrom, readCompanySenderName } from '../api/companySender.js';
 
 const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -33,18 +35,11 @@ const service = createClient(url, serviceKey, {
 async function sendMail(to, name, actionLink) {
   const resolved = resolveOutboundRecipients({ to, kind: 'automated' });
   if (resolved.blocked || !resolved.to) return false;
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
-  if (!user || !pass) return false;
-  const port = parseInt(process.env.SMTP_PORT || '465', 10);
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.hostinger.com',
-    port,
-    secure: process.env.SMTP_SECURE === 'true' || port === 465,
-    auth: { user, pass },
-  });
+  const smtp = readSmtpConfig(process.env);
+  const senderName = await readCompanySenderName(service);
+  const transporter = nodemailer.createTransport(smtp);
   await transporter.sendMail({
-    from: `"Samyak International ERP" <${user}>`,
+    from: quotedFrom(senderName, smtp.auth.user),
     to: resolved.to,
     subject: 'Set your FlexiERP password',
     text: `Hello ${name},\n\nSet your FlexiERP password with this one-time link:\n${actionLink}\n`,

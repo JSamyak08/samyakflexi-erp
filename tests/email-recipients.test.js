@@ -5,9 +5,9 @@ import { PGlite } from '@electric-sql/pglite';
 import { handleSendEmail } from '../api/send-email.js';
 import { deliverAccountEmail } from '../api/admin-users.js';
 import {
-  ADMIN_REROUTE,
-  COMPANY_DOMAIN,
   EXTERNAL_MANUAL_EMAIL_ENV,
+  adminReroute,
+  companyDomain,
   companyRecipients,
   externalManualDeliveryEnabled,
   isCompanyAddress,
@@ -17,8 +17,21 @@ import {
   resolveOutboundRecipients,
 } from '../src/services/emailPolicy.js';
 
+process.env.COMPANY_EMAIL_DOMAIN = 'samyakinternational.in';
+process.env.ADMIN_REROUTE = 'admin@samyakinternational.in';
+const COMPANY_DOMAIN = companyDomain();
+const ADMIN_REROUTE = adminReroute();
+
 const COMPANY = `qa@${COMPANY_DOMAIN}`;
 const COMPANY_UPPER = `QA@${COMPANY_DOMAIN.toUpperCase()}`;
+
+function mailEnv(extra = {}) {
+  return {
+    COMPANY_EMAIL_DOMAIN: COMPANY_DOMAIN,
+    ADMIN_REROUTE,
+    ...extra,
+  };
+}
 
 function domainsOf(header) {
   if (!header) return [];
@@ -137,7 +150,7 @@ test('manual external mail reroutes to admin while the switch is off', () => {
     cc: `accounts@vendor.com, purchase@${COMPANY_DOMAIN}`,
     bcc: 'hidden@gmail.com',
     replyTo: `Buyer <qa@${COMPANY_DOMAIN}>`,
-    env: { [EXTERNAL_MANUAL_EMAIL_ENV]: 'false' },
+    env: mailEnv({ [EXTERNAL_MANUAL_EMAIL_ENV]: 'false' }),
   });
   assert.equal(resolved.blocked, false);
   assert.equal(resolved.externalDelivery, false);
@@ -156,7 +169,7 @@ test('former internal domains are external on manual sends', () => {
     cc: 'a@samyak.com, b@samyakflexi.com',
     bcc: 'c@plant.com',
     replyTo: 'd@samyak.com',
-    env: {},
+    env: mailEnv(),
   });
   assert.equal(resolved.to, ADMIN_REROUTE);
   assert.equal(resolved.cc, '');
@@ -173,7 +186,7 @@ test('a company address stays internal even when the local part says customer', 
     kind: 'manual',
     to: `customer@${COMPANY_DOMAIN}`,
     cc: `vendor@${COMPANY_DOMAIN}`,
-    env: {},
+    env: mailEnv(),
   });
   assert.equal(manual.to, `customer@${COMPANY_DOMAIN}`);
   assert.equal(manual.cc, `vendor@${COMPANY_DOMAIN}`);
@@ -200,7 +213,7 @@ test('manual display-name smuggling is not handed to SMTP', () => {
   const bracketed = resolveOutboundRecipients({
     kind: 'manual',
     to: 'x@gmail.com <a@samyakinternational.in>',
-    env: {},
+    env: mailEnv(),
   });
   assert.equal(bracketed.to, 'a@samyakinternational.in');
   assert.equal(bracketed.to.includes('gmail.com'), false);
@@ -209,7 +222,7 @@ test('manual display-name smuggling is not handed to SMTP', () => {
     kind: 'manual',
     to: 'x@gmail.com admin@samyakinternational.in',
     cc: 'x@gmail.com <a@samyakinternational.in',
-    env: {},
+    env: mailEnv(),
   });
   assert.equal(suffixTrick.to, ADMIN_REROUTE);
   assert.equal(suffixTrick.cc, '');
@@ -222,7 +235,7 @@ test('the external switch delivers a manual address and still strips reply-to', 
     to: 'Buyer <buyer@client.com>',
     cc: `qa@${COMPANY_DOMAIN}`,
     replyTo: 'buyer@client.com',
-    env: { [EXTERNAL_MANUAL_EMAIL_ENV]: 'true' },
+    env: mailEnv({ [EXTERNAL_MANUAL_EMAIL_ENV]: 'true' }),
   });
   assert.equal(resolved.externalDelivery, true);
   assert.equal(resolved.blocked, false);
@@ -235,7 +248,7 @@ test('automated ignores the external switch', () => {
   const resolved = resolveOutboundRecipients({
     kind: 'automated',
     to: 'buyer@client.com',
-    env: { [EXTERNAL_MANUAL_EMAIL_ENV]: 'true' },
+    env: mailEnv({ [EXTERNAL_MANUAL_EMAIL_ENV]: 'true' }),
   });
   assert.equal(resolved.blocked, true);
   assert.equal(resolved.externalDelivery, false);
@@ -344,7 +357,19 @@ function mockService() {
     auth: {
       getUser: async () => ({ data: { user: { id: 'auth-admin' } }, error: null }),
     },
-    from() { return profileQuery(); },
+    from(table) {
+      if (table === 'system_settings') {
+        return {
+          select() { return this; },
+          eq() { return this; },
+          maybeSingle: async () => ({
+            data: { setting_value: JSON.stringify({ name: 'SAMYAK INTERNATIONAL LTD.' }) },
+            error: null,
+          }),
+        };
+      }
+      return profileQuery();
+    },
     rpc(name, args) {
       calls.push({ name, args });
       if (name === 'claim_email_send') {
@@ -453,7 +478,7 @@ test('send-email keeps only company mailboxes across to, cc and bcc', async () =
     assert.equal(sent[0].cc, `a@${COMPANY_DOMAIN}`);
     assert.equal(sent[0].bcc, `store@${COMPANY_DOMAIN}`);
     assert.equal(sent[0].replyTo, `qa@${COMPANY_DOMAIN}`);
-    assert.equal(sent[0].from, '"Samyak International ERP" <stub-user>');
+    assert.equal(sent[0].from, '"SAMYAK INTERNATIONAL LTD." <stub-user>');
     assert.equal(JSON.stringify(sent[0]).includes('gmail.com'), false);
     assert.equal(JSON.stringify(sent[0]).includes('attacker@'), false);
   });
@@ -492,12 +517,24 @@ test('manual send-email reroutes an external recipient to admin', async () => {
 });
 
 test('account setup mail follows the same kind rules and never uses a live transport in tests', async () => {
-  const env = {
+  const env = mailEnv({
     SMTP_USER: 'stub-user',
     SMTP_PASS: 'stub-pass',
     SMTP_HOST: 'smtp.example.test',
     SMTP_PORT: '465',
     SMTP_SECURE: 'true',
+  });
+  const companyService = {
+    from() {
+      return {
+        select() { return this; },
+        eq() { return this; },
+        maybeSingle: async () => ({
+          data: { setting_value: JSON.stringify({ name: 'SAMYAK INTERNATIONAL LTD.' }) },
+          error: null,
+        }),
+      };
+    },
   };
   let opened = 0;
   const transport = () => {
@@ -523,6 +560,7 @@ test('account setup mail follows the same kind rules and never uses a live trans
     actionLink: 'https://erp.example/reset',
     kind: 'manual',
     env,
+    service: companyService,
     createTransport: () => ({
       sendMail: async (mail) => {
         sent.push(mail);
@@ -541,6 +579,7 @@ test('account setup mail follows the same kind rules and never uses a live trans
     actionLink: 'https://erp.example/reset',
     kind: 'automated',
     env,
+    service: companyService,
     createTransport: () => ({
       sendMail: async (mail) => {
         company.push(mail);

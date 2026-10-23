@@ -139,8 +139,10 @@ export async function sendPasswordResetEmail(email) {
   };
 }
 
+export const MIN_PASSWORD_LENGTH = 8;
+
 export async function updateOwnPassword(newPassword) {
-  if (!newPassword || newPassword.length < 8) {
+  if (!newPassword || newPassword.length < MIN_PASSWORD_LENGTH) {
     return { success: false, message: 'Use at least 8 characters.' };
   }
   const { error } = await supabase.auth.updateUser({ password: newPassword });

@@ -36,7 +36,7 @@ export default class ErrorBoundary extends React.Component {
 
   handleClearCacheAndReset = () => {
     try {
-      const protectedKeys = ['samyak_supabase_url', 'samyak_supabase_key'];
+      const protectedKeys = [];
       const keys = Object.keys(localStorage);
       for (const k of keys) {
         if (!protectedKeys.includes(k)) {

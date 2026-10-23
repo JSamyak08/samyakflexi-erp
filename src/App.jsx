@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from './services/supabaseClient';
 import { applyRemoteCompanyProfile } from './services/companyProfile';
+import { getMaterialCostSettings, mergePressPlainWastage, optionalPercent } from './services/operationalConfig.js';
+import { STAGE_LABEL } from './constants/processStages.js';
 import { 
   isReconciliationDue,
   DEFAULT_ROLE_PERMISSIONS,
@@ -1681,7 +1683,7 @@ export default function App() {
         qtyDispatch: 0,
         totalProductionQtyKg: 0,
         totalMaterialCostRs: 0,
-        processingCostPerKg: 25,
+        processingCostPerKg: getMaterialCostSettings().conversionChargesPerKg,
         totalProcessingCostRs: 0,
         printingPlainSettingWastageKg: 0,
         printingWastageKg: 0,
@@ -1852,13 +1854,13 @@ export default function App() {
       jobName: order.jobName || '',
       clientName: order.clientName || order.customerName || '',
       machineId: machineId || order.machineId || 'UNASSIGNED',
-      shift: 'Day Shift',
+      shift: order.shift || '',
       scheduledDate: new Date().toISOString().split('T')[0],
       startTime: new Date(startIso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }),
       orderQtyKg: Number(order.quantityKg || order.quantity || order.orderQtyKg || 0),
       widthMm: Number(order.widthMm || order.printWidthMm || 0),
-      micron: Number(order.micron || 12),
-      filmType: order.printFilmType || order.filmType || 'PET',
+      micron: Number.isFinite(Number(order.micron)) ? Number(order.micron) : null,
+      filmType: order.printFilmType || order.filmType || '',
       status: 'In Production',
       priority: order.priority || 'Normal'
     });
@@ -1920,7 +1922,7 @@ export default function App() {
     const durationFormatted = computedDurationMinutes ? (computedDurationMinutes >= 60 ? `${Math.floor(computedDurationMinutes / 60)}h ${computedDurationMinutes % 60}m` : `${computedDurationMinutes}m`) : 'Completed';
     
     const actualMetersPrinted = parseFloat(endData.actualMetersPrinted) || parseFloat(order.targetMeters) || 0;
-    const inkGsmInSpeed = parseFloat(endData.inkGsmInSpeed) || parseFloat(order.inkGsm) || 1.5;
+    const inkGsmInSpeed = parseFloat(endData.inkGsmInSpeed) || parseFloat(order.inkGsm) || null;
     const printedOutputKg = parseFloat(endData.printedOutputKg) || parseFloat(order.printLayerNetKg || order.quantityKg || order.quantity || order.orderQtyKg || 0);
 
     const updatedOrder = {
@@ -1983,8 +1985,9 @@ export default function App() {
       rollsBreakdown: endData.rollsBreakdown || baseRecord.rollsBreakdown || [],
       outputRolls: endData.rollsBreakdown || baseRecord.outputRolls || [],
       totalInputConsumedKg: endData.totalInputConsumedKg || 0,
-      printWidthMm: endData.printWidthMm || order.printWidthMm || 460,
-      inputRollWidthMm: endData.inputRollWidthMm || 460,
+      printWidthMm: endData.printWidthMm || order.printWidthMm || null,
+      inputRollWidthMm: endData.inputRollWidthMm || null,
+      ...mergePressPlainWastage(baseRecord, endData.plainSubstrateWastageKg),
       isBiggerSize: endData.isBiggerSize || false,
       excessFilmWastageKg: endData.excessFilmWastageKg || 0,
       excessFilmWastagePct: endData.excessFilmWastagePct || 0,
@@ -2015,13 +2018,13 @@ export default function App() {
       jobName: order.jobName || '',
       clientName: order.clientName || order.customerName || '',
       machineId: order.machineId || 'UNASSIGNED',
-      shift: 'Day Shift',
+      shift: order.shift || '',
       scheduledDate: new Date().toISOString().split('T')[0],
       endTime: new Date(endIso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }),
       orderQtyKg: Number(order.quantityKg || order.quantity || order.orderQtyKg || 0),
       widthMm: Number(order.widthMm || order.printWidthMm || 0),
-      micron: Number(order.micron || 12),
-      filmType: order.printFilmType || order.filmType || 'PET',
+      micron: Number.isFinite(Number(order.micron)) ? Number(order.micron) : null,
+      filmType: order.printFilmType || order.filmType || '',
       status: 'Completed',
       priority: order.priority || 'Normal',
       totalDurationMins: computedDurationMinutes || 0
@@ -2042,9 +2045,9 @@ export default function App() {
           jobCode: order.jobCode || order.id,
           clientName: order.clientName || order.customerName || 'Client',
           sfgType: 'Printed Rolls',
-          filmType: r.filmType || order.printFilmType || 'PET',
+          filmType: r.filmType || order.printFilmType || '',
           widthMm: Number(r.widthMm || order.widthMm || 460),
-          micron: Number(r.micron || order.micron || 12),
+          micron: Number.isFinite(Number(r.micron || order.micron)) ? Number(r.micron || order.micron) : null,
           totalNetKg: Number(r.netWeightKg || 0),
           availableKg: Number(r.availableWeightKg || r.netWeightKg || 0),
           consumedKg: 0,
@@ -2860,7 +2863,7 @@ export default function App() {
         petSize: updatedJm.petSize || order.petSize,
         inkGsm: updatedJm.inkGsm !== undefined ? Number(updatedJm.inkGsm) : (order.inkGsm ?? 1.5),
         adhesiveGsm: updatedJm.adhesiveGsm !== undefined ? Number(updatedJm.adhesiveGsm) : (order.adhesiveGsm ?? 1.5),
-        wastagePct: updatedJm.wastagePct !== undefined ? Number(updatedJm.wastagePct) : (order.wastagePct ?? 5),
+        wastagePct: updatedJm.wastagePct !== undefined ? optionalPercent(updatedJm.wastagePct) : optionalPercent(order.wastagePct),
         pressMarks: updatedJm.pressMarks || order.pressMarks,
         artworkUrl: updatedJm.artworkUrl || order.artworkUrl,
         specialInstructions: updatedJm.specialInstructions !== undefined ? updatedJm.specialInstructions : order.specialInstructions,
@@ -2878,7 +2881,7 @@ export default function App() {
           colorsCount: updatedJm.colorsCount !== undefined && updatedJm.colorsCount !== null ? Number(updatedJm.colorsCount) : order.jobDetails?.colorsCount,
           inkGsm: updatedJm.inkGsm !== undefined ? Number(updatedJm.inkGsm) : (order.jobDetails?.inkGsm ?? 1.5),
           adhesiveGsm: updatedJm.adhesiveGsm !== undefined ? Number(updatedJm.adhesiveGsm) : (order.jobDetails?.adhesiveGsm ?? 1.5),
-          wastagePct: updatedJm.wastagePct !== undefined ? Number(updatedJm.wastagePct) : (order.jobDetails?.wastagePct ?? 5),
+          wastagePct: updatedJm.wastagePct !== undefined ? optionalPercent(updatedJm.wastagePct) : optionalPercent(order.jobDetails?.wastagePct),
           pressMarks: updatedJm.pressMarks || order.jobDetails?.pressMarks,
           artworkUrl: updatedJm.artworkUrl || order.jobDetails?.artworkUrl
         }
@@ -3259,34 +3262,34 @@ export default function App() {
     const round2 = (v) => parseFloat((Number(v) || 0).toFixed(2));
 
     let stageUpdates = {};
-    if (stage === 'Lamination (Pass 1)') {
+    if (stage === STAGE_LABEL.LAMINATION_PASS_1) {
       stageUpdates = {
         qtyLaminationL1: round2((Number(matchedRec?.qtyLaminationL1) || 0) + outNetKg),
         adhesiveConsumedL1Kg: round2((Number(matchedRec?.adhesiveConsumedL1Kg) || 0) + (Number(scrap.adhesiveConsumedL1Kg) || 0)),
         laminationPlainSubstrateWastageKg: round2((Number(matchedRec?.laminationPlainSubstrateWastageKg) || 0) + (Number(scrap.laminationPlainSubstrateWastageKg) || 0)),
         laminateWastageKg: round2((Number(matchedRec?.laminateWastageKg) || 0) + (Number(scrap.laminateWastageKg) || 0))
       };
-    } else if (stage === 'Lamination (Pass 2)') {
+    } else if (stage === STAGE_LABEL.LAMINATION_PASS_2) {
       stageUpdates = {
         qtySecondPassL2: round2((Number(matchedRec?.qtySecondPassL2) || 0) + outNetKg),
         adhesiveConsumedL2Kg: round2((Number(matchedRec?.adhesiveConsumedL2Kg) || 0) + (Number(scrap.adhesiveConsumedL2Kg) || 0)),
         laminationPlainSubstrateWastageL2Kg: round2((Number(matchedRec?.laminationPlainSubstrateWastageL2Kg) || 0) + (Number(scrap.laminationPlainSubstrateWastageL2Kg) || 0)),
         laminateWastageKg: round2((Number(matchedRec?.laminateWastageKg) || 0) + (Number(scrap.laminateWastageKg) || 0))
       };
-    } else if (stage === 'Printing (Pass 2)') {
+    } else if (stage === STAGE_LABEL.PRINTING_PASS_2) {
       stageUpdates = {
         printingPlainSettingWastageKg: round2((Number(matchedRec?.printingPlainSettingWastageKg) || 0) + (Number(scrap.printingPlainSettingWastageKg) || 0)),
         printingWastageKg: round2((Number(matchedRec?.printingWastageKg) || 0) + (Number(scrap.printingWastageKg) || 0)),
         ...(outNetKg > 0 ? { qtyFirstPassL1: round2((Number(matchedRec?.qtyFirstPassL1) || 0) + outNetKg) } : {})
       };
-    } else if (stage === 'Slitting & Rewinding') {
+    } else if (stage === STAGE_LABEL.SLITTING) {
       stageUpdates = {
         qtySlitting: round2((Number(matchedRec?.qtySlitting) || 0) + outNetKg),
         trimWastageKg: round2((Number(matchedRec?.trimWastageKg) || 0) + (Number(scrap.slittingTrimScrapKg) || 0)),
         slittingSettingWastageKg: round2((Number(matchedRec?.slittingSettingWastageKg) || 0) + (Number(scrap.slittingSettingWastageKg) || 0)),
         slittingScrapKg: round2((Number(matchedRec?.slittingScrapKg) || 0) + (Number(scrap.slittingScrapKg) || 0))
       };
-    } else if (stage === 'Pouching / Bag Making') {
+    } else if (stage === STAGE_LABEL.POUCHING) {
       stageUpdates = {
         qtyPouching: round2((Number(matchedRec?.qtyPouching) || 0) + outNetKg),
         zipperConsumedKg: round2((Number(matchedRec?.zipperConsumedKg) || 0) + (Number(scrap.zipperConsumedKg) || 0)),
@@ -3324,7 +3327,7 @@ export default function App() {
         jobName: updatedSfgItem.jobName || 'Untitled Job',
         clientName: updatedSfgItem.clientName || 'General Client',
         operatorName: logEntry.operatorName || 'Plant Operator',
-        shift: logEntry.shift || 'Day Shift',
+        shift: logEntry.shift || '',
         status: 'Pending Plant Approval',
         dateFilled: logEntry.date || new Date().toISOString().split('T')[0]
       }),

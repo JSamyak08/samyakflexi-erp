@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 import { readSmtpConfig } from '../api/smtpConfig.js';
 import { resolveAppOrigin } from '../api/appOrigin.js';
 import { deliverAccountEmail } from '../api/admin-users.js';
-import { COMPANY_DOMAIN } from '../src/services/emailPolicy.js';
+import { companyDomain } from '../src/services/emailPolicy.js';
+
+process.env.COMPANY_EMAIL_DOMAIN = 'samyakinternational.in';
+process.env.ADMIN_REROUTE = 'admin@samyakinternational.in';
+const COMPANY_DOMAIN = companyDomain();
 
 const complete = {
   SMTP_HOST: 'smtp.example.test',

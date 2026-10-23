@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Printer, ArrowLeft, Edit3, Plus, Trash2, FileText } from 'lucide-react';
 import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
-import { numberToWords, formatINR, calculateGSTBreakdown, toTitleCase } from '../utils/pdfHelpers';
+import { numberToWords, formatINR, calculateGSTBreakdown, configuredGstRate, toTitleCase } from '../utils/pdfHelpers';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 
 export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa }) {
@@ -60,7 +60,7 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
     challanNature = "Sale of Goods",
     freightCharges = 0,
     items = [],
-    gstRatePct = 18,
+    gstRatePct,
     taxType = 'auto',
     dispatchedBy = "",
     remarks = "",
@@ -93,7 +93,8 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
   const freightAmt = parseFloat(freightCharges) || 0;
   const subtotalTaxable = subtotalItems + freightAmt;
 
-  const gstCalc = calculateGSTBreakdown(clientGstin, clientAddress, subtotalTaxable, gstRatePct, COMPANY_DETAILS.gstin, taxType);
+  const resolvedGstRatePct = configuredGstRate(gstRatePct);
+  const gstCalc = calculateGSTBreakdown(clientGstin, clientAddress, subtotalTaxable, resolvedGstRatePct, COMPANY_DETAILS.gstin, taxType);
 
   // Dynamic Total Quantity & UOM calculation
   const formattedTotalQty = (() => {
@@ -344,13 +345,13 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
                 {gstCalc.isIntraState ? (
                   <>
                     <tr>
-                      <td style={{ padding: '3px 8px', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>CGST @ {gstRatePct / 2}%:</td>
+                      <td style={{ padding: '3px 8px', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>CGST @ {resolvedGstRatePct / 2}%:</td>
                       <td style={{ padding: '3px 8px', borderBottom: '1px solid #e2e8f0', textAlign: 'right' }}>
                         {formatINR(gstCalc.cgstAmount)}
                       </td>
                     </tr>
                     <tr>
-                      <td style={{ padding: '3px 8px', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>SGST @ {gstRatePct / 2}%:</td>
+                      <td style={{ padding: '3px 8px', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>SGST @ {resolvedGstRatePct / 2}%:</td>
                       <td style={{ padding: '3px 8px', borderBottom: '1px solid #e2e8f0', textAlign: 'right' }}>
                         {formatINR(gstCalc.sgstAmount)}
                       </td>
@@ -358,7 +359,7 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
                   </>
                 ) : (
                   <tr>
-                    <td style={{ padding: '3px 8px', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>IGST @ {gstRatePct}%:</td>
+                    <td style={{ padding: '3px 8px', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>IGST @ {resolvedGstRatePct}%:</td>
                     <td style={{ padding: '3px 8px', borderBottom: '1px solid #e2e8f0', textAlign: 'right' }}>
                       {formatINR(gstCalc.igstAmount)}
                     </td>

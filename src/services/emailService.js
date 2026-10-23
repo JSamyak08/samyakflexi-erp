@@ -1,12 +1,41 @@
 /**
  * Frontend Email & Action Task Notification Service
- * Communicates with backend Express SMTP server (Hostinger: admin@samyakinternational.in)
- * Uses dynamic configurable Email Templates from settingsService.js
+ * Uses dynamic configurable Email Templates from settingsService.js.
+ * Recipients come from the template. A template with no To address is not sent.
  */
 
 import { getEmailTemplates, interpolateTemplate } from './settingsService';
 import { supabase } from './supabaseClient';
 import { legacyFilterInternalRecipients, normalizeKind } from './emailPolicy';
+import { companyFooterText, getCompanyProfile } from './companyProfile';
+
+function requiredRecipient(value, label) {
+  const to = String(value || '').trim();
+  if (!to) {
+    const error = new Error(`Email template "${label || 'message'}" has no recipient. Set toEmail in Document Settings.`);
+    error.status = 500;
+    throw error;
+  }
+  return to;
+}
+
+function companyMailBits() {
+  const profile = getCompanyProfile();
+  return {
+    companyName: profile.name,
+    companyFooter: companyFooterText(profile).replace(/\n/g, '<br/>'),
+  };
+}
+
+function resolveFooter(note) {
+  const text = String(note || '').trim();
+  const stale = !text
+    || text.includes('{companyFooter}')
+    || text.includes('Indore Packaging Division')
+    || text.includes('Hostinger');
+  if (!stale) return text;
+  return companyMailBits().companyFooter;
+}
 
 const recentSends = new Map();
 const DEDUPE_MS = 10 * 60 * 1000;
@@ -110,7 +139,7 @@ export const buildEmailTemplate = ({ title, badgeText, badgeBg = '#0284c7', cont
 <body>
   <div class="container">
     <div class="header">
-      <h1>Samyak International Ltd</h1>
+      <h1>${companyMailBits().companyName}</h1>
       <p>Flexible Packaging Manufacturing ERP • Action Task Notification System</p>
     </div>
     <div class="body-content">
@@ -119,7 +148,7 @@ export const buildEmailTemplate = ({ title, badgeText, badgeBg = '#0284c7', cont
       ${contentHtml}
     </div>
     <div class="footer">
-      ${footerNote ? footerNote : `<strong>Samyak International Ltd • Indore Packaging Division</strong><br/>Kheda Industrial Area, Sector 3, Pithampur, MP | GSTIN: 23AABCM3526F1ZY<br/>Automated Notification Engine • Hostinger Secure SMTP Server`}
+      ${resolveFooter(footerNote)}
     </div>
   </div>
 </body>
@@ -140,7 +169,7 @@ const getActiveTemplate = (templateKey, vars = {}) => {
     subject: interpolateTemplate(tmpl.subject || '', vars),
     badgeText: interpolateTemplate(tmpl.badgeText || '', vars),
     contentHtml: interpolateTemplate(tmpl.contentHtml || '', vars),
-    footerNote: interpolateTemplate(tmpl.footerNote || '', vars),
+    footerNote: resolveFooter(interpolateTemplate(tmpl.footerNote || '', { ...companyMailBits(), ...vars })),
     toEmail: interpolateTemplate(tmpl.toEmail || '', vars),
     ccEmail: interpolateTemplate(tmpl.ccEmail || '', vars)
   };
@@ -162,7 +191,7 @@ export const notifyOrderPunched = async (order, customTo) => {
   const tmpl = getActiveTemplate('order_punched', vars);
   if (!tmpl || tmpl.enabled === false) return { success: false, message: 'Notification disabled.' };
 
-  const targetEmail = customTo || tmpl.toEmail || 'admin@samyakinternational.in';
+  const targetEmail = requiredRecipient(customTo || tmpl.toEmail, tmpl?.name);
 
   const html = buildEmailTemplate({
     title: tmpl.eventTitle,
@@ -200,7 +229,7 @@ export const notifyProductionRecordSubmitted = async (record, customTo) => {
   const tmpl = getActiveTemplate('production_submitted', vars);
   if (!tmpl || tmpl.enabled === false) return { success: false, message: 'Notification disabled.' };
 
-  const targetEmail = customTo || tmpl.toEmail || 'admin@samyakinternational.in';
+  const targetEmail = requiredRecipient(customTo || tmpl.toEmail, tmpl?.name);
 
   const html = buildEmailTemplate({
     title: tmpl.eventTitle,
@@ -236,7 +265,7 @@ export const notifyProductionRecordApproved = async (record, customTo) => {
   const tmpl = getActiveTemplate('production_approved', vars);
   if (!tmpl || tmpl.enabled === false) return { success: false, message: 'Notification disabled.' };
 
-  const targetEmail = customTo || tmpl.toEmail || 'admin@samyakinternational.in';
+  const targetEmail = requiredRecipient(customTo || tmpl.toEmail, tmpl?.name);
 
   const html = buildEmailTemplate({
     title: tmpl.eventTitle,
@@ -271,7 +300,7 @@ export const notifyPurchaseIndentCreated = async (indent, customTo) => {
   const tmpl = getActiveTemplate('indent_created', vars);
   if (!tmpl || tmpl.enabled === false) return { success: false, message: 'Notification disabled.' };
 
-  const targetEmail = customTo || tmpl.toEmail || 'admin@samyakinternational.in';
+  const targetEmail = requiredRecipient(customTo || tmpl.toEmail, tmpl?.name);
 
   const html = buildEmailTemplate({
     title: tmpl.eventTitle,
@@ -308,7 +337,7 @@ export const notifyPurchaseOrderIssued = async (po, customTo) => {
   const tmpl = getActiveTemplate('po_issued', vars);
   if (!tmpl || tmpl.enabled === false) return { success: false, message: 'Notification disabled.' };
 
-  const targetEmail = customTo || tmpl.toEmail || 'purchase@samyakinternational.in';
+  const targetEmail = requiredRecipient(customTo || tmpl.toEmail, tmpl?.name);
 
   const html = buildEmailTemplate({
     title: tmpl.eventTitle,
@@ -344,7 +373,7 @@ export const notifyLowStockAlert = async (stockItem, customTo) => {
   const tmpl = getActiveTemplate('low_stock', vars);
   if (!tmpl || tmpl.enabled === false) return { success: false, message: 'Notification disabled.' };
 
-  const targetEmail = customTo || tmpl.toEmail || 'admin@samyakinternational.in';
+  const targetEmail = requiredRecipient(customTo || tmpl.toEmail, tmpl?.name);
 
   const html = buildEmailTemplate({
     title: tmpl.eventTitle,
@@ -378,7 +407,7 @@ export const notifyUserCreated = async (user, customTo) => {
   const tmpl = getActiveTemplate('user_created', vars);
   if (!tmpl || tmpl.enabled === false) return { success: false, message: 'Notification disabled.' };
 
-  const targetEmail = customTo || user.email || tmpl.toEmail;
+  const targetEmail = requiredRecipient(customTo || user.email || tmpl.toEmail, tmpl?.name || 'account');
 
   const html = buildEmailTemplate({
     title: tmpl.eventTitle,
@@ -404,7 +433,12 @@ export const notifyUserCreated = async (user, customTo) => {
 export const notifyOverWastageAlert = async ({ record, order, allowedWastagePct, customTo }) => {
   const actualWastageKg = Number(record.totalScrapQtyKg || 0);
   const actualWastagePct = Number(record.overallScrapPctOfDispatch || record.overallScrapPctOfOutput || 0);
-  const targetWastagePct = Number(allowedWastagePct || order?.calculationDetails?.wastagePct || order?.wastagePct || 5);
+  const targetWastagePct = [allowedWastagePct, order?.calculationDetails?.wastagePct, order?.wastagePct]
+    .map(value => (value === undefined || value === null || value === '' ? null : Number(value)))
+    .find(value => Number.isFinite(value));
+  if (targetWastagePct == null) {
+    return { success: false, message: 'This job has no saved wastage percentage, so the over-wastage alert was not sent.' };
+  }
   const variancePct = Number((actualWastagePct - targetWastagePct).toFixed(1));
 
   // Build HTML table for stage-wise wastage breakdown
@@ -448,7 +482,7 @@ export const notifyOverWastageAlert = async ({ record, order, allowedWastagePct,
   const tmpl = getActiveTemplate('over_wastage', vars);
   if (!tmpl || tmpl.enabled === false) return { success: false, message: 'Notification disabled.' };
 
-  const targetEmail = customTo || tmpl.toEmail || 'admin@samyakinternational.in';
+  const targetEmail = requiredRecipient(customTo || tmpl.toEmail, tmpl?.name);
 
   const html = buildEmailTemplate({
     title: tmpl.eventTitle,
@@ -471,7 +505,7 @@ export const notifyOverWastageAlert = async ({ record, order, allowedWastagePct,
 /**
  * Helper to dynamically resolve email addresses by system roles from user list
  */
-export const getEmailsForRoles = (users = [], targetRoles = [], defaultEmail = 'admin@samyakinternational.in') => {
+export const getEmailsForRoles = (users = [], targetRoles = [], defaultEmail = '') => {
   if (!Array.isArray(users) || users.length === 0) return defaultEmail;
 
   const matchedEmails = new Set();
@@ -514,8 +548,8 @@ export const getEmailsForRoles = (users = [], targetRoles = [], defaultEmail = '
  * 9. ACTION TASK: GRN Inward Pending QC Approval Notification (Sent to QC / Quality User)
  */
 export const notifyGRNPendingQC = async ({ grn, users = [], customTo }) => {
-  const qcTargetEmails = getEmailsForRoles(users, ['QC Chemist', 'Quality Manager', 'Quality', 'QC'], 'quality@samyakinternational.in');
-  const targetEmail = customTo || qcTargetEmails;
+  const qcTargetEmails = getEmailsForRoles(users, ['QC Chemist', 'Quality Manager', 'Quality', 'QC']);
+  const targetEmail = requiredRecipient(customTo || qcTargetEmails, 'GRN pending QC');
 
   const barcodeListStr = Array.isArray(grn.barcodes) && grn.barcodes.length > 0
     ? grn.barcodes.join(', ')
@@ -582,7 +616,7 @@ export const notifyGRNPendingQC = async ({ grn, users = [], customTo }) => {
   return await sendERPEmailNotification({
     kind: 'automated',
     to: targetEmail,
-    cc: tmpl.ccEmail || 'admin@samyakinternational.in',
+    cc: tmpl.ccEmail || '',
     subject: tmpl.subject,
     html,
     text: `ACTION REQUIRED: GRN #${vars.grnNo} for ${vars.itemName} (${vars.netWeightKg}) from ${vars.vendorName} is pending QC approval.`
@@ -597,10 +631,10 @@ export const notifyGRNQCEscalation12h = async ({ grn, hoursPending = 12, users =
   const escalationEmails = getEmailsForRoles(
     users, 
     ['Admin', 'Plant Manager', 'Production Manager', 'Quality Manager', 'QC Chemist', 'Quality', 'QC'], 
-    'admin@samyakinternational.in, quality@samyakinternational.in'
+    ''
   );
 
-  const targetEmail = customTo || escalationEmails;
+  const targetEmail = requiredRecipient(customTo || escalationEmails, 'GRN QC escalation');
 
   const unitCount = grn.rollsReceived || (Array.isArray(grn.itemsBreakdown) ? grn.itemsBreakdown.length : 1);
   const netQty = Number(grn.netWeightKg || grn.receivedQtyKg || 0).toLocaleString();
@@ -672,7 +706,7 @@ export const notifyGRNQCEscalation12h = async ({ grn, hoursPending = 12, users =
   return await sendERPEmailNotification({
     kind: 'automated',
     to: targetEmail,
-    cc: tmpl.ccEmail || 'admin@samyakinternational.in',
+    cc: tmpl.ccEmail || '',
     subject: tmpl.subject,
     html,
     text: `URGENT QC OVERDUE ALERT: GRN #${vars.grnNo} for ${vars.itemName} has been pending QC approval for ${vars.hoursPending} hours (>12h SLA limit).`
@@ -696,10 +730,10 @@ export const notifyGRNQCVarianceModified = async ({
   const recipientEmails = getEmailsForRoles(
     users,
     ['Admin', 'Store Manager', 'Store', 'Plant Manager', 'Production Manager', 'Quality Manager'],
-    'admin@samyakinternational.in, store@samyakinternational.in'
+    ''
   );
 
-  const targetEmail = customTo || recipientEmails;
+  const targetEmail = requiredRecipient(customTo || recipientEmails, 'GRN QC variance');
   const grnNo = grn?.grnNo || grn?.id || 'GRN';
   const vendorName = grn?.vendorName || updatedDetails?.vendorName || 'Supplier';
   const itemName = updatedDetails?.itemName || grn?.itemName || 'Raw Material';
@@ -788,7 +822,7 @@ export const notifyGRNQCVarianceModified = async ({
   return await sendERPEmailNotification({
     kind: 'automated',
     to: targetEmail,
-    cc: 'admin@samyakinternational.in',
+    cc: '',
     subject: `⚠️ QC Inward Specification Variance Adjusted: GRN #${grnNo} — ${vendorName}`,
     html,
     text: `QC Inward Adjustment: GRN #${grnNo} (${itemName}) had specifications modified by ${editedBy}. Changes reflected in GRN & active stock.`

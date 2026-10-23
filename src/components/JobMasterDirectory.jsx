@@ -509,7 +509,7 @@ export default function JobMasterDirectory({
       pass: 'Pass 1 (Single Pass)',
       stageOutput: 'Semi-Finished Goods (SFG)',
       stageDescription: `SFG - Printed Web (${list[0]?.filmType || 'PET'} ${list[0]?.micron || 12}µ)`,
-      targetSpeedMpm: rotoMachine.maxSpeedMpm || 250,
+      targetSpeedMpm: rotoMachine.maxSpeedMpm ?? null,
       notes: ''
     });
 
@@ -1466,7 +1466,7 @@ export default function JobMasterDirectory({
                   </div>
                   {layers.map((l, idx) => {
                     const pw = parseFloat(printWidthMm) || 1000;
-                    const defaultW = isLDFilm(l.filmType) ? pw + 5 : pw;
+                    const defaultW = getFilmSlitWidth(l.filmType, pw);
                     const widthVal = (l.widthMm !== undefined && l.widthMm !== '' && !isNaN(parseFloat(l.widthMm)))
                       ? l.widthMm
                       : defaultW;
@@ -1480,7 +1480,7 @@ export default function JobMasterDirectory({
                           value={l.filmType} 
                           onChange={e => {
                             const newType = e.target.value;
-                            const newDefW = isLDFilm(newType) ? pw + 5 : pw;
+                            const newDefW = getFilmSlitWidth(newType, pw);
                             setLayers(prev => prev.map(item => item.id === l.id ? { ...item, filmType: newType, widthMm: newDefW } : item));
                           }}
                         >
@@ -2246,7 +2246,7 @@ export default function JobMasterDirectory({
                       const density = FILM_DENSITIES[l.filmType] || 1.0;
                       const layerW = (l.widthMm !== undefined && l.widthMm !== '' && !isNaN(parseFloat(l.widthMm)))
                         ? parseFloat(l.widthMm)
-                        : (isLDFilm(l.filmType) ? printW + 5 : printW);
+                        : getFilmSlitWidth(l.filmType, printW);
                       const baseGsm = l.micron * density;
                       const effectiveGsm = printW > 0 ? (baseGsm * (layerW / printW)).toFixed(2) : baseGsm.toFixed(2);
                       return (
@@ -2267,11 +2267,11 @@ export default function JobMasterDirectory({
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px', background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                 <div>
                   <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Pre-Costing Target Dry Ink GSM</span>
-                  <strong style={{ fontSize: '0.95rem', color: '#0284c7' }}>{selectedJob.inkGsm || 1.5} g/m²</strong>
+                  <strong style={{ fontSize: '0.95rem', color: '#0284c7' }}>{selectedJob.inkGsm ?? '—'} g/m²</strong>
                 </div>
                 <div>
                   <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Pre-Costing Target Adhesive GSM</span>
-                  <strong style={{ fontSize: '0.95rem', color: '#0284c7' }}>{selectedJob.adhesiveGsm || 1.5} g/m²</strong>
+                  <strong style={{ fontSize: '0.95rem', color: '#0284c7' }}>{selectedJob.adhesiveGsm ?? '—'} g/m²</strong>
                 </div>
               </div>
             </div>

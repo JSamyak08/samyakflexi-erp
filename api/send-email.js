@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
 import { resolveOutboundRecipients } from '../src/services/emailPolicy.js';
 import { readSmtpConfig } from './smtpConfig.js';
+import { quotedFrom, readCompanySenderName } from './companySender.js';
 
 const ROLES = [
   'Admin',
@@ -15,9 +16,6 @@ const ROLES = [
   'Printing Operator',
   'Shop Floor Operator',
 ];
-
-const USER_DAILY_CAP = 20;
-const GLOBAL_DAILY_CAP = 60;
 
 function serverEnv(name, fallback = '') {
   return process.env[name] || fallback;
@@ -183,18 +181,25 @@ export async function handleSendEmail(req, res, deps = {}) {
 
     const status = claim.data?.status;
     claimId = claim.data?.id || null;
+    if (status === 'config') {
+      claimId = null;
+      return res.status(500).json({
+        success: false,
+        message: claim.data?.message || 'Email send caps are not configured.',
+      });
+    }
     if (status === 'user') {
       claimId = null;
       return res.status(429).json({
         success: false,
-        message: `You have reached the daily email limit (${USER_DAILY_CAP}). Try again tomorrow.`,
+        message: `You have reached the daily email limit (${claim.data?.userDailyCap}). Try again tomorrow.`,
       });
     }
     if (status === 'global') {
       claimId = null;
       return res.status(429).json({
         success: false,
-        message: `The plant mailbox has reached its daily email limit (${GLOBAL_DAILY_CAP}). Try again tomorrow.`,
+        message: `The plant mailbox has reached its daily email limit (${claim.data?.plantDailyCap}). Try again tomorrow.`,
       });
     }
     if (status !== 'ok' || !claimId) {
@@ -203,10 +208,11 @@ export async function handleSendEmail(req, res, deps = {}) {
     }
 
     const smtp = readSmtpConfig(process.env);
+    const senderName = await readCompanySenderName(service);
     const transporter = openTransport(smtp);
 
     const info = await transporter.sendMail({
-      from: `"Samyak International ERP" <${smtp.auth.user}>`,
+      from: quotedFrom(senderName, smtp.auth.user),
       ...(resolved.to ? { to: resolved.to } : {}),
       ...(resolved.cc ? { cc: resolved.cc } : {}),
       ...(resolved.bcc ? { bcc: resolved.bcc } : {}),

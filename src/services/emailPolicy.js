@@ -1,19 +1,52 @@
 /**
  * Who may receive FlexiERP mail.
  *
- * The only internal domain is exactly samyakinternational.in.
- * Automated mail (alerts, page-load checks, save side effects) may go only to
- * a parsed address on that domain. Manual mail is a signed-in user clicking
- * Send. While ALLOW_EXTERNAL_MANUAL_EMAIL is not the string "true", a manual
- * To that is not on that domain is replaced with admin@samyakinternational.in
- * and is not delivered to the original recipient. Cc and Bcc outsiders are
- * dropped. Reply-To is company-only in every mode. The switch does not relax
- * automated mail or Reply-To.
+ * The internal domain is COMPANY_EMAIL_DOMAIN (browser: VITE_COMPANY_EMAIL_DOMAIN).
+ * Automated mail may go only to a parsed address on that domain. Manual mail is
+ * a signed-in user clicking Send. While ALLOW_EXTERNAL_MANUAL_EMAIL is not the
+ * string "true", a manual To that is not on that domain is replaced with
+ * ADMIN_REROUTE and is not delivered to the original recipient. Cc and Bcc
+ * outsiders are dropped. Reply-To is company-only in every mode.
  */
 
-export const COMPANY_DOMAIN = 'samyakinternational.in';
-export const ADMIN_REROUTE = 'admin@samyakinternational.in';
 export const EXTERNAL_MANUAL_EMAIL_ENV = 'ALLOW_EXTERNAL_MANUAL_EMAIL';
+
+function viteMailValue(name) {
+  try {
+    if (name === 'COMPANY_EMAIL_DOMAIN') return String(import.meta.env.VITE_COMPANY_EMAIL_DOMAIN || '').trim();
+    if (name === 'ADMIN_REROUTE') return String(import.meta.env.VITE_ADMIN_REROUTE || '').trim();
+  } catch {
+    return '';
+  }
+  return '';
+}
+
+function configuredValue(name, env) {
+  const fromEnv = env && env[name] != null ? String(env[name]).trim() : '';
+  if (fromEnv) return fromEnv;
+  return viteMailValue(name);
+}
+
+export function companyDomain(env = typeof process !== 'undefined' ? process.env : {}) {
+  const domain = configuredValue('COMPANY_EMAIL_DOMAIN', env).toLowerCase();
+  if (!domain || !domain.includes('.')) {
+    const error = new Error('COMPANY_EMAIL_DOMAIN is not configured.');
+    error.status = 500;
+    throw error;
+  }
+  return domain;
+}
+
+export function adminReroute(env = typeof process !== 'undefined' ? process.env : {}) {
+  const address = configuredValue('ADMIN_REROUTE', env);
+  const parsed = address ? parseMailbox(address) : null;
+  if (!parsed || parsed.domain !== companyDomain(env)) {
+    const error = new Error('ADMIN_REROUTE must be a mailbox on COMPANY_EMAIL_DOMAIN.');
+    error.status = 500;
+    throw error;
+  }
+  return parsed.address;
+}
 
 export function normalizeKind(kind) {
   return kind === 'manual' ? 'manual' : 'automated';
@@ -114,8 +147,8 @@ export function parseMailbox(token) {
   };
 }
 
-export function isCompanyAddress(parsed) {
-  return Boolean(parsed) && parsed.domain === COMPANY_DOMAIN;
+export function isCompanyAddress(parsed, env) {
+  return Boolean(parsed) && parsed.domain === companyDomain(env);
 }
 
 function dedupe(addresses) {
@@ -148,8 +181,9 @@ export function companyRecipients(input) {
  * The local part is not keyword-filtered: customer@samyakinternational.in
  * is an internal mailbox.
  */
-export function legacyFilterInternalRecipients(emailInput, defaultInternal = ADMIN_REROUTE) {
-  return companyField(emailInput, defaultInternal);
+export function legacyFilterInternalRecipients(emailInput, defaultInternal) {
+  const fallback = defaultInternal === undefined ? adminReroute() : defaultInternal;
+  return companyField(emailInput, fallback);
 }
 
 function companyField(input, emptyDefault) {
@@ -167,14 +201,14 @@ function passthrough(input) {
   return dedupe(kept).join(', ');
 }
 
-function companyReplyTo(replyTo) {
-  const parsed = splitAddressList(replyTo).map(parseMailbox).find(isCompanyAddress);
+function companyReplyTo(replyTo, env) {
+  const parsed = splitAddressList(replyTo).map(parseMailbox).find(item => isCompanyAddress(item, env));
   return parsed ? parsed.address : '';
 }
 
 export function resolveOutboundRecipients({ to, cc, bcc, replyTo, kind, env } = {}) {
   const normalizedKind = normalizeKind(kind);
-  const safeReplyTo = companyReplyTo(replyTo);
+  const safeReplyTo = companyReplyTo(replyTo, env);
   const allowExternal = normalizedKind === 'manual' && externalManualDeliveryEnabled(env);
 
   if (normalizedKind === 'automated') {
@@ -197,7 +231,7 @@ export function resolveOutboundRecipients({ to, cc, bcc, replyTo, kind, env } = 
   }
 
   if (!allowExternal) {
-    const toList = companyField(to, ADMIN_REROUTE);
+    const toList = companyField(to, adminReroute(env));
     const ccList = cc ? companyField(cc, '') : '';
     const bccList = bcc ? companyField(bcc, '') : '';
     return {

@@ -1,11 +1,13 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import SearchableSelect from './SearchableSelect';
+import { getFilmSubstrates } from '../services/filmSubstratesService';
 import { 
   FILM_DENSITIES, 
   DEFAULT_DAILY_RATES, 
   DEFAULT_PROCESSING_RATES,
   calculateJobRawMaterials,
   isLDFilm,
+  getFilmSlitWidth,
   isMetalloceneEligibleFilm,
   METALLOCENE_OPTIONS
 } from '../factoryStore';
@@ -45,8 +47,8 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
     if (fmt) return String(fmt).toLowerCase().includes('pouch') ? 'Pouching' : 'Reel';
     return 'Reel';
   }); // Reel or Pouching
-  const [inkGsm, setInkGsm] = useState(() => (initialJobMasterData?.inkGsm !== undefined && initialJobMasterData?.inkGsm !== null && initialJobMasterData?.inkGsm !== '') ? initialJobMasterData.inkGsm : 1.5);
-  const [adhesiveGsm, setAdhesiveGsm] = useState(() => (initialJobMasterData?.adhesiveGsm !== undefined && initialJobMasterData?.adhesiveGsm !== null && initialJobMasterData?.adhesiveGsm !== '') ? initialJobMasterData.adhesiveGsm : 1.5);
+  const [inkGsm, setInkGsm] = useState(() => (initialJobMasterData?.inkGsm !== undefined && initialJobMasterData?.inkGsm !== null && initialJobMasterData?.inkGsm !== '') ? initialJobMasterData.inkGsm : '');
+  const [adhesiveGsm, setAdhesiveGsm] = useState(() => (initialJobMasterData?.adhesiveGsm !== undefined && initialJobMasterData?.adhesiveGsm !== null && initialJobMasterData?.adhesiveGsm !== '') ? initialJobMasterData.adhesiveGsm : '');
   const [orderComments, setOrderComments] = useState('');
 
   // Order Variants State
@@ -161,10 +163,10 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
 
   // Dynamic Layers State with explicit film width (mm) support
   const [layers, setLayers] = useState(() => {
-    const pw = parseFloat(initialJobMasterData?.printWidthMm) || 1000;
+    const pw = parseFloat(initialJobMasterData?.printWidthMm);
     if (initialJobMasterData?.layers && initialJobMasterData.layers.length > 0) {
       return initialJobMasterData.layers.map(l => {
-        const defW = isLDFilm(l.filmType) ? pw + 5 : pw;
+        const defW = Number.isFinite(pw) ? getFilmSlitWidth(l.filmType, pw) : '';
         return {
           ...l,
           rate: l.rate ?? l.ratePerKg ?? '',
@@ -174,10 +176,9 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
         };
       });
     }
+    const firstSubstrate = (getFilmSubstrates() || [])[0];
     return [
-      { id: 1, filmType: 'PET', micron: 12, rate: '', widthMm: isLDFilm('PET') ? pw + 5 : pw },
-      { id: 2, filmType: 'METPET', micron: 12, rate: '', widthMm: isLDFilm('METPET') ? pw + 5 : pw },
-      { id: 3, filmType: 'Natural GP LD', micron: 35, rate: '', widthMm: isLDFilm('Natural GP LD') ? pw + 5 : pw }
+      { id: 1, filmType: firstSubstrate?.name || '', micron: '', rate: '', widthMm: '' },
     ];
   });
 
@@ -195,9 +196,9 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
         setAdhesiveGsm(initialJobMasterData.adhesiveGsm);
       }
       if (initialJobMasterData.layers && initialJobMasterData.layers.length > 0) {
-        const pw = parseFloat(initialJobMasterData.printWidthMm) || 1000;
+        const pw = parseFloat(initialJobMasterData.printWidthMm);
         setLayers(initialJobMasterData.layers.map(l => {
-          const defW = isLDFilm(l.filmType) ? pw + 5 : pw;
+          const defW = getFilmSlitWidth(l.filmType, pw);
           return {
             ...l,
             rate: l.rate ?? l.ratePerKg ?? '',
@@ -238,9 +239,9 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       if (matchedJM.clientName && !clientName) setClientName(matchedJM.clientName);
       if (matchedJM.colorsCount) setColorsCount(matchedJM.colorsCount);
       if (matchedJM.layers && matchedJM.layers.length > 0) {
-        const pw = parseFloat(matchedJM.printWidthMm || printWidthMm) || 1000;
+        const pw = parseFloat(matchedJM.printWidthMm || printWidthMm);
         setLayers(matchedJM.layers.map(l => {
-          const defW = isLDFilm(l.filmType) ? pw + 5 : pw;
+          const defW = getFilmSlitWidth(l.filmType, pw);
           return {
             ...l,
             rate: l.rate ?? l.ratePerKg ?? '',
@@ -256,12 +257,12 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
   // Track printWidthMm changes to auto-sync uncustomized film layer widths
   const prevPrintWidthRef = React.useRef(printWidthMm);
   React.useEffect(() => {
-    const oldPw = parseFloat(prevPrintWidthRef.current) || 1000;
-    const newPw = parseFloat(printWidthMm) || 1000;
+    const oldPw = parseFloat(prevPrintWidthRef.current);
+    const newPw = parseFloat(printWidthMm);
     if (oldPw !== newPw) {
       setLayers(prevLayers => prevLayers.map(l => {
-        const oldDefault = isLDFilm(l.filmType) ? oldPw + 5 : oldPw;
-        const newDefault = isLDFilm(l.filmType) ? newPw + 5 : newPw;
+        const oldDefault = getFilmSlitWidth(l.filmType, oldPw);
+        const newDefault = getFilmSlitWidth(l.filmType, newPw);
         if (l.widthMm === undefined || l.widthMm === '' || l.widthMm === null || parseFloat(l.widthMm) === oldDefault) {
           return { ...l, widthMm: newDefault };
         }
@@ -362,54 +363,54 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
 
   // Preset structures selector for convenience
   const applyPresetStructure = (presetName) => {
-    const pw = parseFloat(printWidthMm) || 1000;
+    const pw = parseFloat(printWidthMm);
     if (presetName === '3layer_pet_metpet_ld') {
       setLayers([
-        { id: 1, filmType: 'PET', micron: 12, rate: '', widthMm: isLDFilm('PET') ? pw + 5 : pw },
-        { id: 2, filmType: 'METPET', micron: 12, rate: '', widthMm: isLDFilm('METPET') ? pw + 5 : pw },
-        { id: 3, filmType: 'Natural GP LD', micron: 35, rate: '', widthMm: isLDFilm('Natural GP LD') ? pw + 5 : pw }
+        { id: 1, filmType: 'PET', micron: 12, rate: '', widthMm: getFilmSlitWidth('PET', pw) },
+        { id: 2, filmType: 'METPET', micron: 12, rate: '', widthMm: getFilmSlitWidth('METPET', pw) },
+        { id: 3, filmType: 'Natural GP LD', micron: 35, rate: '', widthMm: getFilmSlitWidth('Natural GP LD', pw) }
       ]);
     } else if (presetName === '2layer_pet_ld') {
       setLayers([
-        { id: 1, filmType: 'PET', micron: 12, rate: '', widthMm: isLDFilm('PET') ? pw + 5 : pw },
-        { id: 2, filmType: 'Natural GP LD', micron: 50, rate: '', widthMm: isLDFilm('Natural GP LD') ? pw + 5 : pw }
+        { id: 1, filmType: 'PET', micron: 12, rate: '', widthMm: getFilmSlitWidth('PET', pw) },
+        { id: 2, filmType: 'Natural GP LD', micron: 50, rate: '', widthMm: getFilmSlitWidth('Natural GP LD', pw) }
       ]);
     } else if (presetName === '3layer_bopp_metbopp_ld') {
       setLayers([
-        { id: 1, filmType: 'BOPP Natural', micron: 15, rate: '', widthMm: isLDFilm('BOPP Natural') ? pw + 5 : pw },
-        { id: 2, filmType: 'Metalised BOPP', micron: 12, rate: '', widthMm: isLDFilm('Metalised BOPP') ? pw + 5 : pw },
-        { id: 3, filmType: 'White LD', micron: 40, rate: '', widthMm: isLDFilm('White LD') ? pw + 5 : pw }
+        { id: 1, filmType: 'BOPP Natural', micron: 15, rate: '', widthMm: getFilmSlitWidth('BOPP Natural', pw) },
+        { id: 2, filmType: 'Metalised BOPP', micron: 12, rate: '', widthMm: getFilmSlitWidth('Metalised BOPP', pw) },
+        { id: 3, filmType: 'White LD', micron: 40, rate: '', widthMm: getFilmSlitWidth('White LD', pw) }
       ]);
     } else if (presetName === '2layer_pearlised_ld') {
       setLayers([
-        { id: 1, filmType: 'Pearlised BOPP', micron: 20, rate: '', widthMm: isLDFilm('Pearlised BOPP') ? pw + 5 : pw },
-        { id: 2, filmType: 'Natural LD GP Film', micron: 30, rate: '', widthMm: isLDFilm('Natural LD GP Film') ? pw + 5 : pw }
+        { id: 1, filmType: 'Pearlised BOPP', micron: 20, rate: '', widthMm: getFilmSlitWidth('Pearlised BOPP', pw) },
+        { id: 2, filmType: 'Natural LD GP Film', micron: 30, rate: '', widthMm: getFilmSlitWidth('Natural LD GP Film', pw) }
       ]);
     } else if (presetName === '3layer_metallocene') {
       setLayers([
-        { id: 1, filmType: 'PET', micron: 12, rate: '', widthMm: isLDFilm('PET') ? pw + 5 : pw },
-        { id: 2, filmType: 'METPET', micron: 12, rate: '', widthMm: isLDFilm('METPET') ? pw + 5 : pw },
-        { id: 3, filmType: 'Natural LD Metallocene Film', micron: 40, rate: '', widthMm: isLDFilm('Natural LD Metallocene Film') ? pw + 5 : pw }
+        { id: 1, filmType: 'PET', micron: 12, rate: '', widthMm: getFilmSlitWidth('PET', pw) },
+        { id: 2, filmType: 'METPET', micron: 12, rate: '', widthMm: getFilmSlitWidth('METPET', pw) },
+        { id: 3, filmType: 'Natural LD Metallocene Film', micron: 40, rate: '', widthMm: getFilmSlitWidth('Natural LD Metallocene Film', pw) }
       ]);
     } else if (presetName === '3layer_atta_high_dart') {
       setLayers([
-        { id: 1, filmType: 'PET', micron: 12, rate: '', widthMm: isLDFilm('PET') ? pw + 5 : pw },
-        { id: 2, filmType: 'METPET', micron: 12, rate: '', widthMm: isLDFilm('METPET') ? pw + 5 : pw },
-        { id: 3, filmType: 'Milky Atta (High Dart) Film', micron: 60, rate: '', widthMm: isLDFilm('Milky Atta (High Dart) Film') ? pw + 5 : pw }
+        { id: 1, filmType: 'PET', micron: 12, rate: '', widthMm: getFilmSlitWidth('PET', pw) },
+        { id: 2, filmType: 'METPET', micron: 12, rate: '', widthMm: getFilmSlitWidth('METPET', pw) },
+        { id: 3, filmType: 'Milky Atta (High Dart) Film', micron: 60, rate: '', widthMm: getFilmSlitWidth('Milky Atta (High Dart) Film', pw) }
       ]);
     }
   };
 
   // Add/Remove Layers
   const addLayer = () => {
-    const pw = parseFloat(printWidthMm) || 1000;
+    const pw = parseFloat(printWidthMm);
     const filmType = 'Natural GP LD';
     setLayers(prev => [...prev, { 
       id: Date.now(), 
       filmType, 
       micron: 35, 
       rate: '', 
-      widthMm: isLDFilm(filmType) ? pw + 5 : pw 
+      widthMm: getFilmSlitWidth(filmType, pw) 
     }]);
   };
 
@@ -438,7 +439,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
 
     const calc = calculateJobRawMaterials({
       jobName,
-      printWidthMm: parseFloat(printWidthMm) || 1000,
+      printWidthMm: parseFloat(printWidthMm),
       repeatLengthMm: parseFloat(repeatLengthMm) || 400,
       orderQtyKg: parseFloat(orderQtyKg) || 0,
       orderType,
@@ -457,7 +458,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       jobName,
       clientName,
       clientDetails: matchedClient,
-      printWidthMm: parseFloat(printWidthMm) || 1000,
+      printWidthMm: parseFloat(printWidthMm),
       repeatLengthMm: parseFloat(repeatLengthMm) || 400,
       hasVariants: hasVariants && finalVariants.length > 0,
       variants: finalVariants
@@ -503,9 +504,9 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
   };
 
   const handleFinalConfirmAndPunch = async () => {
-    const pw = parseFloat(printWidthMm) || 1000;
+    const pw = parseFloat(printWidthMm);
     const finalLayers = layers.map(l => {
-      const defW = isLDFilm(l.filmType) ? pw + 5 : pw;
+      const defW = getFilmSlitWidth(l.filmType, pw);
       const wVal = (l.widthMm !== undefined && l.widthMm !== '' && !isNaN(parseFloat(l.widthMm)))
         ? parseFloat(l.widthMm)
         : defW;
@@ -558,7 +559,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
         orderComments, 
         comments: orderComments 
       },
-      wastagePct: parseFloat(calculationResults.wastagePct) || 5,
+      wastagePct: Number.isFinite(parseFloat(calculationResults.wastagePct)) ? parseFloat(calculationResults.wastagePct) : null,
       wastageKg: parseFloat(calculationResults.wastageKg) || 0,
       conversionChargesPerKg: parseFloat(conversionCharges) || 0,
       fixedProfitPerKg: parseFloat(fixedProfit) || 0,
@@ -1091,8 +1092,8 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {layers.map((layer, index) => {
               const density = FILM_DENSITIES[layer.filmType] || 1.0;
-              const pWidth = parseFloat(printWidthMm) || 1000;
-              const defaultWidth = isLDFilm(layer.filmType) ? pWidth + 5 : pWidth;
+              const pWidth = parseFloat(printWidthMm);
+              const defaultWidth = getFilmSlitWidth(layer.filmType, pWidth);
               const layerWidth = (layer.widthMm !== undefined && layer.widthMm !== '' && !isNaN(parseFloat(layer.widthMm)))
                 ? parseFloat(layer.widthMm)
                 : defaultWidth;
@@ -1117,7 +1118,7 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
                       value={layer.filmType}
                       onChange={e => {
                         const newType = e.target.value;
-                        const newDefWidth = isLDFilm(newType) ? pWidth + 5 : pWidth;
+                        const newDefWidth = getFilmSlitWidth(newType, pWidth);
                         const oldDefWidth = defaultWidth;
                         const currentW = layer.widthMm;
                         const shouldResetWidth = (currentW === undefined || currentW === '' || currentW === null || parseFloat(currentW) === oldDefWidth);

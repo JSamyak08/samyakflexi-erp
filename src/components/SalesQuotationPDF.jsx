@@ -3,7 +3,7 @@ import { Printer, ArrowLeft } from 'lucide-react';
 import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import { getAuthorisedSignature, getCompanyLogo } from '../services/settingsService';
-import { calculateGSTBreakdown } from '../utils/pdfHelpers';
+import { calculateGSTBreakdown, configuredGstRate } from '../utils/pdfHelpers';
 
 export default function SalesQuotationPDF({ quotationData, onClose }) {
   const letterhead = loadLetterhead();
@@ -36,7 +36,7 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
   } = quotationData;
 
   const totalTaxable = items.reduce((acc, it) => acc + (parseFloat(it.taxableAmount) || (it.quantity * it.ratePerUom)), 0);
-  const gstBreakdown = calculateGSTBreakdown(clientGstin, clientAddress, totalTaxable, 18, COMPANY_DETAILS.gstin);
+  const gstBreakdown = calculateGSTBreakdown(clientGstin, clientAddress, totalTaxable, configuredGstRate(), COMPANY_DETAILS.gstin);
   const totalGrand = gstBreakdown.grandTotal;
 
   return (
@@ -199,7 +199,7 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
                     <b>₹ {(gstBreakdown?.cgstAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', color: '#334155' }}>
-                    <span>SGST ({gstBreakdown?.sgstRatePct || 0}% State Tax - MP):</span>
+                    <span>SGST ({gstBreakdown?.sgstRatePct || 0}% State Tax):</span>
                     <b>₹ {(gstBreakdown?.sgstAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
                   </div>
                 </>

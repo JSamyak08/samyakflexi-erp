@@ -33,7 +33,7 @@ import CertificateOfAnalysisPDF, { DEFAULT_COA_PARAMETERS } from './CertificateO
 import DispatchPackingListPDF from './DispatchPackingListPDF';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import { generateDocRefNumber, getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
-import { formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
+import { formatINR, calculateGSTBreakdown, configuredGstRate } from '../utils/pdfHelpers';
 import { getCompanyProfile } from '../services/companyProfile';
 import { supabase } from '../services/supabaseClient';
 import { fetchMaterialTemplates, saveMaterialTemplate, deleteMaterialTemplate, describeSaveError } from '../services/businessRecords';
@@ -622,7 +622,7 @@ export default function DispatchManagement({
     setDcJobName(dc.jobName || '');
     setDcChallanNature(dc.challanNature || dc.movementType || 'Sale of Goods');
     setDcFreightCharges(dc.freightCharges || 0);
-    setDcGstRatePct(dc.gstRatePct || 18);
+    setDcGstRatePct(dc.gstRatePct ?? '');
     setDcTaxType(dc.taxType || 'auto');
     setDcDispatchedBy(dc.dispatchedBy || '');
     setDcRemarks(dc.remarks || '');
@@ -754,7 +754,7 @@ export default function DispatchManagement({
       challanNature: dcChallanNature,
       freightCharges: freightAmount,
       items: dcItems,
-      gstRatePct: parseFloat(dcGstRatePct) || 18,
+      gstRatePct: configuredGstRate(dcGstRatePct),
       taxType: dcTaxType,
       subtotalAmount: subtotalItems,
       taxableSubtotal: totalTaxable,

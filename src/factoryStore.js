@@ -1,14 +1,23 @@
 // FactoryOS Data Store & Flexible Packaging Calculation Engine
 // Samyak International Ltd, Indore
 
-import { SEED_COMPANY_PROFILE, withCompanyTagline } from './services/companyProfile';
+import { SEED_COMPANY_PROFILE, withCompanyTagline } from './services/companyProfile.js';
+import {
+  filmRatePerKg,
+  getCostingSettings,
+  getMaterialCostSettings,
+  liquidInkKg,
+  requireNumber,
+  resolveShiftHours,
+  wastagePercentForQuantity,
+} from './services/operationalConfig.js';
 
 export const COMPANY_DETAILS = withCompanyTagline({ ...SEED_COMPANY_PROFILE });
 
 
 
-import { getFilmSubstrates } from './services/filmSubstratesService';
-import { attendanceCalendarDate } from './services/employeeAttendance';
+import { getFilmSubstrates } from './services/filmSubstratesService.js';
+import { attendanceCalendarDate } from './services/employeeAttendance.js';
 
 export const getFilmSubstrateMap = () => {
   const substrates = getFilmSubstrates();
@@ -16,7 +25,8 @@ export const getFilmSubstrateMap = () => {
   if (Array.isArray(substrates)) {
     substrates.forEach(s => {
       if (s && s.name) {
-        map[s.name] = parseFloat(s.density) || 1.40;
+        const density = parseFloat(s.density);
+        if (Number.isFinite(density)) map[s.name] = density;
       }
     });
   }
@@ -73,12 +83,12 @@ export const getFilmTypeCode = (filmType = "") => {
 };
 
 export const getFilmSubstrateDensity = (filmTypeStr) => {
-  if (!filmTypeStr) return 1.40;
+  if (!filmTypeStr) return null;
   const rawKey = String(filmTypeStr).trim();
   const currentMap = getFilmSubstrateMap();
-  
+
   if (currentMap[rawKey] !== undefined) return currentMap[rawKey];
-  
+
   const cleanKey = rawKey.toLowerCase();
   const matchingKey = Object.keys(currentMap).find(k => k.toLowerCase() === cleanKey);
   if (matchingKey) return currentMap[matchingKey];
@@ -86,15 +96,15 @@ export const getFilmSubstrateDensity = (filmTypeStr) => {
   if (cleanKey.includes('pearl')) return 0.70;
   if (cleanKey.includes('alu') || cleanKey.includes('foil')) return 2.70;
   if (cleanKey.includes('pvc')) return 1.38;
-  if (cleanKey.includes('pet')) return 1.40;
+  if (cleanKey.includes('polyester') || cleanKey.includes('pet')) return 1.40;
   if (cleanKey.includes('bopp')) return 0.91;
   if (cleanKey.includes('cpp')) return 0.91;
   if (cleanKey.includes('metallocene') || cleanKey.includes('nmet') || cleanKey.includes('mmet')) return 0.935;
   if (cleanKey.includes('atta') || cleanKey.includes('matta') || cleanKey.includes('lldpe')) return 0.94;
-  if (cleanKey.includes('ld') || cleanKey.includes('pe') || cleanKey.includes('mgp') || cleanKey.includes('ngp')) return 0.93;
+  if (cleanKey.includes('ldpe') || cleanKey.includes(' ld') || cleanKey.startsWith('ld') || cleanKey.includes('mgp') || cleanKey.includes('ngp')) return 0.93;
   if (cleanKey.includes('paper')) return 0.80;
 
-  return 1.40;
+  return null;
 };
 
 // Proxy to make FILM_DENSITIES dynamically reflect system settings without breaking Object.keys() or property lookups
@@ -181,8 +191,10 @@ export const isLDFilm = (filmType = "") => {
  * Calculates Slit Width (mm) for a layer: LD Films receive +5mm extra width over Print Width
  */
 export const getFilmSlitWidth = (filmType, printWidthMm) => {
-  const width = parseFloat(printWidthMm) || 1000;
-  return isLDFilm(filmType) ? width + 5 : width;
+  const width = Number(printWidthMm);
+  if (!Number.isFinite(width) || width <= 0) return null;
+  const extra = requireNumber(getCostingSettings().ldExtraSlitMm, 'ldExtraSlitMm');
+  return isLDFilm(filmType) ? width + extra : width;
 };
 
 export const DEFAULT_PROCESSING_RATES = {
@@ -198,14 +210,7 @@ export const DEFAULT_PROCESSING_RATES = {
  * Calculates wastage percentage based on order quantity and process type
  */
 export const getWastagePercentage = (orderQtyKg, isPouching = false) => {
-  const qty = parseFloat(orderQtyKg) || 0;
-  if (qty >= 2000) return isPouching ? 5.0 : 4.5;
-  if (qty >= 1000) return isPouching ? 6.0 : 5.0;
-  if (qty <= 500) {
-    return isPouching ? 8.0 : 7.0;
-  }
-  // Interpolation for 501 to 999 kg
-  return isPouching ? 7.5 : 6.0;
+  return wastagePercentForQuantity(orderQtyKg, isPouching);
 };
 
 /**
@@ -213,27 +218,28 @@ export const getWastagePercentage = (orderQtyKg, isPouching = false) => {
  */
 export const calculateJobRawMaterials = ({
   jobName = "",
-  printWidthMm = 1000,
-  repeatLengthMm = 400,
-  orderQtyKg = 1000,
+  printWidthMm,
+  repeatLengthMm,
+  orderQtyKg,
   orderType = "Reel", // "Reel" or "Pouching"
-  inkGsm = 1.5,
-  adhesiveGsm = 1.5,
+  inkGsm,
+  adhesiveGsm,
   layers = [],
   filmPrices = {},
-  inkPrice = 1500,
-  adhesivePrice = 270,
-  conversionChargesPerKg = 0,
-  fixedProfitPerKg = 0
+  inkPrice,
+  adhesivePrice,
+  conversionChargesPerKg,
+  fixedProfitPerKg
 }) => {
+  const materialSettings = getMaterialCostSettings();
   const isPouching = orderType === "Pouching" || String(orderType).toLowerCase().includes('pouch');
   const wastagePct = getWastagePercentage(orderQtyKg, isPouching);
 
   // 1. Calculate effective GSM for each film layer based on custom layer width
   const calculatedLayers = layers.map((layer) => {
-    const density = FILM_DENSITIES[layer.filmType] || layer.density || 1.0;
-    const micron = parseFloat(layer.micron) || 0;
-    const printWidth = parseFloat(printWidthMm) || 1000;
+    const density = FILM_DENSITIES[layer.filmType] || layer.density || null;
+    const micron = parseFloat(layer.micron);
+    const printWidth = parseFloat(printWidthMm);
     const layerIsLD = isLDFilm(layer.filmType);
     const layerWidthMm = (layer.widthMm !== undefined && layer.widthMm !== '' && !isNaN(parseFloat(layer.widthMm)))
       ? parseFloat(layer.widthMm)
@@ -252,7 +258,11 @@ export const calculateJobRawMaterials = ({
         ? parseFloat(layer.ratePerKg)
         : ((layer.pricePerKg !== undefined && layer.pricePerKg !== '' && layer.pricePerKg !== null && !isNaN(parseFloat(layer.pricePerKg)))
           ? parseFloat(layer.pricePerKg)
-          : (parseFloat(filmPrices[layer.filmType]) || DEFAULT_DAILY_RATES[layer.filmType] || 130)));
+          : filmRatePerKg({
+            filmType: layer.filmType,
+            purchaseRatePerKg: filmPrices[layer.filmType],
+            settings: materialSettings,
+          })));
 
     return {
       ...layer,
@@ -300,21 +310,34 @@ export const calculateJobRawMaterials = ({
   // 4. Calculate Ink & Adhesive Quantities & Costs
   // Liquid Ink assumes 20% weight gain (solvents included in 1500/kg cost)
   const dryInkNetKg = (totalAreaSqm * (parseFloat(inkGsm) || 0)) / 1000;
-  const liquidInkGrossKg = dryInkNetKg * 1.20 * (1 + wastagePct / 100); 
-  const totalInkCost = Math.round(liquidInkGrossKg * (parseFloat(inkPrice) || 1500));
+  const solidsPct = Number.isFinite(Number(materialSettings.inkWeightGainPct))
+    ? Number(materialSettings.inkWeightGainPct)
+    : requireNumber(undefined, 'inkWeightGainPct');
+  const liquidInkGrossKg = liquidInkKg(dryInkNetKg, solidsPct) * (1 + wastagePct / 100);
+  const inkRate = inkPrice === undefined || inkPrice === ''
+    ? requireNumber(materialSettings.liquidInkPrice, 'liquidInkPrice')
+    : requireNumber(inkPrice, 'inkPrice');
+  const totalInkCost = Math.round(liquidInkGrossKg * inkRate);
 
   // Solventless Adhesive assumes 100% weight gain (no volatile solvents lost)
   const adhesiveNetKg = (totalAreaSqm * (parseFloat(adhesiveGsm) || 0)) / 1000;
   const adhesiveGrossKg = adhesiveNetKg * (1 + wastagePct / 100);
-  const totalAdhesiveCost = Math.round(adhesiveGrossKg * (parseFloat(adhesivePrice) || 270));
+  const adhesiveRate = adhesivePrice === undefined || adhesivePrice === ''
+    ? requireNumber(materialSettings.adhesiveCostPerKg, 'adhesiveCostPerKg')
+    : requireNumber(adhesivePrice, 'adhesivePrice');
+  const totalAdhesiveCost = Math.round(adhesiveGrossKg * adhesiveRate);
 
   const totalRawMaterialCost = Math.round(totalFilmCost + totalInkCost + totalAdhesiveCost);
   const costPerKg = orderQtyKg > 0 ? parseFloat((totalRawMaterialCost / orderQtyKg).toFixed(2)) : 0;
   const wastageKg = Math.round(totalFilmGrossKg - totalFilmNetKg);
 
   // 5. Derive Minimum Selling Price/kg: Raw Material Cost + Conversion Charges + Fixed Profit
-  const convPerKg = parseFloat(conversionChargesPerKg) || 0;
-  const profitPerKg = parseFloat(fixedProfitPerKg) || 0;
+  const convPerKg = conversionChargesPerKg === undefined || conversionChargesPerKg === ''
+    ? requireNumber(materialSettings.conversionChargesPerKg, 'conversionChargesPerKg')
+    : requireNumber(conversionChargesPerKg, 'conversionChargesPerKg');
+  const profitPerKg = fixedProfitPerKg === undefined || fixedProfitPerKg === ''
+    ? requireNumber(materialSettings.fixedProfitPerKg, 'fixedProfitPerKg')
+    : requireNumber(fixedProfitPerKg, 'fixedProfitPerKg');
   const rawMaterialCostPerKg = costPerKg;
   const minSellingPricePerKg = parseFloat((rawMaterialCostPerKg + convPerKg + profitPerKg).toFixed(2));
   const totalConversionCost = Math.round(convPerKg * orderQtyKg);
@@ -457,7 +480,7 @@ export const getOrderMaterialRequirements = (order, jobMasters = []) => {
         micron: layer.micron,
         widthMm: layer.widthMm || parseFloat(order?.printWidthMm || jm?.printWidthMm) || 1000,
         qtyKg: layer.grossKg || 0,
-        preferredVendor: (layer.filmType || '').toLowerCase().includes('ld') ? 'Malwa Extrusions Pvt Ltd' : 'FlexiPoly Films Ltd',
+        preferredVendor: layer.preferredVendorId || '',
         poIssued: false,
         poNumber: ""
       });
@@ -470,7 +493,7 @@ export const getOrderMaterialRequirements = (order, jobMasters = []) => {
         micron: '-',
         widthMm: '-',
         qtyKg: calc.inkDetails.grossKg,
-        preferredVendor: 'Siegwerk Inks Ltd',
+        preferredVendor: getMaterialCostSettings().preferredInkVendorId || '',
         poIssued: false,
         poNumber: ""
       });
@@ -483,7 +506,7 @@ export const getOrderMaterialRequirements = (order, jobMasters = []) => {
         micron: '-',
         widthMm: '-',
         qtyKg: calc.adhesiveDetails.grossKg,
-        preferredVendor: 'Siegwerk Inks Ltd',
+        preferredVendor: getMaterialCostSettings().preferredAdhesiveVendorId || '',
         poIssued: false,
         poNumber: ""
       });
@@ -1533,7 +1556,10 @@ export function calculateEmployeeMonthlySalary(emp, monthKey, attendanceList = [
   const hra = Number(struct.hra) || 0;
   const other = Number(struct.otherAllowance) || 0;
   const fixedGross = basic + hra + other;
-  const shiftHours = Number(emp.shiftDurationHours) || 12;
+  const shiftHours = resolveShiftHours({
+    shiftHours: emp.shiftDurationHours,
+    shift: emp.defaultShift || emp.shift,
+  });
 
   // Filter attendance for this employee and month (e.g. '2026-08')
   const empAtt = attendanceList.filter(a => 

@@ -3,7 +3,7 @@ import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
 import { isLDFilm, getFilmSlitWidth } from '../factoryStore';
 import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
-import { numberToWords, formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
+import { numberToWords, formatINR, calculateGSTBreakdown, configuredGstRate } from '../utils/pdfHelpers';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 
 export default function OrderConfirmationPDF({ calculationData, onClose, clientDetails, clients }) {
@@ -122,7 +122,7 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
   const totalTaxable = summary.totalRawMaterialCost || summary.totalTaxable || 0;
   
   // Calculate Indian GST applicability (Intra-State 23 MP: CGST 9% + SGST 9% vs Inter-State: IGST 18%)
-  const gstInfo = calculateGSTBreakdown(clientInfo.gstin, clientInfo.address, totalTaxable, 18, COMPANY_DETAILS.gstin);
+  const gstInfo = calculateGSTBreakdown(clientInfo.gstin, clientInfo.address, totalTaxable, configuredGstRate(), COMPANY_DETAILS.gstin);
   const cgstAmt = gstInfo.cgstAmount;
   const sgstAmt = gstInfo.sgstAmount;
   const igstAmt = gstInfo.igstAmount;

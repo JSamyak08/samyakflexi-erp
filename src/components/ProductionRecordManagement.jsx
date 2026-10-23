@@ -37,13 +37,14 @@ import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import CylinderJobCardForm from '../CylinderJobCardForm';
 import SFGFGEntryModal from './SFGFGEntryModal';
-import { DEFAULT_DAILY_RATES, generateBarcodeId, calculateJobRawMaterials, calculatePreVsPostCosting } from '../factoryStore';
+import { generateBarcodeId, calculateJobRawMaterials, calculatePreVsPostCosting } from '../factoryStore';
+import { filmRatePerKg, getMaterialCostSettings, keptNumber, netPrintedSubstrateKg, optionalPercent, plainKg, sumPlainWastageKg } from '../services/operationalConfig.js';
 import { notifyProductionRecordSubmitted, notifyProductionRecordApproved, notifyOverWastageAlert } from '../services/emailService';
 import { pushSlugState } from '../utils/slugRouter';
 import TablePagination, { usePagination } from './TablePagination';
 import { supabase } from '../services/supabaseClient';
 import { fetchScrapDisposals, saveScrapDisposal, describeSaveError } from '../services/businessRecords';
-import { getMaterialCostSettings, fetchMaterialCostSettingsFromSupabase, DEFAULT_MATERIAL_COST_SETTINGS } from '../services/settingsService';
+import { fetchMaterialCostSettingsFromSupabase, DEFAULT_MATERIAL_COST_SETTINGS } from '../services/settingsService';
 import { roundToTwo, formatUpToTwoDecimals, formatCurrency, formatQty } from '../utils/numberHelpers';
 
 /**
@@ -122,8 +123,8 @@ function RollWiseInputOutputMasterRolls({
     if (!isRealSfgOrFg) return;
 
     const netKg = parseFloat(r.netWeightKg || r.total_net_kg || r.totalNetKg || r.availableWeightKg || r.available_weight_kg || 0) || 0;
-    const grossKg = parseFloat(r.grossWeightKg || r.total_gross_kg || r.totalGrossKg || (netKg > 0 ? netKg + 0.8 : 0)) || 0;
-    const tareKg = parseFloat(r.tareWeightKg || r.tare_weight_kg || 0.8) || 0.8;
+    const tareKg = parseFloat(r.tareWeightKg || r.tare_weight_kg || 0) || 0;
+    const grossKg = parseFloat(r.grossWeightKg || r.total_gross_kg || r.totalGrossKg || (netKg + tareKg)) || 0;
     const lengthM = parseFloat(r.lengthMeters || r.total_meters || r.totalMeters || r.meters || 0) || 0;
 
     // Discard entries with 0 weight (not weighed or uninitialized placeholder)
@@ -131,9 +132,9 @@ function RollWiseInputOutputMasterRolls({
 
     if (!rollMap.has(barcode)) {
       const isFg = rType.includes('finish') || rType === 'fg' || barcode.startsWith('FG-');
-      const film = r.filmType || r.film_type || effectiveOrder?.printFilmType || 'Film';
-      const micron = r.micron || effectiveOrder?.micron || 12;
-      const widthMm = r.widthMm || r.width_mm || effectiveOrder?.widthMm || effectiveOrder?.printWidthMm || 460;
+      const film = r.filmType || r.film_type || effectiveOrder?.printFilmType || '';
+      const micron = r.micron || effectiveOrder?.micron || '';
+      const widthMm = r.widthMm || r.width_mm || effectiveOrder?.widthMm || effectiveOrder?.printWidthMm || '';
       const qc = r.qcStatus || r.qc_status || 'Approved';
       const loc = r.locationBay || r.storageBay || r.storage_bay || (isFg ? 'FG Warehouse' : 'SFG Store');
 
@@ -215,9 +216,10 @@ function RollWiseInputOutputMasterRolls({
   }).map((r, i) => ({
     id: r.id || `in-roll-${i + 1}`,
     barcodeId: String(r.barcodeId || r.barcode).trim(),
-    filmType: r.filmType || effectiveOrder?.printFilmType || 'Film',
-    micron: r.micron || effectiveOrder?.micron || 12,
-    widthMm: r.widthMm || effectiveOrder?.widthMm || effectiveOrder?.printWidthMm || 460,
+    filmType: r.filmType || effectiveOrder?.printFilmType || '',
+    micron: r.micron || effectiveOrder?.micron || '',
+    widthMm: r.widthMm || effectiveOrder?.widthMm || effectiveOrder?.printWidthMm || '',
+    plainSubstrateWastageKg: r.plainSubstrateWastageKg ?? '',
     initialWeightKg: parseFloat(r.initialWeightKg || r.initialWeight || r.consumedWeightKg || 0) || 0,
     consumedWeightKg: parseFloat(r.consumedWeightKg || r.consumedWeight || r.initialWeightKg || 0) || 0,
     source: 'Active Print Run'
@@ -231,8 +233,8 @@ function RollWiseInputOutputMasterRolls({
         id: `sfg-cons-${log.id || log.sfgBatchCode}`,
         barcodeId: log.sfgBatchCode,
         filmType: 'SFG Base Film',
-        micron: effectiveOrder?.micron || 12,
-        widthMm: effectiveOrder?.widthMm || 800,
+        micron: effectiveOrder?.micron || '',
+        widthMm: effectiveOrder?.widthMm || '',
         initialWeightKg: (parseFloat(log.consumedKg) || 0) + (parseFloat(log.remainingBalanceKg) || 0),
         consumedWeightKg: parseFloat(log.consumedKg) || 0,
         source: `SFG Store (${log.targetProcess || 'Consumption'})`
@@ -243,8 +245,8 @@ function RollWiseInputOutputMasterRolls({
         id: `sub2-cons-${log.id || log.substrate2.barcode}`,
         barcodeId: log.substrate2.barcode,
         filmType: log.substrate2.filmType || 'Substrate 2',
-        micron: log.substrate2.micron || 12,
-        widthMm: log.substrate2.widthMm || 800,
+        micron: log.substrate2.micron || '',
+        widthMm: log.substrate2.widthMm || '',
         initialWeightKg: parseFloat(log.substrate2.initialKg || log.substrate2.consumedKg) || 0,
         consumedWeightKg: parseFloat(log.substrate2.consumedKg) || 0,
         source: `SFG Store (${log.targetProcess || 'Lamination Pass 1'})`
@@ -255,8 +257,8 @@ function RollWiseInputOutputMasterRolls({
         id: `sub3-cons-${log.id || log.substrate3.barcode}`,
         barcodeId: log.substrate3.barcode,
         filmType: log.substrate3.filmType || 'Substrate 3',
-        micron: log.substrate3.micron || 12,
-        widthMm: log.substrate3.widthMm || 800,
+        micron: log.substrate3.micron || '',
+        widthMm: log.substrate3.widthMm || '',
         initialWeightKg: parseFloat(log.substrate3.initialKg || log.substrate3.consumedKg) || 0,
         consumedWeightKg: parseFloat(log.substrate3.consumedKg) || 0,
         source: `SFG Store (${log.targetProcess || 'Lamination Pass 2'})`
@@ -875,8 +877,8 @@ export default function ProductionRecordManagement({
     const linkedJm = (jobMasters || []).find(j => 
       j.id === ord.jobMasterId || (j.jobName || '').toLowerCase().trim() === (ord.jobName || '').toLowerCase().trim()
     );
-    const defaultTargetInk = linkedJm?.inkGsm || ord?.inkGsm || 1.5;
-    const defaultTargetAdhesive = linkedJm?.adhesiveGsm || ord?.adhesiveGsm || 1.5;
+    const defaultTargetInk = linkedJm?.inkGsm ?? ord?.inkGsm ?? '';
+    const defaultTargetAdhesive = linkedJm?.adhesiveGsm ?? ord?.adhesiveGsm ?? '';
 
     // 1. Check if an existing production record already exists for this order/job
     const cleanOrdId = String(ord.id || '').replace(/^PR-/, '').replace(/^REC-/, '').trim().toLowerCase();
@@ -901,23 +903,26 @@ export default function ProductionRecordManagement({
       const pressInputRolls = existingRec.inputRollsList || ord.inputRollsList || [];
       const prefilledPressMaterials = pressInputRolls.map((r, idx) => {
         const consumed = parseFloat(r.consumedWeightKg) || parseFloat(r.initialWeightKg) || 0;
-        const defaultRate = DEFAULT_DAILY_RATES[r.filmType] || 140;
+        const wastageKg = plainKg(r.plainSubstrateWastageKg);
+        const netQty = Math.max(0, consumed - (Number.isFinite(wastageKg) ? wastageKg : 0));
+        const defaultRate = filmRatePerKg({ filmType: r.filmType, purchaseRatePerKg: r.purchaseRatePerKg || r.ratePerKg });
         return {
           id: `mat-press-${Date.now()}-${idx + 1}`,
           itemId: `RM-${(r.filmType || 'FILM').substring(0, 3).toUpperCase()}-${idx + 1}`,
           itemCode: `RM-${(r.filmType || 'FILM').substring(0, 3).toUpperCase()}-${idx + 1}`,
-          itemName: `${r.filmType || 'Substrate Film'} ${r.micron || 12}µ (${r.widthMm || 800}mm)`,
-          filmType: r.filmType || 'PET Film',
-          micron: String(r.micron || '12'),
-          widthMm: String(r.widthMm || '800'),
+          itemName: `${r.filmType || 'Substrate Film'} ${r.micron || '—'}µ (${r.widthMm || '—'}mm)`,
+          filmType: r.filmType || '',
+          micron: r.micron ?? '',
+          widthMm: r.widthMm ?? '',
           unit: 'Kg',
           barcode: r.barcodeId || '',
           issueQtyKg: consumed,
           returnQtyKg: 0,
-          netConsumedQtyKg: consumed,
+          netConsumedQtyKg: netQty,
+          wastageKg: Number.isFinite(wastageKg) ? wastageKg : '',
           unitPricePerKg: defaultRate,
           totalMaterialCost: consumed * defaultRate,
-          wastagePct: 0
+          wastagePct: consumed > 0 && Number.isFinite(wastageKg) ? (wastageKg / consumed) * 100 : ''
         };
       });
 
@@ -1000,10 +1005,10 @@ export default function ProductionRecordManagement({
               barcode: s2.barcode || updatedMatList[foundIdx].barcode,
               issueQtyKg: s2.initialKg || updatedMatList[foundIdx].issueQtyKg || s2.consumedKg,
               netConsumedQtyKg: s2.consumedKg || updatedMatList[foundIdx].netConsumedQtyKg,
-              totalMaterialCost: (s2.consumedKg || updatedMatList[foundIdx].netConsumedQtyKg) * (updatedMatList[foundIdx].unitPricePerKg || 140)
+              totalMaterialCost: (s2.consumedKg || updatedMatList[foundIdx].netConsumedQtyKg) * (updatedMatList[foundIdx].unitPricePerKg ?? null)
             };
           } else {
-            const defaultRate = DEFAULT_DAILY_RATES[s2.filmType] || 150;
+            const defaultRate = filmRatePerKg({ filmType: s2.filmType, purchaseRatePerKg: s2.purchaseRatePerKg });
             updatedMatList.push({
               id: `mat-sub2-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
               itemId: `RM-SUB2-${s2.barcode || Date.now()}`,
@@ -1032,10 +1037,10 @@ export default function ProductionRecordManagement({
               barcode: s3.barcode || updatedMatList[foundIdx].barcode,
               issueQtyKg: s3.initialKg || updatedMatList[foundIdx].issueQtyKg || s3.consumedKg,
               netConsumedQtyKg: s3.consumedKg || updatedMatList[foundIdx].netConsumedQtyKg,
-              totalMaterialCost: (s3.consumedKg || updatedMatList[foundIdx].netConsumedQtyKg) * (updatedMatList[foundIdx].unitPricePerKg || 140)
+              totalMaterialCost: (s3.consumedKg || updatedMatList[foundIdx].netConsumedQtyKg) * (updatedMatList[foundIdx].unitPricePerKg ?? null)
             };
           } else {
-            const defaultRate = DEFAULT_DAILY_RATES[s3.filmType] || 150;
+            const defaultRate = filmRatePerKg({ filmType: s3.filmType, purchaseRatePerKg: s3.purchaseRatePerKg });
             updatedMatList.push({
               id: `mat-sub3-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
               itemId: `RM-SUB3-${s3.barcode || Date.now()}`,
@@ -1075,7 +1080,7 @@ export default function ProductionRecordManagement({
       setZipperConsumedKg(existingRec.zipperConsumedKg || sfgZipperConsumed || 0);
       setPouchingScrapKg(existingRec.pouchingScrapKg || sfgPouchingScrap || 0);
       setQtyDispatch(existingRec.qtyDispatch || 0);
-      setProcessingCostPerKg(existingRec.processingCostPerKg || 25);
+      setProcessingCostPerKg(keptNumber(existingRec.processingCostPerKg, getMaterialCostSettings().conversionChargesPerKg));
 
       // Preserve historical snapshot rates for existing record:
       const snapAdhesive = existingRec.adhesiveCostPerKg !== undefined && existingRec.adhesiveCostPerKg !== null
@@ -1087,7 +1092,7 @@ export default function ProductionRecordManagement({
       setAdhesiveCostPerKg(snapAdhesive);
       setPaperCoreCostPerKg(snapPaperCore);
 
-      setPrintingPlainSettingWastageKg(existingRec.printingPlainSettingWastageKg || sfgPrintPlainScrap || 0);
+      setPrintingPlainSettingWastageKg(existingRec.printingPlainSettingWastageKg || sumPlainWastageKg(pressInputRolls) || sfgPrintPlainScrap || 0);
       setPrintingWastageKg(existingRec.printingWastageKg || sfgPrintScrap || 0);
       setLaminationPlainSubstrateWastageKg(existingRec.laminationPlainSubstrateWastageKg || sfgLamPlainScrapL1 || 0);
       setPrintedWastageKg(existingRec.printedWastageKg || 0);
@@ -1202,7 +1207,7 @@ export default function ProductionRecordManagement({
       ordSfgLogs.forEach(log => {
         if (log.substrate2 && (parseFloat(log.substrate2.consumedKg) > 0 || log.substrate2.barcode)) {
           const s2 = log.substrate2;
-          const defaultRate = DEFAULT_DAILY_RATES[s2.filmType] || 150;
+          const defaultRate = filmRatePerKg({ filmType: s2.filmType, purchaseRatePerKg: s2.purchaseRatePerKg });
           loadedMats.push({
             id: `mat-sub2-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
             itemId: `RM-SUB2-${s2.barcode || Date.now()}`,
@@ -1223,7 +1228,7 @@ export default function ProductionRecordManagement({
         }
         if (log.substrate3 && (parseFloat(log.substrate3.consumedKg) > 0 || log.substrate3.barcode)) {
           const s3 = log.substrate3;
-          const defaultRate = DEFAULT_DAILY_RATES[s3.filmType] || 150;
+          const defaultRate = filmRatePerKg({ filmType: s3.filmType, purchaseRatePerKg: s3.purchaseRatePerKg });
           loadedMats.push({
             id: `mat-sub3-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
             itemId: `RM-SUB3-${s3.barcode || Date.now()}`,
@@ -1251,7 +1256,7 @@ export default function ProductionRecordManagement({
       if (jm && jm.layers && jm.layers.length > 0) {
         const generatedList = jm.layers.map((layer, idx) => {
           const estimatedRollWeightKg = Math.round((ord.orderQtyKg || 1000) / jm.layers.length);
-          const defaultRate = DEFAULT_DAILY_RATES[layer.filmType] || 140;
+          const defaultRate = filmRatePerKg({ filmType: layer.filmType, purchaseRatePerKg: layer.rate || layer.ratePerKg });
           return {
             id: `mat-${Date.now()}-${idx + 1}`,
             itemId: `RM-${layer.filmType.substring(0, 3).toUpperCase()}-${idx + 1}`,
@@ -1273,7 +1278,7 @@ export default function ProductionRecordManagement({
         ordSfgLogs.forEach(log => {
           if (log.substrate2 && (parseFloat(log.substrate2.consumedKg) > 0 || log.substrate2.barcode)) {
             const s2 = log.substrate2;
-            const defaultRate = DEFAULT_DAILY_RATES[s2.filmType] || 150;
+            const defaultRate = filmRatePerKg({ filmType: s2.filmType, purchaseRatePerKg: s2.purchaseRatePerKg });
             generatedList.push({
               id: `mat-sub2-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
               itemId: `RM-SUB2-${s2.barcode || Date.now()}`,
@@ -1294,7 +1299,7 @@ export default function ProductionRecordManagement({
           }
           if (log.substrate3 && (parseFloat(log.substrate3.consumedKg) > 0 || log.substrate3.barcode)) {
             const s3 = log.substrate3;
-            const defaultRate = DEFAULT_DAILY_RATES[s3.filmType] || 150;
+            const defaultRate = filmRatePerKg({ filmType: s3.filmType, purchaseRatePerKg: s3.purchaseRatePerKg });
             generatedList.push({
               id: `mat-sub3-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
               itemId: `RM-SUB3-${s3.barcode || Date.now()}`,
@@ -1862,13 +1867,13 @@ export default function ProductionRecordManagement({
       totalProductionQtyKg: roundToTwo(totalNetQtyKg),
 
       // Snapshot consumable material cost rates and totals
-      adhesiveCostPerKg: parseFloat(adhesiveCostPerKg) || 270,
-      paperCoreCostPerKg: parseFloat(paperCoreCostPerKg) || 45,
+      adhesiveCostPerKg: keptNumber(adhesiveCostPerKg, getMaterialCostSettings().adhesivePrice),
+      paperCoreCostPerKg: keptNumber(paperCoreCostPerKg, getMaterialCostSettings().paperCorePrice),
       adhesiveCostRs: roundToTwo(adhesiveCostRs),
       paperCoreCostRs: roundToTwo(paperCoreCostRs),
       rawMaterialsTableCostRs: roundToTwo(rawMaterialsTableCostRs),
       totalMaterialCostRs: roundToTwo(totalMaterialCostRs),
-      processingCostPerKg: roundToTwo(parseFloat(processingCostPerKg) || 25),
+      processingCostPerKg: roundToTwo(keptNumber(processingCostPerKg, getMaterialCostSettings().conversionChargesPerKg)),
       totalProcessingCostRs: roundToTwo(totalProcessingCostRs),
 
       // Stage-wise Scrap Breakdown (in kg)
@@ -1891,9 +1896,9 @@ export default function ProductionRecordManagement({
       // Target & Actual Ink & Adhesive GSMs
       actualInkGsm: actualInkGsm !== '' && !isNaN(parseFloat(actualInkGsm)) ? parseFloat(actualInkGsm) : null,
       actualAdhesiveGsm: actualAdhesiveGsm !== '' && !isNaN(parseFloat(actualAdhesiveGsm)) ? parseFloat(actualAdhesiveGsm) : null,
-      targetInkGsm: parseFloat(targetInkGsm) || 1.5,
-      targetAdhesiveGsm: parseFloat(targetAdhesiveGsm) || 1.5,
-      inkGsmInSpeed: actualInkGsm !== '' && !isNaN(parseFloat(actualInkGsm)) ? parseFloat(actualInkGsm) : (parseFloat(targetInkGsm) || 1.5),
+      targetInkGsm: targetInkGsm === '' || Number.isNaN(parseFloat(targetInkGsm)) ? null : parseFloat(targetInkGsm),
+      targetAdhesiveGsm: targetAdhesiveGsm === '' || Number.isNaN(parseFloat(targetAdhesiveGsm)) ? null : parseFloat(targetAdhesiveGsm),
+      inkGsmInSpeed: actualInkGsm !== '' && !isNaN(parseFloat(actualInkGsm)) ? parseFloat(actualInkGsm) : (targetInkGsm === '' ? null : parseFloat(targetInkGsm)),
 
       status: "Filled by Plant Manager",
       filledBy: `${currentUser.name} (${currentUser.role})`,
@@ -1913,9 +1918,9 @@ export default function ProductionRecordManagement({
     notifyProductionRecordSubmitted(newRecord).catch(err => console.error("Production submission email error:", err));
 
     // Over-Wastage Alert Email Trigger if scrap % exceeds pre-costing target
-    const targetWastagePct = Number(selectedOrder?.calculationDetails?.wastagePct || selectedOrder?.wastagePct || 5);
+    const targetWastagePct = optionalPercent(selectedOrder?.calculationDetails?.wastagePct ?? selectedOrder?.wastagePct);
     const actualWastagePct = Math.max(overallScrapPctOfDispatch, overallScrapPctOfOutput);
-    if (actualWastagePct > targetWastagePct) {
+    if (targetWastagePct != null && actualWastagePct > targetWastagePct) {
       notifyOverWastageAlert({
         record: newRecord,
         order: selectedOrder,
@@ -2613,9 +2618,11 @@ export default function ProductionRecordManagement({
             const inputRolls = selectedRecord.inputRollsList || [];
             const outputRolls = selectedRecord.rollsBreakdown || selectedRecord.outputRolls || [];
             const actualMeters = parseFloat(selectedRecord.actualMetersPrinted || linkedOrder?.actualMetersPrinted || 0);
-            const printWidthMm = parseFloat(selectedRecord.printWidthMm || linkedOrder?.printWidthMm || matchedJM?.printWidthMm || matchedJM?.cylinderData?.widthMm || linkedOrder?.widthMm || 460);
+            const widthSource = selectedRecord.printWidthMm || linkedOrder?.printWidthMm || matchedJM?.printWidthMm || matchedJM?.cylinderData?.widthMm || linkedOrder?.widthMm;
+            const printWidthMm = widthSource === undefined || widthSource === null || widthSource === '' ? null : Number(widthSource);
 
             const totalInputConsumedKg = inputRolls.reduce((sum, r) => sum + (parseFloat(r.consumedWeightKg) || 0), 0) || parseFloat(selectedRecord.totalInputConsumedKg) || 0;
+            const netFilmKg = inputRolls.length > 0 ? netPrintedSubstrateKg(inputRolls) : totalInputConsumedKg;
             const totalOutputRollsKg = outputRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0) || parseFloat(selectedRecord.printedOutputKg) || 0;
 
             let inputRollWidthMm = printWidthMm;
@@ -2626,29 +2633,29 @@ export default function ProductionRecordManagement({
               inputRollWidthMm = parseFloat(selectedRecord.inputRollWidthMm);
             }
 
-            const isBiggerSize = inputRollWidthMm > printWidthMm;
+            const isBiggerSize = printWidthMm != null && inputRollWidthMm > printWidthMm;
             let excessFilmWastageKg = parseFloat(selectedRecord.excessFilmWastageKg || 0);
             let excessFilmWastagePct = parseFloat(selectedRecord.excessFilmWastagePct || 0);
 
-            if (isBiggerSize && totalInputConsumedKg > 0 && (!excessFilmWastageKg || excessFilmWastageKg === 0)) {
+            if (isBiggerSize && netFilmKg > 0 && (!excessFilmWastageKg || excessFilmWastageKg === 0)) {
               const trimRatio = (inputRollWidthMm - printWidthMm) / inputRollWidthMm;
-              excessFilmWastageKg = totalInputConsumedKg * trimRatio;
-              excessFilmWastagePct = (excessFilmWastageKg / totalInputConsumedKg) * 100;
+              excessFilmWastageKg = netFilmKg * trimRatio;
+              excessFilmWastagePct = (excessFilmWastageKg / netFilmKg) * 100;
             }
 
             let inkWeightGainKg = parseFloat(selectedRecord.inkWeightGainKg || 0);
             if (!inkWeightGainKg || inkWeightGainKg === 0) {
               if (isBiggerSize) {
-                inkWeightGainKg = totalOutputRollsKg - (totalInputConsumedKg - excessFilmWastageKg);
+                inkWeightGainKg = totalOutputRollsKg - (netFilmKg - excessFilmWastageKg);
               } else {
-                inkWeightGainKg = totalOutputRollsKg - totalInputConsumedKg;
+                inkWeightGainKg = totalOutputRollsKg - netFilmKg;
               }
             }
 
             const printedAreaM2 = (actualMeters * printWidthMm) / 1000;
             let actualCalculatedInkGsm = parseFloat(selectedRecord.actualCalculatedInkGsm || 0);
             if ((!actualCalculatedInkGsm || actualCalculatedInkGsm === 0) && printedAreaM2 > 0 && inkWeightGainKg > 0) {
-              actualCalculatedInkGsm = (inkWeightGainKg * 0.20 * 1000) / printedAreaM2;
+              actualCalculatedInkGsm = (inkWeightGainKg * (Number(getMaterialCostSettings().inkWeightGainPct) / 100) * 1000) / printedAreaM2;
             }
 
             const operatorInkGsm = parseFloat(selectedRecord.inkGsmInSpeed || linkedOrder?.inkGsmInSpeed || 0);
@@ -2706,10 +2713,10 @@ export default function ProductionRecordManagement({
                   <div style={{ background: '#ffffff', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                     <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Substrate Match</span>
                     <div style={{ fontSize: '1.1rem', fontWeight: '900', color: '#0f172a', marginTop: '2px' }}>
-                      {selectedRecord.printFilmType || linkedOrder?.printFilmType || 'PET'} {selectedRecord.micron || linkedOrder?.micron || 12}µ
+                      {selectedRecord.printFilmType || linkedOrder?.printFilmType || '—'} {selectedRecord.micron || linkedOrder?.micron || '—'}µ
                     </div>
                     <span style={{ fontSize: '0.74rem', color: isBiggerSize ? '#b45309' : '#059669', fontWeight: '700' }}>
-                      {isBiggerSize ? `⚠️ Wider Input Film (${inputRollWidthMm}mm > Job Print ${printWidthMm}mm)` : `✓ Same Size (${printWidthMm}mm)`}
+                      {printWidthMm == null ? 'Print width is not recorded' : isBiggerSize ? `⚠️ Wider Input Film (${inputRollWidthMm}mm > Job Print ${printWidthMm}mm)` : `✓ Same Size (${printWidthMm}mm)`}
                     </span>
                   </div>
 
@@ -2734,7 +2741,7 @@ export default function ProductionRecordManagement({
                   <div style={{ background: '#ffffff', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                     <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Dry Ink Solids Gain</span>
                     <div style={{ fontSize: '1.2rem', fontWeight: '900', color: '#059669', marginTop: '2px' }}>
-                      {(inkWeightGainKg * 0.20).toFixed(2)} kg <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: '600' }}>(20% Ink Solids)</span>
+                      {(inkWeightGainKg * (Number(getMaterialCostSettings().inkWeightGainPct) / 100)).toFixed(2)} kg <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: '600' }}>({getMaterialCostSettings().inkWeightGainPct}% Ink Solids)</span>
                     </div>
                     <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Gross Ink Weight Gain: {inkWeightGainKg.toFixed(2)} kg</span>
                   </div>
@@ -2779,6 +2786,8 @@ export default function ProductionRecordManagement({
                           <th>Width (mm)</th>
                           <th>Initial Wt (kg)</th>
                           <th>Consumed Wt (kg)</th>
+                          <th>Plain wastage (kg)</th>
+                          <th>Net to print (kg)</th>
                           <th>Remaining Wt (kg)</th>
                         </tr>
                       </thead>
@@ -2786,16 +2795,20 @@ export default function ProductionRecordManagement({
                         {inputRolls.map((r, idx) => {
                           const initW = parseFloat(r.initialWeightKg) || 0;
                           const consW = parseFloat(r.consumedWeightKg) || 0;
+                          const plainW = plainKg(r.plainSubstrateWastageKg);
+                          const netPrint = Math.max(0, consW - (Number.isFinite(plainW) ? plainW : 0));
                           const balW = Math.max(0, initW - consW);
                           return (
                             <tr key={idx}>
                               <td style={{ fontWeight: '700' }}>Roll #{idx + 1}</td>
                               <td><code style={{ background: '#ffffff', border: '1px solid #cbd5e1', padding: '2px 6px', borderRadius: '4px', fontWeight: '800' }}>{r.barcodeId || 'N/A'}</code></td>
-                              <td>{r.filmType || 'PET'}</td>
-                              <td>{r.micron || 12}µ</td>
-                              <td>{r.widthMm || 460} mm</td>
+                              <td>{r.filmType || '—'}</td>
+                              <td>{r.micron || '—'}µ</td>
+                              <td>{r.widthMm || '—'} mm</td>
                               <td>{initW.toFixed(1)} kg</td>
                               <td style={{ fontWeight: '800', color: '#0284c7' }}>{consW.toFixed(1)} kg</td>
+                              <td>{Number.isFinite(plainW) ? plainW.toFixed(1) : '—'} kg</td>
+                              <td>{netPrint.toFixed(1)} kg</td>
                               <td>
                                 {balW > 0 ? (
                                   <span style={{ fontWeight: '800', color: '#059669' }}>
@@ -3236,7 +3249,7 @@ export default function ProductionRecordManagement({
                 const paperCoreCostPerKgSnap = Number(selectedRecord.paperCoreCostPerKg !== undefined && selectedRecord.paperCoreCostPerKg !== null ? selectedRecord.paperCoreCostPerKg : 45);
                 const paperCoreCost = roundToTwo(Number(selectedRecord.paperCoreCostRs !== undefined && selectedRecord.paperCoreCostRs !== null ? selectedRecord.paperCoreCostRs : (paperCoreConsumedKg * paperCoreCostPerKgSnap)));
 
-                const actualProcCost = roundToTwo(parseFloat(selectedRecord.totalProcessingCostRs) || parseFloat(selectedRecord.processingCostRs) || (actualQtyKg * (parseFloat(selectedRecord.processingCostPerKg) || 25)));
+                const actualProcCost = roundToTwo(parseFloat(selectedRecord.totalProcessingCostRs) || parseFloat(selectedRecord.processingCostRs) || (actualQtyKg * keptNumber(selectedRecord.processingCostPerKg, getMaterialCostSettings().conversionChargesPerKg)));
                 const actualMaterialCost = selectedRecord.totalMaterialCostRs !== undefined && Number(selectedRecord.totalMaterialCostRs) > 0
                   ? roundToTwo(Number(selectedRecord.totalMaterialCostRs))
                   : roundToTwo(filmsCost + inksSolventsCost + adhesiveCost + paperCoreCost);
@@ -3608,8 +3621,9 @@ export default function ProductionRecordManagement({
                           onChange={e => {
                             const val = e.target.value;
                             updateMaterialRow(m.id, 'filmType', val);
-                            if (DEFAULT_DAILY_RATES[val]) {
-                              updateMaterialRow(m.id, 'unitPricePerKg', DEFAULT_DAILY_RATES[val]);
+                            const selectedFilmRate = filmRatePerKg({ filmType: val });
+                            if (selectedFilmRate != null) {
+                              updateMaterialRow(m.id, 'unitPricePerKg', selectedFilmRate);
                             }
                           }}
                         >
@@ -3670,7 +3684,7 @@ export default function ProductionRecordManagement({
                                     if (match.filmType) updateMaterialRow(m.id, 'filmType', match.filmType);
                                     if (match.micron) updateMaterialRow(m.id, 'micron', match.micron);
                                     if (match.widthMm) updateMaterialRow(m.id, 'widthMm', match.widthMm);
-                                    const rate = match.unitPrice || match.purchaseRatePerKg || DEFAULT_DAILY_RATES[match.filmType] || 120;
+                                    const rate = filmRatePerKg({ filmType: match.filmType, purchaseRatePerKg: match.unitPrice || match.purchaseRatePerKg });
                                     updateMaterialRow(m.id, 'unitPricePerKg', rate);
                                     if (match.unit) updateMaterialRow(m.id, 'unit', match.unit);
                                   }
@@ -4054,7 +4068,7 @@ export default function ProductionRecordManagement({
                           🎨 Actual Dry Ink GSM (g/m²)
                         </label>
                         <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#0284c7', background: '#e0f2fe', padding: '1px 6px', borderRadius: '4px' }}>
-                          Target: {targetInkGsm || 1.5} GSM
+                          Target: {targetInkGsm ?? ''} GSM
                         </span>
                       </div>
                       <input 
@@ -4065,7 +4079,7 @@ export default function ProductionRecordManagement({
                         style={{ fontWeight: '700', fontSize: '0.95rem', background: '#ffffff', color: '#0369a1', borderColor: '#0284c7' }} 
                         value={actualInkGsm} 
                         onChange={e => setActualInkGsm(e.target.value)} 
-                        placeholder={`e.g. ${targetInkGsm || 1.5}`}
+                        placeholder={`e.g. ${targetInkGsm ?? ''}`}
                       />
                       <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '4px' }}>
                         Input by Machine Operator during printing job run
@@ -4083,14 +4097,24 @@ export default function ProductionRecordManagement({
                         <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#78350f', display: 'block', marginBottom: '4px' }}>
                           Printing Plain Setting (kg)
                         </label>
+                        {(() => {
+                          const pressRolls = Array.isArray(selectedRecord?.inputRollsList) ? selectedRecord.inputRollsList : [];
+                          const rollsLockPlain = pressRolls.length > 0 && pressRolls.every(roll => {
+                            const plain = roll?.plainSubstrateWastageKg;
+                            return plain !== undefined && plain !== null && plain !== '' && Number.isFinite(Number(plain));
+                          });
+                          return (
                         <input 
                           type="number" 
                           step="0.1" 
                           className="form-control" 
                           style={{ background: '#ffffff', fontWeight: '700' }} 
-                          value={printingPlainSettingWastageKg} 
-                          onChange={e => setPrintingPlainSettingWastageKg(e.target.value)} 
+                          value={rollsLockPlain ? sumPlainWastageKg(pressRolls) : printingPlainSettingWastageKg} 
+                          readOnly={rollsLockPlain}
+                          onChange={e => { if (!rollsLockPlain) setPrintingPlainSettingWastageKg(e.target.value); }} 
                         />
+                          );
+                        })()}
                       </div>
                       <div>
                         <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#78350f', display: 'block', marginBottom: '4px' }}>
@@ -4210,7 +4234,7 @@ export default function ProductionRecordManagement({
                           🧪 Actual Adhesive GSM (g/m²)
                         </label>
                         <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#4338ca', background: '#e0e7ff', padding: '1px 6px', borderRadius: '4px' }}>
-                          Target: {targetAdhesiveGsm || 1.5} GSM
+                          Target: {targetAdhesiveGsm ?? ''} GSM
                         </span>
                       </div>
                       <input 
@@ -4221,7 +4245,7 @@ export default function ProductionRecordManagement({
                         style={{ fontWeight: '700', fontSize: '0.95rem', background: '#ffffff', color: '#4338ca', borderColor: '#818cf8' }} 
                         value={actualAdhesiveGsm} 
                         onChange={e => setActualAdhesiveGsm(e.target.value)} 
-                        placeholder={`e.g. ${targetAdhesiveGsm || 1.5}`}
+                        placeholder={`e.g. ${targetAdhesiveGsm ?? ''}`}
                       />
                       <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '4px' }}>
                         Input by Machine Operator during lamination job run

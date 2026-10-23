@@ -4,7 +4,8 @@
  * so a mark made after midnight in Indore is not stored as the previous UTC day.
  */
 
-export const FACTORY_TIME_ZONE = 'Asia/Kolkata';
+import { getCompanyProfile, requireCompanyField } from './companyProfile.js';
+import { resolveShiftHours } from './operationalConfig.js';
 
 export function attendanceCalendarDate(value) {
   if (value == null || value === '') return '';
@@ -33,9 +34,10 @@ export function attendanceCalendarDate(value) {
   return '';
 }
 
-export function factoryCalendarDate(now = new Date(), timeZone = FACTORY_TIME_ZONE) {
+export function factoryCalendarDate(now = new Date(), timeZone) {
+  const zone = timeZone || String(requireCompanyField(getCompanyProfile(), 'timeZone'));
   const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
+    timeZone: zone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit'
@@ -87,7 +89,7 @@ export function buildEmployeeAttendanceRow(record) {
     employee_id: String(employeeId),
     date,
     shift_type: record.shiftType || record.shift_type || '',
-    shift_hours: record.shiftHours || record.shift_hours || 12,
+    shift_hours: resolveShiftHours(record),
     status: record.status,
     check_in: record.checkIn || record.check_in || '',
     check_out: record.checkOut || record.check_out || '',
@@ -113,7 +115,7 @@ export function mapEmployeeAttendanceRow(row) {
     employeeId: row.employee_id || row.employeeId,
     date: attendanceCalendarDate(row.date),
     shiftType: row.shift_type || row.shiftType,
-    shiftHours: Number(row.shift_hours || row.shiftHours) || 12,
+    shiftHours: row.shift_hours == null || row.shift_hours === '' ? null : Number(row.shift_hours),
     status: row.status,
     checkIn: row.check_in || row.checkIn,
     checkOut: row.check_out || row.checkOut,
