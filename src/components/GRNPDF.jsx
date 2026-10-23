@@ -3,6 +3,7 @@ import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
 import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import { numberToWords, formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
+import { pdfLinesFromGrn, taxableAmountFromLines } from '../services/grnDocument';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import QRCode2D from './QRCode2D';
 
@@ -86,7 +87,14 @@ export default function GRNPDF({ grnData, onClose }) {
     );
   }
 
-  const totalTaxable = netWeightKg * unitPrice;
+  const printableLines = pdfLinesFromGrn(grnData);
+  const severalItems = printableLines.length > 1;
+  const shownNet = severalItems
+    ? printableLines.reduce((sum, line) => sum + (Number(line.netWeightKg) || 0), 0)
+    : (Number(netWeightKg) || 0);
+  const totalTaxable = severalItems
+    ? taxableAmountFromLines(printableLines)
+    : (Number(netWeightKg) || 0) * (Number(unitPrice) || 0);
   const gstInfo = calculateGSTBreakdown(vendorGstin, vendorAddress, totalTaxable, 18, COMPANY_DETAILS.gstin);
   const cgstAmt = gstInfo.cgstAmount;
   const sgstAmt = gstInfo.sgstAmount;
@@ -253,32 +261,50 @@ export default function GRNPDF({ grnData, onClose }) {
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td className="center">1</td>
-                <td>
-                  <div className="item-name">{displayItemName}</div>
-                  <div className="item-meta">Batch Ref: {batchNo}</div>
-                </td>
-                <td className="center">3920</td>
-                <td className="center">{micron} µ</td>
-                <td className="center">{widthMm} mm</td>
-                <td className="center">{rollsReceived} Rolls</td>
-                <td className="right" style={{ fontWeight: 'bold' }}>{(netWeightKg ?? 0).toLocaleString()} Kg</td>
-                <td className="right">{formatINR(unitPrice)}</td>
-                <td className="right">{formatINR(totalTaxable)}</td>
-              </tr>
+              {(severalItems ? printableLines : [{
+                lineNo: 1,
+                itemName: displayItemName,
+                batchNo,
+                micron,
+                widthMm,
+                rollsReceived,
+                netWeightKg,
+                purchaseRate: unitPrice,
+                category
+              }]).map((line, index) => {
+                const lineRate = severalItems ? line.purchaseRate : unitPrice;
+                const lineNet = severalItems ? line.netWeightKg : netWeightKg;
+                const lineAmount = (Number(lineNet) || 0) * (Number(lineRate) || 0);
+                const hsn = !severalItems || (line.category || category) === 'Film Substrates' ? '3920' : '';
+                return (
+                  <tr key={line.lineNo || index}>
+                    <td className="center">{line.lineNo || index + 1}</td>
+                    <td>
+                      <div className="item-name">{severalItems ? line.itemName : displayItemName}</div>
+                      <div className="item-meta">Batch Ref: {line.batchNo || batchNo}</div>
+                    </td>
+                    <td className="center">{hsn}</td>
+                    <td className="center">{line.micron} µ</td>
+                    <td className="center">{line.widthMm} mm</td>
+                    <td className="center">{line.rollsReceived} Rolls</td>
+                    <td className="right" style={{ fontWeight: 'bold' }}>{(lineNet ?? 0).toLocaleString()} Kg</td>
+                    <td className="right">{formatINR(lineRate)}</td>
+                    <td className="right">{formatINR(lineAmount)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
             <tfoot>
               <tr>
                 <td colSpan="6" className="right" style={{ fontWeight: 'bold' }}>Total Quantity Inwarded</td>
-                <td className="right" style={{ fontWeight: 'bold' }}>{(netWeightKg ?? 0).toLocaleString()} Kg</td>
+                <td className="right" style={{ fontWeight: 'bold' }}>{(shownNet ?? 0).toLocaleString()} Kg</td>
                 <td colSpan="2"></td>
               </tr>
             </tfoot>
           </table>
 
           {/* Individual Roll / Container Weight Log Breakdown Annexure (if available) */}
-          {Array.isArray(itemsBreakdown) && itemsBreakdown.length > 1 && (
+          {!severalItems && Array.isArray(itemsBreakdown) && itemsBreakdown.length > 1 && (
             <div style={{ marginTop: '14px', marginBottom: '14px' }}>
               <div style={{ fontSize: '9px', fontWeight: '800', textTransform: 'uppercase', color: '#1e3a8a', borderBottom: '1px solid #93c5fd', paddingBottom: '3px', marginBottom: '6px' }}>
                 Annexure: Individual {packagingType} Scale Weight Log ({itemsBreakdown.length} Units)
@@ -311,6 +337,27 @@ export default function GRNPDF({ grnData, onClose }) {
               </table>
             </div>
           )}
+          {severalItems && printableLines.map((line) => (
+            Array.isArray(line.rolls) && line.rolls.length > 0 ? (
+              <div key={`annexure-${line.lineNo}`} style={{ marginTop: '14px', marginBottom: '14px' }}>
+                <div style={{ fontSize: '9px', fontWeight: '800', textTransform: 'uppercase', color: '#1e3a8a', borderBottom: '1px solid #93c5fd', paddingBottom: '3px', marginBottom: '6px' }}>
+                  Annexure: {line.itemName} ({line.rolls.length} {line.packagingType || 'Roll'}{line.rolls.length > 1 ? 's' : ''})
+                </div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '8.5px' }} className="items-table">
+                  <tbody>
+                    {line.rolls.map((item, idx) => (
+                      <tr key={item.barcodeId || idx}>
+                        <td style={{ textAlign: 'center' }}>{item.unitNo || idx + 1}</td>
+                        <td style={{ textAlign: 'center', fontFamily: 'monospace' }}>{item.barcodeId || '—'}</td>
+                        <td style={{ textAlign: 'center' }}>{item.vendorRollNo || '—'}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 'bold' }}>{(parseFloat(item.netWeightKg) || 0).toLocaleString()} kg</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null
+          ))}
 
           {/* Totals and Words */}
           <div className="totals-and-words-grid">
