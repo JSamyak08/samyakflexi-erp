@@ -929,6 +929,25 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                 required
               />
             </label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginTop: '12px' }}>
+              {[
+                ['defaultGstRatePct', 'Default GST %'],
+                ['financialYearStartMonth', 'Financial year start month'],
+                ['timeZone', 'Time zone'],
+                ['locale', 'Locale'],
+                ['currency', 'Currency'],
+              ].map(([field, label]) => (
+                <label key={field} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.78rem', fontWeight: 700 }}>
+                  {label}
+                  <input
+                    className="form-control"
+                    value={companyProfile[field] ?? ''}
+                    onChange={(e) => setCompanyProfile(prev => ({ ...prev, [field]: e.target.value }))}
+                    required
+                  />
+                </label>
+              ))}
+            </div>
             <div style={{ marginTop: '16px' }}>
               <button type="submit" className="btn-primary">Save company profile</button>
             </div>

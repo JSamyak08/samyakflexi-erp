@@ -46,6 +46,12 @@ import {
   withCompanyTagline,
 } from './companyProfile';
 import { FILM_SUBSTRATES_STORAGE_KEY, DEFAULT_FILM_SUBSTRATES, getFilmSubstrates } from './filmSubstratesService';
+import {
+  DEFAULT_MATERIAL_COST_SETTINGS as MATERIAL_COST_DEFAULTS,
+  getMaterialCostSettings as readMaterialCostSettings,
+  keptNumber,
+  applyPrefixTemplate,
+} from './operationalConfig.js';
 export { FILM_SUBSTRATES_STORAGE_KEY, DEFAULT_FILM_SUBSTRATES, getFilmSubstrates };
 
 
@@ -86,28 +92,28 @@ export async function clearCompanyLogo() {
 
 
 export const DEFAULT_PREFIXES = {
-  orderPrefix: 'ORD-2026-',
-  orderCounter: 101,
-  poPrefix: 'SIL/PO/26-27/',
-  poCounter: 246,
-  ocnPrefix: 'SIL/OCN/26-27/',
-  ocnCounter: 108,
-  grnPrefix: 'SIL/GRN/26-27/',
-  grnCounter: 104,
-  qtnPrefix: 'SIL/QTN/26-27/',
-  qtnCounter: 501,
-  dispatchPrefix: 'SIL/DISP/26-27/',
-  dispatchCounter: 301,
-  dcPrefix: 'SIL/DC/26-27/',
-  dcCounter: 101,
-  coaPrefix: 'SIL/COA/26-27/',
-  coaCounter: 101,
-  jdsPrefix: 'SIL/JDS/26-27/',
-  jdsCounter: 201,
-  indentPrefix: 'SIL/IND/26-27/',
-  indentCounter: 101,
-  plPrefix: 'PL-',
-  plCounter: 606130
+  orderPrefix: 'ORD-{yyyy}-',
+  orderCounter: null,
+  poPrefix: 'SIL/PO/{fy}/',
+  poCounter: null,
+  ocnPrefix: 'SIL/OCN/{fy}/',
+  ocnCounter: null,
+  grnPrefix: 'SIL/GRN/{fy}/',
+  grnCounter: null,
+  qtnPrefix: 'SIL/QTN/{fy}/',
+  qtnCounter: null,
+  dispatchPrefix: 'SIL/DISP/{fy}/',
+  dispatchCounter: null,
+  dcPrefix: 'SIL/DC/{fy}/',
+  dcCounter: null,
+  coaPrefix: 'SIL/COA/{fy}/',
+  coaCounter: null,
+  jdsPrefix: 'SIL/JDS/{fy}/',
+  jdsCounter: null,
+  indentPrefix: 'SIL/IND/{fy}/',
+  indentCounter: null,
+  plPrefix: 'PL-{yyyy}-',
+  plCounter: null,
 };
 
 export const DEFAULT_DOCUMENT_TERMS = {
@@ -250,51 +256,52 @@ export async function saveCoaSignatories(signatoryConfig) {
 }
 
 
+const DOC_SERIES = {
+  order: ['orderPrefix', 'orderCounter', true],
+  po: ['poPrefix', 'poCounter', false],
+  ocn: ['ocnPrefix', 'ocnCounter', false],
+  grn: ['grnPrefix', 'grnCounter', false],
+  qtn: ['qtnPrefix', 'qtnCounter', false],
+  dispatch: ['dispatchPrefix', 'dispatchCounter', false],
+  dc: ['dcPrefix', 'dcCounter', false],
+  coa: ['coaPrefix', 'coaCounter', false],
+  jds: ['jdsPrefix', 'jdsCounter', false],
+  indent: ['indentPrefix', 'indentCounter', false],
+  pl: ['plPrefix', 'plCounter', false],
+  packing: ['plPrefix', 'plCounter', false],
+};
+
+function requireCounter(value, key) {
+  if (value === undefined || value === null || value === '') {
+    const error = new Error(`Document counter ${key} is not configured. Set it in Document Settings. Existing saved series are left as they are.`);
+    error.status = 500;
+    throw error;
+  }
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    const error = new Error(`Document counter ${key} is not a number.`);
+    error.status = 500;
+    throw error;
+  }
+  return number;
+}
+
 /**
  * Generate formatted document reference number without incrementing counter
  */
 export function generateDocRefNumber(type, customNumber) {
   const config = getDocumentPrefixes();
-  
-  if (type === 'order') {
-    const num = customNumber !== undefined ? customNumber : (config.orderCounter || 101);
-    const prefix = config.orderPrefix || 'ORD-2026-';
-    const formattedNum = String(num).padStart(3, '0');
-    return `${prefix}${formattedNum}`;
-  } else if (type === 'po') {
-    const num = customNumber !== undefined ? customNumber : config.poCounter;
-    return `${config.poPrefix}${num}`;
-  } else if (type === 'ocn') {
-    const num = customNumber !== undefined ? customNumber : config.ocnCounter;
-    return `${config.ocnPrefix}${num}`;
-  } else if (type === 'grn') {
-    const num = customNumber !== undefined ? customNumber : config.grnCounter;
-    return `${config.grnPrefix}${num}`;
-  } else if (type === 'qtn') {
-    const num = customNumber !== undefined ? customNumber : (config.qtnCounter || 501);
-    return `${config.qtnPrefix || 'SIL/QTN/26-27/'}${num}`;
-  } else if (type === 'dispatch') {
-    const num = customNumber !== undefined ? customNumber : (config.dispatchCounter || 301);
-    return `${config.dispatchPrefix || 'SIL/DISP/26-27/'}${num}`;
-  } else if (type === 'dc') {
-    const num = customNumber !== undefined ? customNumber : (config.dcCounter || 101);
-    return `${config.dcPrefix || 'SIL/DC/26-27/'}${num}`;
-  } else if (type === 'coa') {
-    const num = customNumber !== undefined ? customNumber : (config.coaCounter || 101);
-    return `${config.coaPrefix || 'SIL/COA/26-27/'}${num}`;
-  } else if (type === 'jds') {
-    const num = customNumber !== undefined ? customNumber : (config.jdsCounter || 201);
-    return `${config.jdsPrefix || 'SIL/JDS/26-27/'}${num}`;
-  } else if (type === 'indent') {
-    const num = customNumber !== undefined ? customNumber : (config.indentCounter || 101);
-    return `${config.indentPrefix || 'SIL/IND/26-27/'}${num}`;
-  } else if (type === 'pl' || type === 'packing') {
-    const year = new Date().getFullYear();
-    const num = customNumber !== undefined ? customNumber : (config.plCounter || 606130);
-    return `PL-${year}-${num}`;
+  const series = DOC_SERIES[type];
+  if (!series) {
+    const error = new Error(`Unknown document series "${type}".`);
+    error.status = 500;
+    throw error;
   }
-  
-  return `SIL/DOC/${customNumber || 100}`;
+  const [prefixKey, counterKey, pad] = series;
+  const num = customNumber !== undefined ? requireCounter(customNumber, counterKey) : requireCounter(config[counterKey], counterKey);
+  const prefix = applyPrefixTemplate(config[prefixKey]);
+  const formatted = pad ? String(num).padStart(3, '0') : String(num);
+  return `${prefix}${formatted}`;
 }
 
 /**
@@ -302,43 +309,14 @@ export function generateDocRefNumber(type, customNumber) {
  */
 export function getNextDocRefNumber(type) {
   const config = getDocumentPrefixes();
-  let num = 101;
-  let key = '';
-  
-  if (type === 'order') {
-    num = config.orderCounter || 101;
-    key = 'orderCounter';
-  } else if (type === 'po') {
-    num = config.poCounter || 246;
-    key = 'poCounter';
-  } else if (type === 'ocn') {
-    num = config.ocnCounter || 108;
-    key = 'ocnCounter';
-  } else if (type === 'grn') {
-    num = config.grnCounter || 104;
-    key = 'grnCounter';
-  } else if (type === 'qtn') {
-    num = config.qtnCounter || 501;
-    key = 'qtnCounter';
-  } else if (type === 'dispatch') {
-    num = config.dispatchCounter || 301;
-    key = 'dispatchCounter';
-  } else if (type === 'dc') {
-    num = config.dcCounter || 101;
-    key = 'dcCounter';
-  } else if (type === 'coa') {
-    num = config.coaCounter || 101;
-    key = 'coaCounter';
-  } else if (type === 'jds') {
-    num = config.jdsCounter || 201;
-    key = 'jdsCounter';
-  } else if (type === 'indent') {
-    num = config.indentCounter || 101;
-    key = 'indentCounter';
-  } else if (type === 'pl' || type === 'packing') {
-    num = config.plCounter || 606130;
-    key = 'plCounter';
+  const series = DOC_SERIES[type];
+  if (!series) {
+    const error = new Error(`Unknown document series "${type}".`);
+    error.status = 500;
+    throw error;
   }
+  const [, key] = series;
+  const num = requireCounter(config[key], key);
 
   const docRef = generateDocRefNumber(type, num);
   
@@ -368,21 +346,10 @@ export const DEFAULT_RATES = {
 
 export const MATERIAL_COST_SETTINGS_STORAGE_KEY = 'samyak_material_cost_settings';
 
-export const DEFAULT_MATERIAL_COST_SETTINGS = {
-  adhesiveCostPerKg: 270,       // ₹ / kg for Lamination Adhesive
-  paperCoreCostPerKg: 45,       // ₹ / kg for Slitting Paper Cores
-  liquidInkPrice: 1500,         // ₹ / kg for Inks
-  conversionChargesPerKg: 45,   // ₹ / kg default Conversion Charges
-  fixedProfitPerKg: 25,         // ₹ / kg default Fixed Profit Margin
-  minPoQtyKg: 100,              // minimum kilograms on an ink purchase order
-  defaultReorderLevelKg: 50,    // used when an ink has no reorder level of its own
-  updatedAt: ''
-};
+export const DEFAULT_MATERIAL_COST_SETTINGS = MATERIAL_COST_DEFAULTS;
 
 function configuredKilograms(value, fallback) {
-  if (value === undefined || value === null || value === '') return fallback;
-  const number = Number(value);
-  return Number.isFinite(number) && number >= 0 ? number : Number.NaN;
+  return keptNumber(value, fallback);
 }
 
 function inkPurchaseQuantities(source) {
@@ -402,15 +369,15 @@ export async function fetchMaterialCostSettingsFromSupabase() {
       const merged = {
         ...DEFAULT_MATERIAL_COST_SETTINGS,
         ...remote,
-        adhesiveCostPerKg: Number(remote.adhesiveCostPerKg ?? remote.adhesivePrice) || DEFAULT_MATERIAL_COST_SETTINGS.adhesiveCostPerKg,
-        paperCoreCostPerKg: Number(remote.paperCoreCostPerKg ?? remote.paperCorePrice) || DEFAULT_MATERIAL_COST_SETTINGS.paperCoreCostPerKg,
-        liquidInkPrice: Number(remote.liquidInkPrice) || DEFAULT_MATERIAL_COST_SETTINGS.liquidInkPrice,
-        conversionChargesPerKg: (remote.conversionChargesPerKg !== undefined && remote.conversionChargesPerKg !== '')
-          ? Number(remote.conversionChargesPerKg)
-          : DEFAULT_MATERIAL_COST_SETTINGS.conversionChargesPerKg,
-        fixedProfitPerKg: (remote.fixedProfitPerKg !== undefined && remote.fixedProfitPerKg !== '')
-          ? Number(remote.fixedProfitPerKg)
-          : DEFAULT_MATERIAL_COST_SETTINGS.fixedProfitPerKg,
+        adhesiveCostPerKg: keptNumber(remote.adhesiveCostPerKg ?? remote.adhesivePrice, Number.NaN),
+        paperCoreCostPerKg: keptNumber(remote.paperCoreCostPerKg ?? remote.paperCorePrice, Number.NaN),
+        liquidInkPrice: keptNumber(remote.liquidInkPrice, Number.NaN),
+        inkWeightGainPct: keptNumber(remote.inkWeightGainPct, Number.NaN),
+        adhesiveWeightGainPct: keptNumber(remote.adhesiveWeightGainPct, Number.NaN),
+        conversionChargesPerKg: keptNumber(remote.conversionChargesPerKg, Number.NaN),
+        fixedProfitPerKg: keptNumber(remote.fixedProfitPerKg, Number.NaN),
+        defaultCoreTareKg: keptNumber(remote.defaultCoreTareKg, Number.NaN),
+        filmRates: remote.filmRates && typeof remote.filmRates === 'object' ? remote.filmRates : null,
         ...inkPurchaseQuantities(remote),
         updatedAt: remote.updatedAt || ''
       };
@@ -427,27 +394,7 @@ export async function fetchMaterialCostSettingsFromSupabase() {
  * Get synchronous Material Cost Settings (cached or defaults)
  */
 export function getMaterialCostSettings() {
-  try {
-    const saved = localStorage.getItem(MATERIAL_COST_SETTINGS_STORAGE_KEY);
-    if (!saved) return { ...DEFAULT_MATERIAL_COST_SETTINGS };
-    const parsed = JSON.parse(saved);
-    return {
-      ...DEFAULT_MATERIAL_COST_SETTINGS,
-      ...parsed,
-      adhesiveCostPerKg: Number(parsed.adhesiveCostPerKg ?? parsed.adhesivePrice) || DEFAULT_MATERIAL_COST_SETTINGS.adhesiveCostPerKg,
-      paperCoreCostPerKg: Number(parsed.paperCoreCostPerKg ?? parsed.paperCorePrice) || DEFAULT_MATERIAL_COST_SETTINGS.paperCoreCostPerKg,
-      liquidInkPrice: Number(parsed.liquidInkPrice) || DEFAULT_MATERIAL_COST_SETTINGS.liquidInkPrice,
-      conversionChargesPerKg: (parsed.conversionChargesPerKg !== undefined && parsed.conversionChargesPerKg !== '')
-        ? Number(parsed.conversionChargesPerKg)
-        : DEFAULT_MATERIAL_COST_SETTINGS.conversionChargesPerKg,
-      fixedProfitPerKg: (parsed.fixedProfitPerKg !== undefined && parsed.fixedProfitPerKg !== '')
-        ? Number(parsed.fixedProfitPerKg)
-        : DEFAULT_MATERIAL_COST_SETTINGS.fixedProfitPerKg,
-      ...inkPurchaseQuantities(parsed)
-    };
-  } catch (e) {
-    return { ...DEFAULT_MATERIAL_COST_SETTINGS };
-  }
+  return readMaterialCostSettings();
 }
 
 /**
@@ -481,15 +428,15 @@ export async function saveMaterialCostSettings(settings) {
     ...DEFAULT_MATERIAL_COST_SETTINGS,
     ...settings,
     ...quantities,
-    adhesiveCostPerKg: Number(settings.adhesiveCostPerKg ?? settings.adhesivePrice) || DEFAULT_MATERIAL_COST_SETTINGS.adhesiveCostPerKg,
-    paperCoreCostPerKg: Number(settings.paperCoreCostPerKg ?? settings.paperCorePrice) || DEFAULT_MATERIAL_COST_SETTINGS.paperCoreCostPerKg,
-    liquidInkPrice: Number(settings.liquidInkPrice) || DEFAULT_MATERIAL_COST_SETTINGS.liquidInkPrice,
-    conversionChargesPerKg: (settings.conversionChargesPerKg !== undefined && settings.conversionChargesPerKg !== '')
-      ? Number(settings.conversionChargesPerKg)
-      : DEFAULT_MATERIAL_COST_SETTINGS.conversionChargesPerKg,
-    fixedProfitPerKg: (settings.fixedProfitPerKg !== undefined && settings.fixedProfitPerKg !== '')
-      ? Number(settings.fixedProfitPerKg)
-      : DEFAULT_MATERIAL_COST_SETTINGS.fixedProfitPerKg,
+    adhesiveCostPerKg: keptNumber(settings.adhesiveCostPerKg ?? settings.adhesivePrice, Number.NaN),
+    paperCoreCostPerKg: keptNumber(settings.paperCoreCostPerKg ?? settings.paperCorePrice, Number.NaN),
+    liquidInkPrice: keptNumber(settings.liquidInkPrice, Number.NaN),
+    inkWeightGainPct: keptNumber(settings.inkWeightGainPct, Number.NaN),
+    adhesiveWeightGainPct: keptNumber(settings.adhesiveWeightGainPct, Number.NaN),
+    conversionChargesPerKg: keptNumber(settings.conversionChargesPerKg, Number.NaN),
+    fixedProfitPerKg: keptNumber(settings.fixedProfitPerKg, Number.NaN),
+    defaultCoreTareKg: keptNumber(settings.defaultCoreTareKg, Number.NaN),
+    filmRates: settings.filmRates && typeof settings.filmRates === 'object' ? settings.filmRates : null,
     updatedAt: new Date().toISOString()
   };
   await saveSystemSetting('material_cost_settings', payload);
@@ -513,15 +460,11 @@ export function getProcessingRates() {
     if (!saved) return { ...DEFAULT_RATES };
     const parsed = JSON.parse(saved);
     return {
-      liquidInkPrice: Number(parsed.liquidInkPrice) || DEFAULT_RATES.liquidInkPrice,
-      adhesivePrice: Number(parsed.adhesivePrice) || DEFAULT_RATES.adhesivePrice,
-      paperCorePrice: Number(parsed.paperCorePrice) || DEFAULT_RATES.paperCorePrice,
-      conversionChargesPerKg: (parsed.conversionChargesPerKg !== undefined && parsed.conversionChargesPerKg !== '')
-        ? Number(parsed.conversionChargesPerKg)
-        : DEFAULT_RATES.conversionChargesPerKg,
-      fixedProfitPerKg: (parsed.fixedProfitPerKg !== undefined && parsed.fixedProfitPerKg !== '')
-        ? Number(parsed.fixedProfitPerKg)
-        : DEFAULT_RATES.fixedProfitPerKg
+      liquidInkPrice: keptNumber(parsed.liquidInkPrice, Number.NaN),
+      adhesivePrice: keptNumber(parsed.adhesivePrice, Number.NaN),
+      paperCorePrice: keptNumber(parsed.paperCorePrice, Number.NaN),
+      conversionChargesPerKg: keptNumber(parsed.conversionChargesPerKg, Number.NaN),
+      fixedProfitPerKg: keptNumber(parsed.fixedProfitPerKg, Number.NaN)
     };
   } catch (e) {
     return { ...DEFAULT_RATES };
@@ -570,16 +513,18 @@ const EMAIL_SETTINGS_STORAGE_KEY = 'samyak_email_settings';
 const EMAIL_TEMPLATES_STORAGE_KEY = 'samyak_email_templates';
 
 export const DEFAULT_EMAIL_SETTINGS = {
-  smtpHost: 'smtp.hostinger.com',
-  smtpPort: 465,
-  smtpSecure: true,
-  smtpUser: 'admin@samyakinternational.in',
+  smtpHost: '',
+  smtpPort: '',
+  smtpSecure: '',
+  smtpUser: '',
   smtpPass: '',
-  senderName: 'Samyak International ERP',
-  adminEmail: 'admin@samyakinternational.in',
-  plantManagerEmail: 'admin@samyakinternational.in',
-  purchaseEmail: 'purchase@samyakinternational.in',
-  dispatchEmail: 'dispatch@samyakinternational.in'
+  senderName: '',
+  adminEmail: '',
+  plantManagerEmail: '',
+  purchaseEmail: '',
+  dispatchEmail: '',
+  userDailyCap: 50,
+  plantDailyCap: 60,
 };
 
 export const DEFAULT_EMAIL_TEMPLATES = {
@@ -590,7 +535,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     subject: '📦 Order Punched: {jobName} ({orderId})',
     badgeText: 'Action Task: Order Created',
     badgeBgColor: '#0284c7',
-    toEmail: 'admin@samyakinternational.in',
+    toEmail: '',
     ccEmail: '',
     enabled: true,
     contentHtml: `<p style="font-size: 14px; color: #334155;">A new job order has been punched into the ERP system and queued for raw material allocation and cylinder scheduling.</p>
@@ -605,7 +550,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
   </table>
 </div>
 <p style="font-size: 13px; color: #64748b;">Please review material requirements in the Production Scheduler.</p>`,
-    footerNote: 'Samyak International Ltd • Indore Packaging Division\nKheda Industrial Area, Sector 3, Pithampur, MP | GSTIN: 23AABCM3526F1ZY'
+    footerNote: '{companyFooter}'
   },
   production_submitted: {
     key: 'production_submitted',
@@ -614,7 +559,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     subject: '📋 Approval Required: Production Record for {jobName} ({orderId})',
     badgeText: 'Action Task: Admin Approval Required',
     badgeBgColor: '#d97706',
-    toEmail: 'admin@samyakinternational.in',
+    toEmail: '',
     ccEmail: '',
     enabled: true,
     contentHtml: `<p style="font-size: 14px; color: #334155;">Plant Manager has submitted a new production record. Administrative approval is required to finalize costings and job completion.</p>
@@ -631,7 +576,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
   </table>
 </div>
 <p style="font-size: 13px; color: #64748b;">Log into the ERP Admin Dashboard to approve or reject this production record.</p>`,
-    footerNote: 'Samyak International Ltd • Indore Packaging Division\nKheda Industrial Area, Sector 3, Pithampur, MP | GSTIN: 23AABCM3526F1ZY'
+    footerNote: '{companyFooter}'
   },
   production_approved: {
     key: 'production_approved',
@@ -640,7 +585,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     subject: '✅ Production Record Approved: {jobName}',
     badgeText: 'Action Task: Approved by Admin',
     badgeBgColor: '#059669',
-    toEmail: 'admin@samyakinternational.in',
+    toEmail: '',
     ccEmail: '',
     enabled: true,
     contentHtml: `<p style="font-size: 14px; color: #334155;">The production record for job <strong>{jobName}</strong> has been officially reviewed and APPROVED by the Admin.</p>
@@ -654,7 +599,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     <tr><td><strong>Approval Date:</strong></td><td>{approvalDate}</td></tr>
   </table>
 </div>`,
-    footerNote: 'Samyak International Ltd • Indore Packaging Division\nKheda Industrial Area, Sector 3, Pithampur, MP | GSTIN: 23AABCM3526F1ZY'
+    footerNote: '{companyFooter}'
   },
   indent_created: {
     key: 'indent_created',
@@ -663,8 +608,8 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     subject: '📝 Material Indent Raised: {indentNo} ({priority} Priority)',
     badgeText: 'Action Task: Material Indent Raised',
     badgeBgColor: '#7c3aed',
-    toEmail: 'admin@samyakinternational.in',
-    ccEmail: 'purchase@samyakinternational.in',
+    toEmail: '',
+    ccEmail: '',
     enabled: true,
     contentHtml: `<p style="font-size: 14px; color: #334155;">A new material purchase indent requisition has been raised for plant consumables / raw materials.</p>
 <div class="info-card">
@@ -676,7 +621,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     <tr><td><strong>Remarks:</strong></td><td>{remarks}</td></tr>
   </table>
 </div>`,
-    footerNote: 'Samyak International Ltd • Indore Packaging Division\nKheda Industrial Area, Sector 3, Pithampur, MP | GSTIN: 23AABCM3526F1ZY'
+    footerNote: '{companyFooter}'
   },
   po_issued: {
     key: 'po_issued',
@@ -685,7 +630,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     subject: '🛒 Purchase Order Issued: {poNumber} - {supplierName}',
     badgeText: 'Action Task: PO Issued to Vendor',
     badgeBgColor: '#2563eb',
-    toEmail: 'purchase@samyakinternational.in',
+    toEmail: '',
     ccEmail: '',
     enabled: true,
     contentHtml: `<p style="font-size: 14px; color: #334155;">An official Purchase Order has been generated and dispatched to the supplier.</p>
@@ -699,7 +644,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     <tr><td><strong>Total PO Amount:</strong></td><td><strong>₹ {totalAmount}</strong></td></tr>
   </table>
 </div>`,
-    footerNote: 'Samyak International Ltd • Indore Packaging Division\nKheda Industrial Area, Sector 3, Pithampur, MP | GSTIN: 23AABCM3526F1ZY'
+    footerNote: '{companyFooter}'
   },
   low_stock: {
     key: 'low_stock',
@@ -708,8 +653,8 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     subject: '⚠️ Low Stock Warning: {itemName} ({stockQty} {unit} left)',
     badgeText: 'Action Task: Inventory Alert',
     badgeBgColor: '#dc2626',
-    toEmail: 'admin@samyakinternational.in',
-    ccEmail: 'purchase@samyakinternational.in',
+    toEmail: '',
+    ccEmail: '',
     enabled: true,
     contentHtml: `<p style="font-size: 14px; color: #334155;">Plant store stock level for item <strong>{itemName}</strong> has fallen below the safety reorder threshold.</p>
 <div class="info-card">
@@ -722,7 +667,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
   </table>
 </div>
 <p style="font-size: 13px; color: #64748b;">Immediate purchase requisition is recommended to avoid shop-floor downtime.</p>`,
-    footerNote: 'Samyak International Ltd • Indore Packaging Division\nKheda Industrial Area, Sector 3, Pithampur, MP | GSTIN: 23AABCM3526F1ZY'
+    footerNote: '{companyFooter}'
   },
   user_created: {
     key: 'user_created',
@@ -732,7 +677,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     badgeText: 'Action Task: User Onboarding',
     badgeBgColor: '#059669',
     toEmail: '{userEmail}',
-    ccEmail: 'admin@samyakinternational.in',
+    ccEmail: '',
     enabled: true,
     contentHtml: `<p style="font-size: 14px; color: #334155;">Your user account has been created on the SamyakFlexi ERP platform.</p>
 <div class="info-card">
@@ -743,8 +688,8 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     <tr><td><strong>Department:</strong></td><td>{userDepartment}</td></tr>
   </table>
 </div>
-<p style="font-size: 13px; color: #64748b;">A separate email contains a link to choose your password. Sign in at erp.samyakinternational.in after you set it. No password is included in this message.</p>`,
-    footerNote: 'Samyak International Ltd • Indore Packaging Division\nKheda Industrial Area, Sector 3, Pithampur, MP | GSTIN: 23AABCM3526F1ZY'
+<p style="font-size: 13px; color: #64748b;">A separate email contains a link to choose your password. Sign in to the plant ERP after you set it. No password is included in this message.</p>`,
+    footerNote: '{companyFooter}'
   },
   password_recovery: {
     key: 'password_recovery',
@@ -759,7 +704,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     contentHtml: `<p style="color: #475569; font-size: 14px; line-height: 1.5;">
   Password resets for <strong>{userEmail}</strong> are sent by Supabase Auth. Use Forgot password on the ERP login screen. The message contains a one-time link to choose a new password. There is no verification code.
 </p>`,
-    footerNote: 'Samyak International Ltd • Indore Packaging Division\nKheda Industrial Area, Sector 3, Pithampur, MP | GSTIN: 23AABCM3526F1ZY'
+    footerNote: '{companyFooter}'
   },
   over_wastage: {
     key: 'over_wastage',
@@ -768,7 +713,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     subject: '⚠️ Over Wastage Threshold Exceeded: {jobName} ({actualWastagePct}% vs {allowedWastagePct}% allowed)',
     badgeText: 'Action Task: High Scrap Warning',
     badgeBgColor: '#dc2626',
-    toEmail: 'admin@samyakinternational.in',
+    toEmail: '',
     ccEmail: '',
     enabled: true,
     contentHtml: `<p style="font-size: 14px; color: #334155;">Production record entry for job <strong>{jobName}</strong> exceeded the pre-costing scrap & wastage allowance threshold by <strong>+{wastageVariancePct}%</strong>.</p>
@@ -786,7 +731,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
 <h4 style="font-size: 13px; color: #0f172a; margin-top: 16px; margin-bottom: 8px;">Breakdown of Process Scrap Generated:</h4>
 {wastageBreakdownHtml}
 <p style="font-size: 13px; color: #64748b; margin-top: 16px;">Please review shop-floor extrusion/printing setup logs and machine settings in the Plant Operations dashboard.</p>`,
-    footerNote: 'Samyak International Ltd • Indore Packaging Division\nKheda Industrial Area, Sector 3, Pithampur, MP | GSTIN: 23AABCM3526F1ZY'
+    footerNote: '{companyFooter}'
   },
   grn_pending_qc: {
     key: 'grn_pending_qc',
@@ -795,8 +740,8 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     subject: '🧪 Action Required: Inward GRN #{grnNo} Pending QC Approval — {vendorName}',
     badgeText: 'Action Task: Pending QC Inspection',
     badgeBgColor: '#d97706',
-    toEmail: 'quality@samyakinternational.in',
-    ccEmail: 'admin@samyakinternational.in',
+    toEmail: '',
+    ccEmail: '',
     enabled: true,
     contentHtml: `<p style="font-size: 14px; color: #334155;">A new Goods Receipt Note (GRN) has been inwarded at the plant store and is currently <strong>Pending Quality Control (QC) Inspection & Approval</strong>.</p>
 <div class="info-card">
@@ -814,7 +759,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
   </table>
 </div>
 <p style="font-size: 13px; color: #475569;"><strong>Action Required:</strong> Please perform physical quality sampling and parameter verification in the Inventory & Quality Control module to release material into active plant inventory.</p>`,
-    footerNote: 'Samyak International Ltd • Indore Packaging Division\nKheda Industrial Area, Sector 3, Pithampur, MP | GSTIN: 23AABCM3526F1ZY'
+    footerNote: '{companyFooter}'
   },
   grn_qc_escalation_12h: {
     key: 'grn_qc_escalation_12h',
@@ -823,8 +768,8 @@ export const DEFAULT_EMAIL_TEMPLATES = {
     subject: '🚨 OVERDUE QC APPROVAL ALERT (>12 hrs): GRN #{grnNo} — {vendorName}',
     badgeText: '🚨 SLA Escalation Alert: QC Overdue',
     badgeBgColor: '#dc2626',
-    toEmail: 'admin@samyakinternational.in',
-    ccEmail: 'quality@samyakinternational.in',
+    toEmail: '',
+    ccEmail: '',
     enabled: true,
     contentHtml: `<div style="background: #fef2f2; border: 1px solid #fca5a5; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
   <h3 style="color: #991b1b; font-size: 16px; margin: 0 0 6px 0;">🚨 12-Hour Quality Inspection SLA Exceeded</h3>
@@ -843,7 +788,7 @@ export const DEFAULT_EMAIL_TEMPLATES = {
   </table>
 </div>
 <p style="font-size: 13px; color: #1e293b; margin-top: 16px; font-weight: 600;">Escalated Roles Notified: Admin, Plant Manager, Production Manager, Quality Head.</p>`,
-    footerNote: 'Samyak International Ltd • Indore Packaging Division\nKheda Industrial Area, Sector 3, Pithampur, MP | GSTIN: 23AABCM3526F1ZY'
+    footerNote: '{companyFooter}'
   }
 };
 

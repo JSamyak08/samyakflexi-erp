@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { leadTimeDays } from '../services/operationalConfig.js';
 import { 
   Package, 
   Plus, 
@@ -1304,7 +1305,7 @@ export default function InventoryManagement({
           if (!seenPoNumbers.has(poNo)) {
             seenPoNumbers.add(poNo);
             const vendorObj = (vendors || []).find(v => v.companyName === r.preferredVendor || v.name === r.preferredVendor) || {
-              companyName: r.preferredVendor || 'FlexiPoly Films Ltd',
+              companyName: r.preferredVendor || '',
               contactPerson: 'Sales Representative',
               phone: '9826001122',
               gstin: '23AAQFC4167Q1ZT'
@@ -1316,7 +1317,7 @@ export default function InventoryManagement({
             list.push({
               poNumber: poNo,
               poDate: ord.date || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
-              promisedDeliveryDate: ord.targetDeliveryDate || new Date(Date.now() + 5*86400000).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+              promisedDeliveryDate: ord.targetDeliveryDate || new Date(Date.now() + leadTimeDays(vendorObj) * 86400000).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
               vendor: vendorObj,
               category: 'Film Substrates',
               source: `Order #${ord.id} (${ord.jobName || 'Substrate Requirements'})`,
@@ -1353,7 +1354,7 @@ export default function InventoryManagement({
           list.push({
             poNumber: poNo,
             poDate: ind.date || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
-            promisedDeliveryDate: ind.promisedDeliveryDate || new Date(Date.now() + 3*86400000).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+            promisedDeliveryDate: ind.promisedDeliveryDate || new Date(Date.now() + leadTimeDays(vendorObj) * 86400000).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
             vendor: vendorObj,
             category: ind.category || 'Store Consumables & Spares',
             source: `Material Indent ${ind.indentNo || ind.id}`,
@@ -1489,7 +1490,7 @@ export default function InventoryManagement({
       return {
         ...po,
         daysElapsed,
-        promisedDeliveryDate: isPromisedValid ? promisedDateObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : (po.promisedDeliveryDate || 'Standard 5 Days'),
+        promisedDeliveryDate: isPromisedValid ? promisedDateObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : (po.promisedDeliveryDate || ''),
         delayDays,
         isOverdue: delayDays > 0 && deliveryStatus !== 'Completed',
         totalPoQty,

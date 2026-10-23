@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { configuredGstRate } from '../utils/pdfHelpers';
 import { 
   Droplet, 
   Plus, 
@@ -866,7 +867,7 @@ export default function InkManagement({
       itemName: `${items.length} Ink Product Code(s) (${items.map(i => i.itemId).join(', ')})`,
       qty: totalQty,
       unit: 'kg',
-      totalAmount: totalTaxable * 1.18
+      totalAmount: totalTaxable * (1 + configuredGstRate() / 100)
     }).catch(e => console.warn('Email notify notice:', e));
 
     setPoConfirmInk(null);
@@ -2810,7 +2811,7 @@ export default function InkManagement({
                       <div>
                         <span style={{ fontSize: '0.82rem', color: '#065f46', fontWeight: '600' }}>Subtotal (Taxable): </span>
                         <strong style={{ fontSize: '0.98rem', color: '#047857' }}>₹ {(subtotal || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
-                        <span style={{ fontSize: '0.82rem', color: '#065f46', marginLeft: '16px', fontWeight: '600' }}>GST (18%): </span>
+                        <span style={{ fontSize: '0.82rem', color: '#065f46', marginLeft: '16px', fontWeight: '600' }}>GST ({configuredGstRate()}%): </span>
                         <strong style={{ fontSize: '0.98rem', color: '#047857' }}>₹ {(gstVal || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
                       </div>
                       <div>

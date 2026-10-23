@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
 import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
-import { numberToWords, formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
+import { numberToWords, formatINR, calculateGSTBreakdown, configuredGstRate } from '../utils/pdfHelpers';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import QRCode2D from './QRCode2D';
 
@@ -97,7 +97,7 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
   }, 0);
 
   // Indian GST Calculation (Vendor in 23 MP: CGST 9% + SGST 9% vs Inter-state: IGST 18%)
-  const gstInfo = calculateGSTBreakdown(supplier.gstin, supplier.address, totalTaxable, 18, COMPANY_DETAILS.gstin);
+  const gstInfo = calculateGSTBreakdown(supplier.gstin, supplier.address, totalTaxable, configuredGstRate(), COMPANY_DETAILS.gstin);
   const totalCgst = gstInfo.cgstAmount;
   const totalSgst = gstInfo.sgstAmount;
   const totalIgst = gstInfo.igstAmount;
@@ -272,8 +272,8 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
                 const qty = parseFloat(item.qtyKg) || 0;
                 const rate = parseFloat(item.rate) || 0;
                 const taxable = qty * rate;
-                const cgstRate = parseFloat(item.cgstRate) || 9;
-                const sgstRate = parseFloat(item.sgstRate) || 9;
+                const cgstRate = Number.isFinite(parseFloat(item.cgstRate)) ? parseFloat(item.cgstRate) : gstInfo.cgstRatePct;
+                const sgstRate = Number.isFinite(parseFloat(item.sgstRate)) ? parseFloat(item.sgstRate) : gstInfo.sgstRatePct;
                 const cgstAmt = (taxable * cgstRate) / 100;
                 const sgstAmt = (taxable * sgstRate) / 100;
                 const totalAmt = taxable + cgstAmt + sgstAmt;

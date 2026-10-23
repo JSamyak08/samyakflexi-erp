@@ -36,7 +36,7 @@ import PurchaseOrderPDF from './PurchaseOrderPDF';
 import TablePagination, { usePagination } from './TablePagination';
 import { getCompanyProfile } from '../services/companyProfile';
 import { generateDocRefNumber, getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
-import { calculateGSTBreakdown, formatINR } from '../utils/pdfHelpers';
+import { calculateGSTBreakdown, configuredGstRate, formatINR } from '../utils/pdfHelpers';
 
 export default function PurchaseOrderManagement({
   purchaseOrders = [],
@@ -338,7 +338,7 @@ export default function PurchaseOrderManagement({
         vendorGstin,
         poForm.vendorDetails?.address || '',
         subtotal,
-        18,
+        configuredGstRate(),
         getCompanyProfile().gstin
       );
     } catch (error) {
@@ -353,6 +353,9 @@ export default function PurchaseOrderManagement({
       cgst: gstInfo.cgstAmount,
       sgst: gstInfo.sgstAmount,
       igst: gstInfo.igstAmount,
+      cgstRatePct: gstInfo.cgstRatePct || 0,
+      sgstRatePct: gstInfo.sgstRatePct || 0,
+      igstRatePct: gstInfo.igstRatePct || 0,
       taxAmount: gstInfo.totalGstAmount,
       totalAmount,
       isInterState: gstInfo.isInterState,
@@ -2159,17 +2162,17 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
 
                       {formCalculations?.isInterState ? (
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '8px', color: '#475569' }}>
-                          <span>IGST (18%):</span>
+                          <span>IGST ({formCalculations?.igstRatePct ?? 0}%):</span>
                           <span>₹{(formCalculations?.igst || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                         </div>
                       ) : (
                         <>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '8px', color: '#475569' }}>
-                            <span>CGST (9%):</span>
+                            <span>CGST ({formCalculations?.cgstRatePct ?? 0}%):</span>
                             <span>₹{(formCalculations?.cgst || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '8px', color: '#475569' }}>
-                            <span>SGST (9%):</span>
+                            <span>SGST ({formCalculations?.sgstRatePct ?? 0}%):</span>
                             <span>₹{(formCalculations?.sgst || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                           </div>
                         </>

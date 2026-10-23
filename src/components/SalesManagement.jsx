@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { configuredGstRate } from '../utils/pdfHelpers';
 import { 
   ShoppingBag, 
   Plus, 
@@ -983,7 +984,7 @@ export default function SalesManagement({
               micron: layer.micron,
               widthMm: layer.widthMm,
               qtyKg: parseFloat((layer.grossKg || 0).toFixed(2)),
-              preferredVendor: isLDFilm(layer.filmType) ? 'Malwa Extrusions Pvt Ltd' : 'FlexiPoly Films Ltd',
+              preferredVendor: layer.preferredVendorId || '',
               poIssued: false,
               poNumber: ''
             });
@@ -1162,7 +1163,7 @@ export default function SalesManagement({
   const confirmedCount = (quotations || []).filter(q => q.status.includes('Confirmed')).length;
   const conversionRatePct = totalQuotationsCount > 0 ? ((confirmedCount / totalQuotationsCount) * 100).toFixed(1) : 0;
   const totalPipelineValueRs = quotations.reduce((sum, q) => {
-    const qtnTotal = (q.items || []).reduce((a, b) => a + (b.totalAmount || (b.quantity * b.ratePerUom * 1.18)), 0);
+    const qtnTotal = (q.items || []).reduce((a, b) => a + (b.totalAmount || (b.quantity * b.ratePerUom * (1 + configuredGstRate() / 100))), 0);
     return sum + qtnTotal;
   }, 0);
 
@@ -1224,7 +1225,7 @@ export default function SalesManagement({
           <div style={{ fontSize: '1.6rem', fontWeight: '900', color: '#7c3aed', marginTop: '4px' }}>
             ₹ {(Math.round(totalPipelineValueRs || 0)).toLocaleString('en-IN')}
           </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>Inclusive of 18% GST</div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>Inclusive of {configuredGstRate()}% GST</div>
         </div>
       </div>
 
@@ -1326,7 +1327,7 @@ export default function SalesManagement({
                   paginatedQuotations.map(qtn => {
                     const isConfirmed = qtn.status.includes('Confirmed');
                     const mainItem = (qtn.items && qtn.items[0]) || {};
-                    const totalVal = (qtn.items || []).reduce((a, b) => a + (b.totalAmount || (b.quantity * b.ratePerUom * 1.18)), 0);
+                    const totalVal = (qtn.items || []).reduce((a, b) => a + (b.totalAmount || (b.quantity * b.ratePerUom * (1 + configuredGstRate() / 100))), 0);
 
                     return (
                       <tr key={qtn.id}>
@@ -1800,7 +1801,7 @@ export default function SalesManagement({
                   {items.map((it, idx) => {
                     const qty = parseFloat(it.quantity) || 0;
                     const rate = parseFloat(it.ratePerUom) || 0;
-                    const total = qty * rate * 1.18;
+                    const total = qty * rate * (1 + configuredGstRate() / 100);
                     const isCylinder = it.materialFormat === 'Rotogravure Cylinder';
                     const currentLayers = it.layers || [
                       { id: 1, filmType: 'PET', micron: 12 },

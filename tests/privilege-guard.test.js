@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import { handleAdminUsers, publicAdminPayload } from '../api/admin-users.js';
-import { ADMIN_REROUTE, COMPANY_DOMAIN, EXTERNAL_MANUAL_EMAIL_ENV } from '../src/services/emailPolicy.js';
+import { EXTERNAL_MANUAL_EMAIL_ENV, adminReroute, companyDomain } from '../src/services/emailPolicy.js';
+
+process.env.COMPANY_EMAIL_DOMAIN = 'samyakinternational.in';
+process.env.ADMIN_REROUTE = 'admin@samyakinternational.in';
+const COMPANY_DOMAIN = companyDomain();
+const ADMIN_REROUTE = adminReroute();
 
 const ADMIN_AUTH = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const STAFF_AUTH = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
@@ -77,7 +82,13 @@ function serviceFor(profile) {
         deleteUser: async () => ({ data: {}, error: null }),
       },
     },
-    from() {
+    from(table) {
+      if (table === 'system_settings') {
+        return chain({
+          data: { setting_value: JSON.stringify({ name: 'SAMYAK INTERNATIONAL LTD.' }) },
+          error: null,
+        });
+      }
       return chain({ data: profile, error: null });
     },
     rpc(name, args) {

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { PROCESS_STAGES, STAGE_LABEL } from '../constants/processStages';
 import SearchableSelect from './SearchableSelect';
 import { 
   Layers, 
@@ -39,6 +40,7 @@ import SFGFGEntryModal from './SFGFGEntryModal';
 import TablePagination, { usePagination } from './TablePagination';
 import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo } from '../utils/fifoUtils';
 import { getInventoryAgeingSettings } from '../services/settingsService';
+import { getShiftMaster } from '../services/operationalConfig.js';
 import { supabase } from '../services/supabaseClient';
 import { fetchPayloadRecords, replacePayloadRecords, describeSaveError } from '../services/businessRecords';
 
@@ -106,10 +108,10 @@ export default function SFGStoreManagement({
 
   // Consume SFG Form State — Starts clean & empty
   const [consumedWeightKg, setConsumedWeightKg] = useState('');
-  const [targetProcess, setTargetProcess] = useState('Lamination (Pass 1)');
+  const [targetProcess, setTargetProcess] = useState(STAGE_LABEL.LAMINATION_PASS_1);
   const [targetMachine, setTargetMachine] = useState('');
   const [operatorName, setOperatorName] = useState(currentUser?.fullName || currentUser?.username || '');
-  const [shift, setShift] = useState('Day Shift');
+  const [shift, setShift] = useState('');
   const [notes, setNotes] = useState('');
   const [formError, setFormError] = useState('');
   const [isSubmittingConsume, setIsSubmittingConsume] = useState(false);
@@ -509,10 +511,10 @@ export default function SFGStoreManagement({
   const handleOpenConsumeModal = (item) => {
     setSelectedItemForConsume(item);
     setConsumedWeightKg('');
-    setTargetProcess('Lamination (Pass 1)');
+    setTargetProcess(STAGE_LABEL.LAMINATION_PASS_1);
     setTargetMachine(machines[0]?.name || '');
     setOperatorName(currentUser?.fullName || currentUser?.username || '');
-    setShift('Day Shift');
+    setShift('');
     setNotes('');
     setHoldReason('');
     setHoldRollCount(1);
@@ -891,7 +893,7 @@ export default function SFGStoreManagement({
             remainingBalanceKg: parseFloat(parentAvail.toFixed(2)),
             targetProcess: 'Restored from QC Hold Store',
             operatorName: currentUser?.fullName || currentUser?.username || 'QC Manager',
-            shift: 'Day Shift',
+            shift: '',
             notes: `Approved from QC Hold Tag #${selectedQcItemForApprove.barcodeId}. Reason: ${approveReason.trim()}`
           },
           ...(parentItem.consumptionHistory || [])
@@ -2672,15 +2674,11 @@ export default function SFGStoreManagement({
                     onChange={(e) => handleTargetProcessChange(e.target.value)}
                     style={{ width: '100%' }}
                   >
-                    <option value="Lamination (Pass 1)">Lamination (Pass 1)</option>
-                    <option value="Lamination (Pass 2)">Lamination (Pass 2)</option>
-                    <option value="Slitting & Rewinding">Slitting & Rewinding</option>
-                    <option value="Pouching / Bag Making">Pouching / Bag Making</option>
-                    <option value="Dispatch Packing">Dispatch Packing</option>
-                    <option value="Printing (Pass 2)">Printing (Pass 2)</option>
-                    <option value="QC Inspection & Rewinding">QC Inspection & Rewinding</option>
-                    <option value="QC Hold Store">🚨 QC Hold Store (Quarantine)</option>
-                    <option value="Custom Stage">Other Process Stage</option>
+                    {PROCESS_STAGES.map(stage => (
+                      <option key={stage.id} value={stage.label}>
+                        {stage.id === 'QC_HOLD' ? '🚨 QC Hold Store (Quarantine)' : stage.id === 'CUSTOM' ? 'Other Process Stage' : stage.label}
+                      </option>
+                    ))}
                   </SearchableSelect>
                 </div>
 
@@ -2839,8 +2837,10 @@ export default function SFGStoreManagement({
                     onChange={(e) => setShift(e.target.value)}
                     style={{ width: '100%' }}
                   >
-                    <option value="Day Shift">Day Shift</option>
-                    <option value="Night Shift">Night Shift</option>
+                    <option value="">Select shift</option>
+                    {(getShiftMaster() || []).filter(row => row?.name).map(row => (
+                      <option key={row.id || row.name} value={row.name}>{row.name}</option>
+                    ))}
                   </SearchableSelect>
                 </div>
 

@@ -1,5 +1,19 @@
 import * as Sentry from '@sentry/react';
 
+function sentryTracesSampleRate() {
+  const raw = String(import.meta.env.VITE_SENTRY_TRACES_SAMPLE_RATE ?? '').trim();
+  if (!raw) {
+    console.error('VITE_SENTRY_TRACES_SAMPLE_RATE is not set. Sentry traces stay at 0.');
+    return 0;
+  }
+  const rate = Number(raw);
+  if (!Number.isFinite(rate) || rate < 0 || rate > 1) {
+    console.error('VITE_SENTRY_TRACES_SAMPLE_RATE must be a number from 0 to 1. Sentry traces stay at 0.');
+    return 0;
+  }
+  return rate;
+}
+
 function sentryTraceTargets(appOrigin) {
   const targets = [/^\//];
   const raw = String(appOrigin || '').trim();
@@ -31,7 +45,7 @@ if (dsn) {
       userInfo: false,
     },
     integrations: [Sentry.browserTracingIntegration()],
-    tracesSampleRate: import.meta.env.MODE === 'production' ? 0.1 : 0,
+    tracesSampleRate: sentryTracesSampleRate(),
     tracePropagationTargets: sentryTraceTargets(import.meta.env.VITE_APP_ORIGIN),
   });
 }

@@ -6,6 +6,18 @@
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 import { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl } from './supabaseStorageService';
 import { isMetalloceneEligibleFilm, getFilmTypeCode } from '../factoryStore';
+import { keptNumber } from './operationalConfig.js';
+import { getCompanyProfile, requireCompanyField } from './companyProfile.js';
+
+function storedOrNull(value) {
+  return keptNumber(value, null);
+}
+
+function formatOrderDate(value) {
+  const date = value ? new Date(value) : new Date();
+  const locale = String(requireCompanyField(getCompanyProfile(), 'locale'));
+  return date.toLocaleDateString(locale);
+}
 export { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl };
 
 /**
@@ -76,7 +88,7 @@ export async function fetchOrders() {
       const layerList = Array.isArray(jd.layers) ? jd.layers : (Array.isArray(jd.calculationDetails?.layerResults) ? jd.calculationDetails.layerResults : (Array.isArray(o.layers) ? o.layers : []));
       const commentsVal = jd.orderComments || jd.comments || jd.notes || o.notes || o.comments || o.job_details?.orderComments || o.job_details?.comments || '';
 
-      const parseGsm = (val, defaultVal = 1.5) => {
+      const parseGsm = (val, defaultVal = null) => {
         if (val !== undefined && val !== null && val !== '') {
           const num = parseFloat(val);
           if (!isNaN(num)) return num;
@@ -84,8 +96,8 @@ export async function fetchOrders() {
         return defaultVal;
       };
 
-      const inkGsm = parseGsm(jd.inkGsm ?? jd.calculationDetails?.inkGsm ?? o.ink_gsm ?? o.inkGsm, 1.5);
-      const adhesiveGsm = parseGsm(jd.adhesiveGsm ?? jd.calculationDetails?.adhesiveGsm ?? o.adhesive_gsm ?? o.adhesiveGsm, 1.5);
+      const inkGsm = parseGsm(jd.inkGsm ?? jd.calculationDetails?.inkGsm ?? o.ink_gsm ?? o.inkGsm, null);
+      const adhesiveGsm = parseGsm(jd.adhesiveGsm ?? jd.calculationDetails?.adhesiveGsm ?? o.adhesive_gsm ?? o.adhesiveGsm, null);
 
       const printingStatus = meta.printingStatus || jd.printingStatus || o.printing_status || (o.status === 'In Production' ? 'In Production' : 'Scheduled');
       const printingStartTime = meta.printingStartTime || jd.printingStartTime || o.printing_start_time || null;
@@ -104,7 +116,7 @@ export async function fetchOrders() {
         orderQtyKg: Number(o.order_qty_kg) || 0,
         deliveryDate: o.target_delivery_date || o.delivery_date,
         targetDeliveryDate: o.target_delivery_date || o.delivery_date,
-        orderDate: jd.orderDate || (o.created_at ? new Date(o.created_at).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB')),
+        orderDate: jd.orderDate || formatOrderDate(o.created_at),
         status: o.status || 'Scheduled',
         printingStatus,
         printingStartTime,
@@ -114,12 +126,14 @@ export async function fetchOrders() {
         actualMetersPrinted,
         printedOutputKg,
         isPrintingCompleted,
-        wastagePct: Number(o.wastage_percentage) || Number(jd.wastagePct) || Number(jd.calculationDetails?.wastagePct) || 5,
+        wastagePct: [o.wastage_percentage, jd.wastagePct, jd.calculationDetails?.wastagePct]
+          .map(value => (value === undefined || value === null || value === '' ? null : Number(value)))
+          .find(value => Number.isFinite(value)) ?? null,
         wastageKg: Number(jd.wastageKg) || Number(jd.calculationDetails?.wastageKg) || 0,
         structure: jd.structure || ((Array.isArray(layerList) && layerList.length > 0) ? layerList.filter(Boolean).map(l => `${l.filmType || ''} ${l.micron || ''}µ`).join(' / ') : '—'),
         printWidthMm: jd.printWidthMm || null,
         repeatLengthMm: jd.repeatLengthMm || null,
-        colorsCount: jd.colorsCount || o.colors_count || 6,
+        colorsCount: jd.colorsCount ?? o.colors_count ?? null,
         poIssued: jd.poIssued || false,
         poNumber: jd.poNumber || '',
         inkGsm: inkGsm,
@@ -168,7 +182,7 @@ export async function saveOrderToSupabase(order) {
   const parsedTarget = parseStandardDate(order.targetDeliveryDate || order.deliveryDate);
   const targetDateVal = parsedTarget ? parsedTarget.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
 
-  const parseGsm = (val, defaultVal = 1.5) => {
+  const parseGsm = (val, defaultVal = null) => {
     if (val !== undefined && val !== null && val !== '') {
       const num = parseFloat(val);
       if (!isNaN(num)) return num;
@@ -179,8 +193,8 @@ export async function saveOrderToSupabase(order) {
   const commentsVal = (order.orderComments || order.comments || order.notes || order.jobDetails?.orderComments || order.jobDetails?.comments || '').trim();
   const variants = Array.isArray(order.variants) ? order.variants : (Array.isArray(order.jobDetails?.variants) ? order.jobDetails?.variants : []);
   const hasVariants = Boolean(order.hasVariants || order.jobDetails?.hasVariants || (Array.isArray(variants) && variants.length > 0));
-  const inkGsmVal = parseGsm(order.inkGsm ?? order.jobDetails?.inkGsm ?? order.calculationDetails?.inkGsm, 1.5);
-  const adhesiveGsmVal = parseGsm(order.adhesiveGsm ?? order.jobDetails?.adhesiveGsm ?? order.calculationDetails?.adhesiveGsm, 1.5);
+  const inkGsmVal = parseGsm(order.inkGsm ?? order.jobDetails?.inkGsm ?? order.calculationDetails?.inkGsm, null);
+  const adhesiveGsmVal = parseGsm(order.adhesiveGsm ?? order.jobDetails?.adhesiveGsm ?? order.calculationDetails?.adhesiveGsm, null);
 
   const printingStatus = order.printingStatus || (order.status === 'In Production' ? 'In Production' : 'Scheduled');
   const printingStartTime = order.printingStartTime || order.jobDetails?.printingStartTime || null;
@@ -200,9 +214,11 @@ export async function saveOrderToSupabase(order) {
     structure: order.structure || order.jobDetails?.structure || '—',
     printWidthMm: order.printWidthMm || order.jobDetails?.printWidthMm || null,
     repeatLengthMm: order.repeatLengthMm || order.jobDetails?.repeatLengthMm || null,
-    colorsCount: order.colorsCount || order.jobDetails?.colorsCount || 6,
-    orderDate: order.orderDate || order.jobDetails?.orderDate || new Date().toLocaleDateString('en-GB'),
-    wastagePct: Number(order.wastagePct) || Number(order.calculationDetails?.wastagePct) || 5,
+    colorsCount: order.colorsCount ?? order.jobDetails?.colorsCount ?? null,
+    orderDate: order.orderDate || order.jobDetails?.orderDate || formatOrderDate(),
+    wastagePct: [order.wastagePct, order.calculationDetails?.wastagePct]
+      .map(value => (value === undefined || value === null || value === '' ? null : Number(value)))
+      .find(value => Number.isFinite(value)) ?? null,
     wastageKg: Number(order.wastageKg) || Number(order.calculationDetails?.wastageKg) || 0,
     calculationDetails: order.calculationDetails || order.jobDetails?.calculationDetails || null,
     poIssued: order.poIssued || false,
@@ -1094,7 +1110,7 @@ export async function fetchCylinders() {
         printWidthMm: Number(c.print_width_mm || c.pouch_open_width || pm.printWidthMm) || 1000,
         layer1PrintedQtyKg: Number(c.layer1_printed_qty_kg) || 0,
         dispatchedQty: Number(c.dispatched_qty) || 0,
-        utilisationLimit: Number(c.utilisation_limit || pm.utilisationLimit) || 10000,
+        utilisationLimit: storedOrNull(c.utilisation_limit ?? pm.utilisationLimit),
         status: c.status || 'Active In-Use',
         artworkUrl: c.artwork_url || c.job_card_file_url || pm.artworkUrl || null,
         jobCardFileUrl: c.job_card_file_url || c.artwork_url || pm.jobCardFileUrl || '',
@@ -1186,7 +1202,7 @@ export async function saveCylinderToSupabase(cyl) {
     costBorneType: cyl.costBorneType || 'client',
     clientGroup: cyl.clientGroup || '',
     circumferenceMm: Number(cyl.circumferenceMm) || 0,
-    utilisationLimit: Number(cyl.utilisationLimit) || 10000,
+    utilisationLimit: storedOrNull(cyl.utilisationLimit),
     jobCardFileUrl: fileUrl,
     jobCardFileName: fileName,
     artworkUrl: fileUrl,
@@ -1308,7 +1324,7 @@ export async function fetchProductionRecords() {
         jobName: r.job_name || extra.jobName,
         clientName: r.client_name || extra.clientName || '',
         operatorName: r.operator_name || extra.operatorName || '',
-        shift: r.shift || extra.shift || 'Day Shift',
+        shift: r.shift || extra.shift || '',
         dateFilled: r.date_filled || extra.dateFilled || (r.recorded_at ? r.recorded_at.split('T')[0] : new Date().toISOString().split('T')[0]),
         materialsList: Array.isArray(r.materials_list) ? r.materials_list : (Array.isArray(extra.materialsList) ? extra.materialsList : []),
         qtyFirstPassL1: Number(extra.qtyFirstPassL1 || extra.qtyPrinting || 0),
@@ -1326,15 +1342,15 @@ export async function fetchProductionRecords() {
         pouchingScrapKg: Number(extra.pouchingScrapKg || 0),
         actualInkGsm: Number(r.actual_ink_gsm ?? extra.actualInkGsm ?? 0),
         actualAdhesiveGsm: Number(r.actual_adhesive_gsm ?? extra.actualAdhesiveGsm ?? 0),
-        targetInkGsm: Number(r.target_ink_gsm ?? extra.targetInkGsm ?? 1.5),
-        targetAdhesiveGsm: Number(r.target_adhesive_gsm ?? extra.targetAdhesiveGsm ?? 1.5),
+        targetInkGsm: storedOrNull(r.target_ink_gsm ?? extra.targetInkGsm),
+        targetAdhesiveGsm: storedOrNull(r.target_adhesive_gsm ?? extra.targetAdhesiveGsm),
         qtyDispatch: Number(extra.qtyDispatch) || Number(r.net_usable_kg) || 0,
         totalProductionQtyKg: Number(r.gross_production_kg) || Number(extra.totalProductionQtyKg) || 0,
         grossProductionKg: Number(r.gross_production_kg) || Number(extra.totalProductionQtyKg) || 0,
         netUsableKg: Number(r.net_usable_kg) || Number(extra.qtyDispatch) || 0,
         outputRolls: extra.outputRolls || extra.rollsBreakdown || [],
         rollsBreakdown: extra.rollsBreakdown || extra.outputRolls || [],
-        inputRollsList: extra.inputRollsList || [],
+        inputRollsList: (Array.isArray(r.input_rolls_list) && r.input_rolls_list.length ? r.input_rolls_list : extra.inputRollsList) || [],
         createdBalanceRolls: extra.createdBalanceRolls || [],
         stages: extra.stages || {},
         actualMetersPrinted: Number(extra.actualMetersPrinted || 0),
@@ -1344,13 +1360,13 @@ export async function fetchProductionRecords() {
         printingEndTime: extra.printingEndTime || null,
         printingDurationMinutes: Number(extra.printingDurationMinutes || 0),
         printingDurationFormatted: extra.printingDurationFormatted || '',
-        adhesiveCostPerKg: Number(extra.adhesiveCostPerKg ?? 270),
-        paperCoreCostPerKg: Number(extra.paperCoreCostPerKg ?? 45),
+        adhesiveCostPerKg: storedOrNull(extra.adhesiveCostPerKg),
+        paperCoreCostPerKg: storedOrNull(extra.paperCoreCostPerKg),
         adhesiveCostRs: Number(extra.adhesiveCostRs ?? 0),
         paperCoreCostRs: Number(extra.paperCoreCostRs ?? 0),
         rawMaterialsTableCostRs: Number(extra.rawMaterialsTableCostRs ?? 0),
         totalMaterialCostRs: Number(r.total_material_cost_rs ?? extra.totalMaterialCostRs ?? 0),
-        processingCostPerKg: Number(r.processing_cost_per_kg ?? extra.processingCostPerKg ?? 25),
+        processingCostPerKg: storedOrNull(r.processing_cost_per_kg ?? extra.processingCostPerKg),
         totalProcessingCostRs: Number(r.total_processing_cost_rs ?? extra.totalProcessingCostRs ?? 0),
         finalProductionCostRs: Number(r.final_production_cost_rs ?? extra.finalProductionCostRs ?? 0),
         printingPlainSettingWastageKg: Number(r.printing_plain_setting_wastage_kg ?? extra.printingPlainSettingWastageKg ?? 0),
@@ -1428,8 +1444,8 @@ export async function saveProductionRecordToSupabase(record) {
     totalProductionQtyKg: grossKg,
     grossProductionKg: grossKg,
     netUsableKg: netKg,
-    adhesiveCostPerKg: Number(record.adhesiveCostPerKg || 270),
-    paperCoreCostPerKg: Number(record.paperCoreCostPerKg || 45),
+    adhesiveCostPerKg: storedOrNull(record.adhesiveCostPerKg),
+    paperCoreCostPerKg: storedOrNull(record.paperCoreCostPerKg),
     adhesiveCostRs: Number(record.adhesiveCostRs || 0),
     paperCoreCostRs: Number(record.paperCoreCostRs || 0),
     rawMaterialsTableCostRs: Number(record.rawMaterialsTableCostRs || 0),
@@ -1451,8 +1467,8 @@ export async function saveProductionRecordToSupabase(record) {
     scrapWastagePct: scrapPct,
     actualInkGsm: Number(record.actualInkGsm || 0),
     actualAdhesiveGsm: Number(record.actualAdhesiveGsm || 0),
-    targetInkGsm: Number(record.targetInkGsm || 1.5),
-    targetAdhesiveGsm: Number(record.targetAdhesiveGsm || 1.5),
+    targetInkGsm: storedOrNull(record.targetInkGsm),
+    targetAdhesiveGsm: storedOrNull(record.targetAdhesiveGsm),
     filledBy: record.filledBy,
     approvedBy: record.approvedBy,
     approvalDate: record.approvalDate,
@@ -1465,12 +1481,12 @@ export async function saveProductionRecordToSupabase(record) {
     job_name: record.jobName || 'Production Record',
     client_name: record.clientName || '',
     operator_name: record.operatorName || record.filledBy || '',
-    shift: record.shift || 'Day Shift',
+    shift: record.shift || '',
     date_filled: record.dateFilled || new Date().toISOString().split('T')[0],
     actual_ink_gsm: Number(record.actualInkGsm || 0),
     actual_adhesive_gsm: Number(record.actualAdhesiveGsm || 0),
-    target_ink_gsm: Number(record.targetInkGsm || 1.5),
-    target_adhesive_gsm: Number(record.targetAdhesiveGsm || 1.5),
+    target_ink_gsm: storedOrNull(record.targetInkGsm),
+    target_adhesive_gsm: storedOrNull(record.targetAdhesiveGsm),
     gross_production_kg: grossKg,
     net_usable_kg: netKg,
     total_wastage_kg: scrapKg,
@@ -1484,7 +1500,7 @@ export async function saveProductionRecordToSupabase(record) {
     laminate_wastage_kg: Number(record.laminateWastageKg || 0),
     trim_wastage_kg: Number(record.trimWastageKg || 0),
     total_material_cost_rs: Number(record.totalMaterialCostRs || 0),
-    processing_cost_per_kg: Number(record.processingCostPerKg || 25),
+    processing_cost_per_kg: storedOrNull(record.processingCostPerKg),
     total_processing_cost_rs: Number(record.totalProcessingCostRs || 0),
     final_production_cost_rs: Number(record.finalProductionCostRs || 0),
     filled_by: record.filledBy || '',
@@ -1492,7 +1508,8 @@ export async function saveProductionRecordToSupabase(record) {
     approval_date: record.approvalDate || '',
     notes: record.notes || '',
     status: record.status || 'Filled by Plant Manager',
-    process_logs: extra
+    process_logs: extra,
+    input_rolls_list: Array.isArray(record.inputRollsList) ? record.inputRollsList : (extra.inputRollsList || []),
   };
   
   const { error: fullErr } = await supabase.from('production_records').upsert(fullPayload, { onConflict: 'id' });
@@ -1941,7 +1958,7 @@ export async function fetchPrintingMachines() {
       name: m.name,
       type: m.type || 'Rotogravure',
       colors: Number(m.colors) || 8,
-      maxSpeedMpm: Number(m.max_speed_mpm) || 250,
+      maxSpeedMpm: storedOrNull(m.max_speed_mpm),
       maxWidthMm: Number(m.max_width_mm) || 1200,
       status: m.status || 'Active',
       operator: m.operator,
@@ -1964,7 +1981,7 @@ export async function savePrintingMachineToSupabase(machine) {
     name: machine.name || 'Machine',
     type: machine.type || 'Rotogravure',
     colors: Number(machine.colors) || 8,
-    max_speed_mpm: Number(machine.maxSpeedMpm) || 250,
+    max_speed_mpm: storedOrNull(machine.maxSpeedMpm),
     max_width_mm: Number(machine.maxWidthMm) || 1200,
     status: machine.status || 'Active',
     operator: machine.operator || '',
@@ -2001,14 +2018,14 @@ export async function fetchProductionSchedules() {
       jobName: s.job_name,
       clientName: s.client_name,
       machineId: s.machine_id,
-      shift: s.shift || 'Day Shift',
+      shift: s.shift || '',
       scheduledDate: s.scheduled_date,
       startTime: s.start_time,
       orderQtyKg: Number(s.order_qty_kg) || 0,
       widthMm: Number(s.width_mm) || 0,
       micron: Number(s.micron) || 12,
       filmType: s.film_type || 'PET',
-      maxSpeedMpm: Number(s.max_speed_mpm) || 250,
+      maxSpeedMpm: storedOrNull(s.max_speed_mpm),
       totalLengthMeters: Number(s.total_length_meters) || 0,
       runTimeMins: Number(s.run_time_mins) || 0,
       rollChangeoverMins: Number(s.roll_changeover_mins) || 0,
@@ -2036,14 +2053,14 @@ export async function saveProductionScheduleToSupabase(schedule) {
     job_name: schedule.jobName || '',
     client_name: schedule.clientName || '',
     machine_id: schedule.machineId,
-    shift: schedule.shift || 'Day Shift',
+    shift: schedule.shift || '',
     scheduled_date: schedule.scheduledDate || new Date().toISOString().split('T')[0],
     start_time: schedule.startTime || '08:00',
     order_qty_kg: Number(schedule.orderQtyKg) || 0,
     width_mm: Number(schedule.widthMm) || 0,
     micron: Number(schedule.micron) || 12,
     film_type: schedule.filmType || 'PET',
-    max_speed_mpm: Number(schedule.maxSpeedMpm) || 250,
+    max_speed_mpm: storedOrNull(schedule.maxSpeedMpm),
     total_length_meters: Number(schedule.totalLengthMeters) || 0,
     run_time_mins: Number(schedule.runTimeMins) || 0,
     roll_changeover_mins: Number(schedule.rollChangeoverMins) || 0,
@@ -2158,7 +2175,7 @@ export async function fetchJobMasters() {
         layers = parseStructureStringToLayers(derivedStructure);
       }
 
-      const parseGsm = (val, defaultVal = 1.5) => {
+      const parseGsm = (val, defaultVal = null) => {
         if (val !== undefined && val !== null && val !== '') {
           const num = parseFloat(val);
           if (!isNaN(num)) return num;
@@ -2166,8 +2183,8 @@ export async function fetchJobMasters() {
         return defaultVal;
       };
 
-      const inkGsm = parseGsm(j.ink_gsm ?? j.inkGsm ?? meta.inkGsm ?? pm.inkGsm ?? pm.ink_gsm, 1.5);
-      const adhesiveGsm = parseGsm(j.adhesive_gsm ?? j.adhesiveGsm ?? meta.adhesiveGsm ?? pm.adhesiveGsm ?? pm.adhesive_gsm, 1.5);
+      const inkGsm = parseGsm(j.ink_gsm ?? j.inkGsm ?? meta.inkGsm ?? pm.inkGsm ?? pm.ink_gsm, null);
+      const adhesiveGsm = parseGsm(j.adhesive_gsm ?? j.adhesiveGsm ?? meta.adhesiveGsm ?? pm.adhesiveGsm ?? pm.adhesive_gsm, null);
 
       return {
         id: j.id,
@@ -2185,10 +2202,10 @@ export async function fetchJobMasters() {
         adhesiveGsm: adhesiveGsm,
         cylinderSku: j.cylinder_sku || j.sku_code || '',
         cylinderCost: j.cylinder_cost || '₹ 0',
-        colorsCount: Number(j.colors_count) || 6,
+        colorsCount: storedOrNull(j.colors_count),
         engravuresName: j.engravures_name || j.engraver_name || '',
         costBorneBy: j.cost_borne_by || 'Client (100%)',
-        utilisationLimit: Number(j.utilisation_limit) || 10000,
+        utilisationLimit: storedOrNull(j.utilisation_limit),
         jobCardFileName: j.job_card_file_name || (j.job_card_file_url || j.artwork_url ? 'Artwork_KLD_Proof.pdf' : ''),
         jobCardFileUrl: j.job_card_file_url || j.artwork_url || '',
         artworkUrl: j.artwork_url || j.job_card_file_url || '',
@@ -2239,14 +2256,14 @@ export async function saveJobMasterToSupabase(jobMaster) {
   const repeatLengthMm = Number(jobMaster.repeatLengthMm || jobMaster.repeat_length_mm) || 400;
   const pouchWidthMm = Number(jobMaster.pouchOpenWidth) || printWidthMm;
   const pouchHeightMm = Number(jobMaster.pouchHeight) || 150;
-  const colorsCount = Number(jobMaster.colorsCount) || 6;
+  const colorsCount = storedOrNull(jobMaster.colorsCount);
   const cylinderCost = String(jobMaster.cylinderCost || '₹ 0');
   const costBorneBy = jobMaster.costBorneBy || 'Client (100%)';
   const engraverName = jobMaster.engravuresName || jobMaster.engraverName || '';
   const fileUrl = jobMaster.jobCardFileUrl || jobMaster.artworkUrl || '';
   const fileName = jobMaster.jobCardFileName || (fileUrl ? 'Artwork_KLD_Proof.pdf' : '');
 
-  const parseGsm = (val, defaultVal = 1.5) => {
+  const parseGsm = (val, defaultVal = null) => {
     if (val !== undefined && val !== null && val !== '') {
       const num = parseFloat(val);
       if (!isNaN(num)) return num;
@@ -2254,8 +2271,8 @@ export async function saveJobMasterToSupabase(jobMaster) {
     return defaultVal;
   };
 
-  const inkGsmVal = parseGsm(jobMaster.inkGsm, 1.5);
-  const adhesiveGsmVal = parseGsm(jobMaster.adhesiveGsm, 1.5);
+  const inkGsmVal = parseGsm(jobMaster.inkGsm, null);
+  const adhesiveGsmVal = parseGsm(jobMaster.adhesiveGsm, null);
 
   const pressMarks = {
     silLogo: jobMaster.silLogo !== undefined && jobMaster.silLogo !== null ? jobMaster.silLogo : '',
@@ -2327,7 +2344,7 @@ export async function saveJobMasterToSupabase(jobMaster) {
     process_routing: processRouting,
     cylinder_sku: jobMaster.cylinderSku || skuCode,
     engravures_name: engraverName,
-    utilisation_limit: Number(jobMaster.utilisationLimit) || 10000,
+    utilisation_limit: storedOrNull(jobMaster.utilisationLimit),
     job_card_file_name: fileName,
     job_card_file_url: fileUrl,
     artwork_url: fileUrl,
@@ -2781,15 +2798,17 @@ export async function saveEmailSettingsToSupabase(config) {
     await ensureValidSession();
     const payload = {
       id: 'default',
-      smtp_host: config.smtpHost || 'smtp.hostinger.com',
-      smtp_port: parseInt(config.smtpPort || 465, 10),
-      smtp_secure: config.smtpSecure !== false,
-      smtp_user: config.smtpUser || 'admin@samyakinternational.in',
-      sender_name: config.senderName || 'Samyak International ERP',
-      admin_email: config.adminEmail || 'admin@samyakinternational.in',
-      plant_manager_email: config.plantManagerEmail || 'admin@samyakinternational.in',
-      purchase_email: config.purchaseEmail || 'purchase@samyakinternational.in',
-      dispatch_email: config.dispatchEmail || 'dispatch@samyakinternational.in',
+      smtp_host: config.smtpHost ?? '',
+      smtp_port: config.smtpPort === '' || config.smtpPort == null ? null : Number(config.smtpPort),
+      smtp_secure: config.smtpSecure === true,
+      smtp_user: config.smtpUser ?? '',
+      sender_name: config.senderName ?? '',
+      admin_email: config.adminEmail ?? '',
+      plant_manager_email: config.plantManagerEmail ?? '',
+      purchase_email: config.purchaseEmail ?? '',
+      dispatch_email: config.dispatchEmail ?? '',
+      user_daily_cap: config.userDailyCap === '' || config.userDailyCap == null ? null : Number(config.userDailyCap),
+      plant_daily_cap: config.plantDailyCap === '' || config.plantDailyCap == null ? null : Number(config.plantDailyCap),
       last_updated: new Date().toISOString()
     };
     const { error } = await supabase.from('email_settings').upsert(payload, { onConflict: 'id' });
@@ -2815,7 +2834,9 @@ export async function fetchEmailSettingsFromSupabase() {
         adminEmail: data.admin_email,
         plantManagerEmail: data.plant_manager_email,
         purchaseEmail: data.purchase_email,
-        dispatchEmail: data.dispatch_email
+        dispatchEmail: data.dispatch_email,
+        userDailyCap: data.user_daily_cap,
+        plantDailyCap: data.plant_daily_cap,
       };
     }
   } catch (e) {
@@ -3602,7 +3623,7 @@ export function sanitizePurchaseOrder(raw) {
   const sanitizedItems = items.map((it, idx) => {
     const qty = Number(it.qtyKg ?? it.qty ?? it.quantity ?? 0) || 0;
     const rate = Number(it.rate ?? it.price ?? it.unitPrice ?? 0) || 0;
-    const gstPct = Number(it.gstPct ?? it.gstRate ?? it.taxPct ?? 18) || 0;
+    const gstPct = storedOrNull(it.gstPct ?? it.gstRate ?? it.taxPct);
     const lineAmount = Number(it.amount ?? (qty * rate)) || (qty * rate);
 
     return {

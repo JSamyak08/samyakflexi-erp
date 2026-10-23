@@ -1,26 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Helper to set cookie for extra persistence against cache wipes
-const setCookie = (name, value, days = 365) => {
-  try {
-    const expires = new Date(Date.now() + days * 864e5).toUTCString();
-    document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/; SameSite=Strict`;
-  } catch (e) {
-    // Ignore cookie errors in restricted environments
-  }
-};
-
-const getCookie = (name) => {
-  try {
-    return document.cookie.split('; ').reduce((r, v) => {
-      const parts = v.split('=');
-      return parts[0] === name ? decodeURIComponent(parts[1]) : r;
-    }, '');
-  } catch (e) {
-    return '';
-  }
-};
-
 const removeCookie = (name) => {
   try {
     document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
@@ -28,9 +7,8 @@ const removeCookie = (name) => {
 };
 
 /**
- * Credential retrieval (LocalStorage -> SessionStorage -> Cookie -> Env).
- * There is no production project fallback. A missing URL or anon key leaves
- * the client unconfigured.
+ * Credential retrieval (this tab's sessionStorage, then Vite env).
+ * localStorage and cookies are not read. There is no production project fallback.
  */
 export const getSupabaseCredentials = () => {
   let url = '';
@@ -52,15 +30,12 @@ export const getSupabaseCredentials = () => {
     return s;
   };
 
-  try { url = cleanVal(localStorage.getItem('samyak_supabase_url')); } catch (e) {}
-  if (!url) try { url = cleanVal(sessionStorage.getItem('samyak_supabase_url')); } catch (e) {}
-  if (!url) url = cleanVal(getCookie('samyak_supabase_url'));
+  try { url = cleanVal(sessionStorage.getItem('samyak_supabase_url')); } catch (e) {}
   if (!url) url = cleanVal(import.meta.env.VITE_SUPABASE_URL || '');
 
-  try { key = cleanVal(localStorage.getItem('samyak_supabase_key')); } catch (e) {}
-  if (!key) try { key = cleanVal(sessionStorage.getItem('samyak_supabase_key')); } catch (e) {}
-  if (!key) key = cleanVal(getCookie('samyak_supabase_key'));
+  try { key = cleanVal(sessionStorage.getItem('samyak_supabase_key')); } catch (e) {}
   if (!key) key = cleanVal(import.meta.env.VITE_SUPABASE_ANON_KEY || '');
+  clearLegacyCredentialCopies();
 
   return { url, key };
 };
@@ -226,33 +201,32 @@ export const checkSupabaseConnection = async () => {
   }
 };
 
+function clearLegacyCredentialCopies() {
+  try { localStorage.removeItem('samyak_supabase_url'); } catch (e) {}
+  try { localStorage.removeItem('samyak_supabase_key'); } catch (e) {}
+  removeCookie('samyak_supabase_url');
+  removeCookie('samyak_supabase_key');
+}
+
 /**
- * Save custom Supabase credentials across LocalStorage, SessionStorage, and Cookies
- * to ensure persistent reconnection across cache clears and browser sessions.
- * Automatically broadcasts a custom event to notify all components.
+ * Save an operator override for this tab only. Env remains the durable source.
+ * Older localStorage and cookie copies are removed.
  */
 export const saveSupabaseCredentials = (supabaseUrl, supabaseAnonKey) => {
   const trimmedUrl = (supabaseUrl || '').trim();
   const trimmedKey = (supabaseAnonKey || '').trim();
+  clearLegacyCredentialCopies();
 
   if (trimmedUrl) {
-    try { localStorage.setItem('samyak_supabase_url', trimmedUrl); } catch (e) {}
     try { sessionStorage.setItem('samyak_supabase_url', trimmedUrl); } catch (e) {}
-    setCookie('samyak_supabase_url', trimmedUrl);
   } else {
-    try { localStorage.removeItem('samyak_supabase_url'); } catch (e) {}
     try { sessionStorage.removeItem('samyak_supabase_url'); } catch (e) {}
-    removeCookie('samyak_supabase_url');
   }
 
   if (trimmedKey) {
-    try { localStorage.setItem('samyak_supabase_key', trimmedKey); } catch (e) {}
     try { sessionStorage.setItem('samyak_supabase_key', trimmedKey); } catch (e) {}
-    setCookie('samyak_supabase_key', trimmedKey);
   } else {
-    try { localStorage.removeItem('samyak_supabase_key'); } catch (e) {}
     try { sessionStorage.removeItem('samyak_supabase_key'); } catch (e) {}
-    removeCookie('samyak_supabase_key');
   }
 
   // Invalidate cached client so the next query immediately uses the new credentials

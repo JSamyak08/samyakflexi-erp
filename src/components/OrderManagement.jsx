@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { configuredGstRate } from '../utils/pdfHelpers';
 import SearchableSelect from './SearchableSelect';
 import { 
   ShoppingBag, 
@@ -726,7 +727,7 @@ export default function OrderManagement({
       items: poItems,
       totalQtyKg: qtyVal,
       subtotal: totalVal,
-      totalAmount: totalVal * 1.18,
+      totalAmount: totalVal * (1 + configuredGstRate() / 100),
       deliveryDate: order.targetDeliveryDate || new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
       promisedDeliveryDate: order.targetDeliveryDate || new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
       terms: '100% Advance along with Purchase Order',
@@ -934,7 +935,7 @@ export default function OrderManagement({
       items: poItems,
       totalQtyKg: totalQtyKg,
       subtotal: subtotal,
-      totalAmount: subtotal * 1.18,
+      totalAmount: subtotal * (1 + configuredGstRate() / 100),
       deliveryDate,
       promisedDeliveryDate: deliveryDate,
       paymentTerms: paymentTerms,

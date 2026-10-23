@@ -27,7 +27,15 @@ export const SEED_COMPANY_PROFILE = {
   email: 'info@samyakinternational.in',
   placeOfSupply: 'Dhar, Madhya Pradesh (23)',
   logoUrl: '/samyak-logo.svg',
+  defaultGstRatePct: 18,
+  timeZone: 'Asia/Kolkata',
+  locale: 'en-IN',
+  currency: 'INR',
+  financialYearStartMonth: 4,
 };
+
+const OPERATIONAL_NUMBER_FIELDS = ['defaultGstRatePct', 'financialYearStartMonth'];
+const OPERATIONAL_TEXT_FIELDS = ['timeZone', 'locale', 'currency'];
 
 export function companyTagline(profile) {
   return `BSE: ${profile.bseSymbol} • CIN: ${profile.cin}`;
@@ -48,7 +56,39 @@ export function normalizeCompanyProfile(profile) {
     normalized[field] = trimField(source[field]);
   }
   normalized.logoUrl = trimField(source.logoUrl);
+  for (const field of OPERATIONAL_TEXT_FIELDS) {
+    if (source[field] !== undefined && source[field] !== null && trimField(source[field])) {
+      normalized[field] = trimField(source[field]);
+    }
+  }
+  for (const field of OPERATIONAL_NUMBER_FIELDS) {
+    if (source[field] !== undefined && source[field] !== null && source[field] !== '') {
+      const number = Number(source[field]);
+      if (Number.isFinite(number)) normalized[field] = number;
+    }
+  }
   return normalized;
+}
+
+export function requireCompanyField(profile, field) {
+  const source = profile || getCompanyProfile();
+  const value = source?.[field];
+  if (value === undefined || value === null || value === '' || (typeof value === 'number' && !Number.isFinite(value))) {
+    const error = new Error(`Company profile is missing ${field}. Set it in Document Settings.`);
+    error.status = 500;
+    throw error;
+  }
+  return value;
+}
+
+export function companyFooterText(profile = getCompanyProfile()) {
+  const problem = companyProfileError(profile);
+  if (problem) {
+    const error = new Error(problem);
+    error.status = 500;
+    throw error;
+  }
+  return `${profile.name}\n${profile.address} | GSTIN: ${profile.gstin}`;
 }
 
 export function companyProfileError(profile) {

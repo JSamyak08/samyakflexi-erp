@@ -31,7 +31,9 @@ export function unsavedItemsMessage({ completed, failed }) {
  * Run a write, and if it throws or returns a Supabase `{ error }`, try again.
  * The last error is thrown. A successful call returns the write result.
  */
-export async function writeWithRetry(writeFn, { attempts = 2 } = {}) {
+export const WRITE_ATTEMPTS = 2;
+
+export async function writeWithRetry(writeFn, { attempts = WRITE_ATTEMPTS } = {}) {
   const tries = Math.max(1, Number(attempts) || 1);
   let lastError = null;
   for (let attempt = 1; attempt <= tries; attempt += 1) {
@@ -70,7 +72,7 @@ export function mergeCommitted(...maps) {
  * and blocks a later update of the same index, so a second deduction is not
  * stored on top of a deduction that never landed.
  */
-export async function commitSequentialUpdates(updates, saveFn, { attempts = 2 } = {}) {
+export async function commitSequentialUpdates(updates, saveFn, { attempts = WRITE_ATTEMPTS } = {}) {
   const committed = new Map();
   const failed = [];
   const blocked = new Set();
