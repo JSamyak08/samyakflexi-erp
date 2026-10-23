@@ -113,6 +113,7 @@ test('lockdown SQL closes anon access without giving dispatch the client list', 
   assert.match(storage, /public = false/);
   assert.match(storage, /erp_files_delete/);
   assert.match(storage, /private\.app_role\(\) IS NOT NULL/);
+  assert.match(storage, /WHEN insufficient_privilege THEN/);
   const secrets = fs.readFileSync(
     new URL('../supabase/migrations/20261024022000_remove_secret_copies.sql', import.meta.url),
     'utf8',
