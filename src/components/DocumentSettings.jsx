@@ -80,8 +80,10 @@ import {
   getMaterialCostSettings,
   saveMaterialCostSettings,
   fetchMaterialCostSettingsFromSupabase,
-  DEFAULT_MATERIAL_COST_SETTINGS
+  DEFAULT_MATERIAL_COST_SETTINGS,
+  saveCompanyProfile
 } from '../services/settingsService';
+import { SEED_COMPANY_PROFILE, readStoredCompanyProfile, REQUIRED_COMPANY_FIELDS } from '../services/companyProfile';
 import { sendERPEmailNotification, buildEmailTemplate } from '../services/emailService';
 import { fetchSystemSetting } from '../services/supabaseDataService';
 import SearchableSelect from './SearchableSelect';
@@ -108,11 +110,24 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
     fetchSystemSetting('processing_rates').then(apply(setRatesState)).catch(() => {});
     fetchSystemSetting('coa_signatories').then(apply(setCoaSignatoriesState)).catch(() => {});
     fetchSystemSetting('inventory_ageing_settings').then(apply(setAgeingSettings)).catch(() => {});
+    fetchSystemSetting('company_profile').then((remote) => {
+      if (mounted && remote && typeof remote === 'object') {
+        setCompanyProfile(prev => ({ ...prev, ...remote }));
+      }
+    }).catch(() => {});
     return () => { mounted = false; };
   }, []);
 
   // Consumable Material Cost Settings State (Adhesive & Paper Core)
   const [materialCostState, setMaterialCostState] = useState(() => getMaterialCostSettings());
+  const [companyProfile, setCompanyProfile] = useState(() => {
+    try {
+      const stored = readStoredCompanyProfile();
+      return stored ? { ...SEED_COMPANY_PROFILE, ...stored } : { ...SEED_COMPANY_PROFILE };
+    } catch {
+      return { ...SEED_COMPANY_PROFILE };
+    }
+  });
   const [isSavingMaterialCosts, setIsSavingMaterialCosts] = useState(false);
 
   useEffect(() => {
@@ -863,6 +878,61 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
       {/* ========================================================================= */}
       {activeTab === 'general' && (
         <>
+          <form
+            className="glass-panel"
+            style={{ padding: '24px', marginBottom: '24px' }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              const missing = REQUIRED_COMPANY_FIELDS.filter(field => !String(companyProfile[field] || '').trim());
+              if (missing.length) {
+                alert(`Company profile was not saved. Set ${missing.join(', ')}.`);
+                return;
+              }
+              persistSetting(() => saveCompanyProfile(companyProfile), (saved) => setCompanyProfile(saved));
+            }}
+          >
+            <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '1.05rem', fontWeight: '700', margin: 0 }}>Company identity on documents</h3>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '8px 0 0' }}>
+                Purchase orders, challans, payslips, and goods receipts read this profile. A blank statutory field stops the document instead of printing another GSTIN, CIN, or address.
+              </p>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+              {[
+                ['name', 'Legal name'],
+                ['bseSymbol', 'BSE symbol'],
+                ['cin', 'CIN'],
+                ['gstin', 'GSTIN'],
+                ['contactPerson', 'Contact person'],
+                ['phones', 'Phones'],
+                ['email', 'Email'],
+                ['placeOfSupply', 'Place of supply'],
+              ].map(([field, label]) => (
+                <label key={field} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.78rem', fontWeight: 700 }}>
+                  {label}
+                  <input
+                    className="form-control"
+                    value={companyProfile[field] || ''}
+                    onChange={(e) => setCompanyProfile(prev => ({ ...prev, [field]: e.target.value }))}
+                    required
+                  />
+                </label>
+              ))}
+            </div>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.78rem', fontWeight: 700, marginTop: '12px' }}>
+              Address
+              <textarea
+                className="form-control"
+                rows={3}
+                value={companyProfile.address || ''}
+                onChange={(e) => setCompanyProfile(prev => ({ ...prev, address: e.target.value }))}
+                required
+              />
+            </label>
+            <div style={{ marginTop: '16px' }}>
+              <button type="submit" className="btn-primary">Save company profile</button>
+            </div>
+          </form>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
             
             {/* SECTION 1: COMPANY LOGO UPLOAD */}
@@ -1390,6 +1460,37 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                 <p style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4', margin: 0 }}>
                   Standard reference rate used across Job Punching pre-costing estimates and cylinder ink checks.
                 </p>
+              </div>
+
+              <div style={{ background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
+                <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '1rem', marginBottom: '8px' }}>Ink purchase quantity</div>
+                <p style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>
+                  Suggested ink purchase orders use these kilograms. They are not filled in on the purchase order when this setting is missing.
+                </p>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '10px' }}>
+                  Minimum PO quantity (kg)
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    className="form-control"
+                    value={materialCostState.minPoQtyKg !== undefined ? materialCostState.minPoQtyKg : ''}
+                    onChange={e => handleMaterialCostChange('minPoQtyKg', e.target.value)}
+                    required
+                  />
+                </label>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700 }}>
+                  Default reorder level (kg)
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    className="form-control"
+                    value={materialCostState.defaultReorderLevelKg !== undefined ? materialCostState.defaultReorderLevelKg : ''}
+                    onChange={e => handleMaterialCostChange('defaultReorderLevelKg', e.target.value)}
+                    required
+                  />
+                </label>
               </div>
 
               {/* Card 4: Default Conversion Charges / kg */}

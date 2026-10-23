@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Printer, X, Tag, ChevronLeft, ChevronRight, QrCode, ArrowRight } from 'lucide-react';
-import { COMPANY_DETAILS } from '../factoryStore';
+import { loadLetterhead } from '../services/companyProfile';
+import CompanyProfileNotice from './CompanyProfileNotice';
 import QRCode2D from './QRCode2D';
 import { codeKey, codeStartsWith, textFrom } from '../utils/barcodeCode';
 
@@ -45,7 +46,10 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
     }
   }, [autoPrint, rollList.length]);
 
+  const letterhead = loadLetterhead();
+  if (letterhead.error) return <CompanyProfileNotice message={letterhead.error} onClose={onClose} />;
   if (rollList.length === 0) return null;
+  const COMPANY_DETAILS = letterhead.company;
 
   const activeRoll = rollList[activeIndex] || rollList[0];
 
@@ -177,7 +181,7 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
                   {COMPANY_DETAILS.name}
                 </div>
                 <div style={{ fontSize: '0.65rem', color: '#475569', fontWeight: '600', marginTop: '1px' }}>
-                  Indore Plant • GSTIN: {COMPANY_DETAILS.gstin}
+                  {COMPANY_DETAILS.placeOfSupply} • GSTIN: {COMPANY_DETAILS.gstin}
                 </div>
               </>
             ) : (
