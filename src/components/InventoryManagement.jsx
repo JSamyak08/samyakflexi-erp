@@ -2322,6 +2322,11 @@ export default function InventoryManagement({
       poNumber: grnPoNo,
       vendorName: grnVendor,
       vendorId: selectedVendorId,
+      vendorAddress: matchedVendor?.address || '',
+      vendorGstin: matchedVendor?.gstin || '',
+      vendorEmail: matchedVendor?.email || '',
+      vendorPhone: matchedVendor?.phone || matchedVendor?.contactNo || '',
+      vendorContact: matchedVendor?.contactPerson || '',
       invoiceNo: grnInvoiceNo,
       receivedDate: todayIsoDate,
       receivedTime: receivedTimeStr,
@@ -5390,7 +5395,21 @@ export default function InventoryManagement({
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: '6px' }}>
-                          <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={() => setSelectedGRNForPDF(g)}>
+                          <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={() => {
+                            const supplierName = String(g.vendorName || g.vendor?.companyName || g.vendor?.name || '').trim();
+                            const supplierAddress = String(g.vendorAddress || g.vendor?.address || '').trim();
+                            const supplierGstin = String(g.vendorGstin || g.vendor?.gstin || '').trim();
+                            const missing = [
+                              !supplierName && 'supplier name',
+                              !supplierAddress && 'supplier address',
+                              !supplierGstin && 'supplier GSTIN',
+                            ].filter(Boolean);
+                            if (missing.length) {
+                              alert(`This GRN cannot be printed. It is missing ${missing.join(', ')}.`);
+                              return;
+                            }
+                            setSelectedGRNForPDF(g);
+                          }}>
                             <Printer size={14} /> Print GRN
                           </button>
                           <button 

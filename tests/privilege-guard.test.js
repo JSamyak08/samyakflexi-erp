@@ -138,10 +138,18 @@ async function withMailEnv(run) {
   const previous = {
     SMTP_USER: process.env.SMTP_USER,
     SMTP_PASS: process.env.SMTP_PASS,
+    SMTP_HOST: process.env.SMTP_HOST,
+    SMTP_PORT: process.env.SMTP_PORT,
+    SMTP_SECURE: process.env.SMTP_SECURE,
+    APP_ORIGIN: process.env.APP_ORIGIN,
     [EXTERNAL_MANUAL_EMAIL_ENV]: process.env[EXTERNAL_MANUAL_EMAIL_ENV],
   };
   process.env.SMTP_USER = 'stub-user';
   process.env.SMTP_PASS = 'stub-pass';
+  process.env.SMTP_HOST = 'smtp.example.test';
+  process.env.SMTP_PORT = '587';
+  process.env.SMTP_SECURE = 'false';
+  process.env.APP_ORIGIN = 'https://erp.samyakinternational.in';
   delete process.env[EXTERNAL_MANUAL_EMAIL_ENV];
   try {
     await run();
@@ -252,17 +260,64 @@ test('a blocked account email returns status only and is logged', async () => {
   });
 });
 
+test('password links use APP_ORIGIN and ignore the caller origin', async () => {
+  await withMailEnv(async () => {
+    process.env.APP_ORIGIN = 'https://preview.example.test';
+    const service = serviceFor(adminProfile);
+    const res = mockRes();
+    await handleAdminUsers(request({
+      action: 'send_reset',
+      email: 'buyer@plant.com',
+      origin: 'https://flexierp-preview.vercel.app',
+    }), res, {
+      serviceClient: () => service,
+      createTransport: () => ({
+        sendMail: async () => ({ messageId: 'stub' }),
+      }),
+    });
+    assert.equal(res.statusCode, 200);
+    const linkCall = service.calls.find(call => call.name === 'generateLink');
+    assert.equal(linkCall.args.options.redirectTo, 'https://preview.example.test/reset-password');
+  });
+});
+
+test('password links fail when APP_ORIGIN is missing', async () => {
+  await withMailEnv(async () => {
+    delete process.env.APP_ORIGIN;
+    const service = serviceFor(adminProfile);
+    const res = mockRes();
+    let opened = false;
+    await handleAdminUsers(request({
+      action: 'send_reset',
+      email: 'buyer@plant.com',
+      origin: 'https://flexierp-preview.vercel.app',
+    }), res, {
+      serviceClient: () => service,
+      createTransport: () => {
+        opened = true;
+        throw new Error('SMTP must not be opened');
+      },
+    });
+    assert.equal(opened, false);
+    assert.equal(res.statusCode, 500);
+    assert.match(res.body.message, /APP_ORIGIN/);
+    assert.equal(service.calls.some(call => call.name === 'generateLink'), false);
+  });
+});
+
 test('redirect and domain locks are in the source', () => {
   const admin = readSource('api/admin-users.js');
   const policy = readSource('src/services/emailPolicy.js');
   const auth = readSource('src/services/authService.js');
   const invite = readSource('scripts/invite-existing-users.mjs');
   assert.doesNotMatch(admin, /vercel\.app/);
-  assert.match(admin, /https:\/\/erp\.samyakinternational\.in/);
+  assert.doesNotMatch(admin, /erp\.samyakinternational\.in/);
+  assert.match(admin, /resolveAppOrigin/);
   assert.doesNotMatch(admin, /actionLink: mail\.actionLink/);
   assert.doesNotMatch(policy, /LEGACY_INTERNAL_DOMAINS/);
   assert.doesNotMatch(policy, /plant\\\.com\|/);
-  assert.match(auth, /redirectTo: 'https:\/\/erp\.samyakinternational\.in\/reset-password'/);
+  assert.doesNotMatch(auth, /redirectTo: 'https:\/\/erp\.samyakinternational\.in\/reset-password'/);
+  assert.match(auth, /VITE_APP_ORIGIN/);
   assert.doesNotMatch(invite, /Share this setup link/);
   assert.match(invite, /const origin = 'https:\/\/erp\.samyakinternational\.in'/);
 });
