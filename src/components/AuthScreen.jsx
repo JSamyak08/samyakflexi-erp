@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Lock, 
   Mail, 
@@ -15,9 +15,18 @@ import {
 import { signInUser, sendPasswordResetEmail, updateOwnPassword } from '../services/authService';
 
 
-export default function AuthScreen({ onLogin, recoveryMode = false, onPasswordUpdated }) {
+export default function AuthScreen({ onLogin, recoveryMode = false, onPasswordUpdated, initialView = 'signin', onViewChange }) {
 
-  const [viewMode, setViewMode] = useState('signin'); // 'signin' | 'forgot_password'
+  const [viewMode, setViewMode] = useState(initialView === 'forgot_password' ? 'forgot_password' : 'signin');
+
+  useEffect(() => {
+    if (initialView === 'forgot_password' || initialView === 'signin') setViewMode(initialView);
+  }, [initialView]);
+
+  const chooseView = (mode) => {
+    setViewMode(mode);
+    if (onViewChange) onViewChange(mode);
+  };
   
   // Login Form State
   const [email, setEmail] = useState('');
@@ -261,7 +270,7 @@ export default function AuthScreen({ onLogin, recoveryMode = false, onPasswordUp
                         setError('');
                         setRecoverySuccessMsg('');
                         setRecoveryEmail(email);
-                        setViewMode('forgot_password');
+                        chooseView('forgot_password');
                       }}
                     >
                       Forgot Password?
@@ -313,7 +322,7 @@ export default function AuthScreen({ onLogin, recoveryMode = false, onPasswordUp
                   className="btn-back-link"
                   onClick={() => {
                     setError('');
-                    setViewMode('signin');
+                    chooseView('signin');
                   }}
                 >
                   <ArrowLeft size={16} /> Back to Sign In
