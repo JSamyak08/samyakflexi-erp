@@ -75,7 +75,7 @@ import SuccessScreenModal from './components/SuccessScreenModal';
 import { showSuccessScreen } from './context/SuccessModalContext';
 import { fetchAuditLogsFromSupabase, saveAuditLogToSupabase, createAuditEntry, pruneOldAuditLogs } from './services/auditLogger';
 import { getDocumentPrefixes, getNextDocRefNumber } from './services/settingsService';
-import { getRouteFromUrl, getTabFromUrl, pushSlugState } from './utils/slugRouter';
+import { getRouteFromUrl, getTabFromUrl, pushSlugState, parseLocation, isRecoveryLocation, rememberReturnTo, consumeReturnTo } from './utils/slugRouter';
 import { activeUserLabel } from './utils/activeUserLabel';
 import { isSupabaseConfigured, checkSupabaseConnection } from './services/supabaseClient';
 import { 
@@ -235,6 +235,17 @@ function stripDummyRecords(arr, idFields = ['id', 'orderId', 'jobId']) {
 initSafeStorage();
 
 
+function routeFromHref(href) {
+  try {
+    const url = new URL(href, 'http://erp.local');
+    const route = parseLocation({ pathname: url.pathname, search: url.search, hash: url.hash });
+    if (!route || route.unknown || !route.tab || route.tab === 'login') return null;
+    return route;
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
   const isSupaConfigured = isSupabaseConfigured();
   const [isSupaActive, setIsSupaActive] = useState(isSupaConfigured);
@@ -279,6 +290,7 @@ export default function App() {
   const [sessionProfile, setSessionProfile] = useState(null);
   const [mustSetPassword, setMustSetPassword] = useState(false);
   const passwordRecoveryRef = useRef(false);
+  const recoveryHandledRef = useRef(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(!isSupaConfigured);
   const [isSigningIn, setIsSigningIn] = useState(false);
@@ -305,22 +317,37 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Sync URL path with auth state and deep links
+  // Sync URL path with auth state and deep links.
+  // Recovery hashes and /reset-password stay put so the email link can finish.
+  // A signed-out visit stores the page and returns there after sign-in.
   useEffect(() => {
-    if (isAuthReady) {
-      if (!isAuthenticated || !currentUser) {
-        if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
-          window.history.replaceState({ tab: 'login' }, '', '/login');
-        }
-      } else {
-        if (activeTab === 'login' || (typeof window !== 'undefined' && window.location.pathname === '/login')) {
-          const defaultTab = currentUser?.role === 'Printing Operator' ? 'printing_scheduler' : 'dashboard';
-          handleTabChange(defaultTab);
-        } else {
-          pushSlugState(activeTab, urlParams, true);
-        }
-      }
+    if (!isAuthReady || typeof window === 'undefined') return;
+    const loc = window.location;
+    if (!recoveryHandledRef.current && isRecoveryLocation(loc)) {
+      passwordRecoveryRef.current = true;
+      setMustSetPassword(true);
+      return;
     }
+    if (!isAuthenticated || !currentUser) {
+      if (loc.pathname !== '/login' && !loc.pathname.startsWith('/login/')) {
+        rememberReturnTo(loc.pathname + loc.search + loc.hash);
+        window.history.replaceState({ tab: 'login' }, '', '/login');
+      }
+      return;
+    }
+    if (activeTab === 'login' || loc.pathname === '/login' || loc.pathname.startsWith('/login/') || loc.pathname === '/reset-password') {
+      const saved = consumeReturnTo();
+      const restored = saved ? routeFromHref(saved) : null;
+      if (restored && isTabAllowed(restored.tab)) {
+        handleTabChange(restored.tab, restored.params || {});
+        return;
+      }
+      const defaultTab = currentUser?.role === 'Printing Operator' ? 'printing_scheduler' : 'dashboard';
+      handleTabChange(defaultTab);
+      return;
+    }
+    const route = getRouteFromUrl();
+    if (!route.unknown) pushSlugState(activeTab, urlParams, true);
   }, [isAuthenticated, currentUser, isAuthReady, activeTab]);
 
   // Supabase is the store of record. Screens stay on the loader until that fetch finishes.
@@ -518,14 +545,16 @@ export default function App() {
     }));
   }, [activeUsersList, currentUser]);
 
-  const isTabAllowed = (tabKey) => {
-    if (!currentUser) return false;
-    if (currentUser.role === 'Admin') return true;
+  const isUserTabAllowed = (user, tabKey) => {
+    if (!user || !tabKey) return false;
+    if (user.role === 'Admin') return true;
     if (tabKey === 'user_management' || tabKey === 'audit_logs') return false;
-    const rolePerm = rolePermissions[currentUser.role];
+    const rolePerm = rolePermissions[user.role];
     if (!rolePerm) return false;
     return rolePerm[tabKey] === true;
   };
+
+  const isTabAllowed = (tabKey) => isUserTabAllowed(currentUser, tabKey);
 
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
 
@@ -1383,9 +1412,17 @@ export default function App() {
     setIsSigningIn(true);
     logAudit('AUTH', 'User Management', `User ${user?.name || user?.email || 'User'} signed in to the system`, user?.id);
     applyAuthenticatedProfile(user);
-    const targetTab = user?.role === 'Printing Operator'
-      ? 'printing_scheduler'
-      : (activeTab === 'login' ? 'dashboard' : (activeTab || 'dashboard'));
+    const saved = consumeReturnTo();
+    const restored = saved ? routeFromHref(saved) : null;
+    if (restored && isUserTabAllowed(user, restored.tab)) {
+      handleTabChange(restored.tab, restored.params || {});
+      return;
+    }
+    if (activeTab && activeTab !== 'login' && isUserTabAllowed(user, activeTab)) {
+      handleTabChange(activeTab, urlParams);
+      return;
+    }
+    const targetTab = user?.role === 'Printing Operator' ? 'printing_scheduler' : 'dashboard';
     handleTabChange(targetTab);
   };
 
@@ -1434,7 +1471,10 @@ export default function App() {
     clearHrCache();
     setSfgGoods([]);
 
+    recoveryHandledRef.current = false;
+    passwordRecoveryRef.current = false;
     if (typeof window !== 'undefined') {
+      rememberReturnTo(window.location.pathname + window.location.search + window.location.hash);
       window.history.replaceState({ tab: 'login' }, '', '/login');
     }
     if (isSupaActive) {
@@ -3485,7 +3525,11 @@ export default function App() {
         onLogin={handleLogin}
         recoveryMode={mustSetPassword}
         onPasswordUpdated={async () => {
+          recoveryHandledRef.current = true;
           passwordRecoveryRef.current = false;
+          if (typeof window !== 'undefined') {
+            window.history.replaceState({ tab: 'dashboard' }, '', '/dashboard');
+          }
           setMustSetPassword(false);
           const profile = await fetchSessionProfile();
           if (profile && !profile.pending && !profile.inactive) {
