@@ -35,7 +35,10 @@ import SearchableSelect from './SearchableSelect';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
 import TablePagination, { usePagination } from './TablePagination';
 import { getCompanyProfile } from '../services/companyProfile';
-import { generateDocRefNumber, getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
+import { generateDocRefNumber, getDocumentPrefixes, getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
+import { allocateGrnNumber } from '../services/supabaseDataService';
+import { findDuplicateInvoice, oneLineFromReceipt, prepareMultiLineReceipt } from '../services/grnDocument';
+import { generateInventoryId } from '../factoryStore';
 import { calculateGSTBreakdown, formatINR } from '../utils/pdfHelpers';
 
 export default function PurchaseOrderManagement({
@@ -52,7 +55,8 @@ export default function PurchaseOrderManagement({
   onAddGRN,
   onUpdateGRN,
   onSaveInventoryItem,
-  onUpdateInventory
+  onUpdateInventory,
+  onUpdateInventoryRolls
 }) {
   // Filters state
   const [searchTerm, setSearchTerm] = useState('');
@@ -96,6 +100,7 @@ export default function PurchaseOrderManagement({
     selectedItemIndex: 0
   });
   const [isSubmittingGrn, setIsSubmittingGrn] = useState(false);
+  const [extraPoLines, setExtraPoLines] = useState([]);
 
   // New PO Form State
   const defaultTerms = getDocumentTerms();
@@ -775,8 +780,50 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
     }
   };
 
+  const poItemKey = (item, index) => String(item?.id || item?.lineId || `po-line-${index}`);
+
+  const draftFromPoItem = (item, index, po) => {
+    const itemOrderedQty = parseFloat(item.qtyKg || item.qty) || 0;
+    const itemRate = parseFloat(item.rate) || 0;
+    const initialItemName = item.itemDesc || item.itemName || 'Raw Material Inward';
+    return {
+      poLineId: poItemKey(item, index),
+      poIndex: index,
+      itemName: initialItemName,
+      originalPoItemName: initialItemName,
+      category: item.category || po?.category || 'Raw Materials',
+      micron: item.micron || '',
+      widthMm: item.widthMm || '',
+      filmType: item.filmType || '',
+      unit: item.unit || 'Kg',
+      poOrderedQty: itemOrderedQty,
+      poRate: itemRate,
+      inwardRate: itemRate,
+      weight: '',
+      packagingType: item.packagingType || (po?.category === 'Inks & Solvents' ? 'Drum / Container' : 'Roll'),
+      rollsCount: '1'
+    };
+  };
+
+  const splitReceivedRolls = (weight, rollsCount) => {
+    const countUnits = parseInt(rollsCount, 10) || 1;
+    const unitWeight = Number((weight / countUnits).toFixed(2));
+    return Array.from({ length: countUnits }, (_, i) => {
+      const net = i === countUnits - 1
+        ? Number((weight - (unitWeight * (countUnits - 1))).toFixed(2))
+        : unitWeight;
+      return {
+        netWeightKg: net,
+        grossWeightKg: net,
+        tareWeightKg: 0,
+        vendorRollNo: '',
+        notes: ''
+      };
+    });
+  };
+
   // Handler to open 'Create Inward GRN' modal directly pre-filled from Purchase Order
-  const handleOpenCreateGrnModal = (po, itemIndex = 0) => {
+  const handleOpenCreateGrnModal = async (po, itemIndex = 0) => {
     if (!po) return;
     const items = po.items && po.items.length > 0 ? po.items : [{
       itemDesc: po.itemName || 'Material Item',
@@ -789,9 +836,16 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
     const item = items[itemIndex] || items[0] || {};
     const itemOrderedQty = parseFloat(item.qtyKg || item.qty || po.totalPoQty) || 0;
     const itemRate = parseFloat(item.rate) || 0;
-    const nextGrnNumber = getNextDocRefNumber('grn');
+    let nextGrnNumber = '';
+    try {
+      nextGrnNumber = await allocateGrnNumber(getDocumentPrefixes().grnPrefix || 'SIL/GRN/26-27/');
+    } catch (err) {
+      alert(`Could not reserve a GRN number: ${err.message || err}`);
+      return;
+    }
     const todayStr = new Date().toISOString().split('T')[0];
     const initialItemName = item.itemDesc || item.itemName || 'Raw Material Inward';
+    setExtraPoLines([]);
 
     setGrnFormData({
       grnNo: nextGrnNumber,
@@ -833,6 +887,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
     const itemOrderedQty = parseFloat(item.qtyKg || item.qty) || 0;
     const itemRate = parseFloat(item.rate) || 0;
     const initialItemName = item.itemDesc || item.itemName || 'Raw Material Inward';
+    setExtraPoLines(prev => prev.filter(line => line.poIndex !== idx));
 
     setGrnFormData(prev => ({
       ...prev,
@@ -848,6 +903,20 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
       selectedItemIndex: idx
     }));
     setActiveGrnModalData(prev => ({ ...prev, item, itemIndex: idx }));
+  };
+
+  const handleToggleExtraPoLine = (idx) => {
+    if (!activeGrnModalData?.items || idx === grnFormData.selectedItemIndex) return;
+    setExtraPoLines(prev => {
+      if (prev.some(line => line.poIndex === idx)) return prev.filter(line => line.poIndex !== idx);
+      const item = activeGrnModalData.items[idx];
+      if (!item) return prev;
+      return [...prev, draftFromPoItem(item, idx, activeGrnModalData.po)];
+    });
+  };
+
+  const handleChangeExtraPoLine = (idx, patch) => {
+    setExtraPoLines(prev => prev.map(line => line.poIndex === idx ? { ...line, ...patch } : line));
   };
 
   // Submit Inward GRN directly from Purchase Order
@@ -872,6 +941,33 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
     const isDup = (grns || []).some(g => String(g.grnNo || g.id).trim().toLowerCase() === grnNo.toLowerCase());
     if (isDup) {
       alert(`🚫 Duplicate GRN:\n\nA GRN with number #${grnNo} already exists! Please specify a unique GRN Number.`);
+      return;
+    }
+
+    const includedExtras = extraPoLines.filter(line => line.poIndex !== grnFormData.selectedItemIndex);
+    for (const line of includedExtras) {
+      const extraWeight = parseFloat(line.weight);
+      if (!line.itemName || !String(line.itemName).trim()) {
+        alert('Each extra PO line needs an item name.');
+        return;
+      }
+      if (isNaN(extraWeight) || extraWeight <= 0) {
+        alert(`Enter the received weight for "${line.itemName}".`);
+        return;
+      }
+    }
+    if (includedExtras.length > 0 && !grnFormData.invoiceNo.trim()) {
+      alert('Invoice number is required when one GRN covers more than one PO line.');
+      return;
+    }
+    const vendorNameForInvoice = po.vendorName || po.vendor?.companyName || po.vendor?.name || 'Supplier';
+    const duplicateInvoice = findDuplicateInvoice(grns, {
+      invoiceNo: grnFormData.invoiceNo,
+      vendorName: vendorNameForInvoice,
+      grnNo
+    });
+    if (duplicateInvoice) {
+      alert(`🚫 Duplicate invoice:\n\nGRN ${duplicateInvoice.grnNo || duplicateInvoice.id} already records invoice ${grnFormData.invoiceNo.trim()} for ${vendorNameForInvoice}.`);
       return;
     }
 
@@ -936,6 +1032,114 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
       }
       const variationSummary = varSummaryList.join('; ');
 
+      if (includedExtras.length > 0) {
+        const batchFallback = grnFormData.batchNo.trim() || `LOT-${nowIso.slice(2, 10).replace(/-/g, '')}`;
+        const primaryCaptured = {
+          poLineId: poItemKey(activeGrnModalData.item, grnFormData.selectedItemIndex),
+          category: grnFormData.category || po.category || 'Raw Materials',
+          itemName: enteredNameClean,
+          filmType: grnFormData.filmType || '',
+          micron: grnFormData.micron || '',
+          widthMm: grnFormData.widthMm || '',
+          unit: grnFormData.unit || 'Kg',
+          packagingType: grnFormData.packagingType || 'Roll',
+          purchaseRate: inwardRateVal,
+          batchNo: batchFallback,
+          remarks: grnFormData.variationNotes.trim(),
+          weightKg: enteredWeight,
+          rolls: splitReceivedRolls(enteredWeight, grnFormData.rollsCount)
+        };
+        const extraCaptured = includedExtras.map((line) => ({
+          poLineId: line.poLineId,
+          category: line.category || grnFormData.category || po.category || 'Raw Materials',
+          itemName: String(line.itemName).trim(),
+          filmType: line.filmType || '',
+          micron: line.micron || '',
+          widthMm: line.widthMm || '',
+          unit: line.unit || 'Kg',
+          packagingType: line.packagingType || 'Roll',
+          purchaseRate: parseFloat(line.inwardRate) || 0,
+          batchNo: batchFallback,
+          remarks: grnFormData.variationNotes.trim(),
+          weightKg: parseFloat(line.weight),
+          rolls: splitReceivedRolls(parseFloat(line.weight), line.rollsCount)
+        }));
+        const poItems = (activeGrnModalData.items || []).map((item, index) => ({
+          ...item,
+          id: poItemKey(item, index)
+        }));
+        const prepared = prepareMultiLineReceipt({
+          header: {
+            poNumber: po.poNumber,
+            vendorName,
+            vendorId,
+            invoiceNo: grnFormData.invoiceNo.trim(),
+            transporterName: grnFormData.transporter.trim() || 'Direct Dispatch / Self',
+            storeManager: currentUser?.name || 'Store Manager',
+            receivedTime: receivedTimeStr,
+            remarks: grnFormData.variationNotes.trim() || `Inward GRN issued directly from PO #${po.poNumber}`
+          },
+          capturedLines: [primaryCaptured, ...extraCaptured],
+          grnNo,
+          nowIso,
+          inventory,
+          poItems,
+          generateInventoryId
+        });
+        const multiGRN = {
+          ...prepared.newGRN,
+          originalPoItemName: origNameClean,
+          agreedPoRate: poRateVal,
+          orderedPoQtyKg: poQtyVal,
+          hasVariation: Boolean(isAnyVar || prepared.newGRN.lineItems.some((line) => line.hasVariation)),
+          variations: varDetails,
+          variationSummary,
+          vehicleNo: grnFormData.vehicleNo.trim(),
+          receivedTime: receivedTimeStr
+        };
+        if (onSaveInventoryItem) {
+          for (const lot of prepared.inventoryLots) {
+            await onSaveInventoryItem(lot);
+          }
+        }
+        let storedGRN = multiGRN;
+        if (onAddGRN) {
+          const returned = await onAddGRN(multiGRN);
+          if (returned) storedGRN = { ...multiGRN, ...returned, lineItems: returned.lineItems || multiGRN.lineItems };
+        }
+        if (onUpdateInventoryRolls) {
+          await onUpdateInventoryRolls(prepared.rolls.map((roll) => ({
+            ...roll,
+            grnNo: storedGRN.grnNo || grnNo,
+            grnId: storedGRN.id || grnNo
+          })));
+        }
+        const receivedTotal = Number(storedGRN.receivedQtyKg || storedGRN.netWeightKg) || 0;
+        const existingInward = (po.matchingGRNs || []).reduce((sum, g) => sum + (parseFloat(g.netWeightKg || g.receivedQtyKg) || 0), 0);
+        const newTotalInward = existingInward + receivedTotal;
+        const totalPoQty = po.totalPoQty || poQtyVal || 0;
+        let newDeliveryStatus = 'Partially Received';
+        if (newTotalInward >= totalPoQty && totalPoQty > 0) {
+          newDeliveryStatus = 'Fully Received';
+        }
+        if (onUpdatePurchaseOrder) {
+          const updatedPo = {
+            ...po,
+            deliveryStatus: newDeliveryStatus,
+            lastInwardDate: todayIsoDate,
+            totalInwardQty: newTotalInward,
+            matchingGRNs: [...(po.matchingGRNs || []), storedGRN]
+          };
+          await onUpdatePurchaseOrder(updatedPo);
+          setActivePoForDetails(updatedPo);
+        }
+        const lineSummary = (storedGRN.lineItems || []).map((line) => `${line.itemName} (${line.netWeightKg} kg)`).join('\n');
+        setExtraPoLines([]);
+        setActiveGrnModalData(null);
+        alert(`✅ Inward GRN #${storedGRN.grnNo || grnNo} Created Successfully!\n\n${lineSummary}\n\nReceived together under PO #${po.poNumber}.\nStatus: Pending QC Approval`);
+        return;
+      }
+
       const countUnits = parseInt(grnFormData.rollsCount, 10) || 1;
       const unitWeight = Number((enteredWeight / countUnits).toFixed(2));
       const newInvId = `INV-${Date.now().toString().slice(-6)}`;
@@ -998,10 +1202,13 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
         qcNotes: '',
         storeManager: currentUser?.name || 'Store Manager'
       };
+      const grnToSave = { ...newGRN, lineItems: [oneLineFromReceipt(newGRN)] };
 
       // 1. Save GRN
+      let storedGRN = grnToSave;
       if (onAddGRN) {
-        await onAddGRN(newGRN);
+        const returned = await onAddGRN(grnToSave);
+        if (returned) storedGRN = { ...grnToSave, ...returned };
       }
 
       // 2. Add to Inventory Stock Item
@@ -1045,14 +1252,15 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
           deliveryStatus: newDeliveryStatus,
           lastInwardDate: todayIsoDate,
           totalInwardQty: newTotalInward,
-          matchingGRNs: [...(po.matchingGRNs || []), newGRN]
+          matchingGRNs: [...(po.matchingGRNs || []), storedGRN]
         };
         await onUpdatePurchaseOrder(updatedPo);
         setActivePoForDetails(updatedPo);
       }
 
+      setExtraPoLines([]);
       setActiveGrnModalData(null);
-      alert(`✅ Inward GRN #${grnNo} Created Successfully!\n\n${enteredNameClean} (${enteredWeight} kg) has been inwarded under PO #${po.poNumber}.\nStatus: Pending QC Approval${isAnyVar ? '\n\n⚠️ Variations noted and linked with PO Hub.' : ''}`);
+      alert(`✅ Inward GRN #${storedGRN.grnNo || grnNo} Created Successfully!\n\n${enteredNameClean} (${enteredWeight} kg) has been inwarded under PO #${po.poNumber}.\nStatus: Pending QC Approval${isAnyVar ? '\n\n⚠️ Variations noted and linked with PO Hub.' : ''}`);
     } catch (err) {
       console.error('[Create GRN from PO] Error:', err);
       alert(`❌ Failed to create GRN:\n${err.message || err}`);
@@ -2865,6 +3073,60 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                       >
                         Item {idx + 1}: {it.itemDesc || it.itemName} ({it.qtyKg || 0} {it.unit || 'Kg'})
                       </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {activeGrnModalData.items && activeGrnModalData.items.length > 1 && (
+              <div style={{ marginBottom: '16px', background: '#f0fdf4', padding: '12px 14px', borderRadius: '10px', border: '1px solid #bbf7d0' }}>
+                <span style={{ fontSize: '0.74rem', fontWeight: '700', color: '#166534', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
+                  Receive more PO lines on this same GRN
+                </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {activeGrnModalData.items.map((it, idx) => {
+                    if (idx === grnFormData.selectedItemIndex) return null;
+                    const extra = extraPoLines.find(line => line.poIndex === idx);
+                    return (
+                      <div key={idx} style={{ background: '#ffffff', border: '1px solid #d1fae5', borderRadius: '8px', padding: '8px 10px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', fontWeight: '700', color: '#14532d', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(extra)}
+                            onChange={() => handleToggleExtraPoLine(idx)}
+                          />
+                          Item {idx + 1}: {it.itemDesc || it.itemName} ({it.qtyKg || 0} {it.unit || 'Kg'})
+                        </label>
+                        {extra && (
+                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '8px', marginTop: '8px' }}>
+                            <input
+                              type="text"
+                              className="form-control"
+                              value={extra.itemName}
+                              onChange={e => handleChangeExtraPoLine(idx, { itemName: e.target.value })}
+                              aria-label={`Item name for PO line ${idx + 1}`}
+                            />
+                            <input
+                              type="number"
+                              step="0.01"
+                              className="form-control"
+                              placeholder="Net kg"
+                              value={extra.weight}
+                              onChange={e => handleChangeExtraPoLine(idx, { weight: e.target.value })}
+                              aria-label={`Received weight for PO line ${idx + 1}`}
+                            />
+                            <input
+                              type="number"
+                              min="1"
+                              className="form-control"
+                              value={extra.rollsCount}
+                              onChange={e => handleChangeExtraPoLine(idx, { rollsCount: e.target.value })}
+                              aria-label={`Roll count for PO line ${idx + 1}`}
+                            />
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
                 </div>

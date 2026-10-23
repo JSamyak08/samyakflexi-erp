@@ -75,6 +75,7 @@ import SuccessScreenModal from './components/SuccessScreenModal';
 import { showSuccessScreen } from './context/SuccessModalContext';
 import { fetchAuditLogsFromSupabase, saveAuditLogToSupabase, createAuditEntry, pruneOldAuditLogs } from './services/auditLogger';
 import { getDocumentPrefixes, getNextDocRefNumber } from './services/settingsService';
+import { mergeRollsIntoList } from './services/grnDocument';
 import { getRouteFromUrl, getTabFromUrl, pushSlugState } from './utils/slugRouter';
 import { activeUserLabel } from './utils/activeUserLabel';
 import { isSupabaseConfigured, checkSupabaseConnection } from './services/supabaseClient';
@@ -2136,9 +2137,15 @@ export default function App() {
 
   const handleAddGRN = async (newGRN) => {
     requireDatabaseConnection('create GRN');
-    await saveGRNToSupabase(newGRN);
-    setGrns(prev => [newGRN, ...prev.filter(g => g.grnNo !== newGRN.grnNo)]);
-    logAudit('CREATE', 'GRN Inward', `Issued GRN ${newGRN.grnNo} for "${newGRN.itemName}" (${newGRN.receivedQtyKg} kg) from ${newGRN.vendorName}`, newGRN.grnNo);
+    const saved = await saveGRNToSupabase(newGRN);
+    const stored = { ...newGRN, ...(saved || {}), lineItems: saved?.lineItems || newGRN.lineItems };
+    setGrns(prev => [stored, ...prev.filter(g => g.grnNo !== stored.grnNo && String(g.id) !== String(stored.id))]);
+    const lineCount = Array.isArray(stored.lineItems) ? stored.lineItems.length : 1;
+    const auditText = lineCount > 1
+      ? `Issued GRN ${stored.grnNo} for ${lineCount} items ("${stored.itemName}", ${stored.receivedQtyKg || stored.netWeightKg} kg) from ${stored.vendorName}`
+      : `Issued GRN ${stored.grnNo} for "${stored.itemName}" (${stored.receivedQtyKg || stored.netWeightKg} kg) from ${stored.vendorName}`;
+    logAudit('CREATE', 'GRN Inward', auditText, stored.grnNo);
+    return stored;
   };
 
   const handleUpdateGRN = async (updatedGRN) => {
@@ -2645,11 +2652,7 @@ export default function App() {
       }
     }
     if (saved.length > 0) {
-      const updatedMap = new Map(saved.map(r => [r.barcodeId || r.id, r]));
-      setInventoryRolls(prev => prev.map(r => {
-        const match = updatedMap.get(r.barcodeId || r.id);
-        return match ? { ...r, ...match } : r;
-      }));
+      setInventoryRolls(prev => mergeRollsIntoList(prev, saved));
     }
     assertAllSaved('Some inventory rolls were saved. The rolls listed below were not, and they are not shown as updated.', failed);
   };
@@ -4882,6 +4885,7 @@ export default function App() {
             onUpdateGRN={handleUpdateGRN}
             onSaveInventoryItem={handleSaveInventoryItem}
             onUpdateInventory={handleUpdateInventory}
+            onUpdateInventoryRolls={handleUpdateInventoryRolls}
           />
         )}
 
