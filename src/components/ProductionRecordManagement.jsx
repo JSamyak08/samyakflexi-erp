@@ -55,6 +55,18 @@ import { fetchScrapDisposals, saveScrapDisposal, describeSaveError } from '../se
 import { getMaterialCostSettings, fetchMaterialCostSettingsFromSupabase, DEFAULT_MATERIAL_COST_SETTINGS } from '../services/settingsService';
 import { roundToTwo, formatUpToTwoDecimals, formatCurrency, formatQty } from '../utils/numberHelpers';
 import { codeStartsWith, codesEqual } from '../utils/barcodeCode';
+import MeasureRangeHint from './MeasureRangeHint';
+import RollLineageSummary from './RollLineageSummary';
+import {
+  NOT_RECORDED,
+  NO_JOB_SPEC,
+  displayQuantity,
+  displayText,
+  describeSubstrateAnalysis,
+  assessFormMeasures,
+  finiteNumber
+} from '../utils/productionRecordQuality';
+import { lineageProblems } from '../utils/rollLineage';
 
 /**
  * Roll-Wise Input Vs Output Reconciliation Component for SFG / FG Output Barcode Master Rolls
@@ -132,8 +144,8 @@ function RollWiseInputOutputMasterRolls({
     if (!isRealSfgOrFg) return;
 
     const netKg = parseFloat(r.netWeightKg || r.total_net_kg || r.totalNetKg || r.availableWeightKg || r.available_weight_kg || 0) || 0;
-    const grossKg = parseFloat(r.grossWeightKg || r.total_gross_kg || r.totalGrossKg || (netKg > 0 ? netKg + 0.8 : 0)) || 0;
-    const tareKg = parseFloat(r.tareWeightKg || r.tare_weight_kg || 0.8) || 0.8;
+    const grossKg = parseFloat(r.grossWeightKg || r.total_gross_kg || r.totalGrossKg || 0) || 0;
+    const tareKg = parseFloat(r.tareWeightKg || r.tare_weight_kg || 0) || 0;
     const lengthM = parseFloat(r.lengthMeters || r.total_meters || r.totalMeters || r.meters || 0) || 0;
 
     // Discard entries with 0 weight (not weighed or uninitialized placeholder)
@@ -141,9 +153,9 @@ function RollWiseInputOutputMasterRolls({
 
     if (!rollMap.has(barcode)) {
       const isFg = rType.includes('finish') || rType === 'fg' || barcode.startsWith('FG-');
-      const film = r.filmType || r.film_type || effectiveOrder?.printFilmType || 'Film';
-      const micron = r.micron || effectiveOrder?.micron || 12;
-      const widthMm = r.widthMm || r.width_mm || effectiveOrder?.widthMm || effectiveOrder?.printWidthMm || 460;
+      const film = r.filmType || r.film_type || effectiveOrder?.printFilmType || '';
+      const micron = finiteNumber(r.micron ?? effectiveOrder?.micron);
+      const widthMm = finiteNumber(r.widthMm ?? r.width_mm ?? effectiveOrder?.printWidthMm ?? effectiveOrder?.widthMm);
       const qc = r.qcStatus || r.qc_status || 'Approved';
       const loc = r.locationBay || r.storageBay || r.storage_bay || (isFg ? 'FG Warehouse' : 'SFG Store');
 
@@ -217,9 +229,9 @@ function RollWiseInputOutputMasterRolls({
   }).map((r, i) => ({
     id: r.id || `in-roll-${i + 1}`,
     barcodeId: String(r.barcodeId || r.barcode).trim(),
-    filmType: r.filmType || effectiveOrder?.printFilmType || 'Film',
-    micron: r.micron || effectiveOrder?.micron || 12,
-    widthMm: r.widthMm || effectiveOrder?.widthMm || effectiveOrder?.printWidthMm || 460,
+    filmType: r.filmType || effectiveOrder?.printFilmType || '',
+    micron: finiteNumber(r.micron),
+    widthMm: finiteNumber(r.widthMm),
     initialWeightKg: parseFloat(r.initialWeightKg || r.initialWeight || r.consumedWeightKg || 0) || 0,
     consumedWeightKg: parseFloat(r.consumedWeightKg || r.consumedWeight || r.initialWeightKg || 0) || 0,
     source: 'Active Print Run'
@@ -232,9 +244,9 @@ function RollWiseInputOutputMasterRolls({
       sfgInputRolls.push({
         id: `sfg-cons-${log.id || log.sfgBatchCode}`,
         barcodeId: log.sfgBatchCode,
-        filmType: 'SFG Base Film',
-        micron: effectiveOrder?.micron || 12,
-        widthMm: effectiveOrder?.widthMm || 800,
+        filmType: log.filmType || '',
+        micron: finiteNumber(log.micron),
+        widthMm: finiteNumber(log.widthMm),
         initialWeightKg: (parseFloat(log.consumedKg) || 0) + (parseFloat(log.remainingBalanceKg) || 0),
         consumedWeightKg: parseFloat(log.consumedKg) || 0,
         source: `SFG Store (${log.targetProcess || 'Consumption'})`
@@ -245,9 +257,9 @@ function RollWiseInputOutputMasterRolls({
       sfgInputRolls.push({
         id: `sub3-cons-${log.id || log.substrate3.barcode}`,
         barcodeId: log.substrate3.barcode,
-        filmType: log.substrate3.filmType || 'Substrate 3',
-        micron: log.substrate3.micron || 12,
-        widthMm: log.substrate3.widthMm || 800,
+        filmType: log.substrate3.filmType || '',
+        micron: finiteNumber(log.substrate3.micron),
+        widthMm: finiteNumber(log.substrate3.widthMm),
         initialWeightKg: parseFloat(log.substrate3.initialKg || log.substrate3.consumedKg) || 0,
         consumedWeightKg: parseFloat(log.substrate3.consumedKg) || 0,
         source: `SFG Store (${log.targetProcess || 'Lamination Pass 2'})`
@@ -899,7 +911,7 @@ export default function ProductionRecordManagement({
           id: `mat-press-${Date.now()}-${idx + 1}`,
           itemId: `RM-${(r.filmType || 'FILM').substring(0, 3).toUpperCase()}-${idx + 1}`,
           itemCode: `RM-${(r.filmType || 'FILM').substring(0, 3).toUpperCase()}-${idx + 1}`,
-          itemName: `${r.filmType || 'Substrate Film'} ${r.micron || 12}µ (${r.widthMm || 800}mm)`,
+          itemName: `${displayText(r.filmType)} ${finiteNumber(r.micron) === null ? NOT_RECORDED : `${r.micron}µ`} (${finiteNumber(r.widthMm) === null ? NOT_RECORDED : `${r.widthMm} mm`})`,
           filmType: r.filmType || 'PET Film',
           micron: String(r.micron || '12'),
           widthMm: String(r.widthMm || '800'),
@@ -1820,6 +1832,56 @@ export default function ProductionRecordManagement({
 
   // Step 2: Final Submit upon confirmation
   const handleFinalSubmitRecord = async () => {
+    const printInputs = selectedRecord?.inputRollsList || selectedOrder?.inputRollsList || [];
+    const printInputKg = printInputs.reduce((sum, roll) => sum + (parseFloat(roll?.consumedWeightKg) || 0), 0);
+    const dryPreview = describeSubstrateAnalysis({
+      record: {
+        inputRollsList: printInputs,
+        printedOutputKg: selectedRecord?.printedOutputKg || selectedOrder?.printedOutputKg,
+        actualMetersPrinted: selectedRecord?.actualMetersPrinted || selectedOrder?.actualMetersPrinted,
+        printWidthMm: selectedOrder?.printWidthMm
+      },
+      order: selectedOrder
+    }).dry;
+    const formCheck = assessFormMeasures({
+      actualInkGsm,
+      actualAdhesiveGsm,
+      wastagePercentage: overallScrapPctOfOutput,
+      actualMetersPrinted: selectedRecord?.actualMetersPrinted || selectedOrder?.actualMetersPrinted,
+      printWidthMm: selectedOrder?.printWidthMm,
+      micron: selectedOrder?.micron,
+      printedOutputKg: selectedRecord?.printedOutputKg || selectedOrder?.printedOutputKg,
+      grossProductionKg: totalJobMaterialOutputKg,
+      dryInkSolidsKg: dryPreview.dryInkSolidsKg,
+      printInputKg: printInputKg || null,
+      adhesiveConsumedL1Kg,
+      totalScrapQtyKg,
+      substrateWarnings: describeSubstrateAnalysis({
+        record: { inputRollsList: printInputs },
+        order: selectedOrder
+      }).match.warnings
+    });
+    const chainCheck = lineageProblems({
+      inputRollsList: printInputs,
+      printedOutputKg: selectedRecord?.printedOutputKg || selectedOrder?.printedOutputKg,
+      actualMetersPrinted: selectedRecord?.actualMetersPrinted || selectedOrder?.actualMetersPrinted,
+      printWidthMm: selectedOrder?.printWidthMm,
+      sfgConsumptions: selectedRecord?.sfgConsumptions || [],
+      orderId: selectedOrder?.id
+    });
+    const blocks = [...formCheck.blocks, ...chainCheck.blocks];
+    if (blocks.length) {
+      alert(`This production record cannot be saved:\n\n${blocks.join('\n')}`);
+      return;
+    }
+    const warnings = [...formCheck.warnings, ...chainCheck.warnings];
+    let qualityWarningReason = '';
+    if (warnings.length) {
+      const reason = window.prompt(`These values look unusual:\n\n${warnings.join('\n')}\n\nEnter a reason to save anyway. Leave this blank to go back.`);
+      if (!reason || !reason.trim()) return;
+      qualityWarningReason = reason.trim();
+    }
+
     const newRecord = {
       id: selectedRecord?.id || `PR-${selectedOrder.id}`,
       orderId: selectedOrder.id,
@@ -1889,7 +1951,9 @@ export default function ProductionRecordManagement({
       actualAdhesiveGsm: actualAdhesiveGsm !== '' && !isNaN(parseFloat(actualAdhesiveGsm)) ? parseFloat(actualAdhesiveGsm) : null,
       targetInkGsm: parseFloat(targetInkGsm) || 1.5,
       targetAdhesiveGsm: parseFloat(targetAdhesiveGsm) || 1.5,
-      inkGsmInSpeed: actualInkGsm !== '' && !isNaN(parseFloat(actualInkGsm)) ? parseFloat(actualInkGsm) : (parseFloat(targetInkGsm) || 1.5),
+      inkGsmInSpeed: actualInkGsm !== '' && !isNaN(parseFloat(actualInkGsm)) ? parseFloat(actualInkGsm) : null,
+      dryInkSolidsKg: dryPreview.dryInkSolidsKg,
+      qualityWarningReason,
 
       status: "Filled by Plant Manager",
       filledBy: `${currentUser.name} (${currentUser.role})`,
@@ -2608,47 +2672,31 @@ export default function ProductionRecordManagement({
 
             const inputRolls = selectedRecord.inputRollsList || [];
             const outputRolls = selectedRecord.rollsBreakdown || selectedRecord.outputRolls || [];
-            const actualMeters = parseFloat(selectedRecord.actualMetersPrinted || linkedOrder?.actualMetersPrinted || 0);
-            const printWidthMm = parseFloat(selectedRecord.printWidthMm || linkedOrder?.printWidthMm || matchedJM?.printWidthMm || matchedJM?.cylinderData?.widthMm || linkedOrder?.widthMm || 460);
-
-            const totalInputConsumedKg = inputRolls.reduce((sum, r) => sum + (parseFloat(r.consumedWeightKg) || 0), 0) || parseFloat(selectedRecord.totalInputConsumedKg) || 0;
-            const totalOutputRollsKg = outputRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0) || parseFloat(selectedRecord.printedOutputKg) || 0;
-
-            let inputRollWidthMm = printWidthMm;
-            if (inputRolls.length > 0) {
-              const maxW = Math.max(...inputRolls.map(r => parseFloat(r.widthMm) || 0));
-              if (maxW > 0) inputRollWidthMm = maxW;
-            } else if (selectedRecord.inputRollWidthMm) {
-              inputRollWidthMm = parseFloat(selectedRecord.inputRollWidthMm);
-            }
-
-            const isBiggerSize = inputRollWidthMm > printWidthMm;
-            let excessFilmWastageKg = parseFloat(selectedRecord.excessFilmWastageKg || 0);
-            let excessFilmWastagePct = parseFloat(selectedRecord.excessFilmWastagePct || 0);
-
-            if (isBiggerSize && totalInputConsumedKg > 0 && (!excessFilmWastageKg || excessFilmWastageKg === 0)) {
-              const trimRatio = (inputRollWidthMm - printWidthMm) / inputRollWidthMm;
-              excessFilmWastageKg = totalInputConsumedKg * trimRatio;
-              excessFilmWastagePct = (excessFilmWastageKg / totalInputConsumedKg) * 100;
-            }
-
-            let inkWeightGainKg = parseFloat(selectedRecord.inkWeightGainKg || 0);
-            if (!inkWeightGainKg || inkWeightGainKg === 0) {
-              if (isBiggerSize) {
-                inkWeightGainKg = totalOutputRollsKg - (totalInputConsumedKg - excessFilmWastageKg);
-              } else {
-                inkWeightGainKg = totalOutputRollsKg - totalInputConsumedKg;
-              }
-            }
-
-            const printedAreaM2 = (actualMeters * printWidthMm) / 1000;
-            let actualCalculatedInkGsm = parseFloat(selectedRecord.actualCalculatedInkGsm || 0);
-            if ((!actualCalculatedInkGsm || actualCalculatedInkGsm === 0) && printedAreaM2 > 0 && inkWeightGainKg > 0) {
-              actualCalculatedInkGsm = (inkWeightGainKg * 0.20 * 1000) / printedAreaM2;
-            }
-
-            const operatorInkGsm = parseFloat(selectedRecord.inkGsmInSpeed || linkedOrder?.inkGsmInSpeed || 0);
-            const isInkGsmHigher = operatorInkGsm > 0 && actualCalculatedInkGsm > operatorInkGsm;
+            const analysis = describeSubstrateAnalysis({
+              record: selectedRecord,
+              order: linkedOrder,
+              jobMaster: matchedJM
+            });
+            const { match, dry } = analysis;
+            const operatorInkGsm = finiteNumber(selectedRecord.inkGsmInSpeed);
+            const actualCalculatedInkGsm = dry.gsm;
+            const isInkGsmHigher = operatorInkGsm !== null && actualCalculatedInkGsm !== null && actualCalculatedInkGsm > operatorInkGsm;
+            const expectedLabel = match.specStatus === NO_JOB_SPEC
+              ? NO_JOB_SPEC
+              : [match.expectedFilm || NOT_RECORDED, match.expectedMicron ? `${match.expectedMicron}µ` : null, match.expectedWidth ? `${match.expectedWidth} mm` : null].filter(Boolean).join(' ');
+            const actualLabel = match.actualStatus === NOT_RECORDED
+              ? NOT_RECORDED
+              : [match.actualFilm || NOT_RECORDED, match.actualMicron ? `${match.actualMicron}µ` : null, match.actualWidth ? `${match.actualWidth} mm` : null].filter(Boolean).join(' ');
+            const sizeLabel = match.sizeMatch === true
+              ? `Same size (${match.actualWidth} mm)`
+              : match.sizeMatch === false
+                ? `Width differs (${match.actualWidth} mm vs job ${match.expectedWidth} mm)`
+                : (match.specStatus === NO_JOB_SPEC ? NO_JOB_SPEC : NOT_RECORDED);
+            const typeLabel = match.typeMatch === true
+              ? 'Same substrate'
+              : match.typeMatch === false
+                ? 'Different substrate'
+                : '';
 
             return (
               <>
@@ -2701,38 +2749,41 @@ export default function ProductionRecordManagement({
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', marginBottom: '16px' }}>
                   <div style={{ background: '#ffffff', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                     <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Substrate Match</span>
-                    <div style={{ fontSize: '1.1rem', fontWeight: '900', color: '#0f172a', marginTop: '2px' }}>
-                      {selectedRecord.printFilmType || linkedOrder?.printFilmType || 'PET'} {selectedRecord.micron || linkedOrder?.micron || 12}µ
+                    <div style={{ fontSize: '0.95rem', fontWeight: '800', color: '#0f172a', marginTop: '2px' }}>
+                      Expected: {expectedLabel}
                     </div>
-                    <span style={{ fontSize: '0.74rem', color: isBiggerSize ? '#b45309' : '#059669', fontWeight: '700' }}>
-                      {isBiggerSize ? `⚠️ Wider Input Film (${inputRollWidthMm}mm > Job Print ${printWidthMm}mm)` : `✓ Same Size (${printWidthMm}mm)`}
+                    <div style={{ fontSize: '0.95rem', fontWeight: '800', color: '#0f172a' }}>
+                      Actual: {actualLabel}
+                    </div>
+                    <span style={{ fontSize: '0.74rem', color: match.sizeMatch === false || match.typeMatch === false ? '#b45309' : '#059669', fontWeight: '700' }}>
+                      {sizeLabel}{typeLabel ? ` · ${typeLabel}` : ''}
                     </span>
                   </div>
 
                   <div style={{ background: '#ffffff', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                     <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Total Input Consumed</span>
                     <div style={{ fontSize: '1.2rem', fontWeight: '900', color: '#0284c7', marginTop: '2px' }}>
-                      {totalInputConsumedKg.toFixed(2)} kg
+                      {analysis.inputKg === null ? NOT_RECORDED : `${analysis.inputKg.toFixed(2)} kg`}
                     </div>
-                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Across {inputRolls.length || 1} input rolls</span>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Across {analysis.inputCount} input rolls</span>
                   </div>
 
-                  {isBiggerSize && (
+                  {dry.trimKg > 0 && (
                     <div style={{ background: '#fffbeb', padding: '12px 16px', borderRadius: '8px', border: '1px solid #fde68a' }}>
                       <span style={{ fontSize: '0.72rem', color: '#b45309', fontWeight: '800', textTransform: 'uppercase' }}>Extra Film Trimming Wastage</span>
                       <div style={{ fontSize: '1.2rem', fontWeight: '900', color: '#d97706', marginTop: '2px' }}>
-                        {excessFilmWastageKg.toFixed(2)} kg <span style={{ fontSize: '0.85rem' }}>({excessFilmWastagePct.toFixed(1)}%)</span>
+                        {dry.trimKg.toFixed(2)} kg
                       </div>
-                      <span style={{ fontSize: '0.72rem', color: '#b45309' }}>Trimming side wastage ({inputRollWidthMm - printWidthMm} mm difference)</span>
+                      <span style={{ fontSize: '0.72rem', color: '#b45309' }}>Input width is wider than the print width. Trim is excluded from dry ink solids.</span>
                     </div>
                   )}
 
                   <div style={{ background: '#ffffff', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                     <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Dry Ink Solids Gain</span>
                     <div style={{ fontSize: '1.2rem', fontWeight: '900', color: '#059669', marginTop: '2px' }}>
-                      {(inkWeightGainKg * 0.20).toFixed(2)} kg <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: '600' }}>(20% Ink Solids)</span>
+                      {dry.status === NOT_RECORDED ? NOT_RECORDED : `${dry.dryInkSolidsKg.toFixed(2)} kg`}
                     </div>
-                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Gross Ink Weight Gain: {inkWeightGainKg.toFixed(2)} kg</span>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Dried web gain on the print step. Downstream output is not counted as ink.</span>
                   </div>
 
                   {/* Side-by-side GSM Comparison */}
@@ -2745,14 +2796,14 @@ export default function ProductionRecordManagement({
                       <div>
                         <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: '700' }}>OPERATOR INPUT</div>
                         <div style={{ fontSize: '1.15rem', fontWeight: '900', color: '#475569' }}>
-                          {operatorInkGsm.toFixed(2)} GSM
+                          {operatorInkGsm === null ? NOT_RECORDED : `${operatorInkGsm.toFixed(2)} GSM`}
                         </div>
                       </div>
                       <div style={{ fontSize: '1.2rem', fontWeight: '700', color: '#94a3b8' }}>vs</div>
                       <div>
                         <div style={{ fontSize: '0.7rem', color: isInkGsmHigher ? '#dc2626' : '#059669', fontWeight: '800' }}>ACTUAL CALCULATED</div>
                         <div style={{ fontSize: '1.25rem', fontWeight: '900', color: isInkGsmHigher ? '#dc2626' : '#059669' }}>
-                          {actualCalculatedInkGsm.toFixed(2)} GSM
+                          {actualCalculatedInkGsm === null ? NOT_RECORDED : `${actualCalculatedInkGsm.toFixed(2)} GSM`}
                         </div>
                       </div>
                     </div>
@@ -2786,10 +2837,10 @@ export default function ProductionRecordManagement({
                           return (
                             <tr key={idx}>
                               <td style={{ fontWeight: '700' }}>Roll #{idx + 1}</td>
-                              <td><code style={{ background: '#ffffff', border: '1px solid #cbd5e1', padding: '2px 6px', borderRadius: '4px', fontWeight: '800' }}>{r.barcodeId || 'N/A'}</code></td>
-                              <td>{r.filmType || 'PET'}</td>
-                              <td>{r.micron || 12}µ</td>
-                              <td>{r.widthMm || 460} mm</td>
+                              <td><code style={{ background: '#ffffff', border: '1px solid #cbd5e1', padding: '2px 6px', borderRadius: '4px', fontWeight: '800' }}>{displayText(r.barcodeId)}</code></td>
+                              <td>{displayText(r.filmType)}</td>
+                              <td>{finiteNumber(r.micron) === null ? NOT_RECORDED : `${r.micron}µ`}</td>
+                              <td>{finiteNumber(r.widthMm) === null ? NOT_RECORDED : `${r.widthMm} mm`}</td>
                               <td>{initW.toFixed(1)} kg</td>
                               <td style={{ fontWeight: '800', color: '#0284c7' }}>{consW.toFixed(1)} kg</td>
                               <td>
@@ -2865,21 +2916,21 @@ export default function ProductionRecordManagement({
                               </td>
                               <td>
                                 <code style={{ background: isFG ? '#eff6ff' : '#ecfdf5', border: isFG ? '1px solid #bfdbfe' : '1px solid #a7f3d0', color: isFG ? '#1d4ed8' : '#047857', padding: '2px 8px', borderRadius: '4px', fontWeight: '900' }}>
-                                  {r.barcodeId || r.id || `${isFG ? 'FG' : 'SFG'}-BC-${r.orderId || 'ORD'}-${idx+1}`}
+                                  {displayText(r.barcodeId || r.id)}
                                 </code>
                               </td>
                               <td>
-                                {r.filmType || selectedRecord.printFilmType || 'PET'} {r.micron || selectedRecord.micron || 12}µ ({r.widthMm || selectedRecord.printWidthMm || 460}mm)
+                                {displayText(r.filmType)} {finiteNumber(r.micron) === null ? NOT_RECORDED : `${r.micron}µ`} ({finiteNumber(r.widthMm) === null ? NOT_RECORDED : `${r.widthMm} mm`})
                                 {r.stage ? <span style={{ color: '#64748b', fontSize: '0.72rem', display: 'block' }}>Process: {r.stage}</span> : null}
                               </td>
                               <td style={{ fontWeight: '800', color: '#059669' }}>{netW.toFixed(1)} kg</td>
-                              <td style={{ fontWeight: '700', color: '#0284c7' }}>{lengthM > 0 ? `${(lengthM || 0).toLocaleString()} m` : '-'}</td>
+                              <td style={{ fontWeight: '700', color: '#0284c7' }}>{lengthM > 0 ? `${(lengthM || 0).toLocaleString()} m` : NOT_RECORDED}</td>
                               <td>
                                 <span style={{ fontSize: '0.74rem', background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '2px 6px', borderRadius: '4px', color: '#334155', fontWeight: '600' }}>
                                   {r.locationBay || r.storageBay || r.nextProcess || (isFG ? 'FG Warehouse' : 'SFG Store (Pre-Lamination)')}
                                 </span>
                               </td>
-                              <td style={{ fontSize: '0.74rem', color: '#64748b' }}>{r.inwardDatetime || r.createdAt || new Date().toLocaleString('en-IN')}</td>
+                              <td style={{ fontSize: '0.74rem', color: '#64748b' }}>{r.inwardDatetime || r.createdAt || NOT_RECORDED}</td>
                             </tr>
                           );
                         })}
@@ -2891,6 +2942,8 @@ export default function ProductionRecordManagement({
             </>
           );
           })()}
+
+          <RollLineageSummary record={selectedRecord} />
 
           {/* Ingredient Materials Breakdown Table */}
           <h4 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '12px', color: 'var(--text-primary)' }}>
@@ -4105,8 +4158,9 @@ export default function ProductionRecordManagement({
                         style={{ fontWeight: '700', fontSize: '0.95rem', background: '#ffffff', color: '#0369a1', borderColor: '#0284c7' }} 
                         value={actualInkGsm} 
                         onChange={e => setActualInkGsm(e.target.value)} 
-                        placeholder={`e.g. ${targetInkGsm || 1.5}`}
+                        placeholder="Recorded GSM"
                       />
+                      <MeasureRangeHint field="inkGsm" value={actualInkGsm} />
                       <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '4px' }}>
                         Input by Machine Operator during printing job run
                       </div>
@@ -4261,8 +4315,9 @@ export default function ProductionRecordManagement({
                         style={{ fontWeight: '700', fontSize: '0.95rem', background: '#ffffff', color: '#4338ca', borderColor: '#818cf8' }} 
                         value={actualAdhesiveGsm} 
                         onChange={e => setActualAdhesiveGsm(e.target.value)} 
-                        placeholder={`e.g. ${targetAdhesiveGsm || 1.5}`}
+                        placeholder="Recorded GSM"
                       />
+                      <MeasureRangeHint field="adhesiveGsm" value={actualAdhesiveGsm} />
                       <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '4px' }}>
                         Input by Machine Operator during lamination job run
                       </div>

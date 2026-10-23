@@ -77,6 +77,16 @@ import { fetchAuditLogsFromSupabase, saveAuditLogToSupabase, createAuditEntry, p
 import { getDocumentPrefixes, getNextDocRefNumber } from './services/settingsService';
 import { getRouteFromUrl, getTabFromUrl, pushSlugState } from './utils/slugRouter';
 import { activeUserLabel } from './utils/activeUserLabel';
+import { assertPersistableMeasures } from './utils/productionRecordQuality';
+import {
+  planAutoCloseUpdates,
+  normalizeAutoCloseSettings,
+  buildManualClose,
+  buildManualReopen,
+  manualCloseGuard,
+  ORDER_AUTO_CLOSE_SETTING,
+  ORDER_CLOSE_TOLERANCE_SETTING
+} from './utils/orderAutoClose';
 import { isSupabaseConfigured, checkSupabaseConnection } from './services/supabaseClient';
 import { 
   fetchOrders, saveOrderToSupabase, deleteOrderFromSupabase,
@@ -107,7 +117,8 @@ import {
   allocatePelletGrnNumber, savePelletInwardWithGrn,
   fetchPurchaseOrders, savePurchaseOrderToSupabase, deletePurchaseOrderFromSupabase, sanitizePurchaseOrder,
   fetchFilmSubstratesFromSupabase,
-  fetchAllSystemSettings
+  fetchAllSystemSettings,
+  saveSystemSetting
 } from './services/supabaseDataService';
 import { attendanceMatchesEmployeeDate } from './services/employeeAttendance';
 import { buildPelletCompanionGrn, findPelletInventoryItem, fuelActorName } from './services/pelletFuel';
@@ -325,6 +336,7 @@ export default function App() {
 
   // Supabase is the store of record. Screens stay on the loader until that fetch finishes.
   const [orders, setOrders] = useState([]);
+  const [orderCloseSettings, setOrderCloseSettings] = useState({ enabled: true, tolerancePct: 10 });
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [ordersError, setOrdersError] = useState(null);
   const [isDataLoading, setIsDataLoading] = useState(true);
@@ -581,6 +593,11 @@ export default function App() {
     async function loadSupabaseData() {
       setIsDataLoading(true);
       setIsDataFetched(false);
+      let loadedOrders = [];
+      let loadedSfg = [];
+      let loadedChallans = [];
+      let loadedShipments = [];
+      let loadedCloseSettings = { enabled: true, tolerancePct: 10 };
 
       // Failsafe timer: Ensure UI unblocks gracefully within 15 seconds even on poor network
       const failsafeTimer = setTimeout(() => {
@@ -675,6 +692,7 @@ export default function App() {
             o => o && o.id && !deletedOrderIdsRef.current.has(o.id)
           );
           setOrders(cleanOrders);
+          loadedOrders = cleanOrders;
           safeLocalStorageSet('samyak_cache_orders', cleanOrders);
 
           const runningInDb = cleanOrders.find(o => 
@@ -825,6 +843,7 @@ export default function App() {
         if (Array.isArray(supaShipments)) {
           const cleanShip = stripDummyRecords(supaShipments);
           setDispatchShipments(cleanShip);
+          loadedShipments = cleanShip;
           safeLocalStorageSet('samyak_cache_dispatch_shipments', cleanShip);
         }
 
@@ -836,12 +855,14 @@ export default function App() {
         if (Array.isArray(supaSFG)) {
           const cleanSFG = stripDummyRecords(supaSFG);
           setSfgGoods(cleanSFG);
+          loadedSfg = cleanSFG;
           safeLocalStorageSet('samyak_cache_sfg_goods', cleanSFG);
         }
 
         if (Array.isArray(supaDCs)) {
           const cleanDCs = stripDummyRecords(supaDCs);
           setDeliveryChallans(cleanDCs);
+          loadedChallans = cleanDCs;
           safeLocalStorageSet('samyak_cache_delivery_challans', cleanDCs);
         }
 
@@ -976,7 +997,8 @@ export default function App() {
             safeLocalStorageSet('samyak_film_substrates_master', JSON.stringify(allSettings.film_substrates_master));
           }
           applyRemoteCompanyProfile(allSettings.company_profile);
-
+          loadedCloseSettings = normalizeAutoCloseSettings(allSettings);
+          setOrderCloseSettings(loadedCloseSettings);
         }
 
         const [indentRows, issueRows, consumableRows, storeRows, pressBoard] = await Promise.all([
@@ -994,6 +1016,26 @@ export default function App() {
           setPressQueueOrder(Array.isArray(pressBoard.queueOrder) ? pressBoard.queueOrder : []);
           setPressMachineAssignments(pressBoard.machineAssignments || {});
           setPressActiveRunningJob(pressBoard.activeRunningJob || null);
+        }
+        try {
+          const decisions = planAutoCloseUpdates(loadedOrders, {
+            challans: loadedChallans,
+            shipments: loadedShipments,
+            sfgGoods: loadedSfg,
+            settings: loadedCloseSettings
+          });
+          for (const decision of decisions) {
+            await saveOrderToSupabase(decision.order);
+            if (decision.audit) logAudit('UPDATE', 'Orders', decision.audit, decision.order.id);
+          }
+          if (decisions.length > 0 && isMounted) {
+            const updated = new Map(decisions.map((decision) => [decision.order.id, decision.order]));
+            const nextOrders = loadedOrders.map((order) => updated.get(order.id) || order);
+            setOrders(nextOrders);
+            safeLocalStorageSet('samyak_cache_orders', nextOrders);
+          }
+        } catch (closeErr) {
+          console.error('[Orders][auto-close]', closeErr);
         }
         console.log('[Supabase Load] All 3 stages completed successfully!');
       } catch (err) {
@@ -1829,8 +1871,34 @@ export default function App() {
     }
   };
 
+  const reconcileOrderAutoClose = async (orderList, challanList, shipmentList, goodsList, settings) => {
+    const decisions = planAutoCloseUpdates(orderList, {
+      challans: challanList,
+      shipments: shipmentList,
+      sfgGoods: goodsList,
+      settings: settings || orderCloseSettings
+    });
+    for (const decision of decisions) {
+      await saveOrderToSupabase(decision.order);
+      if (decision.audit) {
+        await logAudit('UPDATE', 'Orders', decision.audit, decision.order.id);
+      }
+    }
+    if (decisions.length > 0) {
+      const updated = new Map(decisions.map((decision) => [decision.order.id, decision.order]));
+      setOrders((prev) => prev.map((order) => updated.get(order.id) || order));
+    }
+    return decisions;
+  };
+
   const handleUpdateOrder = async (updatedOrder) => {
     console.log(`[ORDERS][UPDATE] Starting orderId=${updatedOrder?.id}`);
+    const previous = orders.find((order) => order.id === updatedOrder?.id);
+    const guard = manualCloseGuard(previous, updatedOrder, currentUser);
+    if (guard) {
+      alert(guard);
+      throw new Error(guard);
+    }
     try {
       await saveOrderToSupabase(updatedOrder);
       console.log(`[ORDERS][DB WRITE] UPSERT orderId=${updatedOrder?.id} successful`);
@@ -1843,6 +1911,34 @@ export default function App() {
     }
   };
   const handleUpdateOrderStatus = handleUpdateOrder;
+
+  const handleManualCloseOrder = async (order, reason) => {
+    const result = buildManualClose(order, { user: currentUser, reason, now: new Date().toISOString() });
+    if (!result.ok) {
+      alert(result.error);
+      throw new Error(result.error);
+    }
+    await handleUpdateOrder(result.order);
+    await logAudit('UPDATE', 'Orders', result.audit, order.id);
+  };
+
+  const handleManualReopenOrder = async (order, reason) => {
+    const result = buildManualReopen(order, { user: currentUser, reason, now: new Date().toISOString() });
+    if (!result.ok) {
+      alert(result.error);
+      throw new Error(result.error);
+    }
+    await handleUpdateOrder(result.order);
+    await logAudit('UPDATE', 'Orders', result.audit, order.id);
+  };
+
+  const handleSaveOrderCloseSettings = async (next) => {
+    const settings = normalizeAutoCloseSettings(next);
+    setOrderCloseSettings(settings);
+    await saveSystemSetting(ORDER_AUTO_CLOSE_SETTING, settings.enabled);
+    await saveSystemSetting(ORDER_CLOSE_TOLERANCE_SETTING, settings.tolerancePct);
+    await logAudit('UPDATE', 'Orders', `Order auto-close is ${settings.enabled ? 'on' : 'off'} at ±${settings.tolerancePct}%.`, 'order-auto-close');
+  };
 
   // Handlers for Starting and Ending Printing Jobs from Scheduler
   const handleStartPrintingJob = async (order, machineId, startTime) => {
@@ -1869,8 +1965,8 @@ export default function App() {
       startTime: new Date(startIso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }),
       orderQtyKg: Number(order.quantityKg || order.quantity || order.orderQtyKg || 0),
       widthMm: Number(order.widthMm || order.printWidthMm || 0),
-      micron: Number(order.micron || 12),
-      filmType: order.printFilmType || order.filmType || 'PET',
+      micron: Number(order.micron) || null,
+      filmType: order.printFilmType || order.filmType || '',
       status: 'In Production',
       priority: order.priority || 'Normal'
     });
@@ -1932,7 +2028,7 @@ export default function App() {
     const durationFormatted = computedDurationMinutes ? (computedDurationMinutes >= 60 ? `${Math.floor(computedDurationMinutes / 60)}h ${computedDurationMinutes % 60}m` : `${computedDurationMinutes}m`) : 'Completed';
     
     const actualMetersPrinted = parseFloat(endData.actualMetersPrinted) || parseFloat(order.targetMeters) || 0;
-    const inkGsmInSpeed = parseFloat(endData.inkGsmInSpeed) || parseFloat(order.inkGsm) || 1.5;
+    const inkGsmInSpeed = Number.isFinite(parseFloat(endData.inkGsmInSpeed)) ? parseFloat(endData.inkGsmInSpeed) : null;
     const printedOutputKg = parseFloat(endData.printedOutputKg) || parseFloat(order.printLayerNetKg || order.quantityKg || order.quantity || order.orderQtyKg || 0);
 
     const updatedOrder = {
@@ -1995,13 +2091,13 @@ export default function App() {
       rollsBreakdown: endData.rollsBreakdown || baseRecord.rollsBreakdown || [],
       outputRolls: endData.rollsBreakdown || baseRecord.outputRolls || [],
       totalInputConsumedKg: endData.totalInputConsumedKg || 0,
-      printWidthMm: endData.printWidthMm || order.printWidthMm || 460,
-      inputRollWidthMm: endData.inputRollWidthMm || 460,
+      printWidthMm: endData.printWidthMm || order.printWidthMm || null,
+      inputRollWidthMm: endData.inputRollWidthMm || null,
       isBiggerSize: endData.isBiggerSize || false,
       excessFilmWastageKg: endData.excessFilmWastageKg || 0,
       excessFilmWastagePct: endData.excessFilmWastagePct || 0,
-      inkWeightGainKg: endData.inkWeightGainKg || 0,
-      actualCalculatedInkGsm: endData.actualCalculatedInkGsm || 0,
+      inkWeightGainKg: endData.inkWeightGainKg ?? null,
+      actualCalculatedInkGsm: endData.actualCalculatedInkGsm ?? null,
       notes: endData.notes || baseRecord.notes || '',
       stages: {
         ...(baseRecord.stages || {}),
@@ -2032,8 +2128,8 @@ export default function App() {
       endTime: new Date(endIso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }),
       orderQtyKg: Number(order.quantityKg || order.quantity || order.orderQtyKg || 0),
       widthMm: Number(order.widthMm || order.printWidthMm || 0),
-      micron: Number(order.micron || 12),
-      filmType: order.printFilmType || order.filmType || 'PET',
+      micron: Number(order.micron) || null,
+      filmType: order.printFilmType || order.filmType || '',
       status: 'Completed',
       priority: order.priority || 'Normal',
       totalDurationMins: computedDurationMinutes || 0
@@ -2054,9 +2150,9 @@ export default function App() {
           jobCode: order.jobCode || order.id,
           clientName: order.clientName || order.customerName || 'Client',
           sfgType: 'Printed Rolls',
-          filmType: r.filmType || order.printFilmType || 'PET',
-          widthMm: Number(r.widthMm || order.widthMm || 460),
-          micron: Number(r.micron || order.micron || 12),
+          filmType: r.filmType || order.printFilmType || '',
+          widthMm: Number(r.widthMm || order.widthMm || 0) || null,
+          micron: Number(r.micron || order.micron || 0) || null,
           totalNetKg: Number(r.netWeightKg || 0),
           availableKg: Number(r.availableWeightKg || r.netWeightKg || 0),
           consumedKg: 0,
@@ -2657,8 +2753,10 @@ export default function App() {
   const handleAddDispatchShipment = async (newShipment) => {
     requireDatabaseConnection('create dispatch shipment');
     await saveDispatchShipmentToSupabase(newShipment);
-    setDispatchShipments(prev => [newShipment, ...prev.filter(s => s.id !== newShipment.id)]);
+    const nextShipments = [newShipment, ...dispatchShipments.filter(s => s.id !== newShipment.id)];
+    setDispatchShipments(nextShipments);
     logAudit('CREATE', 'Dispatch', `Created client dispatch shipment ${newShipment.id} for "${newShipment.clientName}"`, newShipment.id);
+    reconcileOrderAutoClose(orders, deliveryChallans, nextShipments, sfgGoods, orderCloseSettings).catch((err) => console.error('[Orders][auto-close]', err));
 
     // 1. Reduce dispatched FG quantities from sfgGoods (FG Store)
     const shipmentItems = Array.isArray(newShipment.items) ? newShipment.items : [];
@@ -2756,22 +2854,28 @@ export default function App() {
   const handleDeleteDispatchShipment = async (id) => {
     requireDatabaseConnection('delete dispatch shipment');
     await deleteDispatchShipmentFromSupabase(id);
-    setDispatchShipments(prev => prev.filter(s => String(s.dispatchId || s.id) !== String(id)));
+    const nextShipments = dispatchShipments.filter(s => String(s.dispatchId || s.id) !== String(id));
+    setDispatchShipments(nextShipments);
     logAudit('DELETE', 'Dispatch', `Deleted Packing List / Dispatch Shipment ${id}`, id);
+    reconcileOrderAutoClose(orders, deliveryChallans, nextShipments, sfgGoods, orderCloseSettings).catch((err) => console.error('[Orders][auto-close]', err));
   };
 
   const handleSaveDeliveryChallan = async (newDc) => {
     requireDatabaseConnection('save delivery challan');
     await saveDeliveryChallanToSupabase(newDc);
-    setDeliveryChallans(prev => [newDc, ...prev.filter(d => d.id !== newDc.id)]);
+    const nextChallans = [newDc, ...deliveryChallans.filter(d => d.id !== newDc.id)];
+    setDeliveryChallans(nextChallans);
     logAudit('CREATE', 'Dispatch', `Issued Delivery Challan ${newDc.challanNo} for "${newDc.clientName}"`, newDc.id);
+    reconcileOrderAutoClose(orders, nextChallans, dispatchShipments, sfgGoods, orderCloseSettings).catch((err) => console.error('[Orders][auto-close]', err));
   };
 
   const handleDeleteDeliveryChallan = async (id) => {
     requireDatabaseConnection('delete delivery challan');
     await deleteDeliveryChallanFromSupabase(id);
-    setDeliveryChallans(prev => prev.filter(d => d.id !== id));
+    const nextChallans = deliveryChallans.filter(d => d.id !== id);
+    setDeliveryChallans(nextChallans);
     logAudit('DELETE', 'Dispatch', `Deleted Delivery Challan ${id}`, id);
+    reconcileOrderAutoClose(orders, nextChallans, dispatchShipments, sfgGoods, orderCloseSettings).catch((err) => console.error('[Orders][auto-close]', err));
   };
 
   const handleSaveCoA = async (newCoa) => {
@@ -4537,9 +4641,9 @@ export default function App() {
                                 >
                                   {stageInfo.stageLabel}
                                 </span>
-                                {stageInfo.totalAvailableKg > 0 && (
-                                  <span style={{ fontSize: '0.7rem', color: '#047857', fontWeight: '700' }}>
-                                    Active: {stageInfo.totalAvailableKg.toFixed(0)} kg ({stageInfo.activeLots.length} lot{stageInfo.activeLots.length !== 1 ? 's' : ''})
+                                {stageInfo.fgAvailableKg > 0 && (
+                                  <span style={{ fontSize: '0.7rem', color: '#6d28d9', fontWeight: '700' }}>
+                                    Ready for dispatch: {stageInfo.fgAvailableKg.toFixed(0)} kg
                                   </span>
                                 )}
                               </div>
@@ -4849,6 +4953,10 @@ export default function App() {
             onAddGRN={handleAddGRN}
             onNavigateToPunching={() => handleTabChange('job_punching')}
             onNavigateToProductionRecords={() => handleTabChange('production_records')}
+            orderCloseSettings={orderCloseSettings}
+            onSaveOrderCloseSettings={handleSaveOrderCloseSettings}
+            onManualCloseOrder={handleManualCloseOrder}
+            onManualReopenOrder={handleManualReopenOrder}
           />
         )}
 
