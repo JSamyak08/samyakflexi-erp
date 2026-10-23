@@ -237,6 +237,16 @@ function stripDummyRecords(arr, idFields = ['id', 'orderId', 'jobId']) {
 initSafeStorage();
 
 
+function e2eStubUser() {
+  if (import.meta.env.VITE_E2E_STUB_AUTH !== '1') return null;
+  try {
+    if (sessionStorage.getItem('samyak_e2e_signed_out') === '1') return null;
+  } catch {
+    /* session storage can be blocked */
+  }
+  return { id: 'e2e-admin', name: 'E2E Admin', email: 'e2e@samyakinternational.in', role: 'Admin' };
+}
+
 function routeFromHref(href) {
   try {
     const url = new URL(href, 'http://erp.local');
@@ -289,12 +299,12 @@ export default function App() {
   };
 
   // Authentication & Active User Session State
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(() => e2eStubUser());
   const [sessionProfile, setSessionProfile] = useState(null);
   const [mustSetPassword, setMustSetPassword] = useState(false);
   const passwordRecoveryRef = useRef(false);
   const recoveryHandledRef = useRef(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(e2eStubUser()));
   const [isAuthReady, setIsAuthReady] = useState(!isSupaConfigured);
   const [isSigningIn, setIsSigningIn] = useState(false);
 
@@ -1415,9 +1425,10 @@ export default function App() {
     try { localStorage.removeItem('samyak_erp_current_user'); } catch (e) {}
 
     if (!isSupaActive) {
-      setSessionProfile(null);
-      setCurrentUser(null);
-      setIsAuthenticated(false);
+      const stub = e2eStubUser();
+      setSessionProfile(stub);
+      setCurrentUser(stub);
+      setIsAuthenticated(Boolean(stub));
       setIsAuthReady(true);
       return;
     }
@@ -1540,6 +1551,9 @@ export default function App() {
 
     recoveryHandledRef.current = false;
     passwordRecoveryRef.current = false;
+    if (import.meta.env.VITE_E2E_STUB_AUTH === '1') {
+      try { sessionStorage.setItem('samyak_e2e_signed_out', '1'); } catch { /* ignore */ }
+    }
     if (typeof window !== 'undefined') {
       rememberReturnTo(window.location.pathname + window.location.search + window.location.hash);
       window.history.replaceState({ tab: 'login' }, '', '/login');
@@ -3556,7 +3570,7 @@ export default function App() {
 
   const handlePunchOrderFromJobMaster = (jobMaster) => {
     setSelectedJobMasterForPunch(jobMaster);
-    handleTabChange('job_punching');
+    handleTabChange('job_punching', jobMaster?.id ? { jobMasterId: jobMaster.id } : {});
   };
 
   const isDataReady = databaseStatus !== 'checking' && (!isAuthenticated || isDataFetched || (!isDataLoading && !ordersLoading));
@@ -4382,7 +4396,7 @@ export default function App() {
                       {delayedOrders.slice(0, 3).map(o => (
                         <span 
                           key={o.id}
-                          onClick={() => handleTabChange('orders')}
+                          onClick={() => handleTabChange('orders', o?.id ? { id: o.id } : {})}
                           style={{
                             background: '#fff1f2',
                             border: '1px solid #fecdd3',
@@ -4494,7 +4508,7 @@ export default function App() {
                       {(lowStockInks || []).slice(0, 3).map(i => (
                         <span 
                           key={i.id || i.productCode}
-                          onClick={() => handleTabChange('ink_management')}
+                          onClick={() => handleTabChange('ink_management', (i?.id || i?.productCode) ? { id: i.id || i.productCode } : {})}
                           style={{
                             background: '#fff1f2',
                             border: '1px solid #fecdd3',
@@ -4896,7 +4910,7 @@ export default function App() {
         )}
 
         {/* TAB: PRODUCTION RECORDS & APPROVAL FLOW */}
-        {moduleOpen && activeTab === 'production_records' && (
+        {moduleOpen && activeTab === 'production_records' && !['job-data-sheets', 'sheet', 'sheet-new'].includes(routeInfo.section) && (
           <ProductionRecordManagement 
             urlParams={urlParams}
             productionRecords={productionRecords}
@@ -4916,6 +4930,17 @@ export default function App() {
             onUpdateJobMaster={handleUpdateJobMaster}
             onUpdateCylinder={handleUpdateCylinder}
             onAddRoll={handleAddRoll}
+          />
+        )}
+
+        {moduleOpen && activeTab === 'production_records' && ['job-data-sheets', 'sheet', 'sheet-new'].includes(routeInfo.section) && (
+          <JobDataSheet
+            urlParams={urlParams}
+            orders={orders}
+            jobDataSheets={jobDataSheets}
+            currentUser={currentUser}
+            onSaveJobDataSheet={handleAddJobDataSheet}
+            onDeleteJobDataSheet={handleDeleteJobDataSheet}
           />
         )}
 
@@ -4961,9 +4986,10 @@ export default function App() {
         {/* TAB 1: JOB PUNCHING & PRE-COSTING */}
         {moduleOpen && activeTab === 'job_punching' && (
           <JobPunchingForm 
+            key={selectedJobMasterForPunch?.id || urlParams.jobMasterId || 'punch'}
             onSaveOrder={handleAddOrder} 
             onNavigateToDashboard={() => handleTabChange('dashboard')} 
-            initialJobMasterData={selectedJobMasterForPunch}
+            initialJobMasterData={selectedJobMasterForPunch || (jobMasters || []).find((job) => String(job.id) === String(urlParams.jobMasterId)) || null}
             clients={clients}
             jobMasters={jobMasters}
           />
@@ -5322,7 +5348,12 @@ export default function App() {
         vendors={vendors}
         onNavigateToProductionRecord={(jobName, params) => {
           setIsBarcodeScannerOpen(false);
-          handleTabChange('production_records', { jobName, ...params });
+          const recordId = params?.id || params?.recordId;
+          handleTabChange('production_records', {
+            jobName,
+            ...params,
+            ...(recordId ? { id: recordId, section: params?.section || params?.tab || 'list' } : {}),
+          });
         }}
       />
 

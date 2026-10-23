@@ -104,6 +104,12 @@ export default function AuthScreen({ onLogin, recoveryMode = false, onPasswordUp
       return;
     }
 
+    if (import.meta.env.VITE_E2E_STUB_AUTH === '1') {
+      try { sessionStorage.removeItem('samyak_e2e_signed_out'); } catch { /* ignore */ }
+      onLogin({ id: 'e2e-admin', name: 'E2E Admin', email: cleanEmail, role: 'Admin' });
+      return;
+    }
+
     setIsLoading(true);
     const response = await signInUser(cleanEmail, cleanPassword);
     setIsLoading(false);
