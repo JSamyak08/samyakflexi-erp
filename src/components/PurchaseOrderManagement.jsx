@@ -1814,15 +1814,22 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                       className="form-control"
                     >
                       <option value="">-- Select Vendor from Directory --</option>
-                      {vendors.map(v => (
-                        <option 
-                          key={v.id} 
-                          value={v.id}
-                          data-subtitle={v.gstin ? `GSTIN: ${v.gstin}` : 'No GSTIN'}
-                        >
-                          {v.companyName || v.name} {v.gstin ? `(${v.gstin})` : ''}
-                        </option>
-                      ))}
+                      {vendors.map(v => {
+                        const vendorName = String(v.companyName || v.name || '').trim();
+                        const vendorCode = v.id != null ? String(v.id) : '';
+                        const optionLabel = vendorName
+                          ? (vendorCode && vendorName !== vendorCode ? `${vendorName} (${vendorCode})` : vendorName)
+                          : vendorCode;
+                        return (
+                          <option
+                            key={v.id}
+                            value={v.id}
+                            data-subtitle={v.gstin ? `GSTIN: ${v.gstin}` : 'No GSTIN'}
+                          >
+                            {optionLabel}
+                          </option>
+                        );
+                      })}
                     </SearchableSelect>
                   </div>
 
@@ -1904,15 +1911,22 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                         triggerStyle={{ height: '34px', fontSize: '0.8rem', padding: '4px 10px' }}
                       >
                         <option value="">+ Add from Inventory...</option>
-                        {inventory.map(inv => (
-                          <option 
-                            key={inv.id} 
-                            value={inv.id}
-                            data-subtitle={`${inv.category} • Avail: ${inv.availableQtyKg || 0} kg`}
-                          >
-                            {inv.itemName || inv.itemCode} ({inv.category})
-                          </option>
-                        ))}
+                        {inventory.map(inv => {
+                          const itemName = String(inv.itemName || '').trim();
+                          const itemCode = String(inv.itemCode || inv.id || '').trim();
+                          const optionLabel = itemName
+                            ? (itemCode && itemName !== itemCode ? `${itemName} (${itemCode})` : itemName)
+                            : itemCode;
+                          return (
+                            <option
+                              key={inv.id}
+                              value={inv.id}
+                              data-subtitle={`${inv.category} • Avail: ${inv.availableQtyKg || 0} kg`}
+                            >
+                              {optionLabel}
+                            </option>
+                          );
+                        })}
                       </SearchableSelect>
                     </div>
 
