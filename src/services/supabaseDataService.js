@@ -31,6 +31,7 @@ import {
   parseStandardDate
 } from '../factoryStore';
 import { buildEmployeeAttendanceRow, mapEmployeeAttendanceRow } from './employeeAttendance';
+import { mapDirectoryUser } from '../utils/activeUserLabel';
 import { groupGrnLineItems, lineItemsForGrn, sanitizeGRN } from './grnLineItems';
 import { pelletConsumptionFromRow, pelletInwardFromRow } from './pelletFuel';
 export { sanitizeGRN };
@@ -1555,14 +1556,7 @@ export async function fetchUsers() {
 
     return data
       .filter(u => u.id && !u.id.startsWith('USR-SETTING-'))
-      .map(u => ({
-        id: u.id,
-        name: u.full_name || u.username || 'User',
-        email: u.email || (u.username?.includes('@') ? u.username : ''),
-        role: u.role || 'Shop Floor Operator',
-        department: u.department || 'Operations',
-        status: u.status || (u.active !== false ? 'Active' : 'Inactive')
-      }));
+      .map(mapDirectoryUser);
   } catch (err) {
     console.error("Error fetching users from Supabase:", err);
     throw err;
