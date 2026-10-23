@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { pushSlugState } from '../utils/slugRouter';
 import { 
   ShoppingBag, 
   Plus, 
@@ -217,7 +218,14 @@ export default function SalesManagement({
     return () => { isMounted = false; };
   }, []);
 
-  const [activeSubTab, setActiveSubTab] = useState('list'); // 'list', 'create'
+  const [activeSubTab, setActiveSubTab] = useState(urlParams?.subTab === 'create' ? 'create' : 'list');
+  useEffect(() => {
+    if (urlParams?.subTab === 'create' || urlParams?.subTab === 'list') setActiveSubTab(urlParams.subTab);
+  }, [urlParams?.subTab]);
+  const chooseSalesTab = (subTab) => {
+    setActiveSubTab(subTab);
+    pushSlugState('sales', { section: subTab });
+  };
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
 
@@ -610,7 +618,7 @@ export default function SalesManagement({
     setSelectedTermsTemplateKey('STANDARD');
     setTermsList([...QUOTATION_TERMS_TEMPLATES.STANDARD.terms]);
     setShowNewClientForm(false);
-    setActiveSubTab('create');
+    chooseSalesTab('create');
   };
 
   // Open the same quotation so a rate or comment change updates that row.
@@ -644,7 +652,7 @@ export default function SalesManagement({
     setTermsList(qtn.termsAndConditions || [...QUOTATION_TERMS_TEMPLATES.STANDARD.terms]);
     setSelectedTermsTemplateKey(qtn.termsTemplateKey || 'STANDARD');
     setComments(qtn.comments || '');
-    setActiveSubTab('create');
+    chooseSalesTab('create');
   };
 
   // Open Amend Form
@@ -695,7 +703,7 @@ export default function SalesManagement({
     setSelectedTermsTemplateKey(qtn.termsTemplateKey || 'CUSTOM');
     setComments(`Amended Revision ${nextRev} based on client specification updates.`);
 
-    setActiveSubTab('create');
+    chooseSalesTab('create');
   };
 
   // Save Sales Quotation
@@ -771,7 +779,7 @@ export default function SalesManagement({
     }
     setQuotations(updatedList);
 
-    setActiveSubTab('list');
+    chooseSalesTab('list');
     setActiveQuotationForPDF(newQtn); // Open PDF preview!
     alert(`Sales Quotation ${finalQtnNo} (${amendmentNo}) saved & sent to client! Opening PDF preview now.`);
   };
@@ -1241,7 +1249,7 @@ export default function SalesManagement({
             alignItems: 'center',
             gap: '8px'
           }}
-          onClick={() => setActiveSubTab('list')}
+          onClick={() => chooseSalesTab('list')}
         >
           <FileText size={18} /> Sales Quotations Directory ({(quotations || []).length})
         </button>
@@ -1464,7 +1472,7 @@ export default function SalesManagement({
               </p>
             </div>
 
-            <button type="button" className="btn-secondary" onClick={() => setActiveSubTab('list')}>
+            <button type="button" className="btn-secondary" onClick={() => chooseSalesTab('list')}>
               <X size={18} /> Cancel
             </button>
           </div>
@@ -2310,7 +2318,7 @@ export default function SalesManagement({
 
           {/* Submit Actions */}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-            <button type="button" className="btn-secondary" onClick={() => setActiveSubTab('list')}>Cancel</button>
+            <button type="button" className="btn-secondary" onClick={() => chooseSalesTab('list')}>Cancel</button>
             <button type="submit" className="btn-primary" style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', padding: '10px 24px', fontWeight: '800' }}>
               <FileText size={18} /> Save Sales Quotation & Generate PDF
             </button>

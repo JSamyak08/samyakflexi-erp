@@ -87,10 +87,18 @@ import { SEED_COMPANY_PROFILE, readStoredCompanyProfile, REQUIRED_COMPANY_FIELDS
 import { sendERPEmailNotification, buildEmailTemplate } from '../services/emailService';
 import { fetchSystemSetting } from '../services/supabaseDataService';
 import SearchableSelect from './SearchableSelect';
+import { pushSlugState } from '../utils/slugRouter';
 
-export default function DocumentSettings({ machines = [], onSaveMachine, onUpdateMachine, onDeleteMachine }) {
+export default function DocumentSettings({ machines = [], onSaveMachine, onUpdateMachine, onDeleteMachine, urlParams = {} }) {
   // Navigation Sub-tab State
-  const [activeTab, setActiveTab] = useState('general'); // 'general', 'material_costs', 'film_substrates', 'storage_bays', 'inventory_ageing', 'email_config', 'email_templates'
+  const [activeTab, setActiveTab] = useState(urlParams?.tab || 'general');
+  useEffect(() => {
+    if (urlParams?.tab) setActiveTab(urlParams.tab);
+  }, [urlParams?.tab]);
+  const chooseSettingsTab = (tab) => {
+    setActiveTab(tab);
+    pushSlugState('doc_settings', { section: tab });
+  };
 
   // General Settings State
   const [logoImage, setLogoImage] = useState(() => getCompanyLogo());
@@ -815,7 +823,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                 type="button"
                 className={`tab-button ${activeTab === 'general' ? 'active' : ''}`}
                 style={{ padding: '6px 14px', fontSize: '0.82rem', fontWeight: '700', borderRadius: '6px', cursor: 'pointer', border: 'none', background: activeTab === 'general' ? '#ffffff' : 'transparent', color: activeTab === 'general' ? '#0f172a' : '#64748b', boxShadow: activeTab === 'general' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}
-                onClick={() => setActiveTab('general')}
+                onClick={() => chooseSettingsTab('general')}
               >
                 📄 Document Specs
               </button>
@@ -823,7 +831,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                 type="button"
                 className={`tab-button ${activeTab === 'material_costs' ? 'active' : ''}`}
                 style={{ padding: '6px 14px', fontSize: '0.82rem', fontWeight: '700', borderRadius: '6px', cursor: 'pointer', border: 'none', background: activeTab === 'material_costs' ? '#ffffff' : 'transparent', color: activeTab === 'material_costs' ? '#0f172a' : '#64748b', boxShadow: activeTab === 'material_costs' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}
-                onClick={() => setActiveTab('material_costs')}
+                onClick={() => chooseSettingsTab('material_costs')}
               >
                 📦 Consumable Material Rates
               </button>
@@ -831,7 +839,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                 type="button"
                 className={`tab-button ${activeTab === 'film_substrates' ? 'active' : ''}`}
                 style={{ padding: '6px 14px', fontSize: '0.82rem', fontWeight: '700', borderRadius: '6px', cursor: 'pointer', border: 'none', background: activeTab === 'film_substrates' ? '#ffffff' : 'transparent', color: activeTab === 'film_substrates' ? '#0f172a' : '#64748b', boxShadow: activeTab === 'film_substrates' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}
-                onClick={() => setActiveTab('film_substrates')}
+                onClick={() => chooseSettingsTab('film_substrates')}
               >
                 🎞️ Film Substrates & Densities
               </button>
@@ -839,7 +847,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                 type="button"
                 className={`tab-button ${activeTab === 'storage_bays' ? 'active' : ''}`}
                 style={{ padding: '6px 14px', fontSize: '0.82rem', fontWeight: '700', borderRadius: '6px', cursor: 'pointer', border: 'none', background: activeTab === 'storage_bays' ? '#ffffff' : 'transparent', color: activeTab === 'storage_bays' ? '#0f172a' : '#64748b', boxShadow: activeTab === 'storage_bays' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}
-                onClick={() => setActiveTab('storage_bays')}
+                onClick={() => chooseSettingsTab('storage_bays')}
               >
                 🏬 Storage Bays
               </button>
@@ -847,7 +855,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                 type="button"
                 className={`tab-button ${activeTab === 'inventory_ageing' ? 'active' : ''}`}
                 style={{ padding: '6px 14px', fontSize: '0.82rem', fontWeight: '700', borderRadius: '6px', cursor: 'pointer', border: 'none', background: activeTab === 'inventory_ageing' ? '#ffffff' : 'transparent', color: activeTab === 'inventory_ageing' ? '#0f172a' : '#64748b', boxShadow: activeTab === 'inventory_ageing' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}
-                onClick={() => setActiveTab('inventory_ageing')}
+                onClick={() => chooseSettingsTab('inventory_ageing')}
               >
                 ⏳ Inventory Ageing & FIFO
               </button>
@@ -855,7 +863,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                 type="button"
                 className={`tab-button ${activeTab === 'email_config' ? 'active' : ''}`}
                 style={{ padding: '6px 14px', fontSize: '0.82rem', fontWeight: '700', borderRadius: '6px', cursor: 'pointer', border: 'none', background: activeTab === 'email_config' ? '#ffffff' : 'transparent', color: activeTab === 'email_config' ? '#0f172a' : '#64748b', boxShadow: activeTab === 'email_config' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}
-                onClick={() => setActiveTab('email_config')}
+                onClick={() => chooseSettingsTab('email_config')}
               >
                 ⚙️ SMTP Server & Routing
               </button>
@@ -863,7 +871,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                 type="button"
                 className={`tab-button ${activeTab === 'email_templates' ? 'active' : ''}`}
                 style={{ padding: '6px 14px', fontSize: '0.82rem', fontWeight: '700', borderRadius: '6px', cursor: 'pointer', border: 'none', background: activeTab === 'email_templates' ? '#ffffff' : 'transparent', color: activeTab === 'email_templates' ? '#0f172a' : '#64748b', boxShadow: activeTab === 'email_templates' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}
-                onClick={() => setActiveTab('email_templates')}
+                onClick={() => chooseSettingsTab('email_templates')}
               >
                 ✉️ Email Templates & Live Preview
               </button>
