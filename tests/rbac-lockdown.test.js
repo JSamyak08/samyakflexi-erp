@@ -47,6 +47,11 @@ test('matrix keys are real and dispatch is not forced on for every role', () => 
   assert.equal(defaults['Production Manager'].audit_logs, false);
   assert.equal(defaults['Sales Manager'].pellet_fuel, false);
   assert.equal(defaults['Printing Operator'].pellet_fuel, false);
+  assert.ok(keys.includes('barcodes'));
+  assert.equal(defaults['Store Manager'].barcodes, true);
+  assert.equal(defaults['Sales Manager'].barcodes, false);
+  assert.equal(defaults['Printing Operator'].barcodes, false);
+  assert.equal(defaults['Shop Floor Operator'].barcodes, false);
 });
 
 test('Allow all sets every module key and Reset uses the code defaults', () => {

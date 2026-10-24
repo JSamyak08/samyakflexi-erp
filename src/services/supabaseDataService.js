@@ -3967,3 +3967,43 @@ export async function seedAllDataToSupabase() {
 
 export const seedInitialDataToSupabase = seedAllDataToSupabase;
 
+function mapBarcodeRegistryRow(row) {
+  return {
+    barcode: row.barcode,
+    sourceModule: row.source_module,
+    description: row.description || '',
+    referenceNo: row.reference_no || '',
+    createdAt: row.created_at || '',
+    status: row.status || '',
+    location: row.location || '',
+    sourceTable: row.source_table || '',
+    sourceColumn: row.source_column || '',
+  };
+}
+
+/**
+ * Read public.barcode_registry when the migration is applied.
+ * Returns null when the view is missing so the screen can union the
+ * tables already loaded for this role. An empty list means the view
+ * answered and held no rows.
+ */
+export async function fetchBarcodeRegistry() {
+  if (!isSupabaseConfigured()) return null;
+  const pageSize = 1000;
+  const rows = [];
+  for (let from = 0; from < 20000; from += pageSize) {
+    const { data, error } = await supabase
+      .from('barcode_registry')
+      .select('barcode, source_module, description, reference_no, created_at, status, location, source_table, source_column')
+      .range(from, from + pageSize - 1);
+    if (error) {
+      console.warn('[barcode_registry]', error.message || error);
+      return rows.length ? rows : null;
+    }
+    const batch = Array.isArray(data) ? data.map(mapBarcodeRegistryRow) : [];
+    rows.push(...batch);
+    if (batch.length < pageSize) break;
+  }
+  return rows;
+}
+
