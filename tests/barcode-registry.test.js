@@ -209,13 +209,21 @@ test('print status is Printed only for a confirmed printer job', () => {
     { barcode: 'RM-BC-1', job_status: 'cancelled', job_id: 'job-later-cancel', printer: 'Zebra-2', printed_at: '2026-10-24T05:00:00Z' },
   ]);
   assert.equal(printed[0].printStatus, PRINT_STATUS.printed);
+  assert.equal(printed[0].printAttempted, true);
   assert.equal(printed[0].printJobId, 'job-new');
   assert.equal(printed[0].printer, 'Zebra-2');
   assert.equal(printed[0].printedBy, 'Store Clerk');
   assert.equal(printed[1].printStatus, PRINT_STATUS.notPrinted);
+  assert.equal(printed[1].printAttempted, false);
+
+  const browserFake = withPrintStatus(rows, [
+    { barcode: 'RM-BC-1', job_status: 'printed', job_id: 'browser-fake', printer: 'browser', printed_at: '2026-10-24T06:00:00Z' },
+  ]);
+  assert.equal(browserFake[0].printStatus, PRINT_STATUS.notPrinted);
+  assert.equal(browserFake[0].printAttempted, true);
 });
 
-test('a sticker print flow records Printed, and stored barcodes without a log stay Not printed', () => {
+test('a sticker print flow records an attempt and leaves the status Not printed', () => {
   const logs = stickerPrintLogs([
     { barcodeId: 'RM-BC-1', sourceModule: BARCODE_SOURCE.rm },
     { id: '', barcode: '  ' },
@@ -227,7 +235,7 @@ test('a sticker print flow records Printed, and stored barcodes without a log st
   });
   assert.equal(logs.length, 2);
   assert.equal(logs[0].printer, 'browser');
-  assert.equal(logs[0].jobStatus, 'printed');
+  assert.equal(logs[0].jobStatus, 'sent_to_browser');
   assert.equal(logs[0].jobId, 'browser-1');
   assert.equal(logs[0].printedBy, 'Store Clerk');
   assert.equal(logs[1].jobId, 'browser-3');
@@ -236,7 +244,9 @@ test('a sticker print flow records Printed, and stored barcodes without a log st
     { barcode: 'RM-BC-1', sourceModule: BARCODE_SOURCE.rm },
     { barcode: 'BAR-TX-1', sourceModule: BARCODE_SOURCE.print },
   ], logs);
-  assert.equal(rows[0].printStatus, PRINT_STATUS.printed);
-  assert.equal(rows[0].printer, 'browser');
+  assert.equal(rows[0].printStatus, PRINT_STATUS.notPrinted);
+  assert.equal(rows[0].printAttempted, true);
+  assert.equal(rows[0].printer, '');
   assert.equal(rows[1].printStatus, PRINT_STATUS.notPrinted);
+  assert.equal(rows[1].printAttempted, false);
 });

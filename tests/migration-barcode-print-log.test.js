@@ -108,14 +108,25 @@ test('print log accepts a printer job and ignores dialog events', async () => {
     /job id/
   );
 
+  await assert.rejects(
+    () => db.query(record('RM-BC-1', 'browser-printed', 'printed', 'browser')),
+    /cannot be recorded as printed/
+  );
+
   await db.exec(`UPDATE auth.session_probe SET role = 'authenticated'`);
-  const browser = await db.query(record('FG-BC-8', 'browser-job-1', 'printed', 'browser'));
-  assert.equal(browser.rows[0].result.counts_as_printed, true);
+  const browser = await db.query(record('FG-BC-8', 'browser-job-1', 'sent_to_browser', 'browser'));
+  assert.equal(browser.rows[0].result.counts_as_printed, false);
+  assert.equal(browser.rows[0].result.job_status, 'sent_to_browser');
   assert.equal(browser.rows[0].result.printer, 'browser');
+
+  await assert.rejects(
+    () => db.query(record('FG-BC-8', 'browser-job-printed', 'printed', 'Zebra-Dock-1')),
+    /print agent/
+  );
 
   await db.exec(`UPDATE private.print_probe SET allowed = false`);
   await assert.rejects(
-    () => db.query(record('RM-BC-1', 'job-denied', 'printed')),
+    () => db.query(record('RM-BC-1', 'job-denied', 'sent_to_browser', 'browser')),
     /barcodes permission/
   );
   await db.exec(`UPDATE private.print_probe SET allowed = true`);
@@ -125,8 +136,16 @@ test('print log accepts a printer job and ignores dialog events', async () => {
     FROM public.barcode_print_status
     ORDER BY barcode, job_id
   `);
-  assert.deepEqual(visible.rows.map((row) => row.barcode), ['FG-BC-8', 'RM-BC-1']);
+  assert.deepEqual(visible.rows.map((row) => row.barcode), ['RM-BC-1']);
   assert.equal(visible.rows.some((row) => row.barcode === 'FG-BC-2'), false);
+  assert.equal(visible.rows.some((row) => row.printer === 'browser'), false);
+
+  const attempts = await db.query(`
+    SELECT barcode, job_status
+    FROM public.barcode_print_attempts
+    ORDER BY barcode
+  `);
+  assert.ok(attempts.rows.some((row) => row.barcode === 'FG-BC-8' && row.job_status === 'sent_to_browser'));
 
   await db.exec(rollbackSql);
   const left = await db.query(`

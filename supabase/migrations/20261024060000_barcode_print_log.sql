@@ -1,14 +1,11 @@
 -- Print log for barcode stickers.
--- A user with the barcodes permission records a row when an existing 4x4
--- sticker print flow runs. printer = 'browser' means that flow called
--- window.print. The browser still cannot tell a finished physical print
--- from a cancelled dialog (afterprint fires on cancel too), so this is the
--- print-flow record, not a device handshake.
--- A service-role print agent may record the same way with the real printer
--- name and job_status printed, failed, or cancelled.
--- Print status is Printed only when the latest matching row is job_status
--- = 'printed'. Barcodes with no row stay Not printed. There is no backfill:
--- rolls, custom_barcodes, and older stickers have no historical print event.
+-- The browser print dialog is not a confirmed print. window.print() and
+-- afterprint also run when the operator cancels. A barcodes user may record
+-- that the sticker was sent to the dialog as job_status = 'sent_to_browser'.
+-- That row does not count. printer = 'browser' can never be stored as printed.
+-- Printed is only job_status = 'printed', written by the service role when a
+-- print agent reports a finished printer job.
+-- Barcodes with no printed row stay Not printed. There is no backfill.
 
 CREATE TABLE public.barcode_print_log (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -22,7 +19,7 @@ CREATE TABLE public.barcode_print_log (
   auth_user_id uuid,
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT barcode_print_log_job_id_key UNIQUE (job_id),
-  CONSTRAINT barcode_print_log_status_check CHECK (job_status IN ('printed', 'failed', 'cancelled')),
+  CONSTRAINT barcode_print_log_status_check CHECK (job_status IN ('printed', 'failed', 'cancelled', 'sent_to_browser')),
   CONSTRAINT barcode_print_log_barcode_check CHECK (btrim(barcode) <> ''),
   CONSTRAINT barcode_print_log_job_id_check CHECK (btrim(job_id) <> ''),
   CONSTRAINT barcode_print_log_printer_check CHECK (btrim(printer) <> '')
@@ -76,15 +73,6 @@ BEGIN
       actor_role := '';
   END;
 
-  IF actor_role = 'service_role' THEN
-    NULL;
-  ELSIF actor_role = 'authenticated' AND private.can_any(ARRAY['barcodes']::text[]) THEN
-    NULL;
-  ELSE
-    RAISE EXCEPTION 'barcode prints can only be recorded by a user with the barcodes permission'
-      USING ERRCODE = '42501';
-  END IF;
-
   IF clean_barcode = '' OR clean_job_id = '' OR clean_printer = '' OR clean_printed_by = '' OR p_printed_at IS NULL THEN
     RAISE EXCEPTION 'barcode, job id, printer, printed at, and printed by are required'
       USING ERRCODE = '22023';
@@ -96,9 +84,28 @@ BEGIN
     clean_status := 'failed';
   ELSIF raw_status IN ('cancelled', 'canceled') THEN
     clean_status := 'cancelled';
+  ELSIF raw_status IN ('sent_to_browser', 'sent-to-browser') THEN
+    clean_status := 'sent_to_browser';
   ELSE
     RAISE EXCEPTION 'job status % is not a printer result', coalesce(p_job_status, '')
       USING ERRCODE = '22023';
+  END IF;
+
+  IF clean_status = 'printed' AND lower(clean_printer) = 'browser' THEN
+    RAISE EXCEPTION 'a browser print cannot be recorded as printed'
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF actor_role = 'service_role' THEN
+    NULL;
+  ELSIF actor_role = 'authenticated' AND private.can_any(ARRAY['barcodes']::text[]) THEN
+    IF clean_status IS DISTINCT FROM 'sent_to_browser' THEN
+      RAISE EXCEPTION 'only a print agent can record a confirmed printer result'
+        USING ERRCODE = '42501';
+    END IF;
+  ELSE
+    RAISE EXCEPTION 'barcode prints can only be recorded by a user with the barcodes permission'
+      USING ERRCODE = '42501';
   END IF;
 
   BEGIN
@@ -214,3 +221,20 @@ ORDER BY lower(btrim(log.barcode)), log.printed_at DESC;
 
 REVOKE ALL ON TABLE public.barcode_print_status FROM PUBLIC, anon;
 GRANT SELECT ON TABLE public.barcode_print_status TO authenticated;
+
+DROP VIEW IF EXISTS public.barcode_print_attempts;
+CREATE VIEW public.barcode_print_attempts
+WITH (security_invoker = true) AS
+SELECT DISTINCT ON (lower(btrim(log.barcode)))
+  log.barcode,
+  log.source_module,
+  log.job_id,
+  log.job_status,
+  log.printer,
+  log.printed_at,
+  log.printed_by
+FROM public.barcode_print_log AS log
+ORDER BY lower(btrim(log.barcode)), log.printed_at DESC;
+
+REVOKE ALL ON TABLE public.barcode_print_attempts FROM PUBLIC, anon;
+GRANT SELECT ON TABLE public.barcode_print_attempts TO authenticated;

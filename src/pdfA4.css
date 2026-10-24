@@ -193,16 +193,35 @@
 
 .totals-and-words-grid {
   gap: 8px;
-  padding: 6px;
+  padding: 12px 14px;
   margin-bottom: 6px;
   font-size: 8.5pt;
+  box-sizing: border-box;
 }
 
 .words-block {
-  gap: 3px;
+  gap: 4px;
+  min-width: 0;
+  padding: 2px 4px 2px 2px;
 }
 
-.word-line,
+.word-line {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  column-gap: 10px;
+  min-width: 0;
+  font-size: 8.5pt;
+}
+
+.word-label {
+  padding: 0 4px 0 0;
+}
+
+.word-value {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
 .totals-summary-table {
   font-size: 8.5pt;
 }
@@ -584,6 +603,37 @@
     word-break: normal !important;
     height: auto !important;
     vertical-align: top !important;
+  }
+
+  .printable-document thead th,
+  #printable-quotation thead th,
+  #printable-po thead th,
+  #printable-ocn thead th,
+  #printable-jds thead th,
+  #printable-packing-list thead th,
+  #printable-payslip thead th,
+  #printable-client-pending-orders thead th,
+  #printable-indent thead th,
+  .items-table th,
+  .letterhead-table th {
+    overflow-wrap: normal !important;
+    word-break: keep-all !important;
+    hyphens: none !important;
+    line-height: 1.15 !important;
+  }
+
+  .totals-and-words-grid,
+  #printable-ocn .totals-and-words-grid,
+  #printable-po .totals-and-words-grid,
+  .printable-document .totals-and-words-grid {
+    padding: 12px 14px !important;
+  }
+
+  .word-line,
+  #printable-ocn .word-line,
+  #printable-po .word-line,
+  .printable-document .word-line {
+    column-gap: 10px !important;
   }
 
   .printable-document thead th,

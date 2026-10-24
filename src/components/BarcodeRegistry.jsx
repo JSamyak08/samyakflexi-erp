@@ -3,7 +3,7 @@ import { Printer, ScanBarcode, Search } from 'lucide-react';
 import TablePagination, { usePagination } from './TablePagination';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import { isSupabaseConfigured, supabase } from '../services/supabaseClient';
-import { fetchBarcodePrintStatus, fetchBarcodeRegistry } from '../services/supabaseDataService';
+import { fetchBarcodePrintAttempts, fetchBarcodePrintStatus, fetchBarcodeRegistry } from '../services/supabaseDataService';
 import { fetchPayloadRecords } from '../services/businessRecords';
 import {
   PRINT_STATUS,
@@ -92,8 +92,16 @@ export default function BarcodeRegistry({
     }
     let cancelled = false;
     (async () => {
-      const logs = await fetchBarcodePrintStatus();
-      if (!cancelled) setPrintLogs(Array.isArray(logs) ? logs : []);
+      const [confirmed, attempts] = await Promise.all([
+        fetchBarcodePrintStatus(),
+        fetchBarcodePrintAttempts(),
+      ]);
+      if (!cancelled) {
+        setPrintLogs([
+          ...(Array.isArray(confirmed) ? confirmed : []),
+          ...(Array.isArray(attempts) ? attempts : []),
+        ]);
+      }
     })();
     return () => {
       cancelled = true;
@@ -147,8 +155,8 @@ export default function BarcodeRegistry({
           Every barcode stored on raw-material and GRN rolls, SFG and FG batches, consume child rolls,
           dispatch packing lists, printed tags, cylinders, and production records.
           Pellet fuel does not generate barcodes.
-          Print status becomes Printed when the 4×4 sticker print flow runs for that barcode.
-          Barcodes stored before this log have no history, so they stay Not printed until printed from here or from an existing sticker screen.
+          Print status stays Not printed until a printer reports a finished job.
+          Sending a sticker to the browser dialog does not count. Reprint shows after that send.
         </p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '14px' }}>
           <label style={{ position: 'relative', flex: '1 1 240px' }}>
@@ -207,12 +215,12 @@ export default function BarcodeRegistry({
                     <button
                       type="button"
                       className="btn-secondary"
-                      aria-label={`${row.printStatus === PRINT_STATUS.printed ? 'Reprint' : 'Print'} ${row.barcode}`}
+                      aria-label={`${row.printAttempted ? 'Reprint' : 'Print'} ${row.barcode}`}
                       onClick={() => setSticker(row)}
                       style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px', fontSize: '0.75rem' }}
                     >
                       <Printer size={13} />
-                      {row.printStatus === PRINT_STATUS.printed ? 'Reprint' : 'Print'}
+                      {row.printAttempted ? 'Reprint' : 'Print'}
                     </button>
                   </div>
                 </td>

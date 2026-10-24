@@ -250,9 +250,9 @@ export default function GRNPDF({ grnData, onClose }) {
             <thead>
               <tr>
                 <th style={{ width: '4%' }}>#</th>
-                <th style={{ width: '32%' }}>Material Substrate Description</th>
+                <th style={{ width: '29%' }}>Material Substrate Description</th>
                 <th style={{ width: '10%' }}>HSN Code</th>
-                <th style={{ width: '8%' }}>Micron</th>
+                <th style={{ width: '11%' }}>Micron</th>
                 <th style={{ width: '10%' }}>Width (mm)</th>
                 <th style={{ width: '10%' }}>Rolls Recd.</th>
                 <th style={{ width: '12%' }}>Net Inward Wt</th>

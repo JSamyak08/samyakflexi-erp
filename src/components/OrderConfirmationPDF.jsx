@@ -321,11 +321,11 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
             <thead>
               <tr>
                 <th style={{ width: '4%' }}>#</th>
-                <th style={{ width: '28%' }}>Description / Specification</th>
-                <th style={{ width: '8%' }}>Micron</th>
+                <th style={{ width: '22%' }}>Description / Specification</th>
+                <th style={{ width: '10%' }}>Micron</th>
                 <th style={{ width: '8%' }}>GSM</th>
                 <th style={{ width: '10%' }}>Net Req.</th>
-                <th style={{ width: '8%' }}>Wastage</th>
+                <th style={{ width: '12%' }}>Wastage</th>
                 <th style={{ width: '10%' }}>Gross Req.</th>
                 <th style={{ width: '10%' }}>Rate</th>
                 <th style={{ width: '14%' }}>Taxable Amount</th>
