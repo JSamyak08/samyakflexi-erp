@@ -70,14 +70,14 @@ test('print log accepts a printer job and ignores dialog events', async () => {
   `);
   assert.match(String(options.rows[0].reloptions), /security_invoker=true/);
 
-  const anon = await db.query(`
-    SELECT privilege_type
+  const grants = await db.query(`
+    SELECT grantee, privilege_type
     FROM information_schema.routine_privileges
     WHERE routine_schema = 'public'
       AND routine_name = 'record_barcode_print'
       AND grantee IN ('anon', 'authenticated', 'PUBLIC')
   `);
-  assert.equal(anon.rows.length, 0);
+  assert.deepEqual(grants.rows.map((row) => row.grantee), ['authenticated']);
 
   const printed = await db.query(record('RM-BC-1', 'job-1', 'printed'));
   const body = printed.rows[0].result;
@@ -109,17 +109,35 @@ test('print log accepts a printer job and ignores dialog events', async () => {
   );
 
   await db.exec(`UPDATE auth.session_probe SET role = 'authenticated'`);
+  const browser = await db.query(record('FG-BC-8', 'browser-job-1', 'printed', 'browser'));
+  assert.equal(browser.rows[0].result.counts_as_printed, true);
+  assert.equal(browser.rows[0].result.printer, 'browser');
+
+  await db.exec(`
+    CREATE OR REPLACE FUNCTION private.can_any(required_permissions text[])
+    RETURNS boolean
+    LANGUAGE sql
+    STABLE
+    AS $$ SELECT false $$;
+  `);
   await assert.rejects(
-    () => db.query(record('RM-BC-1', 'job-browser', 'printed')),
-    /print agent/
+    () => db.query(record('RM-BC-1', 'job-denied', 'printed')),
+    /barcodes permission/
   );
+  await db.exec(`
+    CREATE OR REPLACE FUNCTION private.can_any(required_permissions text[])
+    RETURNS boolean
+    LANGUAGE sql
+    STABLE
+    AS $$ SELECT true $$;
+  `);
 
   const visible = await db.query(`
     SELECT barcode, job_id, printer
     FROM public.barcode_print_status
     ORDER BY barcode, job_id
   `);
-  assert.deepEqual(visible.rows.map((row) => row.barcode), ['RM-BC-1']);
+  assert.deepEqual(visible.rows.map((row) => row.barcode), ['FG-BC-8', 'RM-BC-1']);
   assert.equal(visible.rows.some((row) => row.barcode === 'FG-BC-2'), false);
 
   await db.exec(rollbackSql);

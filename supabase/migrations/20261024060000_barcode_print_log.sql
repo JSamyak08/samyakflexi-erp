@@ -1,9 +1,14 @@
--- Confirmed physical prints of barcode stickers.
--- The browser print dialog (window.print / afterprint) is not a confirmation:
--- afterprint also runs when the operator cancels. Nothing in the app writes
--- this log. A print agent records a job result through
--- public.record_barcode_print, which only the service role may call.
--- Print status is Printed only when a row has job_status = 'printed'.
+-- Print log for barcode stickers.
+-- A user with the barcodes permission records a row when an existing 4x4
+-- sticker print flow runs. printer = 'browser' means that flow called
+-- window.print. The browser still cannot tell a finished physical print
+-- from a cancelled dialog (afterprint fires on cancel too), so this is the
+-- print-flow record, not a device handshake.
+-- A service-role print agent may record the same way with the real printer
+-- name and job_status printed, failed, or cancelled.
+-- Print status is Printed only when the latest matching row is job_status
+-- = 'printed'. Barcodes with no row stay Not printed. There is no backfill:
+-- rolls, custom_barcodes, and older stickers have no historical print event.
 
 CREATE TABLE public.barcode_print_log (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -71,8 +76,12 @@ BEGIN
       actor_role := '';
   END;
 
-  IF actor_role IS DISTINCT FROM 'service_role' THEN
-    RAISE EXCEPTION 'barcode print results can only be recorded by the print agent'
+  IF actor_role = 'service_role' THEN
+    NULL;
+  ELSIF actor_role = 'authenticated' AND private.can_any(ARRAY['barcodes']::text[]) THEN
+    NULL;
+  ELSE
+    RAISE EXCEPTION 'barcode prints can only be recorded by a user with the barcodes permission'
       USING ERRCODE = '42501';
   END IF;
 
@@ -149,7 +158,8 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION private.record_barcode_print(text, text, text, text, timestamptz, text, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION private.record_barcode_print(text, text, text, text, timestamptz, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION private.record_barcode_print(text, text, text, text, timestamptz, text, text) TO authenticated;
 
 CREATE OR REPLACE FUNCTION public.record_barcode_print(
   p_barcode text,
@@ -176,7 +186,8 @@ AS $$
   );
 $$;
 
-REVOKE ALL ON FUNCTION public.record_barcode_print(text, text, text, text, timestamptz, text, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.record_barcode_print(text, text, text, text, timestamptz, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.record_barcode_print(text, text, text, text, timestamptz, text, text) TO authenticated;
 
 DO $$
 BEGIN

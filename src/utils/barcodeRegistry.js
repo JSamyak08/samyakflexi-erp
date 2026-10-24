@@ -470,7 +470,30 @@ export const PRINT_STATUS = {
   notPrinted: 'Not printed',
 };
 
-/** Printer-agent success values. Dialog open/close and afterprint are not in this set. */
+/**
+ * One log row per sticker the existing 4×4 print flow sends to window.print.
+ * printer is "browser" because the app has no device-level job result.
+ */
+export function stickerPrintLogs(rolls, { printedBy = 'Operator', printedAt = '', jobIds = [] } = {}) {
+  const when = printedAt || new Date().toISOString();
+  const who = plain(printedBy) || 'Operator';
+  return (rolls || []).flatMap((roll, index) => {
+    const barcode = plain(roll?.barcodeId, roll?.barcode, roll?.id);
+    if (!barcode) return [];
+    const jobId = plain(jobIds[index]) || `browser-${when}-${index + 1}-${barcode}`;
+    return [{
+      barcode,
+      sourceModule: plain(roll?.sourceModule) || '',
+      jobId,
+      jobStatus: 'printed',
+      printer: 'browser',
+      printedAt: when,
+      printedBy: who,
+    }];
+  });
+}
+
+/** Printer-job success values. A cancelled or failed job is not in this set. */
 const CONFIRMED_PRINT_STATUSES = new Set(['printed', 'success']);
 
 function logStatus(log) {

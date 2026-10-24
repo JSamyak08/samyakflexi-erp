@@ -4011,6 +4011,49 @@ export async function fetchBarcodeRegistry() {
  * Confirmed physical prints only. A missing view or a failed read leaves
  * every barcode Not printed. This never writes the log.
  */
+export async function recordBarcodePrints(logs) {
+  const list = Array.isArray(logs) ? logs : [];
+  if (!list.length) return [];
+  if (!isSupabaseConfigured()) {
+    return list.map((log) => ({
+      barcode: log.barcode,
+      source_module: log.sourceModule || null,
+      job_id: log.jobId,
+      job_status: 'printed',
+      printer: log.printer || 'browser',
+      printed_at: log.printedAt,
+      printed_by: log.printedBy,
+    }));
+  }
+  const saved = [];
+  for (const log of list) {
+    const { data, error } = await supabase.rpc('record_barcode_print', {
+      p_barcode: log.barcode,
+      p_job_id: log.jobId,
+      p_job_status: log.jobStatus || 'printed',
+      p_printer: log.printer || 'browser',
+      p_printed_at: log.printedAt,
+      p_printed_by: log.printedBy,
+      p_source_module: log.sourceModule || null,
+    });
+    if (error) {
+      console.warn('[barcode print]', error.message || error);
+      continue;
+    }
+    if (!data?.counts_as_printed) continue;
+    saved.push({
+      barcode: log.barcode,
+      source_module: log.sourceModule || null,
+      job_id: data.job_id || log.jobId,
+      job_status: data.job_status || 'printed',
+      printer: data.printer || log.printer || 'browser',
+      printed_at: data.printed_at || log.printedAt,
+      printed_by: data.printed_by || log.printedBy,
+    });
+  }
+  return saved;
+}
+
 export async function fetchBarcodePrintStatus() {
   if (!isSupabaseConfigured()) return [];
   const pageSize = 1000;

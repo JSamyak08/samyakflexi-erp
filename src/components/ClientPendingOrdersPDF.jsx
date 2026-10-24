@@ -97,7 +97,7 @@ export default function ClientPendingOrdersPDF({ client = {}, pendingOrders = []
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
               {logoImage ? (
-                <img src={logoImage} alt="Company Logo" style={{ height: '52px', objectFit: 'contain' }} />
+                <img src={logoImage} alt="Company Logo" className="samyak-logo-img" style={{ height: '36px', maxWidth: '188px', objectFit: 'contain' }} />
               ) : (
                 <div style={{
                   width: '48px',
@@ -320,17 +320,18 @@ export default function ClientPendingOrdersPDF({ client = {}, pendingOrders = []
             </ul>
           </div>
 
-          <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            {signatureImage ? (
-              <img src={signatureImage} alt="Authorized Signatory" style={{ height: '42px', objectFit: 'contain', marginBottom: '4px' }} />
-            ) : (
-              <div style={{ height: '36px' }} />
-            )}
-            <div style={{ borderTop: '1.5px solid #0f172a', width: '180px', margin: '0 auto 4px' }} />
+          <div className="pdf-sign-company">
             <div style={{ fontSize: '0.78rem', fontWeight: '800', color: '#0f172a' }}>
               For SAMYAK INTERNATIONAL LTD.
             </div>
-            <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+            <div className="pdf-sign-slot">
+              {signatureImage ? (
+                <img src={signatureImage} alt="Authorized Signatory" style={{ maxHeight: '38px', maxWidth: '156px', objectFit: 'contain' }} />
+              ) : (
+                <span />
+              )}
+            </div>
+            <div className="pdf-sign-role">
               Authorized Signatory / Plant Manager
             </div>
           </div>

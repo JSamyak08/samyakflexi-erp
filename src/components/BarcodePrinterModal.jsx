@@ -4,8 +4,22 @@ import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import QRCode2D from './QRCode2D';
 import { codeKey, codeStartsWith, textFrom } from '../utils/barcodeCode';
+import { stickerPrintLogs } from '../utils/barcodeRegistry';
+import { isSupabaseConfigured, supabase } from '../services/supabaseClient';
+import { recordBarcodePrints } from '../services/supabaseDataService';
 
-export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks = [], autoPrint = false, onRecordNext, onClose }) {
+async function operatorName() {
+  if (!isSupabaseConfigured()) return 'Operator';
+  try {
+    const { data } = await supabase.auth.getUser();
+    const user = data?.user;
+    return user?.user_metadata?.full_name || user?.email || 'Operator';
+  } catch {
+    return 'Operator';
+  }
+}
+
+export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks = [], autoPrint = false, onRecordNext, onPrinted, onClose }) {
   const rollList = Array.isArray(rolls) 
     ? rolls 
     : (Array.isArray(roll) ? roll : (roll ? [roll] : []));
@@ -32,20 +46,27 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onRecordNext, onClose]);
 
-  // Auto-trigger instant print command to system default printer when requested
+  const printStickers = async () => {
+    try {
+      window.print();
+    } catch (error) {
+      console.warn('Print error:', error);
+      return;
+    }
+    const logs = stickerPrintLogs(rollList, { printedBy: await operatorName() });
+    const saved = await recordBarcodePrints(logs);
+    if (saved.length && onPrinted) onPrinted(saved);
+  };
+
+  // Same 4x4 sticker path used by GRN, SFG/FG, dispatch, and the barcode list.
   useEffect(() => {
     if (autoPrint && rollList.length > 0) {
       const timer = setTimeout(() => {
-        try {
-          // Opens the browser dialog only. afterprint also fires on cancel,
-          // so this must not write barcode_print_log.
-          window.print();
-        } catch (e) {
-          console.warn("Auto-print error:", e);
-        }
+        printStickers();
       }, 300);
       return () => clearTimeout(timer);
     }
+    return undefined;
   }, [autoPrint, rollList.length]);
 
   const letterhead = loadLetterhead();
@@ -56,9 +77,7 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
   const activeRoll = rollList[activeIndex] || rollList[0];
 
   const handlePrint = () => {
-    // Opens the browser dialog only. afterprint also fires on cancel,
-    // so this must not write barcode_print_log.
-    window.print();
+    printStickers();
   };
 
   const resolveItemPurchaseRate = (r) => {

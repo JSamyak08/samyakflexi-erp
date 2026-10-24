@@ -147,8 +147,8 @@ export default function BarcodeRegistry({
           Every barcode stored on raw-material and GRN rolls, SFG and FG batches, consume child rolls,
           dispatch packing lists, printed tags, cylinders, and production records.
           Pellet fuel does not generate barcodes.
-          Print status stays Not printed until a print agent reports a successful printer job.
-          Opening this list or the browser print dialog does not count.
+          Print status becomes Printed when the 4×4 sticker print flow runs for that barcode.
+          Barcodes stored before this log have no history, so they stay Not printed until printed from here or from an existing sticker screen.
         </p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '14px' }}>
           <label style={{ position: 'relative', flex: '1 1 240px' }}>
@@ -243,13 +243,16 @@ export default function BarcodeRegistry({
 
       {sticker && (
         <BarcodePrinterModal
+          autoPrint
           roll={{
             barcodeId: sticker.barcode,
             itemName: sticker.description,
             orderId: sticker.referenceNo,
             status: sticker.status,
             locationBay: sticker.location,
+            sourceModule: sticker.sourceModule,
           }}
+          onPrinted={(entries) => setPrintLogs((current) => [...current, ...entries])}
           onClose={() => setSticker(null)}
         />
       )}

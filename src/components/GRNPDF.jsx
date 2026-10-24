@@ -127,7 +127,7 @@ export default function GRNPDF({ grnData, onClose }) {
           {/* Header */}
           <div className="letterhead-header">
             <div className="letterhead-brand">
-              <img src={logoImage} alt="Samyak International Ltd Logo" className="samyak-logo-img" style={{ height: '46px', objectFit: 'contain' }} />
+              <img src={logoImage} alt="Samyak International Ltd Logo" className="samyak-logo-img" style={{ height: '36px', maxWidth: '188px', objectFit: 'contain' }} />
               <p className="letterhead-company-sub" style={{ marginTop: '2px', fontSize: '8.5px', fontWeight: '800', color: '#374151' }}>
                 {COMPANY_DETAILS.tagline}
               </p>
@@ -492,14 +492,14 @@ export default function GRNPDF({ grnData, onClose }) {
           {/* Authorised Signatory */}
           <div className="letterhead-signatory-block pdf-signature-block">
             <div style={{ fontWeight: 'bold' }}>For {COMPANY_DETAILS.name}</div>
-            <div style={{ height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="pdf-sign-slot">
               {signatureImage ? (
-                <img src={signatureImage} alt="Authorised Signature" style={{ maxHeight: '38px', objectFit: 'contain' }} />
+                <img src={signatureImage} alt="Authorised Signature" style={{ maxHeight: '38px', maxWidth: '156px', objectFit: 'contain' }} />
               ) : (
                 <span style={{ fontStyle: 'italic', fontFamily: 'serif', fontSize: '18px', fontWeight: 'bold' }}>Sy</span>
               )}
             </div>
-            <div style={{ fontSize: '9px', fontWeight: 'bold' }}>Authorised Signatory</div>
+            <div className="pdf-sign-role">Authorised Signatory</div>
           </div>
 
         </div>

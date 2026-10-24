@@ -80,10 +80,10 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
         <div id="printable-quotation" className="printable-document" style={{ padding: 0, background: '#ffffff', color: '#0f172a', fontFamily: 'Inter, system-ui, sans-serif' }}>
           
           {/* Header Company Banner */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '3px solid #1e293b', paddingBottom: '16px', marginBottom: '20px' }}>
+          <div className="letterhead-header">
             <div>
               {logoImage ? (
-                <img src={logoImage} alt="Company Logo" style={{ height: '55px', maxWidth: '240px', objectFit: 'contain', marginBottom: '8px' }} />
+                <img src={logoImage} alt="Company Logo" className="samyak-logo-img" style={{ height: '36px', maxWidth: '188px', objectFit: 'contain', marginBottom: '4px' }} />
               ) : (
                 <h1 style={{ fontSize: '1.8rem', fontWeight: '900', color: '#1e293b', margin: 0, letterSpacing: '-0.5px' }}>
                   {COMPANY_DETAILS.name}
@@ -244,16 +244,16 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
               <div><b>Issued On:</b> {enquiryDate}</div>
             </div>
 
-            <div style={{ textAlign: 'center' }}>
-              {signatureImage ? (
-                <img src={signatureImage} alt="Authorised Signature" style={{ height: '55px', maxHeight: '55px', objectFit: 'contain', marginBottom: '4px' }} />
-              ) : (
-                <div style={{ height: '45px' }}></div>
-              )}
-              <div style={{ borderTop: '1.5px solid #0f172a', width: '200px', margin: '0 auto', paddingTop: '4px', fontWeight: '800', fontSize: '0.85rem', color: '#0f172a' }}>
-                For Samyak International Ltd
+            <div className="pdf-sign-company">
+              <div style={{ fontWeight: '800', fontSize: '0.85rem', color: '#0f172a' }}>For Samyak International Ltd</div>
+              <div className="pdf-sign-slot">
+                {signatureImage ? (
+                  <img src={signatureImage} alt="Authorised Signature" style={{ maxHeight: '38px', maxWidth: '156px', objectFit: 'contain' }} />
+                ) : (
+                  <span style={{ fontFamily: 'serif', fontStyle: 'italic' }}>Sy</span>
+                )}
               </div>
-              <div style={{ fontSize: '0.75rem', color: '#475569', marginTop: '2px' }}>Authorized Signature</div>
+              <div className="pdf-sign-role">Authorized Signature</div>
             </div>
           </div>
 

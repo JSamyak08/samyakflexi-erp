@@ -11,6 +11,7 @@ const {
   filterBarcodeRows,
   mergeBarcodeRows,
   sourceModuleForCode,
+  stickerPrintLogs,
   withPrintStatus,
 } = await import('../src/utils/barcodeRegistry.js');
 const {
@@ -212,4 +213,30 @@ test('print status is Printed only for a confirmed printer job', () => {
   assert.equal(printed[0].printer, 'Zebra-2');
   assert.equal(printed[0].printedBy, 'Store Clerk');
   assert.equal(printed[1].printStatus, PRINT_STATUS.notPrinted);
+});
+
+test('a sticker print flow records Printed, and stored barcodes without a log stay Not printed', () => {
+  const logs = stickerPrintLogs([
+    { barcodeId: 'RM-BC-1', sourceModule: BARCODE_SOURCE.rm },
+    { id: '', barcode: '  ' },
+    { barcodeId: 'FG-BC-2', sourceModule: BARCODE_SOURCE.fg },
+  ], {
+    printedBy: 'Store Clerk',
+    printedAt: '2026-10-24T06:00:00.000Z',
+    jobIds: ['browser-1', 'browser-2', 'browser-3'],
+  });
+  assert.equal(logs.length, 2);
+  assert.equal(logs[0].printer, 'browser');
+  assert.equal(logs[0].jobStatus, 'printed');
+  assert.equal(logs[0].jobId, 'browser-1');
+  assert.equal(logs[0].printedBy, 'Store Clerk');
+  assert.equal(logs[1].jobId, 'browser-3');
+
+  const rows = withPrintStatus([
+    { barcode: 'RM-BC-1', sourceModule: BARCODE_SOURCE.rm },
+    { barcode: 'BAR-TX-1', sourceModule: BARCODE_SOURCE.print },
+  ], logs);
+  assert.equal(rows[0].printStatus, PRINT_STATUS.printed);
+  assert.equal(rows[0].printer, 'browser');
+  assert.equal(rows[1].printStatus, PRINT_STATUS.notPrinted);
 });
