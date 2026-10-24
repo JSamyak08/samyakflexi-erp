@@ -51,6 +51,9 @@ import {
   validateAddedConsumeRows
 } from '../utils/consumeRollEntries';
 import TablePagination, { usePagination } from './TablePagination';
+import MeasureRangeHint from './MeasureRangeHint';
+import { assessConsumeStep } from '../utils/rollLineage';
+import { orderClosedStockLabel } from '../utils/orderAutoClose';
 import { pushSlugState } from '../utils/slugRouter';
 import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo } from '../utils/fifoUtils';
 import { getInventoryAgeingSettings } from '../services/settingsService';
@@ -958,6 +961,34 @@ export default function SFGStoreManagement({
       if (multiOutputRolls && multiOutputRolls.length > 1) {
         logEntry.outputRoll = null;
         logEntry.outputRolls = multiOutputRolls;
+      }
+
+      const substrateKg = (parseFloat(subConsumedKg) || 0) + extraSubstrate2.reduce((sum, row) => sum + (parseFloat(row.consumedKg) || 0), 0);
+      const outputKg = multiOutputRolls && multiOutputRolls.length > 1
+        ? multiOutputRolls.reduce((sum, roll) => sum + (parseFloat(roll.netWeightKg) || 0), 0)
+        : (outputRollInfo ? parseFloat(outputRollInfo.netWeightKg) : null);
+      if (outputKg !== null && !Number.isNaN(outputKg)) {
+        const consumeCheck = assessConsumeStep({
+          stage: targetProcess,
+          inputKg: qtyVal,
+          substrateKg,
+          outputKg,
+          barcode: selectedItemForConsume.sfgBatchCode,
+          availableKg: currentAvailable
+        });
+        if (consumeCheck.blocks.length) {
+          setFormError(consumeCheck.blocks.join(' '));
+          setIsSubmittingConsume(false);
+          return;
+        }
+        if (consumeCheck.warnings.length) {
+          const reason = window.prompt(`${consumeCheck.warnings.join('\n')}\n\nEnter a reason to continue.`);
+          if (!reason || !reason.trim()) {
+            setIsSubmittingConsume(false);
+            return;
+          }
+          logEntry.qualityWarningReason = reason.trim();
+        }
       }
 
       const updatedConsumptionHistory = [
@@ -2008,6 +2039,11 @@ export default function SFGStoreManagement({
                                   }}>
                                     {item.status || 'In Stock (WIP)'}
                                   </span>
+                                  {orderClosedStockLabel((orders || []).find((order) => String(order.id) === String(item.orderId))) && (
+                                    <span style={{ background: '#fff7ed', color: '#9a3412', border: '1px solid #fdba74', fontSize: '0.66rem', fontWeight: '800', padding: '2px 6px', borderRadius: '4px' }}>
+                                      Order closed
+                                    </span>
+                                  )}
 
                                   {(() => {
                                     const catName = isFgType ? "Finished Goods (FG)" : "Semi-Finished Goods (SFG)";
@@ -2894,6 +2930,7 @@ export default function SFGStoreManagement({
                       onWeightCaptured={(weight) => setConsumedWeightKg(weight.toString())}
                     />
                   </div>
+                  <MeasureRangeHint field="rollKg" value={consumedWeightKg} />
                   <div style={{ fontSize: '0.76rem', color: '#64748b', marginTop: '4px' }}>
                     Enter exact weight removed from stock for processing or capture directly from weighing scale.
                   </div>

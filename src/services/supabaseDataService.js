@@ -6,6 +6,7 @@
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 import { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl } from './supabaseStorageService';
 import { isMetalloceneEligibleFilm, getFilmTypeCode } from '../factoryStore';
+import { assertPersistableMeasures } from '../utils/productionRecordQuality';
 export { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl };
 
 /**
@@ -112,6 +113,14 @@ export async function fetchOrders() {
         targetDeliveryDate: o.target_delivery_date || o.delivery_date,
         orderDate: jd.orderDate || (o.created_at ? new Date(o.created_at).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB')),
         status: o.status || 'Scheduled',
+        closedBy: o.closed_by || jd.closedBy || null,
+        closedAt: o.closed_at || jd.closedAt || null,
+        closeReason: o.close_reason || jd.closeReason || null,
+        closeMode: o.close_mode || jd.closeMode || null,
+        overDispatchWarning: o.over_dispatch_warning || jd.overDispatchWarning || null,
+        reopenedBy: jd.reopenedBy || null,
+        reopenedAt: jd.reopenedAt || null,
+        reopenReason: jd.reopenReason || null,
         printingStatus,
         printingStartTime,
         printingEndTime,
@@ -223,7 +232,15 @@ export async function saveOrderToSupabase(order) {
     inputRollsList,
     actualMetersPrinted,
     printedOutputKg,
-    isPrintingCompleted
+    isPrintingCompleted,
+    closedBy: order.closedBy ?? order.jobDetails?.closedBy ?? null,
+    closedAt: order.closedAt ?? order.jobDetails?.closedAt ?? null,
+    closeReason: order.closeReason ?? order.jobDetails?.closeReason ?? null,
+    closeMode: order.closeMode ?? order.jobDetails?.closeMode ?? null,
+    overDispatchWarning: order.overDispatchWarning ?? order.jobDetails?.overDispatchWarning ?? null,
+    reopenedBy: order.reopenedBy ?? order.jobDetails?.reopenedBy ?? null,
+    reopenedAt: order.reopenedAt ?? order.jobDetails?.reopenedAt ?? null,
+    reopenReason: order.reopenReason ?? order.jobDetails?.reopenReason ?? null
   };
 
   const matReqs = order.materialRequirements || order.rawMaterialRequirements || [];
@@ -257,7 +274,17 @@ export async function saveOrderToSupabase(order) {
     raw_material_requirements: matReqs
   };
 
-  const { error: fullErr } = await supabase.from('orders').upsert(fullPayload, { onConflict: 'id' });
+  const closeColumns = {
+    closed_by: jobDetails.closedBy,
+    closed_at: jobDetails.closedAt,
+    close_reason: jobDetails.closeReason,
+    close_mode: jobDetails.closeMode,
+    over_dispatch_warning: jobDetails.overDispatchWarning
+  };
+  let { error: fullErr } = await supabase.from('orders').upsert({ ...fullPayload, ...closeColumns }, { onConflict: 'id' });
+  if (fullErr && /closed_by|close_mode|close_reason|closed_at|over_dispatch_warning|schema cache/i.test(fullErr.message || '')) {
+    ({ error: fullErr } = await supabase.from('orders').upsert(fullPayload, { onConflict: 'id' }));
+  }
   if (fullErr) {
     console.error(`[ORDERS][DB WRITE Error] orderId=${order.id}:`, fullErr);
     handleSupabaseError(fullErr, 'orders');
@@ -1374,6 +1401,7 @@ export async function saveProductionRecordToSupabase(record) {
   if (!isSupabaseConfigured() || !record) {
     throw new Error("Cannot save production record: Supabase database connection is not available.");
   }
+  assertPersistableMeasures(record);
   await ensureValidSession();
   const recId = record.id || `REC-${Date.now()}`;
   const scrapKg = Number(record.totalScrapQtyKg ?? record.totalWastageKg ?? 0);
@@ -2038,7 +2066,7 @@ export async function saveProductionScheduleToSupabase(schedule) {
     order_qty_kg: Number(schedule.orderQtyKg) || 0,
     width_mm: Number(schedule.widthMm) || 0,
     micron: Number(schedule.micron) || 12,
-    film_type: schedule.filmType || 'PET',
+    film_type: schedule.filmType || '',
     max_speed_mpm: Number(schedule.maxSpeedMpm) || 250,
     total_length_meters: Number(schedule.totalLengthMeters) || 0,
     run_time_mins: Number(schedule.runTimeMins) || 0,

@@ -85,6 +85,12 @@ function codeKey(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function recordedPositive(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
 export function validateAddedConsumeRows({
   substrateExtras = [],
   firstSubstrateBarcode = '',
@@ -312,9 +318,9 @@ export function substrate2InputRolls(log) {
         ? `sub2-cons-${log?.id || roll.barcode}`
         : `sub2-cons-${log?.id || roll.barcode}-${index + 1}`,
       barcodeId: roll.barcode,
-      filmType: roll.filmType || 'Substrate 2',
-      micron: roll.micron || 12,
-      widthMm: roll.widthMm || 800,
+      filmType: roll.filmType || '',
+      micron: recordedPositive(roll.micron),
+      widthMm: recordedPositive(roll.widthMm),
       initialWeightKg: parseFloat(roll.initialKg || roll.consumedKg) || 0,
       consumedWeightKg: parseFloat(roll.consumedKg) || 0,
       source: `SFG Store (${log?.targetProcess || 'Lamination Pass 1'})`
@@ -334,9 +340,9 @@ export function additionalSubstrate2Materials(log, rateForFilm = () => 150) {
         itemId: `RM-SUB2-${roll.barcode || 'roll'}`,
         itemCode: 'RM-SUB2',
         itemName: `Substrate 2 (${roll.filmType || 'Lamination Film'}) - Pass 1`,
-        filmType: roll.filmType || 'PET Film',
-        micron: '-',
-        widthMm: '-',
+        filmType: roll.filmType || '',
+        micron: recordedPositive(roll.micron),
+        widthMm: recordedPositive(roll.widthMm),
         unit: 'Kg',
         barcode: roll.barcode || '',
         issueQtyKg: initial || consumed,
