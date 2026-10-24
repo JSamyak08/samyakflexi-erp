@@ -73,7 +73,7 @@ export default function JobDataSheetPDF({ sheetData, onClose }) {
           </div>
 
           {/* Document Title Banner */}
-          <div className="letterhead-doc-title">
+          <div className="pdf-doc-banner">
             JOB DATA SHEET & ACTUAL CONSUMPTION REPORT
           </div>
 
@@ -190,7 +190,7 @@ export default function JobDataSheetPDF({ sheetData, onClose }) {
           </div>
 
           {/* Authorised Signatory */}
-          <div className="letterhead-signatory-block" style={{ marginTop: '24px' }}>
+          <div className="letterhead-signatory-block pdf-signature-block" style={{ marginTop: '8px' }}>
             <div style={{ fontWeight: 'bold' }}>For {COMPANY_DETAILS.name}</div>
             <div style={{ height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               {signatureImage ? (
