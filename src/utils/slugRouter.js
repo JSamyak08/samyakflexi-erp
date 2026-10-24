@@ -229,6 +229,12 @@ export const MODULES = [
     ],
   },
   {
+    key: 'barcodes',
+    path: '/barcodes',
+    legacy: ['/barcodes', '/barcode-registry'],
+    patterns: [{ section: 'registry', segs: [], default: true }],
+  },
+  {
     key: 'vendors',
     path: '/vendors',
     legacy: ['/vendors'],

@@ -102,6 +102,7 @@ const CANONICAL = [
   ['/pellet-fuel/consumption/CON-1', 'pellet_fuel', 'consumption-item'],
   ['/pellet-fuel/inward/new', 'pellet_fuel', 'inward-new'],
   ['/pellet-fuel/inward/GRN-1', 'pellet_fuel', 'inward-item'],
+  ['/barcodes', 'barcodes', 'registry'],
   ['/vendors', 'vendors', 'directory'],
   ['/vendors/new', 'vendors', 'new'],
   ['/vendors/VEN-1', 'vendors', 'vendor'],
@@ -359,7 +360,7 @@ test('canonical table covers every module that the sidebar can open', () => {
   for (const key of [
     'login', 'dashboard', 'sales', 'scrap_analytics', 'job_punching', 'orders', 'job_masters',
     'clients', 'printing_scheduler', 'production_records', 'sfg_store', 'cylinders',
-    'purchase_orders', 'inventory', 'ink_management', 'material_indents', 'pellet_fuel',
+    'purchase_orders', 'inventory', 'ink_management', 'material_indents', 'pellet_fuel', 'barcodes',
     'vendors', 'dispatch', 'employees', 'user_management', 'supabase', 'doc_settings', 'audit_logs',
   ]) {
     assert.ok(modules.has(key), key);

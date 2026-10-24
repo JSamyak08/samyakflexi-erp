@@ -4,6 +4,7 @@ import { applyRemoteCompanyProfile } from './services/companyProfile';
 import { 
   isReconciliationDue,
   DEFAULT_ROLE_PERMISSIONS,
+  applyBarcodePermissionDefaults,
   isOrderOverdue,
   isOrderNearingDeadline,
   getOrderStatusInfo,
@@ -59,6 +60,7 @@ import SupabaseManagement from './components/SupabaseManagement';
 import DocumentSettings from './components/DocumentSettings';
 import ConsumablesAndIndents from './components/ConsumablesAndIndents';
 import PelletFuelManagement from './components/PelletFuelManagement';
+import BarcodeRegistry from './components/BarcodeRegistry';
 import SalesManagement from './components/SalesManagement';
 import ScrapWastageAnalysis from './components/ScrapWastageAnalysis';
 import AuditLogsManagement from './components/AuditLogsManagement';
@@ -121,6 +123,7 @@ import {
   fetchPurchaseOrders, savePurchaseOrderToSupabase, deletePurchaseOrderFromSupabase, sanitizePurchaseOrder,
   fetchFilmSubstratesFromSupabase,
   fetchAllSystemSettings,
+  fetchBarcodeRegistry,
   saveSystemSetting
 } from './services/supabaseDataService';
 import { attendanceMatchesEmployeeDate } from './services/employeeAttendance';
@@ -446,7 +449,7 @@ export default function App() {
   const [rolePermissions, setRolePermissions] = useState(() => {
     const cached = safeLocalStorageGet('samyak_cache_role_permissions', null);
     if (cached && typeof cached === 'object' && !Array.isArray(cached) && Object.keys(cached).length > 0) {
-      return cached;
+      return applyBarcodePermissionDefaults(cached);
     }
     return DEFAULT_ROLE_PERMISSIONS;
   });
@@ -462,6 +465,7 @@ export default function App() {
   const [salaryAdvances, setSalaryAdvances] = useState([]);
   const [salaryPayments, setSalaryPayments] = useState([]);
   const [sfgGoods, setSfgGoods] = useState([]);
+  const [barcodeRegistryRows, setBarcodeRegistryRows] = useState([]);
   const [pelletInwards, setPelletInwards] = useState([]);
   const [pelletConsumptions, setPelletConsumptions] = useState([]);
   const [pelletLoadError, setPelletLoadError] = useState('');
@@ -744,9 +748,10 @@ export default function App() {
         const loadedMatrix = await fetchSafe(fetchRolePermissionsFromSupabase, 'Role Permissions');
         if (loadedMatrix && typeof loadedMatrix === 'object' && !Array.isArray(loadedMatrix) && Object.keys(loadedMatrix).length > 0) {
           accessMatrix = loadedMatrix;
-          setRolePermissions(loadedMatrix);
-          safeLocalStorageSet('samyak_cache_role_permissions', loadedMatrix);
         }
+        accessMatrix = applyBarcodePermissionDefaults(accessMatrix);
+        setRolePermissions(accessMatrix);
+        safeLocalStorageSet('samyak_cache_role_permissions', accessMatrix);
         const allow = (moduleKey) => roleHasModule(accessMatrix, roleName, moduleKey);
         const need = (...keys) => roleNeedsAny(accessMatrix, roleName, keys.length === 1 && Array.isArray(keys[0]) ? keys[0] : keys);
         const hrAllowed = canReadPayroll(roleName);
@@ -1024,6 +1029,16 @@ export default function App() {
           const cleanPOs = stripDummyRecords(supaPOs).map(sanitizePurchaseOrder).filter(Boolean);
           setPurchaseOrders(cleanPOs);
           remember('purchase_orders', 'samyak_cache_purchase_orders', cleanPOs);
+        }
+
+        if (allow('barcodes')) {
+          const registry = await fetchSafe(fetchBarcodeRegistry, 'Barcode registry');
+          if (Array.isArray(registry) && isMounted) {
+            setBarcodeRegistryRows(registry);
+            remember('barcodes', 'samyak_cache_barcode_registry', registry);
+          }
+        } else if (isMounted) {
+          setBarcodeRegistryRows([]);
         }
 
         // ====================================================================
@@ -1638,6 +1653,8 @@ export default function App() {
     setStoreIssueTransactions([]);
     clearHrCache();
     setSfgGoods([]);
+    setBarcodeRegistryRows([]);
+    try { localStorage.removeItem('samyak_cache_barcode_registry'); } catch (e) {}
 
     recoveryHandledRef.current = false;
     passwordRecoveryRef.current = false;
@@ -4037,7 +4054,7 @@ export default function App() {
           )}
 
           {/* Group 4: Supply Chain & Logistics */}
-          {(isTabAllowed('inventory') || isTabAllowed('purchase_orders') || isTabAllowed('ink_management') || isTabAllowed('material_indents') || isTabAllowed('vendors') || isTabAllowed('dispatch')) && (
+          {(isTabAllowed('inventory') || isTabAllowed('purchase_orders') || isTabAllowed('ink_management') || isTabAllowed('material_indents') || isTabAllowed('vendors') || isTabAllowed('dispatch') || isTabAllowed('barcodes')) && (
             <>
               <div className="sidebar-section-header">Supply Chain & Store</div>
 
@@ -4113,6 +4130,18 @@ export default function App() {
                     <Flame size={18} />
                   </span>
                   <span>Pellet Fuel Stock Management</span>
+                </div>
+              )}
+
+              {isTabAllowed('barcodes') && (
+                <div
+                  className={`nav-item ${activeTab === 'barcodes' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('barcodes')}
+                >
+                  <span className="nav-icon-box" style={{ color: '#0f766e' }}>
+                    <ScanBarcode size={18} />
+                  </span>
+                  <span>Barcodes</span>
                 </div>
               )}
 
@@ -4266,6 +4295,7 @@ export default function App() {
               {moduleOpen && activeTab === 'ink_management' && 'Ink Master Directory, Solid Costing & Stock Management'}
               {moduleOpen && activeTab === 'material_indents' && 'Material Indents Requisitions & Consumable Store'}
               {moduleOpen && activeTab === 'pellet_fuel' && 'Boiler Pellet Fuel Stock & Consumption Management'}
+              {moduleOpen && activeTab === 'barcodes' && 'Barcodes'}
               {moduleOpen && activeTab === 'dispatch' && 'Finished Goods Dispatch, Delivery Challan & Quality CoA Hub'}
               {moduleOpen && activeTab === 'user_management' && 'Departmental User Management (RBAC)'}
               {moduleOpen && activeTab === 'cylinders' && 'Rotogravure Cylinder Database'}
@@ -5330,6 +5360,21 @@ export default function App() {
             onDeletePelletInward={handleDeletePelletInward}
             onSavePelletConsumption={handleSavePelletConsumption}
             onDeletePelletConsumption={handleDeletePelletConsumption}
+          />
+        )}
+
+        {moduleOpen && activeTab === 'barcodes' && (
+          <BarcodeRegistry
+            serverRows={barcodeRegistryRows}
+            inventoryRolls={inventoryRolls}
+            inventory={inventory}
+            grns={grns}
+            sfgGoods={sfgGoods}
+            dispatchShipments={dispatchShipments}
+            deliveryChallans={deliveryChallans}
+            productionRecords={productionRecords}
+            cylinders={cylinders}
+            pelletInwards={pelletInwards}
           />
         )}
 

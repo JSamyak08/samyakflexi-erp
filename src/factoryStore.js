@@ -1406,6 +1406,7 @@ export const ALL_MODULES = [
   { key: "ink_management", label: "Ink Management & Solid Costing", category: "Store & Inventory" },
   { key: "material_indents", label: "Material Indents & Store", category: "Store & Inventory" },
   { key: "pellet_fuel", label: "Pellet Fuel Stock & Consumption", category: "Store & Inventory" },
+  { key: "barcodes", label: "Barcodes", category: "Store & Inventory" },
   { key: "dispatch", label: "Dispatch, Challan & CoA", category: "Core Operations" },
   { key: "employees", label: "Employee Management & Payroll", category: "Human Resources & Payroll" },
   { key: "user_management", label: "User Management & RBAC", category: "Administration" },
@@ -1456,11 +1457,40 @@ export const generateFullRolePermissions = (allowAll = false) => {
       "QC Chemist",
       "Shop Floor Operator"
     ].includes(r);
+    // Barcodes follows the roles that already have inventory in this matrix.
+    // Those roles inward GRNs, print roll tags, and look up stock. HR is
+    // included because the same matrix already opens Inventory, GRN & QC
+    // for that role. Sales, printing, and shop-floor roles stay off.
+    perm[r].barcodes = BARCODE_REGISTRY_ROLES.includes(r);
   });
   return perm;
 };
 
+export const BARCODE_REGISTRY_ROLES = [
+  "Admin",
+  "Plant Manager",
+  "HR & Payroll Manager",
+  "Production Manager",
+  "Store Manager",
+  "QC Chemist",
+  "Purchase Manager"
+];
+
 export const DEFAULT_ROLE_PERMISSIONS = generateFullRolePermissions(false);
+
+/** Fill a missing barcodes key from the role list. An explicit true or false stays. */
+export function applyBarcodePermissionDefaults(matrix) {
+  if (!matrix || typeof matrix !== 'object' || Array.isArray(matrix)) return matrix;
+  const next = {};
+  Object.entries(matrix).forEach(([role, permissions]) => {
+    const row = { ...(permissions || {}) };
+    if (row.barcodes !== true && row.barcodes !== false) {
+      row.barcodes = BARCODE_REGISTRY_ROLES.includes(role);
+    }
+    next[role] = row;
+  });
+  return next;
+}
 
 export function grantAllRolePermissions() {
   const perm = {};

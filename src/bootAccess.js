@@ -41,6 +41,7 @@ export const BOOT_NEEDS = {
   pellets: ['pellet_fuel', 'inventory'],
   purchaseOrders: ['purchase_orders', 'inventory'],
   indents: ['material_indents', 'inventory'],
+  barcodes: ['barcodes'],
 };
 
 const MODULE_CACHE_KEYS = {
@@ -56,6 +57,7 @@ const MODULE_CACHE_KEYS = {
   dispatch: ['samyak_cache_dispatch_shipments', 'samyak_cache_delivery_challans'],
   sfg_store: ['samyak_cache_sfg_goods'],
   pellet_fuel: ['samyak_cache_pellet_inwards', 'samyak_cache_pellet_consumptions'],
+  barcodes: ['samyak_cache_barcode_registry'],
   purchase_orders: ['samyak_cache_purchase_orders'],
   audit_logs: ['samyak_cache_audit_logs', 'samyak_erp_audit_logs'],
 };
