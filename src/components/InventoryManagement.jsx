@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Package, 
   Plus, 
@@ -17,6 +17,7 @@ import {
   FileSpreadsheet,
   Bell,
   Edit3,
+  Copy,
   Trash2,
   Building2,
   Tag,
@@ -108,6 +109,47 @@ export const INVENTORY_UOMS = [
   { value: "Drums", label: "Drums" },
   { value: "Sheets", label: "Sheets" }
 ];
+
+export function summarizeGrnLineDraft(line) {
+  const rolls = Array.isArray(line?.rolls) ? line.rolls : [];
+  const netFromRolls = rolls.reduce((sum, roll) => sum + (Number(roll?.netWeightKg) || 0), 0);
+  const net = netFromRolls > 0 ? netFromRolls : (Number(line?.weightKg) || 0);
+  const rate = Number(line?.purchaseRate) || 0;
+  const rollsCount = rolls.length || Number(line?.rollsCount) || 0;
+  const isFilm = (line?.category || 'Film Substrates') === 'Film Substrates';
+  const name = isFilm
+    ? (line?.filmType || line?.itemName || 'New item')
+    : (line?.itemName || line?.itemSearchTerm || 'New item');
+  const batch = String(line?.batchNo || '').trim();
+  const spec = [
+    ...(isFilm
+      ? [
+        line?.micron !== '' && line?.micron !== null && line?.micron !== undefined ? `${line.micron}µ` : '',
+        line?.widthMm !== '' && line?.widthMm !== null && line?.widthMm !== undefined ? `${line.widthMm} mm` : ''
+      ]
+      : [line?.packagingType || line?.category || '']),
+    batch ? `Batch ${batch}` : ''
+  ].filter(Boolean).join(' · ');
+  const problems = [];
+  if (!(net > 0)) problems.push('missing weight');
+  if (!String(line?.batchNo || '').trim()) problems.push('missing batch');
+  if (isFilm) {
+    if (line?.micron === '' || line?.micron === null || line?.micron === undefined) problems.push('missing micron');
+    if (line?.widthMm === '' || line?.widthMm === null || line?.widthMm === undefined) problems.push('missing width');
+  } else if (!String(line?.itemName || '').trim()) {
+    problems.push('missing description');
+  }
+  return {
+    name,
+    spec,
+    rollsCount,
+    net,
+    rate,
+    amount: net * rate,
+    unitLabel: line?.packagingType || (isFilm ? 'Rolls' : 'Units'),
+    problems
+  };
+}
 
 export function formatInwardTimestamp(grn) {
   if (!grn) return 'Date N/A';
@@ -988,6 +1030,8 @@ export default function InventoryManagement({
   // Individual Roll / Container Itemized Breakdown State (Each with distinct gross/tare/net weights)
   const [savedGrnLines, setSavedGrnLines] = useState([]);
   const [activeGrnLineKey, setActiveGrnLineKey] = useState('line-active');
+  const [grnLineOrder, setGrnLineOrder] = useState(['line-active']);
+  const grnItemEditorRef = useRef(null);
   const [expandedGrnNo, setExpandedGrnNo] = useState('');
   const [qcLineDrafts, setQcLineDrafts] = useState({});
   const [qcActiveLineId, setQcActiveLineId] = useState('');
@@ -1869,8 +1913,10 @@ export default function InventoryManagement({
       }
     ]);
     
+    const freshLineId = `line-${Date.now()}`;
     setSavedGrnLines([]);
-    setActiveGrnLineKey(`line-${Date.now()}`);
+    setActiveGrnLineKey(freshLineId);
+    setGrnLineOrder([freshLineId]);
     setActiveTab('grn_inward');
     setIsNewGRNModalOpen(true);
   };
@@ -1911,8 +1957,10 @@ export default function InventoryManagement({
   };
 
   const openNewGRNModal = (preselectedItem = null) => {
+    const freshLineId = `line-${Date.now()}`;
     setSavedGrnLines([]);
-    setActiveGrnLineKey(`line-${Date.now()}`);
+    setActiveGrnLineKey(freshLineId);
+    setGrnLineOrder([freshLineId]);
     setIsNewGRNModalOpen(true);
     setIsManualPoEntry(false);
     setGrnRolls('1');
@@ -2252,6 +2300,7 @@ export default function InventoryManagement({
     ]);
     setGrnDefaultTare(line.defaultTare || 0);
     setGrnRolls(line.rollsCount || String((line.rolls || []).length || 1));
+    setIsGrnItemDropdownOpen(false);
   };
 
   const blankGrnLineFields = (keepBatch = true) => {
@@ -2270,16 +2319,22 @@ export default function InventoryManagement({
       { id: `item-${Date.now()}-1`, grossWeightKg: '', tareWeightKg: grnDefaultTare || 0, netWeightKg: '', lengthMeters: '', vendorRollNo: '', notes: '' }
     ]);
     setGrnRolls('1');
+    setIsGrnItemDropdownOpen(false);
     return freshId;
   };
 
   const handleAddAnotherGrnItem = () => {
     const current = captureCurrentGrnLine();
+    const freshId = blankGrnLineFields(true);
     setSavedGrnLines((prev) => [...prev.filter((line) => line.id !== current.id), current]);
-    blankGrnLineFields(true);
+    setGrnLineOrder((prev) => {
+      const base = prev.includes(current.id) ? prev : [...prev, current.id];
+      return [...base.filter((id) => id !== freshId), freshId];
+    });
   };
 
   const handleSwitchGrnLine = (lineId) => {
+    if (lineId === activeGrnLineKey) return;
     const current = captureCurrentGrnLine();
     const target = savedGrnLines.find((line) => line.id === lineId);
     if (!target) return;
@@ -2288,8 +2343,52 @@ export default function InventoryManagement({
     setActiveGrnLineKey(target.id);
   };
 
-  const handleRemoveSavedGrnLine = (lineId) => {
-    setSavedGrnLines((prev) => prev.filter((line) => line.id !== lineId));
+  const handleDuplicateGrnLine = (lineId) => {
+    const current = captureCurrentGrnLine();
+    const source = lineId === activeGrnLineKey
+      ? current
+      : (savedGrnLines.find((line) => line.id === lineId) || current);
+    const copyId = `line-${Date.now()}`;
+    const copy = {
+      ...source,
+      id: copyId,
+      rolls: (source.rolls || []).map((roll, index) => ({
+        ...roll,
+        id: `item-${copyId}-${index + 1}`
+      }))
+    };
+    setSavedGrnLines((prev) => [
+      ...prev.filter((line) => line.id !== current.id && line.id !== copyId),
+      current
+    ]);
+    applyGrnLineToForm(copy);
+    setActiveGrnLineKey(copyId);
+    setGrnLineOrder((prev) => {
+      const base = (prev.includes(current.id) ? prev : [...prev, current.id]).filter((id) => id !== copyId);
+      const at = base.indexOf(lineId);
+      if (at === -1) return [...base, copyId];
+      return [...base.slice(0, at + 1), copyId, ...base.slice(at + 1)];
+    });
+  };
+
+  const handleRemoveGrnLine = (lineId) => {
+    const line = lineId === activeGrnLineKey
+      ? captureCurrentGrnLine()
+      : savedGrnLines.find((item) => item.id === lineId);
+    if (!line) return;
+    const summary = summarizeGrnLineDraft(line);
+    const label = [summary.name, summary.spec].filter(Boolean).join(' ');
+    if (!window.confirm(`Remove ${label || 'this item'} from this invoice?`)) return;
+    if (lineId === activeGrnLineKey) {
+      const neighbor = savedGrnLines.find((item) => item.id !== lineId) || savedGrnLines[0];
+      if (!neighbor) return;
+      setSavedGrnLines((prev) => prev.filter((item) => item.id !== neighbor.id && item.id !== lineId));
+      applyGrnLineToForm(neighbor);
+      setActiveGrnLineKey(neighbor.id);
+    } else {
+      setSavedGrnLines((prev) => prev.filter((item) => item.id !== lineId));
+    }
+    setGrnLineOrder((prev) => prev.filter((id) => id !== lineId));
   };
 
   const handleAddOtherPoLines = () => {
@@ -2332,15 +2431,54 @@ export default function InventoryManagement({
     });
     const current = captureCurrentGrnLine();
     setSavedGrnLines((prev) => [...prev.filter((line) => line.id !== current.id), ...extras]);
+    setGrnLineOrder((prev) => {
+      const base = prev.includes(current.id) ? [...prev] : [...prev, current.id];
+      extras.forEach((line) => {
+        if (!base.includes(line.id)) base.push(line.id);
+      });
+      return base;
+    });
   };
+
+  const orderedGrnLineViews = (() => {
+    const ids = grnLineOrder.filter((id) => id === activeGrnLineKey || savedGrnLines.some((line) => line.id === id));
+    if (!ids.includes(activeGrnLineKey)) ids.push(activeGrnLineKey);
+    savedGrnLines.forEach((line) => {
+      if (!ids.includes(line.id)) ids.push(line.id);
+    });
+    return ids.map((id) => {
+      const line = id === activeGrnLineKey
+        ? captureCurrentGrnLine()
+        : (savedGrnLines.find((item) => item.id === id) || {});
+      return { id, ...summarizeGrnLineDraft(line) };
+    });
+  })();
+  const severalGrnItems = orderedGrnLineViews.length > 1;
+  const grnInvoiceTotals = orderedGrnLineViews.reduce((totals, line) => ({
+    items: totals.items + 1,
+    rolls: totals.rolls + (Number(line.rollsCount) || 0),
+    net: totals.net + (Number(line.net) || 0),
+    amount: totals.amount + (Number(line.amount) || 0)
+  }), { items: 0, rolls: 0, net: 0, amount: 0 });
+
+  useEffect(() => {
+    if (savedGrnLines.length === 0) return;
+    const node = grnItemEditorRef.current;
+    if (!node || typeof node.scrollIntoView !== 'function') return;
+    node.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    const search = node.querySelector('#grn-active-item-search');
+    if (search && typeof search.focus === 'function') search.focus();
+  }, [activeGrnLineKey]);
 
   // Inward GRN Submit (Supports Films, Inks, Solvents, Adhesives, Blades, Spares, PPE)
   const handleSaveGRN = async (e) => {
     e.preventDefault();
-    const capturedLines = [
-      ...savedGrnLines.filter((line) => line.id !== activeGrnLineKey),
-      captureCurrentGrnLine()
-    ];
+    const currentLine = captureCurrentGrnLine();
+    const linesById = new Map(savedGrnLines.map((line) => [line.id, line]));
+    linesById.set(currentLine.id, currentLine);
+    const capturedLines = orderedGrnLineViews
+      .map((view) => linesById.get(view.id))
+      .filter(Boolean);
     if (capturedLines.length > 1) {
       if (!grnInvoiceNo.trim()) {
         alert('Invoice Number is required.');
@@ -2827,8 +2965,10 @@ export default function InventoryManagement({
     setGrnItemsList([
       { id: `item-${Date.now()}-1`, grossWeightKg: '', tareWeightKg: grnDefaultTare || 0, netWeightKg: '', lengthMeters: '', vendorRollNo: '', notes: '' }
     ]);
+    const freshLineId = `line-${Date.now()}`;
     setSavedGrnLines([]);
-    setActiveGrnLineKey(`line-${Date.now()}`);
+    setActiveGrnLineKey(freshLineId);
+    setGrnLineOrder([freshLineId]);
 
     // Close Create Modal and Confirmation Modal
     setIsNewGRNModalOpen(false);
@@ -6407,48 +6547,13 @@ export default function InventoryManagement({
 
             {/* Scrollable Form Body */}
             <form onSubmit={handleSaveGRN}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '12px' }}>
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.78rem', fontWeight: '800', color: '#334155' }}>
-                    Invoice items ({savedGrnLines.length + 1})
-                  </span>
-                  {savedGrnLines.map((line, index) => (
-                    <button
-                      key={line.id}
-                      type="button"
-                      onClick={() => handleSwitchGrnLine(line.id)}
-                      style={{ border: '1px solid #cbd5e1', background: '#fff', borderRadius: '999px', padding: '4px 10px', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer' }}
-                    >
-                      Item {index + 1}: {line.itemName || line.filmType || 'New item'}
-                    </button>
-                  ))}
-                  <span style={{ border: '1px solid #0284c7', background: '#e0f2fe', color: '#075985', borderRadius: '999px', padding: '4px 10px', fontSize: '0.75rem', fontWeight: '800' }}>
-                    Editing item {savedGrnLines.length + 1}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                  {savedGrnLines.length > 0 && (
-                    <button type="button" className="btn-secondary" style={{ padding: '6px 10px', fontSize: '0.75rem' }} onClick={() => handleRemoveSavedGrnLine(savedGrnLines[savedGrnLines.length - 1].id)}>
-                      Remove last added item
-                    </button>
-                  )}
-                  {grnPoNo && (
-                    <button type="button" className="btn-secondary" style={{ padding: '6px 10px', fontSize: '0.75rem' }} onClick={handleAddOtherPoLines}>
-                      Add the other open PO lines
-                    </button>
-                  )}
-                  <button type="button" className="btn-primary" style={{ padding: '6px 12px', fontSize: '0.78rem' }} onClick={handleAddAnotherGrnItem}>
-                    <Plus size={14} /> Add another item
-                  </button>
-                </div>
-              </div>
-              
-              {/* Section 1: Vendor & Item Categorization */}
               <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Building2 size={14} style={{ color: '#0284c7' }} /> 1. Vendor & Item Categorization
+                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <FileText size={14} style={{ color: '#0284c7' }} /> Invoice details
                 </div>
-
+                <p style={{ margin: '0 0 12px', fontSize: '0.78rem', color: '#64748b' }}>
+                  Entered once for this supplier invoice. Receipt date {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}.
+                </p>
                 <div className="form-grid">
                   {/* Vendor Selection */}
                   <div className="form-group" style={{ gridColumn: 'span 2' }}>
@@ -6520,7 +6625,218 @@ export default function InventoryManagement({
                       </option>
                     </SearchableSelect>
                   </div>
+                  <div className="form-group">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <label style={{ margin: 0, fontWeight: '600', fontSize: '0.83rem', color: '#334155', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        Ref PO Number
+                        {vendorActivePOs.length > 0 && !isManualPoEntry && (
+                          <span style={{ 
+                            fontSize: '0.7rem', 
+                            fontWeight: '700', 
+                            color: '#b45309', 
+                            background: '#fef3c7', 
+                            border: '1px solid #fde68a', 
+                            padding: '1px 6px', 
+                            borderRadius: '4px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '3px'
+                          }}>
+                            <Clock size={11} /> {vendorActivePOs.length} Active {vendorActivePOs.length === 1 ? 'PO' : 'POs'} Awaiting Delivery
+                          </span>
+                        )}
+                      </label>
+                      {vendorActivePOs.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isManualPoEntry) {
+                              setIsManualPoEntry(false);
+                              if (vendorActivePOs.length === 1) {
+                                handleSelectPoForGrn(vendorActivePOs[0].poNumber);
+                              }
+                            } else {
+                              setIsManualPoEntry(true);
+                            }
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#0284c7',
+                            fontSize: '0.74rem',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            padding: 0,
+                            textDecoration: 'underline'
+                          }}
+                        >
+                          {isManualPoEntry ? `← Select from Active POs (${vendorActivePOs.length})` : 'Enter manually'}
+                        </button>
+                      )}
+                    </div>
 
+                    {vendorActivePOs.length > 0 && !isManualPoEntry ? (
+                      <SearchableSelect
+                        className="form-control"
+                        placeholder="-- Select Active PO (Awaiting Delivery) --"
+                        searchPlaceholder="Search PO #, item, or quantity..."
+                        value={grnPoNo}
+                        onChange={e => handleSelectPoForGrn(e.target.value)}
+                        triggerStyle={{ 
+                          fontWeight: '600',
+                          color: grnPoNo ? '#0f172a' : '#64748b',
+                          borderColor: grnPoNo ? '#0284c7' : '#cbd5e1',
+                          background: grnPoNo ? '#f0f9ff' : '#ffffff'
+                        }}
+                      >
+                        <option value="" disabled>-- Select Active PO (Awaiting Delivery) --</option>
+                        {vendorActivePOs.map(po => {
+                          const firstItem = (po.items || [])[0] || {};
+                          const itemsSummary = (po.items || []).map(it => it.itemDesc || it.description || it.itemName || it.filmType || 'Item').join(', ');
+                          const deliveryInfo = getPoDeliveryInfo(po);
+                          const qtySummary = deliveryInfo.totalQty || po.totalPoQty || firstItem.qtyKg || 0;
+                          const poStatusText = deliveryInfo.status === 'Partially Received'
+                            ? `Partial Inward (${deliveryInfo.inwardQty}/${qtySummary} kg)`
+                            : `⏳ Awaiting Delivery (${qtySummary} kg)`;
+                          
+                          return (
+                            <option
+                              key={po.poNumber || po.id}
+                              value={po.poNumber}
+                              data-subtitle={`${poStatusText} • ${po.category || 'Raw Material'} • ${itemsSummary || 'Item'}`}
+                            >
+                              {po.poNumber} — {itemsSummary || 'Raw Material'} ({qtySummary} kg)
+                            </option>
+                          );
+                        })}
+                        <option value="__MANUAL__" style={{ fontWeight: '700', color: '#0284c7' }}>
+                          ✏️ + Enter Other / Manual PO Number...
+                        </option>
+                      </SearchableSelect>
+                    ) : (
+                      <>
+                        <input 
+                          type="text" 
+                          className="form-control" 
+                          placeholder="e.g. SIL/PO/26-27/1941" 
+                          value={grnPoNo} 
+                          onChange={e => setGrnPoNo(e.target.value)} 
+                        />
+                        {grnVendor && vendorActivePOs.length === 0 && (
+                          <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '3px' }}>
+                            No active POs awaiting delivery for {grnVendor} — enter manually if applicable.
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  <div className="form-group">
+                    <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                      Vendor Invoice Number <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input type="text" className="form-control" required placeholder="e.g. INV-FP-9904" value={grnInvoiceNo} onChange={e => setGrnInvoiceNo(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>Transporter Name / Vehicle #</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="e.g. V-Trans Logistics / MP-09-AB-1234" 
+                      value={grnTransporterName} 
+                      onChange={e => setGrnTransporterName(e.target.value)} 
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>Inward Freight Charge (₹)</label>
+                    <input 
+                      type="number" 
+                      step="any" 
+                      className="form-control" 
+                      placeholder="e.g. 2500 (Optional)" 
+                      value={grnFreightAmount} 
+                      onChange={e => setGrnFreightAmount(e.target.value)} 
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {severalGrnItems && (
+                <div style={{ fontSize: '0.84rem', fontWeight: '800', color: '#0f172a' }}>
+                  Items on this invoice
+                </div>
+              )}
+
+              {orderedGrnLineViews.map((view, index) => view.id !== activeGrnLineKey ? (
+                <div key={view.id} style={{ background: '#ffffff', borderRadius: '12px', border: view.problems.length ? '1px solid #fecaca' : '1px solid #e2e8f0', padding: '10px 12px' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px 14px' }}>
+                    <span style={{ fontWeight: '800', color: '#64748b', minWidth: '28px' }}>#{index + 1}</span>
+                    <div style={{ flex: '1 1 200px', minWidth: 0 }}>
+                      <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '0.9rem' }}>{view.name}</div>
+                      <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{view.spec || 'Specification not entered'}</div>
+                    </div>
+                    <span style={{ fontSize: '0.78rem', color: '#334155' }}>{view.rollsCount} {view.unitLabel}</span>
+                    <span style={{ fontSize: '0.78rem', color: '#334155', fontWeight: '700' }}>{Number(view.net || 0).toFixed(2)} kg</span>
+                    <span style={{ fontSize: '0.78rem', color: '#334155' }}>₹{Number(view.rate || 0).toLocaleString('en-IN')}</span>
+                    <span style={{ fontSize: '0.82rem', color: '#0f172a', fontWeight: '800' }}>₹{Number(view.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginLeft: 'auto' }}>
+                      <button type="button" className="btn-secondary" style={{ padding: '5px 10px', fontSize: '0.75rem' }} onClick={() => handleSwitchGrnLine(view.id)} aria-label={`Edit item ${index + 1}`}>
+                        <Edit3 size={14} /> Edit
+                      </button>
+                      <button type="button" className="btn-secondary" style={{ padding: '5px 10px', fontSize: '0.75rem' }} onClick={() => handleDuplicateGrnLine(view.id)} aria-label={`Duplicate item ${index + 1}`}>
+                        <Copy size={14} /> Duplicate
+                      </button>
+                      <button type="button" className="btn-secondary" style={{ padding: '5px 10px', fontSize: '0.75rem', color: '#b91c1c', borderColor: '#fecaca' }} onClick={() => handleRemoveGrnLine(view.id)} aria-label={`Remove item ${index + 1}`}>
+                        <Trash2 size={14} /> Remove
+                      </button>
+                    </div>
+                  </div>
+                  {view.problems.length > 0 && (
+                    <div role="alert" style={{ marginTop: '6px', color: '#b91c1c', fontSize: '0.75rem', fontWeight: '700' }}>
+                      Item {index + 1}: {view.problems.join(', ')}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div
+                  key={view.id}
+                  ref={grnItemEditorRef}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '16px',
+                    ...(severalGrnItems ? {
+                      border: '2px solid #0284c7',
+                      borderRadius: '12px',
+                      padding: '12px',
+                      background: '#f0f9ff'
+                    } : {})
+                  }}
+                >
+                  {severalGrnItems && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontWeight: '800', color: '#0f172a' }}>
+                          Item {index + 1} · {view.name}
+                          <span style={{ marginLeft: '8px', background: '#e0f2fe', color: '#075985', borderRadius: '999px', padding: '2px 8px', fontSize: '0.72rem', fontWeight: '800' }}>Editing</span>
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: '#475569' }}>{view.spec || 'Enter the specification below'}</div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        <button type="button" className="btn-secondary" style={{ padding: '5px 10px', fontSize: '0.75rem' }} onClick={() => handleDuplicateGrnLine(view.id)}>
+                          <Copy size={14} /> Duplicate
+                        </button>
+                        <button type="button" className="btn-secondary" style={{ padding: '5px 10px', fontSize: '0.75rem', color: '#b91c1c', borderColor: '#fecaca' }} onClick={() => handleRemoveGrnLine(view.id)}>
+                          <Trash2 size={14} /> Remove
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Tag size={14} style={{ color: '#0284c7' }} /> Item
+                    </div>
+                    <div className="form-grid">
                   {/* Item Category */}
                   <div className="form-group" style={{ gridColumn: 'span 2' }}>
                     <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155', marginBottom: '6px', display: 'block' }}>
@@ -6570,6 +6886,7 @@ export default function InventoryManagement({
                       <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', zIndex: 2 }} />
                       <input
                         type="text"
+                        id="grn-active-item-search"
                         className="form-control"
                         style={{ paddingLeft: '36px', paddingRight: '36px', fontWeight: grnSelectedStockItemId ? '700' : 'normal' }}
                         placeholder="Search existing stock items (e.g. Doctor Blade, Cyan Ink, PET 12µ)..."
@@ -6678,129 +6995,13 @@ export default function InventoryManagement({
                       </div>
                     )}
                   </div>
-                </div>
-              </div>
-
-              {/* Section 2: Reference & Batch Documentation */}
-              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <FileText size={14} style={{ color: '#0284c7' }} /> 2. Invoice & Batch Documentation
-                </div>
-
-                <div className="form-grid">
-                  <div className="form-group">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                      <label style={{ margin: 0, fontWeight: '600', fontSize: '0.83rem', color: '#334155', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        Ref PO Number
-                        {vendorActivePOs.length > 0 && !isManualPoEntry && (
-                          <span style={{ 
-                            fontSize: '0.7rem', 
-                            fontWeight: '700', 
-                            color: '#b45309', 
-                            background: '#fef3c7', 
-                            border: '1px solid #fde68a', 
-                            padding: '1px 6px', 
-                            borderRadius: '4px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '3px'
-                          }}>
-                            <Clock size={11} /> {vendorActivePOs.length} Active {vendorActivePOs.length === 1 ? 'PO' : 'POs'} Awaiting Delivery
-                          </span>
-                        )}
-                      </label>
-                      {vendorActivePOs.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (isManualPoEntry) {
-                              setIsManualPoEntry(false);
-                              if (vendorActivePOs.length === 1) {
-                                handleSelectPoForGrn(vendorActivePOs[0].poNumber);
-                              }
-                            } else {
-                              setIsManualPoEntry(true);
-                            }
-                          }}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: '#0284c7',
-                            fontSize: '0.74rem',
-                            fontWeight: '600',
-                            cursor: 'pointer',
-                            padding: 0,
-                            textDecoration: 'underline'
-                          }}
-                        >
-                          {isManualPoEntry ? `← Select from Active POs (${vendorActivePOs.length})` : 'Enter manually'}
-                        </button>
-                      )}
                     </div>
-
-                    {vendorActivePOs.length > 0 && !isManualPoEntry ? (
-                      <SearchableSelect
-                        className="form-control"
-                        placeholder="-- Select Active PO (Awaiting Delivery) --"
-                        searchPlaceholder="Search PO #, item, or quantity..."
-                        value={grnPoNo}
-                        onChange={e => handleSelectPoForGrn(e.target.value)}
-                        triggerStyle={{ 
-                          fontWeight: '600',
-                          color: grnPoNo ? '#0f172a' : '#64748b',
-                          borderColor: grnPoNo ? '#0284c7' : '#cbd5e1',
-                          background: grnPoNo ? '#f0f9ff' : '#ffffff'
-                        }}
-                      >
-                        <option value="" disabled>-- Select Active PO (Awaiting Delivery) --</option>
-                        {vendorActivePOs.map(po => {
-                          const firstItem = (po.items || [])[0] || {};
-                          const itemsSummary = (po.items || []).map(it => it.itemDesc || it.description || it.itemName || it.filmType || 'Item').join(', ');
-                          const deliveryInfo = getPoDeliveryInfo(po);
-                          const qtySummary = deliveryInfo.totalQty || po.totalPoQty || firstItem.qtyKg || 0;
-                          const poStatusText = deliveryInfo.status === 'Partially Received'
-                            ? `Partial Inward (${deliveryInfo.inwardQty}/${qtySummary} kg)`
-                            : `⏳ Awaiting Delivery (${qtySummary} kg)`;
-                          
-                          return (
-                            <option
-                              key={po.poNumber || po.id}
-                              value={po.poNumber}
-                              data-subtitle={`${poStatusText} • ${po.category || 'Raw Material'} • ${itemsSummary || 'Item'}`}
-                            >
-                              {po.poNumber} — {itemsSummary || 'Raw Material'} ({qtySummary} kg)
-                            </option>
-                          );
-                        })}
-                        <option value="__MANUAL__" style={{ fontWeight: '700', color: '#0284c7' }}>
-                          ✏️ + Enter Other / Manual PO Number...
-                        </option>
-                      </SearchableSelect>
-                    ) : (
-                      <>
-                        <input 
-                          type="text" 
-                          className="form-control" 
-                          placeholder="e.g. SIL/PO/26-27/1941" 
-                          value={grnPoNo} 
-                          onChange={e => setGrnPoNo(e.target.value)} 
-                        />
-                        {grnVendor && vendorActivePOs.length === 0 && (
-                          <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '3px' }}>
-                            No active POs awaiting delivery for {grnVendor} — enter manually if applicable.
-                          </div>
-                        )}
-                      </>
-                    )}
                   </div>
-
-                  <div className="form-group">
-                    <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
-                      Vendor Invoice Number <span style={{ color: '#ef4444' }}>*</span>
-                    </label>
-                    <input type="text" className="form-control" required placeholder="e.g. INV-FP-9904" value={grnInvoiceNo} onChange={e => setGrnInvoiceNo(e.target.value)} />
-                  </div>
-
+                  <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <FileText size={14} style={{ color: '#0284c7' }} /> Batch & packaging
+                    </div>
+                    <div className="form-grid">
                   <div className="form-group" style={{ gridColumn: 'span 2' }}>
                     <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
                       Manufacturer Batch / Heat # <span style={{ color: '#ef4444' }}>*</span>
@@ -6836,14 +7037,13 @@ export default function InventoryManagement({
                       onChange={e => setGrnItemRemarks(e.target.value)} 
                     />
                   </div>
-                </div>
-              </div>
-
+                    </div>
+                  </div>
               {/* Section 3: Specifications & Quantity Parameters (Individual Roll & Container Breakdown) */}
               <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
                   <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Scale size={14} style={{ color: '#0284c7' }} /> 3. Specifications & Individual {grnPackagingType} Breakdown
+                    <Scale size={14} style={{ color: '#0284c7' }} /> Specifications & individual {grnPackagingType} Breakdown
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#0369a1', background: '#e0f2fe', padding: '2px 8px', borderRadius: '4px' }}>
@@ -7281,39 +7481,6 @@ export default function InventoryManagement({
                   </div>
                 </div>
               </div>
-
-              {/* Section 4: Transporter & Freight */}
-              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Truck size={14} style={{ color: '#0284c7' }} /> 4. Logistics & Freight Expenses
-                </div>
-
-                <div className="form-grid">
-                  <div className="form-group">
-                    <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>Transporter Name / Vehicle #</label>
-                    <input 
-                      type="text" 
-                      className="form-control" 
-                      placeholder="e.g. V-Trans Logistics / MP-09-AB-1234" 
-                      value={grnTransporterName} 
-                      onChange={e => setGrnTransporterName(e.target.value)} 
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>Inward Freight Charge (₹)</label>
-                    <input 
-                      type="number" 
-                      step="any" 
-                      className="form-control" 
-                      placeholder="e.g. 2500 (Optional)" 
-                      value={grnFreightAmount} 
-                      onChange={e => setGrnFreightAmount(e.target.value)} 
-                    />
-                  </div>
-                </div>
-              </div>
-
               {/* Breakdown Callout Box */}
               {(() => {
                 const effectiveNetWeight = grnCalculatedTotals.totalNet > 0 
@@ -7382,6 +7549,39 @@ export default function InventoryManagement({
                   </div>
                 );
               })()}
+                </div>
+              ))}
+
+              <div>
+                <button
+                  type="button"
+                  onClick={handleAddAnotherGrnItem}
+                  className={severalGrnItems ? 'btn-secondary' : undefined}
+                  style={severalGrnItems
+                    ? { padding: '8px 14px', fontSize: '0.84rem', fontWeight: '700', display: 'inline-flex', alignItems: 'center', gap: '6px' }
+                    : { background: 'none', border: 'none', color: '#0284c7', fontWeight: '700', cursor: 'pointer', padding: '2px 0', fontSize: '0.86rem', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Plus size={14} /> Add another item
+                </button>
+                {grnPoNo && (
+                  <button
+                    type="button"
+                    onClick={handleAddOtherPoLines}
+                    style={{ background: 'none', border: 'none', color: '#475569', marginLeft: '16px', cursor: 'pointer', fontSize: '0.8rem', textDecoration: 'underline', fontWeight: '600' }}
+                  >
+                    Add the other open PO lines
+                  </button>
+                )}
+              </div>
+
+              {severalGrnItems && (
+                <div aria-live="polite" style={{ background: '#0f172a', color: '#ffffff', borderRadius: '10px', padding: '12px 16px', display: 'flex', flexWrap: 'wrap', gap: '14px 22px', fontSize: '0.84rem' }}>
+                  <span>{grnInvoiceTotals.items} items</span>
+                  <span>{grnInvoiceTotals.rolls} rolls</span>
+                  <span>{Number(grnInvoiceTotals.net || 0).toFixed(2)} kg net</span>
+                  <span style={{ fontWeight: '800' }}>₹{Number(grnInvoiceTotals.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                </div>
+              )}
 
               {/* Sticky Bottom Actions Footer */}
               <div className="modal-footer-bar">

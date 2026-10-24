@@ -36,6 +36,7 @@ import {
   getOrderMaterialRequirements as getOrderMaterialRequirementsFromStore,
   calculateOrderStockReservations
 } from '../factoryStore';
+import { readyForDispatchLots, isAdminRole } from '../utils/orderAutoClose';
 import { saveOrderToSupabase, savePurchaseOrderToSupabase } from '../services/supabaseDataService';
 import { getNextDocRefNumber } from '../services/settingsService';
 
@@ -57,7 +58,11 @@ export default function OrderManagement({
   onUpdateCylinder,
   onAddGRN,
   onNavigateToPunching,
-  onNavigateToProductionRecords
+  onNavigateToProductionRecords,
+  orderCloseSettings = { enabled: true, tolerancePct: 10 },
+  onSaveOrderCloseSettings,
+  onManualCloseOrder,
+  onManualReopenOrder
 }) {
   // Helper: derive substrate structure (preserves locked order structure for punched orders)
   const getSubstrateStructure = (order) => {
@@ -91,7 +96,9 @@ export default function OrderManagement({
       return jm.layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
     }
 
-    return order?.structure || jm?.structure || '—';
+    const fallback = order?.structure || jm?.structure;
+    if (!fallback || fallback === '—' || fallback === 'PET / PE') return 'Not recorded';
+    return fallback;
   };
 
   // Helper: derive Material Form (Reel Form, Pouching Form, or Rotogravure Cylinder)
@@ -337,6 +344,35 @@ export default function OrderManagement({
         metallocenePct: editMetallocenePct.trim()
       }
     };
+
+    if (editStatus === 'Completed' && editingOrder.closeMode !== 'manual' && editingOrder.status !== 'Completed') {
+      if (!isAdminRole(currentUser?.role)) {
+        alert('Only Admin can manually close an order.');
+        return;
+      }
+      const reason = window.prompt(`Close order ${editingOrder.id}?\nEnter the reason. This overrides the ±10% auto-close rule.`);
+      if (!reason || !reason.trim()) return;
+      updatedOrder.closeMode = 'manual';
+      updatedOrder.closedBy = currentUser?.name || 'Admin';
+      updatedOrder.closedAt = new Date().toISOString();
+      updatedOrder.closeReason = reason.trim();
+      updatedOrder.overDispatchWarning = null;
+    }
+    if (editingOrder.closeMode === 'manual' && editStatus !== 'Completed') {
+      if (!isAdminRole(currentUser?.role)) {
+        alert('Only Admin can reopen a manually closed order.');
+        return;
+      }
+      const reason = window.prompt(`Reopen order ${editingOrder.id}?\nEnter the reason.`);
+      if (!reason || !reason.trim()) return;
+      updatedOrder.closeMode = null;
+      updatedOrder.closedBy = null;
+      updatedOrder.closedAt = null;
+      updatedOrder.closeReason = null;
+      updatedOrder.reopenedBy = currentUser?.name || 'Admin';
+      updatedOrder.reopenedAt = new Date().toISOString();
+      updatedOrder.reopenReason = reason.trim();
+    }
 
     try {
       if (onUpdateOrder) {
@@ -1020,10 +1056,36 @@ export default function OrderManagement({
     }
   };
 
+  const handleAdminClose = (order, event) => {
+    if (event) event.stopPropagation();
+    if (!isAdminRole(currentUser?.role)) {
+      alert('Only Admin can manually close an order.');
+      return;
+    }
+    const reason = window.prompt(`Close order ${order.id} at your discretion.\nThis overrides the ±10% auto-close rule.\nEnter the reason.`);
+    if (!reason || !reason.trim()) return;
+    if (!window.confirm(`Close ${order.id} as Completed?\n\n${reason.trim()}`)) return;
+    if (onManualCloseOrder) onManualCloseOrder(order, reason.trim());
+  };
+
+  const handleAdminReopen = (order, event) => {
+    if (event) event.stopPropagation();
+    if (!isAdminRole(currentUser?.role)) {
+      alert('Only Admin can reopen an order.');
+      return;
+    }
+    const reason = window.prompt(`Reopen order ${order.id}?\nEnter the reason.`);
+    if (!reason || !reason.trim()) return;
+    if (!window.confirm(`Reopen ${order.id}?\n\n${reason.trim()}`)) return;
+    if (onManualReopenOrder) onManualReopenOrder(order, reason.trim());
+  };
+
   // Filter orders
   const filteredOrders = orders.filter(o => {
     if (!o) return false;
     const q = String(searchTerm || '').trim().toLowerCase();
+    if (o.status === 'Completed' && statusFilter !== 'COMPLETED') return false;
+    if (statusFilter === 'COMPLETED' && o.status !== 'Completed') return false;
     const matchesSearch = !q ||
       String(o.jobName || '').toLowerCase().includes(q) ||
       String(o.id || '').toLowerCase().includes(q) ||
@@ -1338,13 +1400,39 @@ export default function OrderManagement({
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: '500' }}>Filter Status:</span>
                 <SearchableSelect className="form-control" style={{ width: '240px' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-                  <option value="ALL">All Orders ({(orders || []).length})</option>
+                  <option value="ALL">Active orders ({(orders || []).filter(o => o && o.status !== 'Completed').length})</option>
+                  <option value="COMPLETED">Completed ({(orders || []).filter(o => o?.status === 'Completed').length})</option>
                   <option value="DELAYED">⚠️ Overdue / Delayed ({delayedOrdersCount})</option>
                   <option value="NEARING_DEADLINE">⏳ Nearing Deadline (≤4 Days) ({nearingDeadlineCount})</option>
                   <option value="ON_HOLD">⏸️ On Hold Orders</option>
                   <option value="PENDING_PO">Pending PO Issuance</option>
                 </SearchableSelect>
               </div>
+              {isAdminRole(currentUser?.role) && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>
+                  <input
+                    type="checkbox"
+                    checked={orderCloseSettings.enabled !== false}
+                    onChange={(event) => onSaveOrderCloseSettings?.({
+                      ...orderCloseSettings,
+                      enabled: event.target.checked
+                    })}
+                  />
+                  Auto-close within ±
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={orderCloseSettings.tolerancePct}
+                    onChange={(event) => onSaveOrderCloseSettings?.({
+                      ...orderCloseSettings,
+                      tolerancePct: Number(event.target.value) || 10
+                    })}
+                    style={{ width: '64px' }}
+                  />
+                  %
+                </label>
+              )}
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: '500' }}>Vendor:</span>
@@ -1511,12 +1599,12 @@ export default function OrderManagement({
                             </div>
 
                             {/* Active Stock Breakdown Pills */}
-                            {stageInfo.activeLots.length > 0 && (
+                            {readyForDispatchLots(stageInfo).length > 0 && (
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', fontSize: '0.73rem', marginTop: '2px' }}>
-                                <span style={{ color: '#475569', fontWeight: '700' }}>
-                                  📦 Active Stock ({stageInfo.totalAvailableKg.toFixed(1)} kg):
+                                <span style={{ color: '#6d28d9', fontWeight: '700' }}>
+                                  Ready for dispatch ({stageInfo.fgAvailableKg.toFixed(1)} kg):
                                 </span>
-                                {stageInfo.activeLots.map(lot => (
+                                {readyForDispatchLots(stageInfo).map(lot => (
                                   <span 
                                     key={lot.id}
                                     style={{
@@ -1602,6 +1690,26 @@ export default function OrderManagement({
                                 title="Mark Job Completed (Requires Approved Production Record)"
                               >
                                 <CheckCircle2 size={13} /> Complete
+                              </button>
+                            )}
+                            {isAdminRole(currentUser?.role) && order.status !== 'Completed' && (
+                              <button
+                                className="btn-secondary"
+                                style={{ padding: '6px 12px', fontSize: '0.78rem', color: '#7c2d12', borderColor: '#fdba74', background: '#fff7ed', borderRadius: '6px', fontWeight: '700', whiteSpace: 'nowrap' }}
+                                onClick={(e) => handleAdminClose(order, e)}
+                                title="Admin only. Closes the order even outside the ±10% band."
+                              >
+                                Admin close
+                              </button>
+                            )}
+                            {isAdminRole(currentUser?.role) && order.status === 'Completed' && (
+                              <button
+                                className="btn-secondary"
+                                style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '6px', fontWeight: '700', whiteSpace: 'nowrap' }}
+                                onClick={(e) => handleAdminReopen(order, e)}
+                                title="Admin only. Reopen is a default and can be changed."
+                              >
+                                Reopen
                               </button>
                             )}
 
@@ -1781,7 +1889,7 @@ export default function OrderManagement({
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                   <Box size={18} style={{ color: 'var(--primary-brand)' }} />
                                   <h4 style={{ fontSize: '0.88rem', fontWeight: '800', color: '#0f172a', margin: 0, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-                                    🏭 SFG & FG Production Stage Inventory ({stageInfo.activeLots.length} Rolls / Lots)
+                                    Ready for dispatch ({readyForDispatchLots(stageInfo).length} FG rolls)
                                   </h4>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1817,11 +1925,7 @@ export default function OrderManagement({
                                   <div style={{ fontSize: '0.92rem', fontWeight: '800', color: '#0f172a', marginTop: '2px' }}>{stageInfo.stage}</div>
                                 </div>
                                 <div style={{ background: '#ffffff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                                  <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Available SFG Stock</div>
-                                  <div style={{ fontSize: '0.92rem', fontWeight: '800', color: '#0369a1', marginTop: '2px' }}>{stageInfo.sfgAvailableKg.toFixed(1)} kg</div>
-                                </div>
-                                <div style={{ background: '#ffffff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                                  <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Ready FG Stock</div>
+                                  <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Ready for dispatch</div>
                                   <div style={{ fontSize: '0.92rem', fontWeight: '800', color: '#6d28d9', marginTop: '2px' }}>{stageInfo.fgAvailableKg.toFixed(1)} kg</div>
                                 </div>
                                 <div style={{ background: '#ffffff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
@@ -1830,9 +1934,9 @@ export default function OrderManagement({
                                 </div>
                               </div>
 
-                              {stageInfo.activeLots.length === 0 ? (
+                              {readyForDispatchLots(stageInfo).length === 0 ? (
                                 <div style={{ textAlign: 'center', padding: '18px', background: '#ffffff', borderRadius: '8px', border: '1px dashed #cbd5e1', color: '#64748b', fontSize: '0.82rem' }}>
-                                  ⏳ No SFG or FG rolls recorded yet for this order. Status is currently <strong>Pre-Production / Material Planning</strong>.
+                                  No finished goods are ready for dispatch. SFG that is still in process stays in the SFG store.
                                 </div>
                               ) : (
                                 <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#ffffff' }}>
@@ -1850,7 +1954,7 @@ export default function OrderManagement({
                                       </tr>
                                     </thead>
                                     <tbody>
-                                      {stageInfo.activeLots.map((lot, lIdx) => (
+                                      {readyForDispatchLots(stageInfo).map((lot, lIdx) => (
                                         <tr key={lot.id || lIdx} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                           <td style={{ padding: '8px 12px', fontWeight: '800', color: '#0f172a' }}>
                                             <span className="order-id-badge" style={{ fontSize: '0.74rem' }}>{lot.sfgBatchCode}</span>
@@ -2556,9 +2660,9 @@ export default function OrderManagement({
                                     >
                                       {rStageInfo.stageLabel}
                                     </span>
-                                    {rStageInfo.totalAvailableKg > 0 && (
-                                      <span style={{ fontSize: '0.68rem', color: '#047857', fontWeight: '700' }}>
-                                        {rStageInfo.totalAvailableKg.toFixed(0)} kg in stock
+                                    {rStageInfo.fgAvailableKg > 0 && (
+                                      <span style={{ fontSize: '0.68rem', color: '#6d28d9', fontWeight: '700' }}>
+                                        Ready for dispatch: {rStageInfo.fgAvailableKg.toFixed(0)} kg
                                       </span>
                                     )}
                                   </div>
