@@ -113,24 +113,12 @@ test('print log accepts a printer job and ignores dialog events', async () => {
   assert.equal(browser.rows[0].result.counts_as_printed, true);
   assert.equal(browser.rows[0].result.printer, 'browser');
 
-  await db.exec(`
-    CREATE OR REPLACE FUNCTION private.can_any(required_permissions text[])
-    RETURNS boolean
-    LANGUAGE sql
-    STABLE
-    AS $$ SELECT false $$;
-  `);
+  await db.exec(`UPDATE private.print_probe SET allowed = false`);
   await assert.rejects(
     () => db.query(record('RM-BC-1', 'job-denied', 'printed')),
     /barcodes permission/
   );
-  await db.exec(`
-    CREATE OR REPLACE FUNCTION private.can_any(required_permissions text[])
-    RETURNS boolean
-    LANGUAGE sql
-    STABLE
-    AS $$ SELECT true $$;
-  `);
+  await db.exec(`UPDATE private.print_probe SET allowed = true`);
 
   const visible = await db.query(`
     SELECT barcode, job_id, printer
