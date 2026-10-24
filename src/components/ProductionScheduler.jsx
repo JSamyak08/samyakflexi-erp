@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { NOT_RECORDED, computeDryInkSolids, finiteNumber } from '../utils/productionRecordQuality';
 import { pushSlugState } from '../utils/slugRouter';
 import StorageImage from './StorageImage';
 import { 
@@ -87,63 +88,56 @@ const parseStructureLayers = (structureStr = '') => {
   });
 };
 
+function printDryInk({ inputRollsList, outputKg, meters, printWidthMm }) {
+  const consumed = (inputRollsList || []).reduce((sum, roll) => sum + (parseFloat(roll.consumedWeightKg) || 0), 0);
+  const widths = (inputRollsList || []).map((roll) => finiteNumber(roll.widthMm)).filter((value) => value !== null);
+  return computeDryInkSolids({
+    inputKg: consumed > 0 ? consumed : null,
+    outputKg,
+    inputWidthMm: widths.length ? Math.max(...widths) : null,
+    printWidthMm,
+    meters
+  });
+}
+
 function EndJobCalculationsBadges({ endJobTargetOrder, inputRollsList, jobMasters, inputPrintedOutputKg, inputActualMeters }) {
   if (!endJobTargetOrder) return null;
   const totalInputConsumedKg = (inputRollsList || []).reduce((sum, r) => sum + (parseFloat(r.consumedWeightKg) || 0), 0);
   const matchingJM = (jobMasters || []).find(j => j.id === endJobTargetOrder.jobMasterId || j.jobCode === endJobTargetOrder.jobCode);
-  const printWidthMm = Number(endJobTargetOrder.printWidthMm || matchingJM?.printWidthMm || endJobTargetOrder.widthMm || 460);
-  const inputWidths = (inputRollsList || []).map(r => Number(r.widthMm) || printWidthMm);
-  const maxInputWidth = Math.max(...inputWidths, printWidthMm);
-  const isBiggerSize = maxInputWidth > printWidthMm;
-  const outputKgNum = parseFloat(inputPrintedOutputKg) || 0;
-  const actualMetersNum = parseFloat(inputActualMeters) || endJobTargetOrder.targetMeters || 0;
-
-  let excessFilmWastageKg = 0;
-  let excessFilmWastagePct = 0;
-  if (isBiggerSize && totalInputConsumedKg > 0) {
-    const trimRatio = (maxInputWidth - printWidthMm) / maxInputWidth;
-    excessFilmWastageKg = Number((totalInputConsumedKg * trimRatio).toFixed(2));
-    excessFilmWastagePct = Number(((excessFilmWastageKg / totalInputConsumedKg) * 100).toFixed(2));
-  }
-
-  let inkWeightGainKg = 0;
-  if (isBiggerSize) {
-    inkWeightGainKg = Number((outputKgNum - (totalInputConsumedKg - excessFilmWastageKg)).toFixed(2));
-  } else {
-    inkWeightGainKg = Number((outputKgNum - totalInputConsumedKg).toFixed(2));
-  }
-
-  const printedAreaM2 = (actualMetersNum * printWidthMm) / 1000;
-  let actualCalculatedInkGsm = 0;
-  if (printedAreaM2 > 0 && inkWeightGainKg > 0) {
-    actualCalculatedInkGsm = Number(((inkWeightGainKg * 0.20 * 1000) / printedAreaM2).toFixed(2));
-  }
+  const printWidthMm = finiteNumber(endJobTargetOrder.printWidthMm ?? matchingJM?.printWidthMm ?? endJobTargetOrder.widthMm);
+  const dry = printDryInk({
+    inputRollsList,
+    outputKg: inputPrintedOutputKg,
+    meters: finiteNumber(inputActualMeters) ?? finiteNumber(endJobTargetOrder.actualMetersPrinted),
+    printWidthMm
+  });
+  const showTrim = dry.trimKg > 0;
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: isBiggerSize ? '1fr 1.2fr 1fr 1fr' : '1.2fr 1fr 1fr', gap: '8px' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: showTrim ? '1fr 1.2fr 1fr 1fr' : '1.2fr 1fr 1fr', gap: '8px' }}>
       <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
         <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Total Substrate Consumed</span>
-        <div style={{ fontSize: '1rem', fontWeight: '900', color: '#0284c7' }}>{totalInputConsumedKg.toFixed(2)} kg</div>
+        <div style={{ fontSize: '1rem', fontWeight: '900', color: '#0284c7' }}>{totalInputConsumedKg > 0 ? `${totalInputConsumedKg.toFixed(2)} kg` : NOT_RECORDED}</div>
       </div>
 
-      {isBiggerSize && (
+      {showTrim && (
         <div style={{ background: '#fffbeb', padding: '8px 10px', borderRadius: '6px', border: '1px solid #fde68a' }}>
-          <span style={{ fontSize: '0.68rem', color: '#b45309', fontWeight: '800', textTransform: 'uppercase' }}>✂️ Film Trimming Wastage</span>
+          <span style={{ fontSize: '0.68rem', color: '#b45309', fontWeight: '800', textTransform: 'uppercase' }}>Film Trimming Wastage</span>
           <div style={{ fontSize: '1rem', fontWeight: '900', color: '#b45309' }}>
-            {excessFilmWastageKg} kg ({excessFilmWastagePct}%)
+            {dry.trimKg} kg
           </div>
-          <span style={{ fontSize: '0.65rem', color: '#92400e' }}>Input {maxInputWidth}mm vs Print {printWidthMm}mm</span>
+          <span style={{ fontSize: '0.65rem', color: '#92400e' }}>Trim is excluded from dry ink solids</span>
         </div>
       )}
 
       <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-        <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Ink Weight Gain</span>
-        <div style={{ fontSize: '1rem', fontWeight: '900', color: '#059669' }}>{inkWeightGainKg} kg</div>
+        <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Dry Ink Solids</span>
+        <div style={{ fontSize: '1rem', fontWeight: '900', color: '#059669' }}>{dry.status === NOT_RECORDED ? NOT_RECORDED : `${dry.dryInkSolidsKg} kg`}</div>
       </div>
 
       <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
         <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Calculated Ink GSM</span>
-        <div style={{ fontSize: '1rem', fontWeight: '900', color: '#7c3aed' }}>{actualCalculatedInkGsm} GSM</div>
+        <div style={{ fontSize: '1rem', fontWeight: '900', color: '#7c3aed' }}>{dry.gsm === null ? NOT_RECORDED : `${dry.gsm} GSM`}</div>
       </div>
     </div>
   );
@@ -740,13 +734,6 @@ export default function ProductionScheduler({
       if (Array.isArray(activeRunningJob.inputRollsList) && activeRunningJob.inputRollsList.length > 0) {
         setInputRollsList(activeRunningJob.inputRollsList);
       } else {
-        const matchingJM = (jobMasters || []).find(j => j.id === activeRunningJob.jobMasterId || j.jobCode === activeRunningJob.jobCode);
-        const printWidth = activeRunningJob.widthMm || activeRunningJob.printWidthMm || matchingJM?.printWidthMm || 460;
-        const filmType = activeRunningJob.printFilmType || 'PET';
-        const micron = activeRunningJob.micron || 12;
-        const reqQty = activeRunningJob.printQtyKg || activeRunningJob.quantityKg || activeRunningJob.quantity || 100;
-        const grnCode = (activeRunningJob.jobCode || activeRunningJob.id || 'ORD').replace(/[^a-zA-Z0-9-]/g, '');
-
         const initialList = [
           {
             id: `in-roll-${Date.now()}-1`,
@@ -819,11 +806,6 @@ export default function ProductionScheduler({
   };
 
   const handleAddInputRollActiveRun = () => {
-    const defaultWidth = activeRunningJob?.widthMm || 460;
-    const defaultFilm = activeRunningJob?.printFilmType || 'PET';
-    const defaultMic = activeRunningJob?.micron || 12;
-    const grnCode = (activeRunningJob?.jobCode || activeRunningJob?.id || 'ORD').replace(/[^a-zA-Z0-9-]/g, '');
-
     const updatedList = [
       ...inputRollsList,
       {
@@ -966,8 +948,8 @@ export default function ProductionScheduler({
       const remainingMins = durationMinutes % 60;
       const durationFormatted = durationHours > 0 ? `${durationHours}h ${remainingMins}m` : `${durationMinutes}m`;
 
-      const actualMetersNum = parseFloat(inputActualMeters) || endJobTargetOrder.targetMeters || 0;
-      const inkGsmNum = parseFloat(inputInkGsm) || 1.5;
+      const actualMetersNum = finiteNumber(inputActualMeters);
+      const inkGsmNum = finiteNumber(inputInkGsm);
       const totalRollsKg = outputRollsList.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
       const outputKgNum = totalRollsKg > 0 ? totalRollsKg : (parseFloat(inputPrintedOutputKg) || 0);
 
@@ -1013,22 +995,22 @@ export default function ProductionScheduler({
           orderId: endJobTargetOrder.id,
           customerName: endJobTargetOrder.clientName || endJobTargetOrder.customerName || 'Client',
           clientName: endJobTargetOrder.clientName || endJobTargetOrder.customerName || 'Client',
-          filmType: endJobTargetOrder.printFilmType || 'PET',
-          micron: Number(endJobTargetOrder.micron) || 12,
-          widthMm: Number(endJobTargetOrder.widthMm) || 460,
+          filmType: endJobTargetOrder.printFilmType || inputRollsList[0]?.filmType || '',
+          micron: finiteNumber(endJobTargetOrder.micron) ?? finiteNumber(inputRollsList[0]?.micron),
+          widthMm: finiteNumber(endJobTargetOrder.printWidthMm) ?? finiteNumber(endJobTargetOrder.widthMm) ?? finiteNumber(inputRollsList[0]?.widthMm),
           unit: 'Kg',
           packagingType: 'Roll',
           unitNo: rollSeqNo,
           rollNo: rollSeqNo,
           totalUnits: outputRollsList.length,
           netWeightKg: rollWeight,
-          grossWeightKg: Number((rollWeight + 0.5).toFixed(2)),
-          tareWeightKg: 0.5,
+          grossWeightKg: finiteNumber(rItem.grossWeightKg) ?? rollWeight,
+          tareWeightKg: finiteNumber(rItem.tareWeightKg),
           totalNetKg: rollWeight,
           availableWeightKg: rollWeight,
           availableKg: rollWeight,
           consumedKg: 0,
-          lengthMeters: Math.round(rollWeight > 0 ? (rollWeight / (outputKgNum || 1)) * actualMetersNum : actualMetersNum),
+          lengthMeters: finiteNumber(rItem.lengthMeters),
           purchaseRatePerKg: Number(endJobTargetOrder.rate || endJobTargetOrder.unitPrice || 0),
           unitPrice: Number(endJobTargetOrder.rate || endJobTargetOrder.unitPrice || 0),
           stationId: 'PRINTING_PRESS_REWINDER',
@@ -1093,18 +1075,18 @@ export default function ProductionScheduler({
             grnNo: `RM-RETURN-${grnCode}`,
             rollType: 'RAW_MATERIAL',
             category: 'Raw Material (RM)',
-            itemName: `${inRoll.filmType || 'Film'} ${inRoll.micron || 12}µ (${inRoll.widthMm || 460}mm) - Remaining Balance Roll`,
+            itemName: `${inRoll.filmType || NOT_RECORDED} ${finiteNumber(inRoll.micron) ?? NOT_RECORDED}µ (${finiteNumber(inRoll.widthMm) ?? NOT_RECORDED} mm) - Remaining Balance Roll`,
             jobName: endJobTargetOrder.jobName,
             jobCode: endJobTargetOrder.jobCode || endJobTargetOrder.id,
             orderId: endJobTargetOrder.id,
             customerName: endJobTargetOrder.clientName || endJobTargetOrder.customerName || 'Client',
-            filmType: inRoll.filmType || endJobTargetOrder.printFilmType || 'PET',
-            micron: Number(inRoll.micron || endJobTargetOrder.micron || 12),
-            widthMm: Number(inRoll.widthMm || endJobTargetOrder.widthMm || 460),
+            filmType: inRoll.filmType || endJobTargetOrder.printFilmType || '',
+            micron: finiteNumber(inRoll.micron) ?? finiteNumber(endJobTargetOrder.micron),
+            widthMm: finiteNumber(inRoll.widthMm) ?? finiteNumber(endJobTargetOrder.widthMm),
             unit: 'Kg',
             netWeightKg: Number(balW.toFixed(2)),
-            grossWeightKg: Number((balW + 0.5).toFixed(2)),
-            tareWeightKg: 0.5,
+            grossWeightKg: Number(balW.toFixed(2)),
+            tareWeightKg: null,
             availableWeightKg: Number(balW.toFixed(2)),
             stationId: 'PRINTING_PRESS_UNWINDER',
             machineName: machineName || 'Rotogravure Press',
@@ -1132,32 +1114,22 @@ export default function ProductionScheduler({
         }));
       }
 
-      // Perform Ink Gain, Substrate Width & Actual Ink GSM Calculations
-      const printWidthMm = Number(endJobTargetOrder.printWidthMm || matchingJM?.printWidthMm || endJobTargetOrder.widthMm || 460);
-      const inputWidths = inputRollsList.map(r => Number(r.widthMm) || printWidthMm);
-      const maxInputWidth = Math.max(...inputWidths, printWidthMm);
-      const isBiggerSize = maxInputWidth > printWidthMm;
-
-      let excessFilmWastageKg = 0;
-      let excessFilmWastagePct = 0;
-      if (isBiggerSize && totalInputConsumedKg > 0) {
-        const trimRatio = (maxInputWidth - printWidthMm) / maxInputWidth;
-        excessFilmWastageKg = Number((totalInputConsumedKg * trimRatio).toFixed(2));
-        excessFilmWastagePct = Number(((excessFilmWastageKg / totalInputConsumedKg) * 100).toFixed(2));
-      }
-
-      let inkWeightGainKg = 0;
-      if (isBiggerSize) {
-        inkWeightGainKg = Number((outputKgNum - (totalInputConsumedKg - excessFilmWastageKg)).toFixed(2));
-      } else {
-        inkWeightGainKg = Number((outputKgNum - totalInputConsumedKg).toFixed(2));
-      }
-
-      const printedAreaM2 = (actualMetersNum * printWidthMm) / 1000;
-      let actualCalculatedInkGsm = 0;
-      if (printedAreaM2 > 0 && inkWeightGainKg > 0) {
-        actualCalculatedInkGsm = Number(((inkWeightGainKg * 0.20 * 1000) / printedAreaM2).toFixed(2));
-      }
+      const printWidthMm = finiteNumber(endJobTargetOrder.printWidthMm ?? matchingJM?.printWidthMm ?? endJobTargetOrder.widthMm);
+      const inputWidths = inputRollsList.map((roll) => finiteNumber(roll.widthMm)).filter((value) => value !== null);
+      const maxInputWidth = inputWidths.length ? Math.max(...inputWidths) : null;
+      const dryInk = printDryInk({
+        inputRollsList,
+        outputKg: outputKgNum,
+        meters: actualMetersNum,
+        printWidthMm
+      });
+      const excessFilmWastageKg = dryInk.trimKg || 0;
+      const excessFilmWastagePct = totalInputConsumedKg > 0 && excessFilmWastageKg
+        ? Number(((excessFilmWastageKg / totalInputConsumedKg) * 100).toFixed(2))
+        : 0;
+      const isBiggerSize = excessFilmWastageKg > 0;
+      const inkWeightGainKg = dryInk.dryInkSolidsKg;
+      const actualCalculatedInkGsm = dryInk.gsm;
 
       const endData = {
         endTime,
@@ -3074,7 +3046,7 @@ export default function ProductionScheduler({
                               <td style={{ padding: '8px 12px', fontWeight: '800', color: '#0f172a' }}>Roll #{idx + 1}</td>
                               <td style={{ padding: '8px 12px', fontWeight: '800', color: '#0284c7' }}>{roll.barcodeId || '—'}</td>
                               <td style={{ padding: '8px 12px', color: '#334155' }}>
-                                <strong>{roll.filmType || 'PET'}</strong> {roll.micron || 12}µ ({roll.widthMm || 460}mm)
+                                <strong>{roll.filmType || NOT_RECORDED}</strong> {finiteNumber(roll.micron) ?? NOT_RECORDED}µ ({finiteNumber(roll.widthMm) ?? NOT_RECORDED} mm)
                               </td>
                               <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '700' }}>{initW.toFixed(1)} kg</td>
                               <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '900', color: '#059669' }}>{consW.toFixed(1)} kg</td>
