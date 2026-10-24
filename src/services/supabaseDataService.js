@@ -49,6 +49,44 @@ export function handleSupabaseError(error, contextName) {
   throw error;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuid(value) {
+  return UUID_RE.test(String(value || '').trim());
+}
+
+/**
+ * PostgREST 404 / missing-relation errors. These must not be treated as fatal
+ * during boot — the caller should degrade to an empty list.
+ */
+export function isMissingRelationError(error) {
+  if (!error) return false;
+  const code = String(error.code || '');
+  const msg = String(error.message || error.details || '').toLowerCase();
+  return code === 'PGRST205' || code === '42P01' || code === 'PGRST204'
+    || msg.includes('does not exist')
+    || msg.includes('schema cache')
+    || msg.includes('could not find the table')
+    || msg.includes('not found');
+}
+
+/**
+ * orders.id is the primary key. There is no orders.order_id column.
+ * Return the id only when that order row exists, otherwise null so FK writes succeed.
+ */
+async function orderIdIfExists(orderId) {
+  const id = orderId == null ? '' : String(orderId).trim();
+  if (!id) return null;
+  try {
+    const { data, error } = await supabase.from('orders').select('id').eq('id', id).maybeSingle();
+    if (error || !data?.id) return null;
+    return data.id;
+  } catch (err) {
+    console.warn('[orders] Could not verify order id for foreign key:', err?.message || err);
+    return null;
+  }
+}
+
 // ============================================================================
 // 1. ORDERS / JOB PUNCHING
 // ============================================================================
@@ -274,6 +312,9 @@ export async function saveOrderToSupabase(order) {
     raw_material_requirements: matReqs
   };
 
+  // orders has no order_id column (the primary key is id). Strip it if a caller spread it in.
+  delete fullPayload.order_id;
+  delete fullPayload.available_qty_kg;
   const closeColumns = {
     closed_by: jobDetails.closedBy,
     closed_at: jobDetails.closedAt,
@@ -777,12 +818,13 @@ export function mapInventoryItemToDbPayload(item) {
 
   const combinedItemName = `${itemNameStr} ||| ${JSON.stringify(meta)}`;
 
+  // Live inventory has stock_qty_kg, not available_qty_kg. Available quantity is stored there.
   return {
     id: String(clean.id),
     item_code: itemCodeStr,
     item_name: combinedItemName,
     metallocene_pct: clean.metallocenePct || null,
-    stock_qty_kg: Number(clean.availableQtyKg ?? 0) || 0,
+    stock_qty_kg: Number(clean.availableQtyKg ?? clean.stock_qty_kg ?? 0) || 0,
     unit_price: Number(clean.unitPrice ?? 0) || 0
   };
 }
@@ -981,6 +1023,7 @@ export async function saveGRNToSupabase(grn) {
   }
 
   // Same supplier and the same invoice is a second document. A different supplier may reuse the number.
+  // The row being saved is not a duplicate of itself. save_grn_with_lines applies the same rule.
   if (clean.invoiceNo && targetVName) {
     const { data: existingGrns, error: duplicateLookupError } = await supabase
       .from('grns')
@@ -1066,6 +1109,44 @@ export async function allocateGrnNumber(prefix) {
   if (error) handleSupabaseError(error, 'allocate_pellet_grn_number');
   if (!data) throw new Error('The server did not return a GRN number.');
   return data;
+}
+
+/**
+ * True when any GRN was already claimed for the QC digest on or after isoStart.
+ * Returns null when escalated_at is not in the schema yet, so the caller must not email.
+ */
+export async function hasQcEscalationSince(isoStart) {
+  const { data, error } = await supabase
+    .from('grns')
+    .select('id')
+    .gte('escalated_at', isoStart)
+    .limit(1);
+  if (error) {
+    if (isMissingRelationError(error)) return null;
+    throw error;
+  }
+  return Array.isArray(data) && data.length > 0;
+}
+
+/**
+ * Stamp escalated_at only on rows that are still unclaimed.
+ * The stamp is the once-per-GRN guard and must happen before the email is sent.
+ * Returns null when the column is missing.
+ */
+export async function claimGrnEscalations(ids, claimedAt) {
+  const uniqueIds = [...new Set((ids || []).map(id => String(id)).filter(Boolean))];
+  if (uniqueIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from('grns')
+    .update({ escalated_at: claimedAt })
+    .in('id', uniqueIds)
+    .is('escalated_at', null)
+    .select('id, escalated_at');
+  if (error) {
+    if (isMissingRelationError(error)) return null;
+    throw error;
+  }
+  return data || [];
 }
 
 
@@ -1404,6 +1485,8 @@ export async function saveProductionRecordToSupabase(record) {
   assertPersistableMeasures(record);
   await ensureValidSession();
   const recId = record.id || `REC-${Date.now()}`;
+  // production_records.order_id references orders(id). A missing or blank id fails the insert.
+  const linkedOrderId = await orderIdIfExists(record.orderId);
   const scrapKg = Number(record.totalScrapQtyKg ?? record.totalWastageKg ?? 0);
   const scrapPct = Number(record.overallScrapPctOfOutput ?? record.wastagePercentage ?? record.scrapWastagePct ?? 0);
   const scrapPctDispatch = Number(record.overallScrapPctOfDispatch ?? 0);
@@ -1478,7 +1561,7 @@ export async function saveProductionRecordToSupabase(record) {
   };
   const fullPayload = {
     id: recId,
-    order_id: record.orderId,
+    order_id: linkedOrderId,
     job_name: record.jobName || 'Production Record',
     client_name: record.clientName || '',
     operator_name: record.operatorName || record.filledBy || '',
@@ -1513,6 +1596,13 @@ export async function saveProductionRecordToSupabase(record) {
   };
   
   const { error: fullErr } = await supabase.from('production_records').upsert(fullPayload, { onConflict: 'id' });
+  const fkFailed = fullErr && (fullErr.code === '23503' || String(fullErr.message || '').toLowerCase().includes('foreign key'));
+  if (fkFailed && linkedOrderId) {
+    console.warn('[production_records] Order foreign key rejected; saving the full record with order_id cleared.');
+    const { error: unlinkedErr } = await supabase.from('production_records').upsert({ ...fullPayload, order_id: null }, { onConflict: 'id' });
+    if (unlinkedErr) handleSupabaseError(unlinkedErr, 'production_records');
+    return;
+  }
   if (fullErr) handleSupabaseError(fullErr, 'production_records');
 }
 
@@ -3413,10 +3503,10 @@ export async function saveSFGGoodToSupabase(item) {
     updated_at: new Date().toISOString()
   };
 
-  const isValidUUID = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(str));
-  // id is a uuid primary key with no database default. Barcode ids such as
-  // SFG-BC-ORD-... are not uuids, and omitting id makes the insert fail.
-  payload.id = item.id && isValidUUID(item.id) ? item.id : crypto.randomUUID();
+  // sfg_goods.id is a uuid. A barcode such as SFG-BC-... must not be written into it.
+  // Send the existing uuid, or a new one. The column default gen_random_uuid()
+  // is only a backstop if id is omitted.
+  payload.id = item.id && isUuid(item.id) ? item.id : crypto.randomUUID();
 
   console.log('[sfg_goods] Upserting item:', sfgBatchCode, 'Status:', computedStatus);
   const { error } = await supabase.from('sfg_goods').upsert(payload, { onConflict: 'sfg_batch_code' });
@@ -3430,7 +3520,12 @@ export async function deleteSFGGoodFromSupabase(idOrBatchCode) {
     throw new Error("Cannot delete SFG good: Supabase database connection is not available.");
   }
   await ensureValidSession();
-  const { error } = await supabase.from('sfg_goods').delete().or(`id.eq.${idOrBatchCode},sfg_batch_code.eq.${idOrBatchCode}`);
+  const key = String(idOrBatchCode);
+  // Comparing a barcode to the uuid primary key raises "invalid input syntax for type uuid".
+  const query = isUuid(key)
+    ? supabase.from('sfg_goods').delete().eq('id', key)
+    : supabase.from('sfg_goods').delete().eq('sfg_batch_code', key);
+  const { error } = await query;
   if (error) {
     handleSupabaseError(error, 'sfg_goods');
   }

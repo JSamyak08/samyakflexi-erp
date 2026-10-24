@@ -2,6 +2,39 @@ import { isSupabaseConfigured, supabase } from './supabaseClient';
 import { ensureValidSession, handleSupabaseError } from './supabaseDataService';
 
 const RETENTION_DAYS = 180; // Minimum 6 months retention
+const PLANT_TIME_ZONE = 'Asia/Kolkata';
+
+export function formatAuditTimestamp(timestamp) {
+  const dt = timestamp instanceof Date ? timestamp : new Date(timestamp || Date.now());
+  const safe = Number.isNaN(dt.getTime()) ? new Date() : dt;
+  return {
+    dateStr: safe.toLocaleDateString('en-GB', { timeZone: PLANT_TIME_ZONE }),
+    timeStr: `${safe.toLocaleTimeString('en-IN', {
+      timeZone: PLANT_TIME_ZONE,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    })} IST`
+  };
+}
+
+function mapAuditRow(d) {
+  const ts = d.created_at || new Date().toISOString();
+  const formatted = formatAuditTimestamp(ts);
+  return {
+    id: String(d.id),
+    timestamp: ts,
+    dateStr: formatted.dateStr,
+    timeStr: formatted.timeStr,
+    username: d.username || 'Admin',
+    userRole: d.user_role || 'Admin',
+    actionType: d.action_type || 'UPDATE',
+    module: d.module || 'System',
+    details: d.details || '',
+    targetId: d.target_id || null
+  };
+}
 
 /**
  * Filter out logs older than RETENTION_DAYS (180 days / 6 months)
@@ -36,36 +69,30 @@ export function mapAuditLogToDbPayload(entry) {
 /**
  * Fetch Audit Logs from the audit_logs table
  */
-export async function fetchAuditLogsFromSupabase(limit = 100) {
+export async function fetchAuditLogsPage({ limit = 100, offset = 0 } = {}) {
+  const pageSize = Math.max(1, Math.min(Number(limit) || 100, 500));
+  const start = Math.max(0, Number(offset) || 0);
   if (!isSupabaseConfigured()) {
     throw new Error('Supabase database connection is not available.');
   }
-  const { data, error } = await supabase
+  const { data, error, count } = await supabase
     .from('audit_logs')
-    .select('*')
+    .select('*', { count: 'exact' })
     .order('created_at', { ascending: false })
-    .limit(limit);
+    .range(start, start + pageSize - 1);
 
   if (error) handleSupabaseError(error, 'audit_logs');
 
-  const fetchedLogs = (data || []).map(d => {
-      const ts = d.created_at || new Date().toISOString();
-      const dt = new Date(ts);
-      return {
-        id: String(d.id),
-        timestamp: ts,
-        dateStr: dt.toLocaleDateString('en-GB'),
-        timeStr: dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-        username: d.username || 'Admin',
-        userRole: d.user_role || 'Admin',
-        actionType: d.action_type || 'UPDATE',
-        module: d.module || 'System',
-        details: d.details || '',
-        targetId: d.target_id || null
-      };
-    });
+  const fetchedLogs = (data || []).map(mapAuditRow);
+  return {
+    logs: pruneOldAuditLogs(fetchedLogs),
+    total: typeof count === 'number' ? count : fetchedLogs.length
+  };
+}
 
-  return pruneOldAuditLogs(fetchedLogs);
+export async function fetchAuditLogsFromSupabase(limit = 100) {
+  const page = await fetchAuditLogsPage({ limit, offset: 0 });
+  return page.logs;
 }
 
 /**
@@ -87,14 +114,15 @@ export async function saveAuditLogToSupabase(entry) {
  */
 export function createAuditEntry(user, actionType, module, details, targetId = null) {
   const dt = new Date();
-  const username = typeof user === 'string' ? user : (user?.name || user?.username || 'Admin');
-  const userRole = typeof user === 'object' ? (user?.role || '') : '';
+  const formatted = formatAuditTimestamp(dt);
+  const username = typeof user === 'string' ? user : (user?.name || user?.full_name || user?.username || user?.email || 'Admin');
+  const userRole = typeof user === 'object' && user ? (user?.role || '') : '';
 
   return {
     id: `LOG-2026-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
     timestamp: dt.toISOString(),
-    dateStr: dt.toLocaleDateString('en-GB'),
-    timeStr: dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    dateStr: formatted.dateStr,
+    timeStr: formatted.timeStr,
     username,
     userRole,
     actionType: actionType ? actionType.toUpperCase() : 'UPDATE',

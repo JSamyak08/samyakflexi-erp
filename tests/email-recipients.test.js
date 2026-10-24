@@ -259,6 +259,7 @@ test('notification callers are automated and the test-send button is manual', ()
     'notifyOverWastageAlert',
     'notifyGRNPendingQC',
     'notifyGRNQCEscalation12h',
+    'notifyQcOverdueDigest',
     'notifyGRNQCVarianceModified',
   ];
   for (const name of notifications) {
@@ -282,8 +283,15 @@ test('notification callers are automated and the test-send button is manual', ()
   assert.match(testSend, /kind:\s*'manual'/);
 
   const inventory = readSource('src/components/InventoryManagement.jsx');
-  assert.match(inventory, /useEffect\(\(\) => \{[\s\S]{0,600}notifyGRNQCEscalation12h/);
+  assert.doesNotMatch(inventory, /notifyGRNQCEscalation12h/);
+  assert.doesNotMatch(inventory, /dispatchOverdueQcAlerts/);
   assert.doesNotMatch(inventory, /kind:\s*'manual'/);
+
+  const digest = readSource('src/services/qcEscalationDigest.js');
+  assert.match(digest, /notifyQcOverdueDigest/);
+  const app = readSource('src/App.jsx');
+  assert.match(app, /runQcOverdueEscalationDigest/);
+  assert.doesNotMatch(app, /dispatchOverdueQcAlerts/);
 
   const indents = readSource('src/components/ConsumablesAndIndents.jsx');
   assert.match(indents, /notifyPurchaseIndentCreated\(/);

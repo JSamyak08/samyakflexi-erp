@@ -132,7 +132,8 @@ export const buildEmailTemplate = ({ title, badgeText, badgeBg = '#0284c7', cont
 const getActiveTemplate = (templateKey, vars = {}) => {
   const templates = getEmailTemplates();
   const tmpl = templates[templateKey];
-  if (!tmpl) return null;
+  // A disabled template must not fall through to a hardcoded "enabled" body.
+  if (!tmpl || tmpl.enabled === false) return null;
 
   return {
     ...tmpl,
@@ -538,15 +539,8 @@ export const notifyGRNPendingQC = async ({ grn, users = [], customTo }) => {
     barcodes: barcodeListStr
   };
 
-  const tmpl = getActiveTemplate('grn_pending_qc', vars) || {
-    eventTitle: `🧪 Inward GRN Pending Quality Inspection: #${vars.grnNo}`,
-    subject: `🧪 Action Required: Inward GRN #${vars.grnNo} Pending QC Approval — ${vars.vendorName}`,
-    badgeText: 'Action Task: Pending QC Inspection',
-    badgeBgColor: '#d97706',
-    enabled: true
-  };
-
-  if (tmpl.enabled === false) return { success: false, message: 'Notification disabled.' };
+  const tmpl = getActiveTemplate('grn_pending_qc', vars);
+  if (!tmpl) return { success: false, message: 'Notification disabled.' };
 
   const contentHtml = `
     <p style="font-size: 14px; color: #334155;">
@@ -618,15 +612,8 @@ export const notifyGRNQCEscalation12h = async ({ grn, hoursPending = 12, users =
     storeManager: grn.storeManager || 'Store Manager'
   };
 
-  const tmpl = getActiveTemplate('grn_qc_escalation_12h', vars) || {
-    eventTitle: `🚨 SLA URGENT ALERT: QC Approval Overdue (>12 Hours) — GRN #${vars.grnNo}`,
-    subject: `🚨 OVERDUE QC APPROVAL ALERT (>12 hrs): GRN #${vars.grnNo} — ${vars.vendorName}`,
-    badgeText: '🚨 SLA Escalation Alert: QC Overdue',
-    badgeBgColor: '#dc2626',
-    enabled: true
-  };
-
-  if (tmpl.enabled === false) return { success: false, message: 'Notification disabled.' };
+  const tmpl = getActiveTemplate('grn_qc_escalation_12h', vars);
+  if (!tmpl) return { success: false, message: 'Notification disabled.' };
 
   const contentHtml = `
     <div style="background: #fef2f2; border: 1px solid #fca5a5; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
@@ -676,6 +663,92 @@ export const notifyGRNQCEscalation12h = async ({ grn, hoursPending = 12, users =
     subject: tmpl.subject,
     html,
     text: `URGENT QC OVERDUE ALERT: GRN #${vars.grnNo} for ${vars.itemName} has been pending QC approval for ${vars.hoursPending} hours (>12h SLA limit).`
+  });
+};
+
+function escapeEmailHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[ch]));
+}
+
+/**
+ * One email listing every GRN claimed for today's QC-overdue digest.
+ * The template enabled flag is honoured. A disabled template sends nothing.
+ */
+export const notifyQcOverdueDigest = async ({ grns = [], users = [], customTo } = {}) => {
+  const list = Array.isArray(grns) ? grns : [];
+  if (list.length === 0) return { success: false, message: 'No overdue GRNs.' };
+
+  const countLabel = list.length === 1 ? (list[0].grnNo || list[0].id || '1 GRN') : `${list.length} GRNs`;
+  const vars = {
+    grnNo: countLabel,
+    vendorName: 'daily digest',
+    invoiceNo: '',
+    receivedDate: '',
+    itemName: `${list.length} overdue`,
+    category: '',
+    netWeightKg: '',
+    batchNo: '',
+    hoursPending: String(Math.max(...list.map(grn => Number(grn.hoursPending) || 12))),
+    storeManager: ''
+  };
+
+  const tmpl = getActiveTemplate('grn_qc_escalation_12h', vars);
+  if (!tmpl) return { success: false, message: 'Notification disabled.' };
+
+  const escalationEmails = getEmailsForRoles(
+    users,
+    ['Admin', 'Plant Manager', 'Production Manager', 'Quality Manager', 'QC Chemist', 'Quality', 'QC'],
+    'admin@samyakinternational.in, quality@samyakinternational.in'
+  );
+
+  const rows = list.map(grn => {
+    const qty = Number(grn.netWeightKg || grn.receivedQtyKg || 0).toLocaleString('en-IN');
+    return `<tr>
+      <td><strong>${escapeEmailHtml(grn.grnNo || grn.id)}</strong></td>
+      <td>${escapeEmailHtml(grn.vendorName || 'Supplier')}</td>
+      <td>${escapeEmailHtml(grn.itemName || '')}</td>
+      <td>${escapeEmailHtml(`${qty} ${grn.unit || 'Kg'}`)}</td>
+      <td>${escapeEmailHtml(grn.hoursPending)} h</td>
+      <td>${escapeEmailHtml(grn.invoiceNo || '')}</td>
+    </tr>`;
+  }).join('');
+
+  const contentHtml = `
+    <div style="background: #fef2f2; border: 1px solid #fca5a5; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+      <h3 style="color: #991b1b; font-size: 16px; margin: 0 0 6px 0;">QC approvals overdue by more than 12 hours</h3>
+      <p style="color: #7f1d1d; font-size: 13px; margin: 0;">${list.length} goods receipt ${list.length === 1 ? 'note is' : 'notes are'} still waiting for quality clearance. This is the only escalation email for today.</p>
+    </div>
+    <table class="data-table">
+      <thead><tr><th>GRN</th><th>Vendor</th><th>Item</th><th>Qty</th><th>Pending</th><th>Invoice</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+
+  const html = buildEmailTemplate({
+    title: list.length === 1 ? tmpl.eventTitle : `QC overdue digest — ${list.length} GRNs`,
+    badgeText: tmpl.badgeText,
+    badgeBg: tmpl.badgeBgColor || '#dc2626',
+    contentHtml,
+    footerNote: tmpl.footerNote
+  });
+
+  const subject = list.length === 1
+    ? tmpl.subject
+    : `QC overdue digest: ${list.length} GRNs pending more than 12 hours`;
+
+  return await sendERPEmailNotification({
+    kind: 'automated',
+    to: customTo || escalationEmails,
+    cc: tmpl.ccEmail || 'admin@samyakinternational.in',
+    subject,
+    html,
+    text: `QC overdue digest (${list.length}): ${list.map(grn => `${grn.grnNo || grn.id} (${grn.hoursPending}h)`).join(', ')}`
   });
 };
 

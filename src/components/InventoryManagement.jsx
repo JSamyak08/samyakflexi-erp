@@ -49,8 +49,7 @@ import SearchableSelect from './SearchableSelect';
 import SFGFGEntryModal, { SFG_TYPES, FG_TYPES } from './SFGFGEntryModal';
 import { getNextDocRefNumber, generateDocRefNumber, getInventoryAgeingSettings, getDocumentPrefixes } from '../services/settingsService';
 import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo, sortBatchesByFifo, getItemInwardDate, parseDateFlexible } from '../utils/fifoUtils';
-import { notifyGRNPendingQC, notifyGRNQCEscalation12h, notifyGRNQCVarianceModified } from '../services/emailService';
-import { dispatchOverdueQcAlerts } from '../services/qcEscalationGuard';
+import { notifyGRNPendingQC, notifyGRNQCVarianceModified } from '../services/emailService';
 
 import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, allocateGrnNumber } from '../services/supabaseDataService';
 import {
@@ -310,22 +309,9 @@ export default function InventoryManagement({
     return sortInventoryByFifo(rawMaterialsOnly, safeGrns, inventoryRolls);
   }, [inventory, safeGrns, inventoryRolls]);
 
-  // One overdue-QC alert per GRN for this tab. A failed send is not retried,
-  // and a re-render does not start another. See qcEscalationGuard.js.
-  useEffect(() => {
-    if (!safeGrns || safeGrns.length === 0) return undefined;
-    let cancelled = false;
-    dispatchOverdueQcAlerts({
-      grns: safeGrns,
-      users,
-      notify: notifyGRNQCEscalation12h,
-      onUpdateGRN,
-      isCancelled: () => cancelled,
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [safeGrns, users, onUpdateGRN]);
+  // QC-overdue mail is not sent from this page. A single daily digest runs
+  // after GRNs load (see runQcOverdueEscalationDigest). Opening Inventory
+  // must not email anyone.
 
   // Group inventory items by Item Name / Specs so films of same 'Item Name' but different Inventory Code/ID are consolidated into the same Item row
   const groupedInventory = useMemo(() => {
@@ -4993,7 +4979,7 @@ export default function InventoryManagement({
         {/* Sub Tab Pills (Fully Visible Flex Wrap Grid - No Sliding UI) */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', width: '100%' }}>
           <button className={`tab-pill ${activeTab === 'stock' ? 'active' : ''}`} onClick={() => handleTabClick('stock')}>
-            <Package size={16} /> Stock Register ({(inventory || []).length})
+            <Package size={16} /> Stock Register ({filteredInventory.length})
           </button>
           <button className={`tab-pill ${activeTab === 'issued_pos' ? 'active' : ''}`} onClick={() => handleTabClick('issued_pos')}>
             <FileText size={16} style={{ color: '#4f46e5' }} /> Issued Purchase Orders Hub ({(unifiedIssuedPOs || []).length})
@@ -5518,7 +5504,7 @@ export default function InventoryManagement({
               <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginLeft: '12px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <span>Total Items: <b>{filteredInventory.length} Listed</b></span>
                 <span style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', padding: '4px 10px', borderRadius: '6px', fontWeight: '700', fontSize: '0.82rem' }}>
-                  💰 Total Stock Valuation: ₹ {safeInventory.reduce((sum, i) => sum + ((parseFloat(i.availableQtyKg) || 0) * (parseFloat(i.unitPrice || i.purchaseRatePerKg) || 0)), 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                  💰 Total Stock Valuation: ₹ {safeInventory.reduce((sum, i) => sum + ((parseFloat(i.availableQtyKg) || 0) * (parseFloat(i.unitPrice || i.purchaseRatePerKg) || 0)), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
             </div>
@@ -5632,10 +5618,10 @@ export default function InventoryManagement({
                         )}
                       </td>
                       <td style={{ fontWeight: '700', color: '#1e293b' }}>
-                        ₹{rate > 0 ? (rate || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '-'} / {unitStr}
+                        ₹{rate > 0 ? (rate || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'} / {unitStr}
                       </td>
                       <td style={{ fontWeight: '800', color: '#047857' }}>
-                        ₹{itemValuation > 0 ? (itemValuation || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '0.00'}
+                        ₹{itemValuation > 0 ? (itemValuation || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
                       </td>
                       <td style={{ color: 'var(--text-secondary)' }}>
                         {(effectiveAllocated ?? 0).toLocaleString()} {unitStr}
@@ -7489,7 +7475,7 @@ export default function InventoryManagement({
 
                     {parseFloat(grnPurchaseRate) > 0 && (
                       <div style={{ fontSize: '0.82rem', borderLeft: '1px solid #334155', paddingLeft: '14px', color: '#38bdf8' }}>
-                        Inward Value: <strong>₹{((grnCalculatedTotals.totalNet || 0) * (parseFloat(grnPurchaseRate) || 0)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
+                        Inward Value: <strong>₹{((grnCalculatedTotals.totalNet || 0) * (parseFloat(grnPurchaseRate) || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                       </div>
                     )}
                   </div>
@@ -7653,7 +7639,7 @@ export default function InventoryManagement({
                     <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Individual Units / Barcodes</span><strong style={{ color: '#059669', fontWeight: '800' }}>{p.unitCount} Unit(s) (Separate Barcodes)</strong></div>
                     <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Total Inward Net Qty</span><strong style={{ color: '#0f172a', fontWeight: '800' }}>{(p.totalNetQty ?? 0).toLocaleString()} {p.newGRN.unit || 'Kg'}</strong></div>
                     <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Purchase Rate</span><strong style={{ color: '#0f172a', fontWeight: '700' }}>₹{p.rateVal} / {p.newGRN.unit || 'Kg'}</strong></div>
-                    <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Total Purchase Valuation</span><strong style={{ color: '#2563eb', fontWeight: '800' }}>₹{(p.totalAmountVal ?? 0).toLocaleString('en-IN')}</strong></div>
+                    <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Total Purchase Valuation</span><strong style={{ color: '#2563eb', fontWeight: '800' }}>₹{(p.totalAmountVal ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
                   </div>
                 </div>
 
@@ -10136,7 +10122,7 @@ export default function InventoryManagement({
 
                             {/* Rate & Total Value */}
                             <td>
-                              <div style={{ fontWeight: '700', color: tx.isPendingQC ? '#b45309' : '#047857' }}>₹ {((tx.totalValue ?? 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                              <div style={{ fontWeight: '700', color: tx.isPendingQC ? '#b45309' : '#047857' }}>₹ {((tx.totalValue ?? 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                               <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>₹ {((tx.ratePerKg ?? 0)).toFixed(2)}/{unitStr}</div>
                             </td>
                           </tr>

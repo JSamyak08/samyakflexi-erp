@@ -1,14 +1,8 @@
-// Interim stop for the Inventory overdue-QC mail loop (B-028).
-//
-// PR #2 (cursor/fix-functional-bugs-7215) removes the Inventory auto-send
-// and replaces it with a once-per-plant-day digest in qcEscalationDigest.js.
-// That digest stamps grns.escalated_at and sends nothing until the column
-// exists. The column migration is not applied. This guard is the stand-in:
-// one attempt per GRN for this browser tab, kept even when the send fails.
-//
-// The session key is intentionally not samyak_qc_escalation_digest_day.
-// When PR #2 merges, delete the Inventory effect and this module so the
-// digest is the only sender. Do not run both.
+// Stand-in that used to send one overdue-QC email per GRN from the Inventory
+// page. The app no longer calls it. Boot sends one plant-day digest from
+// qcEscalationDigest.js instead. scripts/verify-qc-alert.mjs still exercises
+// this module. Do not wire it back into Inventory while the digest is live:
+// the two senders would both email.
 
 export const QC_ESCALATION_SESSION_KEY = 'samyak_qc_escalation_attempted_v1';
 

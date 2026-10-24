@@ -2158,13 +2158,13 @@ export default function ConsumablesAndIndents({
               {/* PO Live Value Calculation Summary */}
               <div style={{ background: '#f8fafc', padding: '14px 18px', borderRadius: '8px', border: '1px solid #e2e8f0', margin: '18px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                 <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                  <div>Taxable Subtotal: <b>₹ {((parseFloat(poQty) || 0) * (parseFloat(poUnitPrice) || 0)).toLocaleString('en-IN')}</b></div>
-                  <div style={{ marginTop: '2px' }}>GST Amount ({poGstPct}%): <b>₹ {(((parseFloat(poQty) || 0) * (parseFloat(poUnitPrice) || 0) * parseFloat(poGstPct || 18)) / 100).toLocaleString('en-IN')}</b></div>
+                  <div>Taxable Subtotal: <b>₹ {((parseFloat(poQty) || 0) * (parseFloat(poUnitPrice) || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b></div>
+                  <div style={{ marginTop: '2px' }}>GST Amount ({poGstPct}%): <b>₹ {(((parseFloat(poQty) || 0) * (parseFloat(poUnitPrice) || 0) * parseFloat(poGstPct || 18)) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b></div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>NET PURCHASE ORDER VALUE</div>
                   <div style={{ fontSize: '1.3rem', fontWeight: '900', color: '#047857' }}>
-                    ₹ {(((parseFloat(poQty) || 0) * (parseFloat(poUnitPrice) || 0)) * (1 + parseFloat(poGstPct || 18) / 100)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    ₹ {(((parseFloat(poQty) || 0) * (parseFloat(poUnitPrice) || 0)) * (1 + parseFloat(poGstPct || 18) / 100)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
                 </div>
               </div>

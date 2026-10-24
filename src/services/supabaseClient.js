@@ -137,6 +137,18 @@ export const supabase = new Proxy({}, {
 });
 
 /**
+ * Race a promise against a timeout. The underlying request is not aborted;
+ * callers use this so a hung probe cannot block the dashboard loader.
+ */
+export function withTimeout(promise, ms, label = 'operation') {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+/**
  * Test connectivity to Supabase (both PostgreSQL tables and Storage Buckets)
  */
 export const checkSupabaseConnection = async () => {
@@ -163,8 +175,13 @@ export const checkSupabaseConnection = async () => {
   try {
     const client = getSupabaseClient();
     
-    // 1. Check PostgreSQL Database Connectivity
-    const { error: dbError } = await client.from('orders').select('count', { count: 'exact', head: true });
+    // 1. Check PostgreSQL Database Connectivity. Bound the probe so a hung request
+    // cannot leave the dashboard loader on "checking" for minutes.
+    const { error: dbError } = await withTimeout(
+      client.from('orders').select('count', { count: 'exact', head: true }),
+      6000,
+      'database health check'
+    );
     
     if (dbError && (dbError.code === 'PGRST301' || dbError.code === 'PGRST204')) {
       result.connected = true;
@@ -189,9 +206,13 @@ export const checkSupabaseConnection = async () => {
       result.message = 'Successfully connected to Supabase database!';
     }
 
-    // 2. Check Cloud Storage Buckets Connectivity
+    // 2. Check Cloud Storage Buckets Connectivity. Storage must not block the DB result.
     try {
-      const { data: buckets, error: storageError } = await client.storage.listBuckets();
+      const { data: buckets, error: storageError } = await withTimeout(
+        client.storage.listBuckets(),
+        2000,
+        'storage health check'
+      );
       if (!storageError && Array.isArray(buckets)) {
         const erpBucket = buckets.find(b => b.name === 'erp-files' || b.name === 'artwork' || b.name === 'artworks');
         if (erpBucket) {
@@ -203,7 +224,11 @@ export const checkSupabaseConnection = async () => {
         }
       } else {
         // Direct probe on 'erp-files' or 'artwork'
-        const { data: files } = await client.storage.from('erp-files').list('', { limit: 1 });
+        const { data: files } = await withTimeout(
+          client.storage.from('erp-files').list('', { limit: 1 }),
+          2000,
+          'storage bucket probe'
+        );
         if (files) {
           result.storageOnline = true;
           result.storageBucket = 'erp-files';

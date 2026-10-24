@@ -946,7 +946,7 @@ export default function SalesManagement({
       if (isCylinderQuote) {
         const cylinderSku = `CYL-${qtn.clientName.substring(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
         const engraverName = item.engraverName || 'Jindal Engravers, Mathura';
-        const cylinderCost = `₹ ${parseFloat(item.cylinderCost || 35000).toLocaleString()}`;
+        const cylinderCost = `₹ ${parseFloat(item.cylinderCost || 35000).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
         const newCyl = {
           id: `CYL-REC-${Date.now()}-${itemIdx}`,
@@ -1230,7 +1230,7 @@ export default function SalesManagement({
         <div className="glass-panel" style={{ padding: '20px' }}>
           <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: '700' }}>TOTAL QUOTATION PIPELINE VALUE</div>
           <div style={{ fontSize: '1.6rem', fontWeight: '900', color: '#7c3aed', marginTop: '4px' }}>
-            ₹ {(Math.round(totalPipelineValueRs || 0)).toLocaleString('en-IN')}
+            ₹ {(Math.round(totalPipelineValueRs || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>Inclusive of 18% GST</div>
         </div>
@@ -1350,7 +1350,11 @@ export default function SalesManagement({
                         </td>
                         <td>
                           <div style={{ fontWeight: '800' }}>{qtn.clientName}</div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Contact: {qtn.contactPerson} ({qtn.contactPhone})</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                            Contact: {String(qtn.contactPerson || '').trim() || String(qtn.contactPhone || '').trim()
+                              ? `${String(qtn.contactPerson || '').trim()}${String(qtn.contactPerson || '').trim() && String(qtn.contactPhone || '').trim() ? ' ' : ''}${String(qtn.contactPhone || '').trim() ? `(${qtn.contactPhone})` : ''}`
+                              : '—'}
+                          </div>
                         </td>
                         <td>
                           <div style={{ fontWeight: '700', fontSize: '0.85rem' }}>{mainItem.jobTitle}</div>
@@ -1363,7 +1367,7 @@ export default function SalesManagement({
                         </td>
                         <td>
                           <div style={{ fontWeight: '800', color: 'var(--primary-brand)', fontSize: '0.95rem' }}>
-                            ₹ {(Math.round(totalVal || 0)).toLocaleString('en-IN')}
+                            ₹ {(Math.round(totalVal || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                             {(mainItem.quantity || 0).toLocaleString()} {mainItem.uom} @ ₹{mainItem.ratePerUom}/UOM
@@ -2159,7 +2163,7 @@ export default function SalesManagement({
                           />
                         </td>
                         <td style={{ verticalAlign: 'top', padding: '12px 8px', fontWeight: '800', color: 'var(--primary-brand)', fontSize: '0.85rem' }}>
-                          ₹ {(Math.round(total || 0)).toLocaleString('en-IN')}
+                          ₹ {(Math.round(total || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
                         <td style={{ verticalAlign: 'top', padding: '8px', textAlign: 'center' }}>
                           {items.length > 1 && (
@@ -2690,18 +2694,18 @@ export default function SalesManagement({
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px' }}>
                         <div>
                           <span style={{ fontSize: '0.72rem', color: '#065f46', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Total Selling Value</span>
-                          <strong style={{ fontSize: '1rem', color: '#047857' }}>₹ {(totalSellingVal || 0).toLocaleString('en-IN')}</strong>
+                          <strong style={{ fontSize: '1rem', color: '#047857' }}>₹ {(totalSellingVal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                         </div>
 
                         <div>
                           <span style={{ fontSize: '0.72rem', color: '#065f46', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Raw Material Cost</span>
-                          <strong style={{ fontSize: '1rem', color: '#b91c1c' }}>₹ {(totalMatCost || 0).toLocaleString('en-IN')}</strong>
+                          <strong style={{ fontSize: '1rem', color: '#b91c1c' }}>₹ {(totalMatCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                         </div>
 
                         <div>
                           <span style={{ fontSize: '0.72rem', color: '#065f46', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>Gross Pre-Cost Margin</span>
                           <strong style={{ fontSize: '1rem', color: (grossMargin || 0) >= 0 ? '#047857' : '#dc2626' }}>
-                            ₹ {(grossMargin || 0).toLocaleString('en-IN')} ({marginPct}%)
+                            ₹ {(grossMargin || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({marginPct}%)
                           </strong>
                         </div>
 

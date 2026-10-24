@@ -1628,7 +1628,6 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                       </div>
                     </div>
                   </div>
-
                   {/* Production Ingredients Example */}
                   <div style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: '12px', padding: '16px 24px' }}>
                     <div style={{ fontSize: '0.8rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
@@ -1637,15 +1636,15 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', fontSize: '0.85rem' }}>
                       <div>
                         <span style={{ color: '#64748b' }}>Adhesive:</span>{' '}
-                        <strong>{testAdhKg} kg × ₹ {testAdhRate}/kg = ₹ {adhCost.toLocaleString()}</strong>
+                        <strong>{testAdhKg} kg × ₹ {testAdhRate}/kg = ₹ {adhCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                       </div>
                       <div>
                         <span style={{ color: '#64748b' }}>Paper Core:</span>{' '}
-                        <strong>{testCoreKg} kg × ₹ {testCoreRate}/kg = ₹ {coreCost.toLocaleString()}</strong>
+                        <strong>{testCoreKg} kg × ₹ {testCoreRate}/kg = ₹ {coreCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                       </div>
                       <div style={{ borderLeft: '2px solid #cbd5e1', paddingLeft: '16px' }}>
                         <span style={{ color: '#475569', fontWeight: '700' }}>Total Added to Record:</span>{' '}
-                        <strong style={{ color: '#1e293b' }}>+ ₹ {totalAdded.toLocaleString()}</strong>
+                        <strong style={{ color: '#1e293b' }}>+ ₹ {totalAdded.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                       </div>
                     </div>
                   </div>

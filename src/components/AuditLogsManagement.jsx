@@ -21,10 +21,40 @@ import { pruneOldAuditLogs } from '../services/auditLogger';
 import TablePagination, { usePagination } from './TablePagination';
 import SearchableSelect from './SearchableSelect';
 
+function resolveAuditActor(log, users = []) {
+  let name = String(log?.username || '').trim();
+  let role = String(log?.userRole || '').trim();
+  const placeholderName = !name || name === 'Admin' || name === 'System';
+  if (placeholderName) {
+    const match = String(log?.details || '').match(/User\s+(.+?)\s+signed\s+(?:in|out)\b/i);
+    if (match && match[1]) name = match[1].trim();
+  }
+  const directory = Array.isArray(users) ? users : [];
+  const known = directory.find(user => {
+    const candidates = [user?.name, user?.full_name, user?.username, user?.email]
+      .filter(Boolean)
+      .map(value => String(value).trim().toLowerCase());
+    return candidates.includes(String(name || '').toLowerCase());
+  });
+  if (known) {
+    name = known.name || known.full_name || name;
+    if (placeholderName || !role || role === 'Admin') {
+      role = known.role || role;
+    }
+  }
+  return {
+    name: name || 'System',
+    role: role || '—'
+  };
+}
+
 export default function AuditLogsManagement({ 
   auditLogs = [], 
+  auditLogTotal = 0,
+  users = [],
   currentUser, 
   onRefreshLogs, 
+  onLoadMoreLogs,
   onPurgeOldLogs 
 }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -32,6 +62,7 @@ export default function AuditLogsManagement({
   const [selectedAction, setSelectedAction] = useState('All');
   const [selectedDateRange, setSelectedDateRange] = useState('All');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   // Filter logs by search term, module, action type, and date range
   const filteredLogs = useMemo(() => {
@@ -99,6 +130,19 @@ export default function AuditLogsManagement({
     setIsRefreshing(true);
     if (onRefreshLogs) await onRefreshLogs();
     setTimeout(() => setIsRefreshing(false), 500);
+  };
+
+  const storedTotal = Math.max(Number(auditLogTotal) || 0, (auditLogs || []).length);
+  const canLoadMore = typeof onLoadMoreLogs === 'function' && (auditLogs || []).length < storedTotal;
+
+  const handleLoadMore = async () => {
+    if (!canLoadMore || isLoadingMore) return;
+    setIsLoadingMore(true);
+    try {
+      await onLoadMoreLogs();
+    } finally {
+      setIsLoadingMore(false);
+    }
   };
 
   // Export CSV
@@ -305,7 +349,7 @@ export default function AuditLogsManagement({
       <div className="glass-panel" style={{ padding: '20px', overflowX: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <h3 style={{ fontSize: '1rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Activity size={18} style={{ color: 'var(--primary-brand)' }} /> Recorded Activity Trail ({filteredLogs.length} entries)
+            <Activity size={18} style={{ color: 'var(--primary-brand)' }} /> Recorded Activity Trail ({filteredLogs.length} loaded{storedTotal > filteredLogs.length ? ` of ${storedTotal}` : ''})
           </h3>
           {onPurgeOldLogs && (
             <button className="btn-secondary" style={{ fontSize: '0.8rem', padding: '6px 12px', color: 'var(--danger)' }} onClick={onPurgeOldLogs}>
@@ -324,7 +368,7 @@ export default function AuditLogsManagement({
           <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '2px solid var(--border-color)', textAlign: 'left' }}>
-                <th style={{ padding: '12px' }}>Date & Time</th>
+                <th style={{ padding: '12px' }}>Date & Time (IST)</th>
                 <th style={{ padding: '12px' }}>User & Role</th>
                 <th style={{ padding: '12px' }}>Action</th>
                 <th style={{ padding: '12px' }}>Module</th>
@@ -335,19 +379,20 @@ export default function AuditLogsManagement({
             <tbody>
               {logsPagination.paginatedItems.map(log => {
                 const badgeStyle = getActionBadgeStyle(log.actionType);
+                const actor = resolveAuditActor(log, users);
                 return (
                   <tr key={log.id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.15s' }}>
-                    <td style={{ padding: '12px', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '12px', whiteSpace: 'nowrap' }} className="no-capitalize">
                       <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{log.dateStr}</div>
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{log.timeStr}</div>
                     </td>
 
-                    <td style={{ padding: '12px', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '12px', whiteSpace: 'nowrap' }} className="no-capitalize">
                       <div style={{ fontWeight: '700', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <User size={14} style={{ color: 'var(--primary-brand)' }} /> {log.username}
+                        <User size={14} style={{ color: 'var(--primary-brand)' }} /> {actor.name}
                       </div>
                       <span className="badge" style={{ fontSize: '0.7rem', padding: '2px 6px', background: '#f1f5f9', color: '#475569', marginTop: '2px', display: 'inline-block' }}>
-                        {log.userRole || 'Admin'}
+                        {actor.role}
                       </span>
                     </td>
 
@@ -397,6 +442,13 @@ export default function AuditLogsManagement({
             onPageChange={logsPagination.setCurrentPage}
             onPageSizeChange={logsPagination.setPageSize}
           />
+        )}
+        {canLoadMore && (
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: '16px' }}>
+            <button className="btn-secondary" onClick={handleLoadMore} disabled={isLoadingMore}>
+              {isLoadingMore ? 'Loading…' : `Load more (${(auditLogs || []).length} of ${storedTotal})`}
+            </button>
+          </div>
         )}
       </div>
     </div>

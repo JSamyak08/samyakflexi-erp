@@ -822,7 +822,7 @@ export default function UniversalBarcodeScannerModal({
           { label: 'Payment Terms', value: matchedPoData.terms || '30 Days Net' },
           { label: 'Total Material Items', value: `${itemsList.length} Items` },
           { label: 'Total Ordered Quantity', value: `${(totalPoQty || 0).toLocaleString()} kg`, isHighlight: true },
-          ...(totalPoAmt > 0 ? [{ label: 'Total Order Value (Taxable)', value: `₹ ${(totalPoAmt || 0).toLocaleString()}` }] : []),
+          ...(totalPoAmt > 0 ? [{ label: 'Total Order Value (Taxable)', value: `₹ ${(totalPoAmt || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` }] : []),
           { label: 'Delivery / Special Terms', value: matchedPoData.remarks || 'Standard flexible packaging raw material terms apply.' }
         ]
       };

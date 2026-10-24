@@ -158,11 +158,19 @@ export function calculateGSTBreakdown(gstin = '', address = '', taxableAmount = 
  * Example: "RK enterprises" -> "RK Enterprises"
  * Example: "sonu jaljeera shots inner" -> "Sonu Jaljeera Shots Inner"
  */
+const UUID_TOKEN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function shouldPreserveToken(token) {
+  const bare = String(token || '').replace(/^[("'`]+|[)"'`,.;:]+$/g, '');
+  return bare.includes('@') || UUID_TOKEN.test(bare);
+}
+
 export function toTitleCase(str) {
   if (!str || typeof str !== 'string') return str || '';
+  if (shouldPreserveToken(str.trim())) return str;
   return str.split(/(\s+)/).map(part => {
-    if (/\s+/.test(part)) return part;
-    if (part === part.toUpperCase()) return part;
+    if (/\s+/.test(part) || shouldPreserveToken(part)) return part;
+    if (part === part.toUpperCase() && /[A-Z]/.test(part)) return part;
     return part.charAt(0).toUpperCase() + part.slice(1);
   }).join('');
 }

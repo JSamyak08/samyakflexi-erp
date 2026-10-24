@@ -378,9 +378,9 @@ export default function UserManagement({
               <tbody>
                 {usersPagination.paginatedItems.map(u => (
                   <tr key={u.id}>
-                    <td style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>{u.id}</td>
+                    <td className="no-capitalize" style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>{u.id}</td>
                     <td style={{ fontWeight: '600' }}>{u.name}</td>
-                    <td style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{u.email}</td>
+                    <td className="no-capitalize" style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{u.email}</td>
                     <td>
                       <span className={`badge ${u.role === 'Admin' ? 'badge-warning' : u.role === 'Plant Manager' ? 'badge-client' : u.role === 'Store Manager' ? 'badge-us' : 'badge-both'}`}>
                         {u.role}

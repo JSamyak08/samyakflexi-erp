@@ -1093,7 +1093,7 @@ export default function EmployeeManagement({
 
     const actionText = isApproved ? 'Approve' : 'Reject';
     const confirmMsg = isApproved
-      ? `Confirm Overtime Approval for ${empName}?\n• Date: ${attRecord.date}\n• Hours: ${attRecord.overtimeHours} hrs\n• Salary Payout Addition: ₹ ${(payout || 0).toLocaleString()}\n\nClick OK to approve and credit into monthly salary.`
+      ? `Confirm Overtime Approval for ${empName}?\n• Date: ${attRecord.date}\n• Hours: ${attRecord.overtimeHours} hrs\n• Salary Payout Addition: ₹ ${(payout || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\nClick OK to approve and credit into monthly salary.`
       : `Confirm Overtime Rejection for ${empName}?\n• Date: ${attRecord.date}\n• Hours: ${attRecord.overtimeHours} hrs\n\nClick OK to reject this overtime request.`;
 
     if (!window.confirm(confirmMsg)) return;
@@ -1107,7 +1107,7 @@ export default function EmployeeManagement({
     };
     try {
       await persistAttendance(updated);
-      alert(`Overtime request for ${empName} on ${attRecord.date} has been ${updated.overtimeStatus} (₹${(payout || 0).toLocaleString()})!`);
+      alert(`Overtime request for ${empName} on ${attRecord.date} has been ${updated.overtimeStatus} (₹${(payout || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})!`);
     } catch (error) {
       alert(`Could not save attendance. ${attendanceSaveErrorText(error)}`);
     }
@@ -1125,7 +1125,7 @@ export default function EmployeeManagement({
     const { payout } = getRecordOtPayout(attRecord, employees);
 
     const confirmMsg = currentStatus === 'Approved'
-      ? `⚠️ REVERT OVERTIME APPROVAL?\n\nEmployee: ${empName} (${emp?.empCode || emp?.id})\nDate: ${attRecord.date} | Hours: ${attRecord.overtimeHours} hrs\nApproved Payout: ₹ ${(payout || 0).toLocaleString()}\n\nReverting will reset the status back to 'Pending Approval' and IMMEDIATELY DEDUCT ₹ ${(payout || 0).toLocaleString()} from ${empName}'s calculated monthly salary.\n\nDo you want to proceed?`
+      ? `⚠️ REVERT OVERTIME APPROVAL?\n\nEmployee: ${empName} (${emp?.empCode || emp?.id})\nDate: ${attRecord.date} | Hours: ${attRecord.overtimeHours} hrs\nApproved Payout: ₹ ${(payout || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\nReverting will reset the status back to 'Pending Approval' and IMMEDIATELY DEDUCT ₹ ${(payout || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} from ${empName}'s calculated monthly salary.\n\nDo you want to proceed?`
       : `Revert overtime rejection for ${empName} on ${attRecord.date}?\nStatus will be reset to 'Pending Approval' for reconsideration.`;
 
     if (!window.confirm(confirmMsg)) return;
@@ -1146,7 +1146,7 @@ export default function EmployeeManagement({
     }
 
     if (currentStatus === 'Approved') {
-      alert(`✅ Approval reverted for ${empName}!\n₹ ${(payout || 0).toLocaleString()} has been deducted from their salary calculation.`);
+      alert(`✅ Approval reverted for ${empName}!\n₹ ${(payout || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} has been deducted from their salary calculation.`);
     } else {
       alert(`✅ Rejection reverted for ${empName}. Request is now Pending Approval.`);
     }
@@ -1247,7 +1247,7 @@ export default function EmployeeManagement({
       );
 
       if (activeExistingAdvance) {
-        alert(`⚠️ Advance Blocked: ${selectedEmp.fullName} already has an active outstanding advance (${activeExistingAdvance.id}) with ₹${(Number(activeExistingAdvance.remainingBalance || activeExistingAdvance.advanceAmount) || 0).toLocaleString()} remaining dues! New advances cannot be requested until previous dues are 100% completed.`);
+        alert(`⚠️ Advance Blocked: ${selectedEmp.fullName} already has an active outstanding advance (${activeExistingAdvance.id}) with ₹${(Number(activeExistingAdvance.remainingBalance || activeExistingAdvance.advanceAmount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} remaining dues! New advances cannot be requested until previous dues are 100% completed.`);
         return;
       }
     }
@@ -1299,7 +1299,7 @@ export default function EmployeeManagement({
     setAdvEmpId('');
     setAdvAmount('');
     setAdvReason('');
-    alert(`Salary Advance ${editingAdvance ? 'Updated' : 'Request recorded'} for ${selectedEmp.fullName} (₹${(amt || 0).toLocaleString()})!`);
+    alert(`Salary Advance ${editingAdvance ? 'Updated' : 'Request recorded'} for ${selectedEmp.fullName} (₹${(amt || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})!`);
   };
 
   // Approve Salary Advance
@@ -1317,7 +1317,7 @@ export default function EmployeeManagement({
     };
     if (onUpdateSalaryAdvance) onUpdateSalaryAdvance(updated);
     saveSalaryAdvanceToSupabase(updated);
-    alert(`Salary Advance of ₹${(adv.advanceAmount || 0).toLocaleString()} for ${adv.employeeName} approved & disbursed! Monthly EMI: ₹${adv.monthlyEmiAmount}`);
+    alert(`Salary Advance of ₹${(adv.advanceAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} for ${adv.employeeName} approved & disbursed! Monthly EMI: ₹${adv.monthlyEmiAmount}`);
   };
 
   // Open Payment Disbursal Modal with Advance Recovery Option
@@ -1375,7 +1375,7 @@ export default function EmployeeManagement({
         return;
       }
       if (enteredAmt > remBal) {
-        alert(`Advance recovery amount (₹${enteredAmt.toLocaleString()}) cannot exceed remaining balance (₹${remBal.toLocaleString()}).`);
+        alert(`Advance recovery amount (₹${enteredAmt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) cannot exceed remaining balance (₹${remBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}).`);
         return;
       }
       actualAdvanceDeduction = Math.min(enteredAmt, remBal);
@@ -1403,7 +1403,7 @@ export default function EmployeeManagement({
       accountNumber: paymentEmpData?.bankDetails?.accountNumber || '',
       status: 'Paid',
       disbursedBy: currentUser?.name || 'Samyak Jain (Admin)',
-      notes: paymentNotes.trim() + (actualAdvanceDeduction > 0 ? ` (₹${actualAdvanceDeduction.toLocaleString()} advance recovered)` : (targetAdvance ? ' (Advance recovery skipped this month)' : '')),
+      notes: paymentNotes.trim() + (actualAdvanceDeduction > 0 ? ` (₹${actualAdvanceDeduction.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} advance recovered)` : (targetAdvance ? ' (Advance recovery skipped this month)' : '')),
       createdAt: new Date().toISOString()
     };
 
@@ -1449,7 +1449,7 @@ export default function EmployeeManagement({
     }
 
     setShowPaymentModal(false);
-    alert(`✅ Salary Payment Recorded Successfully!\n• Employee: ${paymentRowData.fullName} (${paymentRowData.empCode})\n• Net Disbursed: ₹${calculatedNetPayable.toLocaleString()}\n• Advance Recovered in Salary: ₹${actualAdvanceDeduction.toLocaleString()}${actualAdvanceDeduction > 0 ? ' (Confirmed ✓)' : ' (Skipped)'}\n• Date: ${paymentDate} at ${paymentTime}\n• Mode: ${paymentMode}\n• Ref: ${paymentTxnRef || 'N/A'}`);
+    alert(`✅ Salary Payment Recorded Successfully!\n• Employee: ${paymentRowData.fullName} (${paymentRowData.empCode})\n• Net Disbursed: ₹${calculatedNetPayable.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n• Advance Recovered in Salary: ₹${actualAdvanceDeduction.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${actualAdvanceDeduction > 0 ? ' (Confirmed ✓)' : ' (Skipped)'}\n• Date: ${paymentDate} at ${paymentTime}\n• Mode: ${paymentMode}\n• Ref: ${paymentTxnRef || 'N/A'}`);
   };
 
   // Open Direct / Standalone Advance Recovery Modal (Advances Tab)
@@ -1480,7 +1480,7 @@ export default function EmployeeManagement({
       return;
     }
     if (amt > remBal) {
-      alert(`Recovery amount (₹${amt.toLocaleString()}) cannot exceed remaining balance (₹${remBal.toLocaleString()}).`);
+      alert(`Recovery amount (₹${amt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) cannot exceed remaining balance (₹${remBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}).`);
       return;
     }
 
@@ -1501,7 +1501,7 @@ export default function EmployeeManagement({
       paymentMode: recoveryModeInput === 'SALARY_DEDUCTION' ? 'Salary Deduction Adjustment' : 'Direct Repayment',
       remainingBalanceAfter: newBal,
       confirmedBy: currentUser?.name || 'Admin',
-      notes: recoveryNotesInput.trim() || `Confirmed recovery of ₹${amt.toLocaleString()}`
+      notes: recoveryNotesInput.trim() || `Confirmed recovery of ₹${amt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     };
 
     const updatedAdv = {
@@ -1519,7 +1519,7 @@ export default function EmployeeManagement({
     saveSalaryAdvanceToSupabase(updatedAdv);
 
     setShowAdvanceRecoveryModal(false);
-    alert(`✅ Advance Recovery Confirmed!\n• Employee: ${recoveryTargetAdvance.employeeName}\n• Recovered Amount: ₹${amt.toLocaleString()}\n• Remaining Balance: ₹${newBal.toLocaleString()}\n• Status: ${isFullyRecovered ? 'Fully Recovered 🎉' : 'Active (In Progress)'}`);
+    alert(`✅ Advance Recovery Confirmed!\n• Employee: ${recoveryTargetAdvance.employeeName}\n• Recovered Amount: ₹${amt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n• Remaining Balance: ₹${newBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n• Status: ${isFullyRecovered ? 'Fully Recovered 🎉' : 'Active (In Progress)'}`);
   };
 
   // Filtered Employee List
@@ -1770,7 +1770,7 @@ export default function EmployeeManagement({
             <div className="stat-card">
               <div className="stat-card-title">Active Salary Advances</div>
               <div className="stat-card-val" style={{ color: '#d97706' }}>
-                ₹ {salaryAdvances.filter(a => a.status === 'Approved & Disbursed').reduce((acc, a) => acc + (a.remainingBalance || 0), 0).toLocaleString()}
+                ₹ {salaryAdvances.filter(a => a.status === 'Approved & Disbursed').reduce((acc, a) => acc + (a.remainingBalance || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <div className="stat-card-sub">Recoverable outstanding balance</div>
             </div>
@@ -1872,9 +1872,9 @@ export default function EmployeeManagement({
                           </div>
                         </td>
                         <td>
-                          <div style={{ fontWeight: '800', color: '#0f172a' }}>₹ {(gross || 0).toLocaleString()}</div>
+                          <div style={{ fontWeight: '800', color: '#0f172a' }}>₹ {(gross || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                           <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
-                            Basic: ₹{(struct.basicSalary || 0).toLocaleString()} | HRA: ₹{(struct.hra || 0).toLocaleString()}
+                            Basic: ₹{(struct.basicSalary || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | HRA: ₹{(struct.hra || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                         </td>
                         <td>
@@ -2182,7 +2182,7 @@ export default function EmployeeManagement({
                 Employee Breakdown • {periodTitle} ({records.length} {records.length === 1 ? 'Record' : 'Records'})
               </div>
               <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                Total Payout: <strong style={{ color: '#0f172a' }}>₹ {(records.reduce((sum, r) => sum + (r.payout || 0), 0) || 0).toLocaleString()}</strong>
+                Total Payout: <strong style={{ color: '#0f172a' }}>₹ {(records.reduce((sum, r) => sum + (r.payout || 0), 0) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
               </div>
             </div>
             <div style={{ overflowX: 'auto', background: '#ffffff', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
@@ -2228,7 +2228,7 @@ export default function EmployeeManagement({
                           {att.overtimeReason || 'Production job extended.'}
                         </td>
                         <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
-                          <div style={{ fontWeight: '800', color: '#0f172a' }}>₹ {(payout || 0).toLocaleString()}</div>
+                          <div style={{ fontWeight: '800', color: '#0f172a' }}>₹ {(payout || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                           <div style={{ fontSize: '0.68rem', color: '#64748b' }}>@ ₹{hourlyRate}/hr</div>
                         </td>
                         <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
@@ -2283,9 +2283,9 @@ export default function EmployeeManagement({
                                   gap: '4px'
                                 }}
                                 onClick={() => handleRevertOvertime(att)}
-                                title={`Revert approval and automatically deduct ₹${(payout || 0).toLocaleString()} from employee's monthly salary`}
+                                title={`Revert approval and automatically deduct ₹${(payout || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} from employee's monthly salary`}
                               >
-                                <RotateCcw size={12} /> Revert (Deduct ₹{(payout || 0).toLocaleString()})
+                                <RotateCcw size={12} /> Revert (Deduct ₹{(payout || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                               </button>
                               <span style={{ fontSize: '0.65rem', color: '#64748b' }}>
                                 by {att.overtimeApprovedBy || 'Admin'}
@@ -2459,7 +2459,7 @@ export default function EmployeeManagement({
                       Total Overtime Amount
                     </div>
                     <div style={{ fontSize: '1.45rem', fontWeight: '900', color: '#0f172a', marginTop: '4px' }}>
-                      ₹ {(otGrandTotals?.totalAmount || 0).toLocaleString()}
+                      ₹ {(otGrandTotals?.totalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                   </div>
                   <div style={{ background: '#ecfdf5', padding: '8px', borderRadius: '8px', color: '#059669' }}>
@@ -2467,9 +2467,9 @@ export default function EmployeeManagement({
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '10px', marginTop: '8px', fontSize: '0.72rem', color: '#64748b' }}>
-                  <span>Approved: <strong style={{ color: '#059669' }}>₹ {(otGrandTotals?.approvedAmount || 0).toLocaleString()}</strong></span>
+                  <span>Approved: <strong style={{ color: '#059669' }}>₹ {(otGrandTotals?.approvedAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
                   <span>•</span>
-                  <span>Pending: <strong style={{ color: '#d97706' }}>₹ {(otGrandTotals?.pendingAmount || 0).toLocaleString()}</strong></span>
+                  <span>Pending: <strong style={{ color: '#d97706' }}>₹ {(otGrandTotals?.pendingAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
                 </div>
               </div>
 
@@ -2531,7 +2531,7 @@ export default function EmployeeManagement({
                   </div>
                 </div>
                 <div style={{ marginTop: '8px', fontSize: '0.72rem', color: '#64748b' }}>
-                  Pending Wage Value: <strong style={{ color: '#d97706' }}>₹ {(otGrandTotals?.pendingAmount || 0).toLocaleString()}</strong>
+                  Pending Wage Value: <strong style={{ color: '#d97706' }}>₹ {(otGrandTotals?.pendingAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                 </div>
               </div>
             </div>
@@ -2712,7 +2712,7 @@ export default function EmployeeManagement({
                               {att.overtimeReason || 'Production job run extended.'}
                             </td>
                             <td style={{ whiteSpace: 'nowrap' }}>
-                              <div style={{ fontWeight: '800', color: '#0f172a' }}>₹ {(payoutInfo?.payout || 0).toLocaleString()}</div>
+                              <div style={{ fontWeight: '800', color: '#0f172a' }}>₹ {(payoutInfo?.payout || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                               <div style={{ fontSize: '0.68rem', color: '#64748b' }}>@ ₹{payoutInfo.hourlyRate}/hr</div>
                             </td>
                             <td style={{ whiteSpace: 'nowrap' }}>
@@ -2764,9 +2764,9 @@ export default function EmployeeManagement({
                                       gap: '4px'
                                     }}
                                     onClick={() => handleRevertOvertime(att)}
-                                    title={`Revert approval and immediately deduct ₹${(payoutInfo?.payout || 0).toLocaleString()} from employee's monthly salary`}
+                                    title={`Revert approval and immediately deduct ₹${(payoutInfo?.payout || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} from employee's monthly salary`}
                                   >
-                                    <RotateCcw size={13} /> Revert (Deduct ₹{(payoutInfo?.payout || 0).toLocaleString()})
+                                    <RotateCcw size={13} /> Revert (Deduct ₹{(payoutInfo?.payout || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                                   </button>
                                   <div style={{ fontSize: '0.68rem', color: '#64748b' }}>
                                     Approved by {att.overtimeApprovedBy || 'Admin'}
@@ -2859,10 +2859,10 @@ export default function EmployeeManagement({
                               </td>
                               <td>
                                 <div style={{ fontWeight: '900', color: '#0f172a', fontSize: '0.95rem' }}>
-                                  ₹ {(dayGroup?.totalAmount || 0).toLocaleString()}
+                                  ₹ {(dayGroup?.totalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </div>
                                 <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
-                                  Appr: <span style={{ color: '#059669', fontWeight: '700' }}>₹{(dayGroup?.approvedAmount || 0).toLocaleString()}</span> • Pend: <span style={{ color: '#d97706', fontWeight: '700' }}>₹{(dayGroup?.pendingAmount || 0).toLocaleString()}</span>
+                                  Appr: <span style={{ color: '#059669', fontWeight: '700' }}>₹{(dayGroup?.approvedAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> • Pend: <span style={{ color: '#d97706', fontWeight: '700' }}>₹{(dayGroup?.pendingAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                 </div>
                               </td>
                               <td>
@@ -2981,10 +2981,10 @@ export default function EmployeeManagement({
                               </td>
                               <td>
                                 <div style={{ fontWeight: '900', color: '#0f172a', fontSize: '0.95rem' }}>
-                                  ₹ {(weekGroup?.totalAmount || 0).toLocaleString()}
+                                  ₹ {(weekGroup?.totalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </div>
                                 <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
-                                  Appr: <span style={{ color: '#059669', fontWeight: '700' }}>₹{(weekGroup?.approvedAmount || 0).toLocaleString()}</span> • Pend: <span style={{ color: '#d97706', fontWeight: '700' }}>₹{(weekGroup?.pendingAmount || 0).toLocaleString()}</span>
+                                  Appr: <span style={{ color: '#059669', fontWeight: '700' }}>₹{(weekGroup?.approvedAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> • Pend: <span style={{ color: '#d97706', fontWeight: '700' }}>₹{(weekGroup?.pendingAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                 </div>
                               </td>
                               <td style={{ textAlign: 'center' }}>
@@ -3082,10 +3082,10 @@ export default function EmployeeManagement({
                               </td>
                               <td>
                                 <div style={{ fontWeight: '900', color: '#0f172a', fontSize: '0.95rem' }}>
-                                  ₹ {(monthGroup?.totalAmount || 0).toLocaleString()}
+                                  ₹ {(monthGroup?.totalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </div>
                                 <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
-                                  Appr: <span style={{ color: '#059669', fontWeight: '700' }}>₹{(monthGroup?.approvedAmount || 0).toLocaleString()}</span> • Pend: <span style={{ color: '#d97706', fontWeight: '700' }}>₹{(monthGroup?.pendingAmount || 0).toLocaleString()}</span>
+                                  Appr: <span style={{ color: '#059669', fontWeight: '700' }}>₹{(monthGroup?.approvedAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> • Pend: <span style={{ color: '#d97706', fontWeight: '700' }}>₹{(monthGroup?.pendingAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                 </div>
                               </td>
                               <td style={{ textAlign: 'center' }}>
@@ -3257,13 +3257,13 @@ export default function EmployeeManagement({
                 Total Records: <strong style={{ color: '#0f172a' }}>{advancesMetrics.count}</strong>
               </div>
               <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
-                Total Disbursed: <strong style={{ color: '#0284c7' }}>₹ {(advancesMetrics?.totalDisbursed || 0).toLocaleString()}</strong>
+                Total Disbursed: <strong style={{ color: '#0284c7' }}>₹ {(advancesMetrics?.totalDisbursed || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
               </div>
               <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
-                Total Recovered: <strong style={{ color: '#059669' }}>₹ {(advancesMetrics?.totalRecovered || 0).toLocaleString()}</strong>
+                Total Recovered: <strong style={{ color: '#059669' }}>₹ {(advancesMetrics?.totalRecovered || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
               </div>
               <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
-                Outstanding Balance: <strong style={{ color: '#d97706' }}>₹ {(advancesMetrics?.totalBalance || 0).toLocaleString()}</strong>
+                Outstanding Balance: <strong style={{ color: '#d97706' }}>₹ {(advancesMetrics?.totalBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
               </div>
             </div>
           </div>
@@ -3299,7 +3299,7 @@ export default function EmployeeManagement({
                       </td>
                       <td>
                         <div style={{ fontWeight: '900', color: '#0f172a', fontSize: '0.92rem' }}>
-                          ₹ {(adv.advanceAmount || 0).toLocaleString()}
+                          ₹ {(adv.advanceAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
                       </td>
                       <td>
@@ -3309,7 +3309,7 @@ export default function EmployeeManagement({
                       </td>
                       <td>
                         <div style={{ fontWeight: '800', color: '#dc2626' }}>
-                          ₹ {(adv.monthlyEmiAmount || 0).toLocaleString()} / mo
+                          ₹ {(adv.monthlyEmiAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / mo
                         </div>
                       </td>
                       <td>
@@ -3317,7 +3317,7 @@ export default function EmployeeManagement({
                           const remBal = Number(adv.remainingBalance ?? (adv.advanceAmount - (adv.totalRecoveredAmount || 0)));
                           return (
                             <div style={{ fontSize: '0.8rem', fontWeight: '700' }}>
-                              <span style={{ color: '#059669' }}>₹{(adv.totalRecoveredAmount || 0).toLocaleString()}</span> / <span style={{ color: remBal > 0 ? '#d97706' : '#64748b' }}>₹{remBal.toLocaleString()} Bal</span>
+                              <span style={{ color: '#059669' }}>₹{(adv.totalRecoveredAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> / <span style={{ color: remBal > 0 ? '#d97706' : '#64748b' }}>₹{remBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Bal</span>
                             </div>
                           );
                         })()}
@@ -3443,7 +3443,7 @@ export default function EmployeeManagement({
             <div className="stat-card">
               <div className="stat-card-title">Net Salary Payout</div>
               <div className="stat-card-val" style={{ color: '#0284c7' }}>
-                ₹ {(payrollTotals?.totalNet || 0).toLocaleString()}
+                ₹ {(payrollTotals?.totalNet || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <div className="stat-card-sub">For {monthlyPayrollSummary.length} employees</div>
             </div>
@@ -3451,7 +3451,7 @@ export default function EmployeeManagement({
             <div className="stat-card">
               <div className="stat-card-title">Disbursed / Paid</div>
               <div className="stat-card-val" style={{ color: '#16a34a' }}>
-                ₹ {salaryPayments.filter(p => p.monthKey === payrollMonth).reduce((acc, p) => acc + (p.netAmountPaid || 0), 0).toLocaleString()}
+                ₹ {salaryPayments.filter(p => p.monthKey === payrollMonth).reduce((acc, p) => acc + (p.netAmountPaid || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <div className="stat-card-sub">
                 {salaryPayments.filter(p => p.monthKey === payrollMonth).length} / {monthlyPayrollSummary.length} Paid
@@ -3461,7 +3461,7 @@ export default function EmployeeManagement({
             <div className="stat-card">
               <div className="stat-card-title">Approved OT Payout</div>
               <div className="stat-card-val" style={{ color: '#059669' }}>
-                ₹ {(payrollTotals?.totalOtPay || 0).toLocaleString()}
+                ₹ {(payrollTotals?.totalOtPay || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <div className="stat-card-sub">{payrollTotals?.totalOtHours || 0} Approved OT hrs</div>
             </div>
@@ -3469,15 +3469,15 @@ export default function EmployeeManagement({
             <div className="stat-card">
               <div className="stat-card-title">Total PF & ESIC</div>
               <div className="stat-card-val" style={{ color: '#7c3aed' }}>
-                ₹ {((payrollTotals?.totalPf || 0) + (payrollTotals?.totalEsic || 0)).toLocaleString()}
+                ₹ {((payrollTotals?.totalPf || 0) + (payrollTotals?.totalEsic || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
-              <div className="stat-card-sub">PF: ₹{(payrollTotals?.totalPf || 0).toLocaleString()} | ESIC: ₹{(payrollTotals?.totalEsic || 0).toLocaleString()}</div>
+              <div className="stat-card-sub">PF: ₹{(payrollTotals?.totalPf || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | ESIC: ₹{(payrollTotals?.totalEsic || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
             </div>
 
             <div className="stat-card">
               <div className="stat-card-title">Advance Recovered</div>
               <div className="stat-card-val" style={{ color: '#dc2626' }}>
-                ₹ {(payrollTotals?.totalAdvanceRecovered || 0).toLocaleString()}
+                ₹ {(payrollTotals?.totalAdvanceRecovered || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <div className="stat-card-sub">Monthly EMI deductions</div>
             </div>
@@ -3531,42 +3531,42 @@ export default function EmployeeManagement({
                         </div>
                       </td>
                       <td>
-                        <div style={{ fontWeight: '700' }}>₹ {(row.earnedBasic || 0).toLocaleString()}</div>
+                        <div style={{ fontWeight: '700' }}>₹ {(row.earnedBasic || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                       </td>
                       <td>
                         <div style={{ fontSize: '0.78rem', color: '#334155' }}>
-                          HRA: ₹{(row.earnedHra || 0).toLocaleString()}<br/>
-                          Other: ₹{(row.earnedOther || 0).toLocaleString()}
+                          HRA: ₹{(row.earnedHra || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<br/>
+                          Other: ₹{(row.earnedOther || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
                       </td>
                       <td>
                         <div style={{ fontWeight: '700', color: row.dinnerAllowance > 0 ? '#7c3aed' : '#94a3b8' }}>
-                          ₹ {(row.dinnerAllowance || 0).toLocaleString()}
+                          ₹ {(row.dinnerAllowance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
                         <div style={{ fontSize: '0.68rem', color: '#64748b' }}>{row.nightShiftCount} Nights</div>
                       </td>
                       <td>
                         <div style={{ fontWeight: '800', color: row.earnedOtPay > 0 ? '#059669' : '#94a3b8' }}>
-                          ₹ {(row.earnedOtPay || 0).toLocaleString()}
+                          ₹ {(row.earnedOtPay || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
                         <div style={{ fontSize: '0.68rem', color: '#64748b' }}>{row.approvedOtHours} hrs approved</div>
                       </td>
                       <td>
                         <div style={{ fontWeight: '800', color: '#0f172a' }}>
-                          ₹ {(row.totalGrossEarned || 0).toLocaleString()}
+                          ₹ {(row.totalGrossEarned || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
                       </td>
                       <td>
                         <div style={{ fontSize: '0.76rem', color: '#334155' }}>
-                          PF: ₹{(row.pfDeduction || 0).toLocaleString()}<br/>
-                          ESIC: ₹{(row.esicDeduction || 0).toLocaleString()}
+                          PF: ₹{(row.pfDeduction || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<br/>
+                          ESIC: ₹{(row.esicDeduction || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
                       </td>
                       <td>
                         {matchingPayment ? (
                           <div>
                             <div style={{ fontWeight: '800', color: (matchingPayment.advanceDeductionAmount || 0) > 0 ? '#16a34a' : '#64748b' }}>
-                              ₹ {Number(matchingPayment.advanceDeductionAmount || 0).toLocaleString()}
+                              ₹ {Number(matchingPayment.advanceDeductionAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </div>
                             {(matchingPayment.advanceDeductionAmount || 0) > 0 ? (
                               <span style={{ background: '#dcfce7', color: '#166534', padding: '1px 6px', borderRadius: '3px', fontSize: '0.68rem', fontWeight: '800', display: 'inline-block', marginTop: '2px' }}>
@@ -3583,7 +3583,7 @@ export default function EmployeeManagement({
                         ) : (
                           <div>
                             <div style={{ fontWeight: '800', color: row.totalAdvanceDeduction > 0 ? '#dc2626' : '#94a3b8' }}>
-                              ₹ {(row.totalAdvanceDeduction || 0).toLocaleString()}
+                              ₹ {(row.totalAdvanceDeduction || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </div>
                             {row.totalAdvanceDeduction > 0 && (
                               <span style={{ background: '#eff6ff', color: '#1d4ed8', padding: '1px 6px', borderRadius: '3px', fontSize: '0.68rem', fontWeight: '700', display: 'inline-block', marginTop: '2px' }}>
@@ -3595,7 +3595,7 @@ export default function EmployeeManagement({
                       </td>
                       <td>
                         <div style={{ fontSize: '0.95rem', fontWeight: '900', color: '#0284c7' }}>
-                          ₹ {(matchingPayment ? (matchingPayment.netAmountPaid !== undefined ? matchingPayment.netAmountPaid : row.netPayable) : (row.netPayable || 0)).toLocaleString()}
+                          ₹ {(matchingPayment ? (matchingPayment.netAmountPaid !== undefined ? matchingPayment.netAmountPaid : row.netPayable) : (row.netPayable || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
                       </td>
                       <td>
@@ -4230,7 +4230,7 @@ export default function EmployeeManagement({
                         );
                         return (
                           <option key={e.id} value={e.id}>
-                            {e.fullName} ({e.empCode || e.id}) - {e.department} {hasActive ? `[⚠️ Advance Due: ₹${(Number(hasActive.remainingBalance || hasActive.advanceAmount) || 0).toLocaleString()}]` : ''}
+                            {e.fullName} ({e.empCode || e.id}) - {e.department} {hasActive ? `[⚠️ Advance Due: ₹${(Number(hasActive.remainingBalance || hasActive.advanceAmount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}]` : ''}
                           </option>
                         );
                       })}
@@ -4243,7 +4243,7 @@ export default function EmployeeManagement({
                         <AlertTriangle size={18} style={{ color: '#dc2626' }} /> Advance Request Blocked — Outstanding Advance Pending
                       </div>
                       <div>
-                        This employee already has an active advance (<b>{selectedEmpActiveAdvance.id}</b>) with an outstanding balance of <b style={{ color: '#b91c1c' }}>₹{(Number(selectedEmpActiveAdvance.remainingBalance || selectedEmpActiveAdvance.advanceAmount) || 0).toLocaleString()}</b> ({selectedEmpActiveAdvance.status}). As per factory policy, a new advance cannot be requested before completion of old dues.
+                        This employee already has an active advance (<b>{selectedEmpActiveAdvance.id}</b>) with an outstanding balance of <b style={{ color: '#b91c1c' }}>₹{(Number(selectedEmpActiveAdvance.remainingBalance || selectedEmpActiveAdvance.advanceAmount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b> ({selectedEmpActiveAdvance.status}). As per factory policy, a new advance cannot be requested before completion of old dues.
                       </div>
                     </div>
                   )}
@@ -4281,7 +4281,7 @@ export default function EmployeeManagement({
 
                   {Number(advAmount) > 0 && !selectedEmpActiveAdvance && (
                     <div style={{ background: '#f0fdf4', padding: '10px 14px', borderRadius: '6px', border: '1px solid #bbf7d0', marginBottom: '14px', fontSize: '0.84rem', color: '#166534' }}>
-                      💰 Monthly Salary EMI Deduction: <b>₹{Math.round(Number(advAmount) / (Number(advTenureMonths) || 1)).toLocaleString()} / month</b>
+                      💰 Monthly Salary EMI Deduction: <b>₹{Math.round(Number(advAmount) / (Number(advTenureMonths) || 1)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / month</b>
                     </div>
                   )}
 
@@ -4359,10 +4359,10 @@ export default function EmployeeManagement({
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ fontSize: '0.72rem', color: '#64748b', textTransform: 'uppercase', fontWeight: '800' }}>Net Disbursal Amount</div>
                       <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#0284c7' }}>
-                        ₹ {liveNetPay.toLocaleString()}
+                        ₹ {liveNetPay.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </div>
                       <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
-                        Gross: ₹{gross.toLocaleString()} {advDed > 0 ? `| Adv Rec: -₹${advDed.toLocaleString()}` : ''}
+                        Gross: ₹{gross.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {advDed > 0 ? `| Adv Rec: -₹${advDed.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
                       </div>
                     </div>
                   </div>
@@ -4408,15 +4408,15 @@ export default function EmployeeManagement({
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', background: '#ffffff', padding: '8px 12px', borderRadius: '6px', border: '1px solid #e2e8f0', marginBottom: '10px', fontSize: '0.75rem' }}>
                           <div>
                             <span style={{ color: '#64748b', display: 'block', fontSize: '0.7rem' }}>Total Advance</span>
-                            <b style={{ color: '#0f172a' }}>₹ {(paymentActiveAdvance.advanceAmount || 0).toLocaleString()}</b>
+                            <b style={{ color: '#0f172a' }}>₹ {(paymentActiveAdvance.advanceAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
                           </div>
                           <div>
                             <span style={{ color: '#64748b', display: 'block', fontSize: '0.7rem' }}>Already Recovered</span>
-                            <b style={{ color: '#16a34a' }}>₹ {(paymentActiveAdvance.totalRecoveredAmount || 0).toLocaleString()}</b>
+                            <b style={{ color: '#16a34a' }}>₹ {(paymentActiveAdvance.totalRecoveredAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
                           </div>
                           <div>
                             <span style={{ color: '#64748b', display: 'block', fontSize: '0.7rem' }}>Outstanding Balance</span>
-                            <b style={{ color: '#dc2626' }}>₹ {remBal.toLocaleString()}</b>
+                            <b style={{ color: '#dc2626' }}>₹ {remBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
                           </div>
                         </div>
 
@@ -4469,7 +4469,7 @@ export default function EmployeeManagement({
                                   }}
                                   title="Set to standard monthly EMI"
                                 >
-                                  Std EMI (₹{(paymentActiveAdvance.monthlyEmiAmount || 0).toLocaleString()})
+                                  Std EMI (₹{(paymentActiveAdvance.monthlyEmiAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                                 </button>
                                 <button 
                                   type="button" 
@@ -4478,17 +4478,17 @@ export default function EmployeeManagement({
                                   onClick={() => setPaymentAdvanceRecoveryAmount(String(remBal))}
                                   title="Clear full remaining balance in this salary"
                                 >
-                                  Full Balance (₹{remBal.toLocaleString()})
+                                  Full Balance (₹{remBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                                 </button>
                               </div>
                             </div>
                             <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '5px' }}>
-                              💡 Balance remaining after this salary payment: <strong style={{ color: balAfterThisPay === 0 ? '#16a34a' : '#d97706' }}>₹{balAfterThisPay.toLocaleString()}</strong> {balAfterThisPay === 0 && '🎉 (Will be Fully Recovered)'}
+                              💡 Balance remaining after this salary payment: <strong style={{ color: balAfterThisPay === 0 ? '#16a34a' : '#d97706' }}>₹{balAfterThisPay.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> {balAfterThisPay === 0 && '🎉 (Will be Fully Recovered)'}
                             </div>
                           </div>
                         ) : (
                           <div style={{ fontSize: '0.72rem', color: '#b45309', marginTop: '4px', fontStyle: 'italic' }}>
-                            ⚠️ Advance recovery is postponed for this month. The outstanding loan balance (₹{remBal.toLocaleString()}) will remain intact.
+                            ⚠️ Advance recovery is postponed for this month. The outstanding loan balance (₹{remBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) will remain intact.
                           </div>
                         )}
                       </>
@@ -4636,19 +4636,19 @@ export default function EmployeeManagement({
                         <div>
                           <span style={{ fontSize: '0.7rem', color: '#64748b', display: 'block' }}>Total Advance</span>
                           <span style={{ fontSize: '0.92rem', fontWeight: '800', color: '#0f172a' }}>
-                            ₹ {(recoveryTargetAdvance.advanceAmount || 0).toLocaleString()}
+                            ₹ {(recoveryTargetAdvance.advanceAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         </div>
                         <div>
                           <span style={{ fontSize: '0.7rem', color: '#64748b', display: 'block' }}>Already Recovered</span>
                           <span style={{ fontSize: '0.92rem', fontWeight: '800', color: '#059669' }}>
-                            ₹ {(recoveryTargetAdvance.totalRecoveredAmount || 0).toLocaleString()}
+                            ₹ {(recoveryTargetAdvance.totalRecoveredAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         </div>
                         <div>
                           <span style={{ fontSize: '0.7rem', color: '#64748b', display: 'block' }}>Current Balance</span>
                           <span style={{ fontSize: '0.92rem', fontWeight: '900', color: '#d97706' }}>
-                            ₹ {remBal.toLocaleString()}
+                            ₹ {remBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         </div>
                       </div>
@@ -4692,7 +4692,7 @@ export default function EmployeeManagement({
                             style={{ padding: '2px 8px', fontSize: '0.7rem' }}
                             onClick={() => setRecoveryAmountInput(String(Math.min(emi > 0 ? emi : remBal, remBal)))}
                           >
-                            1 EMI (₹{(emi || 0).toLocaleString()})
+                            1 EMI (₹{(emi || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                           </button>
                           <button 
                             type="button" 
@@ -4700,7 +4700,7 @@ export default function EmployeeManagement({
                             style={{ padding: '2px 8px', fontSize: '0.7rem' }}
                             onClick={() => setRecoveryAmountInput(String(remBal))}
                           >
-                            Full Balance (₹{remBal.toLocaleString()})
+                            Full Balance (₹{remBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                           </button>
                         </div>
                       </div>
@@ -4715,7 +4715,7 @@ export default function EmployeeManagement({
                         required 
                       />
                       <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '4px' }}>
-                        Balance remaining after recovery: <strong style={{ color: projectedBal === 0 ? '#166534' : '#d97706' }}>₹{projectedBal.toLocaleString()}</strong> {projectedBal === 0 && '🎉 (Loan will be Marked Fully Recovered)'}
+                        Balance remaining after recovery: <strong style={{ color: projectedBal === 0 ? '#166534' : '#d97706' }}>₹{projectedBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> {projectedBal === 0 && '🎉 (Loan will be Marked Fully Recovered)'}
                       </div>
                     </div>
 
@@ -4817,19 +4817,19 @@ export default function EmployeeManagement({
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginTop: '10px', fontSize: '0.78rem' }}>
                       <div>
                         <span style={{ color: '#64748b', display: 'block', fontSize: '0.7rem' }}>Total Advance</span>
-                        <b style={{ color: '#0f172a' }}>₹ {totalAdv.toLocaleString()}</b>
+                        <b style={{ color: '#0f172a' }}>₹ {totalAdv.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
                       </div>
                       <div>
                         <span style={{ color: '#64748b', display: 'block', fontSize: '0.7rem' }}>Monthly EMI</span>
-                        <b style={{ color: '#0284c7' }}>₹ {(historyTargetAdvance.monthlyEmiAmount || 0).toLocaleString()}</b>
+                        <b style={{ color: '#0284c7' }}>₹ {(historyTargetAdvance.monthlyEmiAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
                       </div>
                       <div>
                         <span style={{ color: '#64748b', display: 'block', fontSize: '0.7rem' }}>Total Recovered</span>
-                        <b style={{ color: '#059669' }}>₹ {totalRec.toLocaleString()} ({pct}%)</b>
+                        <b style={{ color: '#059669' }}>₹ {totalRec.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({pct}%)</b>
                       </div>
                       <div>
                         <span style={{ color: '#64748b', display: 'block', fontSize: '0.7rem' }}>Outstanding</span>
-                        <b style={{ color: remBal > 0 ? '#d97706' : '#64748b' }}>₹ {remBal.toLocaleString()}</b>
+                        <b style={{ color: remBal > 0 ? '#d97706' : '#64748b' }}>₹ {remBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
                       </div>
                     </div>
 
@@ -4880,10 +4880,10 @@ export default function EmployeeManagement({
                                   </span>
                                 </td>
                                 <td style={{ textAlign: 'right', fontWeight: '800', color: '#16a34a' }}>
-                                  ₹ {Number(h.amount || 0).toLocaleString()}
+                                  ₹ {Number(h.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </td>
                                 <td style={{ textAlign: 'right', fontWeight: '700', color: '#d97706' }}>
-                                  ₹ {Number(h.remainingBalanceAfter !== undefined ? h.remainingBalanceAfter : (h.remainingBalance || 0)).toLocaleString()}
+                                  ₹ {Number(h.remainingBalanceAfter !== undefined ? h.remainingBalanceAfter : (h.remainingBalance || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </td>
                                 <td>
                                   <div style={{ fontSize: '0.72rem', color: '#334155' }}>

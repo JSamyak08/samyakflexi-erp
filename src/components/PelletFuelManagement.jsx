@@ -551,7 +551,7 @@ export default function PelletFuelManagement({
             {(stockSummary?.mtdConsumedKg || 0).toLocaleString()} <span style={{ fontSize: '0.9rem', fontWeight: '700', color: '#64748b' }}>Kg</span>
           </div>
           <div style={{ fontSize: '0.76rem', color: '#64748b', marginTop: '6px' }}>
-            MTD Expense: <strong style={{ color: '#0284c7' }}>₹ {(Math.round(stockSummary?.mtdExpenditure || 0)).toLocaleString()}</strong>
+            MTD Expense: <strong style={{ color: '#0284c7' }}>₹ {(Math.round(stockSummary?.mtdExpenditure || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
           </div>
         </div>
 
@@ -932,7 +932,7 @@ export default function PelletFuelManagement({
                     </td>
                     <td style={{ padding: '14px 16px' }}>
                       <div style={{ fontWeight: '900', color: '#0284c7', fontSize: '0.96rem' }}>
-                        ₹ {((Number(item.totalAmount) || (Number(item.inwardQtyKg) * Number(item.unitCostPerKg))) || 0).toLocaleString()}
+                        ₹ {((Number(item.totalAmount) || (Number(item.inwardQtyKg) * Number(item.unitCostPerKg))) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </div>
                     </td>
                     <td style={{ padding: '14px 16px' }}>
@@ -1402,7 +1402,7 @@ export default function PelletFuelManagement({
                     readOnly
                     disabled
                     style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.88rem', background: '#f8fafc', fontWeight: '800', color: '#0284c7' }}
-                    value={iQtyKg && iRatePerKg ? `₹ ${((Number(iQtyKg) * Number(iRatePerKg)) || 0).toLocaleString()}` : '₹ 0'}
+                    value={iQtyKg && iRatePerKg ? `₹ ${((Number(iQtyKg) * Number(iRatePerKg)) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '₹ 0'}
                   />
                 </div>
               </div>

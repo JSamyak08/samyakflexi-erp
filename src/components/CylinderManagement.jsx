@@ -677,8 +677,8 @@ export default function CylinderManagement({
       colorsCount: parseInt(colorsCount) || 1,
       rate: parseFloat(rate) || 1.6,
       ratePerSqInch: parseFloat(rate) || 1.6,
-      costPerCylinder: `₹ ${parseInt(costPerCylinder || 0).toLocaleString()}`,
-      cylinderCost: `₹ ${parseInt(cylinderCost || 0).toLocaleString()}`,
+      costPerCylinder: `₹ ${parseInt(costPerCylinder || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      cylinderCost: `₹ ${parseInt(cylinderCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       engravuresName,
       costBorneBy,
       costBorneType,
@@ -729,7 +729,7 @@ export default function CylinderManagement({
           pouchHeight: parseFloat(pouchHeight) || 0,
           layers: layers,
           cylinderSku: sku.trim(),
-          cylinderCost: `₹ ${parseInt(cylinderCost || 0).toLocaleString()}`,
+          cylinderCost: `₹ ${parseInt(cylinderCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
           colorsCount: parseInt(colorsCount) || 6,
           engravuresName,
           costBorneBy,
@@ -877,8 +877,8 @@ export default function CylinderManagement({
       const computedFace = parseFloat(rawFaceLength) || 1050;
       const computedCirc = parseFloat(rawCircumference) || 400;
       const computedRate = parseFloat(rawRate) || 1.6;
-      const computedCost = rawCost ? `₹ ${parseInt(rawCost.replace(/\D/g, '')) || 0}` : `₹ ${Math.round((computedFace * computedCirc / 100) * computedRate * computedColors).toLocaleString()}`;
-      const computedCostPerCyl = rawCostPerCyl ? `₹ ${parseInt(rawCostPerCyl.replace(/\D/g, '')) || 0}` : `₹ ${Math.round((computedFace * computedCirc / 100) * computedRate).toLocaleString()}`;
+      const computedCost = rawCost ? `₹ ${parseInt(rawCost.replace(/\D/g, '')) || 0}` : `₹ ${Math.round((computedFace * computedCirc / 100) * computedRate * computedColors).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const computedCostPerCyl = rawCostPerCyl ? `₹ ${parseInt(rawCostPerCyl.replace(/\D/g, '')) || 0}` : `₹ ${Math.round((computedFace * computedCirc / 100) * computedRate).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
       let parsedLayers = [
         { id: 1, filmType: 'PET', micron: 12 },

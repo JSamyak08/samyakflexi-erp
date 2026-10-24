@@ -180,6 +180,8 @@ export function sanitizeGRN(rawGRN) {
     status: statusVal,
     qcStatus: qcStatusVal,
     qcNotes: rawGRN.qc_remarks || rawGRN.qcNotes || meta.qcNotes || '',
+    escalatedAt: rawGRN.escalated_at || rawGRN.escalatedAt || meta.escalatedAt || null,
+    escalated_at: rawGRN.escalated_at || rawGRN.escalatedAt || meta.escalatedAt || null,
     inspectedBy: meta.inspectedBy || rawGRN.inspectedBy || '',
     storeManager: meta.storeManager || rawGRN.storeManager || '',
     receivedQtyKg: Number(rawGRN.received_qty_kg ?? rawGRN.receivedQtyKg ?? rawGRN.netWeightKg ?? 0) || 0,

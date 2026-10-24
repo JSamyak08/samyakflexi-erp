@@ -443,7 +443,7 @@ export default function PurchaseOrderManagement({
       }
 
       setIsCreateModalOpen(false);
-      alert(`✅ Purchase Order ${payload.poNumber} created and saved to database successfully!\nTotal Value: ₹${(payload.totalAmount || 0).toLocaleString('en-IN')}`);
+      alert(`✅ Purchase Order ${payload.poNumber} created and saved to database successfully!\nTotal Value: ₹${(payload.totalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
     } catch (err) {
       console.error("Error creating Purchase Order:", err);
       alert(`Failed to save Purchase Order: ${err.message}`);
@@ -1669,10 +1669,10 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                       {/* Total Amount */}
                       <td style={{ padding: '12px 16px', verticalAlign: 'top' }}>
                         <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '0.92rem' }}>
-                          ₹{(po.totalAmount || 0).toLocaleString('en-IN')}
+                          ₹{(po.totalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
                         <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>
-                          Sub: ₹{(po.subtotal || 0).toLocaleString('en-IN')} + Tax
+                          Sub: ₹{(po.subtotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} + Tax
                         </div>
                       </td>
 
@@ -2294,7 +2294,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
 
                             {/* Line Total */}
                             <td style={{ padding: '8px 12px', fontWeight: '700', color: '#0f172a' }}>
-                              ₹{(item.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                              ₹{(item.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </td>
 
                             {/* Remove */}
@@ -2376,23 +2376,23 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
 
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '8px', color: '#475569' }}>
                         <span>Subtotal (Taxable):</span>
-                        <span>₹{(formCalculations?.subtotal || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                        <span>₹{(formCalculations?.subtotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       </div>
 
                       {formCalculations?.isInterState ? (
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '8px', color: '#475569' }}>
                           <span>IGST (18%):</span>
-                          <span>₹{(formCalculations?.igst || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                          <span>₹{(formCalculations?.igst || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                         </div>
                       ) : (
                         <>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '8px', color: '#475569' }}>
                             <span>CGST (9%):</span>
-                            <span>₹{(formCalculations?.cgst || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                            <span>₹{(formCalculations?.cgst || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '8px', color: '#475569' }}>
                             <span>SGST (9%):</span>
-                            <span>₹{(formCalculations?.sgst || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                            <span>₹{(formCalculations?.sgst || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         </>
                       )}
@@ -2402,7 +2402,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontSize: '0.95rem', fontWeight: '800', color: '#0f172a' }}>Grand Total (₹):</span>
                         <span style={{ fontSize: '1.25rem', fontWeight: '800', color: '#4f46e5' }}>
-                          ₹{(formCalculations?.totalAmount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                          ₹{(formCalculations?.totalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </div>
                     </div>
